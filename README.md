@@ -1,1 +1,7 @@
-Tel T&D V2 project structure
+
+Tel T&D Platform
+
+Structure:
+frontend/
+backend/
+database/
