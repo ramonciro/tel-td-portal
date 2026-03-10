@@ -1,0 +1,11 @@
+{
+  "name": "tel-td-backend",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.1",
+    "cors": "^2.8.5"
+  }
+}

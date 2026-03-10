@@ -1,2 +1,1 @@
-# tel-td-portal
-Portal interno de Treinamento e Desenvolvimento
+Tel T&D V2 project structure
