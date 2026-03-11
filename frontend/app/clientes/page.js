@@ -1,4 +1,5 @@
 import PortalShell from "../../components/PortalShell";
+<PortalShell title="..." subtitle="...">
 
 "use client";
 
@@ -74,3 +75,5 @@ export default function ClientesPage() {
     </div>
   );
 }
+
+</PortalShell>
