@@ -1,6 +1,19 @@
+import pool from "../db.js";
+
 export async function listUsers(req, res) {
-  return res.json([
-    { nome: "Ramon Ciro", email: "admin@teltd.com", role: "COORDENADOR", cliente: "Global", ativo: true },
-    { nome: "Paulo Silva", email: "paulo@teltd.com", role: "SUPERVISOR", cliente: "Claro", ativo: true }
-  ]);
+  const [rows] = await pool.query(
+    "SELECT id, nome, email, perfil, cliente, ativo FROM usuarios ORDER BY id DESC"
+  );
+  res.json(rows);
+}
+
+export async function createUser(req, res) {
+  const { nome, email, senha, perfil, cliente, ativo } = req.body;
+
+  const [result] = await pool.query(
+    "INSERT INTO usuarios (nome,email,senha,perfil,cliente,ativo) VALUES (?,?,?,?,?,?)",
+    [nome, email, senha, perfil, cliente, ativo]
+  );
+
+  res.json({ ok: true, id: result.insertId });
 }
