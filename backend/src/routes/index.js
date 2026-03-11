@@ -21,5 +21,8 @@ router.get("/clientes", authRequired, listClientes);
 router.get("/treinamentos", authRequired, listTreinamentos);
 router.post("/treinamentos", authRequired, createTreinamento);
 
+router.get("/presencas", authRequired, listPresencas);
+router.post("/presencas", authRequired, createPresenca);
+
 
 export default router;
