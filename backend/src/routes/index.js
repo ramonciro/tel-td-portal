@@ -7,6 +7,7 @@ import { listTreinamentos, createTreinamento } from "../controllers/treinamentos
 import { authRequired } from "../middlewares/auth.js";
 import { listPresencas, createPresenca } from "../controllers/presencasController.js";
 
+
 const router = Router();
 
 router.post("/auth/login", login);
