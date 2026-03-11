@@ -1,4 +1,5 @@
 import PortalShell from "../../components/PortalShell";
+<PortalShell title="..." subtitle="...">
 
 "use client";
 
@@ -343,3 +344,5 @@ const cellStyle = {
   padding: 12,
   textAlign: "left"
 };
+
+</PortalShell>
