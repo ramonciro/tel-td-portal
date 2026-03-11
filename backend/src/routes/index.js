@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { login } from "../controllers/authController.js";
 import { getDashboard } from "../controllers/dashboardController.js";
-import { listUsers, creatUser } from "../controllers/usersController.js";
+import { listUsers, createUser } from "../controllers/usersController.js";
 import { listClientes } from "../controllers/clientesController.js";
 import { listTreinamentos, createTreinamento } from "../controllers/treinamentosController.js";
 import { authRequired } from "../middlewares/auth.js";
