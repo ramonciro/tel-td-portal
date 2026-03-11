@@ -7,6 +7,7 @@ import { listTreinamentos, createTreinamento } from "../controllers/treinamentos
 import { authRequired } from "../middlewares/auth.js";
 import { listPresencas, createPresenca } from "../controllers/presencasController.js";
 import { listAvaliacoes, createAvaliacao } from "../controllers/avaliacoesController.js";
+import { listMateriaisAvaliativos, createMaterialAvaliativo } from "../controllers/materiaisAvaliativosController.js";
 
 
 const router = Router();
@@ -28,6 +29,9 @@ router.post("/presencas", authRequired, createPresenca);
 
 router.get("/avaliacoes", authRequired, listAvaliacoes);
 router.post("/avaliacoes", authRequired, createAvaliacao);
+
+router.get("/materiais-avaliativos", authRequired, listMateriaisAvaliativos);
+router.post("/materiais-avaliativos", authRequired, createMaterialAvaliativo);
 
 
 export default router;
