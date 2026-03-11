@@ -10,6 +10,7 @@ import { listAvaliacoes, createAvaliacao } from "../controllers/avaliacoesContro
 import { listMateriaisAvaliativos, createMaterialAvaliativo } from "../controllers/materiaisAvaliativosController.js";
 
 
+
 const router = Router();
 
 router.post("/auth/login", login);
