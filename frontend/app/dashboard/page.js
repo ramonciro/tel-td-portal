@@ -1,3 +1,6 @@
+import PortalShell from "../../components/PortalShell";
+<PortalShell title="..." subtitle="...">
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -99,3 +102,5 @@ const cell = {
   padding: 12,
   textAlign: "left"
 };
+
+</PortalShell>
