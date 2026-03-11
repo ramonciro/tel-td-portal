@@ -52,7 +52,6 @@ router.get("/migracao-materiais-avaliativos", async (req, res) => {
       ok: true,
       message: "Tabela materiais_avaliativos criada com sucesso"
     });
-
   } catch (error) {
     res.status(500).json({
       ok: false,
