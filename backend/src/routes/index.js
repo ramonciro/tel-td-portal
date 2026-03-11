@@ -9,8 +9,6 @@ import { listPresencas, createPresenca } from "../controllers/presencasControlle
 import { listAvaliacoes, createAvaliacao } from "../controllers/avaliacoesController.js";
 import { listMateriaisAvaliativos, createMaterialAvaliativo } from "../controllers/materiaisAvaliativosController.js";
 
-
-
 const router = Router();
 
 router.post("/auth/login", login);
@@ -34,5 +32,33 @@ router.post("/avaliacoes", authRequired, createAvaliacao);
 router.get("/materiais-avaliativos", authRequired, listMateriaisAvaliativos);
 router.post("/materiais-avaliativos", authRequired, createMaterialAvaliativo);
 
+router.get("/migracao-materiais-avaliativos", async (req, res) => {
+  try {
+    const pool = (await import("../db.js")).default;
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS materiais_avaliativos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        treinamento_id INT,
+        titulo VARCHAR(200),
+        tipo VARCHAR(50),
+        link_arquivo VARCHAR(255),
+        observacao TEXT,
+        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    res.json({
+      ok: true,
+      message: "Tabela materiais_avaliativos criada com sucesso"
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      message: "Erro ao criar tabela",
+      error: error.message
+    });
+  }
+});
 export default router;
