@@ -4,11 +4,9 @@ import { getDashboard } from "../controllers/dashboardController.js";
 import { listUsers } from "../controllers/usersController.js";
 import { listClientes } from "../controllers/clientesController.js";
 import { listTreinamentos } from "../controllers/treinamentosController.js";
-import { runMigration } from "../controllers/migrateController.js";
 import { authRequired } from "../middlewares/auth.js";
 
 const router = Router();
-
 
 router.post("/auth/login", login);
 router.get("/dashboard", authRequired, getDashboard);
