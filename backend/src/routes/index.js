@@ -11,7 +11,7 @@ const router = Router();
 router.post("/auth/login", login);
 router.get("/dashboard", authRequired, getDashboard);
 router.get("/users", authRequired, listUsers);
-router.post("/users", authRequired, creatUser);
+router.post("/users", authRequired, createUser);
 router.get("/clientes", authRequired, listClientes);
 router.get("/treinamentos", authRequired, listTreinamentos);
 router.post("/treinamentos", authRequired, createTreinamento);
