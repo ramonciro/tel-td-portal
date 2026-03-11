@@ -9,7 +9,6 @@ import { authRequired } from "../middlewares/auth.js";
 
 const router = Router();
 
-router.get("/migrate", runMigration);
 
 router.post("/auth/login", login);
 router.get("/dashboard", authRequired, getDashboard);
