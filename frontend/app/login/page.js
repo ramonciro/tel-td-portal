@@ -1,3 +1,7 @@
+import PortalShell from "../../components/PortalShell";
+
+<PortalShell title="..." subtitle="...">
+  
 "use client";
 
 import { useState } from "react";
@@ -70,3 +74,5 @@ export default function Login() {
     </div>
   );
 }
+
+</PortalShell>
