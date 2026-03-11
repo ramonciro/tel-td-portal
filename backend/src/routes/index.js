@@ -5,6 +5,7 @@ import { listUsers, createUser } from "../controllers/usersController.js";
 import { listClientes } from "../controllers/clientesController.js";
 import { listTreinamentos, createTreinamento } from "../controllers/treinamentosController.js";
 import { authRequired } from "../middlewares/auth.js";
+import { listPresencas, createPresenca } from "../controllers/presencasController.js";
 
 const router = Router();
 
