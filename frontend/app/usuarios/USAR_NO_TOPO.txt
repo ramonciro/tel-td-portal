@@ -1,0 +1,1 @@
+No arquivo frontend/app/usuarios/page.js, adicione no topo:\nimport PortalShell from "../../components/PortalShell";\n\nE envolva o conteúdo principal com:\n<PortalShell title="Usuários" subtitle="Gestão de acessos, perfis e usuários do portal."> ...conteúdo... </PortalShell>\n

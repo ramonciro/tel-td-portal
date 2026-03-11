@@ -22,9 +22,6 @@ export default function PresencasPage() {
       const res = await fetch(`${apiUrl}/treinamentos`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-
-      if (!res.ok) throw new Error();
-
       const data = await res.json();
       setTreinamentos(data);
     } catch {
@@ -45,7 +42,7 @@ export default function PresencasPage() {
       const data = await res.json();
       setPresencas(data);
     } catch {
-      setPresencas([]);
+      setErro("Erro ao carregar presenças");
     }
   }
 
@@ -106,15 +103,13 @@ export default function PresencasPage() {
       <h1>Presenças</h1>
       <p>Registro de participação dos treinandos por treinamento.</p>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr",
-          gap: 24,
-          maxWidth: 900,
-          marginTop: 24
-        }}
-      >
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr",
+        gap: 24,
+        maxWidth: 900,
+        marginTop: 24
+      }}>
         <form
           onSubmit={handleSubmit}
           style={{
@@ -127,12 +122,7 @@ export default function PresencasPage() {
           <h2 style={{ marginTop: 0 }}>Nova presença</h2>
 
           <label>Treinamento</label>
-          <select
-            name="treinamento_id"
-            value={form.treinamento_id}
-            onChange={handleChange}
-            style={inputStyle}
-          >
+          <select name="treinamento_id" value={form.treinamento_id} onChange={handleChange} style={inputStyle}>
             <option value="">Selecione</option>
             {treinamentos.map((treinamento) => (
               <option key={treinamento.id} value={treinamento.id}>
@@ -142,12 +132,7 @@ export default function PresencasPage() {
           </select>
 
           <label>Nome do treinando</label>
-          <input
-            name="treinando_nome"
-            value={form.treinando_nome}
-            onChange={handleChange}
-            style={inputStyle}
-          />
+          <input name="treinando_nome" value={form.treinando_nome} onChange={handleChange} style={inputStyle} />
 
           <label style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
             <input

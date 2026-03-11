@@ -100,15 +100,13 @@ export default function UsuariosPage() {
       <h1>Usuários</h1>
       <p>Cadastro e acompanhamento de usuários do portal.</p>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr",
-          gap: 24,
-          maxWidth: 850,
-          marginTop: 24
-        }}
-      >
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr",
+        gap: 24,
+        maxWidth: 850,
+        marginTop: 24
+      }}>
         <form
           onSubmit={handleSubmit}
           style={{
@@ -164,14 +162,12 @@ export default function UsuariosPage() {
           {erro ? <p style={{ color: "#b91c1c" }}>{erro}</p> : null}
         </form>
 
-        <div
-          style={{
-            background: "#fff",
-            padding: 24,
-            borderRadius: 16,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.08)"
-          }}
-        >
+        <div style={{
+          background: "#fff",
+          padding: 24,
+          borderRadius: 16,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.08)"
+        }}>
           <h2 style={{ marginTop: 0 }}>Usuários cadastrados</h2>
 
           {usuarios.length === 0 ? (

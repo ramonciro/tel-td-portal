@@ -1,0 +1,1 @@
+No arquivo frontend/app/presencas/page.js, adicione no topo:\nimport PortalShell from "../../components/PortalShell";\n\nE envolva o conteúdo principal com:\n<PortalShell title="Presenças" subtitle="Registro de participação dos treinandos."> ...conteúdo... </PortalShell>\n

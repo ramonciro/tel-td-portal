@@ -1,0 +1,1 @@
+No arquivo frontend/app/clientes/page.js, adicione no topo:\nimport PortalShell from "../../components/PortalShell";\n\nE envolva o conteúdo principal com:\n<PortalShell title="Clientes" subtitle="Visão consolidada dos clientes acompanhados pelo T&D."> ...conteúdo... </PortalShell>\n
