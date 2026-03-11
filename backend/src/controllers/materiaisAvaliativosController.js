@@ -18,13 +18,6 @@ export async function createMaterialAvaliativo(req, res) {
   try {
     const { treinamento_id, titulo, tipo, link_arquivo, observacao } = req.body;
 
-    if (!treinamento_id || !titulo || !tipo) {
-      return res.status(400).json({
-        ok: false,
-        message: "Preencha treinamento, título e tipo"
-      });
-    }
-
     const [result] = await pool.query(
       "INSERT INTO materiais_avaliativos (treinamento_id, titulo, tipo, link_arquivo, observacao) VALUES (?,?,?,?,?)",
       [treinamento_id, titulo, tipo, link_arquivo || null, observacao || null]
