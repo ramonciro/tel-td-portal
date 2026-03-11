@@ -1,4 +1,3 @@
-
 export async function getDashboard(req, res) {
   return res.json({
     assiduidade: "93,4%",

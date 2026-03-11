@@ -1,4 +1,3 @@
-
 export async function listClientes(req, res) {
   return res.json([
     { nome: "Agibank" },

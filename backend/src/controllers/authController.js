@@ -1,4 +1,3 @@
-
 import jwt from "jsonwebtoken";
 
 export async function login(req, res) {
@@ -13,7 +12,11 @@ export async function login(req, res) {
 
     return res.json({
       token,
-      user: { nome: "Ramon Ciro", email, role: "COORDENADOR" }
+      user: {
+        nome: "Ramon Ciro",
+        email,
+        role: "COORDENADOR"
+      }
     });
   }
 
