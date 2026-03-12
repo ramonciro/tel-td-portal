@@ -50,6 +50,16 @@ export default function PresencasPage() {
     carregar();
   }, []);
 
+  function getTreinamento(id) {
+    return treinamentos.find((t) => String(t.id) === String(id));
+  }
+
+  function getNomeTreinamento(id) {
+    const treinamento = getTreinamento(id);
+    if (!treinamento) return `Treinamento #${id}`;
+    return `${treinamento.tema} - ${treinamento.cliente}`;
+  }
+
   const resumo = useMemo(() => {
     return {
       total: items.length,
@@ -63,7 +73,8 @@ export default function PresencasPage() {
     return items.filter((item) => {
       const matchBusca =
         !busca ||
-        String(item.treinando_nome || "").toLowerCase().includes(busca.toLowerCase());
+        String(item.treinando_nome || "").toLowerCase().includes(busca.toLowerCase()) ||
+        getNomeTreinamento(item.treinamento_id).toLowerCase().includes(busca.toLowerCase());
 
       const matchTreinamento =
         filtroTreinamento === "todos" ||
@@ -75,7 +86,7 @@ export default function PresencasPage() {
 
       return matchBusca && matchTreinamento && matchStatus;
     });
-  }, [items, busca, filtroTreinamento, filtroStatus]);
+  }, [items, busca, filtroTreinamento, filtroStatus, treinamentos]);
 
   function handleChange(e) {
     const { name, value } = e.target;
@@ -162,9 +173,9 @@ export default function PresencasPage() {
   }
 
   function baixarCSV() {
-    const headers = ["treinamento_id", "treinando_nome", "status", "justificativa"];
+    const headers = ["treinamento", "treinando_nome", "status", "justificativa"];
     const rows = itensFiltrados.map((item) => [
-      item.treinamento_id ?? "",
+      getNomeTreinamento(item.treinamento_id),
       item.treinando_nome ?? "",
       item.status ?? "",
       item.justificativa ?? ""
@@ -203,7 +214,7 @@ export default function PresencasPage() {
 
       <div style={filtersBar}>
         <input
-          placeholder="Buscar por treinando"
+          placeholder="Buscar por treinando ou treinamento"
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           style={input}
@@ -279,7 +290,7 @@ export default function PresencasPage() {
           <table style={table}>
             <thead>
               <tr>
-                <th style={thtd}>Treinamento ID</th>
+                <th style={thtd}>Treinamento</th>
                 <th style={thtd}>Treinando</th>
                 <th style={thtd}>Status</th>
                 <th style={thtd}>Justificativa</th>
@@ -287,22 +298,36 @@ export default function PresencasPage() {
               </tr>
             </thead>
             <tbody>
-              {itensFiltrados.map((item) => (
-                <tr key={item.id}>
-                  <td style={thtd}>{item.treinamento_id}</td>
-                  <td style={thtd}>{item.treinando_nome}</td>
-                  <td style={thtd}>
-                    <span style={{ ...badge, ...statusBadge(item.status) }}>{item.status}</span>
-                  </td>
-                  <td style={thtd}>{item.justificativa || "-"}</td>
-                  <td style={thtd}>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button style={miniBtn} onClick={() => editar(item)}>Editar</button>
-                      <button style={miniBtnDanger} onClick={() => excluir(item.id)}>Excluir</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {itensFiltrados.map((item) => {
+                const treinamento = getTreinamento(item.treinamento_id);
+                return (
+                  <tr key={item.id}>
+                    <td style={thtd}>
+                      <div style={trainingCell}>
+                        <div style={trainingTitle}>
+                          {treinamento?.tema || `Treinamento #${item.treinamento_id}`}
+                        </div>
+                        <div style={trainingSubtitle}>
+                          {treinamento?.cliente || "Cliente não identificado"}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={thtd}>
+                      <div style={personCell}>{item.treinando_nome}</div>
+                    </td>
+                    <td style={thtd}>
+                      <span style={{ ...badge, ...statusBadge(item.status) }}>{item.status}</span>
+                    </td>
+                    <td style={thtd}>{item.justificativa || "-"}</td>
+                    <td style={thtd}>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button style={miniBtn} onClick={() => editar(item)}>Editar</button>
+                        <button style={miniBtnDanger} onClick={() => excluir(item.id)}>Excluir</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {itensFiltrados.length === 0 ? (
                 <tr><td style={thtd} colSpan="5">Nenhuma presença cadastrada.</td></tr>
               ) : null}
@@ -444,7 +469,30 @@ const table = {
 const thtd = {
   borderBottom: "1px solid #e5e7eb",
   padding: 12,
-  textAlign: "left"
+  textAlign: "left",
+  verticalAlign: "top"
+};
+
+const trainingCell = {
+  display: "grid",
+  gap: 4
+};
+
+const trainingTitle = {
+  fontSize: 14,
+  fontWeight: 700,
+  color: "#0f172a"
+};
+
+const trainingSubtitle = {
+  fontSize: 12,
+  color: "#64748b"
+};
+
+const personCell = {
+  fontSize: 14,
+  color: "#334155",
+  fontWeight: 500
 };
 
 const badge = {
