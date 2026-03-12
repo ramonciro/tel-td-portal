@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const menu = [
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/inicio", label: "Dashboard" },
   { href: "/clientes", label: "Clientes" },
   { href: "/usuarios", label: "Usuários" },
   { href: "/treinamentos", label: "Treinamentos" },
