@@ -3,88 +3,135 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const menu = [
-  { href: "/inicio", label: "Início" },
-  { href: "/clientes", label: "Clientes" },
-  { href: "/usuarios", label: "Usuários" },
-  { href: "/treinamentos", label: "Treinamentos" },
-  { href: "/presencas", label: "Presenças" },
-  { href: "/avaliacoes", label: "Avaliações" }
+const menuItems = [
+  { label: "Início", href: "/inicio" },
+  { label: "Clientes", href: "/clientes" },
+  { label: "Usuários", href: "/usuarios" },
+  { label: "Treinamentos", href: "/treinamentos" },
+  { label: "Presenças", href: "/presencas" },
+  { label: "Avaliações", href: "/avaliacoes" },
+  { label: "Biblioteca", href: "/biblioteca" },
+  { label: "Trilhas", href: "/trilhas" }
 ];
 
 export default function PortalShell({ title, subtitle, children }) {
   const pathname = usePathname();
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "Arial, sans-serif" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh" }}>
-        <aside style={{
-          background: "#172554",
-          color: "#fff",
-          padding: 24,
-          display: "flex",
-          flexDirection: "column",
-          gap: 20
-        }}>
-          <div>
-            <div style={{ fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.8 }}>
-              Tel Centro de Contatos
-            </div>
-            <h2 style={{ margin: "8px 0 0", fontSize: 28 }}>Tel T&D</h2>
-            <p style={{ margin: "8px 0 0", color: "#c7d2fe", fontSize: 14 }}>
-              Portal de Treinamento e Desenvolvimento
-            </p>
-          </div>
+    <div style={layoutStyle}>
+      <aside style={sidebarStyle}>
+        <div>
+          <div style={brandMiniStyle}>TEL CENTRO DE CONTATOS</div>
+          <h1 style={brandTitleStyle}>Tel T&amp;D</h1>
+          <p style={brandTextStyle}>Portal de Treinamento e Desenvolvimento</p>
+        </div>
 
-          <nav style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {menu.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  style={{
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    textDecoration: "none",
-                    color: "#fff",
-                    background: active ? "#1d4ed8" : "transparent",
-                    fontWeight: active ? "bold" : "normal"
-                  }}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+        <nav style={navStyle}>
+          {menuItems.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                style={{
+                  ...navItemStyle,
+                  ...(active ? navItemActiveStyle : {})
+                }}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
 
-          <div style={{
-            marginTop: "auto",
-            background: "rgba(255,255,255,0.08)",
-            padding: 16,
-            borderRadius: 14
-          }}>
-            <div style={{ fontWeight: "bold" }}>Ramon Ciro</div>
-            <div style={{ fontSize: 14, color: "#c7d2fe", marginTop: 4 }}>
-              Coordenador de T&D
-            </div>
-          </div>
-        </aside>
+      <main style={mainStyle}>
+        <div style={headerCardStyle}>
+          <h1 style={pageTitleStyle}>{title}</h1>
+          {subtitle ? <p style={pageSubtitleStyle}>{subtitle}</p> : null}
+        </div>
 
-        <main style={{ padding: 32 }}>
-          <header style={{
-            background: "#fff",
-            borderRadius: 18,
-            padding: 24,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-            marginBottom: 24
-          }}>
-            <h1 style={{ margin: 0, fontSize: 30 }}>{title}</h1>
-            <p style={{ margin: "8px 0 0", color: "#64748b" }}>{subtitle}</p>
-          </header>
-          {children}
-        </main>
-      </div>
+        {children}
+      </main>
     </div>
   );
 }
+
+const layoutStyle = {
+  minHeight: "100vh",
+  display: "grid",
+  gridTemplateColumns: "340px 1fr",
+  background: "#f8fafc"
+};
+
+const sidebarStyle = {
+  background: "linear-gradient(180deg, #0b1020 0%, #172554 100%)",
+  color: "#fff",
+  padding: "32px 28px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 28
+};
+
+const brandMiniStyle = {
+  fontSize: 12,
+  letterSpacing: "0.18em",
+  opacity: 0.75,
+  marginBottom: 10
+};
+
+const brandTitleStyle = {
+  fontSize: 28,
+  margin: 0
+};
+
+const brandTextStyle = {
+  marginTop: 12,
+  color: "rgba(255,255,255,0.82)",
+  lineHeight: 1.35
+};
+
+const navStyle = {
+  display: "grid",
+  gap: 10
+};
+
+const navItemStyle = {
+  display: "block",
+  padding: "16px 18px",
+  borderRadius: 16,
+  color: "#fff",
+  textDecoration: "none",
+  fontSize: 18,
+  fontWeight: 600,
+  background: "transparent"
+};
+
+const navItemActiveStyle = {
+  background: "linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%)",
+  boxShadow: "0 10px 24px rgba(37,99,235,0.28)"
+};
+
+const mainStyle = {
+  padding: 28
+};
+
+const headerCardStyle = {
+  background: "#fff",
+  borderRadius: 20,
+  padding: 28,
+  boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+  marginBottom: 20
+};
+
+const pageTitleStyle = {
+  margin: 0,
+  fontSize: 34,
+  color: "#334155"
+};
+
+const pageSubtitleStyle = {
+  margin: "10px 0 0",
+  fontSize: 16,
+  color: "#64748b"
+};
