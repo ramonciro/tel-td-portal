@@ -1,27 +1,19 @@
-PACOTE V4 - BIBLIOTECA, TRILHAS E RANKING
+PACOTE /USUARIOS + ACESSO POR PERFIL
 
 BACKEND
-- backend/src/controllers/bibliotecaController.js
-- backend/src/controllers/trilhasController.js
-- backend/src/controllers/dashboardController.js
-- backend/src/routes/index.js
+- backend/src/middlewares/authorizeRoles.js
 
 FRONTEND
-- frontend/app/biblioteca/page.js
-- frontend/app/trilhas/page.js
-- frontend/app/inicio/page.js
+- frontend/components/PortalShell.js
+- frontend/app/usuarios/page.js
 
-PASSOS IMPORTANTES
-1. Substitua os arquivos do backend
-2. Faça commit e aguarde Railway
-3. Acesse uma vez:
-   /api/migracao-biblioteca
-   /api/migracao-trilhas
-4. Substitua os arquivos do frontend
-5. Faça commit e aguarde Vercel
+REGRAS DE MENU
+- admin: tudo
+- coordenador: tudo, exceto limitações técnicas futuras
+- supervisor: também pode gerenciar usuários
+- instrutor: visão operacional (sem clientes e sem usuários)
 
-MELHORIAS
-- biblioteca de conteúdos
-- trilhas de aprendizagem
-- ranking de instrutores no dashboard
-- cards de biblioteca e trilhas no painel
+OBSERVAÇÃO
+- Este pacote ajusta o menu por perfil no frontend
+- A página /usuarios foi refinada com resumo, busca, filtros e badges
+- O middleware authorizeRoles já fica pronto para uso em rotas futuras
