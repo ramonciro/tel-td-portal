@@ -60,8 +60,9 @@ export default function PortalShell({ title, subtitle, children }) {
 const layoutStyle = {
   minHeight: "100vh",
   display: "grid",
-  gridTemplateColumns: "340px 1fr",
+  gridTemplateColumns: "320px 1fr",
   background: "#f8fafc"
+  fontFamily: "Inter, system-ui, Arial, sns-serif"
 };
 
 const sidebarStyle = {
@@ -102,7 +103,7 @@ const navItemStyle = {
   borderRadius: 16,
   color: "#fff",
   textDecoration: "none",
-  fontSize: 18,
+  fontSize: 16,
   fontWeight: 600,
   background: "transparent"
 };
@@ -126,12 +127,12 @@ const headerCardStyle = {
 
 const pageTitleStyle = {
   margin: 0,
-  fontSize: 34,
+  fontSize: 30,
   color: "#334155"
 };
 
 const pageSubtitleStyle = {
   margin: "10px 0 0",
-  fontSize: 16,
+  fontSize: 15,
   color: "#64748b"
 };
