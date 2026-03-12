@@ -1,1 +1,0 @@
-No arquivo frontend/app/treinamentos/page.js, adicione no topo:\nimport PortalShell from "../../components/PortalShell";\n\nE envolva o conteúdo principal com:\n<PortalShell title="Treinamentos" subtitle="Cadastro e acompanhamento dos treinamentos."> ...conteúdo... </PortalShell>\n
