@@ -1,40 +1,22 @@
-REBUILD COMPLETO - BACKEND E FRONTEND DO ZERO
+PACOTE CRUD - USUÁRIOS, TREINAMENTOS E PRESENÇAS
 
-ORDEM DE ATUALIZACAO
+BACKEND
+- backend/src/controllers/usersController.js
+- backend/src/controllers/treinamentosController.js
+- backend/src/controllers/presencasController.js
+- backend/src/routes/index.js
 
-1. BACKEND
-   - exclua a pasta backend atual do repositório
-   - envie a pasta backend deste pacote
-   - no Railway, confirme as variáveis:
-     MYSQLHOST
-     MYSQLPORT
-     MYSQLUSER
-     MYSQLPASSWORD
-     MYSQLDATABASE
-     JWT_SECRET
-   - aguarde o deploy do Railway
+FRONTEND
+- frontend/app/usuarios/page.js
+- frontend/app/treinamentos/page.js
+- frontend/app/presencas/page.js
 
-2. FRONTEND
-   - exclua a pasta frontend atual do repositório
-   - envie a pasta frontend deste pacote
-   - na Vercel, confirme:
-     Root Directory = frontend
-     NEXT_PUBLIC_API_URL = URL do backend + /api
-     exemplo:
-     https://seu-backend.up.railway.app/api
-   - aguarde o deploy da Vercel
+ORDEM
+1. Substitua os arquivos do backend
+2. Faça commit e aguarde Railway publicar
+3. Substitua os arquivos do frontend
+4. Faça commit e aguarde Vercel publicar
 
-3. TESTE
-   - /login
-   - /inicio
-   - /clientes
-   - /dashboard
-   - /usuarios
-   - /treinamentos
-   - /presencas
-   - /avaliacoes
-
-OBSERVACAO
-- /dashboard redireciona para /inicio
-- /clientes usa fallback local e tenta API
-- login redireciona para /inicio
+OBSERVAÇÃO
+- A rota /dashboard foi deixada sem authRequired para estabilizar
+- As demais rotas CRUD seguem protegidas por token
