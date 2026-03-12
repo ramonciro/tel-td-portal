@@ -111,4 +111,15 @@ function Card({titulo,valor}){
     }}>
 
       <div style={{fontSize:14,color:"#64748b"}}>
-        {titulo
+        {titulo}
+      </div>
+
+      <div style={{fontSize:28,fontWeight:"bold"}}>
+        {valor ?? 0}
+      </div>
+
+    </div>
+
+  )
+
+}
