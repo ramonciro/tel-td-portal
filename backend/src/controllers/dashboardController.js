@@ -2,80 +2,64 @@ import pool from "../db.js";
 
 export async function getDashboard(req, res) {
   try {
-    const [[clientesRow]] = await pool.query("SELECT COUNT(*) AS total FROM clientes");
-    const [[usuariosRow]] = await pool.query("SELECT COUNT(*) AS total FROM usuarios");
-    const [[treinamentosRow]] = await pool.query("SELECT COUNT(*) AS total FROM treinamentos");
-    const [[presencasRow]] = await pool.query("SELECT COUNT(*) AS total FROM presencas");
-    const [[avaliacoesRow]] = await pool.query("SELECT COUNT(*) AS total FROM avaliacoes");
+    const [[clientesRow]] = await pool.query(
+      "SELECT COUNT(*) AS totalClientes FROM clientes"
+    );
 
-    const [[materiaisRow]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM materiais_avaliativos
-    `).catch(() => [[{ total: 0 }]]);
+    const [[usuariosRow]] = await pool.query(
+      "SELECT COUNT(*) AS totalUsuarios FROM usuarios"
+    );
 
-    const [[npsRow]] = await pool.query(`
-      SELECT COALESCE(ROUND(AVG(nota_nps), 1), 0) AS media
-      FROM avaliacoes
-      WHERE nota_nps IS NOT NULL
-    `);
+    const [[treinamentosRow]] = await pool.query(
+      "SELECT COUNT(*) AS totalTreinamentos FROM treinamentos"
+    );
 
-    const [[qualidadeRow]] = await pool.query(`
-      SELECT COALESCE(ROUND(AVG(nota_qualidade), 1), 0) AS media
-      FROM avaliacoes
-      WHERE nota_qualidade IS NOT NULL
-    `);
+    const [[presencasRow]] = await pool.query(
+      "SELECT COUNT(*) AS totalPresencas FROM presencas"
+    );
+
+    const [[avaliacoesRow]] = await pool.query(
+      "SELECT COUNT(*) AS totalAvaliacoes FROM avaliacoes"
+    );
+
+    const [[npsRow]] = await pool.query(
+      "SELECT COALESCE(ROUND(AVG(nota_nps), 1), 0) AS npsMedio FROM avaliacoes"
+    );
+
+    const [[qualidadeRow]] = await pool.query(
+      "SELECT COALESCE(ROUND(AVG(nota_qualidade), 1), 0) AS qualidadeMedia FROM avaliacoes"
+    );
 
     const [[assiduidadeRow]] = await pool.query(`
       SELECT COALESCE(
-        ROUND((SUM(CASE WHEN presente = TRUE THEN 1 ELSE 0 END) / NULLIF(COUNT(*),0)) * 100, 1),
+        ROUND(
+          (SUM(CASE WHEN presente = TRUE THEN 1 ELSE 0 END) * 100.0) / NULLIF(COUNT(*), 0),
+          1
+        ),
         0
-      ) AS media
+      ) AS assiduidadeMedia
       FROM presencas
     `);
 
     const [treinamentosRecentes] = await pool.query(`
-      SELECT id, tema, cliente, instrutor, data, status
+      SELECT id, tema, cliente, instrutor, status
       FROM treinamentos
       ORDER BY id DESC
       LIMIT 10
     `);
 
-    const [treinamentosPorCliente] = await pool.query(`
-      SELECT cliente, COUNT(*) AS total
-      FROM treinamentos
-      GROUP BY cliente
-      ORDER BY total DESC, cliente ASC
-    `);
-
-    const [treinamentosPorInstrutor] = await pool.query(`
-      SELECT instrutor, COUNT(*) AS total
-      FROM treinamentos
-      GROUP BY instrutor
-      ORDER BY total DESC, instrutor ASC
-      LIMIT 10
-    `);
-
-    const [clientes] = await pool.query(`
-      SELECT id, nome
-      FROM clientes
-      ORDER BY nome ASC
-      LIMIT 8
-    `);
-
     return res.json({
-      totalClientes: clientesRow.total,
-      totalUsuarios: usuariosRow.total,
-      totalTreinamentos: treinamentosRow.total,
-      totalPresencas: presencasRow.total,
-      totalAvaliacoes: avaliacoesRow.total,
-      totalMateriaisAvaliativos: materiaisRow.total,
-      npsMedio: npsRow.media,
-      qualidadeMedia: qualidadeRow.media,
-      assiduidadeMedia: assiduidadeRow.media,
-      clientes,
-      treinamentosRecentes,
-      treinamentosPorCliente,
-      treinamentosPorInstrutor
+      totalClientes: clientesRow.totalClientes ?? 0,
+      totalUsuarios: usuariosRow.totalUsuarios ?? 0,
+      totalTreinamentos: treinamentosRow.totalTreinamentos ?? 0,
+      totalPresencas: presencasRow.totalPresencas ?? 0,
+      totalAvaliacoes: avaliacoesRow.totalAvaliacoes ?? 0,
+      npsMedio: npsRow.npsMedio ?? 0,
+      qualidadeMedia: qualidadeRow.qualidadeMedia ?? 0,
+      assiduidadeMedia: assiduidadeRow.assiduidadeMedia ?? 0,
+      treinamentosRecentes: Array.isArray(treinamentosRecentes)
+        ? treinamentosRecentes
+        : []
     });
   } catch (error) {
     return res.status(500).json({
