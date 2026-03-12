@@ -1,12 +1,16 @@
-PACOTE FRONTEND /BIBLIOTECA
+
+PACOTE: TRILHAS DE DESENVOLVIMENTO
 
 ARQUIVO:
-- frontend/app/biblioteca/page.js
+frontend/app/trilhas/page.js
 
-MELHORIAS:
-- visual de portfólio
-- cards de resumo
-- filtros
-- formulário mais completo
-- grid de conteúdos com acesso rápido
-- foco em treinandos e instrutores
+OBJETIVO:
+Criar módulo de Trilhas de Desenvolvimento com foco em evolução pessoal e profissional.
+
+FUNCIONALIDADES:
+- cadastro de trilhas
+- edição
+- exclusão
+- busca
+- cards de trilhas
+- visão de jornada contínua
