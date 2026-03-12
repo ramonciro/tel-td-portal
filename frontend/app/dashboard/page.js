@@ -1,5 +1,8 @@
-import { redirect } from "next/navigation";
-
 export default function DashboardPage() {
-  redirect("/clientes");
+  return (
+    <div style={{ padding: 40 }}>
+      <h1>Dashboard</h1>
+      <p>Teste estático.</p>
+    </div>
+  );
 }
