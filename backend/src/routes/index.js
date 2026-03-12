@@ -12,12 +12,16 @@ import { listUsers, createUser, updateUser, deleteUser } from "../controllers/us
 import { listTreinamentos, createTreinamento, updateTreinamento, deleteTreinamento } from "../controllers/treinamentosController.js";
 import { listPresencas, createPresenca, updatePresenca, deletePresenca, migrarPresencasStatus } from "../controllers/presencasController.js";
 import { listAvaliacoes, createAvaliacao, updateAvaliacao, deleteAvaliacao } from "../controllers/avaliacoesController.js";
-import { listMateriaisAvaliativos, createMaterialAvaliativo } from "../controllers/materiaisAvaliativosController.js";
+import {
+  listMateriaisAvaliativos,
+  createMaterialAvaliativo,
+  updateMaterialAvaliativo,
+  deleteMaterialAvaliativo
+} from "../controllers/materiaisAvaliativosController.js";
 import { listBiblioteca, createBiblioteca, updateBiblioteca, deleteBiblioteca } from "../controllers/bibliotecaController.js";
 import { listTrilhas, createTrilha, updateTrilha, deleteTrilha } from "../controllers/trilhasController.js";
 import { authRequired } from "../middlewares/auth.js";
 import pool from "../db.js";
-
 
 const router = Router();
 
@@ -54,6 +58,8 @@ router.delete("/avaliacoes/:id", authRequired, deleteAvaliacao);
 
 router.get("/materiais-avaliativos", authRequired, listMateriaisAvaliativos);
 router.post("/materiais-avaliativos", authRequired, createMaterialAvaliativo);
+router.put("/materiais-avaliativos/:id", authRequired, updateMaterialAvaliativo);
+router.delete("/materiais-avaliativos/:id", authRequired, deleteMaterialAvaliativo);
 
 router.get("/biblioteca", authRequired, listBiblioteca);
 router.post("/biblioteca", authRequired, createBiblioteca);
@@ -74,11 +80,24 @@ router.get("/migracao-materiais-avaliativos", async (req, res) => {
         titulo VARCHAR(200),
         tipo VARCHAR(50),
         link_arquivo VARCHAR(255),
-        observacao TEXT,
+        descricao TEXT,
+        nota_maxima DECIMAL(10,2) NULL,
+        data_aplicacao DATE NULL,
         criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    return res.json({ ok: true, message: "Tabela materiais_avaliativos criada com sucesso" });
+
+    try {
+      await pool.query("ALTER TABLE materiais_avaliativos ADD COLUMN descricao TEXT NULL");
+    } catch {}
+    try {
+      await pool.query("ALTER TABLE materiais_avaliativos ADD COLUMN nota_maxima DECIMAL(10,2) NULL");
+    } catch {}
+    try {
+      await pool.query("ALTER TABLE materiais_avaliativos ADD COLUMN data_aplicacao DATE NULL");
+    } catch {}
+
+    return res.json({ ok: true, message: "Tabela materiais_avaliativos criada/atualizada com sucesso" });
   } catch (error) {
     return res.status(500).json({ ok: false, message: "Erro ao criar tabela", error: error.message });
   }
