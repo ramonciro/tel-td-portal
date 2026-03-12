@@ -18,14 +18,16 @@ export default function PortalShell({ title, subtitle, children }) {
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "Arial, sans-serif" }}>
       <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh" }}>
-        <aside style={{
-          background: "#172554",
-          color: "#fff",
-          padding: 24,
-          display: "flex",
-          flexDirection: "column",
-          gap: 20
-        }}>
+        <aside
+          style={{
+            background: "#172554",
+            color: "#fff",
+            padding: 24,
+            display: "flex",
+            flexDirection: "column",
+            gap: 20
+          }}
+        >
           <div>
             <div style={{ fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.8 }}>
               Tel Centro de Contatos
@@ -49,7 +51,6 @@ export default function PortalShell({ title, subtitle, children }) {
                     textDecoration: "none",
                     color: "#fff",
                     background: active ? "#1d4ed8" : "transparent",
-                    border: active ? "1px solid rgba(255,255,255,0.15)" : "1px solid transparent",
                     fontWeight: active ? "bold" : "normal"
                   }}
                 >
@@ -59,12 +60,14 @@ export default function PortalShell({ title, subtitle, children }) {
             })}
           </nav>
 
-          <div style={{
-            marginTop: "auto",
-            background: "rgba(255,255,255,0.08)",
-            padding: 16,
-            borderRadius: 14
-          }}>
+          <div
+            style={{
+              marginTop: "auto",
+              background: "rgba(255,255,255,0.08)",
+              padding: 16,
+              borderRadius: 14
+            }}
+          >
             <div style={{ fontWeight: "bold" }}>Ramon Ciro</div>
             <div style={{ fontSize: 14, color: "#c7d2fe", marginTop: 4 }}>
               Coordenador de T&D
@@ -73,20 +76,20 @@ export default function PortalShell({ title, subtitle, children }) {
         </aside>
 
         <main style={{ padding: 32 }}>
-          <header style={{
-            background: "#fff",
-            borderRadius: 18,
-            padding: 24,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-            marginBottom: 24
-          }}>
+          <header
+            style={{
+              background: "#fff",
+              borderRadius: 18,
+              padding: 24,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+              marginBottom: 24
+            }}
+          >
             <h1 style={{ margin: 0, fontSize: 30 }}>{title}</h1>
             <p style={{ margin: "8px 0 0", color: "#64748b" }}>{subtitle}</p>
           </header>
 
-          <section>
-            {children}
-          </section>
+          <section>{children}</section>
         </main>
       </div>
     </div>
