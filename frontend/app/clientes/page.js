@@ -1,13 +1,21 @@
-import PortalShell from "../../components/PortalShell";
-<PortalShell title="..." subtitle="...">
-
 "use client";
 
+import PortalShell from "../../components/PortalShell";
 import { useEffect, useState } from "react";
 
+const CLIENTES_FIXOS = [
+  { id: 1, nome: "Agibank" },
+  { id: 2, nome: "Mercantil" },
+  { id: 3, nome: "Crea" },
+  { id: 4, nome: "Buser" },
+  { id: 5, nome: "Rede Américas" },
+  { id: 6, nome: "Prefeitura de Salvador" },
+  { id: 7, nome: "Claro" },
+  { id: 8, nome: "Hugsnet" }
+];
+
 export default function ClientesPage() {
-  const [clientes, setClientes] = useState([]);
-  const [erro, setErro] = useState("");
+  const [clientes, setClientes] = useState(CLIENTES_FIXOS);
 
   useEffect(() => {
     async function carregarClientes() {
@@ -15,20 +23,22 @@ export default function ClientesPage() {
         const token = localStorage.getItem("token");
         const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
+        if (!token || !apiUrl) return;
+
         const res = await fetch(`${apiUrl}/clientes`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
         });
 
-        if (!res.ok) {
-          throw new Error("Erro ao carregar clientes");
-        }
+        if (!res.ok) return;
 
         const data = await res.json();
-        setClientes(data);
-      } catch (e) {
-        setErro("Erro ao carregar clientes");
+
+        if (Array.isArray(data) && data.length > 0) {
+          setClientes(data);
+        }
+      } catch {
       }
     }
 
@@ -36,18 +46,15 @@ export default function ClientesPage() {
   }, []);
 
   return (
-    <div style={{ padding: 40, fontFamily: "Arial, sans-serif" }}>
-      <h1>Clientes</h1>
-      <p>Visão consolidada dos clientes acompanhados pelo T&D.</p>
-
-      {erro ? <p style={{ color: "#b91c1c" }}>{erro}</p> : null}
-
+    <PortalShell
+      title="Clientes"
+      subtitle="Visão consolidada dos clientes acompanhados pelo T&D."
+    >
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: 20,
-          marginTop: 24
+          gap: 20
         }}
       >
         {clientes.map((cliente) => (
@@ -61,19 +68,12 @@ export default function ClientesPage() {
             }}
           >
             <h2 style={{ marginTop: 0, fontSize: 22 }}>{cliente.nome}</h2>
-
             <p style={{ margin: "12px 0" }}>
-              <strong>Treinamentos:</strong> {cliente.total_treinamentos}
-            </p>
-
-            <p style={{ margin: "12px 0" }}>
-              <strong>Usuários:</strong> {cliente.total_usuarios}
+              <strong>Status:</strong> Ativo
             </p>
           </div>
         ))}
       </div>
-    </div>
+    </PortalShell>
   );
 }
-
-</PortalShell>
