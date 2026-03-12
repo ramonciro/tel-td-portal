@@ -19,13 +19,11 @@ export default function ClientesPage() {
       title="Clientes"
       subtitle="Visão consolidada dos clientes acompanhados pelo T&D."
     >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: 20
-        }}
-      >
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gap: 20
+      }}>
         {CLIENTES_FIXOS.map((cliente) => (
           <div
             key={cliente.id}
