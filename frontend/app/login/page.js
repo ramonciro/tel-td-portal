@@ -38,7 +38,7 @@ export default function Login() {
       const data = await res.json();
 
       localStorage.setItem("token", data.token);
-      window.location.href = "/dashboard";
+      window.location.href = "/painel";
     } catch {
       setErro("Erro ao conectar com o servidor");
     }
