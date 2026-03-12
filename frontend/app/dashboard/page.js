@@ -17,13 +17,40 @@ export default function DashboardPage() {
           headers: { Authorization: `Bearer ${token}` }
         });
 
-        if (!res.ok) throw new Error("Não foi possível carregar o dashboard");
+        if (!res.ok) {
+          throw new Error("Não foi possível carregar o dashboard");
+        }
+
         const data = await res.json();
-        setDashboard(data);
+
+        setDashboard({
+          totalClientes: data.totalClientes ?? 0,
+          totalUsuarios: data.totalUsuarios ?? 0,
+          totalTreinamentos: data.totalTreinamentos ?? 0,
+          totalPresencas: data.totalPresencas ?? 0,
+          totalAvaliacoes: data.totalAvaliacoes ?? 0,
+          totalMateriaisAvaliativos: data.totalMateriaisAvaliativos ?? 0,
+          npsMedio: data.npsMedio ?? 0,
+          qualidadeMedia: data.qualidadeMedia ?? 0,
+          assiduidadeMedia: data.assiduidadeMedia ?? 0,
+          clientes: Array.isArray(data.clientes) ? data.clientes : [],
+          treinamentosRecentes: Array.isArray(data.treinamentosRecentes)
+            ? data.treinamentosRecentes
+            : Array.isArray(data.treinamentosHoje)
+            ? data.treinamentosHoje
+            : [],
+          treinamentosPorCliente: Array.isArray(data.treinamentosPorCliente)
+            ? data.treinamentosPorCliente
+            : [],
+          treinamentosPorInstrutor: Array.isArray(data.treinamentosPorInstrutor)
+            ? data.treinamentosPorInstrutor
+            : []
+        });
       } catch (e) {
         setErro("Erro ao carregar o dashboard");
       }
     }
+
     carregar();
   }, []);
 
@@ -66,12 +93,12 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {dashboard.treinamentosRecentes.map((item) => (
-                      <tr key={item.id}>
-                        <td style={cell}>{item.tema}</td>
-                        <td style={cell}>{item.cliente}</td>
-                        <td style={cell}>{item.instrutor}</td>
-                        <td style={cell}>{item.status}</td>
+                    {dashboard.treinamentosRecentes.map((item, index) => (
+                      <tr key={item.id ?? index}>
+                        <td style={cell}>{item.tema ?? "-"}</td>
+                        <td style={cell}>{item.cliente ?? "-"}</td>
+                        <td style={cell}>{item.instrutor ?? "-"}</td>
+                        <td style={cell}>{item.status ?? "-"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -85,9 +112,9 @@ export default function DashboardPage() {
                 <p>Sem dados ainda.</p>
               ) : (
                 <ul style={{ paddingLeft: 18 }}>
-                  {dashboard.treinamentosPorCliente.map((item) => (
-                    <li key={item.cliente} style={{ marginBottom: 10 }}>
-                      <strong>{item.cliente}</strong>: {item.total}
+                  {dashboard.treinamentosPorCliente.map((item, index) => (
+                    <li key={item.cliente ?? index} style={{ marginBottom: 10 }}>
+                      <strong>{item.cliente ?? "Cliente"}</strong>: {item.total ?? 0}
                     </li>
                   ))}
                 </ul>
@@ -102,9 +129,9 @@ export default function DashboardPage() {
                 <p>Sem dados ainda.</p>
               ) : (
                 <ul style={{ paddingLeft: 18 }}>
-                  {dashboard.treinamentosPorInstrutor.map((item) => (
-                    <li key={item.instrutor} style={{ marginBottom: 10 }}>
-                      <strong>{item.instrutor}</strong>: {item.total}
+                  {dashboard.treinamentosPorInstrutor.map((item, index) => (
+                    <li key={item.instrutor ?? index} style={{ marginBottom: 10 }}>
+                      <strong>{item.instrutor ?? "Instrutor"}</strong>: {item.total ?? 0}
                     </li>
                   ))}
                 </ul>
@@ -113,11 +140,17 @@ export default function DashboardPage() {
 
             <div style={boxStyle}>
               <h2 style={h2}>Clientes Ativos</h2>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                {dashboard.clientes.map((cliente) => (
-                  <span key={cliente.id} style={pillStyle}>{cliente.nome}</span>
-                ))}
-              </div>
+              {dashboard.clientes.length === 0 ? (
+                <p>Sem clientes carregados.</p>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  {dashboard.clientes.map((cliente, index) => (
+                    <span key={cliente.id ?? index} style={pillStyle}>
+                      {cliente.nome ?? "Cliente"}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </>
