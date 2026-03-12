@@ -1,12 +1,13 @@
-PACOTE FRONTEND /TREINAMENTOS
+PACOTE FRONTEND /PRESENCAS
 
 ARQUIVO:
-- frontend/app/treinamentos/page.js
+- frontend/app/presencas/page.js
 
 MELHORIAS:
 - cards resumo
-- busca
-- filtros por cliente, instrutor e status
-- badges de status
-- formulário mais organizado
-- lista executiva com mais colunas
+- filtros
+- visual em painéis
+- histórico mais organizado
+- botão para baixar lista de presença em CSV
+- status com badges
+- popup de justificativa
