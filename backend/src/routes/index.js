@@ -1,7 +1,13 @@
 import { Router } from "express";
 import { login } from "../controllers/authController.js";
 import { getDashboard } from "../controllers/dashboardController.js";
-import { listClientes } from "../controllers/clientesController.js";
+import {
+  listClientes,
+  createCliente,
+  updateCliente,
+  deleteCliente,
+  migrarClientesCampos
+} from "../controllers/clientesController.js";
 import { listUsers, createUser, updateUser, deleteUser } from "../controllers/usersController.js";
 import { listTreinamentos, createTreinamento, updateTreinamento, deleteTreinamento } from "../controllers/treinamentosController.js";
 import { listPresencas, createPresenca, updatePresenca, deletePresenca, migrarPresencasStatus } from "../controllers/presencasController.js";
@@ -12,12 +18,18 @@ import { listTrilhas, createTrilha, updateTrilha, deleteTrilha } from "../contro
 import { authRequired } from "../middlewares/auth.js";
 import pool from "../db.js";
 
+
 const router = Router();
 
 router.post("/auth/login", login);
 
 router.get("/dashboard", authRequired, getDashboard);
+
 router.get("/clientes", authRequired, listClientes);
+router.post("/clientes", authRequired, createCliente);
+router.put("/clientes/:id", authRequired, updateCliente);
+router.delete("/clientes/:id", authRequired, deleteCliente);
+router.get("/migracao-clientes-campos", migrarClientesCampos);
 
 router.get("/users", authRequired, listUsers);
 router.post("/users", authRequired, createUser);
