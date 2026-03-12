@@ -71,7 +71,7 @@ export default function InicioPage() {
   }, [dados]);
 
   return (
-    <PortalShell title="Dashboard Executivo 2.0" subtitle="Visão estratégica do Treinamento e Desenvolvimento">
+    <PortalShell title="Dashboard Executivo 3.0" subtitle="Visão estratégica do Treinamento e Desenvolvimento">
       {erro ? <div style={alertBoxStyle}>{erro}</div> : null}
 
       <section style={heroStyle}>
@@ -95,7 +95,7 @@ export default function InicioPage() {
         <KpiCard title="Usuários" value={dados.totalUsuarios} caption="Pessoas cadastradas" />
         <KpiCard title="Treinamentos" value={dados.totalTreinamentos} caption="Volume total aplicado" />
         <KpiCard title="Horas Treinadas" value={dados.horasTreinadas} caption="Carga horária consolidada" />
-        <KpiCard title="Participantes" value={dados.participantesTreinados} caption="Pessoas treinadas" />
+        <KpiCard title="Participantes" value={dados.participantesTreinados} caption="Presenças efetivas registradas" />
         <KpiCard title="Trein./Pessoa" value={dados.mediaTreinamentosPorPessoa} caption="Média por usuário" />
         <KpiCard title="Taxa de Conclusão" value={`${dados.taxaConclusao}%`} caption={dados.taxaConclusao >= 85 ? "Acima da meta" : "Abaixo da meta"} highlight={dados.taxaConclusao >= 85} />
         <KpiCard title="Aproveitamento" value={dados.aproveitamentoMedio} caption="Média de nota_prova" highlight={dados.aproveitamentoMedio >= 8} />
