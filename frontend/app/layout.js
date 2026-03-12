@@ -1,12 +1,12 @@
 export const metadata = {
-  title:"Tel T&D",
-  description:"Portal de Treinamento e Desenvolvimento"
+  title: "Tel T&D",
+  description: "Portal de Treinamento e Desenvolvimento"
 };
 
-export default function RootLayout({children}){
+export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
-    <body>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
