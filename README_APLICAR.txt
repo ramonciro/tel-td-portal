@@ -1,23 +1,40 @@
-PACOTE DE FRONTEND REFEITO DO ZERO - TEL T&D
+REBUILD COMPLETO - BACKEND E FRONTEND DO ZERO
 
-O que este pacote substitui:
-- frontend inteiro (somente arquivos deste pacote)
-- login estável
-- clientes estável
-- dashboard redirecionando para clientes
-- navegação lateral limpa
-- páginas base estáveis para usuários, treinamentos, presenças e avaliações
+ORDEM DE ATUALIZACAO
 
-Como aplicar:
-1. Extraia o ZIP
-2. No GitHub, substitua os arquivos da pasta frontend pelos arquivos deste pacote
-3. Faça commit
-4. Aguarde a Vercel publicar
-5. Teste:
-   /login
-   /clientes
-   /dashboard
-   /usuarios
-   /treinamentos
-   /presencas
-   /avaliacoes
+1. BACKEND
+   - exclua a pasta backend atual do repositório
+   - envie a pasta backend deste pacote
+   - no Railway, confirme as variáveis:
+     MYSQLHOST
+     MYSQLPORT
+     MYSQLUSER
+     MYSQLPASSWORD
+     MYSQLDATABASE
+     JWT_SECRET
+   - aguarde o deploy do Railway
+
+2. FRONTEND
+   - exclua a pasta frontend atual do repositório
+   - envie a pasta frontend deste pacote
+   - na Vercel, confirme:
+     Root Directory = frontend
+     NEXT_PUBLIC_API_URL = URL do backend + /api
+     exemplo:
+     https://seu-backend.up.railway.app/api
+   - aguarde o deploy da Vercel
+
+3. TESTE
+   - /login
+   - /inicio
+   - /clientes
+   - /dashboard
+   - /usuarios
+   - /treinamentos
+   - /presencas
+   - /avaliacoes
+
+OBSERVACAO
+- /dashboard redireciona para /inicio
+- /clientes usa fallback local e tenta API
+- login redireciona para /inicio
