@@ -1,22 +1,20 @@
-PACOTE CRUD - USUÁRIOS, TREINAMENTOS E PRESENÇAS
+PACOTE DASHBOARD 2.0
 
-BACKEND
-- backend/src/controllers/usersController.js
-- backend/src/controllers/treinamentosController.js
-- backend/src/controllers/presencasController.js
-- backend/src/routes/index.js
+ARQUIVOS:
+- backend/src/controllers/dashboardController.js
+- frontend/app/inicio/page.js
 
-FRONTEND
-- frontend/app/usuarios/page.js
-- frontend/app/treinamentos/page.js
-- frontend/app/presencas/page.js
+ORDEM:
+1. Substitua o controller do backend
+2. Faça commit e aguarde Railway
+3. Substitua a página /inicio
+4. Faça commit e aguarde Vercel
 
-ORDEM
-1. Substitua os arquivos do backend
-2. Faça commit e aguarde Railway publicar
-3. Substitua os arquivos do frontend
-4. Faça commit e aguarde Vercel publicar
-
-OBSERVAÇÃO
-- A rota /dashboard foi deixada sem authRequired para estabilizar
-- As demais rotas CRUD seguem protegidas por token
+NOVOS KPIS:
+- horas treinadas
+- participantes treinados
+- taxa de conclusão
+- aproveitamento médio
+- média de treinamentos por pessoa
+- cliente x horas
+- instrutor x horas
