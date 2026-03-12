@@ -1,10 +1,12 @@
-PATCH VISUAL /PRESENCAS
+PACOTE FRONTEND /BIBLIOTECA
 
 ARQUIVO:
-- frontend/app/presencas/page.js
+- frontend/app/biblioteca/page.js
 
 MELHORIAS:
-- coluna Treinamento exibe tema + cliente
-- célula do treinamento com visual mais profissional
-- busca também considera o nome do treinamento
-- CSV exporta o nome do treinamento em vez do ID
+- visual de portfólio
+- cards de resumo
+- filtros
+- formulário mais completo
+- grid de conteúdos com acesso rápido
+- foco em treinandos e instrutores
