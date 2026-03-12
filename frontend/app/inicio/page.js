@@ -10,6 +10,8 @@ const initialData = {
   totalPresencas: 0,
   totalAvaliacoes: 0,
   totalMateriaisAvaliativos: 0,
+  totalConteudosBiblioteca: 0,
+  totalTrilhas: 0,
   horasTreinadas: 0,
   participantesTreinados: 0,
   taxaConclusao: 0,
@@ -21,7 +23,8 @@ const initialData = {
   treinamentosRecentes: [],
   treinamentosPorCliente: [],
   treinamentosPorInstrutor: [],
-  avaliacoesPorCliente: []
+  avaliacoesPorCliente: [],
+  rankingInstrutores: []
 };
 
 export default function InicioPage() {
@@ -48,7 +51,8 @@ export default function InicioPage() {
           treinamentosRecentes: Array.isArray(json.treinamentosRecentes) ? json.treinamentosRecentes : [],
           treinamentosPorCliente: Array.isArray(json.treinamentosPorCliente) ? json.treinamentosPorCliente : [],
           treinamentosPorInstrutor: Array.isArray(json.treinamentosPorInstrutor) ? json.treinamentosPorInstrutor : [],
-          avaliacoesPorCliente: Array.isArray(json.avaliacoesPorCliente) ? json.avaliacoesPorCliente : []
+          avaliacoesPorCliente: Array.isArray(json.avaliacoesPorCliente) ? json.avaliacoesPorCliente : [],
+          rankingInstrutores: Array.isArray(json.rankingInstrutores) ? json.rankingInstrutores : []
         });
       } catch {
         setErro("Erro ao carregar dashboard executivo");
@@ -71,7 +75,7 @@ export default function InicioPage() {
   }, [dados]);
 
   return (
-    <PortalShell title="Dashboard Executivo 3.0" subtitle="Visão estratégica do Treinamento e Desenvolvimento">
+    <PortalShell title="Dashboard Executivo 4.0" subtitle="Visão estratégica do Treinamento e Desenvolvimento">
       {erro ? <div style={alertBoxStyle}>{erro}</div> : null}
 
       <section style={heroStyle}>
@@ -79,8 +83,7 @@ export default function InicioPage() {
           <div style={eyebrowStyle}>Resumo executivo</div>
           <h2 style={heroTitleStyle}>Painel estratégico do Tel T&D</h2>
           <p style={heroTextStyle}>
-            Monitoramento de volume, qualidade, presença, conclusão, aproveitamento e produtividade
-            por cliente e por instrutor.
+            Monitoramento de volume, qualidade, presença, conclusão, aproveitamento, biblioteca e trilhas por cliente e por instrutor.
           </p>
         </div>
         <div style={metaGridStyle}>
@@ -101,8 +104,8 @@ export default function InicioPage() {
         <KpiCard title="Aproveitamento" value={dados.aproveitamentoMedio} caption="Média de nota_prova" highlight={dados.aproveitamentoMedio >= 8} />
         <KpiCard title="NPS Médio" value={dados.npsMedio} caption={dados.npsMedio >= 8.5 ? "Acima da meta" : "Abaixo da meta"} highlight={dados.npsMedio >= 8.5} />
         <KpiCard title="Qualidade Média" value={dados.qualidadeMedia} caption={dados.qualidadeMedia >= 4.5 ? "Acima da meta" : "Abaixo da meta"} highlight={dados.qualidadeMedia >= 4.5} />
-        <KpiCard title="Assiduidade" value={`${dados.assiduidadeMedia}%`} caption={dados.assiduidadeMedia >= 90 ? "Acima da meta" : "Abaixo da meta"} highlight={dados.assiduidadeMedia >= 90} />
-        <KpiCard title="Materiais" value={dados.totalMateriaisAvaliativos} caption="Testes e provas cadastrados" />
+        <KpiCard title="Biblioteca" value={dados.totalConteudosBiblioteca} caption="Conteúdos cadastrados" />
+        <KpiCard title="Trilhas" value={dados.totalTrilhas} caption="Jornadas de aprendizagem" />
       </div>
 
       <div style={twoColsStyle}>
@@ -120,10 +123,17 @@ export default function InicioPage() {
       </div>
 
       <div style={twoColsStyle}>
-        <Panel title="NPS por Cliente" subtitle="Percepção média dos treinamentos por operação">
-          {dados.avaliacoesPorCliente.length === 0 ? <p style={emptyStyle}>Sem dados ainda.</p> : dados.avaliacoesPorCliente.map((item, index) => (
-            <BarItem key={`${item.cliente}-nps-${index}`} label={`${item.cliente || "Cliente"} • Qualidade ${item.qualidade_media || 0}`} value={Number(item.nps_medio || 0)} max={10} />
-          ))}
+        <Panel title="Ranking de Instrutores" subtitle="Volume, horas e médias de avaliação">
+          {dados.rankingInstrutores.length === 0 ? <p style={emptyStyle}>Sem dados ainda.</p> : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {dados.rankingInstrutores.map((item, idx) => (
+                <div key={idx} style={rankingCard}>
+                  <strong>{idx + 1}º • {item.instrutor || "-"}</strong>
+                  <div style={rankingMeta}>Treinamentos: {item.total_treinamentos} | Horas: {item.horas} | NPS: {item.nps_medio} | Qualidade: {item.qualidade_media}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </Panel>
 
         <Panel title="Alertas Executivos" subtitle="Sinais rápidos para tomada de decisão">
@@ -136,39 +146,6 @@ export default function InicioPage() {
           </div>
         </Panel>
       </div>
-
-      <Panel title="Treinamentos Recentes" subtitle="Últimos registros lançados no portal">
-        {dados.treinamentosRecentes.length === 0 ? <p style={emptyStyle}>Nenhum treinamento cadastrado.</p> : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thtd}>Tema</th>
-                  <th style={thtd}>Cliente</th>
-                  <th style={thtd}>Instrutor</th>
-                  <th style={thtd}>Data</th>
-                  <th style={thtd}>Carga Horária</th>
-                  <th style={thtd}>Participantes</th>
-                  <th style={thtd}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dados.treinamentosRecentes.map((item, index) => (
-                  <tr key={item.id || index}>
-                    <td style={thtd}>{item.tema || "-"}</td>
-                    <td style={thtd}>{item.cliente || "-"}</td>
-                    <td style={thtd}>{item.instrutor || "-"}</td>
-                    <td style={thtd}>{formatDate(item.data)}</td>
-                    <td style={thtd}>{item.carga_horaria || 0}</td>
-                    <td style={thtd}>{item.participantes_presentes || 0}</td>
-                    <td style={thtd}>{item.status || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
     </PortalShell>
   );
 }
@@ -224,13 +201,6 @@ function maxValue(items, key) {
   return Math.max(...values, 1);
 }
 
-function formatDate(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString("pt-BR");
-}
-
 const heroStyle = { background: "linear-gradient(135deg, #ffffff 0%, #eff6ff 100%)", borderRadius: 18, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08)", display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16, marginBottom: 20 };
 const eyebrowStyle = { fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", color: "#1d4ed8", fontWeight: 700 };
 const heroTitleStyle = { margin: "10px 0 8px", fontSize: 30 };
@@ -241,7 +211,7 @@ const cardsGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minm
 const twoColsStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16, marginBottom: 16 };
 const cardStyle = { background: "#fff", padding: 20, borderRadius: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" };
 const panelStyle = { background: "#fff", padding: 24, borderRadius: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" };
-const tableStyle = { width: "100%", borderCollapse: "collapse" };
-const thtd = { borderBottom: "1px solid #e5e7eb", padding: 12, textAlign: "left" };
+const rankingCard = { border: "1px solid #e5e7eb", borderRadius: 12, padding: 14 };
+const rankingMeta = { color: "#64748b", marginTop: 6, fontSize: 14 };
 const emptyStyle = { margin: 0, color: "#64748b" };
 const alertBoxStyle = { background: "#fef2f2", color: "#b91c1c", padding: 14, borderRadius: 12, marginBottom: 16 };
