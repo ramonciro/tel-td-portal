@@ -4,8 +4,8 @@ import { getDashboard } from "../controllers/dashboardController.js";
 import { listClientes } from "../controllers/clientesController.js";
 import { listUsers, createUser, updateUser, deleteUser } from "../controllers/usersController.js";
 import { listTreinamentos, createTreinamento, updateTreinamento, deleteTreinamento } from "../controllers/treinamentosController.js";
-import { listPresencas, createPresenca, updatePresenca, deletePresenca } from "../controllers/presencasController.js";
-import { listAvaliacoes, createAvaliacao } from "../controllers/avaliacoesController.js";
+import { listPresencas, createPresenca, updatePresenca, deletePresenca, migrarPresencasStatus } from "../controllers/presencasController.js";
+import { listAvaliacoes, createAvaliacao, updateAvaliacao, deleteAvaliacao } from "../controllers/avaliacoesController.js";
 import { listMateriaisAvaliativos, createMaterialAvaliativo } from "../controllers/materiaisAvaliativosController.js";
 import { authRequired } from "../middlewares/auth.js";
 import pool from "../db.js";
@@ -14,7 +14,7 @@ const router = Router();
 
 router.post("/auth/login", login);
 
-router.get("/dashboard", getDashboard);
+router.get("/dashboard", authRequired, getDashboard);
 router.get("/clientes", authRequired, listClientes);
 
 router.get("/users", authRequired, listUsers);
@@ -31,9 +31,12 @@ router.get("/presencas", authRequired, listPresencas);
 router.post("/presencas", authRequired, createPresenca);
 router.put("/presencas/:id", authRequired, updatePresenca);
 router.delete("/presencas/:id", authRequired, deletePresenca);
+router.get("/migracao-presencas-status", migrarPresencasStatus);
 
 router.get("/avaliacoes", authRequired, listAvaliacoes);
 router.post("/avaliacoes", authRequired, createAvaliacao);
+router.put("/avaliacoes/:id", authRequired, updateAvaliacao);
+router.delete("/avaliacoes/:id", authRequired, deleteAvaliacao);
 
 router.get("/materiais-avaliativos", authRequired, listMateriaisAvaliativos);
 router.post("/materiais-avaliativos", authRequired, createMaterialAvaliativo);
