@@ -1,4 +1,4 @@
-export default funcition DasboardPage(){
+export default funcition DashboardPage(){
 return (
   <div style={{ padding:40 }}>
 <h1>Dashboard</h1>
