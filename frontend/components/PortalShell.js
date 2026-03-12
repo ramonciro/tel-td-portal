@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/painel", label: "Dashboard" },
+  { href: "/clientes", label: "Dashboard" },
   { href: "/clientes", label: "Clientes" },
   { href: "/usuarios", label: "Usuários" },
   { href: "/treinamentos", label: "Treinamentos" },
@@ -39,11 +39,11 @@ export default function PortalShell({ title, subtitle, children }) {
           </div>
 
           <nav style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {items.map((item) => {
-              const active = pathname === item.href;
+            {items.map((item, idx) => {
+              const active = pathname === item.href && !(pathname === "/clientes" && idx === 0);
               return (
                 <Link
-                  key={item.href}
+                  key={`${item.href}-${idx}`}
                   href={item.href}
                   style={{
                     padding: "12px 14px",

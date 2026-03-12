@@ -1,7 +1,6 @@
 "use client";
 
 import PortalShell from "../../components/PortalShell";
-import { useEffect, useState } from "react";
 
 const CLIENTES_FIXOS = [
   { id: 1, nome: "Agibank" },
@@ -15,36 +14,6 @@ const CLIENTES_FIXOS = [
 ];
 
 export default function ClientesPage() {
-  const [clientes, setClientes] = useState(CLIENTES_FIXOS);
-
-  useEffect(() => {
-    async function carregarClientes() {
-      try {
-        const token = localStorage.getItem("token");
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-
-        if (!token || !apiUrl) return;
-
-        const res = await fetch(`${apiUrl}/clientes`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-
-        if (!res.ok) return;
-
-        const data = await res.json();
-
-        if (Array.isArray(data) && data.length > 0) {
-          setClientes(data);
-        }
-      } catch {
-      }
-    }
-
-    carregarClientes();
-  }, []);
-
   return (
     <PortalShell
       title="Clientes"
@@ -57,7 +26,7 @@ export default function ClientesPage() {
           gap: 20
         }}
       >
-        {clientes.map((cliente) => (
+        {CLIENTES_FIXOS.map((cliente) => (
           <div
             key={cliente.id}
             style={{
