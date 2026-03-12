@@ -29,7 +29,7 @@ export default function LoginPage() {
       const data = await res.json();
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user || {}));
-      window.location.href = "/clientes";
+      window.location.href = "/inicio";
     } catch {
       setErro("Erro ao conectar com o servidor");
     }
