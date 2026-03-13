@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import API_URL from "../../services/api";
 
 export default function PrimeiroAcessoPage() {
   const [email, setEmail] = useState("");
@@ -34,28 +35,23 @@ export default function PrimeiroAcessoPage() {
       setErro("");
       setSucesso("");
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-      const res = await fetch(`${apiUrl}/auth/alterar-senha-primeiro-acesso`, {
+      const response = await fetch(`${API_URL}/auth/alterar-senha-primeiro-acesso`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           email,
           senha_atual: senhaAtual,
-          nova_senha: novaSenha
-        })
+          nova_senha: novaSenha,
+        }),
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "Erro ao alterar senha");
+      const data = await response.json().catch(() => ({}));
 
-      try {
-        const raw = localStorage.getItem("user");
-        if (raw) {
-          const user = JSON.parse(raw);
-          user.troca_senha_obrigatoria = false;
-          localStorage.setItem("user", JSON.stringify(user));
-        }
-      } catch {}
+      if (!response.ok) {
+        throw new Error(data.message || "Erro ao alterar senha");
+      }
 
       setSucesso("Senha alterada com sucesso. Redirecionando...");
       setTimeout(() => {
@@ -105,15 +101,10 @@ export default function PrimeiroAcessoPage() {
             placeholder="Confirmar nova senha"
             style={input}
           />
-
           <button type="submit" style={button}>
             {loading ? "Salvando..." : "Salvar nova senha"}
           </button>
         </form>
-
-        <div style={tipBox}>
-          Sua senha padrão inicial é <strong>Tel@2026</strong> e deve ser alterada no primeiro acesso.
-        </div>
       </div>
     </div>
   );
@@ -124,7 +115,7 @@ const page = {
   display: "grid",
   placeItems: "center",
   background: "#f1f5f9",
-  padding: 24
+  padding: 24,
 };
 
 const card = {
@@ -132,46 +123,47 @@ const card = {
   background: "#fff",
   borderRadius: 18,
   padding: 28,
-  boxShadow: "0 10px 30px rgba(0,0,0,0.08)"
+  boxShadow: "0 10px 30px rgba(0,0,0,.08)",
 };
 
 const title = { margin: 0, fontSize: 30, color: "#0f172a" };
 const subtitle = { marginTop: 8, color: "#64748b" };
-const form = { display: "grid", gap: 12, marginTop: 20 };
+
+const form = {
+  display: "grid",
+  gap: 12,
+  marginTop: 20,
+};
+
 const input = {
   padding: 12,
   borderRadius: 10,
   border: "1px solid #cbd5e1",
   width: "100%",
-  boxSizing: "border-box"
+  boxSizing: "border-box",
 };
+
 const button = {
   background: "#2563eb",
   color: "#fff",
   border: 0,
   borderRadius: 10,
   padding: "12px 16px",
-  cursor: "pointer"
+  cursor: "pointer",
 };
+
 const errorBox = {
   background: "#fef2f2",
   color: "#b91c1c",
   padding: 12,
   borderRadius: 10,
-  marginTop: 16
+  marginTop: 16,
 };
+
 const successBox = {
   background: "#ecfdf5",
   color: "#166534",
   padding: 12,
   borderRadius: 10,
-  marginTop: 16
-};
-const tipBox = {
-  marginTop: 18,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  padding: 12,
-  borderRadius: 10,
-  fontSize: 14
+  marginTop: 16,
 };
