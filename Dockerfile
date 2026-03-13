@@ -1,14 +1,9 @@
-
 {
   "name": "teltd-backend",
   "version": "1.0.0",
-  "description": "Backend do portal Tel T&D",
   "main": "src/index.js",
-  "scripts": {
-    "start": "node src/index.js"
-  },
+  "scripts": { "start": "node src/index.js" },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
