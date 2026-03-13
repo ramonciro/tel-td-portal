@@ -34,7 +34,7 @@ router.post("/login", (req, res) => {
           id: usuario.id,
           nome: usuario.nome,
           email: usuario.email,
-          perfil: usuario.perfil || "instrutor",
+          perfil: usuario.perfil || "admin",
           cliente: usuario.cliente || "",
           troca_senha_obrigatoria: false
         }
@@ -44,3 +44,4 @@ router.post("/login", (req, res) => {
 })
 
 module.exports = router
+``
