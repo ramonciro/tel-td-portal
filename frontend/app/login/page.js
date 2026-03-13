@@ -16,13 +16,13 @@ export default function LoginPage() {
       setLoading(true);
       setErro("");
 
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, senha }),
-      });
+const response = await fetch(`${API_URL}/auth/login`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ email, senha }),
+});
 
       const data = await response.json().catch(() => ({}));
 
