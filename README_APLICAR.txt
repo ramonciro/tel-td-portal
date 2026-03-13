@@ -1,16 +1,20 @@
-
-PACOTE: TRILHAS DE DESENVOLVIMENTO
+PACOTE: EVOLUCAO DO COLABORADOR
 
 ARQUIVO:
-frontend/app/trilhas/page.js
+- frontend/app/evolucao-colaborador/page.js
 
 OBJETIVO:
-Criar módulo de Trilhas de Desenvolvimento com foco em evolução pessoal e profissional.
+Criar painel de evolução do colaborador usando dados reais já existentes no portal:
+- usuários
+- presenças
+- avaliações
+- treinamentos
 
 FUNCIONALIDADES:
-- cadastro de trilhas
-- edição
-- exclusão
-- busca
-- cards de trilhas
-- visão de jornada contínua
+- leitura por colaborador
+- progresso da jornada
+- assiduidade
+- absenteísmo
+- nota média
+- NPS médio
+- treinamentos relacionados
