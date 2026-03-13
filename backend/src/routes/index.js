@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { login } from "../controllers/authController.js";
+import { login, alterarSenhaPrimeiroAcesso } from "../controllers/authController.js";
 import { getDashboard } from "../controllers/dashboardController.js";
 import {
   listClientes,
@@ -26,6 +26,7 @@ import pool from "../db.js";
 const router = Router();
 
 router.post("/auth/login", login);
+router.post("/auth/alterar-senha-primeiro-acesso", alterarSenhaPrimeiroAcesso);
 
 router.get("/dashboard", authRequired, getDashboard);
 
@@ -71,72 +72,19 @@ router.post("/trilhas", authRequired, createTrilha);
 router.put("/trilhas/:id", authRequired, updateTrilha);
 router.delete("/trilhas/:id", authRequired, deleteTrilha);
 
-router.get("/migracao-materiais-avaliativos", async (req, res) => {
+router.get("/migracao-usuarios-primeiro-acesso", async (req, res) => {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS materiais_avaliativos (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        treinamento_id INT,
-        titulo VARCHAR(200),
-        tipo VARCHAR(50),
-        link_arquivo VARCHAR(255),
-        descricao TEXT,
-        nota_maxima DECIMAL(10,2) NULL,
-        data_aplicacao DATE NULL,
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
     try {
-      await pool.query("ALTER TABLE materiais_avaliativos ADD COLUMN descricao TEXT NULL");
+      await pool.query(`ALTER TABLE usuarios ADD COLUMN troca_senha_obrigatoria TINYINT(1) DEFAULT 1`);
     } catch {}
-    try {
-      await pool.query("ALTER TABLE materiais_avaliativos ADD COLUMN nota_maxima DECIMAL(10,2) NULL");
-    } catch {}
-    try {
-      await pool.query("ALTER TABLE materiais_avaliativos ADD COLUMN data_aplicacao DATE NULL");
-    } catch {}
-
-    return res.json({ ok: true, message: "Tabela materiais_avaliativos criada/atualizada com sucesso" });
-  } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao criar tabela", error: error.message });
-  }
-});
-
-router.get("/migracao-biblioteca", async (req, res) => {
-  try {
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS biblioteca_conteudos (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        titulo VARCHAR(200) NOT NULL,
-        tipo VARCHAR(50) NOT NULL,
-        cliente VARCHAR(120) NOT NULL,
-        link_arquivo VARCHAR(255),
-        descricao TEXT,
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
+      UPDATE usuarios
+      SET troca_senha_obrigatoria = 1
+      WHERE troca_senha_obrigatoria IS NULL
     `);
-    return res.json({ ok: true, message: "Tabela biblioteca_conteudos criada com sucesso" });
+    return res.json({ ok: true, message: "Campo troca_senha_obrigatoria atualizado com sucesso" });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao criar tabela da biblioteca", error: error.message });
-  }
-});
-
-router.get("/migracao-trilhas", async (req, res) => {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS trilhas_aprendizagem (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        cliente VARCHAR(120) NOT NULL,
-        titulo VARCHAR(200) NOT NULL,
-        descricao TEXT,
-        etapas JSON,
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    return res.json({ ok: true, message: "Tabela trilhas_aprendizagem criada com sucesso" });
-  } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao criar tabela das trilhas", error: error.message });
+    return res.status(500).json({ ok: false, message: "Erro ao migrar usuários", error: error.message });
   }
 });
 
