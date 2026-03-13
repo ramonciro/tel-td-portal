@@ -6,7 +6,7 @@ export default function Page() {
   return (
     <CrudPage
       title="Usuarios"
-      subtitle="Gestão de perfis e acessos"
+      subtitle="Gestao de perfis e acessos"
       endpoint="/usuarios"
     />
   );
