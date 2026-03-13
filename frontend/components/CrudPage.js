@@ -1,7 +1,29 @@
 "use client";
-import { useEffect, useState } from "react"
-import PortalShell from "./PortalShell"
-import { apiFetch } from "../services/api"
+
+import { useEffect, useState } from "react";
+import PortalShell from "./PortalShell";
+import { apiFetch } from "../services/api";
+
+export default function CrudPage({ title, subtitle, endpoint, fields = [] }) {
+  const [items, setItems] = useState([]);
+  const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
+  const [form, setForm] = useState({});
+
+  async function carregar() {
+    try {
+      setErro("");
+      const data = await apiFetch(endpoint);
+      setItems(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setErro(e.message || "Erro ao carregar dados");
+      setItems([]);
+    }
+  }
+
+  useEffect(() => {
+    carregar();
+  }, []);
 
 export default function CrudPage({ title, subtitle, endpoint, fields = [] }) {
   const [items, setItems] = useState([]);
