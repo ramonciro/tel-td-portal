@@ -29,7 +29,7 @@ export async function login(req, res) {
       return res.status(403).json({ ok: false, message: "Usuário inativo" });
     }
 
-    const senhaOk = await bcrypt.compare(senha, user.senha || "");
+    const senhaOk = senha === user.senha;
     if (!senhaOk) {
       return res.status(401).json({ ok: false, message: "Usuário ou senha inválidos" });
     }
