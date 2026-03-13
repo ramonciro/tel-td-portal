@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PortalShell from "./PortalShell";
+import SectionCard from "./SectionCard";
+import { StatsGrid } from "./StatsGrid";
 import { apiFetch } from "../services/api";
 
-export default function CrudPage({ title, subtitle, endpoint, fields = [] }) {
+export default function CrudPage({ title, subtitle, endpoint, fields = [], summary = [] }) {
   const [items, setItems] = useState([]);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
@@ -16,14 +18,17 @@ export default function CrudPage({ title, subtitle, endpoint, fields = [] }) {
       const data = await apiFetch(endpoint);
       setItems(Array.isArray(data) ? data : []);
     } catch (e) {
-      setErro(e.message || "Erro ao carregar dados");
+      setErro(e.message || `Erro ao listar ${endpoint.replace("/", "")}`);
       setItems([]);
     }
   }
 
-  useEffect(() => {
-    carregar();
-  }, []);
+  useEffect(() => { carregar(); }, [endpoint]);
+
+  const summaryItems = useMemo(() => summary.length ? summary : [
+    { label: "Total de registros", value: items.length, icon: "📌", helper: "Base atual carregada da API" },
+    { label: "Último status", value: erro ? "Atenção" : "OK", icon: erro ? "⚠️" : "✅", helper: erro || "Consulta realizada com sucesso" },
+  ], [items.length, erro, summary]);
 
   function handleChange(e) {
     const { name, value } = e.target;
@@ -32,25 +37,16 @@ export default function CrudPage({ title, subtitle, endpoint, fields = [] }) {
 
   async function salvar(e) {
     e.preventDefault();
-
     try {
       setErro("");
       setSucesso("");
-
       if (form.id) {
-        await apiFetch(`${endpoint}/${form.id}`, {
-          method: "PUT",
-          body: JSON.stringify(form),
-        });
-        setSucesso("Registro atualizado com sucesso");
+        await apiFetch(`${endpoint}/${form.id}`, { method: "PUT", body: JSON.stringify(form) });
+        setSucesso("Registro atualizado com sucesso.");
       } else {
-        await apiFetch(endpoint, {
-          method: "POST",
-          body: JSON.stringify(form),
-        });
-        setSucesso("Registro criado com sucesso");
+        await apiFetch(endpoint, { method: "POST", body: JSON.stringify(form) });
+        setSucesso("Registro criado com sucesso.");
       }
-
       setForm({});
       carregar();
     } catch (e) {
@@ -60,12 +56,9 @@ export default function CrudPage({ title, subtitle, endpoint, fields = [] }) {
 
   async function excluir(id) {
     if (!confirm("Deseja excluir este registro?")) return;
-
     try {
-      await apiFetch(`${endpoint}/${id}`, {
-        method: "DELETE",
-      });
-      setSucesso("Registro excluído com sucesso");
+      await apiFetch(`${endpoint}/${id}`, { method: "DELETE" });
+      setSucesso("Registro excluído com sucesso.");
       carregar();
     } catch (e) {
       setErro(e.message || "Erro ao excluir");
@@ -74,214 +67,82 @@ export default function CrudPage({ title, subtitle, endpoint, fields = [] }) {
 
   return (
     <PortalShell title={title} subtitle={subtitle}>
+      <StatsGrid items={summaryItems} />
       {erro ? <div style={errorBox}>{erro}</div> : null}
       {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
-      <div style={panel}>
-        <h3 style={{ marginTop: 0 }}>
-          {form.id ? "Editar registro" : "Novo registro"}
-        </h3>
-
+      <SectionCard title={form.id ? "Editar registro" : "Novo registro"} subtitle="Preencha os campos abaixo para manter a base atualizada.">
         <form onSubmit={salvar} style={formGrid}>
           {(fields || []).map((field) =>
             field.type === "textarea" ? (
-              <textarea
-                key={field.name}
-                name={field.name}
-                placeholder={field.label}
-                value={form[field.name] || ""}
-                onChange={handleChange}
-                style={{ ...input, minHeight: 90 }}
-              />
+              <div key={field.name} style={fieldWrap}>
+                <label style={label}>{field.label}</label>
+                <textarea name={field.name} placeholder={field.placeholder || field.label} value={form[field.name] || ""} onChange={handleChange} style={{ ...input, minHeight: 96 }} />
+              </div>
             ) : field.type === "select" ? (
-              <select
-                key={field.name}
-                name={field.name}
-                value={form[field.name] || ""}
-                onChange={handleChange}
-                style={input}
-              >
-                <option value="">{field.label}</option>
-                {(field.options || []).map((op) => (
-                  <option key={op} value={op}>
-                    {op}
-                  </option>
-                ))}
-              </select>
+              <div key={field.name} style={fieldWrap}>
+                <label style={label}>{field.label}</label>
+                <select name={field.name} value={form[field.name] || ""} onChange={handleChange} style={input}>
+                  <option value="">Selecione</option>
+                  {(field.options || []).map((op) => <option key={op} value={op}>{op}</option>)}
+                </select>
+              </div>
             ) : (
-              <input
-                key={field.name}
-                type={field.type || "text"}
-                name={field.name}
-                placeholder={field.label}
-                value={form[field.name] || ""}
-                onChange={handleChange}
-                style={input}
-              />
+              <div key={field.name} style={fieldWrap}>
+                <label style={label}>{field.label}</label>
+                <input type={field.type || "text"} name={field.name} placeholder={field.placeholder || field.label} value={form[field.name] || ""} onChange={handleChange} style={input} />
+              </div>
             )
           )}
-
-          <div style={{ display: "flex", gap: 10 }}>
-            <button type="submit" style={buttonPrimary}>
-              Salvar
-            </button>
-            <button
-              type="button"
-              style={buttonSecondary}
-              onClick={() => setForm({})}
-            >
-              Limpar
-            </button>
+          <div style={buttonRow}>
+            <button type="submit" style={buttonPrimary}>Salvar</button>
+            <button type="button" style={buttonSecondary} onClick={() => setForm({})}>Limpar</button>
           </div>
         </form>
-      </div>
+      </SectionCard>
 
-      <div style={panel}>
-        <h3 style={{ marginTop: 0 }}>Registros</h3>
-
+      <SectionCard title="Registros" subtitle="Visualização operacional da base cadastrada.">
         <div style={{ overflowX: "auto" }}>
           <table style={table}>
             <thead>
-              <tr>
-                {["ID", ...(fields || []).map((f) => f.label), "Ações"].map(
-                  (col) => (
-                    <th key={col} style={thtd}>
-                      {col}
-                    </th>
-                  )
-                )}
-              </tr>
+              <tr>{["ID", ...(fields || []).map((f) => f.label), "Ações"].map((col) => <th key={col} style={thtdHead}>{col}</th>)}</tr>
             </thead>
-
             <tbody>
               {(items || []).map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} style={row}>
                   <td style={thtd}>{item.id}</td>
-
-                  {(fields || []).map((f) => (
-                    <td key={f.name} style={thtd}>
-                      {String(item?.[f.name] ?? "")}
-                    </td>
-                  ))}
-
+                  {(fields || []).map((f) => <td key={f.name} style={thtd}>{String(item?.[f.name] ?? "")}</td>)}
                   <td style={thtd}>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        style={miniBtn}
-                        onClick={() => setForm(item)}
-                        type="button"
-                      >
-                        Editar
-                      </button>
-
-                      <button
-                        style={miniBtnDanger}
-                        onClick={() => excluir(item.id)}
-                        type="button"
-                      >
-                        Excluir
-                      </button>
+                    <div style={actionRow}>
+                      <button style={miniBtn} onClick={() => setForm(item)} type="button">Editar</button>
+                      <button style={miniBtnDanger} onClick={() => excluir(item.id)} type="button">Excluir</button>
                     </div>
                   </td>
                 </tr>
               ))}
-
-              {!items.length ? (
-                <tr>
-                  <td style={thtd} colSpan={(fields || []).length + 2}>
-                    Nenhum registro encontrado.
-                  </td>
-                </tr>
-              ) : null}
+              {!items.length ? <tr><td style={emptyCell} colSpan={(fields || []).length + 2}>Nenhum registro encontrado.</td></tr> : null}
             </tbody>
           </table>
         </div>
-      </div>
+      </SectionCard>
     </PortalShell>
   );
 }
 
-const panel = {
-  background: "#fff",
-  padding: 20,
-  borderRadius: 12,
-  marginBottom: 20,
-  boxShadow: "0 1px 4px rgba(0,0,0,.08)",
-};
-
-const formGrid = {
-  display: "grid",
-  gap: 12,
-};
-
-const input = {
-  padding: 12,
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  width: "100%",
-  boxSizing: "border-box",
-};
-
-const buttonPrimary = {
-  background: "#2563eb",
-  color: "#fff",
-  border: 0,
-  borderRadius: 10,
-  padding: "12px 16px",
-  cursor: "pointer",
-};
-
-const buttonSecondary = {
-  background: "#e5e7eb",
-  color: "#111827",
-  border: 0,
-  borderRadius: 10,
-  padding: "12px 16px",
-  cursor: "pointer",
-};
-
-const table = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
-const thtd = {
-  padding: 12,
-  borderBottom: "1px solid #e5e7eb",
-  textAlign: "left",
-  verticalAlign: "top",
-};
-
-const errorBox = {
-  background: "#fef2f2",
-  color: "#b91c1c",
-  padding: 12,
-  borderRadius: 10,
-  marginBottom: 16,
-};
-
-const successBox = {
-  background: "#ecfdf5",
-  color: "#166534",
-  padding: 12,
-  borderRadius: 10,
-  marginBottom: 16,
-};
-
-const miniBtn = {
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  border: 0,
-  padding: "8px 10px",
-  borderRadius: 8,
-  cursor: "pointer",
-};
-
-const miniBtnDanger = {
-  background: "#fee2e2",
-  color: "#b91c1c",
-  border: 0,
-  padding: "8px 10px",
-  borderRadius: 8,
-  cursor: "pointer",
-};
+const formGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 };
+const fieldWrap = { display: "grid", gap: 8 };
+const label = { fontSize: 13, color: "#334155", fontWeight: 600 };
+const input = { padding: 12, border: "1px solid #dbe3ef", borderRadius: 12, width: "100%", boxSizing: "border-box", background: "#fcfdff" };
+const buttonRow = { display: "flex", gap: 10, alignItems: "center", gridColumn: "1 / -1", marginTop: 4 };
+const buttonPrimary = { background: "#2563eb", color: "#fff", border: 0, borderRadius: 12, padding: "12px 18px", cursor: "pointer", fontWeight: 700 };
+const buttonSecondary = { background: "#e2e8f0", color: "#0f172a", border: 0, borderRadius: 12, padding: "12px 18px", cursor: "pointer", fontWeight: 700 };
+const table = { width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 760 };
+const thtdHead = { textAlign: "left", padding: 14, background: "#f8fafc", color: "#334155", fontSize: 13, borderBottom: "1px solid #e2e8f0" };
+const thtd = { padding: 14, borderBottom: "1px solid #eef2f7", color: "#0f172a", verticalAlign: "top" };
+const row = { background: "#fff" };
+const actionRow = { display: "flex", gap: 8, flexWrap: "wrap" };
+const emptyCell = { padding: 24, color: "#64748b", textAlign: "center" };
+const errorBox = { background: "#fef2f2", color: "#b91c1c", padding: 14, borderRadius: 14, marginBottom: 16, border: "1px solid #fecaca" };
+const successBox = { background: "#ecfdf5", color: "#166534", padding: 14, borderRadius: 14, marginBottom: 16, border: "1px solid #bbf7d0" };
+const miniBtn = { background: "#dbeafe", color: "#1d4ed8", border: 0, padding: "8px 12px", borderRadius: 10, cursor: "pointer", fontWeight: 600 };
+const miniBtnDanger = { background: "#fee2e2", color: "#b91c1c", border: 0, padding: "8px 12px", borderRadius: 10, cursor: "pointer", fontWeight: 600 };
