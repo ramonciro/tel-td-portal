@@ -1,14 +1,22 @@
 const express = require("express")
 const cors = require("cors")
 const mysql = require("mysql2")
-require("dotenv").config()
 
 const app = express()
 
 app.use(cors())
 app.use(express.json())
 
-// conexão com banco
+/*
+CONEXÃO COM MYSQL (RAILWAY)
+Railway cria automaticamente estas variáveis:
+MYSQLHOST
+MYSQLUSER
+MYSQLPASSWORD
+MYSQLDATABASE
+MYSQLPORT
+*/
+
 const db = mysql.createConnection({
   host: process.env.MYSQLHOST,
   user: process.env.MYSQLUSER,
@@ -18,23 +26,31 @@ const db = mysql.createConnection({
 })
 
 db.connect((err) => {
+
   if (err) {
     console.error("Erro ao conectar no banco:", err)
   } else {
-    console.log("Banco de dados conectado")
+    console.log("Banco conectado com sucesso")
   }
+
 })
 
+/* ---------------------------
+ROTA DE TESTE DA API
+--------------------------- */
 
-// rota teste
 app.get("/api", (req, res) => {
+
   res.json({
     status: "API Tel T&D online"
   })
+
 })
 
+/* ---------------------------
+DASHBOARD EXECUTIVO
+--------------------------- */
 
-// DASHBOARD EXECUTIVO
 app.get("/api/dashboard", async (req, res) => {
 
   try {
@@ -53,19 +69,22 @@ app.get("/api/dashboard", async (req, res) => {
 
   } catch (error) {
 
-    console.error(error)
+    console.error("Erro dashboard:", error)
 
     res.status(500).json({
-      error: "Erro ao carregar dashboard"
+      erro: "Erro ao carregar dashboard"
     })
 
   }
 
 })
 
+/* ---------------------------
+FUNÇÃO AUXILIAR MYSQL
+--------------------------- */
 
-// função auxiliar para queries
 function query(sql) {
+
   return new Promise((resolve, reject) => {
 
     db.query(sql, (error, results) => {
@@ -79,10 +98,13 @@ function query(sql) {
     })
 
   })
+
 }
 
+/* ---------------------------
+PORTA DO SERVIDOR
+--------------------------- */
 
-// porta do railway
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
