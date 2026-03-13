@@ -7,4 +7,4 @@ INSERT INTO clientes (nome) VALUES
 ('Rede Américas'),
 ('Prefeitura de Salvador'),
 ('Claro'),
-('Hugsnet');
+('HughesNet');
