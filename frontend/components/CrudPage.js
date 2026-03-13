@@ -29,7 +29,7 @@ export default function CrudPage({ title, subtitle, endpoint, fields }) {
       <div style={panel}>
         <h3 style={{ marginTop: 0 }}>{form.id ? "Editar registro" : "Novo registro"}</h3>
         <form onSubmit={salvar} style={formGrid}>
-          {fields.map((field) => field.type === "textarea" ? (
+          {(field.options || []).map((op) => field.type === "textarea" ? (
             <textarea key={field.name} name={field.name} placeholder={field.label} value={form[field.name] || ""} onChange={handleChange} style={{ ...input, minHeight: 90 }} />
           ) : field.type === "select" ? (
             <select key={field.name} name={field.name} value={form[field.name] || ""} onChange={handleChange} style={input}>
@@ -45,9 +45,9 @@ export default function CrudPage({ title, subtitle, endpoint, fields }) {
         <h3 style={{ marginTop: 0 }}>Registros</h3>
         <div style={{ overflowX: "auto" }}>
           <table style={table}>
-            <thead><tr>{["ID", ...fields.map((f) => f.label), "Ações"].map((col) => <th key={col} style={thtd}>{col}</th>)}</tr></thead>
+            <thead><tr>{["ID", ...(fields || []).map((f) => f.label), "Ações"].map((col) => <th key={col} style={thtd}>{col}</th>)}</tr></thead>
             <tbody>
-              {items.map((item) => <tr key={item.id}><td style={thtd}>{item.id}</td>{fields.map((f) => <td key={f.name} style={thtd}>{String(item[f.name] ?? "")}</td>)}<td style={thtd}><div style={{ display: "flex", gap: 8 }}><button style={miniBtn} onClick={() => setForm(item)}>Editar</button><button style={miniBtnDanger} onClick={() => excluir(item.id)}>Excluir</button></div></td></tr>)}
+              {(items || []).map((item) => <tr key={item.id}><td style={thtd}>{item.id}</td>{(fields || []).map((f) => <td key={f.name} style={thtd}>{String(item[f.name] ?? "")}</td>)}<td style={thtd}><div style={{ display: "flex", gap: 8 }}><button style={miniBtn} onClick={() => setForm(item)}>Editar</button><button style={miniBtnDanger} onClick={() => excluir(item.id)}>Excluir</button></div></td></tr>)}
               {!items.length ? <tr><td style={thtd} colSpan={fields.length + 2}>Nenhum registro encontrado.</td></tr> : null}
             </tbody>
           </table>
