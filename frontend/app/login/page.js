@@ -6,85 +6,124 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function handleLogin(e) {
     e.preventDefault();
-    setErro("");
-
     try {
+      setLoading(true)
+    } catch {}
+    try {
+      setErro("");
       const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
       const res = await fetch(`${apiUrl}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, senha })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Erro ao realizar login");
 
-      if (!res.ok) {
-        setErro(data.message || "Login inválido");
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      if (data.user?.troca_senha_obrigatoria) {
+        window.location.href = "/primeiro-acesso";
         return;
       }
 
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user || {}));
       window.location.href = "/inicio";
-    } catch {
-      setErro("Erro ao conectar com o servidor");
+    } catch (e) {
+      setErro(e.message || "Erro ao realizar login");
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      display: "grid",
-      placeItems: "center",
-      background: "#f8fafc",
-      fontFamily: "Arial, sans-serif"
-    }}>
-      <div style={{
-        width: "100%",
-        maxWidth: 420,
-        background: "#fff",
-        borderRadius: 18,
-        padding: 28,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.08)"
-      }}>
-        <h1 style={{ marginTop: 0 }}>Tel T&D</h1>
-        <p style={{ color: "#64748b", marginTop: 0 }}>Portal de Treinamento e Desenvolvimento</p>
+    <div style={page}>
+      <div style={card}>
+        <h1 style={title}>Tel T&D</h1>
+        <p style={subtitle}>Acesse o portal de Treinamento e Desenvolvimento</p>
 
-        <form onSubmit={handleLogin}>
-          <label>E-mail</label>
-          <input style={inputStyle} placeholder="Digite seu e-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
+        {erro ? <div style={errorBox}>{erro}</div> : null}
 
-          <label>Senha</label>
-          <input type="password" style={inputStyle} placeholder="Digite sua senha" value={senha} onChange={(e) => setSenha(e.target.value)} />
-
-          <button type="submit" style={buttonStyle}>Entrar</button>
-          {erro ? <p style={{ color: "#b91c1c" }}>{erro}</p> : null}
+        <form onSubmit={handleLogin} style={form}>
+          <input
+            type="email"
+            placeholder="E-mail"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={input}
+          />
+          <input
+            type="password"
+            placeholder="Senha"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            style={input}
+          />
+          <button type="submit" style={button}>
+            {loading ? "Entrando..." : "Entrar"}
+          </button>
         </form>
+
+        <div style={tipBox}>
+          Senha padrão de criação: <strong>Tel@2026</strong>
+        </div>
       </div>
     </div>
   );
 }
 
-const inputStyle = {
-  width: "100%",
-  padding: 12,
-  marginTop: 8,
-  marginBottom: 16,
-  border: "1px solid #d1d5db",
-  borderRadius: 10,
-  boxSizing: "border-box"
+const page = {
+  minHeight: "100vh",
+  display: "grid",
+  placeItems: "center",
+  background: "#f1f5f9",
+  padding: 24
 };
 
-const buttonStyle = {
+const card = {
+  width: "min(420px, 100%)",
+  background: "#fff",
+  borderRadius: 18,
+  padding: 28,
+  boxShadow: "0 10px 30px rgba(0,0,0,0.08)"
+};
+
+const title = { margin: 0, fontSize: 32, color: "#0f172a" };
+const subtitle = { marginTop: 8, color: "#64748b" };
+const form = { display: "grid", gap: 12, marginTop: 20 };
+const input = {
+  padding: 12,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
   width: "100%",
-  background: "#172554",
+  boxSizing: "border-box"
+};
+const button = {
+  background: "#2563eb",
   color: "#fff",
   border: 0,
   borderRadius: 10,
-  padding: "12px 18px",
-  cursor: "pointer",
-  fontWeight: "bold"
+  padding: "12px 16px",
+  cursor: "pointer"
+};
+const errorBox = {
+  background: "#fef2f2",
+  color: "#b91c1c",
+  padding: 12,
+  borderRadius: 10,
+  marginTop: 16
+};
+const tipBox = {
+  marginTop: 18,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  padding: 12,
+  borderRadius: 10,
+  fontSize: 14
 };
