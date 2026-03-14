@@ -1,134 +1,143 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import API_URL from "../../services/api";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("admin@teltd.com");
-  const [senha, setSenha] = useState("Tel@2026");
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e) {
     e.preventDefault();
+    setErro("");
+    setLoading(true);
 
     try {
-      setLoading(true);
-      setErro("");
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, senha })
+      });
 
-const response = await fetch(`${API_URL}/auth/login`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({ email, senha }),
-});
-
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.message || "Erro ao realizar login");
       }
 
-      localStorage.setItem("token", data.token || "");
-      localStorage.setItem("user", JSON.stringify(data.user || {}));
-      window.location.href = "/inicio";
-    } catch (e) {
-      setErro(e.message || "Erro ao realizar login");
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      if (data.user?.troca_senha_obrigatoria) {
+        router.push("/primeiro-acesso");
+      } else {
+        router.push("/inicio");
+      }
+    } catch (error) {
+      setErro(error.message || "Erro ao realizar login");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={page}>
-      <div style={card}>
-        <h1 style={title}>Tel T&amp;D</h1>
+    <div style={wrap}>
+      <form onSubmit={handleLogin} style={card}>
+        <h1 style={title}>Tel T&D</h1>
         <p style={subtitle}>Acesse o portal de Treinamento e Desenvolvimento</p>
 
         {erro ? <div style={errorBox}>{erro}</div> : null}
 
-        <form onSubmit={handleLogin} style={form}>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={input}
-          />
-          <input
-            type="password"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            style={input}
-          />
-          <button type="submit" style={button}>
-            {loading ? "Entrando..." : "Entrar"}
-          </button>
-        </form>
+        <input
+          style={input}
+          type="email"
+          placeholder="E-mail"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
 
-        <div style={tipBox}>
-          Senha padrão de criação: <strong>Tel@2026</strong>
-        </div>
-      </div>
+        <input
+          style={input}
+          type="password"
+          placeholder="Senha"
+          value={senha}
+          onChange={(e) => setSenha(e.target.value)}
+        />
+
+        <button type="submit" style={button} disabled={loading}>
+          {loading ? "Entrando..." : "Entrar"}
+        </button>
+
+        <p style={hint}>Senha padrão de criação: <strong>Tel@2026</strong></p>
+      </form>
     </div>
   );
 }
 
-const page = {
+const wrap = {
   minHeight: "100vh",
-  display: "grid",
-  placeItems: "center",
-  padding: 24,
-  background: "#f1f5f9",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#eef4fb",
+  padding: 24
 };
 
 const card = {
-  width: "min(460px,100%)",
+  width: "100%",
+  maxWidth: 460,
   background: "#fff",
-  borderRadius: 18,
-  padding: 28,
-  boxShadow: "0 10px 30px rgba(0,0,0,.08)",
+  borderRadius: 20,
+  padding: 32,
+  boxShadow: "0 10px 30px rgba(15,23,42,.08)"
 };
 
-const title = { margin: 0, fontSize: 30, color: "#0f172a" };
-const subtitle = { marginTop: 8, color: "#64748b" };
+const title = {
+  margin: 0,
+  fontSize: 40,
+  color: "#1e3a8a"
+};
 
-const form = {
-  display: "grid",
-  gap: 12,
-  marginTop: 20,
+const subtitle = {
+  color: "#64748b",
+  marginBottom: 24
 };
 
 const input = {
-  padding: 12,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
   width: "100%",
   boxSizing: "border-box",
+  padding: 14,
+  borderRadius: 12,
+  border: "1px solid #dbe3ef",
+  marginBottom: 14
 };
 
 const button = {
-  background: "#2563eb",
-  color: "#fff",
+  width: "100%",
   border: 0,
-  borderRadius: 10,
-  padding: "12px 16px",
-  cursor: "pointer",
+  borderRadius: 12,
+  padding: 14,
+  background: "#3b82f6",
+  color: "#fff",
+  fontWeight: 700,
+  cursor: "pointer"
 };
 
 const errorBox = {
   background: "#fef2f2",
   color: "#b91c1c",
   padding: 12,
-  borderRadius: 10,
-  marginTop: 16,
+  borderRadius: 12,
+  marginBottom: 16,
+  border: "1px solid #fecaca"
 };
 
-const tipBox = {
+const hint = {
   marginTop: 18,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  padding: 12,
-  borderRadius: 10,
-  fontSize: 14,
+  textAlign: "center",
+  color: "#64748b"
 };
