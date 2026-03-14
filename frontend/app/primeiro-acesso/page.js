@@ -1,169 +1,161 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import API_URL from "../../services/api";
 
 export default function PrimeiroAcessoPage() {
-  const [email, setEmail] = useState("");
-  const [senhaAtual, setSenhaAtual] = useState("Tel@2026");
+  const router = useRouter();
   const [novaSenha, setNovaSenha] = useState("");
-  const [confirmarSenha, setConfirmarSenha] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("user");
-      if (raw) {
-        const user = JSON.parse(raw);
-        setEmail(user?.email || "");
-      }
-    } catch {}
-  }, []);
-
   async function handleSubmit(e) {
     e.preventDefault();
+    setErro("");
+    setSucesso("");
 
-    if (novaSenha !== confirmarSenha) {
-      setErro("A confirmação da nova senha não confere");
+    if (!novaSenha || !confirmacao) {
+      setErro("Preencha os dois campos.");
+      return;
+    }
+
+    if (novaSenha !== confirmacao) {
+      setErro("As senhas não coincidem.");
       return;
     }
 
     try {
       setLoading(true);
-      setErro("");
-      setSucesso("");
+      const token = localStorage.getItem("token");
 
-      const response = await fetch(`${API_URL}/auth/alterar-senha-primeiro-acesso`, {
+      const response = await fetch(`${API_URL}/auth/alterar-senha`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          email,
-          senha_atual: senhaAtual,
-          nova_senha: novaSenha,
-        }),
+        body: JSON.stringify({ novaSenha })
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.message || "Erro ao alterar senha");
       }
 
-      setSucesso("Senha alterada com sucesso. Redirecionando...");
-      setTimeout(() => {
-        window.location.href = "/inicio";
-      }, 1200);
-    } catch (e) {
-      setErro(e.message || "Erro ao alterar senha");
+      const rawUser = localStorage.getItem("user");
+      const user = rawUser ? JSON.parse(rawUser) : {};
+      user.troca_senha_obrigatoria = 0;
+      localStorage.setItem("user", JSON.stringify(user));
+
+      setSucesso("Senha alterada com sucesso.");
+      setTimeout(() => router.push("/inicio"), 1000);
+    } catch (error) {
+      setErro(error.message || "Erro ao alterar senha");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={page}>
-      <div style={card}>
+    <div style={wrap}>
+      <form onSubmit={handleSubmit} style={card}>
         <h1 style={title}>Primeiro acesso</h1>
-        <p style={subtitle}>Para continuar, altere sua senha padrão.</p>
+        <p style={subtitle}>Por segurança, defina uma nova senha para continuar.</p>
 
         {erro ? <div style={errorBox}>{erro}</div> : null}
         {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
-        <form onSubmit={handleSubmit} style={form}>
-          <input
-            type="email"
-            value={email}
-            readOnly
-            style={{ ...input, background: "#f8fafc" }}
-          />
-          <input
-            type="password"
-            value={senhaAtual}
-            onChange={(e) => setSenhaAtual(e.target.value)}
-            placeholder="Senha atual"
-            style={input}
-          />
-          <input
-            type="password"
-            value={novaSenha}
-            onChange={(e) => setNovaSenha(e.target.value)}
-            placeholder="Nova senha"
-            style={input}
-          />
-          <input
-            type="password"
-            value={confirmarSenha}
-            onChange={(e) => setConfirmarSenha(e.target.value)}
-            placeholder="Confirmar nova senha"
-            style={input}
-          />
-          <button type="submit" style={button}>
-            {loading ? "Salvando..." : "Salvar nova senha"}
-          </button>
-        </form>
-      </div>
+        <input
+          style={input}
+          type="password"
+          placeholder="Nova senha"
+          value={novaSenha}
+          onChange={(e) => setNovaSenha(e.target.value)}
+        />
+
+        <input
+          style={input}
+          type="password"
+          placeholder="Confirmar nova senha"
+          value={confirmacao}
+          onChange={(e) => setConfirmacao(e.target.value)}
+        />
+
+        <button type="submit" style={button} disabled={loading}>
+          {loading ? "Salvando..." : "Salvar nova senha"}
+        </button>
+      </form>
     </div>
   );
 }
 
-const page = {
+const wrap = {
   minHeight: "100vh",
-  display: "grid",
-  placeItems: "center",
-  background: "#f1f5f9",
-  padding: 24,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#eef4fb",
+  padding: 24
 };
 
 const card = {
-  width: "min(460px, 100%)",
+  width: "100%",
+  maxWidth: 460,
   background: "#fff",
-  borderRadius: 18,
-  padding: 28,
-  boxShadow: "0 10px 30px rgba(0,0,0,.08)",
+  borderRadius: 20,
+  padding: 32,
+  boxShadow: "0 10px 30px rgba(15,23,42,.08)"
 };
 
-const title = { margin: 0, fontSize: 30, color: "#0f172a" };
-const subtitle = { marginTop: 8, color: "#64748b" };
+const title = {
+  margin: 0,
+  fontSize: 34,
+  color: "#1e3a8a"
+};
 
-const form = {
-  display: "grid",
-  gap: 12,
-  marginTop: 20,
+const subtitle = {
+  color: "#64748b",
+  marginBottom: 24
 };
 
 const input = {
-  padding: 12,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
   width: "100%",
   boxSizing: "border-box",
+  padding: 14,
+  borderRadius: 12,
+  border: "1px solid #dbe3ef",
+  marginBottom: 14
 };
 
 const button = {
+  width: "100%",
+  border: 0,
+  borderRadius: 12,
+  padding: 14,
   background: "#2563eb",
   color: "#fff",
-  border: 0,
-  borderRadius: 10,
-  padding: "12px 16px",
-  cursor: "pointer",
+  fontWeight: 700,
+  cursor: "pointer"
 };
 
 const errorBox = {
   background: "#fef2f2",
   color: "#b91c1c",
   padding: 12,
-  borderRadius: 10,
-  marginTop: 16,
+  borderRadius: 12,
+  marginBottom: 16,
+  border: "1px solid #fecaca"
 };
 
 const successBox = {
   background: "#ecfdf5",
   color: "#166534",
   padding: 12,
-  borderRadius: 10,
-  marginTop: 16,
+  borderRadius: 12,
+  marginBottom: 16,
+  border: "1px solid #bbf7d0"
 };
