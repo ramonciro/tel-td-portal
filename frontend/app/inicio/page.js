@@ -11,32 +11,49 @@ export default function InicioPage() {
   const [erro, setErro] = useState("");
 
   useEffect(() => {
-    apiFetch("/dashboard").then((res) => setData(res || {})).catch((e) => setErro(e.message || "Erro ao carregar dashboard executivo"));
+    apiFetch("/dashboard")
+      .then((res) => setData(res || {}))
+      .catch((e) => setErro(e.message || "Erro ao carregar dashboard executivo"));
   }, []);
 
-  const stats = useMemo(() => ([
-    { label: "Clientes", value: data?.clientes || 0, icon: "🏢", helper: "Operações cadastradas" },
-    { label: "Usuários", value: data?.usuarios || 0, icon: "👥", helper: "Perfis ativos no portal" },
-    { label: "Treinamentos", value: data?.treinamentos || 0, icon: "🎓", helper: "Eventos e turmas lançadas" },
-    { label: "Presenças", value: data?.presencas || 0, icon: "📋", helper: "Controle operacional de presença" },
-    { label: "Avaliações", value: data?.avaliacoes || 0, icon: "⭐", helper: "Base de feedback e desempenho" },
-    { label: "Biblioteca", value: data?.biblioteca || 0, icon: "📚", helper: "Materiais disponíveis" },
-    { label: "Trilhas", value: data?.trilhas || 0, icon: "🧭", helper: "Jornadas de desenvolvimento" },
-  ]), [data]);
+  const stats = useMemo(
+    () => [
+      { label: "Clientes", value: data?.clientes || 0, icon: "🏢", helper: "Operações cadastradas" },
+      { label: "Usuários", value: data?.usuarios || 0, icon: "👥", helper: "Perfis ativos no portal" },
+      { label: "Treinamentos", value: data?.treinamentos || 0, icon: "🎓", helper: "Eventos e turmas lançadas" },
+      { label: "Presenças", value: data?.presencas || 0, icon: "📋", helper: "Controle operacional de presença" },
+      { label: "Avaliações", value: data?.avaliacoes || 0, icon: "⭐", helper: "Base de feedback e desempenho" },
+      { label: "Biblioteca", value: data?.biblioteca || 0, icon: "📚", helper: "Materiais disponíveis" },
+      { label: "Trilhas", value: data?.trilhas || 0, icon: "🧭", helper: "Jornadas de desenvolvimento" },
+    ],
+    [data]
+  );
 
   return (
-    <PortalShell title="Dashboard Executivo" subtitle="Visão estratégica do Treinamento e Desenvolvimento com leitura operacional e apoio à tomada de decisão.">
+    <PortalShell
+      title="Dashboard Executivo"
+      subtitle="Visão estratégica do Treinamento e Desenvolvimento com leitura operacional e apoio à tomada de decisão."
+    >
       {erro ? <div style={errorBox}>{erro}</div> : null}
+
       <StatsGrid items={stats} />
+
       <div style={contentGrid}>
-        <SectionCard title="Resumo executivo do T&D" subtitle="Acompanhe o comportamento geral do portal e mantenha a estrutura de treinamento organizada para expansão por cliente, instrutor e indicador.">
+        <SectionCard
+          title="Resumo executivo do T&D"
+          subtitle="Acompanhe o comportamento geral do portal e mantenha a estrutura de treinamento organizada para expansão por cliente, instrutor e indicador."
+        >
           <div style={bulletGrid}>
             <InfoBlock title="Leitura rápida" text="Use este painel como visão inicial da operação de T&D antes de aprofundar em clientes, trilhas, biblioteca e avaliações." />
             <InfoBlock title="Foco gerencial" text="A versão 2.0 organiza melhor a navegação para facilitar o acompanhamento da rotina, da base de usuários e dos registros de treinamento." />
             <InfoBlock title="Próxima evolução" text="Este layout já está preparado para crescer com indicadores de aprovação, absenteísmo, NPS e produtividade por cliente." />
           </div>
         </SectionCard>
-        <SectionCard title="Prioridades recomendadas" subtitle="Ordem sugerida para estruturar o portal com maior consistência.">
+
+        <SectionCard
+          title="Prioridades recomendadas"
+          subtitle="Ordem sugerida para estruturar o portal com maior consistência."
+        >
           <ol style={orderedList}>
             <li>Cadastrar clientes e usuários.</li>
             <li>Subir treinamentos e listas de presença.</li>
@@ -51,7 +68,12 @@ export default function InicioPage() {
 }
 
 function InfoBlock({ title, text }) {
-  return <div style={infoBlock}><div style={infoTitle}>{title}</div><div style={infoText}>{text}</div></div>;
+  return (
+    <div style={infoBlock}>
+      <div style={infoTitle}>{title}</div>
+      <div style={infoText}>{text}</div>
+    </div>
+  );
 }
 
 const contentGrid = { display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 20 };
