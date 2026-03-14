@@ -1,15 +1,28 @@
-"use client";
+"use client"
 
-import CrudPage from "../../components/CrudPage";
+import PortalShell from "../../components/PortalShell"
+import SectionCard from "../../components/SectionCard"
 
 export default function Page() {
+
   return (
-    <CrudPage
+    <PortalShell
       title="Mapa de Desenvolvimento"
-      subtitle="Painel de acompanhamento individual para orientar objetivos, trilhas e próximos passos."
-      endpoint="/mapa-desenvolvimento"
-      fields=[{"name": "colaborador", "label": "Colaborador"}, {"name": "cliente", "label": "Cliente"}, {"name": "cargo", "label": "Cargo"}, {"name": "objetivo_profissional", "label": "Objetivo profissional", "type": "textarea"}, {"name": "trilha_atual", "label": "Trilha atual"}, {"name": "etapa_atual", "label": "Etapa atual"}, {"name": "status", "label": "Status"}, {"name": "percentual", "label": "Percentual", "type": "number"}, {"name": "proximo_passo", "label": "Próximo passo", "type": "textarea"}, {"name": "mentor", "label": "Mentor"}, {"name": "observacoes", "label": "Observações", "type": "textarea"}]
-      summary=[{"label": "Acompanhamento", "value": "Evolução", "icon": "🗺️", "helper": "Leitura individual e contínua"}, {"label": "Aplicação", "value": "Desenvolvimento", "icon": "📈", "helper": "Base para crescimento técnico e comportamental"}]
-    />
-  );
+      subtitle="Módulo em implantação"
+    >
+
+      <SectionCard
+        title="Em breve"
+        subtitle="Este módulo será conectado ao backend na próxima atualização."
+      >
+
+        <p style={{color:"#64748b"}}>
+          O mapa de desenvolvimento permitirá acompanhar a evolução dos colaboradores
+          nas trilhas de aprendizagem e metas de capacitação.
+        </p>
+
+      </SectionCard>
+
+    </PortalShell>
+  )
 }
