@@ -1,0 +1,21 @@
+CAUSA DO ERRO:
+Os page.js foram salvos com arrays/objetos escritos diretamente nas props JSX.
+Isso quebra a compilação do Next.
+
+CORREÇÃO:
+Neste pacote, cada página usa constantes JS (fields e summary) e depois passa:
+fields={fields}
+summary={summary}
+
+SUBSTITUA ESTES ARQUIVOS:
+frontend/app/avaliacoes/page.js
+frontend/app/biblioteca/page.js
+frontend/app/clientes/page.js
+frontend/app/dashboard/page.js
+frontend/app/evolucao-colaborador/page.js
+frontend/app/inicio/page.js
+frontend/app/mapa-desenvolvimento/page.js
+frontend/app/presencas/page.js
+frontend/app/treinamentos/page.js
+frontend/app/trilhas/page.js
+frontend/app/usuarios/page.js
