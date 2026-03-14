@@ -14,7 +14,12 @@ export default function EvolucaoColaboradorPage() {
   const [erro, setErro] = useState("");
 
   useEffect(() => {
-    Promise.all([apiFetch("/usuarios"), apiFetch("/treinamentos"), apiFetch("/presencas"), apiFetch("/avaliacoes")])
+    Promise.all([
+      apiFetch("/usuarios"),
+      apiFetch("/treinamentos"),
+      apiFetch("/presencas"),
+      apiFetch("/avaliacoes"),
+    ])
       .then(([u, t, p, a]) => {
         setUsuarios(Array.isArray(u) ? u : []);
         setTreinamentos(Array.isArray(t) ? t : []);
@@ -24,17 +29,31 @@ export default function EvolucaoColaboradorPage() {
       .catch((e) => setErro(e.message || "Erro ao carregar dados"));
   }, []);
 
-  const cards = useMemo(() => usuarios.map((u) => {
-    const pres = presencas.filter((p) => String(p.treinando_nome || "").toLowerCase() === String(u.nome || "").toLowerCase());
-    const ids = [...new Set(pres.map((p) => p.treinamento_id).filter(Boolean))];
-    const treinos = treinamentos.filter((t) => ids.includes(t.id));
-    const avs = avaliacoes.filter((a) => ids.includes(a.treinamento_id));
-    const presentes = pres.filter((p) => p.status === "presente").length;
-    const total = pres.length;
-    const assiduidade = total ? Math.round((presentes / total) * 100) : 0;
-    const nota = avs.length ? (avs.reduce((acc, x) => acc + Number(x.nota_prova || 0), 0) / avs.length).toFixed(1) : "0.0";
-    return { nome: u.nome, perfil: u.perfil, cliente: u.cliente, treinamentos: treinos.length, assiduidade, nota };
-  }), [usuarios, treinamentos, presencas, avaliacoes]);
+  const cards = useMemo(() => {
+    return usuarios.map((u) => {
+      const pres = presencas.filter(
+        (p) => String(p.treinando_nome || "").toLowerCase() === String(u.nome || "").toLowerCase()
+      );
+      const ids = [...new Set(pres.map((p) => p.treinamento_id).filter(Boolean))];
+      const treinos = treinamentos.filter((t) => ids.includes(t.id));
+      const avs = avaliacoes.filter((a) => ids.includes(a.treinamento_id));
+      const presentes = pres.filter((p) => p.status === "presente").length;
+      const total = pres.length;
+      const assiduidade = total ? Math.round((presentes / total) * 100) : 0;
+      const nota = avs.length
+        ? (avs.reduce((acc, x) => acc + Number(x.nota_prova || 0), 0) / avs.length).toFixed(1)
+        : "0.0";
+
+      return {
+        nome: u.nome,
+        perfil: u.perfil,
+        cliente: u.cliente,
+        treinamentos: treinos.length,
+        assiduidade,
+        nota,
+      };
+    });
+  }, [usuarios, treinamentos, presencas, avaliacoes]);
 
   const stats = [
     { label: "Colaboradores", value: usuarios.length, icon: "👥", helper: "Base total acompanhada" },
@@ -44,15 +63,26 @@ export default function EvolucaoColaboradorPage() {
   ];
 
   return (
-    <PortalShell title="Evolução do Colaborador" subtitle="Painel de leitura individual com foco em assiduidade, exposição ao treinamento e aproveitamento.">
+    <PortalShell
+      title="Evolução do Colaborador"
+      subtitle="Painel de leitura individual com foco em assiduidade, exposição ao treinamento e aproveitamento."
+    >
       {erro ? <div style={errorBox}>{erro}</div> : null}
+
       <StatsGrid items={stats} />
-      <SectionCard title="Painel individual" subtitle="Leitura consolidada por colaborador a partir da base real do portal.">
+
+      <SectionCard
+        title="Painel individual"
+        subtitle="Leitura consolidada por colaborador a partir da base real do portal."
+      >
         <div style={grid}>
           {cards.map((c) => (
             <div key={c.nome} style={card}>
               <div style={name}>{c.nome}</div>
-              <div style={sub}>{c.perfil} • {c.cliente || "-"}</div>
+              <div style={sub}>
+                {c.perfil} • {c.cliente || "-"}
+              </div>
+
               <div style={metricGrid}>
                 <Metric label="Treinamentos" value={c.treinamentos} />
                 <Metric label="Assiduidade" value={`${c.assiduidade}%`} />
@@ -60,6 +90,7 @@ export default function EvolucaoColaboradorPage() {
               </div>
             </div>
           ))}
+
           {!cards.length ? <div style={empty}>Nenhum colaborador disponível para leitura neste momento.</div> : null}
         </div>
       </SectionCard>
@@ -68,7 +99,12 @@ export default function EvolucaoColaboradorPage() {
 }
 
 function Metric({ label, value }) {
-  return <div style={metricCard}><div style={metricLabel}>{label}</div><div style={metricValue}>{value}</div></div>;
+  return (
+    <div style={metricCard}>
+      <div style={metricLabel}>{label}</div>
+      <div style={metricValue}>{value}</div>
+    </div>
+  );
 }
 
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 };
