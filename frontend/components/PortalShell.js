@@ -41,24 +41,26 @@ export default function PortalShell({ title, subtitle, children }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex" }}>
+    <div style={{ minHeight: "100vh", display: "flex", background: "#f8fafc" }}>
       <aside
         style={{
-          width: 282,
+          width: 230,
+          minWidth: 230,
           background: "linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%)",
           color: "#fff",
-          padding: 24,
+          padding: 20,
           boxSizing: "border-box",
           position: "sticky",
           top: 0,
           height: "100vh",
           display: "flex",
-          flexDirection: "column"
+          flexDirection: "column",
+          overflow: "hidden"
         }}
       >
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em" }}>Tel T&D</div>
-          <div style={{ fontSize: 14, color: "rgba(255,255,255,.72)", marginTop: 6, lineHeight: 1.5 }}>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Tel T&D</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.72)", marginTop: 6, lineHeight: 1.5 }}>
             Ambiente de Treinamento e Desenvolvimento com foco em gestão, operação e evolução.
           </div>
         </div>
@@ -67,21 +69,21 @@ export default function PortalShell({ title, subtitle, children }) {
           style={{
             background: "rgba(255,255,255,.09)",
             border: "1px solid rgba(255,255,255,.12)",
-            borderRadius: 18,
-            padding: 14,
-            marginBottom: 18
+            borderRadius: 16,
+            padding: 12,
+            marginBottom: 16
           }}
         >
-          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", color: "rgba(255,255,255,.6)" }}>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", color: "rgba(255,255,255,.6)" }}>
             Perfil em uso
           </div>
-          <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16 }}>{user?.nome || "Usuário"}</div>
-          <div style={{ marginTop: 4, fontSize: 13, color: "rgba(255,255,255,.72)" }}>
+          <div style={{ marginTop: 8, fontWeight: 800, fontSize: 15 }}>{user?.nome || "Usuário"}</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: "rgba(255,255,255,.72)" }}>
             {(user?.perfil || "perfil não identificado").toString().toUpperCase()}
           </div>
         </div>
 
-        <nav style={{ display: "grid", gap: 8, flex: 1, overflowY: "auto", paddingRight: 4 }}>
+        <nav style={{ display: "grid", gap: 8, flex: 1 }}>
           {menu.map((item) => {
             const active = pathname === item.href;
             return (
@@ -91,11 +93,12 @@ export default function PortalShell({ title, subtitle, children }) {
                 style={{
                   textDecoration: "none",
                   color: "#fff",
-                  padding: "12px 14px",
-                  borderRadius: 14,
+                  padding: "11px 12px",
+                  borderRadius: 12,
                   background: active ? "rgba(255,255,255,.16)" : "transparent",
                   border: active ? "1px solid rgba(255,255,255,.2)" : "1px solid transparent",
-                  fontWeight: active ? 700 : 500
+                  fontWeight: active ? 700 : 500,
+                  fontSize: 14
                 }}
               >
                 {item.label}
@@ -104,7 +107,7 @@ export default function PortalShell({ title, subtitle, children }) {
           })}
         </nav>
 
-        <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+        <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
           <Link
             href="/alterar-senha"
             style={{
@@ -113,9 +116,10 @@ export default function PortalShell({ title, subtitle, children }) {
               border: "1px solid rgba(255,255,255,.18)",
               background: "rgba(255,255,255,.08)",
               color: "#fff",
-              borderRadius: 14,
-              padding: 12,
-              fontWeight: 700
+              borderRadius: 12,
+              padding: 11,
+              fontWeight: 700,
+              fontSize: 14
             }}
           >
             Alterar senha
@@ -128,10 +132,11 @@ export default function PortalShell({ title, subtitle, children }) {
               border: "1px solid rgba(255,255,255,.18)",
               background: "#ffffff",
               color: "#1e3a8a",
-              borderRadius: 14,
-              padding: 12,
+              borderRadius: 12,
+              padding: 11,
               fontWeight: 800,
-              cursor: "pointer"
+              cursor: "pointer",
+              fontSize: 14
             }}
           >
             Sair
@@ -139,13 +144,13 @@ export default function PortalShell({ title, subtitle, children }) {
         </div>
       </aside>
 
-      <main style={{ flex: 1, padding: 28, boxSizing: "border-box" }}>
+      <main style={{ flex: 1, padding: 24, boxSizing: "border-box" }}>
         <div
           style={{
-            background: "rgba(255,255,255,.82)",
+            background: "rgba(255,255,255,.88)",
             backdropFilter: "blur(10px)",
-            borderRadius: 26,
-            padding: 28,
+            borderRadius: 24,
+            padding: 24,
             border: "1px solid #dbeafe",
             boxShadow: "0 20px 40px rgba(15, 23, 42, 0.06)"
           }}
@@ -166,8 +171,8 @@ export default function PortalShell({ title, subtitle, children }) {
             >
               Portal T&D
             </div>
-            <h1 style={{ margin: "14px 0 10px", fontSize: 38, lineHeight: 1.05 }}>{title}</h1>
-            <p style={{ margin: 0, color: "#64748b", fontSize: 16, maxWidth: 980, lineHeight: 1.65 }}>
+            <h1 style={{ margin: "14px 0 10px", fontSize: 36, lineHeight: 1.05 }}>{title}</h1>
+            <p style={{ margin: 0, color: "#64748b", fontSize: 15, maxWidth: 980, lineHeight: 1.65 }}>
               {subtitle}
             </p>
           </div>

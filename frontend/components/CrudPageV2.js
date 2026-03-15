@@ -31,7 +31,8 @@ export default function CrudPageV2({
     try {
       setCarregando(true);
       setErro("");
-      const data = await apiFetch(endpoint).catch(() => []);
+      const separator = endpoint.includes("?") ? "&" : "?";
+      const data = await apiFetch(`${endpoint}${separator}t=${Date.now()}`).catch(() => []);
       setItems(Array.isArray(data) ? data : []);
     } catch (error) {
       setErro(`Erro ao carregar ${String(title || "registros").toLowerCase()}`);
@@ -56,11 +57,13 @@ export default function CrudPageV2({
   }
 
   function editarRegistro(item) {
-    setForm(item || {});
+    setForm({ ...(item || {}) });
     setEditingId(item?.id || null);
     setErro("");
     setSucesso("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   async function excluirRegistro(id) {
@@ -118,8 +121,9 @@ export default function CrudPageV2({
 
   const gridStyle = recordsGridStyle || {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
     gap: 16,
+    alignItems: "stretch",
   };
 
   return (
@@ -198,7 +202,7 @@ export default function CrudPageV2({
             );
           })}
 
-          <div style={{ display: "flex", gap: 10, gridColumn: "1 / -1", marginTop: 4 }}>
+          <div style={{ display: "flex", gap: 10, gridColumn: "1 / -1", marginTop: 4, flexWrap: "wrap" }}>
             <button type="submit" style={buttonPrimary}>
               {editingId ? "Atualizar" : "Salvar"}
             </button>
@@ -414,10 +418,11 @@ const cardWrapper = {
   background: "#ffffff",
   border: "1px solid #e2e8f0",
   borderRadius: 18,
-  padding: 16,
+  padding: 14,
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
   display: "grid",
   gap: 14,
+  alignContent: "space-between",
 };
 
 const cardActions = {
