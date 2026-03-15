@@ -10,8 +10,12 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function statusStyle(status) {
-  const key = String(status || "").toLowerCase();
+  const key = normalizeText(status);
 
   const base = {
     display: "inline-block",
@@ -32,7 +36,7 @@ function statusStyle(status) {
   return { ...base, background: "#e2e8f0", color: "#334155" };
 }
 
-function tipoStyle(tipo) {
+function tipoStyle() {
   return {
     display: "inline-block",
     padding: "5px 9px",
@@ -49,15 +53,13 @@ function BibliotecaCard({ item, onEdit, onDelete }) {
     <div style={card}>
       <div style={cardTop}>
         <div style={cardTopRow}>
-          <span style={tipoStyle(item.tipo)}>{item.tipo || "Material"}</span>
+          <span style={tipoStyle()}>{item.tipo || "Material"}</span>
           <span style={statusStyle(item.status)}>{item.status || "Rascunho"}</span>
         </div>
 
         <div style={cardTitle}>{item.titulo || "Sem título"}</div>
         <div style={cardMeta}>
-          {(item.cliente || "GLOBAL") +
-            " • " +
-            (item.publico || "Público não informado")}
+          {(item.cliente || "GLOBAL") + " • " + (item.publico || "Público não informado")}
         </div>
       </div>
 
@@ -98,6 +100,12 @@ function BibliotecaCard({ item, onEdit, onDelete }) {
 
 export default function BibliotecaPage() {
   const [biblioteca, setBiblioteca] = useState([]);
+  const [filtroCliente, setFiltroCliente] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
+  const [filtroPublico, setFiltroPublico] = useState("");
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     async function carregar() {
@@ -170,18 +178,71 @@ export default function BibliotecaPage() {
     },
   ];
 
+  const clientesOptions = useMemo(() => {
+    return [...new Set(biblioteca.map((item) => item.cliente).filter(Boolean))].sort();
+  }, [biblioteca]);
+
+  const tiposOptions = useMemo(() => {
+    return [...new Set(biblioteca.map((item) => item.tipo).filter(Boolean))].sort();
+  }, [biblioteca]);
+
+  const categoriasOptions = useMemo(() => {
+    return [...new Set(biblioteca.map((item) => item.categoria).filter(Boolean))].sort();
+  }, [biblioteca]);
+
+  const statusOptions = useMemo(() => {
+    return [...new Set(biblioteca.map((item) => item.status).filter(Boolean))].sort();
+  }, [biblioteca]);
+
+  const publicoOptions = useMemo(() => {
+    return [...new Set(biblioteca.map((item) => item.publico).filter(Boolean))].sort();
+  }, [biblioteca]);
+
+  const bibliotecaFiltrada = useMemo(() => {
+    return biblioteca.filter((item) => {
+      const clienteOk = !filtroCliente || item.cliente === filtroCliente;
+      const tipoOk = !filtroTipo || item.tipo === filtroTipo;
+      const categoriaOk = !filtroCategoria || item.categoria === filtroCategoria;
+      const statusOk = !filtroStatus || item.status === filtroStatus;
+      const publicoOk = !filtroPublico || item.publico === filtroPublico;
+
+      const textoBase = [
+        item.titulo,
+        item.tipo,
+        item.cliente,
+        item.categoria,
+        item.publico,
+        item.status,
+        item.descricao,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const buscaOk = !busca || textoBase.includes(busca.toLowerCase());
+
+      return clienteOk && tipoOk && categoriaOk && statusOk && publicoOk && buscaOk;
+    });
+  }, [
+    biblioteca,
+    filtroCliente,
+    filtroTipo,
+    filtroCategoria,
+    filtroStatus,
+    filtroPublico,
+    busca,
+  ]);
+
   const kpis = useMemo(() => {
     const total = biblioteca.length;
     const publicados = biblioteca.filter(
-      (item) => String(item.status || "").toLowerCase() === "publicado"
+      (item) => normalizeText(item.status) === "publicado"
     ).length;
-    const atualizacao = biblioteca.filter(
-      (item) =>
-        String(item.status || "").toLowerCase() === "em atualização" ||
-        String(item.status || "").toLowerCase() === "em atualizacao"
-    ).length;
+    const atualizacao = biblioteca.filter((item) => {
+      const status = normalizeText(item.status);
+      return status === "em atualização" || status === "em atualizacao";
+    }).length;
     const rascunhos = biblioteca.filter(
-      (item) => String(item.status || "").toLowerCase() === "rascunho"
+      (item) => normalizeText(item.status) === "rascunho"
     ).length;
 
     const porClienteMap = {};
@@ -196,33 +257,19 @@ export default function BibliotecaPage() {
     });
 
     const porCliente = Object.entries(porClienteMap)
-      .map(([cliente, totalItens]) => ({
-        cliente,
-        totalItens,
-      }))
+      .map(([cliente, totalItens]) => ({ cliente, totalItens }))
       .sort((a, b) => b.totalItens - a.totalItens);
 
     const porCategoria = Object.entries(porCategoriaMap)
-      .map(([categoria, totalItens]) => ({
-        categoria,
-        totalItens,
-      }))
+      .map(([categoria, totalItens]) => ({ categoria, totalItens }))
       .sort((a, b) => b.totalItens - a.totalItens);
 
     const alertas = [];
-
-    if (atualizacao > 0) {
-      alertas.push(`${atualizacao} material(is) estão em atualização.`);
-    }
-
-    if (rascunhos > 0) {
-      alertas.push(`${rascunhos} material(is) ainda estão como rascunho.`);
-    }
+    if (atualizacao > 0) alertas.push(`${atualizacao} material(is) estão em atualização.`);
+    if (rascunhos > 0) alertas.push(`${rascunhos} material(is) ainda estão como rascunho.`);
 
     const semLink = biblioteca.filter((item) => !item.link_arquivo).length;
-    if (semLink > 0) {
-      alertas.push(`${semLink} material(is) ainda sem link cadastrado.`);
-    }
+    if (semLink > 0) alertas.push(`${semLink} material(is) ainda sem link cadastrado.`);
 
     if (!alertas.length) {
       alertas.push("Biblioteca organizada, sem pendências críticas no momento.");
@@ -239,6 +286,159 @@ export default function BibliotecaPage() {
     };
   }, [biblioteca]);
 
+  const hero = (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={heroGrid}>
+        <StatCard
+          title="Materiais"
+          value={fmt(kpis.total)}
+          subtitle="Base total"
+          accent="#0891b2"
+        />
+        <StatCard
+          title="Publicados"
+          value={fmt(kpis.publicados)}
+          subtitle="Disponíveis para uso"
+          accent="#16a34a"
+        />
+        <StatCard
+          title="Em atualização"
+          value={fmt(kpis.atualizacao)}
+          subtitle="Materiais em revisão"
+          accent="#ea580c"
+        />
+        <StatCard
+          title="Rascunhos"
+          value={fmt(kpis.rascunhos)}
+          subtitle="Ainda não finalizados"
+          accent="#64748b"
+        />
+      </div>
+
+      <SectionCard
+        title="Filtros rápidos"
+        subtitle="Refine a consulta do acervo para uso diário do setor."
+      >
+        <div style={filtersGrid}>
+          <select value={filtroCliente} onChange={(e) => setFiltroCliente(e.target.value)} style={filterInput}>
+            <option value="">Todos os clientes</option>
+            {clientesOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+
+          <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} style={filterInput}>
+            <option value="">Todos os tipos</option>
+            {tiposOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+
+          <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={filterInput}>
+            <option value="">Todas as categorias</option>
+            {categoriasOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+
+          <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} style={filterInput}>
+            <option value="">Todos os status</option>
+            {statusOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+
+          <select value={filtroPublico} onChange={(e) => setFiltroPublico(e.target.value)} style={filterInput}>
+            <option value="">Todos os públicos</option>
+            {publicoOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+
+          <input
+            type="text"
+            placeholder="Buscar material"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            style={filterInput}
+          />
+        </div>
+
+        <div style={filterActions}>
+          <button
+            type="button"
+            style={clearButton}
+            onClick={() => {
+              setFiltroCliente("");
+              setFiltroTipo("");
+              setFiltroCategoria("");
+              setFiltroStatus("");
+              setFiltroPublico("");
+              setBusca("");
+            }}
+          >
+            Limpar filtros
+          </button>
+
+          <div style={filterResult}>
+            {fmt(bibliotecaFiltrada.length)} material(is) encontrado(s)
+          </div>
+        </div>
+      </SectionCard>
+
+      <div style={twoCol}>
+        <SectionCard
+          title="Distribuição por cliente"
+          subtitle="Clientes com maior volume de material cadastrado."
+        >
+          <div style={listGrid}>
+            {kpis.porCliente.length ? (
+              kpis.porCliente.slice(0, 6).map((item) => (
+                <div key={item.cliente} style={listItem}>
+                  <div style={itemTitle}>{item.cliente}</div>
+                  <div style={itemMeta}>{item.totalItens} material(is)</div>
+                </div>
+              ))
+            ) : (
+              <div style={emptyText}>Nenhum cliente disponível.</div>
+            )}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Distribuição por categoria"
+          subtitle="Organização do acervo por linha de conteúdo."
+        >
+          <div style={listGrid}>
+            {kpis.porCategoria.length ? (
+              kpis.porCategoria.slice(0, 6).map((item) => (
+                <div key={item.categoria} style={listItem}>
+                  <div style={itemTitle}>{item.categoria}</div>
+                  <div style={itemMeta}>{item.totalItens} material(is)</div>
+                </div>
+              ))
+            ) : (
+              <div style={emptyText}>Nenhuma categoria disponível.</div>
+            )}
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard
+        title="Leitura gerencial"
+        subtitle="Pontos rápidos para acompanhar a maturidade do acervo."
+      >
+        <div style={alertGrid}>
+          {kpis.alertas.map((item, index) => (
+            <div key={index} style={alertItem}>
+              {item}
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+    </div>
+  );
+
   return (
     <CrudPageV2
       title="Biblioteca"
@@ -253,99 +453,20 @@ export default function BibliotecaPage() {
         gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
         gap: 12,
       }}
-      renderRecordCard={({ item, onEdit, onDelete }) => (
-        <BibliotecaCard
-          key={item.id}
-          item={item}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      )}
-      hero={
-        <div style={{ display: "grid", gap: 14 }}>
-          <div style={heroGrid}>
-            <StatCard
-              title="Materiais"
-              value={fmt(kpis.total)}
-              subtitle="Base total"
-              accent="#0891b2"
-            />
-            <StatCard
-              title="Publicados"
-              value={fmt(kpis.publicados)}
-              subtitle="Disponíveis para uso"
-              accent="#16a34a"
-            />
-            <StatCard
-              title="Em atualização"
-              value={fmt(kpis.atualizacao)}
-              subtitle="Materiais em revisão"
-              accent="#ea580c"
-            />
-            <StatCard
-              title="Rascunhos"
-              value={fmt(kpis.rascunhos)}
-              subtitle="Ainda não finalizados"
-              accent="#64748b"
-            />
-          </div>
+      renderRecordCard={({ item, onEdit, onDelete }) => {
+        const visivel = bibliotecaFiltrada.some((registro) => String(registro.id) === String(item.id));
+        if (!visivel) return null;
 
-          <div style={twoCol}>
-            <SectionCard
-              title="Distribuição por cliente"
-              subtitle="Clientes com maior volume de material cadastrado."
-            >
-              <div style={listGrid}>
-                {kpis.porCliente.length ? (
-                  kpis.porCliente.slice(0, 6).map((item) => (
-                    <div key={item.cliente} style={listItem}>
-                      <div style={itemTitle}>{item.cliente}</div>
-                      <div style={itemMeta}>
-                        {item.totalItens} material(is)
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={emptyText}>Nenhum cliente disponível.</div>
-                )}
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              title="Distribuição por categoria"
-              subtitle="Organização do acervo por linha de conteúdo."
-            >
-              <div style={listGrid}>
-                {kpis.porCategoria.length ? (
-                  kpis.porCategoria.slice(0, 6).map((item) => (
-                    <div key={item.categoria} style={listItem}>
-                      <div style={itemTitle}>{item.categoria}</div>
-                      <div style={itemMeta}>
-                        {item.totalItens} material(is)
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={emptyText}>Nenhuma categoria disponível.</div>
-                )}
-              </div>
-            </SectionCard>
-          </div>
-
-          <SectionCard
-            title="Leitura gerencial"
-            subtitle="Pontos rápidos para acompanhar a maturidade do acervo."
-          >
-            <div style={alertGrid}>
-              {kpis.alertas.map((item, index) => (
-                <div key={index} style={alertItem}>
-                  {item}
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-        </div>
-      }
+        return (
+          <BibliotecaCard
+            key={item.id}
+            item={item}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        );
+      }}
+      hero={hero}
     />
   );
 }
@@ -360,6 +481,48 @@ const twoCol = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: 14,
+};
+
+const filtersGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 10,
+};
+
+const filterInput = {
+  width: "100%",
+  height: 40,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "0 12px",
+  fontSize: 14,
+  boxSizing: "border-box",
+  background: "#fff",
+};
+
+const filterActions = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 10,
+  flexWrap: "wrap",
+  marginTop: 12,
+};
+
+const clearButton = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  padding: "9px 12px",
+  background: "#fff",
+  color: "#334155",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const filterResult = {
+  fontSize: 13,
+  color: "#64748b",
+  fontWeight: 700,
 };
 
 const listGrid = {
