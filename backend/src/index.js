@@ -92,32 +92,68 @@ app.use(
 
 /**
  * ZERA A BASE RELACIONADA AO DASHBOARD
- * Use antes da importação se quiser começar do zero.
+ * Limpa as tabelas na ordem correta, reseta AUTO_INCREMENT
+ * e devolve a contagem final para validação.
  */
 app.get("/api/zerar-dashboard", async (req, res) => {
+  const conn = await pool.getConnection();
+
   try {
-    await pool.query("SET FOREIGN_KEY_CHECKS = 0");
-    await pool.query("DELETE FROM avaliacoes");
-    await pool.query("DELETE FROM presencas");
-    await pool.query("DELETE FROM treinamentos");
-    await pool.query("DELETE FROM usuarios");
-    await pool.query("DELETE FROM clientes");
-    await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+    await conn.beginTransaction();
+
+    await conn.query("SET FOREIGN_KEY_CHECKS = 0");
+
+    // Limpa tabelas filhas primeiro
+    await conn.query("DELETE FROM avaliacoes");
+    await conn.query("DELETE FROM presencas");
+    await conn.query("DELETE FROM treinamentos");
+    await conn.query("DELETE FROM usuarios");
+    await conn.query("DELETE FROM clientes");
+
+    // Reseta AUTO_INCREMENT
+    await conn.query("ALTER TABLE avaliacoes AUTO_INCREMENT = 1");
+    await conn.query("ALTER TABLE presencas AUTO_INCREMENT = 1");
+    await conn.query("ALTER TABLE treinamentos AUTO_INCREMENT = 1");
+    await conn.query("ALTER TABLE usuarios AUTO_INCREMENT = 1");
+    await conn.query("ALTER TABLE clientes AUTO_INCREMENT = 1");
+
+    await conn.query("SET FOREIGN_KEY_CHECKS = 1");
+
+    await conn.commit();
+
+    const [[treinamentosCount]] = await conn.query("SELECT COUNT(*) AS total FROM treinamentos");
+    const [[presencasCount]] = await conn.query("SELECT COUNT(*) AS total FROM presencas");
+    const [[avaliacoesCount]] = await conn.query("SELECT COUNT(*) AS total FROM avaliacoes");
+    const [[usuariosCount]] = await conn.query("SELECT COUNT(*) AS total FROM usuarios");
+    const [[clientesCount]] = await conn.query("SELECT COUNT(*) AS total FROM clientes");
 
     res.json({
       ok: true,
       message: "Base zerada com sucesso.",
+      contagem: {
+        clientes: clientesCount.total,
+        usuarios: usuariosCount.total,
+        treinamentos: treinamentosCount.total,
+        presencas: presencasCount.total,
+        avaliacoes: avaliacoesCount.total,
+      },
     });
   } catch (error) {
-    console.error("Erro ao zerar base:", error);
+    await conn.rollback();
+
     try {
-      await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+      await conn.query("SET FOREIGN_KEY_CHECKS = 1");
     } catch {}
+
+    console.error("Erro ao zerar base:", error);
+
     res.status(500).json({
       ok: false,
       message: "Erro ao zerar base.",
       error: error.message,
     });
+  } finally {
+    conn.release();
   }
 });
 
