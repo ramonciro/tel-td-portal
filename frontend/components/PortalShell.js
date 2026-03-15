@@ -15,8 +15,7 @@ const allMenu = [
   { href: "/avaliacoes", label: "Avaliações" },
   { href: "/biblioteca", label: "Biblioteca" },
   { href: "/trilhas", label: "Trilhas" },
-  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento" },
-  { href: "/alterar-senha", label: "Alterar senha" },
+  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento" }
 ];
 
 export default function PortalShell({ title, subtitle, children }) {
@@ -54,7 +53,7 @@ export default function PortalShell({ title, subtitle, children }) {
           top: 0,
           height: "100vh",
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "column"
         }}
       >
         <div style={{ marginBottom: 24 }}>
@@ -70,7 +69,7 @@ export default function PortalShell({ title, subtitle, children }) {
             border: "1px solid rgba(255,255,255,.12)",
             borderRadius: 18,
             padding: 14,
-            marginBottom: 18,
+            marginBottom: 18
           }}
         >
           <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", color: "rgba(255,255,255,.6)" }}>
@@ -96,7 +95,7 @@ export default function PortalShell({ title, subtitle, children }) {
                   borderRadius: 14,
                   background: active ? "rgba(255,255,255,.16)" : "transparent",
                   border: active ? "1px solid rgba(255,255,255,.2)" : "1px solid transparent",
-                  fontWeight: active ? 700 : 500,
+                  fontWeight: active ? 700 : 500
                 }}
               >
                 {item.label}
@@ -116,11 +115,12 @@ export default function PortalShell({ title, subtitle, children }) {
               color: "#fff",
               borderRadius: 14,
               padding: 12,
-              fontWeight: 700,
+              fontWeight: 700
             }}
           >
             Alterar senha
           </Link>
+
           <button
             onClick={sair}
             style={{
@@ -131,7 +131,7 @@ export default function PortalShell({ title, subtitle, children }) {
               borderRadius: 14,
               padding: 12,
               fontWeight: 800,
-              cursor: "pointer",
+              cursor: "pointer"
             }}
           >
             Sair
@@ -147,7 +147,7 @@ export default function PortalShell({ title, subtitle, children }) {
             borderRadius: 26,
             padding: 28,
             border: "1px solid #dbeafe",
-            boxShadow: "0 20px 40px rgba(15, 23, 42, 0.06)",
+            boxShadow: "0 20px 40px rgba(15, 23, 42, 0.06)"
           }}
         >
           <div style={{ marginBottom: 24 }}>
@@ -161,7 +161,7 @@ export default function PortalShell({ title, subtitle, children }) {
                 borderRadius: 999,
                 fontSize: 12,
                 letterSpacing: ".02em",
-                textTransform: "uppercase",
+                textTransform: "uppercase"
               }}
             >
               Portal T&D
@@ -171,6 +171,7 @@ export default function PortalShell({ title, subtitle, children }) {
               {subtitle}
             </p>
           </div>
+
           {children}
         </div>
       </main>
