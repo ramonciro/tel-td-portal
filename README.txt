@@ -1,8 +1,9 @@
-Este pacote contém:
-- frontend/app/inicio/page.js
-- frontend/components/PortalShell.js
+Este pacote contém a nova página Início 100% dinâmica.
+Ela lê dados reais de:
+- /dashboard
+- /treinamentos
+- /biblioteca
+- /trilhas
 
-Ajustes aplicados:
-- remoção do botão duplicado de alterar senha
-- nova versão da página Início, com clima de atualizações e novidades do T&D
-- comunicação mais prática e menos superficial
+Assim, sempre que você cadastrar novas turmas, materiais e trilhas,
+a página inicial será atualizada automaticamente.
