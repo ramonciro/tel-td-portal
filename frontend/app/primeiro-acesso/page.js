@@ -29,6 +29,7 @@ export default function PrimeiroAcessoPage() {
 
     try {
       setLoading(true);
+
       const token = localStorage.getItem("token");
 
       const response = await fetch(`${API_URL}/auth/alterar-senha`, {
@@ -63,9 +64,11 @@ export default function PrimeiroAcessoPage() {
   return (
     <div style={wrap}>
       <form onSubmit={handleSubmit} style={card}>
-        <div style={eyebrow}>Primeiro acesso</div>
+        <div style={badge}>Primeiro acesso</div>
         <h1 style={title}>Defina sua nova senha</h1>
-        <p style={subtitle}>Por segurança, atualize sua credencial antes de continuar.</p>
+        <p style={subtitle}>
+          Por segurança, atualize sua credencial antes de continuar.
+        </p>
 
         {erro ? <div style={errorBox}>{erro}</div> : null}
         {sucesso ? <div style={successBox}>{sucesso}</div> : null}
@@ -99,70 +102,87 @@ const wrap = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "linear-gradient(180deg, #eef4fb 0%, #f8fafc 100%)",
+  background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
   padding: 24,
 };
 
 const card = {
   width: "100%",
-  maxWidth: 430,
+  maxWidth: 560,
   background: "#fff",
-  borderRadius: 20,
-  padding: 28,
-  boxShadow: "0 16px 34px rgba(15,23,42,.08)",
-  border: "1px solid #e2e8f0",
+  borderRadius: 24,
+  padding: 32,
+  boxShadow: "0 18px 40px rgba(15,23,42,.08)",
+  border: "1px solid #dbeafe",
 };
 
-const eyebrow = {
+const badge = {
   display: "inline-block",
-  padding: "5px 10px",
+  padding: "6px 12px",
   borderRadius: 999,
   background: "#dbeafe",
   color: "#1d4ed8",
   fontWeight: 800,
-  fontSize: 11,
+  fontSize: 12,
   textTransform: "uppercase",
   letterSpacing: ".04em",
+  marginBottom: 14,
 };
 
-const title = { margin: "14px 0 8px", fontSize: 28, color: "#0f172a" };
-const subtitle = { color: "#64748b", margin: "0 0 20px", lineHeight: 1.5 };
+const title = {
+  margin: "0 0 8px",
+  fontSize: 34,
+  lineHeight: 1.05,
+  color: "#0f172a",
+};
+
+const subtitle = {
+  color: "#64748b",
+  margin: "0 0 24px",
+  lineHeight: 1.6,
+  fontSize: 16,
+};
+
 const input = {
   width: "100%",
   boxSizing: "border-box",
-  height: 42,
-  padding: "0 12px",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  marginBottom: 12,
+  height: 46,
+  padding: "0 14px",
+  borderRadius: 12,
+  border: "1px solid #dbe3ef",
+  marginBottom: 14,
   fontSize: 14,
+  background: "#fff",
 };
+
 const button = {
   width: "100%",
   border: 0,
-  borderRadius: 10,
-  height: 42,
-  background: "#2563eb",
+  borderRadius: 12,
+  height: 46,
+  background: "#3b82f6",
   color: "#fff",
   fontWeight: 800,
+  fontSize: 15,
   cursor: "pointer",
-  fontSize: 14,
 };
+
 const errorBox = {
   background: "#fef2f2",
   color: "#b91c1c",
-  padding: 10,
-  borderRadius: 10,
-  marginBottom: 14,
+  padding: 12,
+  borderRadius: 12,
+  marginBottom: 16,
   border: "1px solid #fecaca",
-  fontWeight: 600,
+  fontWeight: 700,
 };
+
 const successBox = {
   background: "#ecfdf5",
   color: "#166534",
-  padding: 10,
-  borderRadius: 10,
-  marginBottom: 14,
+  padding: 12,
+  borderRadius: 12,
+  marginBottom: 16,
   border: "1px solid #bbf7d0",
-  fontWeight: 600,
+  fontWeight: 700,
 };
