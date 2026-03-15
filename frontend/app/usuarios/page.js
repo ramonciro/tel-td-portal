@@ -1,9 +1,9 @@
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import AccessGate from "../../components/AccessGate";
 import CrudPageV2 from "../../components/CrudPageV2";
-import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 
@@ -129,52 +129,39 @@ export default function UsuariosPage() {
   return (
     <AccessGate allowed={["admin", "coordenador", "supervisor"]}>
       <CrudPageV2
-        title="Usuários 2.0"
-        subtitle="Gestão de acessos, perfis e vínculos com clientes, com leitura mais executiva e preparada para a evolução do portal."
+        title="Usuários"
+        subtitle="Gestão de acessos, perfis e vínculo com clientes."
         endpoint="/usuarios"
         fields={fields}
         columns={columns}
-        recordsSubtitle="Tabela dinâmica para gestão do time, instrutores e futuros colaboradores/treinandos."
+        recordsSubtitle="Base de usuários do portal."
         hero={
-          <>
-            <div style={statsWrap}>
-              <StatCard
-                title="Usuários"
-                value={totalUsuarios}
-                subtitle="Base total cadastrada"
-                accent="#2563eb"
-              />
-              <StatCard
-                title="Instrutores"
-                value={totalInstrutores}
-                subtitle="Perfis de aplicação"
-                accent="#059669"
-              />
-              <StatCard
-                title="Treinandos"
-                value={totalTreinandos}
-                subtitle="Base de aprendizagem"
-                accent="#7c3aed"
-              />
-              <StatCard
-                title="Liderança"
-                value={totalLideranca}
-                subtitle="Admin, coordenação e supervisão"
-                accent="#ea580c"
-              />
-            </div>
-
-            <SectionCard
-              title="Leitura da página"
-              subtitle="A área de usuários passa a ser uma base real de gestão de acesso, preparada para o crescimento do portal."
-            >
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={infoBox}>Cliente em lista dinâmica, puxado dos cadastros reais.</div>
-                <div style={infoBox}>Primeiro acesso traduzido visualmente, sem leitura 1/0.</div>
-                <div style={infoBox}>Perfis preparados para suportar expansão futura do portal.</div>
-              </div>
-            </SectionCard>
-          </>
+          <div style={statsWrap}>
+            <StatCard
+              title="Usuários"
+              value={totalUsuarios}
+              subtitle="Total cadastrado"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Instrutores"
+              value={totalInstrutores}
+              subtitle="Perfis de aplicação"
+              accent="#059669"
+            />
+            <StatCard
+              title="Treinandos"
+              value={totalTreinandos}
+              subtitle="Em formação"
+              accent="#7c3aed"
+            />
+            <StatCard
+              title="Liderança"
+              value={totalLideranca}
+              subtitle="Admin, coordenação e supervisão"
+              accent="#ea580c"
+            />
+          </div>
         }
       />
     </AccessGate>
@@ -183,17 +170,8 @@ export default function UsuariosPage() {
 
 const statsWrap = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
   gap: 14,
-};
-
-const infoBox = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 14,
-  color: "#334155",
-  fontWeight: 600,
 };
 
 const tagBase = {
