@@ -55,7 +55,7 @@ export default function TreinamentosPage() {
   const fields = useMemo(
     () => [
       {
-        name: "nome",
+        name: "tema",
         label: "Treinamento",
         placeholder: "Nome do treinamento",
       },
@@ -104,7 +104,7 @@ export default function TreinamentosPage() {
 
   const columns = [
     {
-      key: "nome",
+      key: "tema",
       label: "Treinamento",
       render: (item) => (
         <div style={courseCard}>
@@ -115,7 +115,7 @@ export default function TreinamentosPage() {
             <span style={hoursTag}>{item.carga_horaria || "0h"}</span>
           </div>
 
-          <div style={courseTitle}>{item.nome || "-"}</div>
+          <div style={courseTitle}>{item.tema || "-"}</div>
 
           <div style={courseMeta}>
             <span>{item.cliente || "Sem cliente"}</span>
@@ -149,52 +149,38 @@ export default function TreinamentosPage() {
   return (
     <CrudPageV2
       title="Treinamentos"
-      subtitle="Ambiente formativo do portal, com leitura mais dinâmica e aderente à rotina de T&D."
+      subtitle="Gestão das ações formativas do setor."
       endpoint="/treinamentos"
       fields={fields}
       columns={columns}
       recordsSubtitle="Turmas, ações formativas e planejamentos do setor."
       recordsMode="cards"
       hero={
-        <div style={heroWrap}>
-          <div style={heroBanner}>
-            <div style={heroEyebrow}>Ambiente formativo</div>
-            <h2 style={heroTitle}>
-              Gestão de treinamentos com leitura mais dinâmica e didática
-            </h2>
-            <p style={heroSubtitle}>
-              Estrutura pensada para organizar jornadas de aprendizagem,
-              reciclagens, integrações e ações formativas com mais clareza
-              visual.
-            </p>
-          </div>
-
-          <div style={statsWrap}>
-            <StatCard
-              title="Treinamentos"
-              value={totalTreinamentos}
-              subtitle="Base total"
-              accent="#2563eb"
-            />
-            <StatCard
-              title="Em andamento"
-              value={emAndamento}
-              subtitle="Ações ativas"
-              accent="#059669"
-            />
-            <StatCard
-              title="Concluídos"
-              value={concluidos}
-              subtitle="Finalizados"
-              accent="#7c3aed"
-            />
-            <StatCard
-              title="Clientes atendidos"
-              value={clientesAtendidos}
-              subtitle="Cobertura atual"
-              accent="#ea580c"
-            />
-          </div>
+        <div style={statsWrap}>
+          <StatCard
+            title="Treinamentos"
+            value={totalTreinamentos}
+            subtitle="Base total"
+            accent="#2563eb"
+          />
+          <StatCard
+            title="Em andamento"
+            value={emAndamento}
+            subtitle="Ações ativas"
+            accent="#059669"
+          />
+          <StatCard
+            title="Concluídos"
+            value={concluidos}
+            subtitle="Finalizados"
+            accent="#7c3aed"
+          />
+          <StatCard
+            title="Clientes atendidos"
+            value={clientesAtendidos}
+            subtitle="Cobertura atual"
+            accent="#ea580c"
+          />
         </div>
       }
     />
@@ -230,43 +216,6 @@ function tagStatus(status) {
     ...(map[key] || { background: "#e5e7eb", color: "#374151" }),
   };
 }
-
-const heroWrap = {
-  display: "grid",
-  gap: 16,
-};
-
-const heroBanner = {
-  background: "linear-gradient(135deg, #eff6ff 0%, #eef2ff 100%)",
-  border: "1px solid #dbeafe",
-  borderRadius: 20,
-  padding: 22,
-};
-
-const heroEyebrow = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  fontSize: 12,
-  textTransform: "uppercase",
-  letterSpacing: ".03em",
-};
-
-const heroTitle = {
-  margin: "14px 0 8px",
-  color: "#0f172a",
-  fontSize: 28,
-  lineHeight: 1.1,
-};
-
-const heroSubtitle = {
-  margin: 0,
-  color: "#64748b",
-  lineHeight: 1.65,
-};
 
 const statsWrap = {
   display: "grid",
