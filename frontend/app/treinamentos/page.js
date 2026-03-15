@@ -171,6 +171,7 @@ export default function TreinamentosPage() {
       columns={columns}
       recordsSubtitle="Turmas, ações formativas e planejamentos do setor."
       recordsMode="cards"
+      recordsGridStyle={recordsGridStyle}
       hero={
         <div style={statsWrap}>
           <StatCard
@@ -220,7 +221,7 @@ function tagStatus(status) {
 
   const base = {
     display: "inline-block",
-    padding: "6px 10px",
+    padding: "5px 10px",
     borderRadius: 999,
     fontWeight: 800,
     fontSize: 12,
@@ -245,14 +246,21 @@ const statsWrap = {
   gap: 14,
 };
 
+const recordsGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 16,
+};
+
 const courseCard = {
   background: "#ffffff",
   border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 18,
-  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+  borderRadius: 16,
+  padding: 16,
+  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
   display: "grid",
-  gap: 10,
+  gap: 8,
+  minHeight: 190,
 };
 
 const courseTop = {
@@ -266,7 +274,7 @@ const courseTop = {
 const courseTitle = {
   fontWeight: 800,
   color: "#0f172a",
-  fontSize: 18,
+  fontSize: 17,
   lineHeight: 1.2,
 };
 
@@ -276,7 +284,7 @@ const courseMeta = {
   flexWrap: "wrap",
   color: "#475569",
   fontWeight: 600,
-  fontSize: 14,
+  fontSize: 13,
 };
 
 const courseMetrics = {
@@ -285,25 +293,25 @@ const courseMetrics = {
   flexWrap: "wrap",
   color: "#0f766e",
   fontWeight: 700,
-  fontSize: 14,
+  fontSize: 13,
 };
 
 const courseAudience = {
   color: "#64748b",
-  lineHeight: 1.5,
-  fontSize: 14,
+  lineHeight: 1.45,
+  fontSize: 13,
   fontWeight: 600,
 };
 
 const courseDescription = {
   color: "#64748b",
-  lineHeight: 1.6,
-  fontSize: 14,
+  lineHeight: 1.5,
+  fontSize: 13,
 };
 
 const hoursTag = {
   display: "inline-block",
-  padding: "6px 10px",
+  padding: "5px 10px",
   borderRadius: 999,
   background: "#eff6ff",
   color: "#1d4ed8",
