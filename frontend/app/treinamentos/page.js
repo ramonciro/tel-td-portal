@@ -77,6 +77,11 @@ export default function TreinamentosPage() {
         placeholder: "Ex.: 4h, 8h, 16h",
       },
       {
+        name: "participantes",
+        label: "Participantes",
+        placeholder: "Quantidade de participantes",
+      },
+      {
         name: "publico",
         label: "Público",
         placeholder: "Ex.: integração, reciclagem, liderança",
@@ -123,6 +128,10 @@ export default function TreinamentosPage() {
             <span>{item.instrutor || "Sem instrutor"}</span>
           </div>
 
+          <div style={courseMetrics}>
+            <span>👥 {item.participantes || 0} participantes</span>
+          </div>
+
           <div style={courseAudience}>
             {item.publico || "Público não informado"}
           </div>
@@ -145,6 +154,13 @@ export default function TreinamentosPage() {
   const clientesAtendidos = new Set(
     treinamentos.map((t) => t.cliente).filter(Boolean)
   ).size;
+
+  const horasTotais = treinamentos.reduce((acc, item) => {
+    const texto = String(item.carga_horaria || "").replace(",", ".").toLowerCase();
+    const match = texto.match(/(\d+(\.\d+)?)/);
+    const valor = match ? Number(match[1]) : 0;
+    return acc + (Number.isFinite(valor) ? valor : 0);
+  }, 0);
 
   return (
     <CrudPageV2
@@ -180,6 +196,12 @@ export default function TreinamentosPage() {
             value={clientesAtendidos}
             subtitle="Cobertura atual"
             accent="#ea580c"
+          />
+          <StatCard
+            title="Horas treinadas"
+            value={`${horasTotais}h`}
+            subtitle="Carga horária total registrada"
+            accent="#0f766e"
           />
         </div>
       }
@@ -254,6 +276,15 @@ const courseMeta = {
   flexWrap: "wrap",
   color: "#475569",
   fontWeight: 600,
+  fontSize: 14,
+};
+
+const courseMetrics = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  color: "#0f766e",
+  fontWeight: 700,
   fontSize: 14,
 };
 
