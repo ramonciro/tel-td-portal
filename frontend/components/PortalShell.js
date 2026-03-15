@@ -15,7 +15,7 @@ const allMenu = [
   { href: "/avaliacoes", label: "Avaliações" },
   { href: "/biblioteca", label: "Biblioteca" },
   { href: "/trilhas", label: "Trilhas" },
-  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento" }
+  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento" },
 ];
 
 export default function PortalShell({ title, subtitle, children }) {
@@ -41,50 +41,70 @@ export default function PortalShell({ title, subtitle, children }) {
   }
 
   return (
-    <div style={shellWrap}>
-      <aside style={asideStyle}>
-        <div style={topBlock}>
+    <div style={shell}>
+      <aside style={sidebar}>
+        <div style={sidebarInner}>
           <div>
-            <div style={brandTitle}>Tel T&amp;D</div>
-            <div style={brandSubtitle}>Gestão de treinamento e desenvolvimento</div>
+            <div style={brandBlock}>
+              <div style={brandTitle}>Tel T&amp;D</div>
+              <div style={brandText}>
+                Portal de Treinamento e Desenvolvimento com foco em gestão,
+                acompanhamento e resultados.
+              </div>
+            </div>
+
+            <div style={profileCard}>
+              <div style={profileLabel}>Perfil em uso</div>
+              <div style={profileName}>{user?.nome || "Usuário"}</div>
+              <div style={profileRole}>
+                {(user?.perfil || "perfil não identificado")
+                  .toString()
+                  .toUpperCase()}
+              </div>
+            </div>
           </div>
 
-          <div style={profileCard}>
-            <div style={profileLabel}>Perfil</div>
-            <div style={profileName}>{user?.nome || "Usuário"}</div>
-            <div style={profileRole}>{String(user?.perfil || "não identificado").toUpperCase()}</div>
+          <div style={menuArea}>
+            <nav style={nav}>
+              {menu.map((item) => {
+                const active = pathname === item.href;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      ...navItem,
+                      ...(active ? navItemActive : null),
+                    }}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
           </div>
-        </div>
 
-        <div style={navWrap}>
-          <nav style={navStyle}>
-            {menu.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link key={item.href} href={item.href} style={navItem(active)}>
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
+          <div style={bottomActions}>
+            <Link href="/alterar-senha" style={secondaryAction}>
+              Alterar senha
+            </Link>
 
-        <div style={footerActions}>
-          <Link href="/alterar-senha" style={secondaryButton}>
-            Alterar senha
-          </Link>
-          <button onClick={sair} style={primaryButton}>
-            Sair
-          </button>
+            <button onClick={sair} style={primaryAction}>
+              Sair
+            </button>
+          </div>
         </div>
       </aside>
 
-      <main style={mainStyle}>
-        <div style={contentWrap}>
-          <div style={pageHeader}>
+      <main style={main}>
+        <div style={contentCard}>
+          <div style={headerBlock}>
+            <div style={headerBadge}>Portal T&amp;D</div>
             <h1 style={pageTitle}>{title}</h1>
             {subtitle ? <p style={pageSubtitle}>{subtitle}</p> : null}
           </div>
+
           {children}
         </div>
       </main>
@@ -92,159 +112,181 @@ export default function PortalShell({ title, subtitle, children }) {
   );
 }
 
-const shellWrap = {
+const shell = {
   minHeight: "100vh",
   display: "flex",
-  background: "#f8fafc"
+  background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
 };
 
-const asideStyle = {
-  width: 228,
-  minWidth: 228,
+const sidebar = {
+  width: 232,
+  minWidth: 232,
+  maxWidth: 232,
+  background: "linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%)",
+  color: "#ffffff",
   height: "100vh",
   position: "sticky",
   top: 0,
-  display: "flex",
-  flexDirection: "column",
-  background: "linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%)",
-  color: "#fff",
-  padding: 16,
-  boxSizing: "border-box",
-  overflow: "hidden"
+  overflow: "hidden",
+  borderRight: "1px solid rgba(255,255,255,.06)",
 };
 
-const topBlock = {
+const sidebarInner = {
+  height: "100%",
   display: "grid",
+  gridTemplateRows: "auto 1fr auto",
   gap: 14,
-  marginBottom: 12,
-  flexShrink: 0
+  padding: 16,
+  boxSizing: "border-box",
+};
+
+const brandBlock = {
+  marginBottom: 10,
 };
 
 const brandTitle = {
-  fontSize: 27,
+  fontSize: 28,
   fontWeight: 900,
-  letterSpacing: "-0.03em"
+  letterSpacing: "-0.03em",
 };
 
-const brandSubtitle = {
-  marginTop: 4,
+const brandText = {
+  marginTop: 6,
   fontSize: 12,
-  color: "rgba(255,255,255,.72)",
-  lineHeight: 1.45
+  lineHeight: 1.5,
+  color: "rgba(255,255,255,.74)",
 };
 
 const profileCard = {
   background: "rgba(255,255,255,.08)",
-  border: "1px solid rgba(255,255,255,.14)",
-  borderRadius: 14,
-  padding: 12
+  border: "1px solid rgba(255,255,255,.12)",
+  borderRadius: 16,
+  padding: 12,
 };
 
 const profileLabel = {
-  fontSize: 10,
-  letterSpacing: ".08em",
+  fontSize: 11,
   textTransform: "uppercase",
-  color: "rgba(255,255,255,.62)"
+  letterSpacing: ".05em",
+  color: "rgba(255,255,255,.62)",
 };
 
 const profileName = {
   marginTop: 8,
-  fontSize: 14,
-  fontWeight: 800
+  fontWeight: 800,
+  fontSize: 15,
+  lineHeight: 1.2,
 };
 
 const profileRole = {
   marginTop: 4,
-  fontSize: 11,
-  color: "rgba(255,255,255,.72)"
+  fontSize: 12,
+  color: "rgba(255,255,255,.78)",
 };
 
-const navWrap = {
-  flex: 1,
+const menuArea = {
   minHeight: 0,
   overflowY: "auto",
   paddingRight: 4,
-  marginRight: -4
 };
 
-const navStyle = {
+const nav = {
   display: "grid",
-  gap: 7,
-  alignContent: "start"
+  gap: 6,
 };
 
-const navItem = (active) => ({
+const navItem = {
   textDecoration: "none",
-  color: "#fff",
+  color: "#ffffff",
   padding: "10px 12px",
   borderRadius: 12,
-  border: active ? "1px solid rgba(255,255,255,.18)" : "1px solid transparent",
-  background: active ? "rgba(255,255,255,.14)" : "transparent",
-  fontSize: 13,
-  fontWeight: active ? 800 : 600
-});
+  fontSize: 14,
+  fontWeight: 600,
+  border: "1px solid transparent",
+  transition: "all .2s ease",
+};
 
-const footerActions = {
+const navItemActive = {
+  background: "rgba(255,255,255,.14)",
+  border: "1px solid rgba(255,255,255,.16)",
+  fontWeight: 800,
+};
+
+const bottomActions = {
   display: "grid",
   gap: 8,
-  marginTop: 12,
-  flexShrink: 0
+  paddingTop: 6,
 };
 
-const secondaryButton = {
+const secondaryAction = {
   textDecoration: "none",
   textAlign: "center",
-  border: "1px solid rgba(255,255,255,.18)",
+  border: "1px solid rgba(255,255,255,.16)",
   background: "rgba(255,255,255,.08)",
-  color: "#fff",
+  color: "#ffffff",
   borderRadius: 12,
-  padding: 11,
+  padding: "10px 12px",
   fontWeight: 700,
-  fontSize: 13
+  fontSize: 14,
 };
 
-const primaryButton = {
+const primaryAction = {
   width: "100%",
-  border: "1px solid rgba(255,255,255,.12)",
+  border: "1px solid rgba(255,255,255,.14)",
   background: "#ffffff",
-  color: "#1d4ed8",
+  color: "#1e3a8a",
   borderRadius: 12,
-  padding: 11,
+  padding: "10px 12px",
   fontWeight: 800,
-  fontSize: 13,
-  cursor: "pointer"
+  fontSize: 14,
+  cursor: "pointer",
 };
 
-const mainStyle = {
+const main = {
   flex: 1,
+  minWidth: 0,
   padding: 18,
-  boxSizing: "border-box"
+  boxSizing: "border-box",
 };
 
-const contentWrap = {
-  background: "rgba(255,255,255,.92)",
+const contentCard = {
+  background: "rgba(255,255,255,.88)",
+  backdropFilter: "blur(10px)",
   borderRadius: 22,
-  border: "1px solid #e2e8f0",
-  boxShadow: "0 20px 36px rgba(15,23,42,.05)",
   padding: 20,
-  minHeight: "calc(100vh - 36px)"
+  border: "1px solid #dbeafe",
+  boxShadow: "0 14px 32px rgba(15, 23, 42, 0.06)",
+  minHeight: "calc(100vh - 36px)",
+  boxSizing: "border-box",
 };
 
-const pageHeader = {
-  marginBottom: 18
+const headerBlock = {
+  marginBottom: 18,
+};
+
+const headerBadge = {
+  display: "inline-block",
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  padding: "5px 10px",
+  borderRadius: 999,
+  fontSize: 11,
+  letterSpacing: ".03em",
+  textTransform: "uppercase",
 };
 
 const pageTitle = {
-  margin: 0,
+  margin: "12px 0 8px",
   fontSize: 34,
   lineHeight: 1.05,
-  letterSpacing: "-0.03em",
-  color: "#0f172a"
+  color: "#0f172a",
 };
 
 const pageSubtitle = {
-  margin: "8px 0 0",
+  margin: 0,
   color: "#64748b",
-  fontSize: 14,
-  lineHeight: 1.55
+  fontSize: 15,
+  maxWidth: 980,
+  lineHeight: 1.55,
 };
