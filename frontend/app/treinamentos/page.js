@@ -52,7 +52,7 @@ export default function TreinamentosPage() {
 
   const fields = useMemo(
     () => [
-      { name: "titulo", label: "Treinamento", placeholder: "Nome do treinamento" },
+      { name: "nome", label: "Treinamento", placeholder: "Nome do treinamento" },
       {
         name: "cliente",
         label: "Cliente",
@@ -93,7 +93,7 @@ export default function TreinamentosPage() {
             <span style={tagStatus(item.status)}>{formatText(item.status)}</span>
             <span style={hoursTag}>{item.carga_horaria || "0h"}</span>
           </div>
-          <div style={courseTitle}>{item.titulo || "-"}</div>
+          <div style={courseTitle}>{item.nome || "-"}</div>
           <div style={courseMeta}>
             <span>{item.cliente || "Sem cliente"}</span>
             <span>•</span>
