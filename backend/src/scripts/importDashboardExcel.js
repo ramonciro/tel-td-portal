@@ -7,10 +7,11 @@ function resolveExcelPath(customFile) {
   const candidates = [
     customFile,
     path.resolve(process.cwd(), "Dashboard_TD.xlsx"),
+    path.resolve(process.cwd(), "./Dashboard_TD.xlsx"),
     path.resolve(process.cwd(), "../Dashboard_TD.xlsx"),
-    path.resolve(__dirname, "../../../Dashboard_TD.xlsx"),
+    path.resolve(process.cwd(), "backend/Dashboard_TD.xlsx"),
     path.resolve(__dirname, "../../Dashboard_TD.xlsx"),
-    path.resolve(__dirname, "../Dashboard_TD.xlsx"),
+    path.resolve(__dirname, "../../../Dashboard_TD.xlsx"),
   ].filter(Boolean);
 
   for (const file of candidates) {
@@ -36,26 +37,25 @@ function titleCase(value) {
     .split(/\s+/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ")
-    .replace(/\bTd\b/g, "T&D")
     .replace(/\bDa\b/g, "da")
     .replace(/\bDe\b/g, "de")
     .replace(/\bDo\b/g, "do")
-    .replace(/\bDos\b/g, "dos")
-    .replace(/\bDas\b/g, "das");
+    .replace(/\bDas\b/g, "das")
+    .replace(/\bDos\b/g, "dos");
 }
 
 function normalizeClient(value) {
   const text = normalizeText(value).toUpperCase();
   const map = {
     MERCANTIL: "Mercantil",
-    "PREFEITURA DE SALVADOR": "Prefeitura de Salvador",
-    "REDE AMÉRICAS": "Rede Américas",
-    "REDE AMERICAS": "Rede Américas",
     AGIBANK: "Agibank",
     CLARO: "Claro",
-    BUSER: "Buser",
     CREA: "Crea",
+    BUSER: "Buser",
     HUGSNET: "Hugsnet",
+    "PREFEITURA DE SALVADOR": "Prefeitura de Salvador",
+    "REDE AMERICAS": "Rede Américas",
+    "REDE AMÉRICAS": "Rede Américas",
   };
   return map[text] || titleCase(text);
 }
@@ -73,7 +73,9 @@ function sanitizeEmail(name, domain = "teltd.local") {
 }
 
 function asNumber(value, defaultValue = 0) {
-  const number = Number(value);
+  if (value === null || value === undefined || value === "") return defaultValue;
+  const cleaned = String(value).replace(",", ".").trim();
+  const number = Number(cleaned);
   return Number.isFinite(number) ? number : defaultValue;
 }
 
@@ -99,17 +101,14 @@ function buildTrainingTheme(row) {
 }
 
 function buildDescription(row) {
-  const partes = [];
+  const parts = [];
   const data = excelDateToMysql(row["Data"]);
   const supervisor = titleCase(row["Supervisor"]);
 
-  if (data) partes.push(`Data-base: ${data}`);
-  if (supervisor) partes.push(`Supervisor: ${supervisor}`);
-  if (normalizeText(row["Observações"])) {
-    partes.push(`Obs.: ${normalizeText(row["Observações"])}`);
-  }
+  if (data) parts.push(`Data-base: ${data}`);
+  if (supervisor) parts.push(`Supervisor: ${supervisor}`);
 
-  return partes.join(" | ");
+  return parts.join(" | ");
 }
 
 async function tableColumns(table) {
@@ -120,9 +119,7 @@ async function tableColumns(table) {
 async function ensureColumn(table, definition) {
   try {
     await pool.query(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
-  } catch {
-    // ignora se já existir
-  }
+  } catch {}
 }
 
 async function ensureSchema() {
@@ -165,7 +162,10 @@ function readRows(file) {
     throw new Error("A aba Base_Dados não foi encontrada no Excel.");
   }
 
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false });
+  const rows = XLSX.utils.sheet_to_json(sheet, {
+    defval: null,
+    raw: false,
+  });
 
   return rows.filter((row) => {
     const id = Number(row.ID);
@@ -270,7 +270,7 @@ async function insertTraining(row) {
     values
   );
 
-  return { id: result.insertId, participantes, presencas, faltas, data };
+  return { id: result.insertId, participantes, presencas, faltas };
 }
 
 async function insertAttendance(trainingId, row, trainingMeta) {
@@ -296,7 +296,7 @@ async function insertAttendance(trainingId, row, trainingMeta) {
       treinando_nome: `${turma} - Participante ${String(trainingMeta.presencas + i).padStart(3, "0")}`,
       presente: 0,
       status: "ausente",
-      justificativa: "Importado de consolidado de turma.",
+      justificativa: "Importado de consolidado da turma.",
     });
   }
 
@@ -331,7 +331,7 @@ async function insertEvaluation(trainingId, row, trainingMeta) {
     nota_qualidade: asNumber(nota),
     nota_prova: 0,
     observacoes: `Importado da planilha do dashboard. Presença: ${trainingMeta.presencas}/${trainingMeta.participantes}.`,
-    comentario: normalizeText(row["Observações"]) || null,
+    comentario: null,
   };
 
   const keys = Object.keys(data).filter((key) => cols.has(key));
@@ -343,15 +343,13 @@ async function insertEvaluation(trainingId, row, trainingMeta) {
 }
 
 async function truncateData() {
-  const tables = ["avaliacoes", "presencas", "treinamentos", "usuarios", "clientes"];
-
-  for (const table of tables) {
-    try {
-      await pool.query(`DELETE FROM ${table}`);
-    } catch (error) {
-      console.warn(`Não foi possível limpar ${table}: ${error.message}`);
-    }
-  }
+  await pool.query("SET FOREIGN_KEY_CHECKS = 0");
+  await pool.query("DELETE FROM avaliacoes");
+  await pool.query("DELETE FROM presencas");
+  await pool.query("DELETE FROM treinamentos");
+  await pool.query("DELETE FROM usuarios");
+  await pool.query("DELETE FROM clientes");
+  await pool.query("SET FOREIGN_KEY_CHECKS = 1");
 }
 
 async function importDashboardExcel(options = {}) {
@@ -360,7 +358,10 @@ async function importDashboardExcel(options = {}) {
   const sourceFile = resolveExcelPath(file);
 
   await ensureSchema();
-  if (truncate) await truncateData();
+
+  if (truncate) {
+    await truncateData();
+  }
 
   const rows = readRows(sourceFile);
 
