@@ -316,7 +316,7 @@ const helperText = {
 const formGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-  gap: 18,
+  gap: 12,
 };
 
 const fieldWrap = {
@@ -332,11 +332,11 @@ const label = {
 
 const input = {
   width: "100%",
-  minHeight: 52,
-  borderRadius: 16,
+  height: 42,
+  borderRadius: 10,
   border: "1px solid #cbd5e1",
-  padding: "0 16px",
-  fontSize: 15,
+  padding: "0 12px",
+  fontSize: 14,
   color: "#0f172a",
   outline: "none",
   background: "#ffffff",
@@ -344,10 +344,10 @@ const input = {
 
 const textarea = {
   width: "100%",
-  borderRadius: 16,
+  borderRadius: 10,
   border: "1px solid #cbd5e1",
-  padding: "14px 16px",
-  fontSize: 15,
+  padding: "10px 12px",
+  fontSize: 14,
   color: "#0f172a",
   outline: "none",
   background: "#ffffff",
