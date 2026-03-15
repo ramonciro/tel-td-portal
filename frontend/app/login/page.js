@@ -20,7 +20,7 @@ export default function LoginPage() {
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, senha })
+        body: JSON.stringify({ email, senha }),
       });
 
       const data = await response.json();
@@ -47,8 +47,9 @@ export default function LoginPage() {
   return (
     <div style={wrap}>
       <form onSubmit={handleLogin} style={card}>
-        <h1 style={title}>Tel T&D</h1>
-        <p style={subtitle}>Acesse o portal de Treinamento e Desenvolvimento</p>
+        <div style={eyebrow}>Portal T&amp;D</div>
+        <h1 style={title}>Acesso</h1>
+        <p style={subtitle}>Entre para acessar o ambiente de gestão do treinamento.</p>
 
         {erro ? <div style={errorBox}>{erro}</div> : null}
 
@@ -72,7 +73,7 @@ export default function LoginPage() {
           {loading ? "Entrando..." : "Entrar"}
         </button>
 
-        <p style={hint}>Senha padrão de criação: <strong>Tel@2026</strong></p>
+        <p style={hint}>Senha padrão inicial: <strong>Tel@2026</strong></p>
       </form>
     </div>
   );
@@ -83,61 +84,62 @@ const wrap = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "#eef4fb",
-  padding: 24
+  background: "linear-gradient(180deg, #eef4fb 0%, #f8fafc 100%)",
+  padding: 24,
 };
 
 const card = {
   width: "100%",
-  maxWidth: 460,
+  maxWidth: 430,
   background: "#fff",
   borderRadius: 20,
-  padding: 32,
-  boxShadow: "0 10px 30px rgba(15,23,42,.08)"
+  padding: 28,
+  boxShadow: "0 16px 34px rgba(15,23,42,.08)",
+  border: "1px solid #e2e8f0",
 };
 
-const title = {
-  margin: 0,
-  fontSize: 40,
-  color: "#1e3a8a"
+const eyebrow = {
+  display: "inline-block",
+  padding: "5px 10px",
+  borderRadius: 999,
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
 };
 
-const subtitle = {
-  color: "#64748b",
-  marginBottom: 24
-};
-
+const title = { margin: "14px 0 8px", fontSize: 32, color: "#0f172a" };
+const subtitle = { color: "#64748b", margin: "0 0 20px", lineHeight: 1.5 };
 const input = {
   width: "100%",
   boxSizing: "border-box",
-  padding: 14,
-  borderRadius: 12,
-  border: "1px solid #dbe3ef",
-  marginBottom: 14
+  height: 42,
+  padding: "0 12px",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  marginBottom: 12,
+  fontSize: 14,
 };
-
 const button = {
   width: "100%",
   border: 0,
-  borderRadius: 12,
-  padding: 14,
-  background: "#3b82f6",
+  borderRadius: 10,
+  height: 42,
+  background: "#2563eb",
   color: "#fff",
-  fontWeight: 700,
-  cursor: "pointer"
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 14,
 };
-
 const errorBox = {
   background: "#fef2f2",
   color: "#b91c1c",
-  padding: 12,
-  borderRadius: 12,
-  marginBottom: 16,
-  border: "1px solid #fecaca"
+  padding: 10,
+  borderRadius: 10,
+  marginBottom: 14,
+  border: "1px solid #fecaca",
+  fontWeight: 600,
 };
-
-const hint = {
-  marginTop: 18,
-  textAlign: "center",
-  color: "#64748b"
-};
+const hint = { marginTop: 14, textAlign: "center", color: "#64748b", fontSize: 12 };
