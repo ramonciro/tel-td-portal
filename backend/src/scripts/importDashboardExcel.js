@@ -4,21 +4,21 @@ const XLSX = require("xlsx");
 const pool = require("../lib/db");
 
 function resolveExcelPath() {
-  const file = path.resolve(process.cwd(), "backend/Dashboard_TD.xlsx");
-
-  if (!fs.existsSync(file)) {
-    throw new Error("Arquivo Dashboard_TD.xlsx não encontrado em backend/");
-  }
-
-  return file;
-}
+  const candidates = [
+    path.resolve(process.cwd(), "backend/Dashboard_TD.xlsx"),
+    path.resolve(process.cwd(), "Dashboard_TD.xlsx"),
+    path.resolve(__dirname, "../../Dashboard_TD.xlsx"),
+    path.resolve(__dirname, "../../../backend/Dashboard_TD.xlsx")
+  ];
 
   for (const file of candidates) {
-    if (fs.existsSync(file)) return file;
+    if (fs.existsSync(file)) {
+      return file;
+    }
   }
 
   throw new Error(
-    `Arquivo Dashboard_TD.xlsx não encontrado. Verifique se ele está no projeto. Caminhos testados: ${candidates.join(
+    `Arquivo Dashboard_TD.xlsx não encontrado. Verifique se ele está em backend/. Caminhos testados: ${candidates.join(
       " | "
     )}`
   );
@@ -35,16 +35,12 @@ function titleCase(value) {
   return text
     .split(/\s+/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ")
-    .replace(/\bDa\b/g, "da")
-    .replace(/\bDe\b/g, "de")
-    .replace(/\bDo\b/g, "do")
-    .replace(/\bDas\b/g, "das")
-    .replace(/\bDos\b/g, "dos");
+    .join(" ");
 }
 
 function normalizeClient(value) {
   const text = normalizeText(value).toUpperCase();
+
   const map = {
     MERCANTIL: "Mercantil",
     AGIBANK: "Agibank",
@@ -52,10 +48,11 @@ function normalizeClient(value) {
     CREA: "Crea",
     BUSER: "Buser",
     HUGSNET: "Hugsnet",
-    "PREFEITURA DE SALVADOR": "Prefeitura de Salvador",
-    "REDE AMERICAS": "Rede Américas",
     "REDE AMÉRICAS": "Rede Américas",
+    "REDE AMERICAS": "Rede Américas",
+    "PREFEITURA DE SALVADOR": "Prefeitura de Salvador"
   };
+
   return map[text] || titleCase(text);
 }
 
@@ -73,8 +70,10 @@ function sanitizeEmail(name, domain = "teltd.local") {
 
 function asNumber(value, defaultValue = 0) {
   if (value === null || value === undefined || value === "") return defaultValue;
-  const cleaned = String(value).replace(",", ".").trim();
-  const number = Number(cleaned);
+
+  const text = String(value).replace(",", ".").trim();
+  const number = Number(text);
+
   return Number.isFinite(number) ? number : defaultValue;
 }
 
@@ -86,7 +85,11 @@ function excelDateToMysql(value) {
   }
 
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return null;
 }
 
 function buildTrainingTheme(row) {
@@ -100,14 +103,14 @@ function buildTrainingTheme(row) {
 }
 
 function buildDescription(row) {
-  const parts = [];
+  const partes = [];
   const data = excelDateToMysql(row["Data"]);
   const supervisor = titleCase(row["Supervisor"]);
 
-  if (data) parts.push(`Data-base: ${data}`);
-  if (supervisor) parts.push(`Supervisor: ${supervisor}`);
+  if (data) partes.push(`Data-base: ${data}`);
+  if (supervisor) partes.push(`Supervisor: ${supervisor}`);
 
-  return parts.join(" | ");
+  return partes.join(" | ");
 }
 
 async function tableColumns(table) {
@@ -118,15 +121,15 @@ async function tableColumns(table) {
 async function ensureColumn(table, definition) {
   try {
     await pool.query(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
-  } catch {}
+  } catch {
+    // ignora se já existir
+  }
 }
 
 async function ensureSchema() {
   await ensureColumn("clientes", "segmento VARCHAR(100) NULL");
   await ensureColumn("clientes", "gestor VARCHAR(150) NULL");
   await ensureColumn("clientes", "descricao TEXT NULL");
-  await ensureColumn("clientes", "supervisor VARCHAR(150) NULL");
-  await ensureColumn("clientes", "observacoes TEXT NULL");
 
   await ensureColumn("usuarios", "troca_senha_obrigatoria TINYINT(1) DEFAULT 1");
 
@@ -163,35 +166,30 @@ function readRows(file) {
 
   const rows = XLSX.utils.sheet_to_json(sheet, {
     defval: null,
-    raw: false,
+    raw: false
   });
 
   return rows.filter((row) => {
-    const id = Number(row.ID);
-    return Number.isFinite(id) && id > 0 && normalizeText(row.Cliente) && normalizeText(row.Tipo_Treinamento);
+    return normalizeText(row["Cliente"]) && normalizeText(row["Tipo_Treinamento"]);
   });
 }
 
 async function upsertClient(row) {
   const nome = normalizeClient(row["Cliente"]);
-  const supervisor = titleCase(row["Supervisor"]);
-  const gestor = supervisor || "Gestão T&D";
-  const descricao = `Cliente importado da planilha Dashboard_TD.xlsx. Último treinamento lido: ${buildTrainingTheme(
-    row
-  )}.`;
+  const gestor = titleCase(row["Supervisor"]) || "Gestão T&D";
+  const descricao = `Cliente importado automaticamente da planilha Dashboard_TD.xlsx.`;
 
   const [existing] = await pool.query("SELECT id FROM clientes WHERE nome = ? LIMIT 1", [nome]);
   if (existing.length) return existing[0].id;
 
   const cols = await tableColumns("clientes");
+
   const data = {
     nome,
-    status: "ativo",
     segmento: "Operação",
+    status: "ativo",
     gestor,
-    descricao,
-    supervisor,
-    observacoes: "Registro criado automaticamente pelo importador do dashboard.",
+    descricao
   };
 
   const keys = Object.keys(data).filter((key) => cols.has(key));
@@ -211,10 +209,12 @@ async function upsertUser(nome, perfil, cliente) {
   if (!cleanName) return null;
 
   const email = sanitizeEmail(cleanName);
+
   const [existing] = await pool.query("SELECT id FROM usuarios WHERE email = ? LIMIT 1", [email]);
   if (existing.length) return existing[0].id;
 
   const cols = await tableColumns("usuarios");
+
   const data = {
     nome: cleanName,
     email,
@@ -222,7 +222,7 @@ async function upsertUser(nome, perfil, cliente) {
     perfil,
     cliente,
     ativo: 1,
-    troca_senha_obrigatoria: 1,
+    troca_senha_obrigatoria: 1
   };
 
   const keys = Object.keys(data).filter((key) => cols.has(key));
@@ -239,6 +239,7 @@ async function upsertUser(nome, perfil, cliente) {
 
 async function insertTraining(row) {
   const cols = await tableColumns("treinamentos");
+
   const participantes = asNumber(row["Participantes"]);
   const presencas = asNumber(row["Presenças"]);
   const faltas = Math.max(0, participantes - presencas);
@@ -257,7 +258,7 @@ async function insertTraining(row) {
     descricao: buildDescription(row),
     data: excelDateToMysql(row["Data"]),
     turma: normalizeText(row["Turma"]) || buildTrainingTheme(row),
-    supervisor: titleCase(row["Supervisor"]),
+    supervisor: titleCase(row["Supervisor"])
   };
 
   const keys = Object.keys(data).filter((key) => cols.has(key));
@@ -269,38 +270,17 @@ async function insertTraining(row) {
     values
   );
 
-  return { id: result.insertId, participantes, presencas, faltas };
+  return {
+    id: result.insertId,
+    participantes,
+    presencas,
+    faltas
+  };
 }
 
 async function insertAttendance(trainingId, row, trainingMeta) {
   const cols = await tableColumns("presencas");
   const turma = normalizeText(row["Turma"]) || buildTrainingTheme(row);
-
-  const presentRows = [];
-  const absentRows = [];
-
-  for (let i = 1; i <= trainingMeta.presencas; i += 1) {
-    presentRows.push({
-      treinamento_id: trainingId,
-      treinando_nome: `${turma} - Participante ${String(i).padStart(3, "0")}`,
-      presente: 1,
-      status: "presente",
-      justificativa: null,
-    });
-  }
-
-  for (let i = 1; i <= trainingMeta.faltas; i += 1) {
-    absentRows.push({
-      treinamento_id: trainingId,
-      treinando_nome: `${turma} - Participante ${String(trainingMeta.presencas + i).padStart(3, "0")}`,
-      presente: 0,
-      status: "ausente",
-      justificativa: "Importado de consolidado da turma.",
-    });
-  }
-
-  const allRows = [...presentRows, ...absentRows];
-  if (!allRows.length) return 0;
 
   const keys = ["treinamento_id", "treinando_nome", "presente", "status", "justificativa"].filter((key) =>
     cols.has(key)
@@ -308,10 +288,43 @@ async function insertAttendance(trainingId, row, trainingMeta) {
 
   let inserted = 0;
 
-  for (const item of allRows) {
-    const values = keys.map((key) => item[key]);
+  for (let i = 1; i <= trainingMeta.presencas; i += 1) {
+    const participante = {
+      treinamento_id: trainingId,
+      treinando_nome: `${turma} - Participante ${String(i).padStart(3, "0")}`,
+      presente: 1,
+      status: "presente",
+      justificativa: null
+    };
+
+    const values = keys.map((key) => participante[key]);
     const placeholders = keys.map(() => "?").join(", ");
-    await pool.query(`INSERT INTO presencas (${keys.join(", ")}) VALUES (${placeholders})`, values);
+
+    await pool.query(
+      `INSERT INTO presencas (${keys.join(", ")}) VALUES (${placeholders})`,
+      values
+    );
+
+    inserted += 1;
+  }
+
+  for (let i = 1; i <= trainingMeta.faltas; i += 1) {
+    const participante = {
+      treinamento_id: trainingId,
+      treinando_nome: `${turma} - Participante ${String(trainingMeta.presencas + i).padStart(3, "0")}`,
+      presente: 0,
+      status: "ausente",
+      justificativa: "Importado de consolidado de turma."
+    };
+
+    const values = keys.map((key) => participante[key]);
+    const placeholders = keys.map(() => "?").join(", ");
+
+    await pool.query(
+      `INSERT INTO presencas (${keys.join(", ")}) VALUES (${placeholders})`,
+      values
+    );
+
     inserted += 1;
   }
 
@@ -323,44 +336,33 @@ async function insertEvaluation(trainingId, row, trainingMeta) {
   if (nota === null || nota === undefined || nota === "") return false;
 
   const cols = await tableColumns("avaliacoes");
+
   const data = {
     treinamento_id: trainingId,
     titulo: `Avaliação - ${buildTrainingTheme(row)}`,
     nota_nps: asNumber(nota),
     nota_qualidade: asNumber(nota),
     nota_prova: 0,
-    observacoes: `Importado da planilha do dashboard. Presença: ${trainingMeta.presencas}/${trainingMeta.participantes}.`,
-    comentario: null,
+    observacoes: `Importado da planilha. Presença: ${trainingMeta.presencas}/${trainingMeta.participantes}.`,
+    comentario: null
   };
 
   const keys = Object.keys(data).filter((key) => cols.has(key));
   const values = keys.map((key) => data[key]);
   const placeholders = keys.map(() => "?").join(", ");
 
-  await pool.query(`INSERT INTO avaliacoes (${keys.join(", ")}) VALUES (${placeholders})`, values);
+  await pool.query(
+    `INSERT INTO avaliacoes (${keys.join(", ")}) VALUES (${placeholders})`,
+    values
+  );
+
   return true;
 }
 
-async function truncateData() {
-  await pool.query("SET FOREIGN_KEY_CHECKS = 0");
-  await pool.query("DELETE FROM avaliacoes");
-  await pool.query("DELETE FROM presencas");
-  await pool.query("DELETE FROM treinamentos");
-  await pool.query("DELETE FROM usuarios");
-  await pool.query("DELETE FROM clientes");
-  await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-}
-
-async function importDashboardExcel(options = {}) {
-  const { truncate = false, file = null } = options;
-
-  const sourceFile = resolveExcelPath(file);
+async function importDashboardExcel() {
+  const sourceFile = resolveExcelPath();
 
   await ensureSchema();
-
-  if (truncate) {
-    await truncateData();
-  }
 
   const rows = readRows(sourceFile);
 
@@ -371,33 +373,33 @@ async function importDashboardExcel(options = {}) {
     usuariosCriados: 0,
     treinamentosCriados: 0,
     presencasCriadas: 0,
-    avaliacoesCriadas: 0,
+    avaliacoesCriadas: 0
   };
 
-  const existingClients = new Set();
-  const existingUsers = new Set();
+  const clientSet = new Set();
+  const userSet = new Set();
 
   for (const row of rows) {
     const clientName = normalizeClient(row["Cliente"]);
 
-    if (!existingClients.has(clientName)) {
+    if (!clientSet.has(clientName)) {
       await upsertClient(row);
-      existingClients.add(clientName);
+      clientSet.add(clientName);
       summary.clientesCriados += 1;
     }
 
     const instrutor = titleCase(row["Instrutor"]);
     const supervisor = titleCase(row["Supervisor"]);
 
-    if (instrutor && !existingUsers.has(`instrutor:${instrutor}`)) {
+    if (instrutor && !userSet.has(`instrutor:${instrutor}`)) {
       await upsertUser(instrutor, "instrutor", clientName);
-      existingUsers.add(`instrutor:${instrutor}`);
+      userSet.add(`instrutor:${instrutor}`);
       summary.usuariosCriados += 1;
     }
 
-    if (supervisor && !existingUsers.has(`supervisor:${supervisor}`)) {
+    if (supervisor && !userSet.has(`supervisor:${supervisor}`)) {
       await upsertUser(supervisor, "supervisor", clientName);
-      existingUsers.add(`supervisor:${supervisor}`);
+      userSet.add(`supervisor:${supervisor}`);
       summary.usuariosCriados += 1;
     }
 
@@ -418,23 +420,3 @@ async function importDashboardExcel(options = {}) {
 }
 
 module.exports = importDashboardExcel;
-
-if (require.main === module) {
-  const args = process.argv.slice(2);
-  const sourceArg = args.find((arg) => !arg.startsWith("--"));
-  const shouldTruncate = args.includes("--truncate");
-
-  importDashboardExcel({
-    truncate: shouldTruncate,
-    file: sourceArg ? path.resolve(process.cwd(), sourceArg) : null,
-  })
-    .catch((error) => {
-      console.error("Falha ao importar a planilha:", error.message);
-      process.exitCode = 1;
-    })
-    .finally(async () => {
-      try {
-        await pool.end();
-      } catch {}
-    });
-}
