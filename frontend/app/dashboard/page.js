@@ -155,16 +155,16 @@ export default function DashboardPage() {
   return (
     <PortalShell
       title="Dashboard estratégico de T&D"
-      subtitle="Painel executivo com KPIs reais do setor, pronto para acompanhamento interno, tomada de decisão e apresentações de resultado."
+      subtitle="Painel com KPIs do setor, pronto para acompanhamento interno, tomada de decisão e apresentações de resultado."
     >
       {erro ? <div style={errorBox}>{erro}</div> : null}
 
       <div style={heroWrap}>
         <div style={heroTextBlock}>
           <div style={heroBadge}>Visão executiva</div>
-          <h2 style={heroTitle}>Gestão de treinamento com leitura de diretoria</h2>
+          <h2 style={heroTitle}>Gestão de Treinamento</h2>
           <p style={heroText}>
-            Acompanhe volume, presença, qualidade, impacto por cliente e produtividade do time de instrutores em um único ambiente.
+            Acompanhe volume, presença, qualidade, impacto por cliente e produtividade do time de instrutores.
           </p>
         </div>
         <div style={heroMiniGrid}>
