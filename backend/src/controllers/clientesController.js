@@ -33,25 +33,43 @@ export async function createCliente(req, res) {
   }
 }
 
-export async function updateCliente(req, res) {
+export async function updateClient(req, res) {
   try {
     const { id } = req.params;
     const { nome, status, supervisor, observacoes } = req.body || {};
 
     if (!nome) {
-      return res.status(400).json({ ok: false, message: "Informe o nome do cliente" });
+      return res.status(400).json({
+        ok: false,
+        message: "Informe o nome do cliente"
+      });
     }
 
     await pool.query(
-      `UPDATE clientes
-       SET nome = ?, status = ?, supervisor = ?, observacoes = ?
-       WHERE id = ?`,
-      [nome, status || "ativo", supervisor || null, observacoes || null, id]
+      `
+      UPDATE clientes
+      SET nome = ?, status = ?, supervisor = ?, observacoes = ?
+      WHERE id = ?
+      `,
+      [
+        nome,
+        status || "ativo",
+        supervisor || null,
+        observacoes || null,
+        id
+      ]
     );
 
-    res.json({ ok: true });
+    return res.json({
+      ok: true,
+      message: "Cliente atualizado com sucesso"
+    });
   } catch (error) {
-    res.status(500).json({ ok: false, message: "Erro ao atualizar cliente", error: error.message });
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao atualizar cliente",
+      error: error.message
+    });
   }
 }
 
