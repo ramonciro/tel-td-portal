@@ -1,237 +1,584 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import SectionCard from "./SectionCard";
-import PortalShell from "./PortalShell";
 import { apiFetch } from "../services/api";
 
-const inputStyle = { width: "100%", boxSizing: "border-box", padding: 12, borderRadius: 14, border: "1px solid #dbe3ef", background: "#fff", fontSize: 14 };
-const labelStyle = { display: "grid", gap: 8, fontWeight: 700, color: "#334155" };
-
 export default function CrudPageV2({
-  title, subtitle, endpoint, fields = [], columns = [], recordsTitle = "Registros",
-  recordsSubtitle = "Acompanhamento dos cadastros", hero, emptyMessage = "Nenhum registro encontrado.",
-  transformBeforeSave, renderRecordCard
+  title,
+  subtitle,
+  endpoint,
+  fields = [],
+  columns = [],
+  hero = null,
+  recordsSubtitle = "",
+  recordsMode = "table",
+  recordsGridStyle = null,
 }) {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({});
   const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState("");
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [carregando, setCarregando] = useState(false);
 
-  async function loadItems() {
+  useEffect(() => {
+    carregar();
+  }, [endpoint]);
+
+  async function carregar() {
     try {
-      setLoading(true);
-      const data = await apiFetch(endpoint);
-      setItems(Array.isArray(data) ? data : []);
+      setCarregando(true);
       setErro("");
+      const data = await apiFetch(endpoint).catch(() => []);
+      setItems(Array.isArray(data) ? data : []);
     } catch (error) {
-      setErro(error.message || "Erro ao listar registros");
+      setErro(`Erro ao carregar ${title?.toLowerCase() || "registros"}`);
     } finally {
-      setLoading(false);
+      setCarregando(false);
     }
   }
 
-  useEffect(() => { loadItems(); }, [endpoint]);
-
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   }
 
-  function clearForm() {
+  function limparFormulario() {
     setForm({});
     setEditingId(null);
-    setSucesso("");
-    setErro("");
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
     setErro("");
     setSucesso("");
-
-    try {
-      const payload = typeof transformBeforeSave === "function" ? transformBeforeSave(form) : form;
-      const method = editingId ? "PUT" : "POST";
-      const path = editingId ? `${endpoint}/${editingId}` : endpoint;
-
-      await apiFetch(path, { method, body: JSON.stringify(payload) });
-      setSucesso(editingId ? "Registro atualizado com sucesso." : "Registro salvo com sucesso.");
-      clearForm();
-      await loadItems();
-    } catch (error) {
-      setErro(error.message || "Erro ao salvar registro");
-    }
   }
 
-  function editItem(item) {
-    setEditingId(item.id || item.user_id || item.treinamento_id);
-    setForm(item);
+  function editarRegistro(item) {
+    setForm(item || {});
+    setEditingId(item?.id || null);
+    setErro("");
+    setSucesso("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function removeItem(item) {
-    const id = item.id || item.user_id || item.treinamento_id;
-    if (!id) return;
-    if (!window.confirm("Deseja realmente excluir este registro?")) return;
+  async function excluirRegistro(id) {
+    const confirmar = window.confirm("Deseja realmente excluir este registro?");
+    if (!confirmar) return;
+
     try {
-      await apiFetch(`${endpoint}/${id}`, { method: "DELETE" });
-      await loadItems();
+      setErro("");
+      setSucesso("");
+
+      await apiFetch(`${endpoint}/${id}`, {
+        method: "DELETE",
+      });
+
+      setSucesso("Registro excluído com sucesso.");
+      await carregar();
+
+      if (editingId === id) {
+        limparFormulario();
+      }
     } catch (error) {
-      setErro(error.message || "Erro ao excluir registro");
+      setErro(error.message || "Erro ao excluir registro.");
+    }
+  }
+
+  async function salvar(event) {
+    event.preventDefault();
+
+    try {
+      setErro("");
+      setSucesso("");
+
+      const metodo = editingId ? "PUT" : "POST";
+      const url = editingId ? `${endpoint}/${editingId}` : endpoint;
+
+      await apiFetch(url, {
+        method: metodo,
+        body: JSON.stringify(form),
+      });
+
+      setSucesso(editingId ? "Registro atualizado com sucesso." : "Registro criado com sucesso.");
+      limparFormulario();
+      await carregar();
+    } catch (error) {
+      setErro(error.message || "Erro ao salvar registro.");
     }
   }
 
   const filteredItems = useMemo(() => {
     if (!search.trim()) return items;
-    const term = search.toLowerCase();
+
+    const termo = search.toLowerCase();
+
     return items.filter((item) =>
-      Object.values(item || {}).some((value) => String(value ?? "").toLowerCase().includes(term))
+      JSON.stringify(item).toLowerCase().includes(termo)
     );
   }, [items, search]);
 
+  const gridStyle = recordsGridStyle || {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: 16,
+  };
+
   return (
-    <PortalShell title={title} subtitle={subtitle}>
-      {hero ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: 18, marginBottom: 20 }}>
-          {hero}
-        </div>
-      ) : null}
-
-      {erro ? <div style={msgError}>{erro}</div> : null}
-      {sucesso ? <div style={msgSuccess}>{sucesso}</div> : null}
-
-      <div style={{ display: "grid", gap: 18 }}>
-        <SectionCard
-          title={editingId ? "Editar registro" : "Novo registro"}
-          subtitle="Preencha os campos do formulário para manter o controle do módulo."
-        >
-          <form onSubmit={handleSubmit}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-              {fields.map((field) => {
-                const value = form[field.name] ?? "";
-                const options = field.options || [];
-
-                if (field.type === "textarea") {
-                  return (
-                    <label key={field.name} style={labelStyle}>
-                      <span>{field.label}</span>
-                      <textarea
-                        name={field.name}
-                        value={value}
-                        onChange={handleChange}
-                        placeholder={field.placeholder || field.label}
-                        rows={field.rows || 4}
-                        style={{ ...inputStyle, resize: "vertical" }}
-                      />
-                    </label>
-                  );
-                }
-
-                if (field.type === "select") {
-                  return (
-                    <label key={field.name} style={labelStyle}>
-                      <span>{field.label}</span>
-                      <select name={field.name} value={value} onChange={handleChange} style={inputStyle}>
-                        <option value="">{field.placeholder || `Selecione ${field.label.toLowerCase()}`}</option>
-                        {options.map((option) => {
-                          const opt = typeof option === "string" ? { value: option, label: option } : option;
-                          return <option key={opt.value} value={opt.value}>{opt.label}</option>;
-                        })}
-                      </select>
-                    </label>
-                  );
-                }
-
-                return (
-                  <label key={field.name} style={labelStyle}>
-                    <span>{field.label}</span>
-                    <input
-                      name={field.name}
-                      type={field.type || "text"}
-                      value={value}
-                      onChange={handleChange}
-                      placeholder={field.placeholder || field.label}
-                      style={inputStyle}
-                    />
-                  </label>
-                );
-              })}
-            </div>
-
-            <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
-              <button type="submit" style={btnPrimary}>{editingId ? "Atualizar" : "Salvar"}</button>
-              <button type="button" onClick={clearForm} style={btnSecondary}>Limpar</button>
-            </div>
-          </form>
-        </SectionCard>
-
-        <SectionCard
-          title={recordsTitle}
-          subtitle={recordsSubtitle}
-          right={<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar registros" style={{ ...inputStyle, minWidth: 260 }} />}
-        >
-          {loading ? (
-            <div style={{ color: "#64748b" }}>Carregando registros...</div>
-          ) : renderRecordCard ? (
-            filteredItems.length ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
-                {filteredItems.map((item, index) => renderRecordCard({
-                  item, index, onEdit: () => editItem(item), onDelete: () => removeItem(item)
-                }))}
-              </div>
-            ) : <div style={{ color: "#64748b" }}>{emptyMessage}</div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 860 }}>
-                <thead>
-                  <tr>
-                    {columns.map((column) => (
-                      <th key={column.key} style={th}>{column.label}</th>
-                    ))}
-                    <th style={{ ...th, width: 170 }}>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.length ? filteredItems.map((item, index) => (
-                    <tr key={item.id || item.user_id || index}>
-                      {columns.map((column) => (
-                        <td key={column.key} style={{ ...td, background: index % 2 === 0 ? "#ffffff" : "#fbfdff" }}>
-                          {typeof column.render === "function" ? column.render(item) : String(item[column.key] ?? "-")}
-                        </td>
-                      ))}
-                      <td style={{ ...td, background: index % 2 === 0 ? "#ffffff" : "#fbfdff" }}>
-                        <div style={{ display: "flex", gap: 10 }}>
-                          <button onClick={() => editItem(item)} style={btnEdit}>Editar</button>
-                          <button onClick={() => removeItem(item)} style={btnDelete}>Excluir</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={columns.length + 1} style={{ padding: 20, color: "#64748b", textAlign: "center" }}>
-                        {emptyMessage}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </SectionCard>
+    <div style={page}>
+      <div style={header}>
+        <h1 style={titleStyle}>{title}</h1>
+        {subtitle ? <p style={subtitleStyle}>{subtitle}</p> : null}
       </div>
-    </PortalShell>
+
+      {hero ? <div style={heroWrap}>{hero}</div> : null}
+
+      {erro ? <div style={errorBox}>{erro}</div> : null}
+      {sucesso ? <div style={successBox}>{sucesso}</div> : null}
+
+      <section style={panel}>
+        <div style={sectionHeader}>
+          <div>
+            <h2 style={sectionTitle}>
+              {editingId ? "Editar registro" : "Novo registro"}
+            </h2>
+            <p style={sectionText}>
+              Preencha os campos do formulário para manter o controle do módulo.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={salvar} style={formGrid}>
+          {fields.map((field) => {
+            const value = form[field.name] ?? "";
+
+            if (field.type === "textarea") {
+              return (
+                <div
+                  key={field.name}
+                  style={{
+                    ...fieldWrap,
+                    gridColumn: "1 / -1",
+                  }}
+                >
+                  <label style={label}>{field.label}</label>
+                  <textarea
+                    name={field.name}
+                    value={value}
+                    onChange={handleChange}
+                    placeholder={field.placeholder || ""}
+                    rows={4}
+                    style={textarea}
+                  />
+                </div>
+              );
+            }
+
+            if (field.type === "select") {
+              return (
+                <div key={field.name} style={fieldWrap}>
+                  <label style={label}>{field.label}</label>
+                  <select
+                    name={field.name}
+                    value={value}
+                    onChange={handleChange}
+                    style={input}
+                  >
+                    <option value="">
+                      {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
+                    </option>
+                    {(field.options || []).map((option) => {
+                      const optionValue =
+                        typeof option === "object" ? option.value : option;
+                      const optionLabel =
+                        typeof option === "object" ? option.label : option;
+
+                      return (
+                        <option key={`${field.name}-${optionValue}`} value={optionValue}>
+                          {optionLabel}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              );
+            }
+
+            return (
+              <div key={field.name} style={fieldWrap}>
+                <label style={label}>{field.label}</label>
+                <input
+                  type={field.type || "text"}
+                  name={field.name}
+                  value={value}
+                  onChange={handleChange}
+                  placeholder={field.placeholder || ""}
+                  style={input}
+                />
+              </div>
+            );
+          })}
+
+          <div style={actionsRow}>
+            <button type="submit" style={buttonPrimary}>
+              {editingId ? "Atualizar" : "Salvar"}
+            </button>
+
+            <button
+              type="button"
+              onClick={limparFormulario}
+              style={buttonSecondary}
+            >
+              Limpar
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section style={panel}>
+        <div style={recordsHeader}>
+          <div>
+            <h2 style={sectionTitle}>Registros</h2>
+            {recordsSubtitle ? (
+              <p style={sectionText}>{recordsSubtitle}</p>
+            ) : null}
+          </div>
+
+          <input
+            type="text"
+            placeholder="Pesquisar registros"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={searchInput}
+          />
+        </div>
+
+        {carregando ? (
+          <div style={emptyState}>Carregando registros...</div>
+        ) : filteredItems.length === 0 ? (
+          <div style={emptyState}>Nenhum registro encontrado.</div>
+        ) : recordsMode === "cards" ? (
+          <div style={gridStyle}>
+            {filteredItems.map((item) => (
+              <div key={item.id} style={cardWrapper}>
+                <div style={cardContent}>
+                  {columns.map((column) => (
+                    <div key={column.key}>
+                      {column.render
+                        ? column.render(item)
+                        : item[column.key] ?? "-"}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={cardActions}>
+                  <button
+                    type="button"
+                    onClick={() => editarRegistro(item)}
+                    style={miniEditButton}
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => excluirRegistro(item.id)}
+                    style={miniDeleteButton}
+                  >
+                    Excluir
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={tableWrap}>
+            <table style={table}>
+              <thead>
+                <tr>
+                  {columns.map((column) => (
+                    <th key={column.key} style={th}>
+                      {column.label}
+                    </th>
+                  ))}
+                  <th style={th}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.map((item) => (
+                  <tr key={item.id}>
+                    {columns.map((column) => (
+                      <td key={column.key} style={td}>
+                        {column.render
+                          ? column.render(item)
+                          : item[column.key] ?? "-"}
+                      </td>
+                    ))}
+                    <td style={td}>
+                      <div style={tableActions}>
+                        <button
+                          type="button"
+                          onClick={() => editarRegistro(item)}
+                          style={miniEditButton}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => excluirRegistro(item.id)}
+                          style={miniDeleteButton}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
-const th = { textAlign: "left", background: "#f8fafc", color: "#334155", padding: 14, borderTop: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", fontSize: 13, textTransform: "uppercase", letterSpacing: ".03em" };
-const td = { padding: 14, borderBottom: "1px solid #eef2f7", color: "#334155", verticalAlign: "top" };
-const btnPrimary = { border: 0, background: "#2563eb", color: "#fff", padding: "12px 18px", borderRadius: 14, fontWeight: 800, cursor: "pointer" };
-const btnSecondary = { border: "1px solid #cbd5e1", background: "#fff", color: "#334155", padding: "12px 18px", borderRadius: 14, fontWeight: 800, cursor: "pointer" };
-const btnEdit = { border: 0, background: "#dbeafe", color: "#1d4ed8", padding: "10px 12px", borderRadius: 12, fontWeight: 800, cursor: "pointer" };
-const btnDelete = { border: 0, background: "#fee2e2", color: "#b91c1c", padding: "10px 12px", borderRadius: 12, fontWeight: 800, cursor: "pointer" };
-const msgError = { marginBottom: 18, background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 16, padding: 16, fontWeight: 600 };
-const msgSuccess = { marginBottom: 18, background: "#ecfdf5", color: "#166534", border: "1px solid #bbf7d0", borderRadius: 16, padding: 16, fontWeight: 600 };
+const page = {
+  display: "grid",
+  gap: 20,
+};
+
+const header = {
+  display: "grid",
+  gap: 6,
+};
+
+const titleStyle = {
+  margin: 0,
+  fontSize: 48,
+  lineHeight: 1.05,
+  color: "#0f172a",
+};
+
+const subtitleStyle = {
+  margin: 0,
+  color: "#64748b",
+  fontSize: 16,
+  lineHeight: 1.6,
+};
+
+const heroWrap = {
+  display: "grid",
+  gap: 14,
+};
+
+const panel = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 24,
+  padding: 24,
+  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+};
+
+const sectionHeader = {
+  marginBottom: 18,
+};
+
+const sectionTitle = {
+  margin: 0,
+  fontSize: 24,
+  color: "#0f172a",
+};
+
+const sectionText = {
+  margin: "8px 0 0",
+  color: "#64748b",
+  lineHeight: 1.6,
+};
+
+const formGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: 18,
+};
+
+const fieldWrap = {
+  display: "grid",
+  gap: 8,
+};
+
+const label = {
+  fontWeight: 800,
+  color: "#0f172a",
+  fontSize: 15,
+};
+
+const input = {
+  width: "100%",
+  minHeight: 52,
+  borderRadius: 16,
+  border: "1px solid #cbd5e1",
+  padding: "0 16px",
+  fontSize: 15,
+  color: "#0f172a",
+  outline: "none",
+  background: "#ffffff",
+};
+
+const textarea = {
+  width: "100%",
+  borderRadius: 16,
+  border: "1px solid #cbd5e1",
+  padding: "14px 16px",
+  fontSize: 15,
+  color: "#0f172a",
+  outline: "none",
+  background: "#ffffff",
+  resize: "vertical",
+};
+
+const actionsRow = {
+  display: "flex",
+  gap: 12,
+  flexWrap: "wrap",
+  alignItems: "center",
+  gridColumn: "1 / -1",
+  marginTop: 4,
+};
+
+const buttonPrimary = {
+  border: "none",
+  borderRadius: 14,
+  padding: "14px 22px",
+  background: "#2563eb",
+  color: "#ffffff",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const buttonSecondary = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 14,
+  padding: "14px 22px",
+  background: "#ffffff",
+  color: "#334155",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const recordsHeader = {
+  display: "flex",
+  gap: 16,
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  flexWrap: "wrap",
+  marginBottom: 18,
+};
+
+const searchInput = {
+  minWidth: 280,
+  minHeight: 48,
+  borderRadius: 16,
+  border: "1px solid #cbd5e1",
+  padding: "0 16px",
+  fontSize: 15,
+  outline: "none",
+};
+
+const tableWrap = {
+  overflowX: "auto",
+};
+
+const table = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const th = {
+  textAlign: "left",
+  padding: "14px 12px",
+  borderBottom: "1px solid #e2e8f0",
+  color: "#334155",
+  fontSize: 13,
+  textTransform: "uppercase",
+  letterSpacing: ".03em",
+};
+
+const td = {
+  padding: "16px 12px",
+  borderBottom: "1px solid #f1f5f9",
+  verticalAlign: "top",
+};
+
+const tableActions = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const cardWrapper = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  padding: 16,
+  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
+  display: "grid",
+  gap: 14,
+};
+
+const cardContent = {
+  display: "grid",
+  gap: 8,
+};
+
+const cardActions = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+};
+
+const miniEditButton = {
+  border: "none",
+  borderRadius: 12,
+  padding: "10px 14px",
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const miniDeleteButton = {
+  border: "none",
+  borderRadius: 12,
+  padding: "10px 14px",
+  background: "#fee2e2",
+  color: "#b91c1c",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const errorBox = {
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  borderRadius: 18,
+  padding: 16,
+  fontWeight: 700,
+};
+
+const successBox = {
+  background: "#f0fdf4",
+  border: "1px solid #bbf7d0",
+  color: "#166534",
+  borderRadius: 18,
+  padding: 16,
+  fontWeight: 700,
+};
+
+const emptyState = {
+  padding: 18,
+  borderRadius: 16,
+  background: "#f8fafc",
+  color: "#64748b",
+  textAlign: "center",
+};
