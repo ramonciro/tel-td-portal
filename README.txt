@@ -1,19 +1,12 @@
-Este pacote contém o Dashboard estratégico com KPIs reais.
+Este pacote contém a página Usuários 2.0.
 
-Novos KPIs incluídos:
-- Horas ministradas
-- Horas treinadas
-- Média de horas por treinamento
-- Taxa de presença
-- Absenteísmo
-- Justificativas
-- Média de qualidade
-- NPS médio
-- Treinamentos por cliente
-- Ranking de instrutores
+Melhorias:
+- cliente como lista dinâmica
+- primeiro acesso com leitura amigável
+- KPIs no topo
+- tabela mais executiva
+- perfis preparados para evolução futura do portal
+- restrição visual para admin, coordenador e supervisor
 
-A página lê dados reais de:
-- /dashboard
-- /treinamentos
-- /presencas
-- /avaliacoes
+Arquivo incluído:
+- frontend/app/usuarios/page.js
