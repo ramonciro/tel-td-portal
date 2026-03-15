@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import PortalShell from "./PortalShell";
 import { apiFetch } from "../services/api";
 
 export default function CrudPageV2({
@@ -33,7 +34,7 @@ export default function CrudPageV2({
       const data = await apiFetch(endpoint).catch(() => []);
       setItems(Array.isArray(data) ? data : []);
     } catch (error) {
-      setErro(`Erro ao carregar ${title?.toLowerCase() || "registros"}`);
+      setErro(`Erro ao carregar ${String(title || "registros").toLowerCase()}`);
     } finally {
       setCarregando(false);
     }
@@ -101,7 +102,8 @@ export default function CrudPageV2({
       });
 
       setSucesso(editingId ? "Registro atualizado com sucesso." : "Registro criado com sucesso.");
-      limparFormulario();
+      setForm({});
+      setEditingId(null);
       await carregar();
     } catch (error) {
       setErro(error.message || "Erro ao salvar registro.");
@@ -110,12 +112,8 @@ export default function CrudPageV2({
 
   const filteredItems = useMemo(() => {
     if (!search.trim()) return items;
-
     const termo = search.toLowerCase();
-
-    return items.filter((item) =>
-      JSON.stringify(item).toLowerCase().includes(termo)
-    );
+    return items.filter((item) => JSON.stringify(item).toLowerCase().includes(termo));
   }, [items, search]);
 
   const gridStyle = recordsGridStyle || {
@@ -125,28 +123,17 @@ export default function CrudPageV2({
   };
 
   return (
-    <div style={page}>
-      <div style={header}>
-        <h1 style={titleStyle}>{title}</h1>
-        {subtitle ? <p style={subtitleStyle}>{subtitle}</p> : null}
-      </div>
-
-      {hero ? <div style={heroWrap}>{hero}</div> : null}
-
+    <PortalShell title={title} subtitle={subtitle}>
       {erro ? <div style={errorBox}>{erro}</div> : null}
       {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
-      <section style={panel}>
-        <div style={sectionHeader}>
-          <div>
-            <h2 style={sectionTitle}>
-              {editingId ? "Editar registro" : "Novo registro"}
-            </h2>
-            <p style={sectionText}>
-              Preencha os campos do formulário para manter o controle do módulo.
-            </p>
-          </div>
-        </div>
+      {hero ? <div style={{ marginBottom: 20 }}>{hero}</div> : null}
+
+      <div style={panel}>
+        <h3 style={{ marginTop: 0, marginBottom: 8 }}>
+          {editingId ? "Editar registro" : "Novo registro"}
+        </h3>
+        <p style={helperText}>Preencha os campos do formulário para manter o controle do módulo.</p>
 
         <form onSubmit={salvar} style={formGrid}>
           {fields.map((field) => {
@@ -154,13 +141,7 @@ export default function CrudPageV2({
 
             if (field.type === "textarea") {
               return (
-                <div
-                  key={field.name}
-                  style={{
-                    ...fieldWrap,
-                    gridColumn: "1 / -1",
-                  }}
-                >
+                <div key={field.name} style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
                   <label style={label}>{field.label}</label>
                   <textarea
                     name={field.name}
@@ -188,10 +169,8 @@ export default function CrudPageV2({
                       {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
                     </option>
                     {(field.options || []).map((option) => {
-                      const optionValue =
-                        typeof option === "object" ? option.value : option;
-                      const optionLabel =
-                        typeof option === "object" ? option.label : option;
+                      const optionValue = typeof option === "object" ? option.value : option;
+                      const optionLabel = typeof option === "object" ? option.label : option;
 
                       return (
                         <option key={`${field.name}-${optionValue}`} value={optionValue}>
@@ -219,29 +198,22 @@ export default function CrudPageV2({
             );
           })}
 
-          <div style={actionsRow}>
+          <div style={{ display: "flex", gap: 10, gridColumn: "1 / -1", marginTop: 4 }}>
             <button type="submit" style={buttonPrimary}>
               {editingId ? "Atualizar" : "Salvar"}
             </button>
-
-            <button
-              type="button"
-              onClick={limparFormulario}
-              style={buttonSecondary}
-            >
+            <button type="button" onClick={limparFormulario} style={buttonSecondary}>
               Limpar
             </button>
           </div>
         </form>
-      </section>
+      </div>
 
-      <section style={panel}>
+      <div style={panel}>
         <div style={recordsHeader}>
           <div>
-            <h2 style={sectionTitle}>Registros</h2>
-            {recordsSubtitle ? (
-              <p style={sectionText}>{recordsSubtitle}</p>
-            ) : null}
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Registros</h3>
+            {recordsSubtitle ? <p style={helperText}>{recordsSubtitle}</p> : null}
           </div>
 
           <input
@@ -261,29 +233,19 @@ export default function CrudPageV2({
           <div style={gridStyle}>
             {filteredItems.map((item) => (
               <div key={item.id} style={cardWrapper}>
-                <div style={cardContent}>
+                <div style={{ display: "grid", gap: 8 }}>
                   {columns.map((column) => (
                     <div key={column.key}>
-                      {column.render
-                        ? column.render(item)
-                        : item[column.key] ?? "-"}
+                      {column.render ? column.render(item) : item[column.key] ?? "-"}
                     </div>
                   ))}
                 </div>
 
                 <div style={cardActions}>
-                  <button
-                    type="button"
-                    onClick={() => editarRegistro(item)}
-                    style={miniEditButton}
-                  >
+                  <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
                     Editar
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => excluirRegistro(item.id)}
-                    style={miniDeleteButton}
-                  >
+                  <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
                     Excluir
                   </button>
                 </div>
@@ -291,7 +253,7 @@ export default function CrudPageV2({
             ))}
           </div>
         ) : (
-          <div style={tableWrap}>
+          <div style={{ overflowX: "auto" }}>
             <table style={table}>
               <thead>
                 <tr>
@@ -308,25 +270,15 @@ export default function CrudPageV2({
                   <tr key={item.id}>
                     {columns.map((column) => (
                       <td key={column.key} style={td}>
-                        {column.render
-                          ? column.render(item)
-                          : item[column.key] ?? "-"}
+                        {column.render ? column.render(item) : item[column.key] ?? "-"}
                       </td>
                     ))}
                     <td style={td}>
-                      <div style={tableActions}>
-                        <button
-                          type="button"
-                          onClick={() => editarRegistro(item)}
-                          style={miniEditButton}
-                        >
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
                           Editar
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => excluirRegistro(item.id)}
-                          style={miniDeleteButton}
-                        >
+                        <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
                           Excluir
                         </button>
                       </div>
@@ -337,39 +289,10 @@ export default function CrudPageV2({
             </table>
           </div>
         )}
-      </section>
-    </div>
+      </div>
+    </PortalShell>
   );
 }
-
-const page = {
-  display: "grid",
-  gap: 20,
-};
-
-const header = {
-  display: "grid",
-  gap: 6,
-};
-
-const titleStyle = {
-  margin: 0,
-  fontSize: 48,
-  lineHeight: 1.05,
-  color: "#0f172a",
-};
-
-const subtitleStyle = {
-  margin: 0,
-  color: "#64748b",
-  fontSize: 16,
-  lineHeight: 1.6,
-};
-
-const heroWrap = {
-  display: "grid",
-  gap: 14,
-};
 
 const panel = {
   background: "#ffffff",
@@ -377,20 +300,11 @@ const panel = {
   borderRadius: 24,
   padding: 24,
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  marginBottom: 20,
 };
 
-const sectionHeader = {
-  marginBottom: 18,
-};
-
-const sectionTitle = {
-  margin: 0,
-  fontSize: 24,
-  color: "#0f172a",
-};
-
-const sectionText = {
-  margin: "8px 0 0",
+const helperText = {
+  margin: "0 0 16px",
   color: "#64748b",
   lineHeight: 1.6,
 };
@@ -436,15 +350,6 @@ const textarea = {
   resize: "vertical",
 };
 
-const actionsRow = {
-  display: "flex",
-  gap: 12,
-  flexWrap: "wrap",
-  alignItems: "center",
-  gridColumn: "1 / -1",
-  marginTop: 4,
-};
-
 const buttonPrimary = {
   border: "none",
   borderRadius: 14,
@@ -484,10 +389,6 @@ const searchInput = {
   outline: "none",
 };
 
-const tableWrap = {
-  overflowX: "auto",
-};
-
 const table = {
   width: "100%",
   borderCollapse: "collapse",
@@ -509,12 +410,6 @@ const td = {
   verticalAlign: "top",
 };
 
-const tableActions = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
 const cardWrapper = {
   background: "#ffffff",
   border: "1px solid #e2e8f0",
@@ -523,11 +418,6 @@ const cardWrapper = {
   boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
   display: "grid",
   gap: 14,
-};
-
-const cardContent = {
-  display: "grid",
-  gap: 8,
 };
 
 const cardActions = {
@@ -564,6 +454,7 @@ const errorBox = {
   borderRadius: 18,
   padding: 16,
   fontWeight: 700,
+  marginBottom: 16,
 };
 
 const successBox = {
@@ -573,6 +464,7 @@ const successBox = {
   borderRadius: 18,
   padding: 16,
   fontWeight: 700,
+  marginBottom: 16,
 };
 
 const emptyState = {
