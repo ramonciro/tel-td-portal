@@ -3,16 +3,15 @@ const path = require("path");
 const XLSX = require("xlsx");
 const pool = require("../lib/db");
 
-function resolveExcelPath(customFile) {
-  const candidates = [
-    customFile,
-    path.resolve(process.cwd(), "Dashboard_TD.xlsx"),
-    path.resolve(process.cwd(), "./Dashboard_TD.xlsx"),
-    path.resolve(process.cwd(), "../Dashboard_TD.xlsx"),
-    path.resolve(process.cwd(), "backend/Dashboard_TD.xlsx"),
-    path.resolve(__dirname, "../../Dashboard_TD.xlsx"),
-    path.resolve(__dirname, "../../../Dashboard_TD.xlsx"),
-  ].filter(Boolean);
+function resolveExcelPath() {
+  const file = path.resolve(process.cwd(), "backend/Dashboard_TD.xlsx");
+
+  if (!fs.existsSync(file)) {
+    throw new Error("Arquivo Dashboard_TD.xlsx não encontrado em backend/");
+  }
+
+  return file;
+}
 
   for (const file of candidates) {
     if (fs.existsSync(file)) return file;
