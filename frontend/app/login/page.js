@@ -4,140 +4,88 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import API_URL from "../../services/api";
 
-export default function LoginPage() {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
-  const [erro, setErro] = useState("");
-  const [loading, setLoading] = useState(false);
+export default function LoginPage(){
 
-  async function handleLogin(e) {
-    e.preventDefault();
-    setErro("");
-    setLoading(true);
+const router = useRouter()
 
-    try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, senha })
-      });
+const [email,setEmail]=useState("")
+const [senha,setSenha]=useState("")
+const [erro,setErro]=useState("")
 
-      const data = await response.json();
+async function login(e){
 
-      if (!response.ok) {
-        throw new Error(data.message || "Erro ao realizar login");
-      }
+e.preventDefault()
 
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+try{
 
-      if (data.user?.troca_senha_obrigatoria) {
-        router.push("/primeiro-acesso");
-      } else {
-        router.push("/inicio");
-      }
-    } catch (error) {
-      setErro(error.message || "Erro ao realizar login");
-    } finally {
-      setLoading(false);
-    }
-  }
+const response = await fetch(`${API_URL}/auth/login`,{
 
-  return (
-    <div style={wrap}>
-      <form onSubmit={handleLogin} style={card}>
-        <h1 style={title}>Tel T&D</h1>
-        <p style={subtitle}>Acesse o portal de Treinamento e Desenvolvimento</p>
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({email,senha})
 
-        {erro ? <div style={errorBox}>{erro}</div> : null}
+})
 
-        <input
-          style={input}
-          type="email"
-          placeholder="E-mail"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+const data = await response.json()
 
-        <input
-          style={input}
-          type="password"
-          placeholder="Senha"
-          value={senha}
-          onChange={(e) => setSenha(e.target.value)}
-        />
+if(!response.ok){
 
-        <button type="submit" style={button} disabled={loading}>
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
+throw new Error(data.message)
 
-        <p style={hint}>Senha padrão de criação: <strong>Tel@2026</strong></p>
-      </form>
-    </div>
-  );
 }
 
-const wrap = {
-  minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#eef4fb",
-  padding: 24
-};
+localStorage.setItem("token",data.token)
+localStorage.setItem("user",JSON.stringify(data.user))
 
-const card = {
-  width: "100%",
-  maxWidth: 460,
-  background: "#fff",
-  borderRadius: 20,
-  padding: 32,
-  boxShadow: "0 10px 30px rgba(15,23,42,.08)"
-};
+if(data.user.troca_senha_obrigatoria){
 
-const title = {
-  margin: 0,
-  fontSize: 40,
-  color: "#1e3a8a"
-};
+router.push("/primeiro-acesso")
 
-const subtitle = {
-  color: "#64748b",
-  marginBottom: 24
-};
+}else{
 
-const input = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: 14,
-  borderRadius: 12,
-  border: "1px solid #dbe3ef",
-  marginBottom: 14
-};
+router.push("/inicio")
 
-const button = {
-  width: "100%",
-  border: 0,
-  borderRadius: 12,
-  padding: 14,
-  background: "#3b82f6",
-  color: "#fff",
-  fontWeight: 700,
-  cursor: "pointer"
-};
+}
 
-const errorBox = {
-  background: "#fef2f2",
-  color: "#b91c1c",
-  padding: 12,
-  borderRadius: 12,
-  marginBottom: 16,
-  border: "1px solid #fecaca"
-};
+}catch(err){
 
-const hint = {
-  marginTop: 18,
-  textAlign: "center",
-  color: "#64748b"
-};
+setErro(err.message)
+
+}
+
+}
+
+return(
+
+<div style={{padding:40}}>
+
+<h1>Portal T&D</h1>
+
+{erro && <p style={{color:"red"}}>{erro}</p>}
+
+<form onSubmit={login}>
+
+<input
+placeholder="email"
+value={email}
+onChange={(e)=>setEmail(e.target.value)}
+/>
+
+<input
+type="password"
+placeholder="senha"
+value={senha}
+onChange={(e)=>setSenha(e.target.value)}
+/>
+
+<button>Entrar</button>
+
+</form>
+
+</div>
+
+)
+
+}
