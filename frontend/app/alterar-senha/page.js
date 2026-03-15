@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
@@ -26,8 +27,14 @@ export default function AlterarSenhaPage() {
 
     try {
       setLoading(true);
-      await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ email: user.email, senha: senhaAtual }) });
-      await apiFetch("/auth/alterar-senha", { method: "POST", body: JSON.stringify({ email: user.email, novaSenha }) });
+      await apiFetch("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: user.email, senha: senhaAtual }),
+      });
+      await apiFetch("/auth/alterar-senha", {
+        method: "POST",
+        body: JSON.stringify({ email: user.email, novaSenha }),
+      });
       setSucesso("Senha alterada com sucesso.");
       setSenhaAtual("");
       setNovaSenha("");
@@ -41,11 +48,12 @@ export default function AlterarSenhaPage() {
   }
 
   return (
-    <PortalShell title="Alterar senha" subtitle="Área para atualização segura da senha de acesso ao portal.">
-      <SectionCard title="Atualização de senha" subtitle="Use esta página para ajustar sua credencial de acesso sem depender do primeiro acesso.">
+    <PortalShell title="Alterar senha" subtitle="Atualização segura da credencial de acesso.">
+      <SectionCard title="Atualização de senha" subtitle="Preencha os campos abaixo para concluir a alteração.">
         {erro ? <div style={errorBox}>{erro}</div> : null}
         {sucesso ? <div style={successBox}>{sucesso}</div> : null}
-        <form onSubmit={handleSubmit} style={{ maxWidth: 560, display: "grid", gap: 14 }}>
+
+        <form onSubmit={handleSubmit} style={{ maxWidth: 460, display: "grid", gap: 10 }}>
           <input type="password" placeholder="Senha atual" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} style={input} />
           <input type="password" placeholder="Nova senha" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} style={input} />
           <input type="password" placeholder="Confirmar nova senha" value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} style={input} />
@@ -56,7 +64,7 @@ export default function AlterarSenhaPage() {
   );
 }
 
-const input = { width: "100%", boxSizing: "border-box", padding: 14, borderRadius: 14, border: "1px solid #dbe3ef", background: "#fff" };
-const button = { border: 0, background: "#2563eb", color: "#fff", padding: "14px 18px", borderRadius: 14, fontWeight: 800, cursor: "pointer" };
-const errorBox = { marginBottom: 16, background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 16, padding: 16, fontWeight: 600 };
-const successBox = { marginBottom: 16, background: "#ecfdf5", color: "#166534", border: "1px solid #bbf7d0", borderRadius: 16, padding: 16, fontWeight: 600 };
+const input = { width: "100%", boxSizing: "border-box", height: 42, padding: "0 12px", borderRadius: 10, border: "1px solid #cbd5e1", background: "#fff", fontSize: 14 };
+const button = { border: 0, background: "#2563eb", color: "#fff", height: 42, borderRadius: 10, fontWeight: 800, cursor: "pointer", fontSize: 14 };
+const errorBox = { marginBottom: 12, background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 10, padding: 10, fontWeight: 600 };
+const successBox = { marginBottom: 12, background: "#ecfdf5", color: "#166534", border: "1px solid #bbf7d0", borderRadius: 10, padding: 10, fontWeight: 600 };
