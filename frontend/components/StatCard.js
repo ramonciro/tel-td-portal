@@ -1,86 +1,68 @@
-export default function StatCard({ title, value, subtitle, accent = "#2563eb", helper }) {
+"use client";
+
+export default function StatCard({
+  title,
+  value,
+  subtitle,
+  accent = "#2563eb",
+  helper = "",
+}) {
   return (
-    <div style={card(accent)}>
-      <div style={glow(accent)} />
-      <div style={headerRow}>
+    <div style={card}>
+      <div style={{ ...topLine, background: accent }} />
+      <div style={content}>
         <div style={titleStyle}>{title}</div>
-        <div style={chip(accent)} />
+        <div style={valueStyle}>{value}</div>
+        {subtitle ? <div style={subtitleStyle}>{subtitle}</div> : null}
+        {helper ? <div style={{ ...helperStyle, color: accent }}>{helper}</div> : null}
       </div>
-      <div style={valueStyle}>{value}</div>
-      <div style={subtitleStyle}>{subtitle}</div>
-      {helper ? <div style={helperStyle(accent)}>{helper}</div> : null}
     </div>
   );
 }
 
-const card = (accent) => ({
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  borderRadius: 24,
-  padding: 22,
-  boxShadow: "0 16px 34px rgba(15, 23, 42, 0.08)",
+const card = {
+  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
   border: "1px solid #e2e8f0",
-  minHeight: 154,
-  position: "relative",
+  borderRadius: 16,
+  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
   overflow: "hidden",
-  isolation: "isolate",
-  borderTop: `5px solid ${accent}`
-});
+  minHeight: 118,
+};
 
-const glow = (accent) => ({
-  position: "absolute",
-  right: -30,
-  top: -30,
-  width: 110,
-  height: 110,
-  borderRadius: "50%",
-  background: `${accent}18`,
-  zIndex: -1
-});
+const topLine = {
+  height: 4,
+  width: "100%",
+};
 
-const headerRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12
+const content = {
+  padding: 14,
+  display: "grid",
+  gap: 6,
 };
 
 const titleStyle = {
-  fontSize: 15,
-  color: "#475569",
-  fontWeight: 800
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  color: "#64748b",
 };
 
-const chip = (accent) => ({
-  width: 14,
-  height: 14,
-  borderRadius: 999,
-  background: accent,
-  boxShadow: `0 0 0 6px ${accent}18`
-});
-
 const valueStyle = {
-  marginTop: 16,
-  fontSize: 42,
+  fontSize: 28,
   lineHeight: 1,
   fontWeight: 900,
   color: "#0f172a",
-  letterSpacing: "-0.03em"
 };
 
 const subtitleStyle = {
-  marginTop: 10,
-  fontSize: 14,
-  color: "#64748b",
-  lineHeight: 1.5
+  fontSize: 13,
+  lineHeight: 1.35,
+  color: "#475569",
 };
 
-const helperStyle = (accent) => ({
-  marginTop: 16,
-  display: "inline-block",
-  fontSize: 12,
+const helperStyle = {
+  marginTop: 2,
+  fontSize: 11,
   fontWeight: 800,
-  color: accent,
-  background: `${accent}12`,
-  padding: "6px 10px",
-  borderRadius: 999
-});
+};
