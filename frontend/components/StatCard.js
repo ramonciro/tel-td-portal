@@ -1,4 +1,4 @@
-export default function StatCard({ title, value, subtitle, accent = "#2563eb" }) {
+export default function StatCard({ title, value, subtitle, accent = "#2563eb", helper }) {
   return (
     <div
       style={{
@@ -22,13 +22,25 @@ export default function StatCard({ title, value, subtitle, accent = "#2563eb" })
           background: accent,
         }}
       />
-      <div style={{ fontSize: 15, color: "#475569", fontWeight: 600 }}>{title}</div>
-      <div style={{ marginTop: 14, fontSize: 40, fontWeight: 800, color: "#0f172a" }}>
-        {value}
-      </div>
-      <div style={{ marginTop: 8, fontSize: 14, color: "#64748b", lineHeight: 1.4 }}>
-        {subtitle}
-      </div>
+      <div style={{ fontSize: 15, color: "#475569", fontWeight: 700 }}>{title}</div>
+      <div style={{ marginTop: 14, fontSize: 36, fontWeight: 800, color: "#0f172a" }}>{value}</div>
+      <div style={{ marginTop: 8, fontSize: 14, color: "#64748b", lineHeight: 1.45 }}>{subtitle}</div>
+      {helper ? (
+        <div
+          style={{
+            marginTop: 14,
+            display: "inline-block",
+            fontSize: 12,
+            fontWeight: 700,
+            color: accent,
+            background: "#eff6ff",
+            padding: "6px 10px",
+            borderRadius: 999,
+          }}
+        >
+          {helper}
+        </div>
+      ) : null}
     </div>
   );
 }

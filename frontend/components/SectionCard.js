@@ -1,18 +1,36 @@
-export default function SectionCard({ title, subtitle, children }) {
+export default function SectionCard({ title, subtitle, children, right }) {
   return (
-    <section style={card}>
-      <div style={header}>
-        <div>
-          <h3 style={titleStyle}>{title}</h3>
-          {subtitle ? <p style={subtitleStyle}>{subtitle}</p> : null}
+    <section
+      style={{
+        background: "#fff",
+        borderRadius: 24,
+        padding: 24,
+        border: "1px solid #e2e8f0",
+        boxShadow: "0 12px 28px rgba(15,23,42,.06)",
+      }}
+    >
+      {(title || subtitle || right) ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+            marginBottom: 18,
+          }}
+        >
+          <div>
+            {title ? <h2 style={{ margin: 0, fontSize: 24 }}>{title}</h2> : null}
+            {subtitle ? (
+              <p style={{ margin: "8px 0 0", color: "#64748b", lineHeight: 1.6 }}>
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
+          {right}
         </div>
-      </div>
-      <div>{children}</div>
+      ) : null}
+      {children}
     </section>
   );
 }
-
-const card = { background: "#fff", borderRadius: 20, padding: 22, marginBottom: 20, boxShadow: "0 8px 30px rgba(15,23,42,.05)", border: "1px solid #eef2f7" };
-const header = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 18 };
-const titleStyle = { margin: 0, fontSize: 24, color: "#0f172a" };
-const subtitleStyle = { margin: "8px 0 0", color: "#64748b", lineHeight: 1.5 };
