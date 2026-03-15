@@ -28,6 +28,7 @@ export default function TurmasPage() {
           apiFetch("/treinamentos").catch(() => []),
           apiFetch("/presencas").catch(() => []),
         ]);
+
         setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
         setPresencas(Array.isArray(presencasData) ? presencasData : []);
         setErro("");
@@ -35,16 +36,29 @@ export default function TurmasPage() {
         setErro(error.message || "Erro ao carregar turmas.");
       }
     }
+
     load();
   }, []);
 
   const turmas = useMemo(() => {
     return treinamentos
       .map((t) => {
-        const registros = presencas.filter((p) => String(p.treinamento_id) === String(t.id));
-        const presentes = registros.filter((p) => ["presente", "Presente"].includes(String(p.status || ""))).length;
-        const ausentes = registros.filter((p) => ["ausente", "Ausente"].includes(String(p.status || ""))).length;
-        const justificados = registros.filter((p) => ["justificado", "Justificado"].includes(String(p.status || ""))).length;
+        const registros = presencas.filter(
+          (p) => String(p.treinamento_id) === String(t.id)
+        );
+
+        const presentes = registros.filter((p) =>
+          ["presente", "Presente"].includes(String(p.status || ""))
+        ).length;
+
+        const ausentes = registros.filter((p) =>
+          ["ausente", "Ausente"].includes(String(p.status || ""))
+        ).length;
+
+        const justificados = registros.filter((p) =>
+          ["justificado", "Justificado"].includes(String(p.status || ""))
+        ).length;
+
         const previstos = Number(t.participantes || registros.length || 0);
         const taxa = previstos ? Math.round((presentes / previstos) * 100) : 0;
         const risco = taxa < 85 ? "Crítico" : taxa < 92 ? "Atenção" : "Saudável";
@@ -74,6 +88,7 @@ export default function TurmasPage() {
     const presentes = turmas.reduce((acc, item) => acc + item.presentes, 0);
     const ausentes = turmas.reduce((acc, item) => acc + item.ausentes, 0);
     const media = previstos ? Math.round((presentes / previstos) * 100) : 0;
+
     return {
       totalTurmas: turmas.length,
       previstos,
@@ -84,14 +99,37 @@ export default function TurmasPage() {
   }, [turmas]);
 
   return (
-    <PortalShell title="Turmas" subtitle="Acompanhamento consolidado das turmas.">
+    <PortalShell
+      title="Turmas"
+      subtitle="Acompanhamento consolidado das turmas."
+    >
       {erro ? <div style={errorBox}>{erro}</div> : null}
 
       <div style={statsGrid}>
-        <StatCard title="Turmas" value={fmt(resumo.totalTurmas)} subtitle="Consolidadas no portal" accent="#2563eb" />
-        <StatCard title="Participantes" value={fmt(resumo.previstos)} subtitle="Capacidade planejada" accent="#06b6d4" />
-        <StatCard title="Presentes" value={fmt(resumo.presentes)} subtitle="Participações confirmadas" accent="#16a34a" />
-        <StatCard title="Presença média" value={`${resumo.media}%`} subtitle="Leitura geral" accent="#7c3aed" />
+        <StatCard
+          title="Turmas"
+          value={fmt(resumo.totalTurmas)}
+          subtitle="Consolidadas no portal"
+          accent="#2563eb"
+        />
+        <StatCard
+          title="Participantes"
+          value={fmt(resumo.previstos)}
+          subtitle="Capacidade planejada"
+          accent="#06b6d4"
+        />
+        <StatCard
+          title="Presentes"
+          value={fmt(resumo.presentes)}
+          subtitle="Participações confirmadas"
+          accent="#16a34a"
+        />
+        <StatCard
+          title="Presença média"
+          value={`${resumo.media}%`}
+          subtitle="Leitura geral"
+          accent="#7c3aed"
+        />
       </div>
 
       <div style={panel}>
@@ -109,18 +147,32 @@ export default function TurmasPage() {
               </div>
 
               <div style={title}>{item.nome}</div>
-              <div style={meta}>{item.cliente} • {item.instrutor}</div>
+              <div style={meta}>
+                {item.cliente} • {item.instrutor}
+              </div>
 
               <div style={metricGrid}>
-                <div style={metricItem}><strong>{fmt(item.previstos)}</strong><span>previstos</span></div>
-                <div style={metricItem}><strong>{fmt(item.presentes)}</strong><span>presentes</span></div>
-                <div style={metricItem}><strong>{fmt(item.ausentes)}</strong><span>ausentes</span></div>
-                <div style={metricItem}><strong>{fmt(item.justificados)}</strong><span>justificados</span></div>
+                <div style={metricItem}>
+                  <strong>{fmt(item.previstos)}</strong>
+                  <span>prev.</span>
+                </div>
+                <div style={metricItem}>
+                  <strong>{fmt(item.presentes)}</strong>
+                  <span>pres.</span>
+                </div>
+                <div style={metricItem}>
+                  <strong>{fmt(item.ausentes)}</strong>
+                  <span>aus.</span>
+                </div>
+                <div style={metricItem}>
+                  <strong>{fmt(item.justificados)}</strong>
+                  <span>just.</span>
+                </div>
               </div>
 
               <div style={infoList}>
                 <div><strong>Público:</strong> {item.publico}</div>
-                <div><strong>Carga horária:</strong> {item.cargaHoraria}h</div>
+                <div><strong>Carga:</strong> {item.cargaHoraria}h</div>
                 <div><strong>Supervisor:</strong> {item.supervisor}</div>
                 <div><strong>Data-base:</strong> {item.data}</div>
               </div>
@@ -134,43 +186,52 @@ export default function TurmasPage() {
 
 const statsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-  marginBottom: 14,
+  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+  gap: 10,
+  marginBottom: 12,
 };
 
 const panel = {
   background: "#ffffff",
   border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 16,
-  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+  borderRadius: 16,
+  padding: 14,
+  boxShadow: "0 8px 20px rgba(15,23,42,.04)",
 };
 
 const panelHeader = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
-  gap: 12,
-  marginBottom: 12,
-  flexWrap: "wrap"
+  gap: 10,
+  marginBottom: 10,
+  flexWrap: "wrap",
 };
 
-const panelTitle = { margin: 0, fontSize: 16, color: "#0f172a" };
-const panelCount = { fontSize: 12, fontWeight: 800, color: "#64748b" };
+const panelTitle = {
+  margin: 0,
+  fontSize: 15,
+  color: "#0f172a",
+};
+
+const panelCount = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#64748b",
+};
 
 const turmaGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))",
-  gap: 12,
+  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+  gap: 10,
 };
 
 const turmaCard = {
   border: "1px solid #e2e8f0",
-  borderRadius: 16,
-  padding: 14,
-  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
-  boxShadow: "0 8px 18px rgba(15,23,42,.04)",
+  borderRadius: 14,
+  padding: 12,
+  background: "#ffffff",
+  boxShadow: "0 6px 14px rgba(15,23,42,.03)",
 };
 
 const topRow = {
@@ -178,71 +239,81 @@ const topRow = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 8,
-  marginBottom: 10,
+  marginBottom: 8,
 };
 
 const riskBadge = (label) => ({
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "6px 10px",
+  padding: "5px 9px",
   borderRadius: 999,
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 800,
-  background: label === "Crítico" ? "#fee2e2" : label === "Atenção" ? "#ffedd5" : "#dcfce7",
-  color: label === "Crítico" ? "#991b1b" : label === "Atenção" ? "#9a3412" : "#166534",
+  background:
+    label === "Crítico"
+      ? "#fee2e2"
+      : label === "Atenção"
+      ? "#ffedd5"
+      : "#dcfce7",
+  color:
+    label === "Crítico"
+      ? "#991b1b"
+      : label === "Atenção"
+      ? "#9a3412"
+      : "#166534",
 });
 
 const presenceBadge = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "6px 10px",
+  padding: "5px 9px",
   borderRadius: 999,
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 800,
   background: "#dbeafe",
   color: "#1d4ed8",
 };
 
 const title = {
-  fontSize: 18,
+  fontSize: 16,
   lineHeight: 1.15,
-  fontWeight: 900,
+  fontWeight: 800,
   color: "#0f172a",
-  marginBottom: 6,
+  marginBottom: 4,
 };
 
 const meta = {
   color: "#64748b",
-  fontSize: 13,
-  marginBottom: 12,
+  fontSize: 12,
+  marginBottom: 10,
 };
 
 const metricGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 8,
-  marginBottom: 12,
+  gap: 6,
+  marginBottom: 10,
 };
 
 const metricItem = {
   border: "1px solid #eef2f7",
-  borderRadius: 12,
-  padding: "10px 8px",
+  borderRadius: 10,
+  padding: "8px 6px",
   textAlign: "center",
-  background: "#fff"
+  background: "#fff",
+  fontSize: 10,
+  color: "#64748b",
+  lineHeight: 1.15,
 };
-metricItem.fontSize = 11;
-metricItem.color = "#64748b";
-metricItem.lineHeight = 1.2;
 
 const infoList = {
   display: "grid",
-  gap: 6,
-  fontSize: 13,
+  gap: 5,
+  fontSize: 12,
   color: "#475569",
-  lineHeight: 1.45,
+  lineHeight: 1.35,
 };
 
 const errorBox = {
