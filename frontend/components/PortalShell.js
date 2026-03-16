@@ -6,16 +6,66 @@ import { useEffect, useMemo, useState } from "react";
 import { getStoredUser, hasSomeRole } from "../services/api";
 
 const allMenu = [
-  { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando", "admin"] },
-  { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor", "admin"] },
-  { href: "/usuarios", label: "Usuários", icon: "👤", roles: ["coordenador", "admin"] },
-  { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor", "admin"] },
-  { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor", "admin"] },
-  { href: "/presencas", label: "Turmas", icon: "👥", roles: ["coordenador", "supervisor", "instrutor", "admin"] },
-  { href: "/avaliacoes", label: "Avaliações", icon: "⭐", roles: ["coordenador", "supervisor", "instrutor", "admin"] },
-  { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando", "admin"] },
-  { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando", "admin"] },
-  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento", icon: "🗺️", roles: ["coordenador", "supervisor", "admin"] },
+  {
+    href: "/inicio",
+    label: "Início",
+    icon: "🏠",
+    roles: ["admin", "coordenador", "supervisor", "instrutor", "treinando"],
+  },
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    icon: "📊",
+    roles: ["admin", "coordenador", "supervisor"],
+  },
+  {
+    href: "/usuarios",
+    label: "Usuários",
+    icon: "👤",
+    roles: ["admin", "coordenador"],
+  },
+  {
+    href: "/clientes",
+    label: "Clientes",
+    icon: "🏢",
+    roles: ["admin", "coordenador", "supervisor"],
+  },
+  {
+    href: "/treinamentos",
+    label: "Treinamentos",
+    icon: "🎓",
+    roles: ["admin", "coordenador", "supervisor", "instrutor"],
+  },
+  {
+    href: "/presencas",
+    label: "Turmas",
+    icon: "👥",
+    roles: ["admin", "coordenador", "supervisor", "instrutor"],
+  },
+  {
+    href: "/avaliacoes",
+    label: "Avaliações",
+    icon: "⭐",
+    roles: ["admin", "coordenador", "supervisor", "instrutor"],
+  },
+  {
+    href: "/biblioteca",
+    label: "Biblioteca",
+    icon: "📚",
+    roles: ["admin", "coordenador", "supervisor", "instrutor", "treinando"],
+  },
+  {
+    href: "/trilhas",
+    label: "Trilhas",
+    icon: "🧭",
+    roles: ["admin", "coordenador", "supervisor", "instrutor", "treinando"],
+  },
+  {
+    href: "/mapa-desenvolvimento",
+    label: "Mapa de desenvolvimento",
+    icon: "🗺️",
+    roles: ["admin", "coordenador", "supervisor"],
+  },
 ];
 
 export default function PortalShell({ title, subtitle, children }) {
@@ -59,7 +109,9 @@ export default function PortalShell({ title, subtitle, children }) {
               <div style={profileBadge}>Perfil em uso</div>
               <div style={profileName}>{user?.nome || "Usuário"}</div>
               <div style={profileRole}>
-                {(user?.perfil || "perfil não identificado").toString().toUpperCase()}
+                {(user?.perfil || "perfil não identificado")
+                  .toString()
+                  .toUpperCase()}
               </div>
             </div>
           </div>
