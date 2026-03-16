@@ -23,7 +23,8 @@ import {
   listTreinamentos,
   createTreinamento,
   updateTreinamento,
-  deleteTreinamento
+  deleteTreinamento,
+  getTreinamentoById
 } from "../controllers/treinamentosController.js";
 
 import {
@@ -74,16 +75,10 @@ import pool from "../db.js";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-/* AUTH */
-
 router.post("/auth/login", login);
 router.post("/auth/alterar-senha-primeiro-acesso", alterarSenhaPrimeiroAcesso);
 
-/* DASHBOARD */
-
 router.get("/dashboard", authRequired, getDashboard);
-
-/* CLIENTES */
 
 router.get("/clientes", authRequired, listClientes);
 router.post("/clientes", authRequired, createCliente);
@@ -91,21 +86,16 @@ router.put("/clientes/:id", authRequired, updateCliente);
 router.delete("/clientes/:id", authRequired, deleteCliente);
 router.get("/migracao-clientes-campos", migrarClientesCampos);
 
-/* USERS */
-
 router.get("/users", authRequired, listUsers);
 router.post("/users", authRequired, createUser);
 router.put("/users/:id", authRequired, updateUser);
 router.delete("/users/:id", authRequired, deleteUser);
 
-/* TREINAMENTOS */
-
 router.get("/treinamentos", authRequired, listTreinamentos);
+router.get("/treinamentos/:id", authRequired, getTreinamentoById);
 router.post("/treinamentos", authRequired, createTreinamento);
 router.put("/treinamentos/:id", authRequired, updateTreinamento);
 router.delete("/treinamentos/:id", authRequired, deleteTreinamento);
-
-/* PARTICIPANTES DO TREINAMENTO */
 
 router.get(
   "/treinamentos/:id/participantes",
@@ -126,43 +116,31 @@ router.post(
   salvarChamadaParticipantes
 );
 
-/* PRESENÇAS */
-
 router.get("/presencas", authRequired, listPresencas);
 router.post("/presencas", authRequired, createPresenca);
 router.put("/presencas/:id", authRequired, updatePresenca);
 router.delete("/presencas/:id", authRequired, deletePresenca);
 router.get("/migracao-presencas-status", migrarPresencasStatus);
 
-/* AVALIAÇÕES */
-
 router.get("/avaliacoes", authRequired, listAvaliacoes);
 router.post("/avaliacoes", authRequired, createAvaliacao);
 router.put("/avaliacoes/:id", authRequired, updateAvaliacao);
 router.delete("/avaliacoes/:id", authRequired, deleteAvaliacao);
-
-/* MATERIAIS */
 
 router.get("/materiais-avaliativos", authRequired, listMateriaisAvaliativos);
 router.post("/materiais-avaliativos", authRequired, createMaterialAvaliativo);
 router.put("/materiais-avaliativos/:id", authRequired, updateMaterialAvaliativo);
 router.delete("/materiais-avaliativos/:id", authRequired, deleteMaterialAvaliativo);
 
-/* BIBLIOTECA */
-
 router.get("/biblioteca", authRequired, listBiblioteca);
 router.post("/biblioteca", authRequired, createBiblioteca);
 router.put("/biblioteca/:id", authRequired, updateBiblioteca);
 router.delete("/biblioteca/:id", authRequired, deleteBiblioteca);
 
-/* TRILHAS */
-
 router.get("/trilhas", authRequired, listTrilhas);
 router.post("/trilhas", authRequired, createTrilha);
 router.put("/trilhas/:id", authRequired, updateTrilha);
 router.delete("/trilhas/:id", authRequired, deleteTrilha);
-
-/* MIGRAÇÃO */
 
 router.get("/migracao-usuarios-primeiro-acesso", async (req, res) => {
   try {
