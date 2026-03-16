@@ -8,8 +8,10 @@ export default function ChamadaTurma({ params }) {
 
   const [participantes, setParticipantes] = useState([]);
   const [treinamento, setTreinamento] = useState(null);
+  const [arquivo, setArquivo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [importando, setImportando] = useState(false);
   const [erro, setErro] = useState("");
 
   useEffect(() => {
@@ -20,15 +22,15 @@ export default function ChamadaTurma({ params }) {
     try {
       setErro("");
 
-      const [dadosPresenca, dadosTreinamento] = await Promise.all([
-        apiFetch(`/presencas/treinamento/${id}`).catch(() => []),
+      const [dadosTreinamento, dadosParticipantes] = await Promise.all([
         apiFetch(`/treinamentos/${id}`).catch(() => null),
+        apiFetch(`/treinamentos/${id}/participantes`).catch(() => []),
       ]);
 
-      setParticipantes(Array.isArray(dadosPresenca) ? dadosPresenca : []);
       setTreinamento(dadosTreinamento || null);
-    } catch (err) {
-      setErro("Não foi possível carregar a chamada da turma.");
+      setParticipantes(Array.isArray(dadosParticipantes) ? dadosParticipantes : []);
+    } catch {
+      setErro("Não foi possível carregar a turma.");
     } finally {
       setLoading(false);
     }
@@ -36,7 +38,7 @@ export default function ChamadaTurma({ params }) {
 
   function alterarStatus(index, status) {
     const copia = [...participantes];
-    copia[index].status = status;
+    copia[index].status_presenca = status;
     setParticipantes(copia);
   }
 
@@ -46,12 +48,56 @@ export default function ChamadaTurma({ params }) {
     setParticipantes(copia);
   }
 
-  async function salvar() {
+  async function importarExcel() {
+    if (!arquivo) {
+      alert("Selecione um arquivo Excel.");
+      return;
+    }
+
+    try {
+      setImportando(true);
+      setErro("");
+
+      const token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+      const formData = new FormData();
+      formData.append("arquivo", arquivo);
+      formData.append("treinamento_id", id);
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "https://tel-td-portal-production.up.railway.app/api"}/treinamentos/importar-participantes`,
+        {
+          method: "POST",
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Erro ao importar planilha");
+      }
+
+      alert("Participantes importados com sucesso.");
+      setArquivo(null);
+      await carregar();
+    } catch (err) {
+      setErro(err.message || "Erro ao importar participantes.");
+    } finally {
+      setImportando(false);
+    }
+  }
+
+  async function salvarChamada() {
     try {
       setSalvando(true);
       setErro("");
 
-      await apiFetch(`/presencas/salvar-lote`, {
+      await apiFetch(`/treinamentos/salvar-chamada`, {
         method: "POST",
         body: JSON.stringify({
           treinamento_id: id,
@@ -60,7 +106,8 @@ export default function ChamadaTurma({ params }) {
       });
 
       alert("Chamada salva com sucesso.");
-    } catch (err) {
+      await carregar();
+    } catch {
       setErro("Não foi possível salvar a chamada.");
     } finally {
       setSalvando(false);
@@ -69,15 +116,21 @@ export default function ChamadaTurma({ params }) {
 
   const resumo = useMemo(() => {
     const presentes = participantes.filter(
-      (p) => String(p.status || "").toLowerCase() === "presente"
+      (p) => String(p.status_presenca || "").toLowerCase() === "presente"
     ).length;
 
     const ausentes = participantes.filter(
-      (p) => String(p.status || "").toLowerCase() === "ausente"
+      (p) => String(p.status_presenca || "").toLowerCase() === "ausente"
     ).length;
 
     const justificados = participantes.filter(
-      (p) => String(p.status || "").toLowerCase() === "justificado"
+      (p) => String(p.status_presenca || "").toLowerCase() === "justificado"
+    ).length;
+
+    const pendentes = participantes.filter(
+      (p) =>
+        !p.status_presenca ||
+        String(p.status_presenca || "").toLowerCase() === "pendente"
     ).length;
 
     return {
@@ -85,6 +138,7 @@ export default function ChamadaTurma({ params }) {
       presentes,
       ausentes,
       justificados,
+      pendentes,
     };
   }, [participantes]);
 
@@ -111,8 +165,7 @@ export default function ChamadaTurma({ params }) {
             {treinamento?.tema || treinamento?.titulo || "Turma de treinamento"}
           </h1>
           <p style={subtitle}>
-            Faça a chamada da turma, registre presença, ausência e justificativas
-            dos participantes.
+            Importe a lista de participantes via Excel e registre a chamada da turma.
           </p>
 
           <div style={metaGrid}>
@@ -125,8 +178,8 @@ export default function ChamadaTurma({ params }) {
               <strong>{treinamento?.instrutor || "-"}</strong>
             </div>
             <div style={metaCard}>
-              <span style={metaLabel}>Data</span>
-              <strong>{formatDate(treinamento?.data)}</strong>
+              <span style={metaLabel}>Participantes previstos</span>
+              <strong>{treinamento?.participantes || 0}</strong>
             </div>
             <div style={metaCard}>
               <span style={metaLabel}>Carga horária</span>
@@ -136,11 +189,33 @@ export default function ChamadaTurma({ params }) {
         </div>
       </div>
 
+      <div style={uploadCard}>
+        <div>
+          <h2 style={sectionTitle}>Importar participantes</h2>
+          <p style={sectionSubtitle}>
+            Use a planilha padrão com as colunas: nome, matricula, cliente, turma,
+            supervisor, operacao e data_admissao.
+          </p>
+        </div>
+
+        <div style={uploadActions}>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => setArquivo(e.target.files?.[0] || null)}
+          />
+          <button style={btnImportar} onClick={importarExcel} disabled={importando}>
+            {importando ? "Importando..." : "Importar Excel"}
+          </button>
+        </div>
+      </div>
+
       <div style={statsGrid}>
-        <Stat label="Participantes" value={resumo.total} color="#2563eb" />
+        <Stat label="Total" value={resumo.total} color="#2563eb" />
         <Stat label="Presentes" value={resumo.presentes} color="#16a34a" />
         <Stat label="Ausentes" value={resumo.ausentes} color="#dc2626" />
         <Stat label="Justificados" value={resumo.justificados} color="#f59e0b" />
+        <Stat label="Pendentes" value={resumo.pendentes} color="#64748b" />
       </div>
 
       {erro ? <div style={errorBox}>{erro}</div> : null}
@@ -148,23 +223,22 @@ export default function ChamadaTurma({ params }) {
       <div style={contentCard}>
         <div style={tableHeader}>
           <div>
-            <h2 style={sectionTitle}>Lista de participantes</h2>
+            <h2 style={sectionTitle}>Participantes da turma</h2>
             <p style={sectionSubtitle}>
-              Atualize o status de cada participante e salve a chamada ao final.
+              Atualize a presença e salve a chamada ao final.
             </p>
           </div>
 
-          <button style={btnSalvar} onClick={salvar} disabled={salvando}>
+          <button style={btnSalvar} onClick={salvarChamada} disabled={salvando}>
             {salvando ? "Salvando..." : "Salvar chamada"}
           </button>
         </div>
 
         {participantes.length === 0 ? (
           <div style={emptyState}>
-            <strong>Nenhum participante encontrado para esta turma.</strong>
+            <strong>Nenhum participante importado para esta turma.</strong>
             <span>
-              Verifique se a turma possui participantes vinculados ou se ainda
-              não houve lançamento inicial de presença.
+              Faça a importação do Excel para preencher automaticamente a lista.
             </span>
           </div>
         ) : (
@@ -173,6 +247,8 @@ export default function ChamadaTurma({ params }) {
               <thead>
                 <tr>
                   <th style={th}>Participante</th>
+                  <th style={th}>Matrícula</th>
+                  <th style={th}>Operação</th>
                   <th style={th}>Status</th>
                   <th style={th}>Justificativa</th>
                 </tr>
@@ -180,12 +256,17 @@ export default function ChamadaTurma({ params }) {
 
               <tbody>
                 {participantes.map((p, i) => (
-                  <tr key={i} style={tr}>
+                  <tr key={p.id || i} style={tr}>
                     <td style={td}>
-                      <div style={participantName}>
-                        {p.nome || p.participante || `Participante ${i + 1}`}
+                      <div style={participantName}>{p.nome}</div>
+                      <div style={participantMeta}>
+                        {p.cliente || "-"} • {p.supervisor || "-"}
                       </div>
                     </td>
+
+                    <td style={td}>{p.matricula || "-"}</td>
+
+                    <td style={td}>{p.operacao || "-"}</td>
 
                     <td style={td}>
                       <div style={statusActions}>
@@ -193,7 +274,7 @@ export default function ChamadaTurma({ params }) {
                           onClick={() => alterarStatus(i, "presente")}
                           style={{
                             ...btnStatusBase,
-                            ...(String(p.status || "").toLowerCase() === "presente"
+                            ...(String(p.status_presenca || "").toLowerCase() === "presente"
                               ? btnPresenteActive
                               : btnPresente),
                           }}
@@ -205,7 +286,7 @@ export default function ChamadaTurma({ params }) {
                           onClick={() => alterarStatus(i, "ausente")}
                           style={{
                             ...btnStatusBase,
-                            ...(String(p.status || "").toLowerCase() === "ausente"
+                            ...(String(p.status_presenca || "").toLowerCase() === "ausente"
                               ? btnAusenteActive
                               : btnAusente),
                           }}
@@ -217,7 +298,7 @@ export default function ChamadaTurma({ params }) {
                           onClick={() => alterarStatus(i, "justificado")}
                           style={{
                             ...btnStatusBase,
-                            ...(String(p.status || "").toLowerCase() === "justificado"
+                            ...(String(p.status_presenca || "").toLowerCase() === "justificado"
                               ? btnJustificadoActive
                               : btnJustificado),
                           }}
@@ -231,7 +312,7 @@ export default function ChamadaTurma({ params }) {
                       <input
                         value={p.justificativa || ""}
                         onChange={(e) => alterarJustificativa(i, e.target.value)}
-                        placeholder="Informar justificativa, se houver"
+                        placeholder="Informar justificativa"
                         style={input}
                       />
                     </td>
@@ -244,7 +325,7 @@ export default function ChamadaTurma({ params }) {
 
         {participantes.length > 0 ? (
           <div style={footerActions}>
-            <button style={btnSalvar} onClick={salvar} disabled={salvando}>
+            <button style={btnSalvar} onClick={salvarChamada} disabled={salvando}>
               {salvando ? "Salvando..." : "Salvar chamada"}
             </button>
           </div>
@@ -261,15 +342,6 @@ function Stat({ label, value, color }) {
       <div style={statValue}>{value}</div>
     </div>
   );
-}
-
-function formatDate(value) {
-  if (!value) return "-";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-
-  return date.toLocaleDateString("pt-BR");
 }
 
 const page = {
@@ -319,7 +391,7 @@ const eyebrow = {
 
 const title = {
   margin: 0,
-  fontSize: 36,
+  fontSize: 34,
   lineHeight: 1.05,
 };
 
@@ -327,7 +399,6 @@ const subtitle = {
   margin: 0,
   color: "rgba(255,255,255,.84)",
   lineHeight: 1.6,
-  maxWidth: 760,
 };
 
 const metaGrid = {
@@ -353,10 +424,41 @@ const metaLabel = {
   color: "rgba(255,255,255,.68)",
 };
 
+const uploadCard = {
+  marginTop: 16,
+  background: "#fff",
+  borderRadius: 18,
+  padding: 18,
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 16,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const uploadActions = {
+  display: "flex",
+  gap: 10,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const btnImportar = {
+  background: "#2563eb",
+  color: "#fff",
+  border: 0,
+  borderRadius: 10,
+  padding: "11px 16px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
 const statsGrid = {
   marginTop: 16,
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
   gap: 12,
 };
 
@@ -441,6 +543,12 @@ const participantName = {
   color: "#0f172a",
 };
 
+const participantMeta = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 12,
+};
+
 const statusActions = {
   display: "flex",
   gap: 8,
@@ -487,7 +595,7 @@ const btnJustificadoActive = {
 
 const input = {
   width: "100%",
-  minWidth: 240,
+  minWidth: 220,
   boxSizing: "border-box",
   padding: 10,
   borderRadius: 10,
