@@ -24,6 +24,60 @@ function parseHoras(value) {
   return match ? Number(match[1]) || 0 : 0;
 }
 
+function normalizeStatus(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
+function getStatusTurma({ treinandos, presentes, ausentes, justificados, pendentes }) {
+  const totalLancados = presentes + ausentes + justificados;
+
+  if (treinandos === 0) {
+    return "Sem treinandos";
+  }
+
+  if (totalLancados === 0) {
+    return "Chamada pendente";
+  }
+
+  if (pendentes > 0) {
+    return "Em andamento";
+  }
+
+  return "Concluída";
+}
+
+function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
+  if (statusTurma === "Sem treinandos") return "Crítico";
+  if (statusTurma === "Chamada pendente") return "Atenção";
+  if (pendentes > 0) return "Atenção";
+  if (treinandos > 0 && taxa < 85) return "Crítico";
+  return "Estável";
+}
+
+function getStatusBadgeStyle(status) {
+  const base = {
+    display: "inline-block",
+    padding: "5px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+  };
+
+  if (status === "Sem treinandos") {
+    return { ...base, background: "#fef2f2", color: "#b91c1c" };
+  }
+
+  if (status === "Chamada pendente") {
+    return { ...base, background: "#fff7ed", color: "#c2410c" };
+  }
+
+  if (status === "Em andamento") {
+    return { ...base, background: "#eff6ff", color: "#1d4ed8" };
+  }
+
+  return { ...base, background: "#ecfdf5", color: "#047857" };
+}
+
 export default function GestaoTurmasPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [presencas, setPresencas] = useState([]);
@@ -60,24 +114,37 @@ export default function GestaoTurmasPage() {
           (p) => String(p.treinamento_id) === String(t.id)
         );
 
-        const presentes = registros.filter((p) =>
-          ["presente", "Presente"].includes(String(p.status || ""))
+        const presentes = registros.filter(
+          (p) => normalizeStatus(p.status) === "presente"
         ).length;
 
-        const ausentes = registros.filter((p) =>
-          ["ausente", "Ausente"].includes(String(p.status || ""))
+        const ausentes = registros.filter(
+          (p) => normalizeStatus(p.status) === "ausente"
         ).length;
 
-        const justificados = registros.filter((p) =>
-          ["justificado", "Justificado"].includes(String(p.status || ""))
+        const justificados = registros.filter(
+          (p) => normalizeStatus(p.status) === "justificado"
         ).length;
 
         const treinandos = Number(t.participantes || registros.length || 0);
+        const totalLancados = presentes + ausentes + justificados;
+        const pendentes = Math.max(treinandos - totalLancados, 0);
         const taxa = treinandos ? Math.round((presentes / treinandos) * 100) : 0;
 
-        let classificacao = "Estável";
-        if (taxa < 85) classificacao = "Crítico";
-        else if (taxa < 95) classificacao = "Atenção";
+        const statusTurma = getStatusTurma({
+          treinandos,
+          presentes,
+          ausentes,
+          justificados,
+          pendentes,
+        });
+
+        const classificacao = getClassificacao({
+          taxa,
+          treinandos,
+          pendentes,
+          statusTurma,
+        });
 
         return {
           ...t,
@@ -85,19 +152,48 @@ export default function GestaoTurmasPage() {
           presentes,
           ausentes,
           justificados,
+          pendentes,
           taxa,
           classificacao,
+          statusTurma,
         };
       })
-      .sort((a, b) => a.taxa - b.taxa);
+      .sort((a, b) => {
+        const ordemStatus = {
+          "Sem treinandos": 1,
+          "Chamada pendente": 2,
+          "Em andamento": 3,
+          "Concluída": 4,
+        };
+
+        const aOrdem = ordemStatus[a.statusTurma] || 99;
+        const bOrdem = ordemStatus[b.statusTurma] || 99;
+
+        if (aOrdem !== bOrdem) return aOrdem - bOrdem;
+        return a.taxa - b.taxa;
+      });
   }, [treinamentos, presencas]);
 
   const resumo = useMemo(() => {
+    const turmasTotal = turmas.length;
+    const treinandos = turmas.reduce((acc, item) => acc + Number(item.treinandos || 0), 0);
+    const presentes = turmas.reduce((acc, item) => acc + Number(item.presentes || 0), 0);
+    const horas = turmas.reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0);
+
+    const semTreinandos = turmas.filter((item) => item.statusTurma === "Sem treinandos").length;
+    const pendentes = turmas.filter((item) => item.statusTurma === "Chamada pendente").length;
+    const andamento = turmas.filter((item) => item.statusTurma === "Em andamento").length;
+    const concluidas = turmas.filter((item) => item.statusTurma === "Concluída").length;
+
     return {
-      turmas: turmas.length,
-      treinandos: turmas.reduce((acc, item) => acc + Number(item.treinandos || 0), 0),
-      presentes: turmas.reduce((acc, item) => acc + Number(item.presentes || 0), 0),
-      horas: turmas.reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0),
+      turmasTotal,
+      treinandos,
+      presentes,
+      horas,
+      semTreinandos,
+      pendentes,
+      andamento,
+      concluidas,
     };
   }, [turmas]);
 
@@ -115,7 +211,7 @@ export default function GestaoTurmasPage() {
           <div style={statsGrid}>
             <StatCard
               title="Turmas"
-              value={fmt(resumo.turmas)}
+              value={fmt(resumo.turmasTotal)}
               subtitle="Consolidadas no portal"
               accent="#2563eb"
             />
@@ -136,6 +232,33 @@ export default function GestaoTurmasPage() {
               value={`${fmt(resumo.horas)}h`}
               subtitle="Carga consolidada"
               accent="#7c3aed"
+            />
+          </div>
+
+          <div style={statusGrid}>
+            <StatCard
+              title="Sem treinandos"
+              value={fmt(resumo.semTreinandos)}
+              subtitle="Turmas sem base vinculada"
+              accent="#dc2626"
+            />
+            <StatCard
+              title="Chamada pendente"
+              value={fmt(resumo.pendentes)}
+              subtitle="Sem lançamento iniciado"
+              accent="#f59e0b"
+            />
+            <StatCard
+              title="Em andamento"
+              value={fmt(resumo.andamento)}
+              subtitle="Com pendências operacionais"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Concluídas"
+              value={fmt(resumo.concluidas)}
+              subtitle="Turmas com chamada finalizada"
+              accent="#16a34a"
             />
           </div>
 
@@ -163,7 +286,14 @@ export default function GestaoTurmasPage() {
                       <span style={badgeTaxa}>{item.taxa}%</span>
                     </div>
 
+                    <div style={statusWrap}>
+                      <span style={getStatusBadgeStyle(item.statusTurma)}>
+                        {item.statusTurma}
+                      </span>
+                    </div>
+
                     <div style={turmaTitulo}>{item.tema || "Turma"}</div>
+
                     <div style={turmaMeta}>
                       {(item.cliente || "Sem cliente") +
                         " • " +
@@ -175,6 +305,7 @@ export default function GestaoTurmasPage() {
                       <span>{fmt(item.presentes)} pres.</span>
                       <span>{fmt(item.ausentes)} aus.</span>
                       <span>{fmt(item.justificados)} just.</span>
+                      <span>{fmt(item.pendentes)} pend.</span>
                     </div>
 
                     <div style={infoBloco}>
@@ -222,6 +353,13 @@ const statsGrid = {
   marginBottom: 16,
 };
 
+const statusGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 14,
+  marginBottom: 16,
+};
+
 const cardsGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
@@ -242,6 +380,10 @@ const cardTop = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
+};
+
+const statusWrap = {
+  marginTop: -2,
 };
 
 const badgeCritico = {
