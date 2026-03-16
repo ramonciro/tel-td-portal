@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import API_URL, { storeUserSession } from "../../services/api";
+import API_URL from "../../services/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,15 +32,18 @@ export default function LoginPage() {
         throw new Error(data.message || "Falha no login");
       }
 
-      storeUserSession(data.token, data.user);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+      }
 
-      if (data.user.troca_senha_obrigatoria) {
+      if (data.user?.troca_senha_obrigatoria) {
         router.push("/primeiro-acesso");
       } else {
         router.push("/inicio");
       }
     } catch (err) {
-      setErro(err.message);
+      setErro(err.message || "Erro ao entrar");
     } finally {
       setLoading(false);
     }
