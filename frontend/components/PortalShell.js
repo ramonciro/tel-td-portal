@@ -2,70 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { getStoredUser, hasSomeRole } from "../services/api";
+import { useEffect, useState } from "react";
+import { getStoredUser } from "../services/api";
 
-const allMenu = [
-  {
-    href: "/inicio",
-    label: "Início",
-    icon: "🏠",
-    roles: ["admin", "coordenador", "supervisor", "instrutor", "treinando"],
-  },
-  {
-    href: "/dashboard",
-    label: "Dashboard",
-    icon: "📊",
-    roles: ["admin", "coordenador", "supervisor"],
-  },
-  {
-    href: "/usuarios",
-    label: "Usuários",
-    icon: "👤",
-    roles: ["admin", "coordenador"],
-  },
-  {
-    href: "/clientes",
-    label: "Clientes",
-    icon: "🏢",
-    roles: ["admin", "coordenador", "supervisor"],
-  },
-  {
-    href: "/treinamentos",
-    label: "Treinamentos",
-    icon: "🎓",
-    roles: ["admin", "coordenador", "supervisor", "instrutor"],
-  },
-  {
-    href: "/presencas",
-    label: "Turmas",
-    icon: "👥",
-    roles: ["admin", "coordenador", "supervisor", "instrutor"],
-  },
-  {
-    href: "/avaliacoes",
-    label: "Avaliações",
-    icon: "⭐",
-    roles: ["admin", "coordenador", "supervisor", "instrutor"],
-  },
-  {
-    href: "/biblioteca",
-    label: "Biblioteca",
-    icon: "📚",
-    roles: ["admin", "coordenador", "supervisor", "instrutor", "treinando"],
-  },
-  {
-    href: "/trilhas",
-    label: "Trilhas",
-    icon: "🧭",
-    roles: ["admin", "coordenador", "supervisor", "instrutor", "treinando"],
-  },
-  {
-    href: "/mapa-desenvolvimento",
-    label: "Mapa de desenvolvimento",
-    icon: "🗺️",
-    roles: ["admin", "coordenador", "supervisor"],
-  },
+const menu = [
+  { href: "/inicio", label: "Início", icon: "🏠" },
+  { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  { href: "/usuarios", label: "Usuários", icon: "👤" },
+  { href: "/clientes", label: "Clientes", icon: "🏢" },
+  { href: "/treinamentos", label: "Treinamentos", icon: "🎓" },
+  { href: "/presencas", label: "Turmas", icon: "👥" },
+  { href: "/avaliacoes", label: "Avaliações", icon: "⭐" },
+  { href: "/biblioteca", label: "Biblioteca", icon: "📚" },
+  { href: "/trilhas", label: "Trilhas", icon: "🧭" },
+  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento", icon: "🗺️" },
 ];
 
 export default function PortalShell({ title, subtitle, children }) {
@@ -76,10 +26,6 @@ export default function PortalShell({ title, subtitle, children }) {
   useEffect(() => {
     setUser(getStoredUser());
   }, []);
-
-  const menu = useMemo(() => {
-    return allMenu.filter((item) => hasSomeRole(user, item.roles));
-  }, [user]);
 
   function sair() {
     if (typeof window !== "undefined") {
@@ -109,9 +55,7 @@ export default function PortalShell({ title, subtitle, children }) {
               <div style={profileBadge}>Perfil em uso</div>
               <div style={profileName}>{user?.nome || "Usuário"}</div>
               <div style={profileRole}>
-                {(user?.perfil || "perfil não identificado")
-                  .toString()
-                  .toUpperCase()}
+                {(user?.perfil || "perfil não identificado").toString().toUpperCase()}
               </div>
             </div>
           </div>
@@ -381,22 +325,4 @@ const headerBadge = {
   fontWeight: 800,
   padding: "6px 11px",
   borderRadius: 999,
-  fontSize: 11,
-  letterSpacing: ".03em",
-  textTransform: "uppercase",
-};
-
-const pageTitle = {
-  margin: "12px 0 8px",
-  fontSize: 34,
-  lineHeight: 1.05,
-  color: "#0f172a",
-};
-
-const pageSubtitle = {
-  margin: 0,
-  color: "#64748b",
-  fontSize: 15,
-  maxWidth: 980,
-  lineHeight: 1.55,
-};
+  fontSize:
