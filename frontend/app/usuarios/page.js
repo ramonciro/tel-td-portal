@@ -146,7 +146,7 @@ export default function UsuariosPage() {
   ];
 
   return (
-    <AccessGate allowedRoles={["admin", "coordenador"]}>
+    <AccessGate allowed={["admin", "coordenador"]}>
       <CrudPageV2
         title="Usuários"
         subtitle="Gestão dos acessos do portal com controle de perfil, cliente e status de uso."
