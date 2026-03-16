@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import API_URL, { getStoredUser, storeUserSession } from "../../services/api";
+import API_URL, { getStoredUser } from "../../services/api";
 
 export default function PrimeiroAcessoPage() {
   const router = useRouter();
@@ -48,10 +48,17 @@ export default function PrimeiroAcessoPage() {
         throw new Error(data.message || "Erro ao alterar senha");
       }
 
-      storeUserSession(localStorage.getItem("token"), {
-        ...user,
-        troca_senha_obrigatoria: false,
-      });
+      if (typeof window !== "undefined") {
+        const token = localStorage.getItem("token");
+
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            ...user,
+            troca_senha_obrigatoria: false,
+          })
+        );
+      }
 
       router.push("/inicio");
     } catch (err) {
