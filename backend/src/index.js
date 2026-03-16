@@ -7,7 +7,11 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
-const { getDashboardTreinamentos, } = require("./controllers/dashboardTreinamentosController");
+
+const {
+  getDashboardTreinamentos,
+} = require("./controllers/dashboardTreinamentosController");
+
 const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
@@ -21,7 +25,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/api/dashboard/treinamentos",getDashboardTreinamentos);
+app.get("/api/dashboard/treinamentos", getDashboardTreinamentos);
+
 app.get("/api", async (req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -29,7 +34,7 @@ app.get("/api", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       status: "API online sem conexão com banco",
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -42,7 +47,7 @@ app.use(
   createCrudRouter({
     table: "clientes",
     fields: ["nome", "segmento", "status", "gestor", "descricao"],
-    orderBy: "nome ASC"
+    orderBy: "nome ASC",
   })
 );
 
@@ -50,7 +55,15 @@ app.use(
   "/api/usuarios",
   createCrudRouter({
     table: "usuarios",
-    fields: ["nome", "email", "senha", "perfil", "cliente", "ativo", "troca_senha_obrigatoria"]
+    fields: [
+      "nome",
+      "email",
+      "senha",
+      "perfil",
+      "cliente",
+      "ativo",
+      "troca_senha_obrigatoria",
+    ],
   })
 );
 
@@ -72,13 +85,12 @@ app.use(
       "descricao",
       "data",
       "turma",
-      "supervisor"
+      "supervisor",
     ],
-    orderBy: "id DESC"
+    orderBy: "id DESC",
   })
 );
 
-/* DETALHE DO TREINAMENTO */
 app.get("/api/treinamentos/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -111,7 +123,7 @@ app.get("/api/treinamentos/:id", async (req, res) => {
     if (!rows.length) {
       return res.status(404).json({
         ok: false,
-        message: "Treinamento não encontrado"
+        message: "Treinamento não encontrado",
       });
     }
 
@@ -120,12 +132,11 @@ app.get("/api/treinamentos/:id", async (req, res) => {
     return res.status(500).json({
       ok: false,
       message: "Erro ao buscar treinamento",
-      error: error.message
+      error: error.message,
     });
   }
 });
 
-/* PARTICIPANTES DO TREINAMENTO */
 app.get(
   "/api/treinamentos/:id/participantes",
   getParticipantesByTreinamento
@@ -146,8 +157,14 @@ app.use(
   "/api/presencas",
   createCrudRouter({
     table: "presencas",
-    fields: ["treinamento_id", "treinando_nome", "presente", "status", "justificativa"],
-    orderBy: "id DESC"
+    fields: [
+      "treinamento_id",
+      "treinando_nome",
+      "presente",
+      "status",
+      "justificativa",
+    ],
+    orderBy: "id DESC",
   })
 );
 
@@ -155,8 +172,16 @@ app.use(
   "/api/avaliacoes",
   createCrudRouter({
     table: "avaliacoes",
-    fields: ["treinamento_id", "titulo", "nota_nps", "nota_qualidade", "nota_prova", "observacoes", "comentario"],
-    orderBy: "id DESC"
+    fields: [
+      "treinamento_id",
+      "titulo",
+      "nota_nps",
+      "nota_qualidade",
+      "nota_prova",
+      "observacoes",
+      "comentario",
+    ],
+    orderBy: "id DESC",
   })
 );
 
@@ -165,7 +190,7 @@ app.use(
   createCrudRouter({
     table: "biblioteca_conteudos",
     fields: ["titulo", "tipo", "cliente", "link_arquivo", "descricao"],
-    orderBy: "id DESC"
+    orderBy: "id DESC",
   })
 );
 
@@ -174,7 +199,7 @@ app.use(
   createCrudRouter({
     table: "trilhas_aprendizagem",
     fields: ["cliente", "titulo", "descricao", "etapas"],
-    orderBy: "id DESC"
+    orderBy: "id DESC",
   })
 );
 
@@ -192,7 +217,7 @@ app.get("/api/zerar-dashboard", async (req, res) => {
 
     res.json({
       ok: true,
-      message: "Base zerada com sucesso."
+      message: "Base zerada com sucesso.",
     });
   } catch (error) {
     try {
@@ -203,7 +228,7 @@ app.get("/api/zerar-dashboard", async (req, res) => {
     res.status(500).json({
       ok: false,
       message: "Erro ao zerar base.",
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -230,7 +255,7 @@ app.get("/api/importar-dashboard", async (req, res) => {
     res.json({
       ok: true,
       message: "Importação do dashboard concluída com sucesso.",
-      resumo: resultado
+      resumo: resultado,
     });
   } catch (error) {
     try {
@@ -241,7 +266,7 @@ app.get("/api/importar-dashboard", async (req, res) => {
     res.status(500).json({
       ok: false,
       message: "Erro ao importar dashboard.",
-      error: error.message
+      error: error.message,
     });
   }
 });
