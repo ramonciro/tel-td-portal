@@ -1,12 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import API_URL from "../../services/api";
 
 export default function LoginPage() {
-  const router = useRouter();
-
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
@@ -35,12 +32,12 @@ export default function LoginPage() {
       if (typeof window !== "undefined") {
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
-      }
 
-      if (data.user?.troca_senha_obrigatoria) {
-        router.push("/primeiro-acesso");
-      } else {
-        router.push("/inicio");
+        if (data.user?.troca_senha_obrigatoria) {
+          window.location.href = "/primeiro-acesso";
+        } else {
+          window.location.href = "/inicio";
+        }
       }
     } catch (err) {
       setErro(err.message || "Erro ao entrar");
@@ -56,7 +53,7 @@ export default function LoginPage() {
           <img src="/logo-td.png" alt="Portal T&D" style={logo} />
           <h1 style={title}>Portal T&amp;D</h1>
           <p style={subtitle}>
-            Plataforma de gestão de Treinamento &amp; Desenvolvimento
+            Plataforma de gestão de Treinamento e Desenvolvimento
           </p>
         </div>
       </div>
