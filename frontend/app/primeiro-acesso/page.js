@@ -2,74 +2,163 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import API_URL from "../../services/api";
+import API_URL, { getStoredUser, storeUserSession } from "../../services/api";
 
-export default function PrimeiroAcessoPage(){
+export default function PrimeiroAcessoPage() {
+  const router = useRouter();
 
-const router = useRouter()
+  const [senha, setSenha] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
-const [senha,setSenha]=useState("")
-const [confirmacao,setConfirmacao]=useState("")
-const [erro,setErro]=useState("")
+  async function salvar(e) {
+    e.preventDefault();
+    setErro("");
 
-async function salvar(e){
+    if (senha !== confirmacao) {
+      setErro("Senhas não conferem");
+      return;
+    }
 
-e.preventDefault()
+    const user = getStoredUser();
 
-if(senha!==confirmacao){
+    if (!user?.email) {
+      setErro("Usuário não identificado");
+      return;
+    }
 
-setErro("Senhas não conferem")
-return
+    try {
+      setLoading(true);
 
+      const response = await fetch(`${API_URL}/auth/alterar-senha`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: user.email,
+          novaSenha: senha,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Erro ao alterar senha");
+      }
+
+      storeUserSession(localStorage.getItem("token"), {
+        ...user,
+        troca_senha_obrigatoria: false,
+      });
+
+      router.push("/inicio");
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={wrap}>
+      <div style={card}>
+        <img src="/logo-td.png" alt="Portal T&D" style={logo} />
+        <h1 style={title}>Primeiro acesso</h1>
+        <p style={subtitle}>
+          Defina sua nova senha para continuar usando o portal.
+        </p>
+
+        {erro && <div style={errorBox}>{erro}</div>}
+
+        <form onSubmit={salvar} style={form}>
+          <input
+            type="password"
+            placeholder="Nova senha"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            style={input}
+            required
+          />
+
+          <input
+            type="password"
+            placeholder="Confirmar senha"
+            value={confirmacao}
+            onChange={(e) => setConfirmacao(e.target.value)}
+            style={input}
+            required
+          />
+
+          <button style={button} disabled={loading}>
+            {loading ? "Salvando..." : "Salvar senha"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 }
 
-const user = JSON.parse(localStorage.getItem("user"))
+const wrap = {
+  minHeight: "100vh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#f8fafc",
+  padding: 24,
+};
 
-await fetch(`${API_URL}/auth/alterar-senha`,{
+const card = {
+  width: "100%",
+  maxWidth: 420,
+  background: "#fff",
+  padding: 32,
+  borderRadius: 18,
+  boxShadow: "0 15px 35px rgba(0,0,0,.08)",
+};
 
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-email:user.email,
-novaSenha:senha
-})
+const logo = {
+  width: 82,
+  marginBottom: 16,
+};
 
-})
+const title = {
+  margin: "0 0 8px",
+};
 
-router.push("/inicio")
+const subtitle = {
+  margin: "0 0 16px",
+  color: "#64748b",
+};
 
-}
+const form = {
+  display: "grid",
+  gap: 12,
+};
 
-return(
+const input = {
+  padding: 12,
+  borderRadius: 8,
+  border: "1px solid #ddd",
+  fontSize: 14,
+};
 
-<div style={{padding:40}}>
+const button = {
+  padding: 12,
+  borderRadius: 8,
+  border: 0,
+  background: "#2563eb",
+  color: "#fff",
+  fontWeight: 700,
+  cursor: "pointer",
+};
 
-<h2>Primeiro acesso</h2>
-
-<form onSubmit={salvar}>
-
-<input
-type="password"
-placeholder="Nova senha"
-value={senha}
-onChange={(e)=>setSenha(e.target.value)}
-/>
-
-<input
-type="password"
-placeholder="Confirmar senha"
-value={confirmacao}
-onChange={(e)=>setConfirmacao(e.target.value)}
-/>
-
-<button>Salvar senha</button>
-
-</form>
-
-</div>
-
-)
-
-}
+const errorBox = {
+  background: "#fee2e2",
+  color: "#b91c1c",
+  padding: 10,
+  borderRadius: 8,
+  fontSize: 13,
+  marginBottom: 12,
+};
