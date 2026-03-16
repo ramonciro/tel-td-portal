@@ -33,10 +33,6 @@ export async function apiFetch(path, options = {}) {
   return data;
 }
 
-/*
-  Mantida para compatibilidade com qualquer página antiga
-  que ainda esteja chamando storeUserSession.
-*/
 export function storeUserSession(token, user) {
   if (typeof window === "undefined") return;
 
@@ -71,10 +67,10 @@ export function hasSomeRole(user, roles = []) {
 
 export function isAuthenticated() {
   if (typeof window === "undefined") return false;
-  return !!localStorage.getItem("token"));
+  return !!localStorage.getItem("token");
 }
 
 export function logout(router) {
   clearSession();
   if (router) router.push("/login");
-      }
+}
