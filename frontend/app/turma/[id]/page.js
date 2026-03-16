@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../services/api";
 
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://tel-td-portal-production.up.railway.app/api";
+
 export default function ChamadaTurma({ params }) {
   const { id } = params;
 
@@ -65,16 +69,13 @@ export default function ChamadaTurma({ params }) {
       formData.append("arquivo", arquivo);
       formData.append("treinamento_id", id);
 
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "https://tel-td-portal-production.up.railway.app/api"}/treinamentos/importar-participantes`,
-        {
-          method: "POST",
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: formData,
-        }
-      );
+      const response = await fetch(`${API_URL}/treinamentos/importar-participantes`, {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      });
 
       const data = await response.json();
 
