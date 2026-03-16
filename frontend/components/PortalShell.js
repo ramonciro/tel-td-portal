@@ -6,16 +6,16 @@ import { useEffect, useMemo, useState } from "react";
 import { getStoredUser, hasSomeRole } from "../services/api";
 
 const allMenu = [
-  { href: "/inicio", label: "Início", icon: "🏠" },
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/usuarios", label: "Usuários", icon: "👤", restricted: true },
-  { href: "/clientes", label: "Clientes", icon: "🏢", restricted: true },
-  { href: "/treinamentos", label: "Treinamentos", icon: "🎓" },
-  { href: "/presencas", label: "Turmas", icon: "👥" },
-  { href: "/avaliacoes", label: "Avaliações", icon: "⭐" },
-  { href: "/biblioteca", label: "Biblioteca", icon: "📚" },
-  { href: "/trilhas", label: "Trilhas", icon: "🧭" },
-  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento", icon: "🗺️" },
+  { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando", "admin"] },
+  { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor", "admin"] },
+  { href: "/usuarios", label: "Usuários", icon: "👤", roles: ["coordenador", "admin"] },
+  { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor", "admin"] },
+  { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor", "admin"] },
+  { href: "/presencas", label: "Turmas", icon: "👥", roles: ["coordenador", "supervisor", "instrutor", "admin"] },
+  { href: "/avaliacoes", label: "Avaliações", icon: "⭐", roles: ["coordenador", "supervisor", "instrutor", "admin"] },
+  { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando", "admin"] },
+  { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando", "admin"] },
+  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento", icon: "🗺️", roles: ["coordenador", "supervisor", "admin"] },
 ];
 
 export default function PortalShell({ title, subtitle, children }) {
@@ -28,8 +28,7 @@ export default function PortalShell({ title, subtitle, children }) {
   }, []);
 
   const menu = useMemo(() => {
-    const elevated = hasSomeRole(user, ["admin", "coordenador", "supervisor"]);
-    return allMenu.filter((item) => !item.restricted || elevated);
+    return allMenu.filter((item) => hasSomeRole(user, item.roles));
   }, [user]);
 
   function sair() {
