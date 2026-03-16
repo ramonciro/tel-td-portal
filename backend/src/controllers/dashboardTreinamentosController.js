@@ -1,5 +1,14 @@
 const pool = require("../lib/db");
 
+function parseHorasTexto(valor) {
+  if (valor === null || valor === undefined || valor === "") return 0;
+
+  const texto = String(valor).toLowerCase().replace(",", ".").trim();
+  const match = texto.match(/(\d+(\.\d+)?)/);
+
+  return match ? Number(match[1]) || 0 : 0;
+}
+
 async function getDashboardTreinamentos(req, res) {
   try {
     const [[treinamentos]] = await pool.query(`
@@ -7,15 +16,27 @@ async function getDashboardTreinamentos(req, res) {
       FROM treinamentos
     `);
 
-    const [[participantesImportados]] = await pool.query(`
+    const [[clientesCarteira]] = await pool.query(`
       SELECT COUNT(*) AS total
-      FROM treinamento_participantes tp
-      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
+      FROM clientes
+    `);
+
+    const [[clientesComTreinamento]] = await pool.query(`
+      SELECT COUNT(DISTINCT cliente) AS total
+      FROM treinamentos
+      WHERE cliente IS NOT NULL
+        AND cliente <> ''
     `);
 
     const [[participantesPrevistos]] = await pool.query(`
-      SELECT COALESCE(SUM(t.participantes), 0) AS total
-      FROM treinamentos t
+      SELECT COALESCE(SUM(participantes), 0) AS total
+      FROM treinamentos
+    `);
+
+    const [[participantesTreinados]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM treinamento_participantes tp
+      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
     `);
 
     const [[presentes]] = await pool.query(`
@@ -49,62 +70,43 @@ async function getDashboardTreinamentos(req, res) {
     `);
 
     const [[mediaParticipantesPorTurma]] = await pool.query(`
-      SELECT COALESCE(ROUND(AVG(x.total_participantes), 1), 0) AS total
-      FROM (
-        SELECT
-          t.id,
-          COUNT(tp.id) AS total_participantes
-        FROM treinamentos t
-        LEFT JOIN treinamento_participantes tp
-          ON tp.treinamento_id = t.id
-        GROUP BY t.id
-      ) x
-    `);
-
-    const [[horasTreinadas]] = await pool.query(`
-      SELECT COALESCE(SUM(base.horas_treinadas), 0) AS total
-      FROM (
-        SELECT
-          t.id,
-          (
-            CASE
-              WHEN t.carga_horaria IS NULL OR t.carga_horaria = '' THEN 0
-              ELSE CAST(
-                REPLACE(
-                  REPLACE(
-                    REPLACE(LOWER(t.carga_horaria), 'h', ''),
-                    ',', '.'
-                  ),
-                  ' ',
-                  ''
-                ) AS DECIMAL(10,2)
-              )
-            END
-          ) *
-          SUM(
-            CASE
-              WHEN tp.status_presenca = 'presente' THEN 1
-              ELSE 0
-            END
-          ) AS horas_treinadas
-        FROM treinamentos t
-        LEFT JOIN treinamento_participantes tp
-          ON tp.treinamento_id = t.id
-        GROUP BY t.id, t.carga_horaria
-      ) base
-    `);
-
-    const [[clientesAtivos]] = await pool.query(`
-      SELECT COUNT(DISTINCT cliente) AS total
+      SELECT COALESCE(ROUND(AVG(participantes), 1), 0) AS total
       FROM treinamentos
-      WHERE cliente IS NOT NULL
-        AND cliente <> ''
     `);
+
+    const [cargas] = await pool.query(`
+      SELECT carga_horaria
+      FROM treinamentos
+      WHERE carga_horaria IS NOT NULL
+        AND carga_horaria <> ''
+    `);
+
+    const cargaHorariaTotal = cargas.reduce(
+      (acc, item) => acc + parseHorasTexto(item.carga_horaria),
+      0
+    );
+
+    const [horasTreinadasBase] = await pool.query(`
+      SELECT
+        t.id,
+        t.carga_horaria,
+        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes
+      FROM treinamentos t
+      LEFT JOIN treinamento_participantes tp
+        ON tp.treinamento_id = t.id
+      GROUP BY t.id, t.carga_horaria
+    `);
+
+    const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
+      const horas = parseHorasTexto(item.carga_horaria);
+      const presentesTurma = Number(item.presentes || 0);
+      return acc + horas * presentesTurma;
+    }, 0);
 
     const [presencaPorCliente] = await pool.query(`
       SELECT
         t.cliente,
-        COUNT(tp.id) AS total_participantes,
+        COUNT(tp.id) AS total_treinados,
         SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
         SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
         SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados,
@@ -121,7 +123,7 @@ async function getDashboardTreinamentos(req, res) {
       WHERE t.cliente IS NOT NULL
         AND t.cliente <> ''
       GROUP BY t.cliente
-      ORDER BY total_participantes DESC, presentes DESC
+      ORDER BY total_treinados DESC, presentes DESC
       LIMIT 10
     `);
 
@@ -129,7 +131,7 @@ async function getDashboardTreinamentos(req, res) {
       SELECT
         t.instrutor,
         COUNT(DISTINCT t.id) AS total_turmas,
-        COUNT(tp.id) AS total_participantes,
+        COUNT(tp.id) AS total_treinados,
         SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
         ROUND(
           (
@@ -157,7 +159,7 @@ async function getDashboardTreinamentos(req, res) {
         t.data,
         t.carga_horaria,
         t.participantes,
-        COUNT(tp.id) AS importados,
+        COUNT(tp.id) AS treinados,
         SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
         SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
         SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados,
@@ -186,31 +188,28 @@ async function getDashboardTreinamentos(req, res) {
     `);
 
     const totalTreinamentos = Number(treinamentos.total || 0);
-    const totalImportados = Number(participantesImportados.total || 0);
+    const totalTreinados = Number(participantesTreinados.total || 0);
     const totalPrevistos = Number(participantesPrevistos.total || 0);
     const totalPresentes = Number(presentes.total || 0);
     const totalAusentes = Number(ausentes.total || 0);
     const totalJustificados = Number(justificados.total || 0);
     const totalPendentes = Number(pendentes.total || 0);
-    const mediaPorTurma = Number(mediaParticipantesPorTurma.total || 0);
-    const totalHorasTreinadas = Number(horasTreinadas.total || 0);
-    const totalClientesAtivos = Number(clientesAtivos.total || 0);
 
     const taxaPresenca =
-      totalImportados > 0
-        ? Math.round((totalPresentes / totalImportados) * 100)
+      totalTreinados > 0
+        ? Math.round((totalPresentes / totalTreinados) * 100)
         : 0;
 
     const taxaConclusaoChamada =
-      totalImportados > 0
-        ? Math.round(((totalImportados - totalPendentes) / totalImportados) * 100)
+      totalTreinados > 0
+        ? Math.round(((totalTreinados - totalPendentes) / totalTreinados) * 100)
         : 0;
 
     return res.json({
       ok: true,
       kpis: {
         treinamentos: totalTreinamentos,
-        participantes_importados: totalImportados,
+        treinados: totalTreinados,
         participantes_previstos: totalPrevistos,
         presentes: totalPresentes,
         ausentes: totalAusentes,
@@ -218,9 +217,11 @@ async function getDashboardTreinamentos(req, res) {
         pendentes: totalPendentes,
         taxa_presenca: taxaPresenca,
         taxa_conclusao_chamada: taxaConclusaoChamada,
-        media_participantes_por_turma: mediaPorTurma,
-        horas_treinadas: totalHorasTreinadas,
-        clientes_ativos: totalClientesAtivos,
+        media_participantes_por_turma: Number(mediaParticipantesPorTurma.total || 0),
+        horas_treinadas: Number(horasTreinadas || 0),
+        carga_horaria_total: Number(cargaHorariaTotal || 0),
+        clientes_ativos: Number(clientesCarteira.total || 0),
+        clientes_com_treinamento: Number(clientesComTreinamento.total || 0),
       },
       presenca_por_cliente: presencaPorCliente,
       ranking_instrutores: rankingInstrutores,
