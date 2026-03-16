@@ -49,8 +49,6 @@ export default function PrimeiroAcessoPage() {
       }
 
       if (typeof window !== "undefined") {
-        const token = localStorage.getItem("token");
-
         localStorage.setItem(
           "user",
           JSON.stringify({
