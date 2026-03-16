@@ -26,15 +26,22 @@ export default function ChamadaTurma({ params }) {
     try {
       setErro("");
 
-      const [dadosTreinamento, dadosParticipantes] = await Promise.all([
-        apiFetch(`/treinamentos/${id}`).catch(() => null),
-        apiFetch(`/treinamentos/${id}/participantes`).catch(() => []),
-      ]);
+      const dadosTreinamento = await apiFetch(`/treinamentos/${id}`).catch(
+        (err) => {
+          throw new Error(`Erro ao buscar treinamento: ${err.message}`);
+        }
+      );
+
+      const dadosParticipantes = await apiFetch(
+        `/treinamentos/${id}/participantes`
+      ).catch((err) => {
+        throw new Error(`Erro ao buscar participantes: ${err.message}`);
+      });
 
       setTreinamento(dadosTreinamento || null);
       setParticipantes(Array.isArray(dadosParticipantes) ? dadosParticipantes : []);
-    } catch {
-      setErro("Não foi possível carregar a turma.");
+    } catch (err) {
+      setErro(err.message || "Não foi possível carregar a turma.");
     } finally {
       setLoading(false);
     }
@@ -77,7 +84,15 @@ export default function ChamadaTurma({ params }) {
         body: formData,
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get("content-type") || "";
+      let data;
+
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Resposta inválida da API: ${text.slice(0, 120)}`);
+      }
 
       if (!response.ok) {
         throw new Error(data.message || "Erro ao importar planilha");
@@ -108,8 +123,8 @@ export default function ChamadaTurma({ params }) {
 
       alert("Chamada salva com sucesso.");
       await carregar();
-    } catch {
-      setErro("Não foi possível salvar a chamada.");
+    } catch (err) {
+      setErro(err.message || "Não foi possível salvar a chamada.");
     } finally {
       setSalvando(false);
     }
