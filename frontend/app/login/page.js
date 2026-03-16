@@ -51,9 +51,7 @@ export default function LoginPage() {
       <div style={leftSide}>
         <div style={brandBox}>
           <img src="/logo-td.png" alt="Portal T&D" style={logo} />
-
           <h1 style={title}>Portal T&amp;D</h1>
-
           <p style={subtitle}>
             Plataforma de gestão de Treinamento &amp; Desenvolvimento
           </p>
@@ -63,7 +61,6 @@ export default function LoginPage() {
       <div style={rightSide}>
         <form onSubmit={login} style={loginCard}>
           <h2 style={loginTitle}>Acessar plataforma</h2>
-
           <p style={loginSubtitle}>
             Utilize seu e-mail corporativo para acessar o portal
           </p>
