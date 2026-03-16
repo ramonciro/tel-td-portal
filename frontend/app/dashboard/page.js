@@ -52,7 +52,7 @@ export default function DashboardPage() {
     const taxaConclusao = Number(kpis.taxa_conclusao_chamada || 0);
     const pendentes = Number(kpis.pendentes || 0);
     const treinamentos = Number(kpis.treinamentos || 0);
-    const importados = Number(kpis.participantes_importados || 0);
+    const treinados = Number(kpis.treinados || 0);
 
     const alertas = [];
 
@@ -60,17 +60,17 @@ export default function DashboardPage() {
       alertas.push("Ainda não há treinamentos cadastrados no portal.");
     }
 
-    if (importados === 0 && treinamentos > 0) {
-      alertas.push("Existem turmas cadastradas sem participantes importados.");
+    if (treinados === 0 && treinamentos > 0) {
+      alertas.push("Existem turmas cadastradas sem treinandos vinculados.");
     }
 
     if (taxaConclusao < 100 && pendentes > 0) {
       alertas.push(
-        `${fmt(pendentes)} participante(s) ainda estão com chamada pendente.`
+        `${fmt(pendentes)} treinando(s) ainda estão com chamada pendente.`
       );
     }
 
-    if (taxaPresenca < 85 && importados > 0) {
+    if (taxaPresenca < 85 && treinados > 0) {
       alertas.push(
         `A taxa geral de presença está em ${taxaPresenca}%, abaixo do patamar ideal.`
       );
@@ -99,20 +99,19 @@ export default function DashboardPage() {
               <div style={heroBadge}>Visão estratégica</div>
               <h2 style={heroTitle}>Painel de execução de treinamentos</h2>
               <p style={heroText}>
-                Acompanhe volume de turmas, participantes importados, presença
-                real, pendências de chamada e desempenho por cliente e
-                instrutor.
+                Acompanhe volume de turmas, treinandos vinculados, presença real,
+                pendências de chamada e desempenho por cliente e instrutor.
               </p>
             </div>
 
             <div style={heroMiniGrid}>
               <div style={heroMiniCard}>
                 <strong>{fmt(kpis.clientes_ativos || 0)}</strong>
-                <span>clientes com treinamentos</span>
+                <span>clientes da carteira</span>
               </div>
               <div style={heroMiniCard}>
-                <strong>{fmt(kpis.horas_treinadas || 0)}h</strong>
-                <span>horas treinadas</span>
+                <strong>{fmt(kpis.clientes_com_treinamento || 0)}</strong>
+                <span>clientes com treinamento</span>
               </div>
               <div style={heroMiniCard}>
                 <strong>{kpis.taxa_presenca || 0}%</strong>
@@ -129,9 +128,9 @@ export default function DashboardPage() {
               accent="#2563eb"
             />
             <StatCard
-              title="Importados"
-              value={fmt(kpis.participantes_importados || 0)}
-              subtitle="Participantes na base"
+              title="Treinados"
+              value={fmt(kpis.treinados || 0)}
+              subtitle="Base real das turmas"
               accent="#06b6d4"
             />
             <StatCard
@@ -141,10 +140,10 @@ export default function DashboardPage() {
               accent="#7c3aed"
             />
             <StatCard
-              title="Clientes ativos"
-              value={fmt(kpis.clientes_ativos || 0)}
-              subtitle="Clientes em execução"
-              accent="#059669"
+              title="Carga horária"
+              value={`${fmt(kpis.carga_horaria_total || 0)}h`}
+              subtitle="Carga consolidada"
+              accent="#0f766e"
             />
           </div>
 
@@ -192,7 +191,7 @@ export default function DashboardPage() {
               title="Média por turma"
               value={fmt(kpis.media_participantes_por_turma || 0)}
               subtitle="Participantes/turma"
-              accent="#0f766e"
+              accent="#475569"
             />
             <StatCard
               title="Horas treinadas"
@@ -219,7 +218,7 @@ export default function DashboardPage() {
                       </div>
 
                       <div style={itemMeta}>
-                        {fmt(item.total_participantes || 0)} participantes •{" "}
+                        {fmt(item.total_treinados || 0)} treinados •{" "}
                         {fmt(item.presentes || 0)} presentes •{" "}
                         {fmt(item.ausentes || 0)} ausentes •{" "}
                         {fmt(item.justificados || 0)} justificados
@@ -251,7 +250,7 @@ export default function DashboardPage() {
 
                       <div style={itemMeta}>
                         {fmt(item.total_turmas || 0)} turma(s) •{" "}
-                        {fmt(item.total_participantes || 0)} participantes •{" "}
+                        {fmt(item.total_treinados || 0)} treinados •{" "}
                         {fmt(item.presentes || 0)} presentes
                       </div>
                     </div>
@@ -285,8 +284,8 @@ export default function DashboardPage() {
 
                       <div style={{ ...itemMeta, marginTop: 6 }}>
                         {formatDate(item.data)} • {item.carga_horaria || "-"} •{" "}
-                        previstos: {fmt(item.participantes || 0)} • importados:{" "}
-                        {fmt(item.importados || 0)}
+                        previstos: {fmt(item.participantes || 0)} • treinados:{" "}
+                        {fmt(item.treinados || 0)}
                       </div>
 
                       <div style={statusLine}>
