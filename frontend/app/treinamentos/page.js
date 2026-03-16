@@ -20,9 +20,9 @@ function parseHoras(value) {
 function statusLabel(status) {
   const key = String(status || "").toLowerCase();
 
-  if (key === "concluido" || key === "concluído") return "Concluído";
+  if (key === "concluido" || key === "concluído") return "Concluída";
   if (key === "em_andamento" || key === "em andamento") return "Em andamento";
-  return "Planejado";
+  return "Planejada";
 }
 
 function statusStyle(status) {
@@ -36,7 +36,7 @@ function statusStyle(status) {
     fontSize: 11,
   };
 
-  if (label === "Concluído") {
+  if (label === "Concluída") {
     return { ...base, background: "#dcfce7", color: "#166534" };
   }
 
@@ -57,7 +57,7 @@ function formatDate(value) {
 }
 
 export default function TreinamentosPage() {
-  const [treinamentos, setTreinamentos] = useState([]);
+  const [turmas, setTurmas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
 
   useEffect(() => {
@@ -68,10 +68,10 @@ export default function TreinamentosPage() {
           apiFetch("/usuarios").catch(() => []),
         ]);
 
-        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+        setTurmas(Array.isArray(treinamentosData) ? treinamentosData : []);
         setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
       } catch {
-        setTreinamentos([]);
+        setTurmas([]);
         setUsuarios([]);
       }
     }
@@ -95,7 +95,7 @@ export default function TreinamentosPage() {
   const fields = [
     {
       name: "tema",
-      label: "Treinamento",
+      label: "Turma / treinamento",
       placeholder: "Tema ou nome da turma",
     },
     {
@@ -127,18 +127,18 @@ export default function TreinamentosPage() {
     },
     {
       name: "participantes",
-      label: "Participantes",
+      label: "Treinandos previstos",
       type: "number",
       placeholder: "Quantidade prevista",
     },
     {
       name: "status",
-      label: "Status",
+      label: "Status da turma",
       type: "select",
       options: [
-        { value: "planejado", label: "Planejado" },
+        { value: "planejado", label: "Planejada" },
         { value: "em_andamento", label: "Em andamento" },
-        { value: "concluido", label: "Concluído" },
+        { value: "concluido", label: "Concluída" },
       ],
       placeholder: "Selecione o status",
     },
@@ -156,23 +156,23 @@ export default function TreinamentosPage() {
   ];
 
   const kpis = useMemo(() => {
-    const total = treinamentos.length;
-    const planejados = treinamentos.filter(
-      (item) => statusLabel(item.status) === "Planejado"
+    const total = turmas.length;
+    const planejadas = turmas.filter(
+      (item) => statusLabel(item.status) === "Planejada"
     ).length;
-    const andamento = treinamentos.filter(
+    const andamento = turmas.filter(
       (item) => statusLabel(item.status) === "Em andamento"
     ).length;
-    const concluidos = treinamentos.filter(
-      (item) => statusLabel(item.status) === "Concluído"
+    const concluidas = turmas.filter(
+      (item) => statusLabel(item.status) === "Concluída"
     ).length;
 
-    const participantes = treinamentos.reduce(
+    const treinandos = turmas.reduce(
       (acc, item) => acc + Number(item.participantes || 0),
       0
     );
 
-    const horas = treinamentos.reduce(
+    const horas = turmas.reduce(
       (acc, item) => acc + parseHoras(item.carga_horaria),
       0
     );
@@ -180,65 +180,65 @@ export default function TreinamentosPage() {
     const porClienteMap = {};
     const porInstrutorMap = {};
 
-    treinamentos.forEach((item) => {
+    turmas.forEach((item) => {
       const cliente = item.cliente || "Sem cliente";
       const instrutor = item.instrutor || "Sem instrutor";
       const carga = parseHoras(item.carga_horaria);
-      const publico = Number(item.participantes || 0);
+      const treinandosTurma = Number(item.participantes || 0);
 
       if (!porClienteMap[cliente]) {
         porClienteMap[cliente] = {
           cliente,
-          treinamentos: 0,
-          participantes: 0,
+          turmas: 0,
+          treinandos: 0,
           horas: 0,
         };
       }
 
-      porClienteMap[cliente].treinamentos += 1;
-      porClienteMap[cliente].participantes += publico;
+      porClienteMap[cliente].turmas += 1;
+      porClienteMap[cliente].treinandos += treinandosTurma;
       porClienteMap[cliente].horas += carga;
 
       if (!porInstrutorMap[instrutor]) {
         porInstrutorMap[instrutor] = {
           instrutor,
-          treinamentos: 0,
-          participantes: 0,
+          turmas: 0,
+          treinandos: 0,
           horas: 0,
         };
       }
 
-      porInstrutorMap[instrutor].treinamentos += 1;
-      porInstrutorMap[instrutor].participantes += publico;
+      porInstrutorMap[instrutor].turmas += 1;
+      porInstrutorMap[instrutor].treinandos += treinandosTurma;
       porInstrutorMap[instrutor].horas += carga;
     });
 
     const porCliente = Object.values(porClienteMap).sort(
-      (a, b) => b.treinamentos - a.treinamentos
+      (a, b) => b.turmas - a.turmas
     );
 
     const rankingInstrutores = Object.values(porInstrutorMap).sort(
-      (a, b) => b.treinamentos - a.treinamentos || b.horas - a.horas
+      (a, b) => b.turmas - a.turmas || b.horas - a.horas
     );
 
     const alertas = [];
 
-    if (planejados > 0) {
-      alertas.push(`${planejados} treinamento(s) ainda estão planejados.`);
+    if (planejadas > 0) {
+      alertas.push(`${planejadas} turma(s) ainda estão planejadas.`);
     }
 
     if (andamento > 0) {
-      alertas.push(`${andamento} treinamento(s) estão em andamento.`);
+      alertas.push(`${andamento} turma(s) estão em andamento.`);
     }
 
-    const semInstrutor = treinamentos.filter((item) => !item.instrutor).length;
+    const semInstrutor = turmas.filter((item) => !item.instrutor).length;
     if (semInstrutor > 0) {
-      alertas.push(`${semInstrutor} treinamento(s) sem instrutor definido.`);
+      alertas.push(`${semInstrutor} turma(s) sem instrutor definido.`);
     }
 
-    const semCliente = treinamentos.filter((item) => !item.cliente).length;
+    const semCliente = turmas.filter((item) => !item.cliente).length;
     if (semCliente > 0) {
-      alertas.push(`${semCliente} treinamento(s) sem cliente vinculado.`);
+      alertas.push(`${semCliente} turma(s) sem cliente vinculado.`);
     }
 
     if (!alertas.length) {
@@ -247,21 +247,21 @@ export default function TreinamentosPage() {
 
     return {
       total,
-      planejados,
+      planejadas,
       andamento,
-      concluidos,
-      participantes,
+      concluidas,
+      treinandos,
       horas,
       porCliente,
       rankingInstrutores,
       alertas,
     };
-  }, [treinamentos]);
+  }, [turmas]);
 
   const columns = [
     {
       key: "tema",
-      label: "Treinamento",
+      label: "Turma",
       render: (item) => (
         <div>
           <div style={titleCell}>{item.tema || item.titulo || "-"}</div>
@@ -287,7 +287,7 @@ export default function TreinamentosPage() {
     },
     {
       key: "participantes",
-      label: "Participantes",
+      label: "Treinandos previstos",
       render: (item) => (
         <strong style={scoreBlue}>{fmt(item.participantes || 0)}</strong>
       ),
@@ -313,14 +313,14 @@ export default function TreinamentosPage() {
       key: "acoes",
       label: "Ações",
       render: (item) => (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
             style={btnChamada}
             onClick={() => {
               window.location.href = `/turma/${item.id}`;
             }}
           >
-            Chamada
+            Gestão da turma
           </button>
         </div>
       ),
@@ -329,25 +329,25 @@ export default function TreinamentosPage() {
 
   return (
     <CrudPageV2
-      title="Treinamentos"
-      subtitle="Gestão executiva das ações de treinamento do setor."
+      title="Gestão de Turmas"
+      subtitle="Execução operacional das turmas de treinamento, treinandos e controle de presença."
       endpoint="/treinamentos"
       fields={fields}
       columns={columns}
-      recordsTitle="Base de treinamentos"
-      recordsSubtitle="Visão consolidada das ações cadastradas."
+      recordsTitle="Base de turmas"
+      recordsSubtitle="Visão consolidada das turmas cadastradas no portal."
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
             <StatCard
-              title="Treinamentos"
+              title="Turmas"
               value={fmt(kpis.total)}
               subtitle="Base total"
               accent="#2563eb"
             />
             <StatCard
-              title="Planejados"
-              value={fmt(kpis.planejados)}
+              title="Planejadas"
+              value={fmt(kpis.planejadas)}
               subtitle="Aguardando execução"
               accent="#f59e0b"
             />
@@ -358,8 +358,8 @@ export default function TreinamentosPage() {
               accent="#ea580c"
             />
             <StatCard
-              title="Concluídos"
-              value={fmt(kpis.concluidos)}
+              title="Concluídas"
+              value={fmt(kpis.concluidas)}
               subtitle="Ações finalizadas"
               accent="#16a34a"
             />
@@ -367,13 +367,13 @@ export default function TreinamentosPage() {
 
           <div style={heroGrid}>
             <StatCard
-              title="Participantes"
-              value={fmt(kpis.participantes)}
-              subtitle="Capacidade prevista"
+              title="Treinandos previstos"
+              value={fmt(kpis.treinandos)}
+              subtitle="Capacidade da base"
               accent="#06b6d4"
             />
             <StatCard
-              title="Horas"
+              title="Carga horária"
               value={`${fmt(kpis.horas)}h`}
               subtitle="Carga consolidada"
               accent="#7c3aed"
@@ -382,8 +382,8 @@ export default function TreinamentosPage() {
 
           <div style={twoCol}>
             <SectionCard
-              title="Impacto por cliente"
-              subtitle="Distribuição dos treinamentos por operação."
+              title="Volume por cliente"
+              subtitle="Distribuição das turmas por operação."
             >
               <div style={listGrid}>
                 {kpis.porCliente.length ? (
@@ -391,8 +391,8 @@ export default function TreinamentosPage() {
                     <div key={item.cliente} style={listItem}>
                       <div style={itemTitle}>{item.cliente}</div>
                       <div style={itemMeta}>
-                        {item.treinamentos} treinamento(s) •{" "}
-                        {fmt(item.participantes)} participantes • {fmt(item.horas)}h
+                        {item.turmas} turma(s) • {fmt(item.treinandos)} treinandos
+                        previstos • {fmt(item.horas)}h
                       </div>
                     </div>
                   ))
@@ -412,8 +412,8 @@ export default function TreinamentosPage() {
                     <div key={item.instrutor} style={listItem}>
                       <div style={itemTitle}>{item.instrutor}</div>
                       <div style={itemMeta}>
-                        {item.treinamentos} treinamento(s) •{" "}
-                        {fmt(item.participantes)} participantes • {fmt(item.horas)}h
+                        {item.turmas} turma(s) • {fmt(item.treinandos)} treinandos
+                        previstos • {fmt(item.horas)}h
                       </div>
                     </div>
                   ))
