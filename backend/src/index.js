@@ -67,6 +67,44 @@ app.use(
   })
 );
 
+/* EXCLUSÃO EM CASCATA DO TREINAMENTO */
+app.delete("/api/treinamentos/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.query(
+      `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
+      [id]
+    );
+
+    await pool.query(
+      `DELETE FROM presencas WHERE treinamento_id = ?`,
+      [id]
+    );
+
+    await pool.query(
+      `DELETE FROM avaliacoes WHERE treinamento_id = ?`,
+      [id]
+    );
+
+    await pool.query(
+      `DELETE FROM treinamentos WHERE id = ?`,
+      [id]
+    );
+
+    return res.json({
+      ok: true,
+      message: "Treinamento e dados relacionados excluídos com sucesso",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao excluir treinamento",
+      error: error.message,
+    });
+  }
+});
+
 app.use(
   "/api/treinamentos",
   createCrudRouter({
@@ -91,6 +129,7 @@ app.use(
   })
 );
 
+/* DETALHE DO TREINAMENTO */
 app.get("/api/treinamentos/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -137,6 +176,7 @@ app.get("/api/treinamentos/:id", async (req, res) => {
   }
 });
 
+/* PARTICIPANTES DO TREINAMENTO */
 app.get(
   "/api/treinamentos/:id/participantes",
   getParticipantesByTreinamento
@@ -209,6 +249,7 @@ app.get("/api/zerar-dashboard", async (req, res) => {
 
     await pool.query("TRUNCATE TABLE avaliacoes");
     await pool.query("TRUNCATE TABLE presencas");
+    await pool.query("TRUNCATE TABLE treinamento_participantes");
     await pool.query("TRUNCATE TABLE treinamentos");
     await pool.query("TRUNCATE TABLE usuarios");
     await pool.query("TRUNCATE TABLE clientes");
@@ -244,6 +285,7 @@ app.get("/api/importar-dashboard", async (req, res) => {
       await pool.query("SET FOREIGN_KEY_CHECKS = 0");
       await pool.query("TRUNCATE TABLE avaliacoes");
       await pool.query("TRUNCATE TABLE presencas");
+      await pool.query("TRUNCATE TABLE treinamento_participantes");
       await pool.query("TRUNCATE TABLE treinamentos");
       await pool.query("TRUNCATE TABLE usuarios");
       await pool.query("TRUNCATE TABLE clientes");
