@@ -33,6 +33,17 @@ export async function apiFetch(path, options = {}) {
   return data;
 }
 
+/*
+  Mantida para compatibilidade com qualquer página antiga
+  que ainda esteja chamando storeUserSession.
+*/
+export function storeUserSession(token, user) {
+  if (typeof window === "undefined") return;
+
+  localStorage.setItem("token", token);
+  localStorage.setItem("user", JSON.stringify(user));
+}
+
 export function getStoredUser() {
   if (typeof window === "undefined") return null;
 
@@ -46,6 +57,7 @@ export function getStoredUser() {
 
 export function clearSession() {
   if (typeof window === "undefined") return;
+
   localStorage.removeItem("token");
   localStorage.removeItem("user");
 }
@@ -59,10 +71,10 @@ export function hasSomeRole(user, roles = []) {
 
 export function isAuthenticated() {
   if (typeof window === "undefined") return false;
-  return !!localStorage.getItem("token");
+  return !!localStorage.getItem("token"));
 }
 
 export function logout(router) {
   clearSession();
   if (router) router.push("/login");
-}
+      }
