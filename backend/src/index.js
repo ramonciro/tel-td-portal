@@ -21,7 +21,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/api/dashboad/treinamentos",getDashboardTreinamentos);
+app.get("/api/dashboard/treinamentos",getDashboardTreinamentos);
 app.get("/api", async (req, res) => {
   try {
     await pool.query("SELECT 1");
