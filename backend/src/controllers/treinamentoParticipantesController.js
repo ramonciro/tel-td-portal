@@ -1,11 +1,11 @@
-import pool from "../db.js";
-import XLSX from "xlsx";
+const XLSX = require("xlsx");
+const db = require("../lib/db");
 
-export async function getParticipantesByTreinamento(req, res) {
+async function getParticipantesByTreinamento(req, res) {
   try {
     const { id } = req.params;
 
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `
       SELECT
         id,
@@ -27,9 +27,9 @@ export async function getParticipantesByTreinamento(req, res) {
       [id]
     );
 
-    res.json(rows);
+    return res.json(rows);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao buscar participantes da turma",
       error: error.message,
@@ -37,7 +37,7 @@ export async function getParticipantesByTreinamento(req, res) {
   }
 }
 
-export async function importarParticipantesExcel(req, res) {
+async function importarParticipantesExcel(req, res) {
   try {
     const { treinamento_id } = req.body;
 
@@ -89,16 +89,18 @@ export async function importarParticipantesExcel(req, res) {
       });
     }
 
-    await pool.query(
+    await db.query(
       `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
       [treinamento_id]
     );
+
+    let totalImportados = 0;
 
     for (const linha of linhas) {
       const nome = String(linha.nome || "").trim();
       if (!nome) continue;
 
-      await pool.query(
+      await db.query(
         `
         INSERT INTO treinamento_participantes
         (
@@ -128,15 +130,17 @@ export async function importarParticipantesExcel(req, res) {
           null,
         ]
       );
+
+      totalImportados += 1;
     }
 
-    res.json({
+    return res.json({
       ok: true,
       message: "Participantes importados com sucesso",
-      total: linhas.length,
+      total: totalImportados,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao importar participantes",
       error: error.message,
@@ -144,7 +148,7 @@ export async function importarParticipantesExcel(req, res) {
   }
 }
 
-export async function salvarChamadaParticipantes(req, res) {
+async function salvarChamadaParticipantes(req, res) {
   try {
     const { treinamento_id, participantes } = req.body || {};
 
@@ -156,7 +160,7 @@ export async function salvarChamadaParticipantes(req, res) {
     }
 
     for (const item of participantes) {
-      await pool.query(
+      await db.query(
         `
         UPDATE treinamento_participantes
         SET status_presenca = ?, justificativa = ?
@@ -173,7 +177,7 @@ export async function salvarChamadaParticipantes(req, res) {
       const status = item.status_presenca || "pendente";
       const presente = status === "presente" ? 1 : 0;
 
-      const [existentes] = await pool.query(
+      const [existentes] = await db.query(
         `
         SELECT id
         FROM presencas
@@ -184,7 +188,7 @@ export async function salvarChamadaParticipantes(req, res) {
       );
 
       if (existentes.length) {
-        await pool.query(
+        await db.query(
           `
           UPDATE presencas
           SET presente = ?, status = ?, justificativa = ?
@@ -193,7 +197,7 @@ export async function salvarChamadaParticipantes(req, res) {
           [presente, status, item.justificativa || null, existentes[0].id]
         );
       } else {
-        await pool.query(
+        await db.query(
           `
           INSERT INTO presencas
           (treinamento_id, treinando_nome, presente, status, justificativa)
@@ -210,12 +214,12 @@ export async function salvarChamadaParticipantes(req, res) {
       }
     }
 
-    res.json({
+    return res.json({
       ok: true,
       message: "Chamada salva com sucesso",
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao salvar chamada",
       error: error.message,
@@ -252,3 +256,9 @@ function formatExcelDateToMySQL(value) {
 
   return null;
 }
+
+module.exports = {
+  getParticipantesByTreinamento,
+  importarParticipantesExcel,
+  salvarChamadaParticipantes,
+};
