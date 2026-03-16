@@ -1,193 +1,162 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { getStoredUser } from "../services/api";
+import { usePathname } from "next/navigation";
+
+const menuItems = [
+  { href: "/inicio", label: "Início", icon: "🏠" },
+  { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  { href: "/usuarios", label: "Usuários", icon: "👤" },
+  { href: "/clientes", label: "Clientes", icon: "🏢" },
+  { href: "/treinamentos", label: "Treinamentos", icon: "🎓" },
+  { href: "/presencas", label: "Gestão de Turmas", icon: "👥" },
+  { href: "/avaliacoes", label: "Avaliações", icon: "⭐" },
+  { href: "/biblioteca", label: "Biblioteca", icon: "📚" },
+  { href: "/trilhas", label: "Trilhas", icon: "🧭" },
+  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento", icon: "🗺️" },
+];
 
 export default function PortalShell({ title, subtitle, children }) {
-
   const pathname = usePathname();
-  const router = useRouter();
-  const user = getStoredUser();
-
-  function sair() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    router.push("/login");
-  }
-
-  const menu = [
-    { href: "/inicio", label: "Início", icon: "🏠" },
-    { href: "/dashboard", label: "Dashboard", icon: "📊" },
-    { href: "/usuarios", label: "Usuários", icon: "👤" },
-    { href: "/clientes", label: "Clientes", icon: "🏢" },
-    { href: "/treinamentos", label: "Treinamentos", icon: "🎓" },
-    { href: "/presencas", label: "Turmas", icon: "👥" },
-    { href: "/avaliacoes", label: "Avaliações", icon: "⭐" },
-    { href: "/biblioteca", label: "Biblioteca", icon: "📚" },
-    { href: "/trilhas", label: "Trilhas", icon: "🧭" },
-    { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento", icon: "🗺️" }
-  ];
 
   return (
-    <div style={shell}>
-
+    <div style={layout}>
       <aside style={sidebar}>
-
-        <div style={logoArea}>
-          <img src="/logo-td.png" style={logo}/>
+        <div style={brandBox}>
+          <img
+            src="/logo-td.png"
+            alt="Portal T&D"
+            style={logo}
+          />
           <div>
-            <div style={brand}>Portal T&D</div>
-            <div style={brandSub}>Treinamento e Desenvolvimento</div>
+            <div style={brandTitle}>Portal T&amp;D</div>
+            <div style={brandSubtitle}>Treinamento e Desenvolvimento</div>
           </div>
         </div>
 
-        <div style={menuArea}>
-
-          {menu.map((item)=>{
-
+        <nav style={nav}>
+          {menuItems.map((item) => {
             const active = pathname === item.href;
-
             return (
-
               <Link
                 key={item.href}
                 href={item.href}
                 style={{
-                  ...menuItem,
-                  ...(active ? menuActive : {})
+                  ...navItem,
+                  ...(active ? navItemActive : {}),
                 }}
               >
-
-                <span>{item.icon}</span>
-                {item.label}
-
+                <span style={navIcon}>{item.icon}</span>
+                <span>{item.label}</span>
               </Link>
-
-            )
-
+            );
           })}
-
-        </div>
-
-        <div style={userArea}>
-          <div style={userName}>
-            {user?.nome || "Usuário"}
-          </div>
-
-          <button onClick={sair} style={logout}>
-            Sair
-          </button>
-        </div>
-
+        </nav>
       </aside>
 
       <main style={main}>
-
-        <div style={header}>
+        <header style={header}>
           <h1 style={titleStyle}>{title}</h1>
-          {subtitle && <p style={subtitleStyle}>{subtitle}</p>}
-        </div>
+          {subtitle ? <p style={subtitleStyle}>{subtitle}</p> : null}
+        </header>
 
-        {children}
-
+        <section style={content}>{children}</section>
       </main>
-
     </div>
   );
 }
 
-const shell={
-display:"flex",
-minHeight:"100vh",
-background:"#f8fafc"
-}
+const layout = {
+  minHeight: "100vh",
+  display: "grid",
+  gridTemplateColumns: "280px 1fr",
+  background: "#f8fafc",
+};
 
-const sidebar={
-width:260,
-background:"#1e3a8a",
-color:"#fff",
-display:"flex",
-flexDirection:"column",
-padding:20
-}
+const sidebar = {
+  background: "linear-gradient(180deg, #0f172a 0%, #1d4ed8 100%)",
+  color: "#fff",
+  padding: 20,
+  display: "flex",
+  flexDirection: "column",
+  gap: 20,
+};
 
-const logoArea={
-display:"flex",
-gap:12,
-alignItems:"center",
-marginBottom:20
-}
+const brandBox = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  padding: "8px 4px 18px",
+};
 
-const logo={
-width:60
-}
+const logo = {
+  width: 56,
+  height: 56,
+  objectFit: "contain",
+  background: "#fff",
+  borderRadius: 8,
+  padding: 6,
+};
 
-const brand={
-fontWeight:800,
-fontSize:18
-}
+const brandTitle = {
+  fontSize: 18,
+  fontWeight: 800,
+  lineHeight: 1.1,
+};
 
-const brandSub={
-fontSize:12,
-opacity:.7
-}
+const brandSubtitle = {
+  fontSize: 13,
+  opacity: 0.8,
+  marginTop: 3,
+};
 
-const menuArea={
-display:"flex",
-flexDirection:"column",
-gap:6,
-flex:1
-}
+const nav = {
+  display: "grid",
+  gap: 8,
+};
 
-const menuItem={
-display:"flex",
-gap:10,
-alignItems:"center",
-padding:"10px 12px",
-borderRadius:8,
-textDecoration:"none",
-color:"#fff",
-fontWeight:500
-}
+const navItem = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  padding: "14px 16px",
+  borderRadius: 14,
+  color: "#fff",
+  textDecoration: "none",
+  fontWeight: 700,
+  background: "transparent",
+};
 
-const menuActive={
-background:"rgba(255,255,255,.2)"
-}
+const navItemActive = {
+  background: "rgba(255,255,255,.16)",
+};
 
-const userArea={
-borderTop:"1px solid rgba(255,255,255,.2)",
-paddingTop:14
-}
+const navIcon = {
+  width: 22,
+  textAlign: "center",
+};
 
-const userName={
-marginBottom:8
-}
+const main = {
+  padding: 24,
+};
 
-const logout={
-background:"#fff",
-color:"#1e3a8a",
-border:0,
-padding:8,
-borderRadius:6,
-cursor:"pointer",
-fontWeight:600
-}
+const header = {
+  marginBottom: 18,
+};
 
-const main={
-flex:1,
-padding:30
-}
+const titleStyle = {
+  margin: 0,
+  fontSize: 34,
+  color: "#0f172a",
+};
 
-const header={
-marginBottom:24
-}
+const subtitleStyle = {
+  margin: "8px 0 0",
+  color: "#64748b",
+  fontSize: 18,
+};
 
-const titleStyle={
-fontSize:28,
-marginBottom:6
-}
-
-const subtitleStyle={
-color:"#64748b"
-  }
+const content = {
+  display: "grid",
+  gap: 16,
+};
