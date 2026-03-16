@@ -11,6 +11,19 @@ export default function UsuariosPage() {
   const [clientes, setClientes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
 
+export default function UsuariosPage() {
+  return (
+    <AccessGate allowedRoles={["admin", "coordenador"]}>
+      <CrudPageV2
+        title="Usuários"
+        subtitle="Gestão de usuários do portal."
+        endpoint="/usuarios"
+        fields={[]}
+        columns={[]}
+      />
+    </AccessGate>
+  );
+}
   useEffect(() => {
     async function carregarBase() {
       try {
