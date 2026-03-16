@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
+import AccessGate from "../../components/AccessGate";
 import { apiFetch } from "../../services/api";
 
 function parseHoras(value) {
@@ -222,299 +223,303 @@ export default function DashboardPage() {
   );
 
   return (
-    <PortalShell
-      title="Dashboard estratégico de T&D"
-      subtitle="Painel executivo com leitura de volume, presença, qualidade, impacto por cliente e produtividade dos instrutores."
-    >
-      {erro ? <div style={errorBox}>{erro}</div> : null}
+    <AccessGate allowedRoles={["admin", "coordenador", "supervisor"]}>
+      <PortalShell
+        title="Dashboard estratégico de T&D"
+        subtitle="Painel executivo com leitura de volume, presença, qualidade, impacto por cliente e produtividade dos instrutores."
+      >
+        {erro ? <div style={errorBox}>{erro}</div> : null}
 
-      <div style={heroWrap}>
-        <div style={heroTextBlock}>
-          <div style={heroBadge}>Visão executiva</div>
-          <h2 style={heroTitle}>Painel central do Treinamento & Desenvolvimento</h2>
-          <p style={heroText}>
-            Acompanhe rapidamente cobertura do setor, produtividade das ações,
-            presença, qualidade percebida e distribuição de treinamento por cliente.
-          </p>
+        <div style={heroWrap}>
+          <div style={heroTextBlock}>
+            <div style={heroBadge}>Visão executiva</div>
+            <h2 style={heroTitle}>
+              Painel central do Treinamento &amp; Desenvolvimento
+            </h2>
+            <p style={heroText}>
+              Acompanhe rapidamente cobertura do setor, produtividade das ações,
+              presença, qualidade percebida e distribuição de treinamento por cliente.
+            </p>
+          </div>
+
+          <div style={heroMiniGrid}>
+            <div style={miniStatCard}>
+              <strong>{fmt(dados.presentes)}</strong>
+              <span>presenças confirmadas</span>
+            </div>
+            <div style={miniStatCard}>
+              <strong>{fmt(dados.ausentes)}</strong>
+              <span>ausências mapeadas</span>
+            </div>
+            <div style={miniStatCard}>
+              <strong>{fmt(dados.justificados)}</strong>
+              <span>justificativas registradas</span>
+            </div>
+          </div>
         </div>
 
-        <div style={heroMiniGrid}>
-          <div style={miniStatCard}>
-            <strong>{fmt(dados.presentes)}</strong>
-            <span>presenças confirmadas</span>
-          </div>
-          <div style={miniStatCard}>
-            <strong>{fmt(dados.ausentes)}</strong>
-            <span>ausências mapeadas</span>
-          </div>
-          <div style={miniStatCard}>
-            <strong>{fmt(dados.justificados)}</strong>
-            <span>justificativas registradas</span>
-          </div>
+        <div style={gridFour}>
+          <StatCard
+            title="Clientes"
+            value={dashboard?.clientes ?? 0}
+            subtitle="Clientes atendidos pelo T&D"
+            accent="#2563eb"
+          />
+          <StatCard
+            title="Treinamentos"
+            value={dashboard?.treinamentos ?? treinamentos.length}
+            subtitle="Ações cadastradas no portal"
+            accent="#059669"
+          />
+          <StatCard
+            title="Participações"
+            value={fmt(dados.totalParticipacoes)}
+            subtitle="Registros de presença lançados"
+            accent="#7c3aed"
+          />
+          <StatCard
+            title="Avaliações"
+            value={dashboard?.avaliacoes ?? avaliacoes.length}
+            subtitle="Leituras de qualidade e NPS"
+            accent="#ea580c"
+          />
         </div>
-      </div>
 
-      <div style={gridFour}>
-        <StatCard
-          title="Clientes"
-          value={dashboard?.clientes ?? 0}
-          subtitle="Clientes atendidos pelo T&D"
-          accent="#2563eb"
-        />
-        <StatCard
-          title="Treinamentos"
-          value={dashboard?.treinamentos ?? treinamentos.length}
-          subtitle="Ações cadastradas no portal"
-          accent="#059669"
-        />
-        <StatCard
-          title="Participações"
-          value={fmt(dados.totalParticipacoes)}
-          subtitle="Registros de presença lançados"
-          accent="#7c3aed"
-        />
-        <StatCard
-          title="Avaliações"
-          value={dashboard?.avaliacoes ?? avaliacoes.length}
-          subtitle="Leituras de qualidade e NPS"
-          accent="#ea580c"
-        />
-      </div>
+        <div style={{ ...gridFour, marginTop: 18 }}>
+          <StatCard
+            title="Horas ministradas"
+            value={`${fmt(dados.horasMinistradas)}h`}
+            subtitle="Carga horária aplicada"
+            accent="#0f766e"
+          />
+          <StatCard
+            title="Horas treinadas"
+            value={`${fmt(dados.horasTreinadas)}h`}
+            subtitle="Carga × presença efetiva"
+            accent="#1d4ed8"
+          />
+          <StatCard
+            title="Taxa de presença"
+            value={`${dados.taxaPresenca}%`}
+            subtitle="Assiduidade média"
+            accent="#16a34a"
+          />
+          <StatCard
+            title="Absenteísmo"
+            value={`${dados.taxaAbsenteismo}%`}
+            subtitle="Ponto de atenção"
+            accent="#dc2626"
+          />
+        </div>
 
-      <div style={{ ...gridFour, marginTop: 18 }}>
-        <StatCard
-          title="Horas ministradas"
-          value={`${fmt(dados.horasMinistradas)}h`}
-          subtitle="Carga horária aplicada"
-          accent="#0f766e"
-        />
-        <StatCard
-          title="Horas treinadas"
-          value={`${fmt(dados.horasTreinadas)}h`}
-          subtitle="Carga × presença efetiva"
-          accent="#1d4ed8"
-        />
-        <StatCard
-          title="Taxa de presença"
-          value={`${dados.taxaPresenca}%`}
-          subtitle="Assiduidade média"
-          accent="#16a34a"
-        />
-        <StatCard
-          title="Absenteísmo"
-          value={`${dados.taxaAbsenteismo}%`}
-          subtitle="Ponto de atenção"
-          accent="#dc2626"
-        />
-      </div>
+        <div style={{ ...gridFour, marginTop: 18 }}>
+          <StatCard
+            title="Justificativas"
+            value={fmt(dados.justificados)}
+            subtitle="Ausências justificadas"
+            accent="#ca8a04"
+          />
+          <StatCard
+            title="Qualidade média"
+            value={dados.mediaQualidade}
+            subtitle="Avaliações do treinamento"
+            accent="#0891b2"
+          />
+          <StatCard
+            title="NPS médio"
+            value={dados.mediaNps}
+            subtitle="Percepção do público"
+            accent="#9333ea"
+          />
+          <StatCard
+            title="Média de horas"
+            value={`${dados.mediaHorasTreinamento}h`}
+            subtitle="Carga média por ação"
+            accent="#475569"
+          />
+        </div>
 
-      <div style={{ ...gridFour, marginTop: 18 }}>
-        <StatCard
-          title="Justificativas"
-          value={fmt(dados.justificados)}
-          subtitle="Ausências justificadas"
-          accent="#ca8a04"
-        />
-        <StatCard
-          title="Qualidade média"
-          value={dados.mediaQualidade}
-          subtitle="Avaliações do treinamento"
-          accent="#0891b2"
-        />
-        <StatCard
-          title="NPS médio"
-          value={dados.mediaNps}
-          subtitle="Percepção do público"
-          accent="#9333ea"
-        />
-        <StatCard
-          title="Média de horas"
-          value={`${dados.mediaHorasTreinamento}h`}
-          subtitle="Carga média por ação"
-          accent="#475569"
-        />
-      </div>
-
-      <div style={twoCol}>
-        <SectionCard
-          title="Impacto por cliente"
-          subtitle="Distribuição das ações por operação com volume, participantes e horas."
-        >
-          {dados.impactoPorCliente.length ? (
-            <div style={barsWrap}>
-              {dados.impactoPorCliente.map((item) => (
-                <div key={item.cliente} style={barRow}>
-                  <div style={barHeader}>
-                    <div>
-                      <div style={barLabel}>{item.cliente}</div>
-                      <div style={mutedSmall}>
-                        {fmt(item.participantes)} participantes • {fmt(item.horas)}h
+        <div style={twoCol}>
+          <SectionCard
+            title="Impacto por cliente"
+            subtitle="Distribuição das ações por operação com volume, participantes e horas."
+          >
+            {dados.impactoPorCliente.length ? (
+              <div style={barsWrap}>
+                {dados.impactoPorCliente.map((item) => (
+                  <div key={item.cliente} style={barRow}>
+                    <div style={barHeader}>
+                      <div>
+                        <div style={barLabel}>{item.cliente}</div>
+                        <div style={mutedSmall}>
+                          {fmt(item.participantes)} participantes • {fmt(item.horas)}h
+                        </div>
                       </div>
+                      <strong style={barValue}>{item.treinamentos}</strong>
                     </div>
-                    <strong style={barValue}>{item.treinamentos}</strong>
-                  </div>
 
-                  <div style={barTrack}>
-                    <div
-                      style={{
-                        ...barFill,
-                        width: `${(item.treinamentos / maxCliente) * 100}%`,
-                      }}
-                    />
+                    <div style={barTrack}>
+                      <div
+                        style={{
+                          ...barFill,
+                          width: `${(item.treinamentos / maxCliente) * 100}%`,
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={emptyText}>Nenhum cliente disponível.</div>
-          )}
-        </SectionCard>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyText}>Nenhum cliente disponível.</div>
+            )}
+          </SectionCard>
 
-        <SectionCard
-          title="Ranking de instrutores"
-          subtitle="Quem mais sustentou turmas, participantes e carga horária."
-        >
-          {dados.rankingInstrutores.length ? (
-            <div style={barsWrap}>
-              {dados.rankingInstrutores.slice(0, 6).map((item) => (
-                <div key={item.instrutor} style={barRow}>
-                  <div style={barHeader}>
-                    <div>
-                      <div style={barLabel}>{item.instrutor}</div>
-                      <div style={mutedSmall}>
-                        {fmt(item.participantes)} participantes • {fmt(item.horas)}h
+          <SectionCard
+            title="Ranking de instrutores"
+            subtitle="Quem mais sustentou turmas, participantes e carga horária."
+          >
+            {dados.rankingInstrutores.length ? (
+              <div style={barsWrap}>
+                {dados.rankingInstrutores.slice(0, 6).map((item) => (
+                  <div key={item.instrutor} style={barRow}>
+                    <div style={barHeader}>
+                      <div>
+                        <div style={barLabel}>{item.instrutor}</div>
+                        <div style={mutedSmall}>
+                          {fmt(item.participantes)} participantes • {fmt(item.horas)}h
+                        </div>
                       </div>
+                      <strong style={barValue}>{item.treinamentos}</strong>
                     </div>
-                    <strong style={barValue}>{item.treinamentos}</strong>
-                  </div>
 
-                  <div style={barTrack}>
-                    <div
-                      style={{
-                        ...barFill,
-                        width: `${(item.treinamentos / maxInstrutor) * 100}%`,
-                        background:
-                          "linear-gradient(90deg, #9333ea 0%, #7c3aed 100%)",
-                      }}
-                    />
+                    <div style={barTrack}>
+                      <div
+                        style={{
+                          ...barFill,
+                          width: `${(item.treinamentos / maxInstrutor) * 100}%`,
+                          background:
+                            "linear-gradient(90deg, #9333ea 0%, #7c3aed 100%)",
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={emptyText}>Nenhum instrutor disponível.</div>
-          )}
-        </SectionCard>
-      </div>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyText}>Nenhum instrutor disponível.</div>
+            )}
+          </SectionCard>
+        </div>
 
-      <div style={{ ...twoCol, marginTop: 18 }}>
-        <SectionCard
-          title="Alertas executivos"
-          subtitle="Turmas com baixa presença que merecem atenção."
-        >
-          {dados.alertas.length ? (
-            <div style={listGrid}>
-              {dados.alertas.map((item) => (
-                <div key={item.id} style={alertCard(item.status)}>
-                  <div style={alertTop}>
-                    <span style={alertBadge(item.status)}>
-                      {item.status === "critico" ? "Crítico" : "Atenção"}
-                    </span>
-                    <strong>{item.taxa}% presença</strong>
-                  </div>
+        <div style={{ ...twoCol, marginTop: 18 }}>
+          <SectionCard
+            title="Alertas executivos"
+            subtitle="Turmas com baixa presença que merecem atenção."
+          >
+            {dados.alertas.length ? (
+              <div style={listGrid}>
+                {dados.alertas.map((item) => (
+                  <div key={item.id} style={alertCard(item.status)}>
+                    <div style={alertTop}>
+                      <span style={alertBadge(item.status)}>
+                        {item.status === "critico" ? "Crítico" : "Atenção"}
+                      </span>
+                      <strong>{item.taxa}% presença</strong>
+                    </div>
 
-                  <div style={itemTitle}>{item.tema}</div>
-                  <div style={itemMeta}>
-                    {item.cliente} • {item.instrutor}
+                    <div style={itemTitle}>{item.tema}</div>
+                    <div style={itemMeta}>
+                      {item.cliente} • {item.instrutor}
+                    </div>
+                    <div style={{ ...itemMeta, marginTop: 8 }}>
+                      {item.ausentes} ausência(s) sinalizada(s)
+                    </div>
                   </div>
-                  <div style={{ ...itemMeta, marginTop: 8 }}>
-                    {item.ausentes} ausência(s) sinalizada(s)
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={emptyText}>
-              Nenhum alerta crítico no momento. O cenário está saudável.
-            </div>
-          )}
-        </SectionCard>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyText}>
+                Nenhum alerta crítico no momento. O cenário está saudável.
+              </div>
+            )}
+          </SectionCard>
 
-        <SectionCard
-          title="Leitura gerencial"
-          subtitle="Resumo pronto para uso em reunião com liderança e cliente."
-        >
-          <div style={managerNotes}>
-            <div style={noteItem}>
-              <strong>Capilaridade:</strong> {fmt(dashboard?.clientes ?? 0)} clientes
-              com ações registradas no portal.
+          <SectionCard
+            title="Leitura gerencial"
+            subtitle="Resumo pronto para uso em reunião com liderança e cliente."
+          >
+            <div style={managerNotes}>
+              <div style={noteItem}>
+                <strong>Capilaridade:</strong> {fmt(dashboard?.clientes ?? 0)} clientes
+                com ações registradas no portal.
+              </div>
+              <div style={noteItem}>
+                <strong>Produtividade:</strong>{" "}
+                {fmt(dashboard?.treinamentos ?? treinamentos.length)} turmas mapeadas
+                e {fmt(dados.horasTreinadas)} horas treinadas.
+              </div>
+              <div style={noteItem}>
+                <strong>Assiduidade:</strong> presença média de {dados.taxaPresenca}%
+                com absenteísmo de {dados.taxaAbsenteismo}%.
+              </div>
+              <div style={noteItem}>
+                <strong>Percepção:</strong> NPS médio de {dados.mediaNps} e média de
+                qualidade de {dados.mediaQualidade}.
+              </div>
             </div>
-            <div style={noteItem}>
-              <strong>Produtividade:</strong>{" "}
-              {fmt(dashboard?.treinamentos ?? treinamentos.length)} turmas mapeadas
-              e {fmt(dados.horasTreinadas)} horas treinadas.
-            </div>
-            <div style={noteItem}>
-              <strong>Assiduidade:</strong> presença média de {dados.taxaPresenca}%
-              com absenteísmo de {dados.taxaAbsenteismo}%.
-            </div>
-            <div style={noteItem}>
-              <strong>Percepção:</strong> NPS médio de {dados.mediaNps} e média de
-              qualidade de {dados.mediaQualidade}.
-            </div>
-          </div>
-        </SectionCard>
-      </div>
+          </SectionCard>
+        </div>
 
-      <div style={{ ...twoCol, marginTop: 18 }}>
-        <SectionCard
-          title="Treinamentos recentes"
-          subtitle="Últimos registros lançados no sistema."
-        >
-          {dados.ultimosTreinamentos.length ? (
-            <div style={listGrid}>
-              {dados.ultimosTreinamentos.map((item, index) => (
-                <div key={item.id || index} style={listItem}>
-                  <div style={itemTitle}>
-                    {item.tema || item.titulo || item.turma || "Treinamento"}
+        <div style={{ ...twoCol, marginTop: 18 }}>
+          <SectionCard
+            title="Treinamentos recentes"
+            subtitle="Últimos registros lançados no sistema."
+          >
+            {dados.ultimosTreinamentos.length ? (
+              <div style={listGrid}>
+                {dados.ultimosTreinamentos.map((item, index) => (
+                  <div key={item.id || index} style={listItem}>
+                    <div style={itemTitle}>
+                      {item.tema || item.titulo || item.turma || "Treinamento"}
+                    </div>
+                    <div style={itemMeta}>
+                      {item.cliente || "Sem cliente"} • {item.instrutor || "Sem instrutor"}
+                    </div>
+                    <div style={{ ...itemMeta, marginTop: 6 }}>
+                      {item.carga_horaria || "0h"} • {fmt(item.participantes || 0)} participantes
+                    </div>
                   </div>
-                  <div style={itemMeta}>
-                    {item.cliente || "Sem cliente"} • {item.instrutor || "Sem instrutor"}
-                  </div>
-                  <div style={{ ...itemMeta, marginTop: 6 }}>
-                    {item.carga_horaria || "0h"} • {fmt(item.participantes || 0)} participantes
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={emptyText}>Nenhum treinamento cadastrado ainda.</div>
-          )}
-        </SectionCard>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyText}>Nenhum treinamento cadastrado ainda.</div>
+            )}
+          </SectionCard>
 
-        <SectionCard
-          title="Avaliações recentes"
-          subtitle="Últimos registros de avaliação do portal."
-        >
-          {dados.ultimasAvaliacoes.length ? (
-            <div style={listGrid}>
-              {dados.ultimasAvaliacoes.map((item, index) => (
-                <div key={item.id || index} style={listItem}>
-                  <div style={itemTitle}>
-                    {item.titulo || item.tipo_registro || "Avaliação"}
+          <SectionCard
+            title="Avaliações recentes"
+            subtitle="Últimos registros de avaliação do portal."
+          >
+            {dados.ultimasAvaliacoes.length ? (
+              <div style={listGrid}>
+                {dados.ultimasAvaliacoes.map((item, index) => (
+                  <div key={item.id || index} style={listItem}>
+                    <div style={itemTitle}>
+                      {item.titulo || item.tipo_registro || "Avaliação"}
+                    </div>
+                    <div style={itemMeta}>
+                      Qualidade: {item.nota_qualidade ?? "-"} • NPS: {item.nota_nps ?? "-"}
+                    </div>
                   </div>
-                  <div style={itemMeta}>
-                    Qualidade: {item.nota_qualidade ?? "-"} • NPS: {item.nota_nps ?? "-"}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={emptyText}>Nenhuma avaliação registrada ainda.</div>
-          )}
-        </SectionCard>
-      </div>
-    </PortalShell>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyText}>Nenhuma avaliação registrada ainda.</div>
+            )}
+          </SectionCard>
+        </div>
+      </PortalShell>
+    </AccessGate>
   );
 }
 
