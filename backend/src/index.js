@@ -7,7 +7,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
-
+const { getDashboardTreinamentos, } = require("./controllers/dashboardTreinaemntosController");
 const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
@@ -21,6 +21,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.get("/api/dashboad/treinamentos",getDashboardTreinamentos);
 app.get("/api", async (req, res) => {
   try {
     await pool.query("SELECT 1");
