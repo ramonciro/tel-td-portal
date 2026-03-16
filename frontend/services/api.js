@@ -18,7 +18,6 @@ export async function apiFetch(path, options = {}) {
   });
 
   const contentType = response.headers.get("content-type") || "";
-
   let data;
 
   if (contentType.includes("application/json")) {
@@ -34,13 +33,6 @@ export async function apiFetch(path, options = {}) {
   return data;
 }
 
-export function storeUserSession(token, user) {
-  if (typeof window === "undefined") return;
-
-  localStorage.setItem("token", token);
-  localStorage.setItem("user", JSON.stringify(user));
-}
-
 export function getStoredUser() {
   if (typeof window === "undefined") return null;
 
@@ -54,7 +46,6 @@ export function getStoredUser() {
 
 export function clearSession() {
   if (typeof window === "undefined") return;
-
   localStorage.removeItem("token");
   localStorage.removeItem("user");
 }
@@ -63,20 +54,15 @@ export function hasSomeRole(user, roles = []) {
   if (!user) return false;
 
   const perfil = String(user.perfil || "").toLowerCase();
-
   return roles.map((r) => String(r).toLowerCase()).includes(perfil);
 }
 
 export function isAuthenticated() {
   if (typeof window === "undefined") return false;
-
   return !!localStorage.getItem("token");
 }
 
 export function logout(router) {
   clearSession();
-
-  if (router) {
-    router.push("/login");
-  }
+  if (router) router.push("/login");
 }
