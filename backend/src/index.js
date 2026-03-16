@@ -7,7 +7,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
-const { getDashboardTreinamentos, } = require("./controllers/dashboardTreinaemntosController");
+const { getDashboardTreinamentos, } = require("./controllers/dashboardTreinamentosController");
 const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
