@@ -1,134 +1,49 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { getStoredUser, hasSomeRole } from "../services/api";
 
-export default function AccessGate({
-  allowedRoles = [],
-  children,
-  fallbackPath = "/inicio",
-}) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [ready, setReady] = useState(false);
-  const [allowed, setAllowed] = useState(false);
-
-  const normalizedAllowedRoles = useMemo(
-    () => allowedRoles.map((r) => String(r).toLowerCase()),
-    [allowedRoles]
-  );
+export default function AccessGate({ allowed = [], children }) {
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const user = getStoredUser();
+    setUser(getStoredUser());
+  }, []);
 
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
+  if (!allowed.length) return children;
+  if (!user) return null;
 
-    if (
-      normalizedAllowedRoles.length === 0 ||
-      hasSomeRole(user, normalizedAllowedRoles)
-    ) {
-      setAllowed(true);
-      setReady(true);
-      return;
-    }
-
-    setAllowed(false);
-    setReady(true);
-  }, [router, pathname, normalizedAllowedRoles]);
-
-  if (!ready) {
+  if (!hasSomeRole(user, allowed)) {
     return (
-      <div style={loadingWrap}>
-        <div style={loadingCard}>Carregando acesso...</div>
-      </div>
-    );
-  }
-
-  if (!allowed) {
-    return (
-      <div style={blockedWrap}>
-        <div style={blockedCard}>
-          <div style={blockedBadge}>Acesso restrito</div>
-          <h2 style={blockedTitle}>Você não tem permissão para acessar esta área.</h2>
-          <p style={blockedText}>
-            Essa página está disponível apenas para perfis autorizados.
-          </p>
-          <button style={blockedButton} onClick={() => router.push(fallbackPath)}>
-            Voltar
-          </button>
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 24,
+          padding: 28,
+          border: "1px solid #e2e8f0",
+          boxShadow: "0 12px 28px rgba(15,23,42,.06)",
+        }}
+      >
+        <div
+          style={{
+            display: "inline-block",
+            background: "#fef2f2",
+            color: "#b91c1c",
+            padding: "6px 12px",
+            borderRadius: 999,
+            fontWeight: 700,
+            marginBottom: 16,
+          }}
+        >
+          Acesso restrito
         </div>
+        <h2 style={{ marginTop: 0 }}>Você não tem permissão para visualizar esta página.</h2>
+        <p style={{ color: "#64748b", lineHeight: 1.7 }}>
+          Esta área está disponível apenas para perfis autorizados.
+        </p>
       </div>
     );
   }
 
   return children;
-}
-
-const loadingWrap = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  minHeight: 240,
-};
-
-const loadingCard = {
-  padding: 16,
-  borderRadius: 14,
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  color: "#475569",
-  fontWeight: 700,
-};
-
-const blockedWrap = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  minHeight: "50vh",
-};
-
-const blockedCard = {
-  maxWidth: 520,
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 20,
-  padding: 24,
-  boxShadow: "0 12px 28px rgba(15,23,42,.06)",
-};
-
-const blockedBadge = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "#fee2e2",
-  color: "#b91c1c",
-  fontWeight: 800,
-  fontSize: 12,
-  marginBottom: 12,
-};
-
-const blockedTitle = {
-  margin: "0 0 8px",
-  color: "#0f172a",
-  fontSize: 24,
-};
-
-const blockedText = {
-  margin: "0 0 18px",
-  color: "#64748b",
-  lineHeight: 1.6,
-};
-
-const blockedButton = {
-  border: 0,
-  background: "#2563eb",
-  color: "#fff",
-  padding: "12px 16px",
-  borderRadius: 12,
-  fontWeight: 800,
-  cursor: "pointer",
-};
+            }
