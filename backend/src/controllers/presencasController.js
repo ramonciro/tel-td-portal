@@ -1,119 +1,66 @@
-import pool from "../db.js";
+const Presenca = require("../models/Presenca");
 
-function normalizeStatus(row) {
-  if (row.status) return row.status;
-  return row.presente ? "presente" : "ausente";
-}
+exports.listar = async (req,res)=>{
 
-export async function listPresencas(req, res) {
-  try {
-    const [rows] = await pool.query(`
-      SELECT id, treinamento_id, treinando_nome, presente, status, justificativa
-      FROM presencas
-      ORDER BY id DESC
-    `);
+  try{
 
-    const normalized = rows.map((row) => ({
-      ...row,
-      status: normalizeStatus(row),
-      justificativa: row.justificativa || ""
-    }));
+    const lista = await Presenca.findAll();
 
-    res.json(normalized);
-  } catch (error) {
-    res.status(500).json({ ok: false, message: "Erro ao listar presenças", error: error.message });
+    res.json(lista);
+
+  }catch(err){
+
+    res.status(500).json({error:"Erro ao listar presenças"});
+
   }
-}
 
-export async function createPresenca(req, res) {
-  try {
-    const { treinamento_id, treinando_nome, status, justificativa } = req.body || {};
+};
 
-    if (!treinamento_id || !treinando_nome || !status) {
-      return res.status(400).json({ ok: false, message: "Preencha treinamento, treinando e status" });
-    }
+exports.porTreinamento = async (req,res)=>{
 
-    if (!["presente", "ausente", "justificado"].includes(status)) {
-      return res.status(400).json({ ok: false, message: "Status inválido" });
-    }
+  const { id } = req.params;
 
-    if (status === "justificado" && !justificativa) {
-      return res.status(400).json({ ok: false, message: "Informe a justificativa" });
-    }
+  try{
 
-    const presente = status === "presente" ? 1 : 0;
+    const lista = await Presenca.findAll({
+      where:{ treinamento_id:id }
+    });
 
-    const [result] = await pool.query(
-      `INSERT INTO presencas (treinamento_id, treinando_nome, presente, status, justificativa)
-       VALUES (?, ?, ?, ?, ?)`,
-      [treinamento_id, treinando_nome, presente, status, justificativa || null]
-    );
+    res.json(lista);
 
-    res.status(201).json({ ok: true, id: result.insertId });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: "Erro ao registrar presença", error: error.message });
+  }catch(err){
+
+    res.status(500).json({error:"Erro ao buscar presenças"});
+
   }
-}
 
-export async function updatePresenca(req, res) {
-  try {
-    const { id } = req.params;
-    const { treinamento_id, treinando_nome, status, justificativa } = req.body || {};
+};
 
-    if (!treinamento_id || !treinando_nome || !status) {
-      return res.status(400).json({ ok: false, message: "Preencha treinamento, treinando e status" });
+exports.salvarLote = async (req,res)=>{
+
+  const { treinamento_id, participantes } = req.body;
+
+  try{
+
+    for(const p of participantes){
+
+      await Presenca.upsert({
+
+        treinamento_id:treinamento_id,
+        participante:p.nome,
+        status:p.status,
+        justificativa:p.justificativa || null
+
+      });
+
     }
 
-    if (!["presente", "ausente", "justificado"].includes(status)) {
-      return res.status(400).json({ ok: false, message: "Status inválido" });
-    }
+    res.json({ok:true});
 
-    if (status === "justificado" && !justificativa) {
-      return res.status(400).json({ ok: false, message: "Informe a justificativa" });
-    }
+  }catch(err){
 
-    const presente = status === "presente" ? 1 : 0;
+    res.status(500).json({error:"Erro ao salvar chamada"});
 
-    await pool.query(
-      `UPDATE presencas
-       SET treinamento_id = ?, treinando_nome = ?, presente = ?, status = ?, justificativa = ?
-       WHERE id = ?`,
-      [treinamento_id, treinando_nome, presente, status, justificativa || null, id]
-    );
-
-    res.json({ ok: true });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: "Erro ao atualizar presença", error: error.message });
   }
-}
 
-export async function deletePresenca(req, res) {
-  try {
-    const { id } = req.params;
-    await pool.query("DELETE FROM presencas WHERE id = ?", [id]);
-    res.json({ ok: true });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: "Erro ao excluir presença", error: error.message });
-  }
-}
-
-export async function migrarPresencasStatus(req, res) {
-  try {
-    try { await pool.query("ALTER TABLE presencas ADD COLUMN status VARCHAR(20) NULL"); } catch {}
-    try { await pool.query("ALTER TABLE presencas ADD COLUMN justificativa TEXT NULL"); } catch {}
-
-    await pool.query(`
-      UPDATE presencas
-      SET status = CASE
-        WHEN status IS NOT NULL THEN status
-        WHEN presente = 1 THEN 'presente'
-        ELSE 'ausente'
-      END
-      WHERE status IS NULL
-    `);
-
-    res.json({ ok: true, message: "Migração de presenças concluída" });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: "Erro na migração de presenças", error: error.message });
-  }
-}
+};
