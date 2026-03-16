@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import StatCard from "../../components/StatCard";
+import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
 
 function fmt(n) {
@@ -16,14 +17,24 @@ function fmtDate(value) {
   return d.toLocaleDateString("pt-BR");
 }
 
-export default function TurmasPage() {
+function parseHoras(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const text = String(value).replace(",", ".").trim();
+  const match = text.match(/(\d+(\.\d+)?)/);
+  return match ? Number(match[1]) || 0 : 0;
+}
+
+export default function GestaoTurmasPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [presencas, setPresencas] = useState([]);
   const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
+        setLoading(true);
+
         const [treinamentosData, presencasData] = await Promise.all([
           apiFetch("/treinamentos").catch(() => []),
           apiFetch("/presencas").catch(() => []),
@@ -33,7 +44,9 @@ export default function TurmasPage() {
         setPresencas(Array.isArray(presencasData) ? presencasData : []);
         setErro("");
       } catch (error) {
-        setErro(error.message || "Erro ao carregar turmas.");
+        setErro(error.message || "Erro ao carregar gestão de turmas.");
+      } finally {
+        setLoading(false);
       }
     }
 
@@ -59,269 +72,274 @@ export default function TurmasPage() {
           ["justificado", "Justificado"].includes(String(p.status || ""))
         ).length;
 
-        const previstos = Number(t.participantes || registros.length || 0);
-        const taxa = previstos ? Math.round((presentes / previstos) * 100) : 0;
-        const risco = taxa < 85 ? "Crítico" : taxa < 92 ? "Atenção" : "Saudável";
+        const treinandos = Number(t.participantes || registros.length || 0);
+        const taxa = treinandos ? Math.round((presentes / treinandos) * 100) : 0;
+
+        let classificacao = "Estável";
+        if (taxa < 85) classificacao = "Crítico";
+        else if (taxa < 95) classificacao = "Atenção";
 
         return {
-          id: t.id,
-          nome: t.tema || t.titulo || t.turma || "Turma",
-          cliente: t.cliente || "Sem cliente",
-          instrutor: t.instrutor || "Sem instrutor",
-          supervisor: t.supervisor || "-",
-          publico: t.publico || "Operação",
-          cargaHoraria: Number(t.carga_horaria || 0),
-          data: fmtDate(t.data),
-          previstos,
+          ...t,
+          treinandos,
           presentes,
           ausentes,
           justificados,
           taxa,
-          risco,
+          classificacao,
         };
       })
-      .sort((a, b) => a.taxa - b.taxa || b.previstos - a.previstos);
+      .sort((a, b) => a.taxa - b.taxa);
   }, [treinamentos, presencas]);
 
   const resumo = useMemo(() => {
-    const previstos = turmas.reduce((acc, item) => acc + item.previstos, 0);
-    const presentes = turmas.reduce((acc, item) => acc + item.presentes, 0);
-    const ausentes = turmas.reduce((acc, item) => acc + item.ausentes, 0);
-    const media = previstos ? Math.round((presentes / previstos) * 100) : 0;
-
     return {
-      totalTurmas: turmas.length,
-      previstos,
-      presentes,
-      ausentes,
-      media,
+      turmas: turmas.length,
+      treinandos: turmas.reduce((acc, item) => acc + Number(item.treinandos || 0), 0),
+      presentes: turmas.reduce((acc, item) => acc + Number(item.presentes || 0), 0),
+      horas: turmas.reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0),
     };
   }, [turmas]);
 
   return (
     <PortalShell
-      title="Turmas"
-      subtitle="Acompanhamento consolidado das turmas."
+      title="Gestão de Turmas"
+      subtitle="Execução operacional das turmas, treinandos e acompanhamento consolidado da presença."
     >
-      {erro ? <div style={errorBox}>{erro}</div> : null}
+      {loading ? (
+        <div style={loadingBox}>Carregando gestão de turmas...</div>
+      ) : erro ? (
+        <div style={errorBox}>{erro}</div>
+      ) : (
+        <>
+          <div style={statsGrid}>
+            <StatCard
+              title="Turmas"
+              value={fmt(resumo.turmas)}
+              subtitle="Consolidadas no portal"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Treinandos"
+              value={fmt(resumo.treinandos)}
+              subtitle="Capacidade planejada"
+              accent="#38bdf8"
+            />
+            <StatCard
+              title="Presentes"
+              value={fmt(resumo.presentes)}
+              subtitle="Participações confirmadas"
+              accent="#16a34a"
+            />
+            <StatCard
+              title="Carga horária"
+              value={`${fmt(resumo.horas)}h`}
+              subtitle="Carga consolidada"
+              accent="#7c3aed"
+            />
+          </div>
 
-      <div style={statsGrid}>
-        <StatCard
-          title="Turmas"
-          value={fmt(resumo.totalTurmas)}
-          subtitle="Consolidadas no portal"
-          accent="#2563eb"
-        />
-        <StatCard
-          title="Participantes"
-          value={fmt(resumo.previstos)}
-          subtitle="Capacidade planejada"
-          accent="#06b6d4"
-        />
-        <StatCard
-          title="Presentes"
-          value={fmt(resumo.presentes)}
-          subtitle="Participações confirmadas"
-          accent="#16a34a"
-        />
-        <StatCard
-          title="Presença média"
-          value={`${resumo.media}%`}
-          subtitle="Leitura geral"
-          accent="#7c3aed"
-        />
-      </div>
+          <SectionCard
+            title="Painel das turmas"
+            subtitle="Leitura rápida das turmas com maior necessidade de acompanhamento."
+          >
+            {turmas.length ? (
+              <div style={cardsGrid}>
+                {turmas.map((item) => (
+                  <div key={item.id} style={turmaCard}>
+                    <div style={cardTop}>
+                      <span
+                        style={
+                          item.classificacao === "Crítico"
+                            ? badgeCritico
+                            : item.classificacao === "Atenção"
+                            ? badgeAtencao
+                            : badgeEstavel
+                        }
+                      >
+                        {item.classificacao}
+                      </span>
 
-      <div style={panel}>
-        <div style={panelHeader}>
-          <h3 style={panelTitle}>Painel das turmas</h3>
-          <div style={panelCount}>{turmas.length} registro(s)</div>
-        </div>
+                      <span style={badgeTaxa}>{item.taxa}%</span>
+                    </div>
 
-        <div style={turmaGrid}>
-          {turmas.map((item) => (
-            <div key={item.id} style={turmaCard}>
-              <div style={topRow}>
-                <span style={riskBadge(item.risco)}>{item.risco}</span>
-                <span style={presenceBadge}>{item.taxa}%</span>
+                    <div style={turmaTitulo}>{item.tema || "Turma"}</div>
+                    <div style={turmaMeta}>
+                      {(item.cliente || "Sem cliente") +
+                        " • " +
+                        (item.instrutor || "Sem instrutor")}
+                    </div>
+
+                    <div style={miniLinha}>
+                      <span>{fmt(item.treinandos)} treinandos</span>
+                      <span>{fmt(item.presentes)} pres.</span>
+                      <span>{fmt(item.ausentes)} aus.</span>
+                      <span>{fmt(item.justificados)} just.</span>
+                    </div>
+
+                    <div style={infoBloco}>
+                      <div>
+                        <strong>Público:</strong> {item.publico || "-"}
+                      </div>
+                      <div>
+                        <strong>Carga:</strong> {item.carga_horaria || "-"}
+                      </div>
+                      <div>
+                        <strong>Supervisor:</strong> {item.supervisor || "-"}
+                      </div>
+                      <div>
+                        <strong>Data-base:</strong> {fmtDate(item.data)}
+                      </div>
+                    </div>
+
+                    <div style={acoesWrap}>
+                      <button
+                        style={btnPrimario}
+                        onClick={() => {
+                          window.location.href = `/turma/${item.id}`;
+                        }}
+                      >
+                        Gestão da turma
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              <div style={title}>{item.nome}</div>
-              <div style={meta}>
-                {item.cliente} • {item.instrutor}
-              </div>
-
-              <div style={metricGrid}>
-                <div style={metricItem}>
-                  <strong>{fmt(item.previstos)}</strong>
-                  <span>prev.</span>
-                </div>
-                <div style={metricItem}>
-                  <strong>{fmt(item.presentes)}</strong>
-                  <span>pres.</span>
-                </div>
-                <div style={metricItem}>
-                  <strong>{fmt(item.ausentes)}</strong>
-                  <span>aus.</span>
-                </div>
-                <div style={metricItem}>
-                  <strong>{fmt(item.justificados)}</strong>
-                  <span>just.</span>
-                </div>
-              </div>
-
-              <div style={infoList}>
-                <div><strong>Público:</strong> {item.publico}</div>
-                <div><strong>Carga:</strong> {item.cargaHoraria}h</div>
-                <div><strong>Supervisor:</strong> {item.supervisor}</div>
-                <div><strong>Data-base:</strong> {item.data}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+            ) : (
+              <div style={emptyText}>Nenhuma turma encontrada.</div>
+            )}
+          </SectionCard>
+        </>
+      )}
     </PortalShell>
   );
 }
 
 const statsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-  gap: 10,
-  marginBottom: 12,
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 14,
+  marginBottom: 16,
 };
 
-const panel = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 16,
-  padding: 14,
-  boxShadow: "0 8px 20px rgba(15,23,42,.04)",
-};
-
-const panelHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 10,
-  marginBottom: 10,
-  flexWrap: "wrap",
-};
-
-const panelTitle = {
-  margin: 0,
-  fontSize: 15,
-  color: "#0f172a",
-};
-
-const panelCount = {
-  fontSize: 12,
-  fontWeight: 800,
-  color: "#64748b",
-};
-
-const turmaGrid = {
+const cardsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-  gap: 10,
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: 14,
 };
 
 const turmaCard = {
+  background: "#fff",
   border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-  background: "#ffffff",
-  boxShadow: "0 6px 14px rgba(15,23,42,.03)",
+  borderRadius: 18,
+  padding: 16,
+  boxShadow: "0 8px 22px rgba(15,23,42,.05)",
+  display: "grid",
+  gap: 10,
 };
 
-const topRow = {
+const cardTop = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
-  gap: 8,
-  marginBottom: 8,
 };
 
-const riskBadge = (label) => ({
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "5px 9px",
+const badgeCritico = {
+  background: "#fef2f2",
+  color: "#b91c1c",
   borderRadius: 999,
-  fontSize: 11,
+  padding: "4px 10px",
+  fontSize: 12,
   fontWeight: 800,
-  background:
-    label === "Crítico"
-      ? "#fee2e2"
-      : label === "Atenção"
-      ? "#ffedd5"
-      : "#dcfce7",
-  color:
-    label === "Crítico"
-      ? "#991b1b"
-      : label === "Atenção"
-      ? "#9a3412"
-      : "#166534",
-});
+};
 
-const presenceBadge = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "5px 9px",
+const badgeAtencao = {
+  background: "#fff7ed",
+  color: "#c2410c",
   borderRadius: 999,
-  fontSize: 11,
+  padding: "4px 10px",
+  fontSize: 12,
   fontWeight: 800,
-  background: "#dbeafe",
+};
+
+const badgeEstavel = {
+  background: "#ecfdf5",
+  color: "#047857",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const badgeTaxa = {
+  background: "#eff6ff",
   color: "#1d4ed8",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
 };
 
-const title = {
-  fontSize: 16,
-  lineHeight: 1.15,
+const turmaTitulo = {
+  fontSize: 20,
   fontWeight: 800,
   color: "#0f172a",
-  marginBottom: 4,
 };
 
-const meta = {
+const turmaMeta = {
   color: "#64748b",
-  fontSize: 12,
-  marginBottom: 10,
+  fontSize: 14,
 };
 
-const metricGrid = {
+const miniLinha = {
+  display: "flex",
+  gap: 18,
+  flexWrap: "wrap",
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const infoBloco = {
   display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 6,
-  marginBottom: 10,
-};
-
-const metricItem = {
-  border: "1px solid #eef2f7",
-  borderRadius: 10,
-  padding: "8px 6px",
-  textAlign: "center",
-  background: "#fff",
-  fontSize: 10,
-  color: "#64748b",
-  lineHeight: 1.15,
-};
-
-const infoList = {
-  display: "grid",
-  gap: 5,
-  fontSize: 12,
   color: "#475569",
-  lineHeight: 1.35,
+  fontSize: 14,
+};
+
+const acoesWrap = {
+  marginTop: 4,
+  display: "flex",
+  justifyContent: "flex-end",
+};
+
+const btnPrimario = {
+  background: "#2563eb",
+  color: "#fff",
+  border: 0,
+  borderRadius: 10,
+  padding: "10px 14px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const emptyText = {
+  color: "#64748b",
+};
+
+const loadingBox = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 18,
+  color: "#475569",
+  fontWeight: 700,
 };
 
 const errorBox = {
   background: "#fef2f2",
   border: "1px solid #fecaca",
   color: "#b91c1c",
-  borderRadius: 14,
-  padding: 12,
+  borderRadius: 16,
+  padding: 16,
   fontWeight: 700,
-  marginBottom: 12,
 };
