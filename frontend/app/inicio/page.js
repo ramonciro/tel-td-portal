@@ -1,65 +1,185 @@
 "use client";
 
-import PortalShell from "../../components/PortalShell";
-import AccessGate from "../../components/AccessGate";
-import { getStoredUser } from "../../services/api";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import API_URL from "../../services/api";
 
-export default function InicioPage() {
+export default function LoginPage() {
+  const router = useRouter();
 
-  const user = getStoredUser();
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function login(e) {
+    e.preventDefault();
+    setErro("");
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, senha }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Falha no login");
+      }
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+      }
+
+      if (data.user?.troca_senha_obrigatoria) {
+        router.push("/primeiro-acesso");
+      } else {
+        router.push("/inicio");
+      }
+    } catch (err) {
+      setErro(err.message || "Erro ao entrar");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <AccessGate allowedRoles={["admin","coordenador","supervisor","instrutor","treinando"]}>
-      <PortalShell
-        title="Portal de Treinamento e Desenvolvimento"
-        subtitle="Ambiente central de gestão e acompanhamento das iniciativas de capacitação."
-      >
-
-        <div style={grid}>
-
-          <div style={card}>
-            <h3>Bem-vindo</h3>
-            <p>
-              {user?.nome || "Usuário"}, este portal concentra
-              as principais informações de treinamento da operação.
-            </p>
-          </div>
-
-          <div style={card}>
-            <h3>Objetivo</h3>
-            <p>
-              Acompanhar indicadores de capacitação,
-              desempenho de turmas e qualidade dos treinamentos.
-            </p>
-          </div>
-
-          <div style={card}>
-            <h3>Funcionalidades</h3>
-            <ul>
-              <li>Gestão de treinamentos</li>
-              <li>Controle de turmas</li>
-              <li>Avaliação de qualidade</li>
-              <li>Biblioteca de conteúdos</li>
-              <li>Dashboard executivo</li>
-            </ul>
-          </div>
-
+    <div style={container}>
+      <div style={leftSide}>
+        <div style={brandBox}>
+          <img src="/logo-td.png" alt="Portal T&D" style={logo} />
+          <h1 style={title}>Portal T&amp;D</h1>
+          <p style={subtitle}>
+            Plataforma de gestão de Treinamento &amp; Desenvolvimento
+          </p>
         </div>
+      </div>
 
-      </PortalShell>
-    </AccessGate>
+      <div style={rightSide}>
+        <form onSubmit={login} style={loginCard}>
+          <h2 style={loginTitle}>Acessar plataforma</h2>
+          <p style={loginSubtitle}>
+            Utilize seu e-mail corporativo para acessar o portal
+          </p>
+
+          {erro && <div style={errorBox}>{erro}</div>}
+
+          <input
+            placeholder="E-mail"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={input}
+            required
+          />
+
+          <input
+            type="password"
+            placeholder="Senha"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            style={input}
+            required
+          />
+
+          <button disabled={loading} style={button}>
+            {loading ? "Entrando..." : "Entrar"}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 
-const grid = {
-display:"grid",
-gridTemplateColumns:"repeat(3,1fr)",
-gap:20
-}
+const container = {
+  minHeight: "100vh",
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  background: "#f8fafc",
+};
 
-const card={
-background:"#fff",
-padding:20,
-borderRadius:14,
-border:"1px solid #e5e7eb"
-}
+const leftSide = {
+  background: "linear-gradient(135deg,#1e3a8a,#2563eb)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "#fff",
+};
+
+const brandBox = {
+  textAlign: "center",
+  maxWidth: 380,
+};
+
+const logo = {
+  width: 110,
+  marginBottom: 20,
+};
+
+const title = {
+  fontSize: 36,
+  marginBottom: 10,
+};
+
+const subtitle = {
+  opacity: 0.85,
+  lineHeight: 1.5,
+};
+
+const rightSide = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const loginCard = {
+  width: 360,
+  background: "#fff",
+  padding: 40,
+  borderRadius: 18,
+  boxShadow: "0 15px 35px rgba(0,0,0,.08)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 14,
+};
+
+const loginTitle = {
+  marginBottom: 4,
+};
+
+const loginSubtitle = {
+  color: "#64748b",
+  fontSize: 14,
+  marginBottom: 10,
+};
+
+const input = {
+  padding: 12,
+  borderRadius: 8,
+  border: "1px solid #ddd",
+  fontSize: 14,
+};
+
+const button = {
+  marginTop: 10,
+  padding: 12,
+  borderRadius: 8,
+  border: 0,
+  background: "#2563eb",
+  color: "#fff",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const errorBox = {
+  background: "#fee2e2",
+  color: "#b91c1c",
+  padding: 10,
+  borderRadius: 8,
+  fontSize: 13,
+};
