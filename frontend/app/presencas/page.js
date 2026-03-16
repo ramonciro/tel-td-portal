@@ -31,18 +31,9 @@ function normalizeStatus(value) {
 function getStatusTurma({ treinandos, presentes, ausentes, justificados, pendentes }) {
   const totalLancados = presentes + ausentes + justificados;
 
-  if (treinandos === 0) {
-    return "Sem treinandos";
-  }
-
-  if (totalLancados === 0) {
-    return "Chamada pendente";
-  }
-
-  if (pendentes > 0) {
-    return "Em andamento";
-  }
-
+  if (treinandos === 0) return "Sem treinandos";
+  if (totalLancados === 0) return "Chamada pendente";
+  if (pendentes > 0) return "Em andamento";
   return "Concluída";
 }
 
@@ -78,11 +69,36 @@ function getStatusBadgeStyle(status) {
   return { ...base, background: "#ecfdf5", color: "#047857" };
 }
 
+function getActionConfig(statusTurma) {
+  if (statusTurma === "Sem treinandos") {
+    return {
+      label: "Importar treinandos",
+      style: btnAlerta,
+    };
+  }
+
+  if (statusTurma === "Chamada pendente" || statusTurma === "Em andamento") {
+    return {
+      label: "Abrir chamada",
+      style: btnPrimario,
+    };
+  }
+
+  return {
+    label: "Ver gestão da turma",
+    style: btnSecundarioAzul,
+  };
+}
+
 export default function GestaoTurmasPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [presencas, setPresencas] = useState([]);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
+
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [filtroCliente, setFiltroCliente] = useState("todos");
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -174,16 +190,65 @@ export default function GestaoTurmasPage() {
       });
   }, [treinamentos, presencas]);
 
-  const resumo = useMemo(() => {
-    const turmasTotal = turmas.length;
-    const treinandos = turmas.reduce((acc, item) => acc + Number(item.treinandos || 0), 0);
-    const presentes = turmas.reduce((acc, item) => acc + Number(item.presentes || 0), 0);
-    const horas = turmas.reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0);
+  const clientesOptions = useMemo(() => {
+    const lista = [...new Set(turmas.map((item) => item.cliente).filter(Boolean))];
+    return lista.sort((a, b) => String(a).localeCompare(String(b)));
+  }, [turmas]);
 
-    const semTreinandos = turmas.filter((item) => item.statusTurma === "Sem treinandos").length;
-    const pendentes = turmas.filter((item) => item.statusTurma === "Chamada pendente").length;
-    const andamento = turmas.filter((item) => item.statusTurma === "Em andamento").length;
-    const concluidas = turmas.filter((item) => item.statusTurma === "Concluída").length;
+  const turmasFiltradas = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+
+    return turmas.filter((item) => {
+      const matchStatus =
+        filtroStatus === "todos" || item.statusTurma === filtroStatus;
+
+      const matchCliente =
+        filtroCliente === "todos" || String(item.cliente || "") === filtroCliente;
+
+      const alvoBusca = [
+        item.tema,
+        item.cliente,
+        item.instrutor,
+        item.supervisor,
+        item.publico,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchBusca = !termo || alvoBusca.includes(termo);
+
+      return matchStatus && matchCliente && matchBusca;
+    });
+  }, [turmas, filtroStatus, filtroCliente, busca]);
+
+  const resumo = useMemo(() => {
+    const turmasTotal = turmasFiltradas.length;
+    const treinandos = turmasFiltradas.reduce(
+      (acc, item) => acc + Number(item.treinandos || 0),
+      0
+    );
+    const presentes = turmasFiltradas.reduce(
+      (acc, item) => acc + Number(item.presentes || 0),
+      0
+    );
+    const horas = turmasFiltradas.reduce(
+      (acc, item) => acc + parseHoras(item.carga_horaria),
+      0
+    );
+
+    const semTreinandos = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Sem treinandos"
+    ).length;
+    const pendentes = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Chamada pendente"
+    ).length;
+    const andamento = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Em andamento"
+    ).length;
+    const concluidas = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Concluída"
+    ).length;
 
     return {
       turmasTotal,
@@ -195,7 +260,7 @@ export default function GestaoTurmasPage() {
       andamento,
       concluidas,
     };
-  }, [turmas]);
+  }, [turmasFiltradas]);
 
   return (
     <PortalShell
@@ -208,11 +273,73 @@ export default function GestaoTurmasPage() {
         <div style={errorBox}>{erro}</div>
       ) : (
         <>
+          <SectionCard
+            title="Filtros"
+            subtitle="Refine a visualização por status, cliente ou palavras-chave."
+          >
+            <div style={filtersGrid}>
+              <div style={fieldWrap}>
+                <label style={label}>Status da turma</label>
+                <select
+                  value={filtroStatus}
+                  onChange={(e) => setFiltroStatus(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="Sem treinandos">Sem treinandos</option>
+                  <option value="Chamada pendente">Chamada pendente</option>
+                  <option value="Em andamento">Em andamento</option>
+                  <option value="Concluída">Concluída</option>
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Cliente</label>
+                <select
+                  value={filtroCliente}
+                  onChange={(e) => setFiltroCliente(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todos</option>
+                  {clientesOptions.map((cliente) => (
+                    <option key={cliente} value={cliente}>
+                      {cliente}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Busca</label>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar por turma, cliente, instrutor..."
+                  style={input}
+                />
+              </div>
+
+              <div style={actionsWrap}>
+                <button
+                  style={btnSecundario}
+                  onClick={() => {
+                    setFiltroStatus("todos");
+                    setFiltroCliente("todos");
+                    setBusca("");
+                  }}
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            </div>
+          </SectionCard>
+
           <div style={statsGrid}>
             <StatCard
               title="Turmas"
               value={fmt(resumo.turmasTotal)}
-              subtitle="Consolidadas no portal"
+              subtitle="Consolidadas no filtro"
               accent="#2563eb"
             />
             <StatCard
@@ -266,78 +393,84 @@ export default function GestaoTurmasPage() {
             title="Painel das turmas"
             subtitle="Leitura rápida das turmas com maior necessidade de acompanhamento."
           >
-            {turmas.length ? (
+            {turmasFiltradas.length ? (
               <div style={cardsGrid}>
-                {turmas.map((item) => (
-                  <div key={item.id} style={turmaCard}>
-                    <div style={cardTop}>
-                      <span
-                        style={
-                          item.classificacao === "Crítico"
-                            ? badgeCritico
-                            : item.classificacao === "Atenção"
-                            ? badgeAtencao
-                            : badgeEstavel
-                        }
-                      >
-                        {item.classificacao}
-                      </span>
+                {turmasFiltradas.map((item) => {
+                  const action = getActionConfig(item.statusTurma);
 
-                      <span style={badgeTaxa}>{item.taxa}%</span>
-                    </div>
+                  return (
+                    <div key={item.id} style={turmaCard}>
+                      <div style={cardTop}>
+                        <span
+                          style={
+                            item.classificacao === "Crítico"
+                              ? badgeCritico
+                              : item.classificacao === "Atenção"
+                              ? badgeAtencao
+                              : badgeEstavel
+                          }
+                        >
+                          {item.classificacao}
+                        </span>
 
-                    <div style={statusWrap}>
-                      <span style={getStatusBadgeStyle(item.statusTurma)}>
-                        {item.statusTurma}
-                      </span>
-                    </div>
-
-                    <div style={turmaTitulo}>{item.tema || "Turma"}</div>
-
-                    <div style={turmaMeta}>
-                      {(item.cliente || "Sem cliente") +
-                        " • " +
-                        (item.instrutor || "Sem instrutor")}
-                    </div>
-
-                    <div style={miniLinha}>
-                      <span>{fmt(item.treinandos)} treinandos</span>
-                      <span>{fmt(item.presentes)} pres.</span>
-                      <span>{fmt(item.ausentes)} aus.</span>
-                      <span>{fmt(item.justificados)} just.</span>
-                      <span>{fmt(item.pendentes)} pend.</span>
-                    </div>
-
-                    <div style={infoBloco}>
-                      <div>
-                        <strong>Público:</strong> {item.publico || "-"}
+                        <span style={badgeTaxa}>{item.taxa}%</span>
                       </div>
-                      <div>
-                        <strong>Carga:</strong> {item.carga_horaria || "-"}
-                      </div>
-                      <div>
-                        <strong>Supervisor:</strong> {item.supervisor || "-"}
-                      </div>
-                      <div>
-                        <strong>Data-base:</strong> {fmtDate(item.data)}
-                      </div>
-                    </div>
 
-                    <div style={acoesWrap}>
-                      <button
-                        style={btnPrimario}
-                        onClick={() => {
-                          window.location.href = `/turma/${item.id}`;
-                        }}
-                      >
-                        Gestão da turma
-                      </button>
+                      <div style={statusWrap}>
+                        <span style={getStatusBadgeStyle(item.statusTurma)}>
+                          {item.statusTurma}
+                        </span>
+                      </div>
+
+                      <div style={turmaTitulo}>{item.tema || "Turma"}</div>
+
+                      <div style={turmaMeta}>
+                        {(item.cliente || "Sem cliente") +
+                          " • " +
+                          (item.instrutor || "Sem instrutor")}
+                      </div>
+
+                      <div style={miniLinha}>
+                        <span>{fmt(item.treinandos)} treinandos</span>
+                        <span>{fmt(item.presentes)} pres.</span>
+                        <span>{fmt(item.ausentes)} aus.</span>
+                        <span>{fmt(item.justificados)} just.</span>
+                        <span>{fmt(item.pendentes)} pend.</span>
+                      </div>
+
+                      <div style={infoBloco}>
+                        <div>
+                          <strong>Público:</strong> {item.publico || "-"}
+                        </div>
+                        <div>
+                          <strong>Carga:</strong> {item.carga_horaria || "-"}
+                        </div>
+                        <div>
+                          <strong>Supervisor:</strong> {item.supervisor || "-"}
+                        </div>
+                        <div>
+                          <strong>Data-base:</strong> {fmtDate(item.data)}
+                        </div>
+                      </div>
+
+                      <div style={acoesWrapCard}>
+                        <button
+                          style={action.style}
+                          onClick={() => {
+                            window.location.href = `/turma/${item.id}`;
+                          }}
+                        >
+                          {action.label}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
-              <div style={emptyText}>Nenhuma turma encontrada.</div>
+              <div style={emptyText}>
+                Nenhuma turma encontrada para os filtros aplicados.
+              </div>
             )}
           </SectionCard>
         </>
@@ -345,6 +478,50 @@ export default function GestaoTurmasPage() {
     </PortalShell>
   );
 }
+
+const filtersGrid = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr 1.4fr auto",
+  gap: 12,
+  alignItems: "end",
+};
+
+const fieldWrap = {
+  display: "grid",
+  gap: 6,
+};
+
+const label = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#334155",
+};
+
+const input = {
+  width: "100%",
+  padding: "11px 12px",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  background: "#fff",
+  color: "#0f172a",
+  fontSize: 14,
+  outline: "none",
+};
+
+const actionsWrap = {
+  display: "flex",
+  justifyContent: "flex-end",
+};
+
+const btnSecundario = {
+  background: "#e2e8f0",
+  color: "#0f172a",
+  border: 0,
+  borderRadius: 10,
+  padding: "11px 14px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
 
 const statsGrid = {
   display: "grid",
@@ -448,7 +625,7 @@ const infoBloco = {
   fontSize: 14,
 };
 
-const acoesWrap = {
+const acoesWrapCard = {
   marginTop: 4,
   display: "flex",
   justifyContent: "flex-end",
@@ -458,6 +635,26 @@ const btnPrimario = {
   background: "#2563eb",
   color: "#fff",
   border: 0,
+  borderRadius: 10,
+  padding: "10px 14px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const btnSecundarioAzul = {
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  border: 0,
+  borderRadius: 10,
+  padding: "10px 14px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const btnAlerta = {
+  background: "#fff7ed",
+  color: "#c2410c",
+  border: "1px solid #fdba74",
   borderRadius: 10,
   padding: "10px 14px",
   cursor: "pointer",
