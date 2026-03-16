@@ -33,7 +33,7 @@ async function getDashboardTreinamentos(req, res) {
       FROM treinamentos
     `);
 
-    const [[participantesTreinados]] = await pool.query(`
+    const [[treinadosImportados]] = await pool.query(`
       SELECT COUNT(*) AS total
       FROM treinamento_participantes tp
       INNER JOIN treinamentos t ON t.id = tp.treinamento_id
@@ -106,14 +106,16 @@ async function getDashboardTreinamentos(req, res) {
     const [presencaPorCliente] = await pool.query(`
       SELECT
         t.cliente,
-        COUNT(tp.id) AS total_treinados,
-        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
-        SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
-        SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados,
+        COUNT(DISTINCT t.id) AS total_turmas,
+        COALESCE(SUM(CASE WHEN tp.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS treinados_importados,
+        COALESCE(SUM(t.participantes), 0) AS previstos,
+        COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) AS presentes,
+        COALESCE(SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END), 0) AS ausentes,
+        COALESCE(SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END), 0) AS justificados,
         ROUND(
           (
-            SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) /
-            NULLIF(COUNT(tp.id), 0)
+            COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) /
+            NULLIF(COALESCE(SUM(CASE WHEN tp.id IS NOT NULL THEN 1 ELSE 0 END), 0), 0)
           ) * 100,
           0
         ) AS taxa_presenca
@@ -123,7 +125,7 @@ async function getDashboardTreinamentos(req, res) {
       WHERE t.cliente IS NOT NULL
         AND t.cliente <> ''
       GROUP BY t.cliente
-      ORDER BY total_treinados DESC, presentes DESC
+      ORDER BY total_turmas DESC, previstos DESC
       LIMIT 10
     `);
 
@@ -131,12 +133,13 @@ async function getDashboardTreinamentos(req, res) {
       SELECT
         t.instrutor,
         COUNT(DISTINCT t.id) AS total_turmas,
-        COUNT(tp.id) AS total_treinados,
-        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
+        COALESCE(SUM(t.participantes), 0) AS treinandos_previstos,
+        COALESCE(SUM(CASE WHEN tp.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS treinandos_vinculados,
+        COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) AS presentes,
         ROUND(
           (
-            SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) /
-            NULLIF(COUNT(tp.id), 0)
+            COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) /
+            NULLIF(COALESCE(SUM(CASE WHEN tp.id IS NOT NULL THEN 1 ELSE 0 END), 0), 0)
           ) * 100,
           0
         ) AS taxa_presenca
@@ -146,7 +149,7 @@ async function getDashboardTreinamentos(req, res) {
       WHERE t.instrutor IS NOT NULL
         AND t.instrutor <> ''
       GROUP BY t.instrutor
-      ORDER BY total_turmas DESC, presentes DESC
+      ORDER BY total_turmas DESC, treinandos_previstos DESC
       LIMIT 10
     `);
 
@@ -188,7 +191,7 @@ async function getDashboardTreinamentos(req, res) {
     `);
 
     const totalTreinamentos = Number(treinamentos.total || 0);
-    const totalTreinados = Number(participantesTreinados.total || 0);
+    const totalTreinados = Number(treinadosImportados.total || 0);
     const totalPrevistos = Number(participantesPrevistos.total || 0);
     const totalPresentes = Number(presentes.total || 0);
     const totalAusentes = Number(ausentes.total || 0);
@@ -223,8 +226,20 @@ async function getDashboardTreinamentos(req, res) {
         clientes_ativos: Number(clientesCarteira.total || 0),
         clientes_com_treinamento: Number(clientesComTreinamento.total || 0),
       },
-      presenca_por_cliente: presencaPorCliente,
-      ranking_instrutores: rankingInstrutores,
+      presenca_por_cliente: presencaPorCliente.map((item) => ({
+        ...item,
+        total_treinados:
+          Number(item.treinados_importados || 0) > 0
+            ? Number(item.treinados_importados || 0)
+            : Number(item.previstos || 0),
+      })),
+      ranking_instrutores: rankingInstrutores.map((item) => ({
+        ...item,
+        total_treinados:
+          Number(item.treinandos_vinculados || 0) > 0
+            ? Number(item.treinandos_vinculados || 0)
+            : Number(item.treinandos_previstos || 0),
+      })),
       ultimas_turmas: ultimasTurmas,
     });
   } catch (error) {
