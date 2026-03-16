@@ -33,13 +33,6 @@ export async function apiFetch(path, options = {}) {
   return data;
 }
 
-export function storeUserSession(token, user) {
-  if (typeof window === "undefined") return;
-
-  localStorage.setItem("token", token);
-  localStorage.setItem("user", JSON.stringify(user));
-}
-
 export function getStoredUser() {
   if (typeof window === "undefined") return null;
 
@@ -53,7 +46,6 @@ export function getStoredUser() {
 
 export function clearSession() {
   if (typeof window === "undefined") return;
-
   localStorage.removeItem("token");
   localStorage.removeItem("user");
 }
