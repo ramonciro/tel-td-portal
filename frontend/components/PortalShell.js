@@ -208,7 +208,9 @@ const sidebar = {
   position: "sticky",
   top: 0,
   height: "100vh",
-  overflow: "hidden",
+  overflowY: "auto",
+  overflowX: "hidden",
+  scrollbarWidth: "thin",
   background: "linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%)",
   color: "#ffffff",
   padding: "18px 14px",
@@ -253,15 +255,15 @@ const brandSubtitle = {
 
 const nav = {
   display: "grid",
-  gap: 6,
+  gap: 4,
 };
 
 const navItem = {
   display: "flex",
   alignItems: "center",
   gap: 12,
-  minHeight: 44,
-  padding: "10px 12px",
+  minHeight: 42,
+  padding: "9px 12px",
   borderRadius: 12,
   textDecoration: "none",
   color: "#E2E8F0",
