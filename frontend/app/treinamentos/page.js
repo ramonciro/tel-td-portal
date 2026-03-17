@@ -336,6 +336,9 @@ export default function TreinamentosPage() {
       columns={columns}
       recordsTitle="Base de turmas"
       recordsSubtitle="Visão consolidada das turmas cadastradas no portal."
+      allowedCreateRoles={["coordenador", "supervisor"]}
+      allowedEditRoles={["coordenador", "supervisor"]}
+      allowedDeleteRoles={["coordenador"]}
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
@@ -518,9 +521,18 @@ const subCell = {
   lineHeight: 1.35,
 };
 
+const statusPill = {
+  display: "inline-block",
+  padding: "5px 10px",
+  borderRadius: 999,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  fontSize: 11,
+};
+
 const plainCell = {
   color: "#334155",
-  fontWeight: 600,
 };
 
 const scoreBlue = {
