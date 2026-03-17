@@ -80,7 +80,7 @@ export async function getDashboardTreinamentos(req, res) {
         COALESCE(
           SUM(
             CASE
-              WHEN base.vinculados > 0 THEN base.vinculados
+              WHEN base.total_chamada > 0 THEN base.total_chamada
               WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
               ELSE base.previstos
             END
@@ -90,7 +90,7 @@ export async function getDashboardTreinamentos(req, res) {
       FROM (
         SELECT
           t.id,
-          COUNT(tp.id) AS vinculados,
+          COUNT(tp.id) AS total_chamada,
           COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados,
           COALESCE(MAX(t.participantes), 0) AS previstos
         FROM treinamentos t
@@ -239,44 +239,20 @@ export async function getDashboardTreinamentos(req, res) {
       SELECT
         base.cliente,
         COUNT(*) AS total_turmas,
-        COALESCE(
-          SUM(
-            CASE
-              WHEN base.vinculados > 0 THEN base.vinculados
-              WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
-              ELSE base.previstos
-            END
-          ),
-          0
-        ) AS treinados_importados,
         COALESCE(SUM(base.previstos), 0) AS previstos,
-        COALESCE(
-          SUM(
-            CASE
-              WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
-              WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
-              ELSE 0
-            END
-          ),
-          0
-        ) AS presentes,
+        COALESCE(SUM(base.total_chamada), 0) AS total_chamada,
+        COALESCE(SUM(base.presentes), 0) AS presentes,
         COALESCE(SUM(base.ausentes), 0) AS ausentes,
         COALESCE(SUM(base.justificados), 0) AS justificados,
+        COALESCE(SUM(base.pendentes), 0) AS pendentes,
         COALESCE(
           ROUND(
             (
-              SUM(
-                CASE
-                  WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
-                  WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
-                  ELSE 0
-                END
-              ) /
+              SUM(base.presentes) /
               NULLIF(
                 SUM(
                   CASE
-                    WHEN base.vinculados > 0 THEN base.vinculados
-                    WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+                    WHEN base.total_chamada > 0 THEN base.total_chamada
                     ELSE base.previstos
                   END
                 ),
@@ -292,11 +268,19 @@ export async function getDashboardTreinamentos(req, res) {
           t.id,
           t.cliente,
           COALESCE(MAX(t.participantes), 0) AS previstos,
-          COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados,
-          COUNT(tp.id) AS vinculados,
-          SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes_chamada,
+          SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
           SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
-          SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados
+          SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados,
+          SUM(
+            CASE
+              WHEN tp.status_presenca IS NULL
+                OR tp.status_presenca = ''
+                OR tp.status_presenca = 'pendente'
+              THEN 1
+              ELSE 0
+            END
+          ) AS pendentes,
+          COUNT(tp.id) AS total_chamada
         FROM treinamentos t
         LEFT JOIN treinamento_participantes tp
           ON tp.treinamento_id = t.id
@@ -323,7 +307,7 @@ export async function getDashboardTreinamentos(req, res) {
         COALESCE(
           SUM(
             CASE
-              WHEN base.vinculados > 0 THEN base.vinculados
+              WHEN base.total_chamada > 0 THEN base.total_chamada
               WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
               ELSE base.previstos
             END
@@ -353,7 +337,7 @@ export async function getDashboardTreinamentos(req, res) {
               NULLIF(
                 SUM(
                   CASE
-                    WHEN base.vinculados > 0 THEN base.vinculados
+                    WHEN base.total_chamada > 0 THEN base.total_chamada
                     WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
                     ELSE base.previstos
                   END
@@ -371,7 +355,7 @@ export async function getDashboardTreinamentos(req, res) {
           t.instrutor,
           COALESCE(MAX(t.participantes), 0) AS previstos,
           COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados,
-          COUNT(tp.id) AS vinculados,
+          COUNT(tp.id) AS total_chamada,
           SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes_chamada
         FROM treinamentos t
         LEFT JOIN treinamento_participantes tp
@@ -558,8 +542,8 @@ export async function getDashboardTreinamentos(req, res) {
       presenca_por_cliente: presencaPorCliente.map((item) => ({
         ...item,
         total_treinados:
-          Number(item.treinados_importados || 0) > 0
-            ? Number(item.treinados_importados || 0)
+          Number(item.total_chamada || 0) > 0
+            ? Number(item.total_chamada || 0)
             : Number(item.previstos || 0),
       })),
       ranking_instrutores: rankingInstrutores.map((item) => ({
@@ -579,4 +563,4 @@ export async function getDashboardTreinamentos(req, res) {
       error: error.message,
     });
   }
-}
+        }
