@@ -1,4 +1,4 @@
-const pool = require("../lib/db");
+import pool from "../db.js";
 
 function parseHorasTexto(valor) {
   if (valor === null || valor === undefined || valor === "") return 0;
@@ -9,7 +9,7 @@ function parseHorasTexto(valor) {
   return match ? Number(match[1]) || 0 : 0;
 }
 
-async function getDashboardTreinamentos(req, res) {
+export async function getDashboardTreinamentos(req, res) {
   try {
     const [[treinamentos]] = await pool.query(`
       SELECT COUNT(*) AS total
@@ -199,9 +199,7 @@ async function getDashboardTreinamentos(req, res) {
     const totalPendentes = Number(pendentes.total || 0);
 
     const taxaPresenca =
-      totalTreinados > 0
-        ? Math.round((totalPresentes / totalTreinados) * 100)
-        : 0;
+      totalTreinados > 0 ? Math.round((totalPresentes / totalTreinados) * 100) : 0;
 
     const taxaConclusaoChamada =
       totalTreinados > 0
@@ -250,7 +248,3 @@ async function getDashboardTreinamentos(req, res) {
     });
   }
 }
-
-module.exports = {
-  getDashboardTreinamentos,
-};
