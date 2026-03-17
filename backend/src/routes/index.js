@@ -69,6 +69,11 @@ import {
   salvarChamadaParticipantes
 } from "../controllers/treinamentoParticipantesController.js";
 
+import {
+  listAvaliacoesTreinandos,
+  createAvaliacaoTreinando
+} from "../controllers/avaliacoesTreinandosController.js";
+
 import { authRequired } from "../middlewares/auth.js";
 import pool from "../db.js";
 
@@ -126,6 +131,10 @@ router.get("/avaliacoes", authRequired, listAvaliacoes);
 router.post("/avaliacoes", authRequired, createAvaliacao);
 router.put("/avaliacoes/:id", authRequired, updateAvaliacao);
 router.delete("/avaliacoes/:id", authRequired, deleteAvaliacao);
+
+/* NPS REAL DO TREINANDO */
+router.get("/avaliacoes-treinandos", authRequired, listAvaliacoesTreinandos);
+router.post("/avaliacoes-treinandos", authRequired, createAvaliacaoTreinando);
 
 router.get("/materiais-avaliativos", authRequired, listMateriaisAvaliativos);
 router.post("/materiais-avaliativos", authRequired, createMaterialAvaliativo);
