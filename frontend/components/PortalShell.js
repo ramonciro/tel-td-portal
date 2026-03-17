@@ -107,7 +107,9 @@ export default function PortalShell({
             {subtitle ? <p className="portal-subtitle">{subtitle}</p> : null}
           </div>
 
-          {topRight ? <div className="portal-header-action">{topRight}</div> : null}
+          {topRight ? (
+            <div className="portal-header-action">{topRight}</div>
+          ) : null}
         </header>
 
         <section className="portal-content">{children}</section>
@@ -117,7 +119,7 @@ export default function PortalShell({
         .portal-shell {
           min-height: 100vh;
           display: grid;
-          grid-template-columns: 260px minmax(0, 1fr);
+          grid-template-columns: 270px minmax(0, 1fr);
           background:
             radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
             linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
@@ -146,12 +148,12 @@ export default function PortalShell({
         }
 
         .portal-brand-logo {
-          width: 52px;
-          height: 52px;
+          width: 64px;
+          height: 64px;
           object-fit: contain;
           background: #ffffff;
-          border-radius: 14px;
-          padding: 6px;
+          border-radius: 16px;
+          padding: 8px;
           box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
           flex-shrink: 0;
         }
@@ -165,13 +167,14 @@ export default function PortalShell({
           font-weight: 800;
           line-height: 1.1;
           letter-spacing: 0.2px;
+          color: #ffffff;
         }
 
         .portal-brand-subtitle {
-          margin-top: 4px;
-          font-size: 12px;
+          margin-top: 6px;
+          font-size: 13px;
           line-height: 1.4;
-          color: rgba(255, 255, 255, 0.78);
+          color: rgba(255, 255, 255, 0.82);
         }
 
         .portal-nav {
@@ -183,70 +186,84 @@ export default function PortalShell({
           display: flex;
           align-items: center;
           gap: 12px;
-          min-height: 48px;
+          min-height: 50px;
           padding: 12px 14px;
-          border-radius: 14px;
+          border-radius: 12px;
           text-decoration: none;
-          color: rgba(255, 255, 255, 0.92);
-          font-weight: 700;
-          font-size: 14px;
-          transition: all 0.18s ease;
+          color: rgba(255, 255, 255, 0.88);
+          font-weight: 600;
+          font-size: 15px;
+          line-height: 1.2;
+          transition: all 0.2s ease;
+          background: transparent;
           border: 1px solid transparent;
+        }
+
+        .portal-nav-item:visited {
+          color: rgba(255, 255, 255, 0.88);
         }
 
         .portal-nav-item:hover {
           background: rgba(255, 255, 255, 0.08);
+          color: #ffffff;
+          transform: translateX(4px);
           border-color: rgba(255, 255, 255, 0.08);
-          transform: translateX(2px);
         }
 
         .portal-nav-item.active {
-          background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+          background: linear-gradient(135deg, #2563eb, #1d4ed8);
+          color: #ffffff;
+          font-weight: 700;
+          box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
           border-color: rgba(255, 255, 255, 0.14);
-          box-shadow: 0 10px 24px rgba(2, 6, 23, 0.16);
+        }
+
+        .portal-nav-item.active:visited {
           color: #ffffff;
         }
 
         .portal-nav-icon {
-          width: 22px;
-          min-width: 22px;
+          width: 24px;
+          min-width: 24px;
           text-align: center;
-          font-size: 16px;
+          font-size: 18px;
+          opacity: 0.95;
         }
 
         .portal-nav-label {
-          line-height: 1.3;
+          display: block;
         }
 
         .portal-sidebar-footer {
           margin-top: auto;
           display: grid;
-          gap: 12px;
-          padding-top: 8px;
+          gap: 14px;
+          padding-top: 12px;
         }
 
         .portal-sidebar-footer-card {
           display: grid;
           gap: 4px;
-          padding: 14px;
-          border-radius: 16px;
+          padding: 16px;
+          border-radius: 18px;
           background: rgba(255, 255, 255, 0.08);
           border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .portal-sidebar-footer-label {
           font-size: 12px;
-          color: rgba(255, 255, 255, 0.72);
+          color: rgba(255, 255, 255, 0.76);
         }
 
         .portal-sidebar-footer-value {
           font-size: 14px;
           line-height: 1.35;
+          color: #ffffff;
         }
 
         .portal-logout-button {
           width: 100%;
-          min-height: 46px;
+          min-height: 48px;
           border: none;
           border-radius: 14px;
           cursor: pointer;
@@ -309,7 +326,7 @@ export default function PortalShell({
 
         @media (max-width: 1024px) {
           .portal-shell {
-            grid-template-columns: 220px minmax(0, 1fr);
+            grid-template-columns: 230px minmax(0, 1fr);
           }
 
           .portal-main {
