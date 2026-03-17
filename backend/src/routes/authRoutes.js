@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../lib/db");
+const { signToken } = require("../middlewares/auth");
 
 router.post("/login", async (req, res) => {
   try {
@@ -29,22 +30,30 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Senha incorreta" });
     }
 
+    const token = signToken({
+      id: user.id,
+      nome: user.nome,
+      email: user.email,
+      perfil: user.perfil || "instrutor",
+      cliente: user.cliente || "",
+    });
+
     return res.json({
-      token: "teltd-token-simples",
+      token,
       user: {
         id: user.id,
         nome: user.nome,
         email: user.email,
         perfil: user.perfil || "instrutor",
         cliente: user.cliente || "",
-        troca_senha_obrigatoria: !!user.troca_senha_obrigatoria
-      }
+        troca_senha_obrigatoria: !!user.troca_senha_obrigatoria,
+      },
     });
   } catch (error) {
     console.error("Erro no login:", error);
     return res.status(500).json({
       message: "Erro ao realizar login",
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -67,7 +76,7 @@ router.post("/alterar-senha", async (req, res) => {
     console.error("Erro ao alterar senha:", error);
     return res.status(500).json({
       message: "Erro ao alterar senha",
-      error: error.message
+      error: error.message,
     });
   }
 });
