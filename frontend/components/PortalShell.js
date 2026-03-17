@@ -3,19 +3,20 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { clearSession, getStoredUser, hasSomeRole } from "../services/api";
 
 const menuItems = [
-  { href: "/inicio", label: "Início", icon: "🏠" },
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/usuarios", label: "Usuários", icon: "👤" },
-  { href: "/clientes", label: "Clientes", icon: "🏢" },
-  { href: "/treinamentos", label: "Treinamentos", icon: "🎓" },
-  { href: "/presencas", label: "Gestão de Turmas", icon: "👥" },
-  { href: "/avaliacoes", label: "Avaliações", icon: "⭐" },
-  { href: "/nps", label: "NPS", icon: "💬" },
-  { href: "/biblioteca", label: "Biblioteca", icon: "📚" },
-  { href: "/trilhas", label: "Trilhas", icon: "🧭" },
-  { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "🗺️" },
+  { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor"] },
+  { href: "/usuarios", label: "Usuários", icon: "👤", roles: ["coordenador"] },
+  { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
+  { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/presencas", label: "Gestão de Turmas", icon: "👥", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/avaliacoes", label: "Avaliações", icon: "⭐", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/nps", label: "NPS", icon: "💬", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "🗺️", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
 ];
 
 function isRouteActive(pathname, href) {
@@ -34,6 +35,7 @@ export default function PortalShell({
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [user, setUser] = useState(undefined);
 
   useEffect(() => {
     function handleResize() {
@@ -54,17 +56,29 @@ export default function PortalShell({
     setMobileMenuOpen(false);
   }, [pathname]);
 
-  function handleLogout() {
-    try {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("token");
-        localStorage.removeItem("usuario");
-        localStorage.removeItem("user");
-      }
-    } catch (error) {
-      console.error("Erro ao limpar sessão:", error);
-    }
+  useEffect(() => {
+    setUser(getStoredUser());
+  }, []);
 
+  const allowedMenuItems = useMemo(() => {
+    if (!user) return [];
+    return menuItems.filter((item) => hasSomeRole(user, item.roles));
+  }, [user]);
+
+  const currentItem = useMemo(() => {
+    return menuItems.find(
+      (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
+    );
+  }, [pathname]);
+
+  const currentAllowed = useMemo(() => {
+    if (!currentItem) return true;
+    if (!user) return false;
+    return hasSomeRole(user, currentItem.roles);
+  }, [currentItem, user]);
+
+  function handleLogout() {
+    clearSession();
     router.push("/login");
   }
 
@@ -78,6 +92,47 @@ export default function PortalShell({
     }),
     [isMobile]
   );
+
+  if (user === undefined) {
+    return null;
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  if (!currentAllowed) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: 20,
+            padding: 24,
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <div
+            style={{
+              display: "inline-block",
+              background: "#fef2f2",
+              color: "#b91c1c",
+              padding: "6px 12px",
+              borderRadius: 999,
+              fontWeight: 700,
+              marginBottom: 16,
+            }}
+          >
+            Acesso restrito
+          </div>
+          <h2 style={{ marginTop: 0 }}>Você não tem permissão para acessar esta área.</h2>
+          <p style={{ color: "#64748b" }}>
+            Fale com o coordenador para revisar seu perfil de acesso.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={shellStyle}>
@@ -104,7 +159,7 @@ export default function PortalShell({
           {mobileMenuOpen ? (
             <div style={mobileDrawer}>
               <nav style={mobileNav}>
-                {menuItems.map((item) => {
+                {allowedMenuItems.map((item) => {
                   const active = isRouteActive(pathname, item.href);
 
                   return (
@@ -152,7 +207,7 @@ export default function PortalShell({
           </div>
 
           <nav style={nav}>
-            {menuItems.map((item) => {
+            {allowedMenuItems.map((item) => {
               const active = isRouteActive(pathname, item.href);
 
               return (
