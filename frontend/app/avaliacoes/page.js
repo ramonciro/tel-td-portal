@@ -108,22 +108,19 @@ export default function AvaliacoesPage() {
     }));
   }, [treinamentos]);
 
-  const participanteOptions = useMemo(() => {
-    const options = [];
+  const participanteOptionsPorTreinamento = useMemo(() => {
+    const mapa = {};
 
-    Object.entries(participantesMap).forEach(([treinamentoId, participantes]) => {
-      const treinamento = treinamentos.find((t) => String(t.id) === String(treinamentoId));
-      const nomeTurma = treinamento?.tema || treinamento?.titulo || "Treinamento";
+    treinamentos.forEach((treinamento) => {
+      const participantes = participantesMap[String(treinamento.id)] || [];
 
-      participantes.forEach((p) => {
-        options.push({
-          value: p.nome,
-          label: `${p.nome} - ${nomeTurma}`,
-        });
-      });
+      mapa[String(treinamento.id)] = participantes.map((p) => ({
+        value: p.nome,
+        label: p.nome,
+      }));
     });
 
-    return options;
+    return mapa;
   }, [participantesMap, treinamentos]);
 
   const fields = useMemo(
@@ -138,8 +135,9 @@ export default function AvaliacoesPage() {
       {
         name: "treinando_nome",
         label: "Treinando",
-        type: "select",
-        options: participanteOptions,
+        type: "dependent-select",
+        dependsOn: "treinamento_id",
+        optionsMap: participanteOptionsPorTreinamento,
         placeholder: "Selecione o treinando",
       },
       {
@@ -147,18 +145,27 @@ export default function AvaliacoesPage() {
         label: "NPS / satisfação",
         type: "number",
         placeholder: "0 a 10",
+        min: 0,
+        max: 10,
+        step: 0.1,
       },
       {
         name: "nota_qualidade",
         label: "Qualidade / aproveitamento",
         type: "number",
         placeholder: "0 a 10",
+        min: 0,
+        max: 10,
+        step: 0.1,
       },
       {
         name: "nota_prova",
         label: "Nota da avaliação",
         type: "number",
         placeholder: "0 a 10",
+        min: 0,
+        max: 10,
+        step: 0.1,
       },
       {
         name: "comentario",
@@ -167,7 +174,7 @@ export default function AvaliacoesPage() {
         placeholder: "Comentários sobre desempenho, reforço ou evolução",
       },
     ],
-    [treinamentoOptions, participanteOptions]
+    [treinamentoOptions, participanteOptionsPorTreinamento]
   );
 
   const kpis = useMemo(() => {
