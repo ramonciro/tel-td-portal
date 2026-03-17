@@ -1,11 +1,22 @@
 import pool from "../db.js";
 
+function classificarResultado(item) {
+  const notaProva = Number(item?.nota_prova || 0);
+  const notaQualidade = Number(item?.nota_qualidade || 0);
+  const notaFinal = notaProva > 0 ? notaProva : notaQualidade;
+
+  if (notaFinal >= 8) return "Aprovado";
+  if (notaFinal >= 6) return "Atenção";
+  return "Reforço";
+}
+
 export async function listAvaliacoes(req, res) {
   try {
     const [rows] = await pool.query(`
       SELECT
         id,
         treinamento_id,
+        treinando_nome,
         COALESCE(nota_nps, 0) AS nota_nps,
         COALESCE(nota_qualidade, 0) AS nota_qualidade,
         COALESCE(nota_prova, 0) AS nota_prova,
@@ -14,12 +25,17 @@ export async function listAvaliacoes(req, res) {
       ORDER BY id DESC
     `);
 
-    res.json(rows);
+    const data = rows.map((item) => ({
+      ...item,
+      status_resultado: classificarResultado(item),
+    }));
+
+    res.json(data);
   } catch (error) {
     res.status(500).json({
       ok: false,
       message: "Erro ao listar avaliações",
-      error: error.message
+      error: error.message,
     });
   }
 }
@@ -28,43 +44,45 @@ export async function createAvaliacao(req, res) {
   try {
     const {
       treinamento_id,
+      treinando_nome,
       nota_nps,
       nota_qualidade,
       nota_prova,
-      comentario
+      comentario,
     } = req.body || {};
 
-    if (!treinamento_id || nota_nps === undefined || nota_qualidade === undefined) {
+    if (!treinamento_id || !treinando_nome || nota_qualidade === undefined) {
       return res.status(400).json({
         ok: false,
-        message: "Preencha turma, NPS e qualidade"
+        message: "Preencha turma, treinando e qualidade",
       });
     }
 
     const [result] = await pool.query(
       `
       INSERT INTO avaliacoes
-      (treinamento_id, nota_nps, nota_qualidade, nota_prova, comentario)
-      VALUES (?, ?, ?, ?, ?)
+      (treinamento_id, treinando_nome, nota_nps, nota_qualidade, nota_prova, comentario)
+      VALUES (?, ?, ?, ?, ?, ?)
       `,
       [
         treinamento_id,
-        nota_nps,
+        treinando_nome,
+        nota_nps || 0,
         nota_qualidade,
         nota_prova || 0,
-        comentario || null
+        comentario || null,
       ]
     );
 
     res.status(201).json({
       ok: true,
-      id: result.insertId
+      id: result.insertId,
     });
   } catch (error) {
     res.status(500).json({
       ok: false,
       message: "Erro ao registrar avaliação",
-      error: error.message
+      error: error.message,
     });
   }
 }
@@ -74,16 +92,17 @@ export async function updateAvaliacao(req, res) {
     const { id } = req.params;
     const {
       treinamento_id,
+      treinando_nome,
       nota_nps,
       nota_qualidade,
       nota_prova,
-      comentario
+      comentario,
     } = req.body || {};
 
-    if (!treinamento_id || nota_nps === undefined || nota_qualidade === undefined) {
+    if (!treinamento_id || !treinando_nome || nota_qualidade === undefined) {
       return res.status(400).json({
         ok: false,
-        message: "Preencha turma, NPS e qualidade"
+        message: "Preencha turma, treinando e qualidade",
       });
     }
 
@@ -92,6 +111,7 @@ export async function updateAvaliacao(req, res) {
       UPDATE avaliacoes
       SET
         treinamento_id = ?,
+        treinando_nome = ?,
         nota_nps = ?,
         nota_qualidade = ?,
         nota_prova = ?,
@@ -100,11 +120,12 @@ export async function updateAvaliacao(req, res) {
       `,
       [
         treinamento_id,
-        nota_nps,
+        treinando_nome,
+        nota_nps || 0,
         nota_qualidade,
         nota_prova || 0,
         comentario || null,
-        id
+        id,
       ]
     );
 
@@ -113,7 +134,7 @@ export async function updateAvaliacao(req, res) {
     res.status(500).json({
       ok: false,
       message: "Erro ao atualizar avaliação",
-      error: error.message
+      error: error.message,
     });
   }
 }
@@ -129,7 +150,7 @@ export async function deleteAvaliacao(req, res) {
     res.status(500).json({
       ok: false,
       message: "Erro ao excluir avaliação",
-      error: error.message
+      error: error.message,
     });
   }
-  }
+}
