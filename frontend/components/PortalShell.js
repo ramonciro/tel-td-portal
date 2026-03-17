@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const menuItems = [
   { href: "/inicio", label: "Início", icon: "🏠" },
@@ -11,152 +11,341 @@ const menuItems = [
   { href: "/treinamentos", label: "Treinamentos", icon: "🎓" },
   { href: "/presencas", label: "Gestão de Turmas", icon: "👥" },
   { href: "/avaliacoes", label: "Avaliações", icon: "⭐" },
+  { href: "/nps", label: "NPS", icon: "💬" },
   { href: "/biblioteca", label: "Biblioteca", icon: "📚" },
   { href: "/trilhas", label: "Trilhas", icon: "🧭" },
-  { href: "/mapa-desenvolvimento", label: "Mapa de desenvolvimento", icon: "🗺️" },
+  { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "🗺️" },
 ];
 
-export default function PortalShell({ title, subtitle, children }) {
+function isRouteActive(pathname, href) {
+  if (!pathname) return false;
+  if (pathname === href) return true;
+  return pathname.startsWith(`${href}/`);
+}
+
+export default function PortalShell({
+  title,
+  subtitle,
+  children,
+  topRight,
+}) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  function handleLogout() {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("token");
+        localStorage.removeItem("usuario");
+        localStorage.removeItem("user");
+      }
+    } catch (error) {
+      console.error("Erro ao limpar sessão:", error);
+    }
+
+    router.push("/login");
+  }
 
   return (
-    <div style={layout}>
-      <aside style={sidebar}>
-        <div style={brandBox}>
+    <div className="portal-shell">
+      <aside className="portal-sidebar">
+        <div className="portal-brand">
           <img
             src="/logo-td.png"
             alt="Portal T&D"
-            style={logo}
+            className="portal-brand-logo"
           />
-          <div>
-            <div style={brandTitle}>Portal T&amp;D</div>
-            <div style={brandSubtitle}>Treinamento e Desenvolvimento</div>
+          <div className="portal-brand-text">
+            <div className="portal-brand-title">Portal T&amp;D</div>
+            <div className="portal-brand-subtitle">
+              Treinamento e Desenvolvimento
+            </div>
           </div>
         </div>
 
-        <nav style={nav}>
+        <nav className="portal-nav" aria-label="Menu principal">
           {menuItems.map((item) => {
-            const active = pathname === item.href;
+            const active = isRouteActive(pathname, item.href);
+
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                style={{
-                  ...navItem,
-                  ...(active ? navItemActive : {}),
-                }}
+                className={`portal-nav-item ${active ? "active" : ""}`}
               >
-                <span style={navIcon}>{item.icon}</span>
-                <span>{item.label}</span>
+                <span className="portal-nav-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+                <span className="portal-nav-label">{item.label}</span>
               </Link>
             );
           })}
         </nav>
+
+        <div className="portal-sidebar-footer">
+          <div className="portal-sidebar-footer-card">
+            <span className="portal-sidebar-footer-label">Ambiente</span>
+            <strong className="portal-sidebar-footer-value">
+              Gestão Executiva de T&amp;D
+            </strong>
+          </div>
+
+          <button
+            type="button"
+            className="portal-logout-button"
+            onClick={handleLogout}
+          >
+            Sair do portal
+          </button>
+        </div>
       </aside>
 
-      <main style={main}>
-        <header style={header}>
-          <h1 style={titleStyle}>{title}</h1>
-          {subtitle ? <p style={subtitleStyle}>{subtitle}</p> : null}
+      <main className="portal-main">
+        <header className="portal-header">
+          <div className="portal-header-text">
+            <h1 className="portal-title">{title}</h1>
+            {subtitle ? <p className="portal-subtitle">{subtitle}</p> : null}
+          </div>
+
+          {topRight ? <div className="portal-header-action">{topRight}</div> : null}
         </header>
 
-        <section style={content}>{children}</section>
+        <section className="portal-content">{children}</section>
       </main>
+
+      <style jsx>{`
+        .portal-shell {
+          min-height: 100vh;
+          display: grid;
+          grid-template-columns: 260px minmax(0, 1fr);
+          background:
+            radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
+            linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
+        }
+
+        .portal-sidebar {
+          position: sticky;
+          top: 0;
+          height: 100vh;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 22px;
+          padding: 22px 18px;
+          background: linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%);
+          color: #ffffff;
+          border-right: 1px solid rgba(255, 255, 255, 0.08);
+          box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .portal-brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 4px 4px 10px;
+        }
+
+        .portal-brand-logo {
+          width: 52px;
+          height: 52px;
+          object-fit: contain;
+          background: #ffffff;
+          border-radius: 14px;
+          padding: 6px;
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+          flex-shrink: 0;
+        }
+
+        .portal-brand-text {
+          min-width: 0;
+        }
+
+        .portal-brand-title {
+          font-size: 18px;
+          font-weight: 800;
+          line-height: 1.1;
+          letter-spacing: 0.2px;
+        }
+
+        .portal-brand-subtitle {
+          margin-top: 4px;
+          font-size: 12px;
+          line-height: 1.4;
+          color: rgba(255, 255, 255, 0.78);
+        }
+
+        .portal-nav {
+          display: grid;
+          gap: 8px;
+        }
+
+        .portal-nav-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-height: 48px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          text-decoration: none;
+          color: rgba(255, 255, 255, 0.92);
+          font-weight: 700;
+          font-size: 14px;
+          transition: all 0.18s ease;
+          border: 1px solid transparent;
+        }
+
+        .portal-nav-item:hover {
+          background: rgba(255, 255, 255, 0.08);
+          border-color: rgba(255, 255, 255, 0.08);
+          transform: translateX(2px);
+        }
+
+        .portal-nav-item.active {
+          background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+          border-color: rgba(255, 255, 255, 0.14);
+          box-shadow: 0 10px 24px rgba(2, 6, 23, 0.16);
+          color: #ffffff;
+        }
+
+        .portal-nav-icon {
+          width: 22px;
+          min-width: 22px;
+          text-align: center;
+          font-size: 16px;
+        }
+
+        .portal-nav-label {
+          line-height: 1.3;
+        }
+
+        .portal-sidebar-footer {
+          margin-top: auto;
+          display: grid;
+          gap: 12px;
+          padding-top: 8px;
+        }
+
+        .portal-sidebar-footer-card {
+          display: grid;
+          gap: 4px;
+          padding: 14px;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .portal-sidebar-footer-label {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.72);
+        }
+
+        .portal-sidebar-footer-value {
+          font-size: 14px;
+          line-height: 1.35;
+        }
+
+        .portal-logout-button {
+          width: 100%;
+          min-height: 46px;
+          border: none;
+          border-radius: 14px;
+          cursor: pointer;
+          background: #ffffff;
+          color: #0f172a;
+          font-size: 14px;
+          font-weight: 800;
+          transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+        }
+
+        .portal-logout-button:hover {
+          transform: translateY(-1px);
+          opacity: 0.96;
+        }
+
+        .portal-main {
+          min-width: 0;
+          padding: 28px;
+        }
+
+        .portal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+          margin-bottom: 22px;
+        }
+
+        .portal-header-text {
+          min-width: 0;
+        }
+
+        .portal-title {
+          margin: 0;
+          font-size: 32px;
+          line-height: 1.1;
+          color: #0f172a;
+          font-weight: 800;
+          letter-spacing: -0.02em;
+        }
+
+        .portal-subtitle {
+          margin: 8px 0 0;
+          color: #64748b;
+          font-size: 16px;
+          line-height: 1.5;
+          max-width: 900px;
+        }
+
+        .portal-header-action {
+          flex-shrink: 0;
+        }
+
+        .portal-content {
+          display: grid;
+          gap: 16px;
+          min-width: 0;
+        }
+
+        @media (max-width: 1024px) {
+          .portal-shell {
+            grid-template-columns: 220px minmax(0, 1fr);
+          }
+
+          .portal-main {
+            padding: 22px;
+          }
+
+          .portal-title {
+            font-size: 28px;
+          }
+        }
+
+        @media (max-width: 820px) {
+          .portal-shell {
+            grid-template-columns: 1fr;
+          }
+
+          .portal-sidebar {
+            position: relative;
+            height: auto;
+            overflow: visible;
+          }
+
+          .portal-main {
+            padding: 18px;
+          }
+
+          .portal-header {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .portal-title {
+            font-size: 26px;
+          }
+        }
+      `}</style>
     </div>
   );
 }
-
-const layout = {
-  minHeight: "100vh",
-  display: "grid",
-  gridTemplateColumns: "280px 1fr",
-  background: "#f8fafc",
-};
-
-const sidebar = {
-  background: "linear-gradient(180deg, #0f172a 0%, #1d4ed8 100%)",
-  color: "#fff",
-  padding: 20,
-  display: "flex",
-  flexDirection: "column",
-  gap: 20,
-};
-
-const brandBox = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  padding: "8px 4px 18px",
-};
-
-const logo = {
-  width: 56,
-  height: 56,
-  objectFit: "contain",
-  background: "#fff",
-  borderRadius: 8,
-  padding: 6,
-};
-
-const brandTitle = {
-  fontSize: 18,
-  fontWeight: 800,
-  lineHeight: 1.1,
-};
-
-const brandSubtitle = {
-  fontSize: 13,
-  opacity: 0.8,
-  marginTop: 3,
-};
-
-const nav = {
-  display: "grid",
-  gap: 8,
-};
-
-const navItem = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  padding: "14px 16px",
-  borderRadius: 14,
-  color: "#fff",
-  textDecoration: "none",
-  fontWeight: 700,
-  background: "transparent",
-};
-
-const navItemActive = {
-  background: "rgba(255,255,255,.16)",
-};
-
-const navIcon = {
-  width: 22,
-  textAlign: "center",
-};
-
-const main = {
-  padding: 24,
-};
-
-const header = {
-  marginBottom: 18,
-};
-
-const titleStyle = {
-  margin: 0,
-  fontSize: 34,
-  color: "#0f172a",
-};
-
-const subtitleStyle = {
-  margin: "8px 0 0",
-  color: "#64748b",
-  fontSize: 18,
-};
-
-const content = {
-  display: "grid",
-  gap: 16,
-};
