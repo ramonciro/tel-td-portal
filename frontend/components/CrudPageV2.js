@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "./PortalShell";
-import { apiFetch } from "../services/api";
+import { apiFetch, getStoredUser, hasSomeRole } from "../services/api";
 
 export default function CrudPageV2({
   title,
@@ -16,6 +16,9 @@ export default function CrudPageV2({
   recordsGridStyle = null,
   recordsTitle = "Registros",
   renderRecordCard = null,
+  allowedCreateRoles = [],
+  allowedEditRoles = [],
+  allowedDeleteRoles = [],
 }) {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({});
@@ -24,6 +27,17 @@ export default function CrudPageV2({
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [carregando, setCarregando] = useState(false);
+
+  const user = getStoredUser();
+
+  const canCreate =
+    !allowedCreateRoles.length || hasSomeRole(user, allowedCreateRoles);
+
+  const canEdit =
+    !allowedEditRoles.length || hasSomeRole(user, allowedEditRoles);
+
+  const canDelete =
+    !allowedDeleteRoles.length || hasSomeRole(user, allowedDeleteRoles);
 
   useEffect(() => {
     carregar();
@@ -69,6 +83,11 @@ export default function CrudPageV2({
   }
 
   function editarRegistro(item) {
+    if (!canEdit) {
+      setErro("Você não tem permissão para editar este registro.");
+      return;
+    }
+
     setForm({ ...item });
     setEditingId(item?.id || null);
     setErro("");
@@ -77,6 +96,11 @@ export default function CrudPageV2({
   }
 
   async function excluirRegistro(id) {
+    if (!canDelete) {
+      setErro("Você não tem permissão para excluir este registro.");
+      return;
+    }
+
     const confirmar = window.confirm("Deseja realmente excluir este registro?");
     if (!confirmar) return;
 
@@ -101,6 +125,16 @@ export default function CrudPageV2({
 
   async function salvar(event) {
     event.preventDefault();
+
+    if (editingId && !canEdit) {
+      setErro("Você não tem permissão para editar este registro.");
+      return;
+    }
+
+    if (!editingId && !canCreate) {
+      setErro("Você não tem permissão para criar registros nesta área.");
+      return;
+    }
 
     try {
       setErro("");
@@ -142,122 +176,124 @@ export default function CrudPageV2({
 
       {hero ? <div style={{ marginBottom: 14 }}>{hero}</div> : null}
 
-      <div style={panel}>
-        <div style={panelHeaderCompact}>
-          <h3 style={panelTitle}>{editingId ? "Editar registro" : "Novo registro"}</h3>
-          {editingId ? (
-            <span style={editingTag}>Modo edição</span>
-          ) : null}
-        </div>
+      {canCreate || (editingId && canEdit) ? (
+        <div style={panel}>
+          <div style={panelHeaderCompact}>
+            <h3 style={panelTitle}>{editingId ? "Editar registro" : "Novo registro"}</h3>
+            {editingId ? (
+              <span style={editingTag}>Modo edição</span>
+            ) : null}
+          </div>
 
-        <form onSubmit={salvar} style={formGrid}>
-          {fields.map((field) => {
-            const value = form[field.name] ?? "";
+          <form onSubmit={salvar} style={formGrid}>
+            {fields.map((field) => {
+              const value = form[field.name] ?? "";
 
-            if (field.type === "textarea") {
+              if (field.type === "textarea") {
+                return (
+                  <div key={field.name} style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
+                    <label style={label}>{field.label}</label>
+                    <textarea
+                      name={field.name}
+                      value={value}
+                      onChange={handleChange}
+                      placeholder={field.placeholder || ""}
+                      rows={3}
+                      style={textarea}
+                    />
+                  </div>
+                );
+              }
+
+              if (field.type === "dependent-select") {
+                const parentValue = form[field.dependsOn] ?? "";
+                const options = field.optionsMap?.[String(parentValue)] || [];
+
+                return (
+                  <div key={field.name} style={fieldWrap}>
+                    <label style={label}>{field.label}</label>
+                    <select
+                      name={field.name}
+                      value={value}
+                      onChange={handleChange}
+                      style={input}
+                      disabled={!parentValue}
+                    >
+                      <option value="">
+                        {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
+                      </option>
+                      {options.map((option) => {
+                        const optionValue = typeof option === "object" ? option.value : option;
+                        const optionLabel = typeof option === "object" ? option.label : option;
+
+                        return (
+                          <option key={`${field.name}-${optionValue}`} value={optionValue}>
+                            {optionLabel}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                );
+              }
+
+              if (field.type === "select") {
+                return (
+                  <div key={field.name} style={fieldWrap}>
+                    <label style={label}>{field.label}</label>
+                    <select
+                      name={field.name}
+                      value={value}
+                      onChange={handleChange}
+                      style={input}
+                    >
+                      <option value="">
+                        {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
+                      </option>
+                      {(field.options || []).map((option) => {
+                        const optionValue = typeof option === "object" ? option.value : option;
+                        const optionLabel = typeof option === "object" ? option.label : option;
+
+                        return (
+                          <option key={`${field.name}-${optionValue}`} value={optionValue}>
+                            {optionLabel}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                );
+              }
+
               return (
-                <div key={field.name} style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
+                <div key={field.name} style={fieldWrap}>
                   <label style={label}>{field.label}</label>
-                  <textarea
+                  <input
+                    type={field.type || "text"}
                     name={field.name}
                     value={value}
                     onChange={handleChange}
                     placeholder={field.placeholder || ""}
-                    rows={3}
-                    style={textarea}
+                    min={field.min}
+                    max={field.max}
+                    step={field.step}
+                    style={input}
                   />
                 </div>
               );
-            }
+            })}
 
-            if (field.type === "dependent-select") {
-              const parentValue = form[field.dependsOn] ?? "";
-              const options = field.optionsMap?.[String(parentValue)] || [];
-
-              return (
-                <div key={field.name} style={fieldWrap}>
-                  <label style={label}>{field.label}</label>
-                  <select
-                    name={field.name}
-                    value={value}
-                    onChange={handleChange}
-                    style={input}
-                    disabled={!parentValue}
-                  >
-                    <option value="">
-                      {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
-                    </option>
-                    {options.map((option) => {
-                      const optionValue = typeof option === "object" ? option.value : option;
-                      const optionLabel = typeof option === "object" ? option.label : option;
-
-                      return (
-                        <option key={`${field.name}-${optionValue}`} value={optionValue}>
-                          {optionLabel}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-              );
-            }
-
-            if (field.type === "select") {
-              return (
-                <div key={field.name} style={fieldWrap}>
-                  <label style={label}>{field.label}</label>
-                  <select
-                    name={field.name}
-                    value={value}
-                    onChange={handleChange}
-                    style={input}
-                  >
-                    <option value="">
-                      {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
-                    </option>
-                    {(field.options || []).map((option) => {
-                      const optionValue = typeof option === "object" ? option.value : option;
-                      const optionLabel = typeof option === "object" ? option.label : option;
-
-                      return (
-                        <option key={`${field.name}-${optionValue}`} value={optionValue}>
-                          {optionLabel}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-              );
-            }
-
-            return (
-              <div key={field.name} style={fieldWrap}>
-                <label style={label}>{field.label}</label>
-                <input
-                  type={field.type || "text"}
-                  name={field.name}
-                  value={value}
-                  onChange={handleChange}
-                  placeholder={field.placeholder || ""}
-                  min={field.min}
-                  max={field.max}
-                  step={field.step}
-                  style={input}
-                />
-              </div>
-            );
-          })}
-
-          <div style={actionsRow}>
-            <button type="submit" style={buttonPrimary}>
-              {editingId ? "Atualizar" : "Salvar"}
-            </button>
-            <button type="button" onClick={limparFormulario} style={buttonSecondary}>
-              Limpar
-            </button>
-          </div>
-        </form>
-      </div>
+            <div style={actionsRow}>
+              <button type="submit" style={buttonPrimary}>
+                {editingId ? "Atualizar" : "Salvar"}
+              </button>
+              <button type="button" onClick={limparFormulario} style={buttonSecondary}>
+                Limpar
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       <div style={panel}>
         <div style={recordsHeader}>
@@ -284,8 +320,8 @@ export default function CrudPageV2({
             {filteredItems.map((item) =>
               renderRecordCard({
                 item,
-                onEdit: () => editarRegistro(item),
-                onDelete: () => excluirRegistro(item.id),
+                onEdit: canEdit ? () => editarRegistro(item) : null,
+                onDelete: canDelete ? () => excluirRegistro(item.id) : null,
               })
             )}
           </div>
@@ -301,14 +337,20 @@ export default function CrudPageV2({
                   ))}
                 </div>
 
-                <div style={cardActions}>
-                  <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
-                    Editar
-                  </button>
-                  <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
-                    Excluir
-                  </button>
-                </div>
+                {(canEdit || canDelete) ? (
+                  <div style={cardActions}>
+                    {canEdit ? (
+                      <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
+                        Editar
+                      </button>
+                    ) : null}
+                    {canDelete ? (
+                      <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
+                        Excluir
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -322,7 +364,7 @@ export default function CrudPageV2({
                       {column.label}
                     </th>
                   ))}
-                  <th style={th}>Ações</th>
+                  {(canEdit || canDelete) ? <th style={th}>Ações</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -333,16 +375,22 @@ export default function CrudPageV2({
                         {column.render ? column.render(item) : item[column.key] ?? "-"}
                       </td>
                     ))}
-                    <td style={td}>
-                      <div style={tableActions}>
-                        <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
-                          Editar
-                        </button>
-                        <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
-                          Excluir
-                        </button>
-                      </div>
-                    </td>
+                    {(canEdit || canDelete) ? (
+                      <td style={td}>
+                        <div style={tableActions}>
+                          {canEdit ? (
+                            <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
+                              Editar
+                            </button>
+                          ) : null}
+                          {canDelete ? (
+                            <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
+                              Excluir
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
