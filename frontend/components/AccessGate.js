@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import { getStoredUser, hasSomeRole } from "../services/api";
 
 export default function AccessGate({ allowed = [], children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(undefined);
 
   useEffect(() => {
     setUser(getStoredUser());
   }, []);
 
   if (!allowed.length) return children;
+  if (user === undefined) return null;
   if (!user) return null;
 
   if (!hasSomeRole(user, allowed)) {
@@ -37,7 +38,9 @@ export default function AccessGate({ allowed = [], children }) {
         >
           Acesso restrito
         </div>
-        <h2 style={{ marginTop: 0 }}>Você não tem permissão para visualizar esta página.</h2>
+        <h2 style={{ marginTop: 0 }}>
+          Você não tem permissão para visualizar esta página.
+        </h2>
         <p style={{ color: "#64748b", lineHeight: 1.7 }}>
           Esta área está disponível apenas para perfis autorizados.
         </p>
@@ -46,4 +49,4 @@ export default function AccessGate({ allowed = [], children }) {
   }
 
   return children;
-            }
+}
