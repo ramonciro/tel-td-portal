@@ -293,8 +293,19 @@ export default function GestaoTurmasPage() {
     >
       {loading ? (
         <div style={loadingBox}>Carregando gestão de turmas...</div>
-      ) : erro ? (
-        <div style={errorBox}>{erro}</div>
+           ) : erro ? (
+        <div style={errorBox}>
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>
+            Não foi possível concluir o carregamento da Gestão de Turmas.
+          </div>
+          <div style={{ marginBottom: 12 }}>{erro}</div>
+          <button
+            style={btnPrimario}
+            onClick={() => window.location.reload()}
+          >
+            Tentar novamente
+          </button>
+        </div>
       ) : (
         <>
           <SectionCard
