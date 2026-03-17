@@ -7,6 +7,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
+const { authRequired, authorizeRoles } = require("./middlewares/auth");
 
 const {
   getDashboardTreinamentos,
@@ -25,7 +26,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/api/dashboard/treinamentos", getDashboardTreinamentos);
+app.get(
+  "/api/dashboard/treinamentos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  getDashboardTreinamentos
+);
 
 app.get("/api", async (req, res) => {
   try {
@@ -40,7 +46,13 @@ app.get("/api", async (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
-app.use("/api/dashboard", dashboardRoutes);
+
+app.use(
+  "/api/dashboard",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  dashboardRoutes
+);
 
 app.use(
   "/api/clientes",
@@ -48,6 +60,10 @@ app.use(
     table: "clientes",
     fields: ["nome", "segmento", "status", "gestor", "descricao"],
     orderBy: "nome ASC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
   })
 );
 
@@ -64,46 +80,44 @@ app.use(
       "ativo",
       "troca_senha_obrigatoria",
     ],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
   })
 );
 
 /* EXCLUSÃO EM CASCATA DO TREINAMENTO */
-app.delete("/api/treinamentos/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+app.delete(
+  "/api/treinamentos/:id",
+  authRequired,
+  authorizeRoles("coordenador"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    await pool.query(
-      `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
-      [id]
-    );
+      await pool.query(
+        `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
+        [id]
+      );
 
-    await pool.query(
-      `DELETE FROM presencas WHERE treinamento_id = ?`,
-      [id]
-    );
+      await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
 
-    await pool.query(
-      `DELETE FROM avaliacoes WHERE treinamento_id = ?`,
-      [id]
-    );
-
-    await pool.query(
-      `DELETE FROM treinamentos WHERE id = ?`,
-      [id]
-    );
-
-    return res.json({
-      ok: true,
-      message: "Treinamento e dados relacionados excluídos com sucesso",
-    });
-  } catch (error) {
-    return res.status(500).json({
-      ok: false,
-      message: "Erro ao excluir treinamento",
-      error: error.message,
-    });
+      return res.json({
+        ok: true,
+        message: "Treinamento e dados relacionados excluídos com sucesso",
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        message: "Erro ao excluir treinamento",
+        error: error.message,
+      });
+    }
   }
-});
+);
 
 app.use(
   "/api/treinamentos",
@@ -126,70 +140,85 @@ app.use(
       "supervisor",
     ],
     orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
   })
 );
 
 /* DETALHE DO TREINAMENTO */
-app.get("/api/treinamentos/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+app.get(
+  "/api/treinamentos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    const [rows] = await pool.query(
-      `
-      SELECT
-        id,
-        tema,
-        cliente,
-        instrutor,
-        carga_horaria,
-        participantes,
-        participantes_previstos,
-        participantes_presentes,
-        concluidos,
-        publico,
-        status,
-        descricao,
-        data,
-        turma,
-        supervisor
-      FROM treinamentos
-      WHERE id = ?
-      LIMIT 1
-      `,
-      [id]
-    );
+      const [rows] = await pool.query(
+        `
+        SELECT
+          id,
+          tema,
+          cliente,
+          instrutor,
+          carga_horaria,
+          participantes,
+          participantes_previstos,
+          participantes_presentes,
+          concluidos,
+          publico,
+          status,
+          descricao,
+          data,
+          turma,
+          supervisor
+        FROM treinamentos
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [id]
+      );
 
-    if (!rows.length) {
-      return res.status(404).json({
+      if (!rows.length) {
+        return res.status(404).json({
+          ok: false,
+          message: "Treinamento não encontrado",
+        });
+      }
+
+      return res.json(rows[0]);
+    } catch (error) {
+      return res.status(500).json({
         ok: false,
-        message: "Treinamento não encontrado",
+        message: "Erro ao buscar treinamento",
+        error: error.message,
       });
     }
-
-    return res.json(rows[0]);
-  } catch (error) {
-    return res.status(500).json({
-      ok: false,
-      message: "Erro ao buscar treinamento",
-      error: error.message,
-    });
   }
-});
+);
 
 /* PARTICIPANTES DO TREINAMENTO */
 app.get(
   "/api/treinamentos/:id/participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
   getParticipantesByTreinamento
 );
 
 app.post(
   "/api/treinamentos/importar-participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
   upload.single("arquivo"),
   importarParticipantesExcel
 );
 
 app.post(
   "/api/treinamentos/salvar-chamada",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
   salvarChamadaParticipantes
 );
 
@@ -205,6 +234,10 @@ app.use(
       "justificativa",
     ],
     orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
   })
 );
 
@@ -222,6 +255,10 @@ app.use(
       "comentario",
     ],
     orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
   })
 );
 
@@ -231,6 +268,10 @@ app.use(
     table: "biblioteca_conteudos",
     fields: ["titulo", "tipo", "cliente", "link_arquivo", "descricao"],
     orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
   })
 );
 
@@ -240,78 +281,92 @@ app.use(
     table: "trilhas_aprendizagem",
     fields: ["cliente", "titulo", "descricao", "etapas"],
     orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
   })
 );
 
-app.get("/api/zerar-dashboard", async (req, res) => {
-  try {
-    await pool.query("SET FOREIGN_KEY_CHECKS = 0");
-
-    await pool.query("TRUNCATE TABLE avaliacoes");
-    await pool.query("TRUNCATE TABLE presencas");
-    await pool.query("TRUNCATE TABLE treinamento_participantes");
-    await pool.query("TRUNCATE TABLE treinamentos");
-    await pool.query("TRUNCATE TABLE usuarios");
-    await pool.query("TRUNCATE TABLE clientes");
-
-    await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-
-    res.json({
-      ok: true,
-      message: "Base zerada com sucesso.",
-    });
-  } catch (error) {
+app.get(
+  "/api/zerar-dashboard",
+  authRequired,
+  authorizeRoles("coordenador"),
+  async (req, res) => {
     try {
-      await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-    } catch (_) {}
-
-    console.error("Erro ao zerar base:", error);
-    res.status(500).json({
-      ok: false,
-      message: "Erro ao zerar base.",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/api/importar-dashboard", async (req, res) => {
-  try {
-    const truncate =
-      req.query.truncate === "1" ||
-      req.query.truncate === "true" ||
-      req.query.truncate === "sim";
-
-    if (truncate) {
       await pool.query("SET FOREIGN_KEY_CHECKS = 0");
+
       await pool.query("TRUNCATE TABLE avaliacoes");
       await pool.query("TRUNCATE TABLE presencas");
       await pool.query("TRUNCATE TABLE treinamento_participantes");
       await pool.query("TRUNCATE TABLE treinamentos");
       await pool.query("TRUNCATE TABLE usuarios");
       await pool.query("TRUNCATE TABLE clientes");
+
       await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+
+      res.json({
+        ok: true,
+        message: "Base zerada com sucesso.",
+      });
+    } catch (error) {
+      try {
+        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+      } catch (_) {}
+
+      console.error("Erro ao zerar base:", error);
+      res.status(500).json({
+        ok: false,
+        message: "Erro ao zerar base.",
+        error: error.message,
+      });
     }
-
-    const resultado = await importDashboardExcel();
-
-    res.json({
-      ok: true,
-      message: "Importação do dashboard concluída com sucesso.",
-      resumo: resultado,
-    });
-  } catch (error) {
-    try {
-      await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-    } catch (_) {}
-
-    console.error("Erro ao importar dashboard:", error);
-    res.status(500).json({
-      ok: false,
-      message: "Erro ao importar dashboard.",
-      error: error.message,
-    });
   }
-});
+);
+
+app.get(
+  "/api/importar-dashboard",
+  authRequired,
+  authorizeRoles("coordenador"),
+  async (req, res) => {
+    try {
+      const truncate =
+        req.query.truncate === "1" ||
+        req.query.truncate === "true" ||
+        req.query.truncate === "sim";
+
+      if (truncate) {
+        await pool.query("SET FOREIGN_KEY_CHECKS = 0");
+        await pool.query("TRUNCATE TABLE avaliacoes");
+        await pool.query("TRUNCATE TABLE presencas");
+        await pool.query("TRUNCATE TABLE treinamento_participantes");
+        await pool.query("TRUNCATE TABLE treinamentos");
+        await pool.query("TRUNCATE TABLE usuarios");
+        await pool.query("TRUNCATE TABLE clientes");
+        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+      }
+
+      const resultado = await importDashboardExcel();
+
+      res.json({
+        ok: true,
+        message: "Importação do dashboard concluída com sucesso.",
+        resumo: resultado,
+      });
+    } catch (error) {
+      try {
+        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+      } catch (_) {}
+
+      console.error("Erro ao importar dashboard:", error);
+      res.status(500).json({
+        ok: false,
+        message: "Erro ao importar dashboard.",
+        error: error.message,
+      });
+    }
+  }
+);
 
 const PORT = process.env.PORT || 3000;
 
