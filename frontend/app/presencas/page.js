@@ -104,15 +104,39 @@ export default function GestaoTurmasPage() {
     async function load() {
       try {
         setLoading(true);
+        setErro("");
 
-        const [treinamentosData, presencasData] = await Promise.all([
-          apiFetch("/treinamentos").catch(() => []),
-          apiFetch("/presencas").catch(() => []),
+        const [treinamentosResult, presencasResult] = await Promise.allSettled([
+          apiFetch("/treinamentos", { timeoutMs: 15000 }),
+          apiFetch("/presencas", { timeoutMs: 15000 }),
         ]);
 
-        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
-        setPresencas(Array.isArray(presencasData) ? presencasData : []);
-        setErro("");
+        let treinamentosData = [];
+        let presencasData = [];
+        const erros = [];
+
+        if (treinamentosResult.status === "fulfilled") {
+          treinamentosData = Array.isArray(treinamentosResult.value)
+            ? treinamentosResult.value
+            : [];
+        } else {
+          erros.push(`Treinamentos: ${treinamentosResult.reason?.message || "falha ao carregar"}`);
+        }
+
+        if (presencasResult.status === "fulfilled") {
+          presencasData = Array.isArray(presencasResult.value)
+            ? presencasResult.value
+            : [];
+        } else {
+          erros.push(`Presenças: ${presencasResult.reason?.message || "falha ao carregar"}`);
+        }
+
+        setTreinamentos(treinamentosData);
+        setPresencas(presencasData);
+
+        if (erros.length) {
+          setErro(erros.join(" | "));
+        }
       } catch (error) {
         setErro(error.message || "Erro ao carregar gestão de turmas.");
       } finally {
