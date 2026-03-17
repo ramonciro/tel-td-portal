@@ -16,10 +16,6 @@ function avg(arr, field) {
   return total / arr.length;
 }
 
-function avgText(arr, field) {
-  return avg(arr, field).toFixed(1);
-}
-
 function getNotaFinal(item) {
   const prova = Number(item?.nota_prova || 0);
   const qualidade = Number(item?.nota_qualidade || 0);
@@ -44,26 +40,14 @@ function badgeClassificacao(label) {
   };
 
   if (label === "Aprovado") {
-    return {
-      ...base,
-      background: "#dcfce7",
-      color: "#166534",
-    };
+    return { ...base, background: "#dcfce7", color: "#166534" };
   }
 
   if (label === "Atenção") {
-    return {
-      ...base,
-      background: "#fff7ed",
-      color: "#c2410c",
-    };
+    return { ...base, background: "#fff7ed", color: "#c2410c" };
   }
 
-  return {
-    ...base,
-    background: "#fee2e2",
-    color: "#b91c1c",
-  };
+  return { ...base, background: "#fee2e2", color: "#b91c1c" };
 }
 
 function acaoRecomendada(item) {
@@ -77,6 +61,7 @@ function acaoRecomendada(item) {
 export default function AvaliacoesPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [avaliacoes, setAvaliacoes] = useState([]);
+  const [participantesMap, setParticipantesMap] = useState({});
 
   useEffect(() => {
     async function carregar() {
@@ -86,11 +71,28 @@ export default function AvaliacoesPage() {
           apiFetch("/avaliacoes").catch(() => []),
         ]);
 
-        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+        const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
+        setTreinamentos(listaTreinamentos);
         setAvaliacoes(Array.isArray(avaliacoesData) ? avaliacoesData : []);
+
+        const participantesObj = {};
+
+        await Promise.all(
+          listaTreinamentos.map(async (t) => {
+            try {
+              const participantes = await apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []);
+              participantesObj[String(t.id)] = Array.isArray(participantes) ? participantes : [];
+            } catch {
+              participantesObj[String(t.id)] = [];
+            }
+          })
+        );
+
+        setParticipantesMap(participantesObj);
       } catch {
         setTreinamentos([]);
         setAvaliacoes([]);
+        setParticipantesMap({});
       }
     }
 
@@ -106,6 +108,24 @@ export default function AvaliacoesPage() {
     }));
   }, [treinamentos]);
 
+  const participanteOptions = useMemo(() => {
+    const options = [];
+
+    Object.entries(participantesMap).forEach(([treinamentoId, participantes]) => {
+      const treinamento = treinamentos.find((t) => String(t.id) === String(treinamentoId));
+      const nomeTurma = treinamento?.tema || treinamento?.titulo || "Treinamento";
+
+      participantes.forEach((p) => {
+        options.push({
+          value: p.nome,
+          label: `${p.nome} - ${nomeTurma}`,
+        });
+      });
+    });
+
+    return options;
+  }, [participantesMap, treinamentos]);
+
   const fields = useMemo(
     () => [
       {
@@ -114,6 +134,13 @@ export default function AvaliacoesPage() {
         type: "select",
         options: treinamentoOptions,
         placeholder: "Selecione a turma",
+      },
+      {
+        name: "treinando_nome",
+        label: "Treinando",
+        type: "select",
+        options: participanteOptions,
+        placeholder: "Selecione o treinando",
       },
       {
         name: "nota_nps",
@@ -140,31 +167,14 @@ export default function AvaliacoesPage() {
         placeholder: "Comentários sobre desempenho, reforço ou evolução",
       },
     ],
-    [treinamentoOptions]
+    [treinamentoOptions, participanteOptions]
   );
 
   const kpis = useMemo(() => {
     const totalAvaliacoes = avaliacoes.length;
-    const mediaNps = avg(avaliacoes, "nota_nps");
-    const mediaQualidade = avg(avaliacoes, "nota_qualidade");
-    const mediaProva = avg(avaliacoes, "nota_prova");
-
-    const idsComAvaliacao = new Set(
-      avaliacoes.map((item) => String(item.treinamento_id)).filter(Boolean)
-    );
-
-    const treinamentosComAvaliacao = treinamentos.filter((t) =>
-      idsComAvaliacao.has(String(t.id))
-    ).length;
-
-    const treinamentosSemAvaliacao = Math.max(
-      treinamentos.length - treinamentosComAvaliacao,
-      0
-    );
-
-    const taxaAplicacao = treinamentos.length
-      ? Math.round((treinamentosComAvaliacao / treinamentos.length) * 100)
-      : 0;
+    const mediaNps = avg(avaliacoes, "nota_nps").toFixed(1);
+    const mediaQualidade = avg(avaliacoes, "nota_qualidade").toFixed(1);
+    const mediaProva = avg(avaliacoes, "nota_prova").toFixed(1);
 
     const aprovados = avaliacoes.filter(
       (item) => classificarResultado(item) === "Aprovado"
@@ -178,8 +188,8 @@ export default function AvaliacoesPage() {
       (item) => classificarResultado(item) === "Reforço"
     ).length;
 
-    const porClienteMap = {};
     const porInstrutorMap = {};
+    const porClienteMap = {};
 
     avaliacoes.forEach((item) => {
       const treinamento = treinamentos.find(
@@ -188,25 +198,18 @@ export default function AvaliacoesPage() {
 
       const cliente = treinamento?.cliente || "Sem cliente";
       const instrutor = treinamento?.instrutor || "Sem instrutor";
-      const notaQualidade = Number(item.nota_qualidade || 0);
-      const notaNps = Number(item.nota_nps || 0);
-      const notaProva = Number(item.nota_prova || 0);
 
       if (!porClienteMap[cliente]) {
         porClienteMap[cliente] = {
           cliente,
           total: 0,
           somaQualidade: 0,
-          somaNps: 0,
-          somaProva: 0,
           reforco: 0,
         };
       }
 
       porClienteMap[cliente].total += 1;
-      porClienteMap[cliente].somaQualidade += notaQualidade;
-      porClienteMap[cliente].somaNps += notaNps;
-      porClienteMap[cliente].somaProva += notaProva;
+      porClienteMap[cliente].somaQualidade += Number(item.nota_qualidade || 0);
       if (classificarResultado(item) === "Reforço") {
         porClienteMap[cliente].reforco += 1;
       }
@@ -216,114 +219,61 @@ export default function AvaliacoesPage() {
           instrutor,
           total: 0,
           somaQualidade: 0,
-          somaNps: 0,
-          somaProva: 0,
           reforco: 0,
         };
       }
 
       porInstrutorMap[instrutor].total += 1;
-      porInstrutorMap[instrutor].somaQualidade += notaQualidade;
-      porInstrutorMap[instrutor].somaNps += notaNps;
-      porInstrutorMap[instrutor].somaProva += notaProva;
+      porInstrutorMap[instrutor].somaQualidade += Number(item.nota_qualidade || 0);
       if (classificarResultado(item) === "Reforço") {
         porInstrutorMap[instrutor].reforco += 1;
       }
     });
 
-    const porCliente = Object.values(porClienteMap)
-      .map((item) => ({
-        ...item,
-        mediaQualidade: item.total
-          ? (item.somaQualidade / item.total).toFixed(1)
-          : "0.0",
-        mediaNps: item.total ? (item.somaNps / item.total).toFixed(1) : "0.0",
-        mediaProva: item.total ? (item.somaProva / item.total).toFixed(1) : "0.0",
-      }))
-      .sort((a, b) => Number(b.mediaQualidade) - Number(a.mediaQualidade));
+    const porCliente = Object.values(porClienteMap).map((item) => ({
+      ...item,
+      mediaQualidade: item.total
+        ? (item.somaQualidade / item.total).toFixed(1)
+        : "0.0",
+    }));
 
-    const rankingInstrutores = Object.values(porInstrutorMap)
-      .map((item) => ({
-        ...item,
-        mediaQualidade: item.total
-          ? (item.somaQualidade / item.total).toFixed(1)
-          : "0.0",
-        mediaNps: item.total ? (item.somaNps / item.total).toFixed(1) : "0.0",
-        mediaProva: item.total ? (item.somaProva / item.total).toFixed(1) : "0.0",
-      }))
-      .sort(
-        (a, b) =>
-          Number(b.mediaQualidade) - Number(a.mediaQualidade) ||
-          b.total - a.total
-      );
-
-    const alertas = [];
-
-    if (treinamentosSemAvaliacao > 0) {
-      alertas.push(
-        `${treinamentosSemAvaliacao} turma(s) ainda sem avaliação registrada.`
-      );
-    }
-
-    const clientesComReforco = porCliente.filter((item) => item.reforco > 0);
-    if (clientesComReforco.length) {
-      alertas.push(
-        `Há ${clientesComReforco.length} cliente(s) com necessidade de reforço.`
-      );
-    }
-
-    const instrutoresAbaixoMeta = rankingInstrutores.filter(
-      (item) => Number(item.mediaQualidade) < 7
-    );
-    if (instrutoresAbaixoMeta.length) {
-      alertas.push(
-        `${instrutoresAbaixoMeta.length} instrutor(es) estão abaixo da meta de qualidade.`
-      );
-    }
-
-    if (!alertas.length) {
-      alertas.push("Não há alertas críticos neste momento.");
-    }
+    const rankingInstrutores = Object.values(porInstrutorMap).map((item) => ({
+      ...item,
+      mediaQualidade: item.total
+        ? (item.somaQualidade / item.total).toFixed(1)
+        : "0.0",
+    }));
 
     return {
       totalAvaliacoes,
-      mediaNps: mediaNps.toFixed(1),
-      mediaQualidade: mediaQualidade.toFixed(1),
-      mediaProva: mediaProva.toFixed(1),
-      treinamentosComAvaliacao,
-      treinamentosSemAvaliacao,
-      taxaAplicacao,
+      mediaNps,
+      mediaQualidade,
+      mediaProva,
       aprovados,
       atencao,
       reforco,
       porCliente,
       rankingInstrutores,
-      alertas,
     };
   }, [avaliacoes, treinamentos]);
 
   const columns = [
     {
-      key: "treinamento_id",
-      label: "Turma",
-      render: (item) => {
-        const treinamento = treinamentos.find(
-          (t) => String(t.id) === String(item.treinamento_id)
-        );
-
-        return (
-          <div>
-            <div style={titleCell}>
-              {treinamento?.tema || treinamento?.titulo || "Treinamento"}
-            </div>
-            <div style={subCell}>
-              {(treinamento?.cliente || "Sem cliente") +
-                " • " +
-                (treinamento?.instrutor || "Sem instrutor")}
-            </div>
+      key: "treinando_nome",
+      label: "Treinando",
+      render: (item) => (
+        <div>
+          <div style={titleCell}>{item.treinando_nome || "-"}</div>
+          <div style={subCell}>
+            {(() => {
+              const treinamento = treinamentos.find(
+                (t) => String(t.id) === String(item.treinamento_id)
+              );
+              return (treinamento?.tema || "Treinamento") + " • " + (treinamento?.cliente || "Sem cliente");
+            })()}
           </div>
-        );
-      },
+        </div>
+      ),
     },
     {
       key: "nota_nps",
@@ -333,16 +283,12 @@ export default function AvaliacoesPage() {
     {
       key: "nota_qualidade",
       label: "Qualidade",
-      render: (item) => (
-        <strong style={scoreGreen}>{item.nota_qualidade ?? "-"}</strong>
-      ),
+      render: (item) => <strong style={scoreGreen}>{item.nota_qualidade ?? "-"}</strong>,
     },
     {
       key: "nota_prova",
       label: "Avaliação",
-      render: (item) => (
-        <strong style={scorePurple}>{item.nota_prova ?? "-"}</strong>
-      ),
+      render: (item) => <strong style={scorePurple}>{item.nota_prova ?? "-"}</strong>,
     },
     {
       key: "classificacao",
@@ -362,12 +308,12 @@ export default function AvaliacoesPage() {
   return (
     <CrudPageV2
       title="Gestão de Avaliações"
-      subtitle="Painel operacional e executivo do aproveitamento das turmas."
+      subtitle="Lançamento individual por treinando, com leitura executiva de desempenho."
       endpoint="/avaliacoes"
       fields={fields}
       columns={columns}
-      recordsTitle="Base de avaliações"
-      recordsSubtitle="Registros consolidados de satisfação, qualidade e avaliação."
+      recordsTitle="Base de avaliações individuais"
+      recordsSubtitle="Resultado por treinando, turma e instrutor."
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
@@ -407,27 +353,21 @@ export default function AvaliacoesPage() {
             <StatCard
               title="Atenção"
               value={fmt(kpis.atencao)}
-              subtitle="Nota final entre 6 e 7,9"
+              subtitle="Nota entre 6 e 7,9"
               accent="#f59e0b"
             />
             <StatCard
               title="Reforço"
               value={fmt(kpis.reforco)}
-              subtitle="Nota final abaixo de 6"
+              subtitle="Nota abaixo de 6"
               accent="#b91c1c"
-            />
-            <StatCard
-              title="Taxa de aplicação"
-              value={`${kpis.taxaAplicacao}%`}
-              subtitle="Turmas com avaliação"
-              accent="#0f766e"
             />
           </div>
 
           <div style={twoCol}>
             <SectionCard
               title="Resultado por cliente"
-              subtitle="Leitura consolidada das avaliações por operação."
+              subtitle="Leitura consolidada de desempenho por operação."
             >
               <div style={listGrid}>
                 {kpis.porCliente.length ? (
@@ -435,8 +375,7 @@ export default function AvaliacoesPage() {
                     <div key={item.cliente} style={listItem}>
                       <div style={itemTitle}>{item.cliente}</div>
                       <div style={itemMeta}>
-                        {item.total} avaliação(ões) • Qualidade média {item.mediaQualidade} •
-                        NPS médio {item.mediaNps} • Avaliação média {item.mediaProva}
+                        {item.total} avaliação(ões) • Qualidade média {item.mediaQualidade}
                       </div>
                       <div style={itemSubMeta}>
                         {item.reforco} registro(s) em reforço
@@ -451,7 +390,7 @@ export default function AvaliacoesPage() {
 
             <SectionCard
               title="Ranking de instrutores"
-              subtitle="Quem sustenta melhor percepção e aproveitamento."
+              subtitle="Leitura da qualidade por instrutor."
             >
               <div style={listGrid}>
                 {kpis.rankingInstrutores.length ? (
@@ -459,8 +398,7 @@ export default function AvaliacoesPage() {
                     <div key={item.instrutor} style={listItem}>
                       <div style={itemTitle}>{item.instrutor}</div>
                       <div style={itemMeta}>
-                        {item.total} avaliação(ões) • Qualidade média {item.mediaQualidade} •
-                        NPS médio {item.mediaNps} • Avaliação média {item.mediaProva}
+                        {item.total} avaliação(ões) • Qualidade média {item.mediaQualidade}
                       </div>
                       <div style={itemSubMeta}>
                         {item.reforco} registro(s) em reforço
@@ -473,19 +411,6 @@ export default function AvaliacoesPage() {
               </div>
             </SectionCard>
           </div>
-
-          <SectionCard
-            title="Alertas e recomendações"
-            subtitle="Leitura rápida para gestão e tomada de decisão."
-          >
-            <div style={alertGrid}>
-              {kpis.alertas.map((alerta, index) => (
-                <div key={index} style={alertItem}>
-                  {alerta}
-                </div>
-              ))}
-            </div>
-          </SectionCard>
         </div>
       }
     />
@@ -532,20 +457,6 @@ const itemSubMeta = {
   marginTop: 6,
   color: "#64748b",
   fontSize: 12,
-};
-
-const alertGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const alertItem = {
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  color: "#1d4ed8",
-  borderRadius: 12,
-  padding: 12,
-  fontWeight: 600,
 };
 
 const emptyText = {
