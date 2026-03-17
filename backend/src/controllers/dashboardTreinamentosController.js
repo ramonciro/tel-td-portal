@@ -151,26 +151,39 @@ export async function getDashboardTreinamentos(req, res) {
       0
     );
 
-    const [horasTreinadasBase] = await pool.query(
-      `
-      SELECT
-        t.id,
-        t.carga_horaria,
-        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes
-      FROM treinamentos t
-      LEFT JOIN treinamento_participantes tp
-        ON tp.treinamento_id = t.id
-      ${clause}
-      GROUP BY t.id, t.carga_horaria
-      `,
-      params
-    );
+const [horasTreinadasBase] = await pool.query(
+  `
+  SELECT
+    t.id,
+    t.carga_horaria,
+    t.participantes,
+    t.participantes_presentes,
+    SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes
+  FROM treinamentos t
+  LEFT JOIN treinamento_participantes tp
+    ON tp.treinamento_id = t.id
+  ${clause}
+  GROUP BY t.id, t.carga_horaria, t.participantes, t.participantes_presentes
+  `,
+  params
+);
 
-    const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
-      const horas = parseHorasTexto(item.carga_horaria);
-      const presentesTurma = Number(item.presentes || 0);
-      return acc + horas * presentesTurma;
-    }, 0);
+const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
+  const horas = parseHorasTexto(item.carga_horaria);
+
+  const presentesChamada = Number(item.presentes || 0);
+  const presentesLançados = Number(item.participantes_presentes || 0);
+  const previstos = Number(item.participantes || 0);
+
+  const baseParticipantes =
+    presentesChamada > 0
+      ? presentesChamada
+      : presentesLançados > 0
+      ? presentesLançados
+      : previstos;
+
+  return acc + horas * baseParticipantes;
+}, 0);
 
     const [presencaPorCliente] = await pool.query(
       `
