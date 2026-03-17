@@ -20,11 +20,18 @@ function avgText(arr, field) {
   return avg(arr, field).toFixed(1);
 }
 
-function classificarNota(nota) {
-  const n = Number(nota || 0);
-  if (n >= 9) return "Excelente";
-  if (n >= 7) return "Boa";
-  return "Crítica";
+function getNotaFinal(item) {
+  const prova = Number(item?.nota_prova || 0);
+  const qualidade = Number(item?.nota_qualidade || 0);
+  return prova > 0 ? prova : qualidade;
+}
+
+function classificarResultado(item) {
+  const nota = getNotaFinal(item);
+
+  if (nota >= 8) return "Aprovado";
+  if (nota >= 6) return "Atenção";
+  return "Reforço";
 }
 
 function badgeClassificacao(label) {
@@ -36,7 +43,7 @@ function badgeClassificacao(label) {
     fontSize: 11,
   };
 
-  if (label === "Excelente") {
+  if (label === "Aprovado") {
     return {
       ...base,
       background: "#dcfce7",
@@ -44,11 +51,11 @@ function badgeClassificacao(label) {
     };
   }
 
-  if (label === "Boa") {
+  if (label === "Atenção") {
     return {
       ...base,
-      background: "#dbeafe",
-      color: "#1d4ed8",
+      background: "#fff7ed",
+      color: "#c2410c",
     };
   }
 
@@ -59,9 +66,12 @@ function badgeClassificacao(label) {
   };
 }
 
-function faixaLabel(item) {
-  const qualidade = Number(item?.nota_qualidade || 0);
-  return classificarNota(qualidade);
+function acaoRecomendada(item) {
+  const status = classificarResultado(item);
+
+  if (status === "Aprovado") return "Manter evolução";
+  if (status === "Atenção") return "Acompanhar desempenho";
+  return "Aplicar reforço";
 }
 
 export default function AvaliacoesPage() {
@@ -100,27 +110,10 @@ export default function AvaliacoesPage() {
     () => [
       {
         name: "treinamento_id",
-        label: "Treinamento",
+        label: "Turma / treinamento",
         type: "select",
         options: treinamentoOptions,
-        placeholder: "Selecione o treinamento",
-      },
-      {
-        name: "tipo_registro",
-        label: "Tipo",
-        type: "select",
-        options: [
-          { value: "Avaliação", label: "Avaliação" },
-          { value: "Prova", label: "Prova" },
-          { value: "Teste", label: "Teste" },
-          { value: "Simulado", label: "Simulado" },
-        ],
-        placeholder: "Selecione o tipo",
-      },
-      {
-        name: "titulo",
-        label: "Título",
-        placeholder: "Nome da avaliação ou atividade",
+        placeholder: "Selecione a turma",
       },
       {
         name: "nota_nps",
@@ -132,13 +125,19 @@ export default function AvaliacoesPage() {
         name: "nota_qualidade",
         label: "Qualidade / aproveitamento",
         type: "number",
-        placeholder: "0 a 10 ou percentual",
+        placeholder: "0 a 10",
       },
       {
-        name: "observacoes",
-        label: "Observações",
+        name: "nota_prova",
+        label: "Nota da avaliação",
+        type: "number",
+        placeholder: "0 a 10",
+      },
+      {
+        name: "comentario",
+        label: "Comentário / feedback",
         type: "textarea",
-        placeholder: "Comentários rápidos",
+        placeholder: "Comentários sobre desempenho, reforço ou evolução",
       },
     ],
     [treinamentoOptions]
@@ -148,6 +147,7 @@ export default function AvaliacoesPage() {
     const totalAvaliacoes = avaliacoes.length;
     const mediaNps = avg(avaliacoes, "nota_nps");
     const mediaQualidade = avg(avaliacoes, "nota_qualidade");
+    const mediaProva = avg(avaliacoes, "nota_prova");
 
     const idsComAvaliacao = new Set(
       avaliacoes.map((item) => String(item.treinamento_id)).filter(Boolean)
@@ -166,16 +166,16 @@ export default function AvaliacoesPage() {
       ? Math.round((treinamentosComAvaliacao / treinamentos.length) * 100)
       : 0;
 
-    const excelentes = avaliacoes.filter(
-      (item) => classificarNota(item.nota_qualidade) === "Excelente"
+    const aprovados = avaliacoes.filter(
+      (item) => classificarResultado(item) === "Aprovado"
     ).length;
 
-    const boas = avaliacoes.filter(
-      (item) => classificarNota(item.nota_qualidade) === "Boa"
+    const atencao = avaliacoes.filter(
+      (item) => classificarResultado(item) === "Atenção"
     ).length;
 
-    const criticas = avaliacoes.filter(
-      (item) => classificarNota(item.nota_qualidade) === "Crítica"
+    const reforco = avaliacoes.filter(
+      (item) => classificarResultado(item) === "Reforço"
     ).length;
 
     const porClienteMap = {};
@@ -190,6 +190,7 @@ export default function AvaliacoesPage() {
       const instrutor = treinamento?.instrutor || "Sem instrutor";
       const notaQualidade = Number(item.nota_qualidade || 0);
       const notaNps = Number(item.nota_nps || 0);
+      const notaProva = Number(item.nota_prova || 0);
 
       if (!porClienteMap[cliente]) {
         porClienteMap[cliente] = {
@@ -197,15 +198,17 @@ export default function AvaliacoesPage() {
           total: 0,
           somaQualidade: 0,
           somaNps: 0,
-          criticas: 0,
+          somaProva: 0,
+          reforco: 0,
         };
       }
 
       porClienteMap[cliente].total += 1;
       porClienteMap[cliente].somaQualidade += notaQualidade;
       porClienteMap[cliente].somaNps += notaNps;
-      if (classificarNota(notaQualidade) === "Crítica") {
-        porClienteMap[cliente].criticas += 1;
+      porClienteMap[cliente].somaProva += notaProva;
+      if (classificarResultado(item) === "Reforço") {
+        porClienteMap[cliente].reforco += 1;
       }
 
       if (!porInstrutorMap[instrutor]) {
@@ -214,15 +217,17 @@ export default function AvaliacoesPage() {
           total: 0,
           somaQualidade: 0,
           somaNps: 0,
-          criticas: 0,
+          somaProva: 0,
+          reforco: 0,
         };
       }
 
       porInstrutorMap[instrutor].total += 1;
       porInstrutorMap[instrutor].somaQualidade += notaQualidade;
       porInstrutorMap[instrutor].somaNps += notaNps;
-      if (classificarNota(notaQualidade) === "Crítica") {
-        porInstrutorMap[instrutor].criticas += 1;
+      porInstrutorMap[instrutor].somaProva += notaProva;
+      if (classificarResultado(item) === "Reforço") {
+        porInstrutorMap[instrutor].reforco += 1;
       }
     });
 
@@ -233,6 +238,7 @@ export default function AvaliacoesPage() {
           ? (item.somaQualidade / item.total).toFixed(1)
           : "0.0",
         mediaNps: item.total ? (item.somaNps / item.total).toFixed(1) : "0.0",
+        mediaProva: item.total ? (item.somaProva / item.total).toFixed(1) : "0.0",
       }))
       .sort((a, b) => Number(b.mediaQualidade) - Number(a.mediaQualidade));
 
@@ -243,6 +249,7 @@ export default function AvaliacoesPage() {
           ? (item.somaQualidade / item.total).toFixed(1)
           : "0.0",
         mediaNps: item.total ? (item.somaNps / item.total).toFixed(1) : "0.0",
+        mediaProva: item.total ? (item.somaProva / item.total).toFixed(1) : "0.0",
       }))
       .sort(
         (a, b) =>
@@ -254,14 +261,14 @@ export default function AvaliacoesPage() {
 
     if (treinamentosSemAvaliacao > 0) {
       alertas.push(
-        `${treinamentosSemAvaliacao} treinamento(s) ainda sem avaliação registrada.`
+        `${treinamentosSemAvaliacao} turma(s) ainda sem avaliação registrada.`
       );
     }
 
-    const clientesCriticos = porCliente.filter((item) => item.criticas > 0);
-    if (clientesCriticos.length) {
+    const clientesComReforco = porCliente.filter((item) => item.reforco > 0);
+    if (clientesComReforco.length) {
       alertas.push(
-        `Há ${clientesCriticos.length} cliente(s) com avaliações críticas na base.`
+        `Há ${clientesComReforco.length} cliente(s) com necessidade de reforço.`
       );
     }
 
@@ -282,12 +289,13 @@ export default function AvaliacoesPage() {
       totalAvaliacoes,
       mediaNps: mediaNps.toFixed(1),
       mediaQualidade: mediaQualidade.toFixed(1),
+      mediaProva: mediaProva.toFixed(1),
       treinamentosComAvaliacao,
       treinamentosSemAvaliacao,
       taxaAplicacao,
-      excelentes,
-      boas,
-      criticas,
+      aprovados,
+      atencao,
+      reforco,
       porCliente,
       rankingInstrutores,
       alertas,
@@ -296,15 +304,8 @@ export default function AvaliacoesPage() {
 
   const columns = [
     {
-      key: "tipo_registro",
-      label: "Tipo",
-      render: (item) => (
-        <span style={tipoBadge}>{item.tipo_registro || "Avaliação"}</span>
-      ),
-    },
-    {
       key: "treinamento_id",
-      label: "Treinamento",
+      label: "Turma",
       render: (item) => {
         const treinamento = treinamentos.find(
           (t) => String(t.id) === String(item.treinamento_id)
@@ -325,11 +326,6 @@ export default function AvaliacoesPage() {
       },
     },
     {
-      key: "titulo",
-      label: "Título",
-      render: (item) => <span style={plainCell}>{item.titulo || "-"}</span>,
-    },
-    {
       key: "nota_nps",
       label: "NPS",
       render: (item) => <strong style={scoreBlue}>{item.nota_nps ?? "-"}</strong>,
@@ -342,40 +338,36 @@ export default function AvaliacoesPage() {
       ),
     },
     {
+      key: "nota_prova",
+      label: "Avaliação",
+      render: (item) => (
+        <strong style={scorePurple}>{item.nota_prova ?? "-"}</strong>
+      ),
+    },
+    {
       key: "classificacao",
-      label: "Classificação",
+      label: "Status",
       render: (item) => {
-        const label = faixaLabel(item);
+        const label = classificarResultado(item);
         return <span style={badgeClassificacao(label)}>{label}</span>;
       },
     },
     {
-      key: "observacoes",
+      key: "comentario",
       label: "Ação recomendada",
-      render: (item) => {
-        const label = faixaLabel(item);
-
-        const acao =
-          label === "Excelente"
-            ? "Manter prática"
-            : label === "Boa"
-            ? "Acompanhar"
-            : "Revisar conteúdo";
-
-        return <span style={obsCell}>{acao}</span>;
-      },
+      render: (item) => <span style={obsCell}>{acaoRecomendada(item)}</span>,
     },
   ];
 
   return (
     <CrudPageV2
-      title="Avaliações"
-      subtitle="Painel executivo de efetividade do treinamento."
+      title="Gestão de Avaliações"
+      subtitle="Painel operacional e executivo do aproveitamento das turmas."
       endpoint="/avaliacoes"
       fields={fields}
       columns={columns}
       recordsTitle="Base de avaliações"
-      recordsSubtitle="Registros consolidados de avaliação, prova, teste e simulado."
+      recordsSubtitle="Registros consolidados de satisfação, qualidade e avaliação."
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
@@ -398,37 +390,37 @@ export default function AvaliacoesPage() {
               accent="#059669"
             />
             <StatCard
-              title="Taxa de aplicação"
-              value={`${kpis.taxaAplicacao}%`}
-              subtitle="Treinamentos com avaliação"
+              title="Média avaliação"
+              value={kpis.mediaProva}
+              subtitle="Nota média das provas"
               accent="#7c3aed"
             />
           </div>
 
           <div style={heroGrid}>
             <StatCard
-              title="Excelentes"
-              value={fmt(kpis.excelentes)}
-              subtitle="Qualidade ≥ 9"
+              title="Aprovados"
+              value={fmt(kpis.aprovados)}
+              subtitle="Nota final ≥ 8"
               accent="#16a34a"
             />
             <StatCard
-              title="Boas"
-              value={fmt(kpis.boas)}
-              subtitle="Qualidade entre 7 e 8,9"
-              accent="#0ea5e9"
+              title="Atenção"
+              value={fmt(kpis.atencao)}
+              subtitle="Nota final entre 6 e 7,9"
+              accent="#f59e0b"
             />
             <StatCard
-              title="Críticas"
-              value={fmt(kpis.criticas)}
-              subtitle="Qualidade abaixo de 7"
+              title="Reforço"
+              value={fmt(kpis.reforco)}
+              subtitle="Nota final abaixo de 6"
               accent="#b91c1c"
             />
             <StatCard
-              title="Sem avaliação"
-              value={fmt(kpis.treinamentosSemAvaliacao)}
-              subtitle="Treinamentos pendentes"
-              accent="#f59e0b"
+              title="Taxa de aplicação"
+              value={`${kpis.taxaAplicacao}%`}
+              subtitle="Turmas com avaliação"
+              accent="#0f766e"
             />
           </div>
 
@@ -444,10 +436,10 @@ export default function AvaliacoesPage() {
                       <div style={itemTitle}>{item.cliente}</div>
                       <div style={itemMeta}>
                         {item.total} avaliação(ões) • Qualidade média {item.mediaQualidade} •
-                        NPS médio {item.mediaNps}
+                        NPS médio {item.mediaNps} • Avaliação média {item.mediaProva}
                       </div>
                       <div style={itemSubMeta}>
-                        {item.criticas} crítica(s) registrada(s)
+                        {item.reforco} registro(s) em reforço
                       </div>
                     </div>
                   ))
@@ -459,7 +451,7 @@ export default function AvaliacoesPage() {
 
             <SectionCard
               title="Ranking de instrutores"
-              subtitle="Quem está sustentando melhor percepção e qualidade."
+              subtitle="Quem sustenta melhor percepção e aproveitamento."
             >
               <div style={listGrid}>
                 {kpis.rankingInstrutores.length ? (
@@ -468,10 +460,10 @@ export default function AvaliacoesPage() {
                       <div style={itemTitle}>{item.instrutor}</div>
                       <div style={itemMeta}>
                         {item.total} avaliação(ões) • Qualidade média {item.mediaQualidade} •
-                        NPS médio {item.mediaNps}
+                        NPS médio {item.mediaNps} • Avaliação média {item.mediaProva}
                       </div>
                       <div style={itemSubMeta}>
-                        {item.criticas} crítica(s) registrada(s)
+                        {item.reforco} registro(s) em reforço
                       </div>
                     </div>
                   ))
@@ -537,7 +529,7 @@ const itemMeta = {
 };
 
 const itemSubMeta = {
-  marginTop: 4,
+  marginTop: 6,
   color: "#64748b",
   fontSize: 12,
 };
@@ -548,9 +540,9 @@ const alertGrid = {
 };
 
 const alertItem = {
-  background: "#fff7ed",
-  border: "1px solid #fed7aa",
-  color: "#9a3412",
+  background: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  color: "#1d4ed8",
   borderRadius: 12,
   padding: 12,
   fontWeight: 600,
@@ -558,16 +550,6 @@ const alertItem = {
 
 const emptyText = {
   color: "#64748b",
-};
-
-const tipoBadge = {
-  display: "inline-block",
-  padding: "5px 9px",
-  borderRadius: 999,
-  background: "#eef2ff",
-  color: "#4338ca",
-  fontWeight: 800,
-  fontSize: 11,
 };
 
 const titleCell = {
@@ -582,18 +564,6 @@ const subCell = {
   lineHeight: 1.35,
 };
 
-const plainCell = {
-  color: "#334155",
-  fontWeight: 600,
-};
-
-const obsCell = {
-  display: "inline-block",
-  maxWidth: 180,
-  color: "#475569",
-  lineHeight: 1.4,
-};
-
 const scoreBlue = {
   color: "#1d4ed8",
   fontWeight: 800,
@@ -602,4 +572,14 @@ const scoreBlue = {
 const scoreGreen = {
   color: "#15803d",
   fontWeight: 800,
+};
+
+const scorePurple = {
+  color: "#7c3aed",
+  fontWeight: 800,
+};
+
+const obsCell = {
+  color: "#334155",
+  fontWeight: 600,
 };
