@@ -1,32 +1,3 @@
-import pool from "../db.js";
-
-function classificarNPS(nota) {
-  if (nota >= 9) return "Promotor";
-  if (nota >= 7) return "Neutro";
-  return "Detrator";
-}
-
-export async function listAvaliacoesTreinandos(req, res) {
-  try {
-    const [rows] = await pool.query(`
-      SELECT * FROM avaliacoes_treinandos ORDER BY id DESC
-    `);
-
-    const data = rows.map((item) => ({
-      ...item,
-      classificacao: classificarNPS(item.nota_nps),
-    }));
-
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({
-      ok: false,
-      message: "Erro ao listar NPS",
-      error: error.message,
-    });
-  }
-}
-
 export async function createAvaliacaoTreinando(req, res) {
   try {
     const { treinamento_id, treinando_nome, nota_nps, comentario } = req.body;
@@ -35,6 +6,31 @@ export async function createAvaliacaoTreinando(req, res) {
       return res.status(400).json({
         ok: false,
         message: "Preencha todos os campos obrigatórios",
+      });
+    }
+
+    if (nota_nps < 0 || nota_nps > 10) {
+      return res.status(400).json({
+        ok: false,
+        message: "A nota NPS deve estar entre 0 e 10",
+      });
+    }
+
+    const [duplicado] = await pool.query(
+      `
+      SELECT id
+      FROM avaliacoes_treinandos
+      WHERE treinamento_id = ?
+        AND treinando_nome = ?
+      LIMIT 1
+      `,
+      [treinamento_id, treinando_nome]
+    );
+
+    if (duplicado.length) {
+      return res.status(400).json({
+        ok: false,
+        message: "Esse treinando já respondeu o NPS dessa turma",
       });
     }
 
