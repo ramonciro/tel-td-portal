@@ -9,23 +9,23 @@ function parseHorasTexto(valor) {
   return match ? Number(match[1]) || 0 : 0;
 }
 
-function buildTreinamentosWhere(req) {
+function buildWhere(alias = "t", query = {}) {
   const where = [];
   const params = [];
 
-  if (req.query?.cliente) {
-    where.push("t.cliente = ?");
-    params.push(req.query.cliente);
+  if (query.cliente) {
+    where.push(`${alias}.cliente = ?`);
+    params.push(query.cliente);
   }
 
-  if (req.query?.inicio) {
-    where.push("DATE(t.data) >= ?");
-    params.push(req.query.inicio);
+  if (query.inicio) {
+    where.push(`DATE(${alias}.data) >= ?`);
+    params.push(query.inicio);
   }
 
-  if (req.query?.fim) {
-    where.push("DATE(t.data) <= ?");
-    params.push(req.query.fim);
+  if (query.fim) {
+    where.push(`DATE(${alias}.data) <= ?`);
+    params.push(query.fim);
   }
 
   return {
@@ -36,7 +36,7 @@ function buildTreinamentosWhere(req) {
 
 export async function getDashboardTreinamentos(req, res) {
   try {
-    const { clause, params } = buildTreinamentosWhere(req);
+    const { clause, params } = buildWhere("t", req.query || {});
 
     const [[treinamentos]] = await pool.query(
       `
@@ -56,7 +56,11 @@ export async function getDashboardTreinamentos(req, res) {
       `
       SELECT COUNT(DISTINCT t.cliente) AS total
       FROM treinamentos t
-      ${clause ? `${clause} AND t.cliente IS NOT NULL AND t.cliente <> ''` : "WHERE t.cliente IS NOT NULL AND t.cliente <> ''"}
+      ${
+        clause
+          ? `${clause} AND t.cliente IS NOT NULL AND t.cliente <> ''`
+          : "WHERE t.cliente IS NOT NULL AND t.cliente <> ''"
+      }
       `,
       params
     );
@@ -70,58 +74,73 @@ export async function getDashboardTreinamentos(req, res) {
       params
     );
 
-const [[treinadosImportados]] = await pool.query(
-  `
-  SELECT
-    COALESCE(SUM(tp_count.total), 0) AS total
-  FROM (
-    SELECT
-      t.id,
-      COALESCE(COUNT(tp.id), t.participantes, 0) AS total
-    FROM treinamentos t
-    LEFT JOIN treinamento_participantes tp
-      ON tp.treinamento_id = t.id
-    ${clause}
-    GROUP BY t.id
-  ) tp_count
-  `,
-  params
-);
+    const [[treinadosImportados]] = await pool.query(
+      `
+      SELECT
+        COALESCE(
+          SUM(
+            CASE
+              WHEN base.vinculados > 0 THEN base.vinculados
+              WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+              ELSE base.previstos
+            END
+          ),
+          0
+        ) AS total
+      FROM (
+        SELECT
+          t.id,
+          COUNT(tp.id) AS vinculados,
+          COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados,
+          COALESCE(MAX(t.participantes), 0) AS previstos
+        FROM treinamentos t
+        LEFT JOIN treinamento_participantes tp
+          ON tp.treinamento_id = t.id
+        ${clause}
+        GROUP BY t.id
+      ) base
+      `,
+      params
+    );
 
-const [[presentes]] = await pool.query(
-  `
-  SELECT
-    COALESCE(
-      SUM(
-        CASE
-          WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
-          WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
-          ELSE 0
-        END
-      ),
-      0
-    ) AS total
-  FROM (
-    SELECT
-      t.id,
-      SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes_chamada,
-      COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados
-    FROM treinamentos t
-    LEFT JOIN treinamento_participantes tp
-      ON tp.treinamento_id = t.id
-    ${clause}
-    GROUP BY t.id
-  ) base
-  `,
-  params
-);
+    const [[presentes]] = await pool.query(
+      `
+      SELECT
+        COALESCE(
+          SUM(
+            CASE
+              WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
+              WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+              ELSE 0
+            END
+          ),
+          0
+        ) AS total
+      FROM (
+        SELECT
+          t.id,
+          SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes_chamada,
+          COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados
+        FROM treinamentos t
+        LEFT JOIN treinamento_participantes tp
+          ON tp.treinamento_id = t.id
+        ${clause}
+        GROUP BY t.id
+      ) base
+      `,
+      params
+    );
 
     const [[ausentes]] = await pool.query(
       `
       SELECT COUNT(*) AS total
       FROM treinamento_participantes tp
       INNER JOIN treinamentos t ON t.id = tp.treinamento_id
-      ${clause ? `${clause} AND tp.status_presenca = 'ausente'` : "WHERE tp.status_presenca = 'ausente'"}
+      ${
+        clause
+          ? `${clause} AND tp.status_presenca = 'ausente'`
+          : "WHERE tp.status_presenca = 'ausente'"
+      }
       `,
       params
     );
@@ -131,7 +150,11 @@ const [[presentes]] = await pool.query(
       SELECT COUNT(*) AS total
       FROM treinamento_participantes tp
       INNER JOIN treinamentos t ON t.id = tp.treinamento_id
-      ${clause ? `${clause} AND tp.status_presenca = 'justificado'` : "WHERE tp.status_presenca = 'justificado'"}
+      ${
+        clause
+          ? `${clause} AND tp.status_presenca = 'justificado'`
+          : "WHERE tp.status_presenca = 'justificado'"
+      }
       `,
       params
     );
@@ -177,187 +200,195 @@ const [[presentes]] = await pool.query(
       0
     );
 
-const [horasTreinadasBase] = await pool.query(
-  `
-  SELECT
-    t.carga_horaria,
-    COALESCE(COUNT(tp.id), t.participantes, 0) AS participantes
-  FROM treinamentos t
-  LEFT JOIN treinamento_participantes tp
-    ON tp.treinamento_id = t.id
-  ${clause}
-  GROUP BY t.id
-  `,
-  params
-);
+    const [horasTreinadasBase] = await pool.query(
+      `
+      SELECT
+        t.id,
+        t.carga_horaria,
+        t.participantes,
+        t.participantes_presentes,
+        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes
+      FROM treinamentos t
+      LEFT JOIN treinamento_participantes tp
+        ON tp.treinamento_id = t.id
+      ${clause}
+      GROUP BY t.id, t.carga_horaria, t.participantes, t.participantes_presentes
+      `,
+      params
+    );
 
-const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
-  const horas = parseHorasTexto(item.carga_horaria);
-  return acc + horas * Number(item.participantes || 0);
-}, 0);
+    const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
+      const horas = parseHorasTexto(item.carga_horaria);
 
-const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
-  const horas = parseHorasTexto(item.carga_horaria);
+      const presentesChamada = Number(item.presentes || 0);
+      const presentesLancados = Number(item.participantes_presentes || 0);
+      const previstos = Number(item.participantes || 0);
 
-  const presentesChamada = Number(item.presentes || 0);
-  const presentesLançados = Number(item.participantes_presentes || 0);
-  const previstos = Number(item.participantes || 0);
+      const baseParticipantes =
+        presentesChamada > 0
+          ? presentesChamada
+          : presentesLancados > 0
+          ? presentesLancados
+          : previstos;
 
-  const baseParticipantes =
-    presentesChamada > 0
-      ? presentesChamada
-      : presentesLançados > 0
-      ? presentesLançados
-      : previstos;
+      return acc + horas * baseParticipantes;
+    }, 0);
 
-  return acc + horas * baseParticipantes;
-}, 0);
-
-const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
-  const horas = parseHorasTexto(item.carga_horaria);
-
-  const presentesChamada = Number(item.presentes || 0);
-  const presentesLançados = Number(item.participantes_presentes || 0);
-  const previstos = Number(item.participantes || 0);
-
-  const baseParticipantes =
-    presentesChamada > 0
-      ? presentesChamada
-      : presentesLançados > 0
-      ? presentesLançados
-      : previstos;
-
-  return acc + horas * baseParticipantes;
-}, 0);
-
-const [presencaPorCliente] = await pool.query(
-  `
-  SELECT
-    t.cliente,
-    COUNT(DISTINCT t.id) AS total_turmas,
-
-    SUM(COALESCE(t.participantes, 0)) AS previstos,
-
-    SUM(
-      CASE
-        WHEN tp.status_presenca = 'presente' THEN 1
-        ELSE 0
-      END
-    ) AS presentes,
-
-    SUM(
-      CASE
-        WHEN tp.status_presenca = 'ausente' THEN 1
-        ELSE 0
-      END
-    ) AS ausentes,
-
-    SUM(
-      CASE
-        WHEN tp.status_presenca = 'justificado' THEN 1
-        ELSE 0
-      END
-    ) AS justificados,
-
-    ROUND(
-      (
-        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) /
-        NULLIF(SUM(COALESCE(t.participantes, 0)), 0)
-      ) * 100,
-      0
-    ) AS taxa_presenca
-
-  FROM treinamentos t
-  LEFT JOIN treinamento_participantes tp
-    ON tp.treinamento_id = t.id
-
-  ${
-    clause
-      ? `${clause} AND t.cliente IS NOT NULL`
-      : "WHERE t.cliente IS NOT NULL"
-  }
-
-  GROUP BY t.cliente
-  ORDER BY total_turmas DESC
-  LIMIT 10
-  `,
-  params
-);
-const [rankingInstrutores] = await pool.query(
-  `
-  SELECT
-    base.instrutor,
-    COUNT(*) AS total_turmas,
-    COALESCE(SUM(base.previstos), 0) AS treinandos_previstos,
-    COALESCE(
-      SUM(
-        CASE
-          WHEN base.vinculados > 0 THEN base.vinculados
-          WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
-          ELSE base.previstos
-        END
-      ),
-      0
-    ) AS treinandos_vinculados,
-    COALESCE(
-      SUM(
-        CASE
-          WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
-          WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
-          ELSE 0
-        END
-      ),
-      0
-    ) AS presentes,
-    COALESCE(
-      ROUND(
-        (
+    const [presencaPorCliente] = await pool.query(
+      `
+      SELECT
+        base.cliente,
+        COUNT(*) AS total_turmas,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN base.vinculados > 0 THEN base.vinculados
+              WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+              ELSE base.previstos
+            END
+          ),
+          0
+        ) AS treinados_importados,
+        COALESCE(SUM(base.previstos), 0) AS previstos,
+        COALESCE(
           SUM(
             CASE
               WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
               WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
               ELSE 0
             END
-          ) /
-          NULLIF(
-            SUM(
-              CASE
-                WHEN base.vinculados > 0 THEN base.vinculados
-                WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
-                ELSE base.previstos
-              END
-            ),
+          ),
+          0
+        ) AS presentes,
+        COALESCE(SUM(base.ausentes), 0) AS ausentes,
+        COALESCE(SUM(base.justificados), 0) AS justificados,
+        COALESCE(
+          ROUND(
+            (
+              SUM(
+                CASE
+                  WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
+                  WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+                  ELSE 0
+                END
+              ) /
+              NULLIF(
+                SUM(
+                  CASE
+                    WHEN base.vinculados > 0 THEN base.vinculados
+                    WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+                    ELSE base.previstos
+                  END
+                ),
+                0
+              )
+            ) * 100,
             0
-          )
-        ) * 100,
-        0
-      ),
-      0
-    ) AS taxa_presenca
-  FROM (
-    SELECT
-      t.id,
-      t.instrutor,
-      COALESCE(MAX(t.participantes), 0) AS previstos,
-      COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados,
-      COUNT(tp.id) AS vinculados,
-      SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes_chamada
-    FROM treinamentos t
-    LEFT JOIN treinamento_participantes tp
-      ON tp.treinamento_id = t.id
-    ${
-      clause
-        ? `${clause} AND t.instrutor IS NOT NULL AND t.instrutor <> ''`
-        : "WHERE t.instrutor IS NOT NULL AND t.instrutor <> ''"
-    }
-    GROUP BY t.id, t.instrutor
-  ) base
-  GROUP BY base.instrutor
-  ORDER BY total_turmas DESC, treinandos_previstos DESC
-  LIMIT 10
-  `,
-  params
-);
+          ),
+          0
+        ) AS taxa_presenca
+      FROM (
+        SELECT
+          t.id,
+          t.cliente,
+          COALESCE(MAX(t.participantes), 0) AS previstos,
+          COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados,
+          COUNT(tp.id) AS vinculados,
+          SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes_chamada,
+          SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
+          SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados
+        FROM treinamentos t
+        LEFT JOIN treinamento_participantes tp
+          ON tp.treinamento_id = t.id
+        ${
+          clause
+            ? `${clause} AND t.cliente IS NOT NULL AND t.cliente <> ''`
+            : "WHERE t.cliente IS NOT NULL AND t.cliente <> ''"
+        }
+        GROUP BY t.id, t.cliente
+      ) base
+      GROUP BY base.cliente
+      ORDER BY total_turmas DESC, previstos DESC
+      LIMIT 10
+      `,
+      params
+    );
+
+    const [rankingInstrutores] = await pool.query(
+      `
+      SELECT
+        base.instrutor,
+        COUNT(*) AS total_turmas,
+        COALESCE(SUM(base.previstos), 0) AS treinandos_previstos,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN base.vinculados > 0 THEN base.vinculados
+              WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+              ELSE base.previstos
+            END
+          ),
+          0
+        ) AS treinandos_vinculados,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
+              WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+              ELSE 0
+            END
+          ),
+          0
+        ) AS presentes,
+        COALESCE(
+          ROUND(
+            (
+              SUM(
+                CASE
+                  WHEN base.presentes_chamada > 0 THEN base.presentes_chamada
+                  WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+                  ELSE 0
+                END
+              ) /
+              NULLIF(
+                SUM(
+                  CASE
+                    WHEN base.vinculados > 0 THEN base.vinculados
+                    WHEN base.presentes_lancados > 0 THEN base.presentes_lancados
+                    ELSE base.previstos
+                  END
+                ),
+                0
+              )
+            ) * 100,
+            0
+          ),
+          0
+        ) AS taxa_presenca
+      FROM (
+        SELECT
+          t.id,
+          t.instrutor,
+          COALESCE(MAX(t.participantes), 0) AS previstos,
+          COALESCE(MAX(t.participantes_presentes), 0) AS presentes_lancados,
+          COUNT(tp.id) AS vinculados,
+          SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes_chamada
+        FROM treinamentos t
+        LEFT JOIN treinamento_participantes tp
+          ON tp.treinamento_id = t.id
+        ${
+          clause
+            ? `${clause} AND t.instrutor IS NOT NULL AND t.instrutor <> ''`
+            : "WHERE t.instrutor IS NOT NULL AND t.instrutor <> ''"
+        }
+        GROUP BY t.id, t.instrutor
+      ) base
+      GROUP BY base.instrutor
+      ORDER BY total_turmas DESC, treinandos_previstos DESC
+      LIMIT 10
+      `,
+      params
+    );
 
     const [ultimasTurmas] = await pool.query(
       `
