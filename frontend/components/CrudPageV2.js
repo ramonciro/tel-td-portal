@@ -44,10 +44,21 @@ export default function CrudPageV2({
 
   function handleChange(event) {
     const { name, value } = event.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        [name]: value,
+      };
+
+      fields.forEach((field) => {
+        if (field.type === "dependent-select" && field.dependsOn === name) {
+          next[field.name] = "";
+        }
+      });
+
+      return next;
+    });
   }
 
   function limparFormulario() {
@@ -159,6 +170,38 @@ export default function CrudPageV2({
               );
             }
 
+            if (field.type === "dependent-select") {
+              const parentValue = form[field.dependsOn] ?? "";
+              const options = field.optionsMap?.[String(parentValue)] || [];
+
+              return (
+                <div key={field.name} style={fieldWrap}>
+                  <label style={label}>{field.label}</label>
+                  <select
+                    name={field.name}
+                    value={value}
+                    onChange={handleChange}
+                    style={input}
+                    disabled={!parentValue}
+                  >
+                    <option value="">
+                      {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
+                    </option>
+                    {options.map((option) => {
+                      const optionValue = typeof option === "object" ? option.value : option;
+                      const optionLabel = typeof option === "object" ? option.label : option;
+
+                      return (
+                        <option key={`${field.name}-${optionValue}`} value={optionValue}>
+                          {optionLabel}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              );
+            }
+
             if (field.type === "select") {
               return (
                 <div key={field.name} style={fieldWrap}>
@@ -196,6 +239,9 @@ export default function CrudPageV2({
                   value={value}
                   onChange={handleChange}
                   placeholder={field.placeholder || ""}
+                  min={field.min}
+                  max={field.max}
+                  step={field.step}
                   style={input}
                 />
               </div>
