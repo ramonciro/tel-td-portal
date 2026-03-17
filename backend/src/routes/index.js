@@ -34,6 +34,9 @@ import {
   updatePresenca,
   deletePresenca,
   migrarPresencasStatus,
+  getPresencasByTreinamento,
+  savePresencasLote,
+  deletePresencaByTreinamentoAndNome
 } from "../controllers/presencasController.js";
 
 import {
@@ -151,9 +154,13 @@ router.post(
    PRESENÇAS
 ========================= */
 router.get("/presencas", authRequired, listPresencas);
+router.get("/presencas/treinamento/:id", authRequired, getPresencasByTreinamento);
 router.post("/presencas", authRequired, createPresenca);
+router.post("/presencas/lote", authRequired, savePresencasLote);
 router.put("/presencas/:id", authRequired, updatePresenca);
 router.delete("/presencas/:id", authRequired, deletePresenca);
+router.delete("/presencas/participante/remover", authRequired, deletePresencaByTreinamentoAndNome);
+router.get("/migracao-presencas-status", authRequired, migrarPresencasStatus);
 
 /* rota de migração protegida */
 router.get("/migracao-presencas-status", authRequired, migrarPresencasStatus);
