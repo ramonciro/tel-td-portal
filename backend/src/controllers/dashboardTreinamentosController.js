@@ -239,7 +239,6 @@ export async function getDashboardTreinamentos(req, res) {
       SELECT
         base.cliente,
         COUNT(*) AS total_turmas,
-        COALESCE(SUM(base.previstos), 0) AS previstos,
         COALESCE(SUM(base.total_chamada), 0) AS total_chamada,
         COALESCE(SUM(base.presentes), 0) AS presentes,
         COALESCE(SUM(base.ausentes), 0) AS ausentes,
@@ -249,15 +248,7 @@ export async function getDashboardTreinamentos(req, res) {
           ROUND(
             (
               SUM(base.presentes) /
-              NULLIF(
-                SUM(
-                  CASE
-                    WHEN base.total_chamada > 0 THEN base.total_chamada
-                    ELSE base.previstos
-                  END
-                ),
-                0
-              )
+              NULLIF(SUM(base.total_chamada), 0)
             ) * 100,
             0
           ),
@@ -267,7 +258,6 @@ export async function getDashboardTreinamentos(req, res) {
         SELECT
           t.id,
           t.cliente,
-          COALESCE(MAX(t.participantes), 0) AS previstos,
           SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
           SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
           SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados,
@@ -282,7 +272,7 @@ export async function getDashboardTreinamentos(req, res) {
           ) AS pendentes,
           COUNT(tp.id) AS total_chamada
         FROM treinamentos t
-        LEFT JOIN treinamento_participantes tp
+        INNER JOIN treinamento_participantes tp
           ON tp.treinamento_id = t.id
         ${
           clause
@@ -290,9 +280,10 @@ export async function getDashboardTreinamentos(req, res) {
             : "WHERE t.cliente IS NOT NULL AND t.cliente <> ''"
         }
         GROUP BY t.id, t.cliente
+        HAVING COUNT(tp.id) > 0
       ) base
       GROUP BY base.cliente
-      ORDER BY total_turmas DESC, previstos DESC
+      ORDER BY total_turmas DESC
       LIMIT 10
       `,
       params
@@ -541,10 +532,7 @@ export async function getDashboardTreinamentos(req, res) {
       },
       presenca_por_cliente: presencaPorCliente.map((item) => ({
         ...item,
-        total_treinados:
-          Number(item.total_chamada || 0) > 0
-            ? Number(item.total_chamada || 0)
-            : Number(item.previstos || 0),
+        total_treinados: Number(item.total_chamada || 0),
       })),
       ranking_instrutores: rankingInstrutores.map((item) => ({
         ...item,
@@ -563,4 +551,4 @@ export async function getDashboardTreinamentos(req, res) {
       error: error.message,
     });
   }
-        }
+}
