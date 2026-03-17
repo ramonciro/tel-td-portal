@@ -11,31 +11,45 @@ export async function apiFetch(path, options = {}) {
   const isFormData =
     typeof FormData !== "undefined" && options.body instanceof FormData;
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
+  const timeoutMs = options.timeoutMs || 15000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  const contentType = response.headers.get("content-type") || "";
+  try {
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
 
-  let data;
+    const contentType = response.headers.get("content-type") || "";
 
-  if (contentType.includes("application/json")) {
-    data = await response.json();
-  } else {
-    const text = await response.text();
-    throw new Error(`Resposta inválida da API: ${text.slice(0, 120)}`);
+    let data;
+
+    if (contentType.includes("application/json")) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      throw new Error(`Resposta inválida da API em ${path}: ${text.slice(0, 120)}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(data?.message || `Erro na requisição para ${path}`);
+    }
+
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`Tempo limite excedido ao carregar ${path}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  if (!response.ok) {
-    throw new Error(data?.message || "Erro na requisição");
-  }
-
-  return data;
 }
 
 export function storeUserSession(token, user) {
@@ -64,6 +78,7 @@ export function clearSession() {
 
   localStorage.removeItem("token");
   localStorage.removeItem("user");
+  localStorage.removeItem("usuario");
 }
 
 export function hasSomeRole(user, roles = []) {
