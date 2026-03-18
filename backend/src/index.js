@@ -25,8 +25,26 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-app.get(
+app.use(
+  "/api/materiais-avaliativos",
+  createCrudRouter({
+    table: "materiais_avaliativos",
+    fields: [
+      "titulo",
+      "cliente",
+      "tipo",
+      "tema",
+      "descricao",
+      "instrucoes",
+      "status",
+      "tempo_minutos",
+      "questoes_json",
+    ],
+    orderBy: "id DESC",
+  })
+);
+app.
+  get(
   "/api/dashboard/treinamentos",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
