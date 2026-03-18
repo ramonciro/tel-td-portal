@@ -9,26 +9,6 @@ const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { authRequired, authorizeRoles } = require("./middlewares/auth");
 
-const path = require("path");
-
-const {
-  listAvaliacoesTreinandos,
-  listNpsDisponivel,
-  createAvaliacaoTreinando,
-} = require("./controllers/avaliacoesTreinandosController");
-
-const {
-  listBiblioteca,
-  createBiblioteca,
-  updateBiblioteca,
-  deleteBiblioteca,
-  uploadBibliotecaArquivo,
-} = require("./controllers/bibliotecaController");
-
-const {
-  getFrequenciaIndividual,
-} = require("./controllers/frequenciaIndividualController");
-
 const {
   getDashboardTreinamentos,
 } = require("./controllers/dashboardTreinamentosController");
@@ -39,26 +19,12 @@ const {
   salvarChamadaParticipantes,
 } = require("./controllers/treinamentoParticipantesController");
 
-const {
-  listMateriaisAvaliativos,
-  createMaterialAvaliativo,
-  updateMaterialAvaliativo,
-  deleteMaterialAvaliativo,
-} = require("./controllers/materiaisAvaliativosController");
-
-const {
-  listRespostasAvaliativas,
-  submitRespostaAvaliativa,
-} = require("./controllers/respostasAvaliativasController");
-
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
-const uploadMem = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.get(
   "/api/dashboard/treinamentos",
@@ -136,8 +102,6 @@ app.delete(
 
       await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
-      await pool.query(`DELETE FROM respostas_avaliativas WHERE treinamento_id = ?`, [id]);
-      await pool.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
 
       return res.json({
@@ -301,110 +265,17 @@ app.use(
   })
 );
 
-app.get(
-  "/api/materiais-avaliativos",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
-  listMateriaisAvaliativos
-);
-
-app.post(
-  "/api/materiais-avaliativos",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  createMaterialAvaliativo
-);
-
-app.put(
-  "/api/materiais-avaliativos/:id",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  updateMaterialAvaliativo
-);
-
-app.delete(
-  "/api/materiais-avaliativos/:id",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  deleteMaterialAvaliativo
-);
-
-app.get(
-  "/api/respostas-avaliativas",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
-  listRespostasAvaliativas
-);
-
-app.post(
-  "/api/respostas-avaliativas",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
-  submitRespostaAvaliativa
-);
-
-app.get(
-  "/api/frequencia-individual",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
-  getFrequenciaIndividual
-);
-
-app.get(
-  "/api/avaliacoes-treinandos",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
-  listAvaliacoesTreinandos
-);
-
-app.get(
-  "/api/nps-disponivel",
-  authRequired,
-  authorizeRoles("treinando", "instrutor", "supervisor", "coordenador"),
-  listNpsDisponivel
-);
-
-app.post(
-  "/api/avaliacoes-treinandos",
-  authRequired,
-  authorizeRoles("treinando", "instrutor", "supervisor", "coordenador"),
-  createAvaliacaoTreinando
-);
-
-app.get(
+app.use(
   "/api/biblioteca",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
-  listBiblioteca
-);
-
-app.post(
-  "/api/biblioteca",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  createBiblioteca
-);
-
-app.put(
-  "/api/biblioteca/:id",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  updateBiblioteca
-);
-
-app.delete(
-  "/api/biblioteca/:id",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  deleteBiblioteca
-);
-
-app.post(
-  "/api/biblioteca/upload",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  uploadMem.single("arquivo"),
-  uploadBibliotecaArquivo
+  createCrudRouter({
+    table: "biblioteca_conteudos",
+    fields: ["titulo", "tipo", "cliente", "link_arquivo", "descricao"],
+    orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
+  })
 );
 
 app.use(
@@ -431,8 +302,6 @@ app.get(
       await pool.query("TRUNCATE TABLE avaliacoes");
       await pool.query("TRUNCATE TABLE presencas");
       await pool.query("TRUNCATE TABLE treinamento_participantes");
-      await pool.query("TRUNCATE TABLE respostas_avaliativas");
-      await pool.query("TRUNCATE TABLE materiais_avaliativos");
       await pool.query("TRUNCATE TABLE treinamentos");
       await pool.query("TRUNCATE TABLE usuarios");
       await pool.query("TRUNCATE TABLE clientes");
@@ -474,8 +343,6 @@ app.get(
         await pool.query("TRUNCATE TABLE avaliacoes");
         await pool.query("TRUNCATE TABLE presencas");
         await pool.query("TRUNCATE TABLE treinamento_participantes");
-        await pool.query("TRUNCATE TABLE respostas_avaliativas");
-        await pool.query("TRUNCATE TABLE materiais_avaliativos");
         await pool.query("TRUNCATE TABLE treinamentos");
         await pool.query("TRUNCATE TABLE usuarios");
         await pool.query("TRUNCATE TABLE clientes");
