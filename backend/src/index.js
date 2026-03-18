@@ -9,6 +9,21 @@ const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { authRequired, authorizeRoles } = require("./middlewares/auth");
 
+const path = require("path");
+
+const {
+  listAvaliacoesTreinandos,
+  listNpsDisponivel,
+  createAvaliacaoTreinando,
+} = require("./controllers/avaliacoesTreinandosController");
+
+const {
+  listBiblioteca,
+  createBiblioteca,
+  updateBiblioteca,
+  deleteBiblioteca,
+  uploadBibliotecaArquivo,
+} = require("./controllers/bibliotecaController");
 
 const {
   getFrequenciaIndividual,
@@ -38,10 +53,12 @@ const {
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
+const uploadMem = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.get(
   "/api/dashboard/treinamentos",
@@ -333,17 +350,61 @@ app.get(
   getFrequenciaIndividual
 );
 
-app.use(
+app.get(
+  "/api/avaliacoes-treinandos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listAvaliacoesTreinandos
+);
+
+app.get(
+  "/api/nps-disponivel",
+  authRequired,
+  authorizeRoles("treinando", "instrutor", "supervisor", "coordenador"),
+  listNpsDisponivel
+);
+
+app.post(
+  "/api/avaliacoes-treinandos",
+  authRequired,
+  authorizeRoles("treinando", "instrutor", "supervisor", "coordenador"),
+  createAvaliacaoTreinando
+);
+
+app.get(
   "/api/biblioteca",
-  createCrudRouter({
-    table: "biblioteca_conteudos",
-    fields: ["titulo", "tipo", "cliente", "link_arquivo", "descricao"],
-    orderBy: "id DESC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
-  })
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listBiblioteca
+);
+
+app.post(
+  "/api/biblioteca",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  createBiblioteca
+);
+
+app.put(
+  "/api/biblioteca/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  updateBiblioteca
+);
+
+app.delete(
+  "/api/biblioteca/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteBiblioteca
+);
+
+app.post(
+  "/api/biblioteca/upload",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  uploadMem.single("arquivo"),
+  uploadBibliotecaArquivo
 );
 
 app.use(
