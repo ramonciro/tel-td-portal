@@ -49,8 +49,10 @@ function statusStyle(status) {
 
 function formatDate(value) {
   if (!value) return "-";
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
+
   return date.toLocaleDateString("pt-BR");
 }
 
@@ -100,8 +102,16 @@ export default function TreinamentosPage() {
   }, [usuarios]);
 
   const fields = [
-    { name: "tema", label: "Turma / treinamento", placeholder: "Tema ou nome da turma" },
-    { name: "cliente", label: "Cliente", placeholder: "Cliente vinculado" },
+    {
+      name: "tema",
+      label: "Turma / treinamento",
+      placeholder: "Tema ou nome da turma",
+    },
+    {
+      name: "cliente",
+      label: "Cliente",
+      placeholder: "Cliente vinculado",
+    },
     {
       name: "instrutor",
       label: "Instrutor",
@@ -109,9 +119,21 @@ export default function TreinamentosPage() {
       options: instrutores,
       placeholder: "Selecione o instrutor",
     },
-    { name: "supervisor", label: "Supervisor", placeholder: "Supervisor responsável" },
-    { name: "publico", label: "Público", placeholder: "Ex.: Operação, onboarding, reciclagem" },
-    { name: "carga_horaria", label: "Carga horária total", placeholder: "Ex.: 20h" },
+    {
+      name: "supervisor",
+      label: "Supervisor",
+      placeholder: "Supervisor responsável",
+    },
+    {
+      name: "publico",
+      label: "Público",
+      placeholder: "Ex.: Operação, onboarding, reciclagem",
+    },
+    {
+      name: "carga_horaria",
+      label: "Carga horária total",
+      placeholder: "Ex.: 20h",
+    },
     {
       name: "participantes",
       label: "Treinandos previstos",
@@ -129,8 +151,16 @@ export default function TreinamentosPage() {
       ],
       placeholder: "Selecione o status",
     },
-    { name: "data_inicio", label: "Data de início", type: "date" },
-    { name: "data_fim", label: "Data de fim", type: "date" },
+    {
+      name: "data_inicio",
+      label: "Data de início",
+      type: "date",
+    },
+    {
+      name: "data_fim",
+      label: "Data de fim",
+      type: "date",
+    },
     {
       name: "descricao",
       label: "Observações",
@@ -141,18 +171,49 @@ export default function TreinamentosPage() {
 
   const kpis = useMemo(() => {
     const total = turmas.length;
-    const planejadas = turmas.filter((item) => statusLabel(item.status) === "Planejada").length;
-    const andamento = turmas.filter((item) => statusLabel(item.status) === "Em andamento").length;
-    const concluidas = turmas.filter((item) => statusLabel(item.status) === "Concluída").length;
-    const treinandos = turmas.reduce((acc, item) => acc + Number(item.participantes || 0), 0);
-    const horas = turmas.reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0);
+    const planejadas = turmas.filter(
+      (item) => statusLabel(item.status) === "Planejada"
+    ).length;
+    const andamento = turmas.filter(
+      (item) => statusLabel(item.status) === "Em andamento"
+    ).length;
+    const concluidas = turmas.filter(
+      (item) => statusLabel(item.status) === "Concluída"
+    ).length;
+
+    const treinandos = turmas.reduce(
+      (acc, item) => acc + Number(item.participantes || 0),
+      0
+    );
+
+    const horas = turmas.reduce(
+      (acc, item) => acc + parseHoras(item.carga_horaria),
+      0
+    );
 
     const alertas = [];
-    if (planejadas > 0) alertas.push(`${planejadas} turma(s) ainda estão planejadas.`);
-    if (andamento > 0) alertas.push(`${andamento} turma(s) estão em andamento.`);
-    if (!alertas.length) alertas.push("Base organizada, sem pendências críticas no momento.");
 
-    return { total, planejadas, andamento, concluidas, treinandos, horas, alertas };
+    if (planejadas > 0) {
+      alertas.push(`${planejadas} turma(s) ainda estão planejadas.`);
+    }
+
+    if (andamento > 0) {
+      alertas.push(`${andamento} turma(s) estão em andamento.`);
+    }
+
+    if (!alertas.length) {
+      alertas.push("Base organizada, sem pendências críticas no momento.");
+    }
+
+    return {
+      total,
+      planejadas,
+      andamento,
+      concluidas,
+      treinandos,
+      horas,
+      alertas,
+    };
   }, [turmas]);
 
   const columns = [
@@ -163,7 +224,9 @@ export default function TreinamentosPage() {
         <div>
           <div style={titleCell}>{item.tema || item.titulo || "-"}</div>
           <div style={subCell}>
-            {(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}
+            {(item.cliente || "Sem cliente") +
+              " • " +
+              (item.instrutor || "Sem instrutor")}
           </div>
         </div>
       ),
@@ -183,12 +246,16 @@ export default function TreinamentosPage() {
     {
       key: "participantes",
       label: "Treinandos previstos",
-      render: (item) => <strong style={scoreBlue}>{fmt(item.participantes || 0)}</strong>,
+      render: (item) => (
+        <strong style={scoreBlue}>{fmt(item.participantes || 0)}</strong>
+      ),
     },
     {
       key: "carga_horaria",
       label: "Carga horária",
-      render: (item) => <strong style={scoreGreen}>{item.carga_horaria || "-"}</strong>,
+      render: (item) => (
+        <strong style={scoreGreen}>{item.carga_horaria || "-"}</strong>
+      ),
     },
     {
       key: "supervisor",
@@ -228,15 +295,45 @@ export default function TreinamentosPage() {
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
-            <StatCard title="Turmas" value={fmt(kpis.total)} subtitle="Base total" accent="#2563eb" />
-            <StatCard title="Planejadas" value={fmt(kpis.planejadas)} subtitle="Aguardando execução" accent="#f59e0b" />
-            <StatCard title="Em andamento" value={fmt(kpis.andamento)} subtitle="Turmas ativas" accent="#ea580c" />
-            <StatCard title="Concluídas" value={fmt(kpis.concluidas)} subtitle="Ações finalizadas" accent="#16a34a" />
+            <StatCard
+              title="Turmas"
+              value={fmt(kpis.total)}
+              subtitle="Base total"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Planejadas"
+              value={fmt(kpis.planejadas)}
+              subtitle="Aguardando execução"
+              accent="#f59e0b"
+            />
+            <StatCard
+              title="Em andamento"
+              value={fmt(kpis.andamento)}
+              subtitle="Turmas ativas"
+              accent="#ea580c"
+            />
+            <StatCard
+              title="Concluídas"
+              value={fmt(kpis.concluidas)}
+              subtitle="Ações finalizadas"
+              accent="#16a34a"
+            />
           </div>
 
           <div style={heroGrid}>
-            <StatCard title="Treinandos previstos" value={fmt(kpis.treinandos)} subtitle="Capacidade da base" accent="#06b6d4" />
-            <StatCard title="Carga horária total" value={`${fmt(kpis.horas)}h`} subtitle="Carga consolidada" accent="#7c3aed" />
+            <StatCard
+              title="Treinandos previstos"
+              value={fmt(kpis.treinandos)}
+              subtitle="Capacidade da base"
+              accent="#06b6d4"
+            />
+            <StatCard
+              title="Carga horária total"
+              value={`${fmt(kpis.horas)}h`}
+              subtitle="Carga consolidada"
+              accent="#7c3aed"
+            />
           </div>
 
           <SectionCard
