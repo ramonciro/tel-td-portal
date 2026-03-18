@@ -9,6 +9,11 @@ const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { authRequired, authorizeRoles } = require("./middlewares/auth");
 
+
+const {
+  getFrequenciaIndividual,
+} = require("./controllers/frequenciaIndividualController");
+
 const {
   getDashboardTreinamentos,
 } = require("./controllers/dashboardTreinamentosController");
@@ -319,6 +324,13 @@ app.post(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   submitRespostaAvaliativa
+);
+
+app.get(
+  "/api/frequencia-individual",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  getFrequenciaIndividual
 );
 
 app.use(
