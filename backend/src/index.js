@@ -19,32 +19,21 @@ const {
   salvarChamadaParticipantes,
 } = require("./controllers/treinamentoParticipantesController");
 
+const {
+  listMateriaisAvaliativos,
+  createMaterialAvaliativo,
+  updateMaterialAvaliativo,
+  deleteMaterialAvaliativo,
+} = require("./controllers/materiaisAvaliativosController");
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(
-  "/api/materiais-avaliativos",
-  createCrudRouter({
-    table: "materiais_avaliativos",
-    fields: [
-      "titulo",
-      "cliente",
-      "tipo",
-      "tema",
-      "descricao",
-      "instrucoes",
-      "status",
-      "tempo_minutos",
-      "questoes_json",
-    ],
-    orderBy: "id DESC",
-  })
-);
-app.
-  get(
+
+app.get(
   "/api/dashboard/treinamentos",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
@@ -105,7 +94,6 @@ app.use(
   })
 );
 
-/* EXCLUSÃO EM CASCATA DO TREINAMENTO */
 app.delete(
   "/api/treinamentos/:id",
   authRequired,
@@ -121,6 +109,7 @@ app.delete(
 
       await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
 
       return res.json({
@@ -165,7 +154,6 @@ app.use(
   })
 );
 
-/* DETALHE DO TREINAMENTO */
 app.get(
   "/api/treinamentos/:id",
   authRequired,
@@ -217,7 +205,6 @@ app.get(
   }
 );
 
-/* PARTICIPANTES DO TREINAMENTO */
 app.get(
   "/api/treinamentos/:id/participantes",
   authRequired,
@@ -271,6 +258,7 @@ app.use(
       "nota_prova",
       "observacoes",
       "comentario",
+      "treinando_nome",
     ],
     orderBy: "id DESC",
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
@@ -278,6 +266,34 @@ app.use(
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
   })
+);
+
+app.get(
+  "/api/materiais-avaliativos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listMateriaisAvaliativos
+);
+
+app.post(
+  "/api/materiais-avaliativos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  createMaterialAvaliativo
+);
+
+app.put(
+  "/api/materiais-avaliativos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  updateMaterialAvaliativo
+);
+
+app.delete(
+  "/api/materiais-avaliativos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteMaterialAvaliativo
 );
 
 app.use(
@@ -317,6 +333,7 @@ app.get(
       await pool.query("TRUNCATE TABLE avaliacoes");
       await pool.query("TRUNCATE TABLE presencas");
       await pool.query("TRUNCATE TABLE treinamento_participantes");
+      await pool.query("TRUNCATE TABLE materiais_avaliativos");
       await pool.query("TRUNCATE TABLE treinamentos");
       await pool.query("TRUNCATE TABLE usuarios");
       await pool.query("TRUNCATE TABLE clientes");
@@ -358,6 +375,7 @@ app.get(
         await pool.query("TRUNCATE TABLE avaliacoes");
         await pool.query("TRUNCATE TABLE presencas");
         await pool.query("TRUNCATE TABLE treinamento_participantes");
+        await pool.query("TRUNCATE TABLE materiais_avaliativos");
         await pool.query("TRUNCATE TABLE treinamentos");
         await pool.query("TRUNCATE TABLE usuarios");
         await pool.query("TRUNCATE TABLE clientes");
