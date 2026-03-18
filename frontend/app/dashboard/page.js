@@ -19,22 +19,10 @@ function formatDate(value) {
   return date.toLocaleDateString("pt-BR");
 }
 
-function getCorHeat(valor) {
-  const numero = Number(valor || 0);
-
-  if (numero >= 85) return "#16a34a";
-  if (numero >= 70) return "#f59e0b";
-  return "#dc2626";
-}
-
 export default function DashboardPage() {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
-  const [clientes, setClientes] = useState([]);
-  const [clienteSelecionado, setClienteSelecionado] = useState("");
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
 
   useEffect(() => {
     async function carregar() {
@@ -42,31 +30,8 @@ export default function DashboardPage() {
         setErro("");
         setLoading(true);
 
-        const params = new URLSearchParams();
-
-        if (clienteSelecionado) {
-          params.append("cliente", clienteSelecionado);
-        }
-
-        if (dataInicio) {
-          params.append("inicio", dataInicio);
-        }
-
-        if (dataFim) {
-          params.append("fim", dataFim);
-        }
-
-        const query = params.toString()
-          ? `/dashboard/treinamentos?${params.toString()}`
-          : "/dashboard/treinamentos";
-
-        const [response, clientesData] = await Promise.all([
-          apiFetch(query),
-          apiFetch("/clientes").catch(() => []),
-        ]);
-
+        const response = await apiFetch("/dashboard/treinamentos");
         setDados(response || null);
-        setClientes(Array.isArray(clientesData) ? clientesData : []);
       } catch (error) {
         setErro(error.message || "Erro ao carregar dashboard.");
       } finally {
@@ -75,61 +40,40 @@ export default function DashboardPage() {
     }
 
     carregar();
-  }, [clienteSelecionado, dataInicio, dataFim]);
+  }, []);
 
   const kpis = dados?.kpis || {};
   const presencaPorCliente = dados?.presenca_por_cliente || [];
   const rankingInstrutores = dados?.ranking_instrutores || [];
   const ultimasTurmas = dados?.ultimas_turmas || [];
-  const rankingNps = dados?.ranking_nps || [];
 
   const leituraGerencial = useMemo(() => {
     const taxaPresenca = Number(kpis.taxa_presenca || 0);
     const taxaConclusao = Number(kpis.taxa_conclusao_chamada || 0);
     const pendentes = Number(kpis.pendentes || 0);
     const treinamentos = Number(kpis.treinamentos || 0);
-    const treinados = Number(kpis.treinados || 0);
-    const nps = Number(kpis.nps || 0);
-    const qualidade = Number(kpis.media_qualidade || 0);
+    const registrosChamada = Number(kpis.treinados || 0);
 
     const alertas = [];
 
-    if (clienteSelecionado) {
-      alertas.push(`Painel filtrado para o cliente ${clienteSelecionado}.`);
-    }
-
-    if (dataInicio || dataFim) {
-      alertas.push(
-        `Período aplicado: ${dataInicio || "início aberto"} até ${dataFim || "fim aberto"}.`
-      );
-    }
-
     if (treinamentos === 0) {
-      alertas.push("Ainda não há treinamentos cadastrados no recorte selecionado.");
+      alertas.push("Ainda não há turmas cadastradas no portal.");
     }
 
-    if (treinados === 0 && treinamentos > 0) {
-      alertas.push("Existem turmas cadastradas sem treinandos vinculados.");
+    if (registrosChamada === 0 && treinamentos > 0) {
+      alertas.push("Existem turmas cadastradas sem registros de chamada diária.");
     }
 
     if (taxaConclusao < 100 && pendentes > 0) {
       alertas.push(
-        `${fmt(pendentes)} treinando(s) ainda estão com chamada pendente.`
+        `${fmt(pendentes)} registro(s) ainda estão com chamada pendente.`
       );
     }
 
-    if (taxaPresenca < 85 && treinados > 0) {
+    if (taxaPresenca < 85 && registrosChamada > 0) {
       alertas.push(
-        `A taxa geral de presença está em ${taxaPresenca}%, abaixo do patamar ideal.`
+        `A taxa geral de presença diária está em ${taxaPresenca}%, abaixo do patamar ideal.`
       );
-    }
-
-    if (Number(kpis.respostas_nps || 0) > 0 && nps < 50) {
-      alertas.push(`NPS em ${nps}, abaixo do ideal. Revisar experiência do treinamento.`);
-    }
-
-    if (qualidade > 0 && qualidade < 7) {
-      alertas.push("A qualidade média está abaixo do esperado. Avaliar conteúdo e instrutores.");
     }
 
     if (!alertas.length) {
@@ -137,12 +81,12 @@ export default function DashboardPage() {
     }
 
     return alertas;
-  }, [kpis, clienteSelecionado, dataInicio, dataFim]);
+  }, [kpis]);
 
   return (
     <PortalShell
-      title="Dashboard Executivo"
-      subtitle="Visão estratégica do T&D"
+      title="Dashboard"
+      subtitle="Painel executivo de Treinamento & Desenvolvimento com leitura consolidada das turmas, períodos e chamadas diárias."
     >
       {loading ? (
         <div style={loadingBox}>Carregando dashboard...</div>
@@ -150,54 +94,13 @@ export default function DashboardPage() {
         <div style={errorBox}>{erro}</div>
       ) : (
         <>
-          <div style={filtersWrap}>
-            <select
-              value={clienteSelecionado}
-              onChange={(e) => setClienteSelecionado(e.target.value)}
-              style={filterInput}
-            >
-              <option value="">Todos os clientes</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.nome}>
-                  {c.nome}
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="date"
-              value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
-              style={filterInput}
-            />
-
-            <input
-              type="date"
-              value={dataFim}
-              onChange={(e) => setDataFim(e.target.value)}
-              style={filterInput}
-            />
-
-            <button
-              type="button"
-              style={clearButton}
-              onClick={() => {
-                setClienteSelecionado("");
-                setDataInicio("");
-                setDataFim("");
-              }}
-            >
-              Limpar filtros
-            </button>
-          </div>
-
           <div style={heroWrap}>
             <div style={heroMain}>
               <div style={heroBadge}>Visão estratégica</div>
               <h2 style={heroTitle}>Painel de execução de treinamentos</h2>
               <p style={heroText}>
-                Acompanhe volume de turmas, treinandos vinculados, presença real,
-                pendências de chamada, satisfação do treinando e desempenho por cliente e instrutor.
+                Acompanhe volume de turmas, registros de chamada diária, presença real,
+                pendências operacionais e desempenho por cliente e instrutor.
               </p>
             </div>
 
@@ -212,51 +115,26 @@ export default function DashboardPage() {
               </div>
               <div style={heroMiniCard}>
                 <strong>{kpis.taxa_presenca || 0}%</strong>
-                <span>taxa geral de presença</span>
-              </div>
-              <div style={heroMiniCard}>
-                <strong>{kpis.nps || 0}</strong>
-                <span>NPS consolidado</span>
+                <span>presença diária consolidada</span>
               </div>
             </div>
           </div>
 
-          <div style={gridFive}>
+          <div style={gridFour}>
             <StatCard
-              title="Treinamentos"
+              title="Turmas"
               value={fmt(kpis.treinamentos || 0)}
-              subtitle="Base total"
+              subtitle="Base total cadastrada"
               accent="#2563eb"
             />
             <StatCard
-              title="Treinados"
+              title="Registros de chamada"
               value={fmt(kpis.treinados || 0)}
-              subtitle="Base real das turmas"
+              subtitle="Base real diária"
               accent="#06b6d4"
             />
             <StatCard
-              title="Tx presença"
-              value={`${kpis.taxa_presenca || 0}%`}
-              subtitle="Indicador geral"
-              accent="#0891b2"
-            />
-            <StatCard
-              title="NPS"
-              value={kpis.nps || 0}
-              subtitle="Satisfação do treinando"
-              accent="#1d4ed8"
-            />
-            <StatCard
-              title="Qualidade"
-              value={kpis.media_qualidade || 0}
-              subtitle="Média das avaliações"
-              accent="#059669"
-            />
-          </div>
-
-          <div style={{ ...gridFour, marginTop: 14 }}>
-            <StatCard
-              title="Previstos"
+              title="Treinandos previstos"
               value={fmt(kpis.participantes_previstos || 0)}
               subtitle="Capacidade planejada"
               accent="#7c3aed"
@@ -264,20 +142,8 @@ export default function DashboardPage() {
             <StatCard
               title="Carga horária"
               value={`${fmt(kpis.carga_horaria_total || 0)}h`}
-              subtitle="Carga consolidada"
+              subtitle="Carga total planejada"
               accent="#0f766e"
-            />
-            <StatCard
-              title="Horas treinadas"
-              value={`${fmt(kpis.horas_treinadas || 0)}h`}
-              subtitle="Carga efetiva"
-              accent="#ea580c"
-            />
-            <StatCard
-              title="Tx. conclusão"
-              value={`${kpis.taxa_conclusao_chamada || 0}%`}
-              subtitle="Chamada registrada"
-              accent="#9333ea"
             />
           </div>
 
@@ -285,13 +151,13 @@ export default function DashboardPage() {
             <StatCard
               title="Presentes"
               value={fmt(kpis.presentes || 0)}
-              subtitle="Participação confirmada"
+              subtitle="Presença confirmada"
               accent="#16a34a"
             />
             <StatCard
               title="Ausentes"
               value={fmt(kpis.ausentes || 0)}
-              subtitle="Não compareceram"
+              subtitle="Ausências registradas"
               accent="#dc2626"
             />
             <StatCard
@@ -303,92 +169,42 @@ export default function DashboardPage() {
             <StatCard
               title="Pendentes"
               value={fmt(kpis.pendentes || 0)}
-              subtitle="Chamada em aberto"
+              subtitle="Registros em aberto"
               accent="#64748b"
             />
           </div>
 
           <div style={{ ...gridFour, marginTop: 14 }}>
             <StatCard
-              title="Respostas NPS"
-              value={fmt(kpis.respostas_nps || 0)}
-              subtitle="Base de satisfação"
-              accent="#0f766e"
+              title="Tx. presença"
+              value={`${kpis.taxa_presenca || 0}%`}
+              subtitle="Presença diária consolidada"
+              accent="#0891b2"
             />
             <StatCard
-              title="Promotores"
-              value={fmt(kpis.promotores || 0)}
-              subtitle="Nota 9 ou 10"
-              accent="#16a34a"
-            />
-            <StatCard
-              title="Detratores"
-              value={fmt(kpis.detratores || 0)}
-              subtitle="Nota 0 a 6"
-              accent="#dc2626"
+              title="Tx. conclusão"
+              value={`${kpis.taxa_conclusao_chamada || 0}%`}
+              subtitle="Chamada diária registrada"
+              accent="#9333ea"
             />
             <StatCard
               title="Média por turma"
               value={fmt(kpis.media_participantes_por_turma || 0)}
-              subtitle="Participantes/turma"
+              subtitle="Previstos por turma"
               accent="#475569"
+            />
+            <StatCard
+              title="Horas assistidas"
+              value={`${fmt(kpis.horas_treinadas || 0)}h`}
+              subtitle="Carga efetivamente entregue"
+              accent="#ea580c"
             />
           </div>
 
           <div style={twoCol}>
             <SectionCard
-              title="Heatmap por cliente"
-              subtitle="Leitura rápida da taxa de presença por operação."
-            >
-              {presencaPorCliente.length ? (
-                <div style={heatmapGrid}>
-                  {presencaPorCliente.map((item, index) => (
-                    <div
-                      key={index}
-                      style={{
-                        ...heatmapCard,
-                        background: getCorHeat(item.taxa_presenca),
-                      }}
-                    >
-                      <div style={heatmapTitle}>{item.cliente || "Sem cliente"}</div>
-                      <div style={heatmapValue}>{Number(item.taxa_presenca || 0)}%</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={emptyText}>Sem dados para heatmap no momento.</div>
-              )}
-            </SectionCard>
-
-            <SectionCard
-              title="Ranking por NPS"
-              subtitle="Percepção de satisfação por cliente."
-            >
-              {rankingNps.length ? (
-                <div style={listGrid}>
-                  {rankingNps.map((item, index) => (
-                    <div key={index} style={listItem}>
-                      <div style={itemHeader}>
-                        <div style={itemTitle}>{item.cliente || "Sem cliente"}</div>
-                        <div style={itemBadgeBlue}>{Number(item.nps || 0)}</div>
-                      </div>
-
-                      <div style={itemMeta}>
-                        {fmt(item.respostas || 0)} resposta(s) de NPS
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={emptyText}>Sem ranking de NPS no momento.</div>
-              )}
-            </SectionCard>
-          </div>
-
-          <div style={{ ...twoCol, marginTop: 14 }}>
-            <SectionCard
               title="Presença por cliente"
-              subtitle="Leitura consolidada das operações com maior volume."
+              subtitle="Leitura consolidada por operação com base nas chamadas diárias."
             >
               {presencaPorCliente.length ? (
                 <div style={listGrid}>
@@ -402,7 +218,7 @@ export default function DashboardPage() {
                       </div>
 
                       <div style={itemMeta}>
-                        {fmt(item.total_treinados || 0)} treinados •{" "}
+                        {fmt(item.total_treinados || 0)} registro(s) •{" "}
                         {fmt(item.presentes || 0)} presentes •{" "}
                         {fmt(item.ausentes || 0)} ausentes •{" "}
                         {fmt(item.justificados || 0)} justificados
@@ -417,7 +233,7 @@ export default function DashboardPage() {
 
             <SectionCard
               title="Ranking de instrutores"
-              subtitle="Produtividade por volume de turmas e presença."
+              subtitle="Produtividade por turmas e presença consolidada."
             >
               {rankingInstrutores.length ? (
                 <div style={listGrid}>
@@ -434,7 +250,7 @@ export default function DashboardPage() {
 
                       <div style={itemMeta}>
                         {fmt(item.total_turmas || 0)} turma(s) •{" "}
-                        {fmt(item.total_treinados || 0)} treinados •{" "}
+                        {fmt(item.total_treinados || 0)} registro(s) •{" "}
                         {fmt(item.presentes || 0)} presentes
                       </div>
                     </div>
@@ -449,7 +265,7 @@ export default function DashboardPage() {
           <div style={{ ...twoCol, marginTop: 14 }}>
             <SectionCard
               title="Últimas turmas"
-              subtitle="Acompanhamento das turmas mais recentes."
+              subtitle="Acompanhamento das turmas mais recentes com base no último dia de chamada."
             >
               {ultimasTurmas.length ? (
                 <div style={listGrid}>
@@ -468,7 +284,7 @@ export default function DashboardPage() {
 
                       <div style={{ ...itemMeta, marginTop: 6 }}>
                         {formatDate(item.data)} • {item.carga_horaria || "-"} •{" "}
-                        previstos: {fmt(item.participantes || 0)} • treinados:{" "}
+                        previstos: {fmt(item.participantes || 0)} • registros:{" "}
                         {fmt(item.treinados || 0)}
                       </div>
 
@@ -512,37 +328,6 @@ export default function DashboardPage() {
     </PortalShell>
   );
 }
-
-const filtersWrap = {
-  display: "flex",
-  gap: 10,
-  marginBottom: 16,
-  flexWrap: "wrap",
-  alignItems: "center",
-};
-
-const filterInput = {
-  minWidth: 180,
-  height: 40,
-  padding: "0 12px",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#0f172a",
-  fontSize: 14,
-  outline: "none",
-};
-
-const clearButton = {
-  height: 40,
-  padding: "0 14px",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#334155",
-  fontWeight: 700,
-  cursor: "pointer",
-};
 
 const heroWrap = {
   display: "grid",
@@ -597,12 +382,6 @@ const heroMiniCard = {
   gap: 4,
 };
 
-const gridFive = {
-  display: "grid",
-  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-  gap: 14,
-};
-
 const gridFour = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
@@ -614,33 +393,6 @@ const twoCol = {
   gridTemplateColumns: "1fr 1fr",
   gap: 14,
   marginTop: 16,
-};
-
-const heatmapGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-  gap: 12,
-};
-
-const heatmapCard = {
-  borderRadius: 14,
-  padding: 14,
-  color: "#ffffff",
-  fontWeight: 800,
-  minHeight: 78,
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-};
-
-const heatmapTitle = {
-  fontSize: 15,
-  lineHeight: 1.2,
-};
-
-const heatmapValue = {
-  fontSize: 24,
-  lineHeight: 1,
 };
 
 const listGrid = {
