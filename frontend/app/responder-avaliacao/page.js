@@ -5,6 +5,15 @@ import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch, getStoredUser } from "../../services/api";
 
+function safeParseQuestoes(raw) {
+  try {
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function formatTreinamentoLabel(material, treinamentos) {
   const treinamento = treinamentos.find(
     (item) => String(item.id) === String(material.treinamento_id)
@@ -13,15 +22,6 @@ function formatTreinamentoLabel(material, treinamentos) {
   return `${material.titulo} • ${material.tipo || "material"}${
     treinamento?.cliente ? ` • ${treinamento.cliente}` : ""
   }`;
-}
-
-function safeParseQuestoes(raw) {
-  try {
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }
 
 export default function ResponderAvaliacaoPage() {
@@ -114,15 +114,13 @@ export default function ResponderAvaliacaoPage() {
         return;
       }
 
-      const payload = {
-        material_id: materialSelecionado.id,
-        treinando_nome: treinandoNome,
-        respostas,
-      };
-
       const response = await apiFetch("/respostas-avaliativas", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          material_id: materialSelecionado.id,
+          treinando_nome: treinandoNome,
+          respostas,
+        }),
       });
 
       setResultado(response);
