@@ -12,6 +12,7 @@ const menuItems = [
   { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
   { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/presencas", label: "Gestão de Turmas", icon: "👥", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/frequencia-individual", label: "Frequência Individual", icon: "📍", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/avaliacoes", label: "Avaliações", icon: "⭐", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/responder-avaliacao", label: "Responder Avaliação", icon: "📝", roles: ["treinando", "instrutor", "supervisor", "coordenador"] },
   { href: "/resultados-avaliacoes", label: "Resultados das Avaliações", icon: "📈", roles: ["coordenador", "supervisor", "instrutor"] },
@@ -19,7 +20,6 @@ const menuItems = [
   { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "🗺️", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/frequencia-individual", label: "Frequência Individual", icon: "📍", roles: ["coordenador", "supervisor", "instrutor"] },
 ];
 
 function isRouteActive(pathname, href) {
