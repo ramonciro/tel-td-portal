@@ -14,6 +14,7 @@ const menuItems = [
   { href: "/presencas", label: "Gestão de Turmas", icon: "👥", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/avaliacoes", label: "Avaliações", icon: "⭐", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/responder-avaliacao", label: "Responder Avaliação", icon: "📝", roles: ["treinando", "instrutor", "supervisor", "coordenador"] },
+  { href: "/resultados-avaliacoes", label: "Resultados das Avaliações", icon: "📈", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/nps", label: "NPS", icon: "💬", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
