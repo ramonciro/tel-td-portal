@@ -58,6 +58,18 @@ function acaoRecomendada(item) {
   return "Aplicar reforço";
 }
 
+function createBlankQuestion() {
+  return {
+    enunciado: "",
+    alternativa_a: "",
+    alternativa_b: "",
+    alternativa_c: "",
+    alternativa_d: "",
+    correta: "A",
+    peso: 1,
+  };
+}
+
 export default function AvaliacoesPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [avaliacoes, setAvaliacoes] = useState([]);
@@ -74,6 +86,7 @@ export default function AvaliacoesPage() {
     data_aplicacao: "",
   });
 
+  const [questoes, setQuestoes] = useState([createBlankQuestion()]);
   const [editingMaterialId, setEditingMaterialId] = useState(null);
   const [materialErro, setMaterialErro] = useState("");
   const [materialSucesso, setMaterialSucesso] = useState("");
@@ -314,6 +327,23 @@ export default function AvaliacoesPage() {
     }));
   }
 
+  function atualizarQuestao(index, field, value) {
+    setQuestoes((prev) =>
+      prev.map((q, i) => (i === index ? { ...q, [field]: value } : q))
+    );
+  }
+
+  function adicionarQuestao() {
+    setQuestoes((prev) => [...prev, createBlankQuestion()]);
+  }
+
+  function removerQuestao(index) {
+    setQuestoes((prev) => {
+      if (prev.length === 1) return prev;
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
   function limparMaterialForm() {
     setEditingMaterialId(null);
     setMaterialErro("");
@@ -327,6 +357,7 @@ export default function AvaliacoesPage() {
       nota_maxima: "",
       data_aplicacao: "",
     });
+    setQuestoes([createBlankQuestion()]);
   }
 
   function editarMaterial(item) {
@@ -342,6 +373,14 @@ export default function AvaliacoesPage() {
       nota_maxima: item.nota_maxima || "",
       data_aplicacao: item.data_aplicacao ? String(item.data_aplicacao).slice(0, 10) : "",
     });
+
+    try {
+      const parsed = item.questoes_json ? JSON.parse(item.questoes_json) : [];
+      setQuestoes(Array.isArray(parsed) && parsed.length ? parsed : [createBlankQuestion()]);
+    } catch {
+      setQuestoes([createBlankQuestion()]);
+    }
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -355,9 +394,20 @@ export default function AvaliacoesPage() {
         return;
       }
 
+      const questoesValidas = questoes.filter(
+        (q) =>
+          q.enunciado &&
+          q.alternativa_a &&
+          q.alternativa_b &&
+          q.alternativa_c &&
+          q.alternativa_d &&
+          q.correta
+      );
+
       const payload = {
         ...materialForm,
         nota_maxima: materialForm.nota_maxima || 0,
+        questoes_json: JSON.stringify(questoesValidas),
       };
 
       const url = editingMaterialId
@@ -440,8 +490,8 @@ export default function AvaliacoesPage() {
           </div>
 
           <SectionCard
-            title="Banco de provas e simulados"
-            subtitle="Cadastre materiais avaliativos por turma com link/arquivo, tipo e nota máxima."
+            title="Montagem de provas e simulados"
+            subtitle="Cadastre materiais avaliativos por turma e monte as questões diretamente no portal."
           >
             {materialErro ? <div style={errorBoxInline}>{materialErro}</div> : null}
             {materialSucesso ? <div style={successBoxInline}>{materialSucesso}</div> : null}
@@ -527,7 +577,7 @@ export default function AvaliacoesPage() {
                       style={input}
                       value={materialForm.link_arquivo}
                       onChange={(e) => handleMaterialField("link_arquivo", e.target.value)}
-                      placeholder="Link do formulário, PDF ou arquivo"
+                      placeholder="Opcional: link do PDF, Forms ou arquivo de apoio"
                     />
                   </div>
 
@@ -541,6 +591,107 @@ export default function AvaliacoesPage() {
                       placeholder="Orientações ou descrição do material"
                     />
                   </div>
+                </div>
+
+                <div style={questionsHeader}>
+                  <h4 style={questionsTitle}>Questões da prova / simulado</h4>
+                  <button type="button" style={btnSecondary} onClick={adicionarQuestao}>
+                    Adicionar questão
+                  </button>
+                </div>
+
+                <div style={questionsGrid}>
+                  {questoes.map((questao, index) => (
+                    <div key={index} style={questionCard}>
+                      <div style={questionHeader}>
+                        <strong>Questão {index + 1}</strong>
+                        {questoes.length > 1 ? (
+                          <button
+                            type="button"
+                            style={btnSmallDelete}
+                            onClick={() => removerQuestao(index)}
+                          >
+                            Remover
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <div style={{ ...fieldWrap, marginTop: 10 }}>
+                        <label style={label}>Enunciado</label>
+                        <textarea
+                          style={textarea}
+                          rows={2}
+                          value={questao.enunciado}
+                          onChange={(e) => atualizarQuestao(index, "enunciado", e.target.value)}
+                          placeholder="Digite a pergunta"
+                        />
+                      </div>
+
+                      <div style={formGridMaterial}>
+                        <div style={fieldWrap}>
+                          <label style={label}>Alternativa A</label>
+                          <input
+                            style={input}
+                            value={questao.alternativa_a}
+                            onChange={(e) => atualizarQuestao(index, "alternativa_a", e.target.value)}
+                          />
+                        </div>
+
+                        <div style={fieldWrap}>
+                          <label style={label}>Alternativa B</label>
+                          <input
+                            style={input}
+                            value={questao.alternativa_b}
+                            onChange={(e) => atualizarQuestao(index, "alternativa_b", e.target.value)}
+                          />
+                        </div>
+
+                        <div style={fieldWrap}>
+                          <label style={label}>Alternativa C</label>
+                          <input
+                            style={input}
+                            value={questao.alternativa_c}
+                            onChange={(e) => atualizarQuestao(index, "alternativa_c", e.target.value)}
+                          />
+                        </div>
+
+                        <div style={fieldWrap}>
+                          <label style={label}>Alternativa D</label>
+                          <input
+                            style={input}
+                            value={questao.alternativa_d}
+                            onChange={(e) => atualizarQuestao(index, "alternativa_d", e.target.value)}
+                          />
+                        </div>
+
+                        <div style={fieldWrap}>
+                          <label style={label}>Resposta correta</label>
+                          <select
+                            style={input}
+                            value={questao.correta}
+                            onChange={(e) => atualizarQuestao(index, "correta", e.target.value)}
+                          >
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="D">D</option>
+                          </select>
+                        </div>
+
+                        <div style={fieldWrap}>
+                          <label style={label}>Peso</label>
+                          <input
+                            style={input}
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={questao.peso}
+                            onChange={(e) => atualizarQuestao(index, "peso", e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 <div style={actionsRowInline}>
@@ -563,6 +714,14 @@ export default function AvaliacoesPage() {
                         (t) => String(t.id) === String(item.treinamento_id)
                       );
 
+                      let totalQuestoes = 0;
+                      try {
+                        const parsed = item.questoes_json ? JSON.parse(item.questoes_json) : [];
+                        totalQuestoes = Array.isArray(parsed) ? parsed.length : 0;
+                      } catch {
+                        totalQuestoes = 0;
+                      }
+
                       return (
                         <div key={item.id} style={listItem}>
                           <div style={itemHeader}>
@@ -579,6 +738,10 @@ export default function AvaliacoesPage() {
                             {item.data_aplicacao
                               ? `Aplicação: ${String(item.data_aplicacao).slice(0, 10)}`
                               : "Sem data"}
+                          </div>
+
+                          <div style={itemSubMeta}>
+                            {totalQuestoes} questão(ões) cadastradas
                           </div>
 
                           {item.link_arquivo ? (
@@ -710,7 +873,7 @@ const obsCell = {
 
 const materialGrid = {
   display: "grid",
-  gridTemplateColumns: "1.2fr 1fr",
+  gridTemplateColumns: "1.3fr 1fr",
   gap: 14,
 };
 
@@ -778,6 +941,42 @@ const textarea = {
   resize: "vertical",
   boxSizing: "border-box",
   minHeight: 76,
+};
+
+const questionsHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 10,
+  marginTop: 18,
+  marginBottom: 12,
+  flexWrap: "wrap",
+};
+
+const questionsTitle = {
+  margin: 0,
+  color: "#0f172a",
+  fontSize: 15,
+};
+
+const questionsGrid = {
+  display: "grid",
+  gap: 12,
+};
+
+const questionCard = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 12,
+};
+
+const questionHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 10,
+  flexWrap: "wrap",
 };
 
 const actionsRowInline = {
