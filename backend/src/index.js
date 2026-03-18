@@ -19,6 +19,10 @@ const {
   salvarChamadaParticipantes,
 } = require("./controllers/treinamentoParticipantesController");
 
+const {
+  getFrequenciaIndividual,
+} = require("./controllers/frequenciaIndividualController");
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -263,6 +267,13 @@ app.use(
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
   })
+);
+
+app.get(
+  "/api/frequencia-individual",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  getFrequenciaIndividual
 );
 
 app.use(
