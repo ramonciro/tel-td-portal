@@ -4,28 +4,61 @@ const db = require("../lib/db");
 async function getParticipantesByTreinamento(req, res) {
   try {
     const { id } = req.params;
+    const dataChamada = req.query?.data || null;
 
-    const [rows] = await db.query(
-      `
-      SELECT
-        id,
-        treinamento_id,
-        nome,
-        matricula,
-        cliente,
-        turma,
-        supervisor,
-        operacao,
-        data_admissao,
-        status_presenca,
-        justificativa,
-        created_at
-      FROM treinamento_participantes
-      WHERE treinamento_id = ?
-      ORDER BY nome ASC
-      `,
-      [id]
-    );
+    let rows;
+
+    if (dataChamada) {
+      const [result] = await db.query(
+        `
+        SELECT
+          tp.id,
+          tp.treinamento_id,
+          tp.nome,
+          tp.matricula,
+          tp.cliente,
+          tp.turma,
+          tp.supervisor,
+          tp.operacao,
+          tp.data_admissao,
+          COALESCE(p.status, 'pendente') AS status_presenca,
+          COALESCE(p.justificativa, '') AS justificativa,
+          tp.created_at
+        FROM treinamento_participantes tp
+        LEFT JOIN presencas p
+          ON p.treinamento_id = tp.treinamento_id
+         AND p.treinando_nome = tp.nome
+         AND p.data_chamada = ?
+        WHERE tp.treinamento_id = ?
+        ORDER BY tp.nome ASC
+        `,
+        [dataChamada, id]
+      );
+      rows = result;
+    } else {
+      const [result] = await db.query(
+        `
+        SELECT
+          id,
+          treinamento_id,
+          nome,
+          matricula,
+          cliente,
+          turma,
+          supervisor,
+          operacao,
+          data_admissao,
+          status_presenca,
+          justificativa,
+          created_at
+        FROM treinamento_participantes
+        WHERE treinamento_id = ?
+        ORDER BY nome ASC
+        `,
+        [id]
+      );
+      rows = result;
+    }
 
     return res.json(rows);
   } catch (error) {
@@ -150,7 +183,7 @@ async function importarParticipantesExcel(req, res) {
 
 async function salvarChamadaParticipantes(req, res) {
   try {
-    const { treinamento_id, participantes } = req.body || {};
+    const { treinamento_id, participantes, data_chamada } = req.body || {};
 
     if (!treinamento_id || !Array.isArray(participantes)) {
       return res.status(400).json({
@@ -159,21 +192,14 @@ async function salvarChamadaParticipantes(req, res) {
       });
     }
 
-    for (const item of participantes) {
-      await db.query(
-        `
-        UPDATE treinamento_participantes
-        SET status_presenca = ?, justificativa = ?
-        WHERE id = ? AND treinamento_id = ?
-        `,
-        [
-          item.status_presenca || "pendente",
-          item.justificativa || null,
-          item.id,
-          treinamento_id,
-        ]
-      );
+    if (!data_chamada) {
+      return res.status(400).json({
+        ok: false,
+        message: "Informe a data da chamada",
+      });
+    }
 
+    for (const item of participantes) {
       const status = item.status_presenca || "pendente";
       const presente = status === "presente" ? 1 : 0;
 
@@ -181,47 +207,68 @@ async function salvarChamadaParticipantes(req, res) {
         `
         SELECT id
         FROM presencas
-        WHERE treinamento_id = ? AND treinando_nome = ?
+        WHERE treinamento_id = ? AND treinando_nome = ? AND data_chamada = ?
         LIMIT 1
         `,
-        [treinamento_id, item.nome]
+        [treinamento_id, item.nome, data_chamada]
       );
 
       if (existentes.length) {
         await db.query(
           `
           UPDATE presencas
-          SET presente = ?, status = ?, justificativa = ?
+          SET presente = ?, status = ?, justificativa = ?, data_chamada = ?
           WHERE id = ?
           `,
-          [presente, status, item.justificativa || null, existentes[0].id]
+          [
+            presente,
+            status,
+            item.justificativa || null,
+            data_chamada,
+            existentes[0].id,
+          ]
         );
       } else {
         await db.query(
           `
           INSERT INTO presencas
-          (treinamento_id, treinando_nome, presente, status, justificativa)
-          VALUES (?, ?, ?, ?, ?)
+          (treinamento_id, treinando_nome, data_chamada, presente, status, justificativa)
+          VALUES (?, ?, ?, ?, ?, ?)
           `,
           [
             treinamento_id,
             item.nome,
+            data_chamada,
             presente,
             status,
             item.justificativa || null,
           ]
         );
       }
+
+      await db.query(
+        `
+        UPDATE treinamento_participantes
+        SET status_presenca = ?, justificativa = ?
+        WHERE id = ? AND treinamento_id = ?
+        `,
+        [
+          status,
+          item.justificativa || null,
+          item.id,
+          treinamento_id,
+        ]
+      );
     }
 
     return res.json({
       ok: true,
-      message: "Chamada salva com sucesso",
+      message: "Chamada diária salva com sucesso",
     });
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      message: "Erro ao salvar chamada",
+      message: "Erro ao salvar chamada diária",
       error: error.message,
     });
   }
