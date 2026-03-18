@@ -24,13 +24,18 @@ function getSaudeOperacao(taxaPresenca, nps, qualidade) {
   const npsValor = Number(nps || 0);
   const qualidadeValor = Number(qualidade || 0);
 
-  if (presenca >= 90 && (npsValor >= 70 || npsValor === 0) && (qualidadeValor >= 8 || qualidadeValor === 0)) {
+  if (
+    presenca >= 90 &&
+    (npsValor >= 70 || npsValor === 0) &&
+    (qualidadeValor >= 8 || qualidadeValor === 0)
+  ) {
     return {
       label: "Estável",
       color: "#166534",
       bg: "#dcfce7",
       border: "#86efac",
-      message: "A operação apresenta execução consistente e sem desvios críticos relevantes.",
+      message:
+        "A operação apresenta execução consistente, com presença diária saudável e sem desvios críticos relevantes.",
     };
   }
 
@@ -40,7 +45,8 @@ function getSaudeOperacao(taxaPresenca, nps, qualidade) {
       color: "#92400e",
       bg: "#fef3c7",
       border: "#fcd34d",
-      message: "Há estabilidade parcial, porém já existem sinais de atenção em presença, satisfação ou qualidade.",
+      message:
+        "Há estabilidade parcial, porém já existem sinais de atenção em presença diária, satisfação ou qualidade.",
     };
   }
 
@@ -49,7 +55,8 @@ function getSaudeOperacao(taxaPresenca, nps, qualidade) {
     color: "#b91c1c",
     bg: "#fee2e2",
     border: "#fca5a5",
-    message: "Os indicadores apontam necessidade de atuação imediata na execução das turmas.",
+    message:
+      "Os indicadores apontam necessidade de atuação imediata na execução das turmas e no fechamento das chamadas diárias.",
   };
 }
 
@@ -59,7 +66,7 @@ function getPriorityList(kpis, ultimasTurmas) {
   if (Number(kpis.pendentes || 0) > 0) {
     prioridades.push({
       titulo: "Finalizar chamadas pendentes",
-      descricao: `${fmt(kpis.pendentes)} registro(s) ainda estão sem fechamento de chamada.`,
+      descricao: `${fmt(kpis.pendentes)} registro(s) ainda estão sem fechamento de chamada diária.`,
       tag: "Execução",
     });
   }
@@ -67,7 +74,7 @@ function getPriorityList(kpis, ultimasTurmas) {
   if (Number(kpis.ausentes || 0) > 0) {
     prioridades.push({
       titulo: "Atuar sobre ausências",
-      descricao: `${fmt(kpis.ausentes)} ausência(s) registradas nas turmas acompanhadas.`,
+      descricao: `${fmt(kpis.ausentes)} ausência(s) registradas nas chamadas diárias das turmas acompanhadas.`,
       tag: "Presença",
     });
   }
@@ -80,7 +87,10 @@ function getPriorityList(kpis, ultimasTurmas) {
     });
   }
 
-  if (Number(kpis.media_qualidade || 0) > 0 && Number(kpis.media_qualidade || 0) < 7) {
+  if (
+    Number(kpis.media_qualidade || 0) > 0 &&
+    Number(kpis.media_qualidade || 0) < 7
+  ) {
     prioridades.push({
       titulo: "Reforçar qualidade dos treinamentos",
       descricao: `A média de qualidade está em ${kpis.media_qualidade}, abaixo do patamar desejado.`,
@@ -153,31 +163,31 @@ export default function InicioPage() {
   }, [kpis, ultimasTurmas]);
 
   const taxaExecucao = useMemo(() => {
-    const treinados = Number(kpis.treinados || 0);
+    const registrosChamada = Number(kpis.treinados || 0);
     const previstos = Number(kpis.participantes_previstos || 0);
 
     if (!previstos) return 0;
-    return Math.round((treinados / previstos) * 100);
+    return Math.round((registrosChamada / previstos) * 100);
   }, [kpis]);
 
   const gapPresenca = useMemo(() => {
     const presentes = Number(kpis.presentes || 0);
-    const treinados = Number(kpis.treinados || 0);
+    const registrosChamada = Number(kpis.treinados || 0);
 
-    if (!treinados) return 0;
-    return treinados - presentes;
+    if (!registrosChamada) return 0;
+    return registrosChamada - presentes;
   }, [kpis]);
 
   const narrativaExecutiva = useMemo(() => {
     const frases = [];
 
     frases.push(
-      `A área acumula ${fmt(kpis.treinamentos || 0)} treinamento(s), com ${fmt(kpis.treinados || 0)} treinando(s) considerados na base real.`
+      `A área acumula ${fmt(kpis.treinamentos || 0)} turma(s), com ${fmt(kpis.treinados || 0)} registro(s) de chamada considerados na base real diária.`
     );
 
     if (Number(kpis.taxa_presenca || 0) > 0) {
       frases.push(
-        `A taxa consolidada de presença está em ${kpis.taxa_presenca}%, com ${fmt(kpis.presentes || 0)} presentes, ${fmt(kpis.ausentes || 0)} ausências e ${fmt(kpis.pendentes || 0)} pendência(s).`
+        `A taxa consolidada de presença diária está em ${kpis.taxa_presenca}%, com ${fmt(kpis.presentes || 0)} presentes, ${fmt(kpis.ausentes || 0)} ausências e ${fmt(kpis.pendentes || 0)} pendência(s).`
       );
     }
 
@@ -214,7 +224,7 @@ export default function InicioPage() {
               <div style={heroBadge}>Resumo executivo</div>
               <h2 style={heroTitle}>Panorama estratégico da área de T&amp;D</h2>
               <p style={heroText}>
-                Acompanhe execução, presença, satisfação e qualidade em uma visão pensada para acompanhamento gerencial e apresentação de resultados.
+                Acompanhe execução, presença diária, satisfação e qualidade em uma visão pensada para acompanhamento gerencial e apresentação de resultados.
               </p>
 
               <div
@@ -238,7 +248,7 @@ export default function InicioPage() {
                 <span style={heroSideLabel}>Taxa de execução</span>
                 <strong style={heroSideValue}>{taxaExecucao}%</strong>
                 <span style={heroSideSub}>
-                  relação entre base treinada e capacidade planejada
+                  relação entre registros de chamada e capacidade planejada
                 </span>
               </div>
 
@@ -246,7 +256,7 @@ export default function InicioPage() {
                 <span style={heroSideLabel}>Gap de presença</span>
                 <strong style={heroSideValue}>{fmt(gapPresenca)}</strong>
                 <span style={heroSideSub}>
-                  diferença entre treinados e presentes
+                  diferença entre registros de chamada e presentes
                 </span>
               </div>
 
@@ -254,7 +264,7 @@ export default function InicioPage() {
                 <span style={heroSideLabel}>Carga efetiva</span>
                 <strong style={heroSideValue}>{fmt(kpis.horas_treinadas || 0)}h</strong>
                 <span style={heroSideSub}>
-                  horas realmente absorvidas na base acompanhada
+                  horas realmente assistidas na base acompanhada
                 </span>
               </div>
             </div>
@@ -262,21 +272,21 @@ export default function InicioPage() {
 
           <div style={gridFive}>
             <StatCard
-              title="Treinamentos"
+              title="Turmas"
               value={fmt(kpis.treinamentos || 0)}
               subtitle="Volume consolidado"
               accent="#2563eb"
             />
             <StatCard
-              title="Treinados"
+              title="Registros de chamada"
               value={fmt(kpis.treinados || 0)}
-              subtitle="Base real das turmas"
+              subtitle="Base real diária"
               accent="#06b6d4"
             />
             <StatCard
               title="Presença"
               value={`${kpis.taxa_presenca || 0}%`}
-              subtitle="Presença consolidada"
+              subtitle="Presença diária consolidada"
               accent="#0891b2"
             />
             <StatCard
@@ -297,7 +307,7 @@ export default function InicioPage() {
             <StatCard
               title="Presentes"
               value={fmt(kpis.presentes || 0)}
-              subtitle="Participação confirmada"
+              subtitle="Presença confirmada"
               accent="#16a34a"
             />
             <StatCard
@@ -315,7 +325,7 @@ export default function InicioPage() {
             <StatCard
               title="Pendentes"
               value={fmt(kpis.pendentes || 0)}
-              subtitle="Chamada em aberto"
+              subtitle="Chamada diária em aberto"
               accent="#64748b"
             />
           </div>
@@ -334,7 +344,7 @@ export default function InicioPage() {
               accent="#0f766e"
             />
             <StatCard
-              title="Horas treinadas"
+              title="Horas assistidas"
               value={`${fmt(kpis.horas_treinadas || 0)}h`}
               subtitle="Execução real"
               accent="#ea580c"
@@ -342,7 +352,7 @@ export default function InicioPage() {
             <StatCard
               title="Conclusão"
               value={`${kpis.taxa_conclusao_chamada || 0}%`}
-              subtitle="Fechamento da chamada"
+              subtitle="Fechamento da chamada diária"
               accent="#9333ea"
             />
           </div>
@@ -382,7 +392,7 @@ export default function InicioPage() {
           <div style={{ ...twoCol, marginTop: 14 }}>
             <SectionCard
               title="Presença por cliente"
-              subtitle="Clientes com chamada registrada e taxa real de presença."
+              subtitle="Clientes com chamada registrada e taxa real de presença diária."
             >
               {presencaPorCliente.length ? (
                 <div style={listGrid}>
@@ -396,7 +406,7 @@ export default function InicioPage() {
                       </div>
 
                       <div style={itemMeta}>
-                        {fmt(item.total_treinados || 0)} treinados •{" "}
+                        {fmt(item.total_treinados || 0)} registro(s) •{" "}
                         {fmt(item.presentes || 0)} presentes •{" "}
                         {fmt(item.ausentes || 0)} ausentes •{" "}
                         {fmt(item.justificados || 0)} justificados
@@ -411,7 +421,7 @@ export default function InicioPage() {
 
             <SectionCard
               title="Ranking de instrutores"
-              subtitle="Leitura de produtividade por volume e presença."
+              subtitle="Leitura de produtividade por turmas e presença consolidada."
             >
               {rankingInstrutores.length ? (
                 <div style={listGrid}>
@@ -426,7 +436,7 @@ export default function InicioPage() {
 
                       <div style={itemMeta}>
                         {fmt(item.total_turmas || 0)} turma(s) •{" "}
-                        {fmt(item.total_treinados || 0)} treinados •{" "}
+                        {fmt(item.total_treinados || 0)} registro(s) •{" "}
                         {fmt(item.presentes || 0)} presentes
                       </div>
                     </div>
@@ -465,7 +475,7 @@ export default function InicioPage() {
 
             <SectionCard
               title="Últimas turmas acompanhadas"
-              subtitle="Visão rápida das turmas mais recentes."
+              subtitle="Visão rápida das turmas mais recentes com base no último dia de chamada."
             >
               {ultimasTurmas.length ? (
                 <div style={listGrid}>
@@ -484,7 +494,7 @@ export default function InicioPage() {
 
                       <div style={{ ...itemMeta, marginTop: 6 }}>
                         {formatDate(item.data)} • {item.carga_horaria || "-"} •{" "}
-                        previstos: {fmt(item.participantes || 0)} • treinados:{" "}
+                        previstos: {fmt(item.participantes || 0)} • registros:{" "}
                         {fmt(item.treinados || 0)}
                       </div>
                     </div>
