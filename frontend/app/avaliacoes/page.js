@@ -77,20 +77,19 @@ export default function AvaliacoesPage() {
   const [editingMaterialId, setEditingMaterialId] = useState(null);
   const [materialErro, setMaterialErro] = useState("");
   const [materialSucesso, setMaterialSucesso] = useState("");
+  const [loadingMateriais, setLoadingMateriais] = useState(false);
 
   useEffect(() => {
     async function carregar() {
       try {
-        const [treinamentosData, avaliacoesData, materiaisData] = await Promise.all([
+        const [treinamentosData, avaliacoesData] = await Promise.all([
           apiFetch("/treinamentos").catch(() => []),
           apiFetch("/avaliacoes").catch(() => []),
-          apiFetch("/materiais-avaliativos").catch(() => []),
         ]);
 
         const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
         setTreinamentos(listaTreinamentos);
         setAvaliacoes(Array.isArray(avaliacoesData) ? avaliacoesData : []);
-        setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
 
         const participantesObj = {};
 
@@ -110,12 +109,22 @@ export default function AvaliacoesPage() {
         setTreinamentos([]);
         setAvaliacoes([]);
         setParticipantesMap({});
-        setMateriais([]);
       }
     }
 
     carregar();
+    carregarMateriais();
   }, []);
+
+  async function carregarMateriais() {
+    try {
+      setLoadingMateriais(true);
+      const materiaisData = await apiFetch("/materiais-avaliativos").catch(() => []);
+      setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
+    } finally {
+      setLoadingMateriais(false);
+    }
+  }
 
   const treinamentoOptions = useMemo(() => {
     return treinamentos.map((item) => ({
@@ -232,62 +241,6 @@ export default function AvaliacoesPage() {
     const provas = materiais.filter((m) => String(m.tipo).toLowerCase() === "prova").length;
     const simulados = materiais.filter((m) => String(m.tipo).toLowerCase() === "simulado").length;
 
-    const porInstrutorMap = {};
-    const porClienteMap = {};
-
-    avaliacoes.forEach((item) => {
-      const treinamento = treinamentos.find(
-        (t) => String(t.id) === String(item.treinamento_id)
-      );
-
-      const cliente = treinamento?.cliente || "Sem cliente";
-      const instrutor = treinamento?.instrutor || "Sem instrutor";
-
-      if (!porClienteMap[cliente]) {
-        porClienteMap[cliente] = {
-          cliente,
-          total: 0,
-          somaQualidade: 0,
-          reforco: 0,
-        };
-      }
-
-      porClienteMap[cliente].total += 1;
-      porClienteMap[cliente].somaQualidade += Number(item.nota_qualidade || 0);
-      if (classificarResultado(item) === "Reforço") {
-        porClienteMap[cliente].reforco += 1;
-      }
-
-      if (!porInstrutorMap[instrutor]) {
-        porInstrutorMap[instrutor] = {
-          instrutor,
-          total: 0,
-          somaQualidade: 0,
-          reforco: 0,
-        };
-      }
-
-      porInstrutorMap[instrutor].total += 1;
-      porInstrutorMap[instrutor].somaQualidade += Number(item.nota_qualidade || 0);
-      if (classificarResultado(item) === "Reforço") {
-        porInstrutorMap[instrutor].reforco += 1;
-      }
-    });
-
-    const porCliente = Object.values(porClienteMap).map((item) => ({
-      ...item,
-      mediaQualidade: item.total
-        ? (item.somaQualidade / item.total).toFixed(1)
-        : "0.0",
-    }));
-
-    const rankingInstrutores = Object.values(porInstrutorMap).map((item) => ({
-      ...item,
-      mediaQualidade: item.total
-        ? (item.somaQualidade / item.total).toFixed(1)
-        : "0.0",
-    }));
-
     return {
       totalAvaliacoes,
       mediaNps,
@@ -299,29 +252,30 @@ export default function AvaliacoesPage() {
       provas,
       simulados,
       materiaisAtivos: materiais.length,
-      porCliente,
-      rankingInstrutores,
     };
-  }, [avaliacoes, treinamentos, materiais]);
+  }, [avaliacoes, materiais]);
 
   const columns = [
     {
       key: "treinando_nome",
       label: "Treinando",
-      render: (item) => (
-        <div>
-          <div style={titleCell}>{item.treinando_nome || "-"}</div>
-          <div style={subCell}>
-            {(() => {
-              const treinamento = treinamentos.find(
-                (t) => String(t.id) === String(item.treinamento_id)
-              );
-              return (treinamento?.tema || "Treinamento") + " • " + (treinamento?.cliente || "Sem cliente");
-            })()}
+      render: (item) => {
+        const treinamento = treinamentos.find(
+          (t) => String(t.id) === String(item.treinamento_id)
+        );
+
+        return (
+          <div>
+            <div style={titleCell}>{item.treinando_nome || "-"}</div>
+            <div style={subCell}>
+              {(treinamento?.tema || "Treinamento") +
+                " • " +
+                (treinamento?.cliente || "Sem cliente")}
+            </div>
+            {item.titulo ? <div style={miniTag}>{item.titulo}</div> : null}
           </div>
-          {item.titulo ? <div style={miniTag}>{item.titulo}</div> : null}
-        </div>
-      ),
+        );
+      },
     },
     {
       key: "nota_nps",
@@ -417,8 +371,7 @@ export default function AvaliacoesPage() {
         body: JSON.stringify(payload),
       });
 
-      const materiaisData = await apiFetch("/materiais-avaliativos").catch(() => []);
-      setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
+      await carregarMateriais();
 
       setMaterialSucesso(
         editingMaterialId
@@ -444,8 +397,7 @@ export default function AvaliacoesPage() {
         method: "DELETE",
       });
 
-      const materiaisData = await apiFetch("/materiais-avaliativos").catch(() => []);
-      setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
+      await carregarMateriais();
 
       setMaterialSucesso("Material avaliativo excluído com sucesso.");
 
@@ -469,105 +421,22 @@ export default function AvaliacoesPage() {
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
-            <StatCard
-              title="Avaliações"
-              value={fmt(kpis.totalAvaliacoes)}
-              subtitle="Registros lançados"
-              accent="#dc2626"
-            />
-            <StatCard
-              title="NPS médio"
-              value={kpis.mediaNps}
-              subtitle="Percepção do treinamento"
-              accent="#2563eb"
-            />
-            <StatCard
-              title="Qualidade média"
-              value={kpis.mediaQualidade}
-              subtitle="Aproveitamento geral"
-              accent="#059669"
-            />
-            <StatCard
-              title="Média prova"
-              value={kpis.mediaProva}
-              subtitle="Provas e simulados"
-              accent="#7c3aed"
-            />
+            <StatCard title="Avaliações" value={fmt(kpis.totalAvaliacoes)} subtitle="Registros lançados" accent="#dc2626" />
+            <StatCard title="NPS médio" value={kpis.mediaNps} subtitle="Percepção do treinamento" accent="#2563eb" />
+            <StatCard title="Qualidade média" value={kpis.mediaQualidade} subtitle="Aproveitamento geral" accent="#059669" />
+            <StatCard title="Média prova" value={kpis.mediaProva} subtitle="Provas e simulados" accent="#7c3aed" />
           </div>
 
           <div style={heroGrid}>
-            <StatCard
-              title="Aprovados"
-              value={fmt(kpis.aprovados)}
-              subtitle="Nota final ≥ 8"
-              accent="#16a34a"
-            />
-            <StatCard
-              title="Atenção"
-              value={fmt(kpis.atencao)}
-              subtitle="Nota entre 6 e 7,9"
-              accent="#f59e0b"
-            />
-            <StatCard
-              title="Reforço"
-              value={fmt(kpis.reforco)}
-              subtitle="Nota abaixo de 6"
-              accent="#b91c1c"
-            />
+            <StatCard title="Aprovados" value={fmt(kpis.aprovados)} subtitle="Nota final ≥ 8" accent="#16a34a" />
+            <StatCard title="Atenção" value={fmt(kpis.atencao)} subtitle="Nota entre 6 e 7,9" accent="#f59e0b" />
+            <StatCard title="Reforço" value={fmt(kpis.reforco)} subtitle="Nota abaixo de 6" accent="#b91c1c" />
             <StatCard
               title="Materiais"
-              value={fmt(kpis.materiaisAtivos)}
+              value={loadingMateriais ? "..." : fmt(kpis.materiaisAtivos)}
               subtitle={`${fmt(kpis.provas)} prova(s) • ${fmt(kpis.simulados)} simulado(s)`}
               accent="#0f766e"
             />
-          </div>
-
-          <div style={twoCol}>
-            <SectionCard
-              title="Resultado por cliente"
-              subtitle="Leitura consolidada de desempenho por operação."
-            >
-              <div style={listGrid}>
-                {kpis.porCliente.length ? (
-                  kpis.porCliente.slice(0, 6).map((item) => (
-                    <div key={item.cliente} style={listItem}>
-                      <div style={itemTitle}>{item.cliente}</div>
-                      <div style={itemMeta}>
-                        {item.total} avaliação(ões) • Qualidade média {item.mediaQualidade}
-                      </div>
-                      <div style={itemSubMeta}>
-                        {item.reforco} registro(s) em reforço
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={emptyText}>Nenhum resultado por cliente disponível.</div>
-                )}
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              title="Ranking de instrutores"
-              subtitle="Leitura da qualidade por instrutor."
-            >
-              <div style={listGrid}>
-                {kpis.rankingInstrutores.length ? (
-                  kpis.rankingInstrutores.slice(0, 6).map((item) => (
-                    <div key={item.instrutor} style={listItem}>
-                      <div style={itemTitle}>{item.instrutor}</div>
-                      <div style={itemMeta}>
-                        {item.total} avaliação(ões) • Qualidade média {item.mediaQualidade}
-                      </div>
-                      <div style={itemSubMeta}>
-                        {item.reforco} registro(s) em reforço
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={emptyText}>Nenhum instrutor disponível.</div>
-                )}
-              </div>
-            </SectionCard>
           </div>
 
           <SectionCard
@@ -584,7 +453,7 @@ export default function AvaliacoesPage() {
                     {editingMaterialId ? "Editar material" : "Novo material avaliativo"}
                   </h3>
                   {editingMaterialId ? (
-                    <button style={btnSecondary} onClick={limparMaterialForm}>
+                    <button type="button" style={btnSecondary} onClick={limparMaterialForm}>
                       Cancelar edição
                     </button>
                   ) : null}
@@ -675,10 +544,10 @@ export default function AvaliacoesPage() {
                 </div>
 
                 <div style={actionsRowInline}>
-                  <button style={btnPrimary} onClick={salvarMaterial}>
+                  <button type="button" style={btnPrimary} onClick={salvarMaterial}>
                     {editingMaterialId ? "Atualizar material" : "Salvar material"}
                   </button>
-                  <button style={btnSecondary} onClick={limparMaterialForm}>
+                  <button type="button" style={btnSecondary} onClick={limparMaterialForm}>
                     Limpar
                   </button>
                 </div>
@@ -689,52 +558,53 @@ export default function AvaliacoesPage() {
 
                 <div style={listGrid}>
                   {materiais.length ? (
-                    materiais.map((item) => (
-                      <div key={item.id} style={listItem}>
-                        <div style={itemHeader}>
-                          <div style={itemTitle}>{item.titulo}</div>
-                          <div style={miniTagBlue}>{item.tipo || "material"}</div>
-                        </div>
+                    materiais.map((item) => {
+                      const treinamento = treinamentos.find(
+                        (t) => String(t.id) === String(item.treinamento_id)
+                      );
 
-                        <div style={itemMeta}>
-                          {(() => {
-                            const treinamento = treinamentos.find(
-                              (t) => String(t.id) === String(item.treinamento_id)
-                            );
-                            return treinamento?.tema || `Turma #${item.treinamento_id}`;
-                          })()}
-                        </div>
-
-                        <div style={itemSubMeta}>
-                          Nota máxima: {item.nota_maxima ?? 0} •{" "}
-                          {item.data_aplicacao
-                            ? `Aplicação: ${String(item.data_aplicacao).slice(0, 10)}`
-                            : "Sem data"}
-                        </div>
-
-                        {item.link_arquivo ? (
-                          <div style={{ marginTop: 8 }}>
-                            <a
-                              href={item.link_arquivo}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={linkStyle}
-                            >
-                              Abrir arquivo / link
-                            </a>
+                      return (
+                        <div key={item.id} style={listItem}>
+                          <div style={itemHeader}>
+                            <div style={itemTitle}>{item.titulo}</div>
+                            <div style={miniTagBlue}>{item.tipo || "material"}</div>
                           </div>
-                        ) : null}
 
-                        <div style={materialCardActions}>
-                          <button style={btnSmallEdit} onClick={() => editarMaterial(item)}>
-                            Editar
-                          </button>
-                          <button style={btnSmallDelete} onClick={() => excluirMaterial(item.id)}>
-                            Excluir
-                          </button>
+                          <div style={itemMeta}>
+                            {treinamento?.tema || `Turma #${item.treinamento_id}`}
+                          </div>
+
+                          <div style={itemSubMeta}>
+                            Nota máxima: {item.nota_maxima ?? 0} •{" "}
+                            {item.data_aplicacao
+                              ? `Aplicação: ${String(item.data_aplicacao).slice(0, 10)}`
+                              : "Sem data"}
+                          </div>
+
+                          {item.link_arquivo ? (
+                            <div style={{ marginTop: 8 }}>
+                              <a
+                                href={item.link_arquivo}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={linkStyle}
+                              >
+                                Abrir arquivo / link
+                              </a>
+                            </div>
+                          ) : null}
+
+                          <div style={materialCardActions}>
+                            <button type="button" style={btnSmallEdit} onClick={() => editarMaterial(item)}>
+                              Editar
+                            </button>
+                            <button type="button" style={btnSmallDelete} onClick={() => excluirMaterial(item.id)}>
+                              Excluir
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div style={emptyText}>Nenhum material avaliativo cadastrado.</div>
                   )}
@@ -754,12 +624,6 @@ const heroGrid = {
   gap: 10,
 };
 
-const twoCol = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 14,
-};
-
 const listGrid = {
   display: "grid",
   gap: 10,
@@ -770,6 +634,13 @@ const listItem = {
   padding: 12,
   borderRadius: 14,
   border: "1px solid #e2e8f0",
+};
+
+const itemHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "center",
 };
 
 const itemTitle = {
