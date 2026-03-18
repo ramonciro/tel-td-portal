@@ -178,54 +178,62 @@ async function submitRespostaAvaliativa(req, res) {
       );
     }
 
-    const [avaliacoesExistentes] = await pool.query(
-      `
-      SELECT id
-      FROM avaliacoes
-      WHERE treinamento_id = ? AND treinando_nome = ? AND titulo = ?
-      LIMIT 1
-      `,
-      [material.treinamento_id, treinando_nome, material.titulo]
-    );
+    let syncAvaliacoesWarning = null;
 
-    if (avaliacoesExistentes.length) {
-      await pool.query(
+    try {
+      const [avaliacoesExistentes] = await pool.query(
         `
-        UPDATE avaliacoes
-        SET nota_prova = ?, comentario = ?
-        WHERE id = ?
+        SELECT id
+        FROM avaliacoes
+        WHERE treinamento_id = ? AND treinando_nome = ? AND titulo = ?
+        LIMIT 1
         `,
-        [
-          nota_final,
-          `Resultado automático da prova/simulado: ${acertos}/${total_questoes} acertos`,
-          avaliacoesExistentes[0].id,
-        ]
+        [material.treinamento_id, treinando_nome, material.titulo]
       );
-    } else {
-      await pool.query(
-        `
-        INSERT INTO avaliacoes
-        (
-          treinamento_id,
-          titulo,
-          nota_nps,
-          nota_qualidade,
-          nota_prova,
-          comentario,
-          treinando_nome
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          material.treinamento_id,
-          material.titulo,
-          0,
-          0,
-          nota_final,
-          `Resultado automático da prova/simulado: ${acertos}/${total_questoes} acertos`,
-          treinando_nome,
-        ]
-      );
+
+      if (avaliacoesExistentes.length) {
+        await pool.query(
+          `
+          UPDATE avaliacoes
+          SET nota_prova = ?, comentario = ?
+          WHERE id = ?
+          `,
+          [
+            nota_final,
+            `Resultado automático da prova/simulado: ${acertos}/${total_questoes} acertos`,
+            avaliacoesExistentes[0].id,
+          ]
+        );
+      } else {
+        await pool.query(
+          `
+          INSERT INTO avaliacoes
+          (
+            treinamento_id,
+            titulo,
+            nota_nps,
+            nota_qualidade,
+            nota_prova,
+            comentario,
+            treinando_nome
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            material.treinamento_id,
+            material.titulo,
+            0,
+            0,
+            nota_final,
+            `Resultado automático da prova/simulado: ${acertos}/${total_questoes} acertos`,
+            treinando_nome,
+          ]
+        );
+      }
+    } catch (syncError) {
+      console.error("Aviso ao sincronizar com avaliacoes:", syncError.message);
+      syncAvaliacoesWarning =
+        "Resposta salva, mas não foi possível sincronizar automaticamente com a tabela de avaliações.";
     }
 
     return res.json({
@@ -238,8 +246,10 @@ async function submitRespostaAvaliativa(req, res) {
       total_questoes,
       percentual,
       nota_final,
+      warning: syncAvaliacoesWarning,
     });
   } catch (error) {
+    console.error("Erro ao enviar respostas da avaliação:", error);
     return res.status(500).json({
       ok: false,
       message: "Erro ao enviar respostas da avaliação",
