@@ -133,8 +133,50 @@ export async function updateMaterialAvaliativo(req, res) {
 export async function deleteMaterialAvaliativo(req, res) {
   try {
     const { id } = req.params;
-    await pool.query("DELETE FROM materiais_avaliativos WHERE id = ?", [id]);
-    res.json({ ok: true });
+
+    const [materiais] = await pool.query(
+      `
+      SELECT id, treinamento_id, titulo
+      FROM materiais_avaliativos
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    if (!materiais.length) {
+      return res.status(404).json({
+        ok: false,
+        message: "Material avaliativo não encontrado",
+      });
+    }
+
+    const material = materiais[0];
+
+    await pool.query(
+      `DELETE FROM respostas_avaliativas WHERE material_id = ?`,
+      [id]
+    );
+
+    await pool.query(
+      `
+      DELETE FROM avaliacoes
+      WHERE treinamento_id = ?
+        AND titulo = ?
+        AND comentario LIKE 'Resultado automático da prova/simulado:%'
+      `,
+      [material.treinamento_id, material.titulo]
+    );
+
+    await pool.query(
+      `DELETE FROM materiais_avaliativos WHERE id = ?`,
+      [id]
+    );
+
+    res.json({
+      ok: true,
+      message: "Material avaliativo e resultados vinculados excluídos com sucesso",
+    });
   } catch (error) {
     res.status(500).json({
       ok: false,
