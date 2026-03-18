@@ -19,6 +19,7 @@ const menuItems = [
   { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "🗺️", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/frequencia-individual", label: "Frequência Individual", icon: "📍", roles: ["coordenador", "supervisor", "instrutor"] },
 ];
 
 function isRouteActive(pathname, href) {
