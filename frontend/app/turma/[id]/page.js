@@ -7,6 +7,20 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   "https://tel-td-portal-production.up.railway.app/api";
 
+function fmtDate(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toLocaleDateString("pt-BR");
+}
+
+function toInputDate(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function ChamadaTurma({ params }) {
   const { id } = params;
 
@@ -17,31 +31,46 @@ export default function ChamadaTurma({ params }) {
   const [salvando, setSalvando] = useState(false);
   const [importando, setImportando] = useState(false);
   const [erro, setErro] = useState("");
+  const [dataChamada, setDataChamada] = useState("");
 
   useEffect(() => {
-    carregar();
+    carregarBase();
   }, []);
 
-  async function carregar() {
+  useEffect(() => {
+    if (dataChamada) {
+      carregarParticipantesPorData(dataChamada);
+    }
+  }, [dataChamada]);
+
+  async function carregarBase() {
     try {
       setErro("");
 
-      const dadosTreinamento = await apiFetch(`/treinamentos/${id}`).catch(
-        (err) => {
-          throw new Error(`Erro ao buscar treinamento: ${err.message}`);
-        }
-      );
-
-      const dadosParticipantes = await apiFetch(
-        `/treinamentos/${id}/participantes`
-      ).catch((err) => {
-        throw new Error(`Erro ao buscar participantes: ${err.message}`);
-      });
-
+      const dadosTreinamento = await apiFetch(`/treinamentos/${id}`);
       setTreinamento(dadosTreinamento || null);
-      setParticipantes(Array.isArray(dadosParticipantes) ? dadosParticipantes : []);
+
+      const dataInicial =
+        dadosTreinamento?.data_inicio ||
+        dadosTreinamento?.data ||
+        new Date().toISOString().slice(0, 10);
+
+      setDataChamada(toInputDate(dataInicial));
     } catch (err) {
       setErro(err.message || "Não foi possível carregar a turma.");
+      setLoading(false);
+    }
+  }
+
+  async function carregarParticipantesPorData(data) {
+    try {
+      const dadosParticipantes = await apiFetch(
+        `/treinamentos/${id}/participantes?data=${encodeURIComponent(data)}`
+      );
+
+      setParticipantes(Array.isArray(dadosParticipantes) ? dadosParticipantes : []);
+    } catch (err) {
+      setErro(err.message || "Erro ao buscar participantes.");
     } finally {
       setLoading(false);
     }
@@ -100,7 +129,7 @@ export default function ChamadaTurma({ params }) {
 
       alert("Participantes importados com sucesso.");
       setArquivo(null);
-      await carregar();
+      await carregarParticipantesPorData(dataChamada);
     } catch (err) {
       setErro(err.message || "Erro ao importar participantes.");
     } finally {
@@ -117,12 +146,13 @@ export default function ChamadaTurma({ params }) {
         method: "POST",
         body: JSON.stringify({
           treinamento_id: id,
+          data_chamada: dataChamada,
           participantes,
         }),
       });
 
-      alert("Chamada salva com sucesso.");
-      await carregar();
+      alert("Chamada diária salva com sucesso.");
+      await carregarParticipantesPorData(dataChamada);
     } catch (err) {
       setErro(err.message || "Não foi possível salvar a chamada.");
     } finally {
@@ -176,12 +206,12 @@ export default function ChamadaTurma({ params }) {
 
       <div style={hero}>
         <div style={heroInfo}>
-          <div style={eyebrow}>Chamada da turma</div>
+          <div style={eyebrow}>Chamada diária da turma</div>
           <h1 style={title}>
             {treinamento?.tema || treinamento?.titulo || "Turma de treinamento"}
           </h1>
           <p style={subtitle}>
-            Importe a lista de participantes via Excel e registre a chamada da turma.
+            Importe os participantes e registre a presença por dia dentro do período da formação.
           </p>
 
           <div style={metaGrid}>
@@ -194,8 +224,10 @@ export default function ChamadaTurma({ params }) {
               <strong>{treinamento?.instrutor || "-"}</strong>
             </div>
             <div style={metaCard}>
-              <span style={metaLabel}>Participantes previstos</span>
-              <strong>{treinamento?.participantes || 0}</strong>
+              <span style={metaLabel}>Período</span>
+              <strong>
+                {fmtDate(treinamento?.data_inicio || treinamento?.data)} até {fmtDate(treinamento?.data_fim || treinamento?.data)}
+              </strong>
             </div>
             <div style={metaCard}>
               <span style={metaLabel}>Carga horária</span>
@@ -207,10 +239,29 @@ export default function ChamadaTurma({ params }) {
 
       <div style={uploadCard}>
         <div>
+          <h2 style={sectionTitle}>Data da chamada</h2>
+          <p style={sectionSubtitle}>
+            Selecione o dia da formação que será controlado nesta chamada.
+          </p>
+        </div>
+
+        <div style={uploadActions}>
+          <input
+            type="date"
+            value={dataChamada}
+            min={toInputDate(treinamento?.data_inicio || treinamento?.data)}
+            max={toInputDate(treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data)}
+            onChange={(e) => setDataChamada(e.target.value)}
+            style={inputDate}
+          />
+        </div>
+      </div>
+
+      <div style={uploadCard}>
+        <div>
           <h2 style={sectionTitle}>Importar participantes</h2>
           <p style={sectionSubtitle}>
-            Use a planilha padrão com as colunas: nome, matricula, cliente, turma,
-            supervisor, operacao e data_admissao.
+            Use a planilha padrão com as colunas: nome, matricula, cliente, turma, supervisor, operacao e data_admissao.
           </p>
         </div>
 
@@ -241,21 +292,19 @@ export default function ChamadaTurma({ params }) {
           <div>
             <h2 style={sectionTitle}>Participantes da turma</h2>
             <p style={sectionSubtitle}>
-              Atualize a presença e salve a chamada ao final.
+              Atualize a presença do dia {fmtDate(dataChamada)} e salve ao final.
             </p>
           </div>
 
           <button style={btnSalvar} onClick={salvarChamada} disabled={salvando}>
-            {salvando ? "Salvando..." : "Salvar chamada"}
+            {salvando ? "Salvando..." : "Salvar chamada do dia"}
           </button>
         </div>
 
         {participantes.length === 0 ? (
           <div style={emptyState}>
             <strong>Nenhum participante importado para esta turma.</strong>
-            <span>
-              Faça a importação do Excel para preencher automaticamente a lista.
-            </span>
+            <span>Faça a importação do Excel para preencher automaticamente a lista.</span>
           </div>
         ) : (
           <div style={tableWrap}>
@@ -265,7 +314,7 @@ export default function ChamadaTurma({ params }) {
                   <th style={th}>Participante</th>
                   <th style={th}>Matrícula</th>
                   <th style={th}>Operação</th>
-                  <th style={th}>Status</th>
+                  <th style={th}>Status do dia</th>
                   <th style={th}>Justificativa</th>
                 </tr>
               </thead>
@@ -281,7 +330,6 @@ export default function ChamadaTurma({ params }) {
                     </td>
 
                     <td style={td}>{p.matricula || "-"}</td>
-
                     <td style={td}>{p.operacao || "-"}</td>
 
                     <td style={td}>
@@ -342,7 +390,7 @@ export default function ChamadaTurma({ params }) {
         {participantes.length > 0 ? (
           <div style={footerActions}>
             <button style={btnSalvar} onClick={salvarChamada} disabled={salvando}>
-              {salvando ? "Salvando..." : "Salvar chamada"}
+              {salvando ? "Salvando..." : "Salvar chamada do dia"}
             </button>
           </div>
         ) : null}
@@ -360,16 +408,8 @@ function Stat({ label, value, color }) {
   );
 }
 
-const page = {
-  minHeight: "100vh",
-  background: "#f8fafc",
-  padding: 24,
-};
-
-const topBar = {
-  marginBottom: 14,
-};
-
+const page = { minHeight: "100vh", background: "#f8fafc", padding: 24 };
+const topBar = { marginBottom: 14 };
 const btnVoltar = {
   background: "#ffffff",
   border: "1px solid #cbd5e1",
@@ -379,7 +419,6 @@ const btnVoltar = {
   cursor: "pointer",
   fontWeight: 700,
 };
-
 const hero = {
   background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
   borderRadius: 22,
@@ -387,12 +426,7 @@ const hero = {
   color: "#fff",
   boxShadow: "0 18px 36px rgba(29,78,216,.18)",
 };
-
-const heroInfo = {
-  display: "grid",
-  gap: 10,
-};
-
+const heroInfo = { display: "grid", gap: 10 };
 const eyebrow = {
   display: "inline-block",
   width: "fit-content",
@@ -404,26 +438,14 @@ const eyebrow = {
   textTransform: "uppercase",
   letterSpacing: ".04em",
 };
-
-const title = {
-  margin: 0,
-  fontSize: 34,
-  lineHeight: 1.05,
-};
-
-const subtitle = {
-  margin: 0,
-  color: "rgba(255,255,255,.84)",
-  lineHeight: 1.6,
-};
-
+const title = { margin: 0, fontSize: 34, lineHeight: 1.05 };
+const subtitle = { margin: 0, color: "rgba(255,255,255,.84)", lineHeight: 1.6 };
 const metaGrid = {
   marginTop: 8,
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 12,
 };
-
 const metaCard = {
   background: "rgba(255,255,255,.10)",
   border: "1px solid rgba(255,255,255,.14)",
@@ -432,14 +454,12 @@ const metaCard = {
   display: "grid",
   gap: 6,
 };
-
 const metaLabel = {
   fontSize: 12,
   textTransform: "uppercase",
   letterSpacing: ".04em",
   color: "rgba(255,255,255,.68)",
 };
-
 const uploadCard = {
   marginTop: 16,
   background: "#fff",
@@ -453,14 +473,7 @@ const uploadCard = {
   alignItems: "center",
   flexWrap: "wrap",
 };
-
-const uploadActions = {
-  display: "flex",
-  gap: 10,
-  alignItems: "center",
-  flexWrap: "wrap",
-};
-
+const uploadActions = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
 const btnImportar = {
   background: "#2563eb",
   color: "#fff",
@@ -470,14 +483,12 @@ const btnImportar = {
   cursor: "pointer",
   fontWeight: 700,
 };
-
 const statsGrid = {
   marginTop: 16,
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
   gap: 12,
 };
-
 const statCard = {
   background: "#fff",
   borderRadius: 16,
@@ -485,19 +496,8 @@ const statCard = {
   border: "1px solid #e2e8f0",
   boxShadow: "0 10px 24px rgba(15,23,42,.05)",
 };
-
-const statLabel = {
-  color: "#64748b",
-  fontSize: 13,
-};
-
-const statValue = {
-  marginTop: 6,
-  fontSize: 32,
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
+const statLabel = { color: "#64748b", fontSize: 13 };
+const statValue = { marginTop: 6, fontSize: 32, fontWeight: 800, color: "#0f172a" };
 const contentCard = {
   marginTop: 16,
   background: "#fff",
@@ -506,7 +506,6 @@ const contentCard = {
   border: "1px solid #e2e8f0",
   boxShadow: "0 12px 28px rgba(15,23,42,.05)",
 };
-
 const tableHeader = {
   display: "flex",
   justifyContent: "space-between",
@@ -514,152 +513,87 @@ const tableHeader = {
   gap: 12,
   marginBottom: 16,
 };
-
-const sectionTitle = {
-  margin: 0,
-  fontSize: 24,
-  color: "#0f172a",
-};
-
-const sectionSubtitle = {
-  margin: "6px 0 0",
-  color: "#64748b",
-};
-
-const tableWrap = {
-  overflowX: "auto",
-};
-
-const table = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
-const th = {
-  textAlign: "left",
-  padding: "14px 12px",
-  borderBottom: "1px solid #e2e8f0",
-  color: "#334155",
-  fontSize: 13,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-};
-
-const tr = {
-  borderBottom: "1px solid #f1f5f9",
-};
-
-const td = {
-  padding: "14px 12px",
-  verticalAlign: "top",
-};
-
-const participantName = {
-  fontWeight: 700,
-  color: "#0f172a",
-};
-
-const participantMeta = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 12,
-};
-
-const statusActions = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const btnStatusBase = {
-  border: 0,
-  padding: "8px 12px",
-  borderRadius: 10,
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const btnPresente = {
-  background: "#dcfce7",
-  color: "#166534",
-};
-
-const btnPresenteActive = {
-  background: "#16a34a",
-  color: "#fff",
-};
-
-const btnAusente = {
-  background: "#fee2e2",
-  color: "#b91c1c",
-};
-
-const btnAusenteActive = {
-  background: "#dc2626",
-  color: "#fff",
-};
-
-const btnJustificado = {
-  background: "#fef3c7",
-  color: "#92400e",
-};
-
-const btnJustificadoActive = {
-  background: "#f59e0b",
-  color: "#fff",
-};
-
-const input = {
-  width: "100%",
-  minWidth: 220,
-  boxSizing: "border-box",
-  padding: 10,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-};
-
+const sectionTitle = { margin: 0, fontSize: 24, color: "#0f172a" };
+const sectionSubtitle = { margin: "6px 0 0", color: "#64748b", lineHeight: 1.5 };
 const btnSalvar = {
-  background: "#2563eb",
+  background: "#16a34a",
   color: "#fff",
   border: 0,
   borderRadius: 10,
   padding: "11px 16px",
   cursor: "pointer",
+  fontWeight: 800,
+};
+const errorBox = {
+  marginTop: 16,
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  borderRadius: 14,
+  padding: 14,
   fontWeight: 700,
 };
-
+const emptyState = {
+  display: "grid",
+  gap: 6,
+  padding: 22,
+  borderRadius: 16,
+  background: "#f8fafc",
+  color: "#475569",
+  textAlign: "center",
+};
+const tableWrap = { overflowX: "auto" };
+const table = { width: "100%", borderCollapse: "collapse" };
+const th = {
+  textAlign: "left",
+  padding: "12px 10px",
+  borderBottom: "1px solid #e2e8f0",
+  color: "#475569",
+  fontSize: 13,
+};
+const tr = { borderBottom: "1px solid #f1f5f9" };
+const td = { padding: "14px 10px", verticalAlign: "top", color: "#0f172a" };
+const participantName = { fontWeight: 800 };
+const participantMeta = { marginTop: 4, color: "#64748b", fontSize: 12 };
+const statusActions = { display: "flex", gap: 8, flexWrap: "wrap" };
+const btnStatusBase = {
+  border: 0,
+  borderRadius: 999,
+  padding: "8px 12px",
+  cursor: "pointer",
+  fontWeight: 700,
+  fontSize: 12,
+};
+const btnPresente = { background: "#ecfdf5", color: "#047857" };
+const btnPresenteActive = { background: "#16a34a", color: "#fff" };
+const btnAusente = { background: "#fef2f2", color: "#b91c1c" };
+const btnAusenteActive = { background: "#dc2626", color: "#fff" };
+const btnJustificado = { background: "#fffbeb", color: "#b45309" };
+const btnJustificadoActive = { background: "#f59e0b", color: "#fff" };
+const input = {
+  width: "100%",
+  minWidth: 180,
+  height: 40,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "0 12px",
+  outline: "none",
+  boxSizing: "border-box",
+};
+const inputDate = {
+  ...input,
+  minWidth: 220,
+};
 const footerActions = {
   marginTop: 18,
   display: "flex",
   justifyContent: "flex-end",
 };
-
-const emptyState = {
-  background: "#f8fafc",
-  border: "1px dashed #cbd5e1",
-  borderRadius: 16,
-  padding: 24,
-  display: "grid",
-  gap: 8,
-  color: "#475569",
-};
-
-const errorBox = {
-  marginTop: 14,
-  background: "#fef2f2",
-  color: "#b91c1c",
-  border: "1px solid #fecaca",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
-};
-
 const loadingWrap = {
   minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
+  display: "grid",
+  placeItems: "center",
   background: "#f8fafc",
-  color: "#334155",
+  color: "#0f172a",
   fontWeight: 700,
 };
