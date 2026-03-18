@@ -149,6 +149,8 @@ app.use(
       "status",
       "descricao",
       "data",
+      "data_inicio",
+      "data_fim",
       "turma",
       "supervisor",
     ],
@@ -184,6 +186,8 @@ app.get(
           status,
           descricao,
           data,
+          data_inicio,
+          data_fim,
           turma,
           supervisor
         FROM treinamentos
@@ -239,6 +243,7 @@ app.use(
     table: "presencas",
     fields: [
       "treinamento_id",
+      "data_chamada",
       "treinando_nome",
       "presente",
       "status",
