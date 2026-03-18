@@ -7,18 +7,18 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   "https://tel-td-portal-production.up.railway.app/api";
 
-function fmtDate(value) {
+function formatDate(value) {
   if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
-  return d.toLocaleDateString("pt-BR");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("pt-BR");
 }
 
 function toInputDate(value) {
   if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return date.toISOString().slice(0, 10);
 }
 
 export default function ChamadaTurma({ params }) {
@@ -32,6 +32,7 @@ export default function ChamadaTurma({ params }) {
   const [importando, setImportando] = useState(false);
   const [erro, setErro] = useState("");
   const [dataChamada, setDataChamada] = useState("");
+  const [selecionados, setSelecionados] = useState({});
 
   useEffect(() => {
     carregarBase();
@@ -47,7 +48,12 @@ export default function ChamadaTurma({ params }) {
     try {
       setErro("");
 
-      const dadosTreinamento = await apiFetch(`/treinamentos/${id}`);
+      const dadosTreinamento = await apiFetch(`/treinamentos/${id}`).catch(
+        (err) => {
+          throw new Error(`Erro ao buscar treinamento: ${err.message}`);
+        }
+      );
+
       setTreinamento(dadosTreinamento || null);
 
       const dataInicial =
@@ -66,9 +72,13 @@ export default function ChamadaTurma({ params }) {
     try {
       const dadosParticipantes = await apiFetch(
         `/treinamentos/${id}/participantes?data=${encodeURIComponent(data)}`
-      );
+      ).catch((err) => {
+        throw new Error(`Erro ao buscar participantes: ${err.message}`);
+      });
 
-      setParticipantes(Array.isArray(dadosParticipantes) ? dadosParticipantes : []);
+      const lista = Array.isArray(dadosParticipantes) ? dadosParticipantes : [];
+      setParticipantes(lista);
+      setSelecionados({});
     } catch (err) {
       setErro(err.message || "Erro ao buscar participantes.");
     } finally {
@@ -85,6 +95,39 @@ export default function ChamadaTurma({ params }) {
   function alterarJustificativa(index, valor) {
     const copia = [...participantes];
     copia[index].justificativa = valor;
+    setParticipantes(copia);
+  }
+
+  function toggleSelecionado(participanteId) {
+    setSelecionados((prev) => ({
+      ...prev,
+      [participanteId]: !prev[participanteId],
+    }));
+  }
+
+  function selecionarTodos() {
+    const mapa = {};
+    participantes.forEach((p, index) => {
+      const chave = p.id || `idx-${index}`;
+      mapa[chave] = true;
+    });
+    setSelecionados(mapa);
+  }
+
+  function limparSelecao() {
+    setSelecionados({});
+  }
+
+  function aplicarStatusEmMassa(status) {
+    const copia = [...participantes];
+
+    copia.forEach((p, index) => {
+      const chave = p.id || `idx-${index}`;
+      if (selecionados[chave]) {
+        copia[index].status_presenca = status;
+      }
+    });
+
     setParticipantes(copia);
   }
 
@@ -151,7 +194,7 @@ export default function ChamadaTurma({ params }) {
         }),
       });
 
-      alert("Chamada diária salva com sucesso.");
+      alert("Chamada do dia salva com sucesso.");
       await carregarParticipantesPorData(dataChamada);
     } catch (err) {
       setErro(err.message || "Não foi possível salvar a chamada.");
@@ -179,14 +222,17 @@ export default function ChamadaTurma({ params }) {
         String(p.status_presenca || "").toLowerCase() === "pendente"
     ).length;
 
+    const totalSelecionados = Object.values(selecionados).filter(Boolean).length;
+
     return {
       total: participantes.length,
       presentes,
       ausentes,
       justificados,
       pendentes,
+      totalSelecionados,
     };
-  }, [participantes]);
+  }, [participantes, selecionados]);
 
   function voltar() {
     window.location.href = "/treinamentos";
@@ -226,7 +272,12 @@ export default function ChamadaTurma({ params }) {
             <div style={metaCard}>
               <span style={metaLabel}>Período</span>
               <strong>
-                {fmtDate(treinamento?.data_inicio || treinamento?.data)} até {fmtDate(treinamento?.data_fim || treinamento?.data)}
+                {formatDate(treinamento?.data_inicio || treinamento?.data)} até{" "}
+                {formatDate(
+                  treinamento?.data_fim ||
+                    treinamento?.data_inicio ||
+                    treinamento?.data
+                )}
               </strong>
             </div>
             <div style={metaCard}>
@@ -250,7 +301,11 @@ export default function ChamadaTurma({ params }) {
             type="date"
             value={dataChamada}
             min={toInputDate(treinamento?.data_inicio || treinamento?.data)}
-            max={toInputDate(treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data)}
+            max={toInputDate(
+              treinamento?.data_fim ||
+                treinamento?.data_inicio ||
+                treinamento?.data
+            )}
             onChange={(e) => setDataChamada(e.target.value)}
             style={inputDate}
           />
@@ -261,7 +316,8 @@ export default function ChamadaTurma({ params }) {
         <div>
           <h2 style={sectionTitle}>Importar participantes</h2>
           <p style={sectionSubtitle}>
-            Use a planilha padrão com as colunas: nome, matricula, cliente, turma, supervisor, operacao e data_admissao.
+            Use a planilha padrão com as colunas: nome, matricula, cliente, turma,
+            supervisor, operacao e data_admissao.
           </p>
         </div>
 
@@ -292,7 +348,7 @@ export default function ChamadaTurma({ params }) {
           <div>
             <h2 style={sectionTitle}>Participantes da turma</h2>
             <p style={sectionSubtitle}>
-              Atualize a presença do dia {fmtDate(dataChamada)} e salve ao final.
+              Atualize a presença do dia {formatDate(dataChamada)} e salve ao final.
             </p>
           </div>
 
@@ -301,16 +357,71 @@ export default function ChamadaTurma({ params }) {
           </button>
         </div>
 
+        {participantes.length > 0 ? (
+          <div style={bulkCard}>
+            <div style={bulkHeader}>
+              <div>
+                <div style={bulkTitle}>Ação em massa</div>
+                <div style={bulkSub}>
+                  {resumo.totalSelecionados} participante(s) selecionado(s)
+                </div>
+              </div>
+
+              <div style={bulkActions}>
+                <button style={bulkSecondary} onClick={selecionarTodos}>
+                  Selecionar todos
+                </button>
+                <button style={bulkSecondary} onClick={limparSelecao}>
+                  Limpar seleção
+                </button>
+              </div>
+            </div>
+
+            <div style={bulkStatusActions}>
+              <button
+                style={{ ...btnStatusBase, ...btnPresenteActive }}
+                onClick={() => aplicarStatusEmMassa("presente")}
+              >
+                Marcar selecionados como presentes
+              </button>
+
+              <button
+                style={{ ...btnStatusBase, ...btnAusenteActive }}
+                onClick={() => aplicarStatusEmMassa("ausente")}
+              >
+                Marcar selecionados como ausentes
+              </button>
+
+              <button
+                style={{ ...btnStatusBase, ...btnJustificadoActive }}
+                onClick={() => aplicarStatusEmMassa("justificado")}
+              >
+                Marcar selecionados como justificados
+              </button>
+
+              <button
+                style={{ ...btnStatusBase, ...btnPendenteActive }}
+                onClick={() => aplicarStatusEmMassa("pendente")}
+              >
+                Marcar selecionados como pendentes
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {participantes.length === 0 ? (
           <div style={emptyState}>
             <strong>Nenhum participante importado para esta turma.</strong>
-            <span>Faça a importação do Excel para preencher automaticamente a lista.</span>
+            <span>
+              Faça a importação do Excel para preencher automaticamente a lista.
+            </span>
           </div>
         ) : (
           <div style={tableWrap}>
             <table style={table}>
               <thead>
                 <tr>
+                  <th style={thCheck}></th>
                   <th style={th}>Participante</th>
                   <th style={th}>Matrícula</th>
                   <th style={th}>Operação</th>
@@ -320,68 +431,97 @@ export default function ChamadaTurma({ params }) {
               </thead>
 
               <tbody>
-                {participantes.map((p, i) => (
-                  <tr key={p.id || i} style={tr}>
-                    <td style={td}>
-                      <div style={participantName}>{p.nome}</div>
-                      <div style={participantMeta}>
-                        {p.cliente || "-"} • {p.supervisor || "-"}
-                      </div>
-                    </td>
+                {participantes.map((p, i) => {
+                  const chave = p.id || `idx-${i}`;
+                  const marcado = !!selecionados[chave];
 
-                    <td style={td}>{p.matricula || "-"}</td>
-                    <td style={td}>{p.operacao || "-"}</td>
+                  return (
+                    <tr key={chave} style={tr}>
+                      <td style={tdCheck}>
+                        <input
+                          type="checkbox"
+                          checked={marcado}
+                          onChange={() => toggleSelecionado(chave)}
+                        />
+                      </td>
 
-                    <td style={td}>
-                      <div style={statusActions}>
-                        <button
-                          onClick={() => alterarStatus(i, "presente")}
-                          style={{
-                            ...btnStatusBase,
-                            ...(String(p.status_presenca || "").toLowerCase() === "presente"
-                              ? btnPresenteActive
-                              : btnPresente),
-                          }}
-                        >
-                          Presente
-                        </button>
+                      <td style={td}>
+                        <div style={participantName}>{p.nome}</div>
+                        <div style={participantMeta}>
+                          {p.cliente || "-"} • {p.supervisor || "-"}
+                        </div>
+                      </td>
 
-                        <button
-                          onClick={() => alterarStatus(i, "ausente")}
-                          style={{
-                            ...btnStatusBase,
-                            ...(String(p.status_presenca || "").toLowerCase() === "ausente"
-                              ? btnAusenteActive
-                              : btnAusente),
-                          }}
-                        >
-                          Ausente
-                        </button>
+                      <td style={td}>{p.matricula || "-"}</td>
+                      <td style={td}>{p.operacao || "-"}</td>
 
-                        <button
-                          onClick={() => alterarStatus(i, "justificado")}
-                          style={{
-                            ...btnStatusBase,
-                            ...(String(p.status_presenca || "").toLowerCase() === "justificado"
-                              ? btnJustificadoActive
-                              : btnJustificado),
-                          }}
-                        >
-                          Justificado
-                        </button>
-                      </div>
-                    </td>
+                      <td style={td}>
+                        <div style={statusActions}>
+                          <button
+                            onClick={() => alterarStatus(i, "presente")}
+                            style={{
+                              ...btnStatusBase,
+                              ...(String(p.status_presenca || "").toLowerCase() ===
+                              "presente"
+                                ? btnPresenteActive
+                                : btnPresente),
+                            }}
+                          >
+                            Presente
+                          </button>
 
-                    <td style={td}>
-                      <input
-                        value={p.justificativa || ""}
-                        onChange={(e) => alterarJustificativa(i, e.target.value)}
-                        placeholder="Informar justificativa"
-                        style={input}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            onClick={() => alterarStatus(i, "ausente")}
+                            style={{
+                              ...btnStatusBase,
+                              ...(String(p.status_presenca || "").toLowerCase() ===
+                              "ausente"
+                                ? btnAusenteActive
+                                : btnAusente),
+                            }}
+                          >
+                            Ausente
+                          </button>
+
+                          <button
+                            onClick={() => alterarStatus(i, "justificado")}
+                            style={{
+                              ...btnStatusBase,
+                              ...(String(p.status_presenca || "").toLowerCase() ===
+                              "justificado"
+                                ? btnJustificadoActive
+                                : btnJustificado),
+                            }}
+                          >
+                            Justificado
+                          </button>
+
+                          <button
+                            onClick={() => alterarStatus(i, "pendente")}
+                            style={{
+                              ...btnStatusBase,
+                              ...(String(p.status_presenca || "").toLowerCase() ===
+                              "pendente"
+                                ? btnPendenteActive
+                                : btnPendente),
+                            }}
+                          >
+                            Pendente
+                          </button>
+                        </div>
+                      </td>
+
+                      <td style={td}>
+                        <input
+                          value={p.justificativa || ""}
+                          onChange={(e) => alterarJustificativa(i, e.target.value)}
+                          placeholder="Informar justificativa"
+                          style={input}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -408,8 +548,16 @@ function Stat({ label, value, color }) {
   );
 }
 
-const page = { minHeight: "100vh", background: "#f8fafc", padding: 24 };
-const topBar = { marginBottom: 14 };
+const page = {
+  minHeight: "100vh",
+  background: "#f8fafc",
+  padding: 24,
+};
+
+const topBar = {
+  marginBottom: 14,
+};
+
 const btnVoltar = {
   background: "#ffffff",
   border: "1px solid #cbd5e1",
@@ -419,6 +567,7 @@ const btnVoltar = {
   cursor: "pointer",
   fontWeight: 700,
 };
+
 const hero = {
   background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
   borderRadius: 22,
@@ -426,7 +575,12 @@ const hero = {
   color: "#fff",
   boxShadow: "0 18px 36px rgba(29,78,216,.18)",
 };
-const heroInfo = { display: "grid", gap: 10 };
+
+const heroInfo = {
+  display: "grid",
+  gap: 10,
+};
+
 const eyebrow = {
   display: "inline-block",
   width: "fit-content",
@@ -438,14 +592,26 @@ const eyebrow = {
   textTransform: "uppercase",
   letterSpacing: ".04em",
 };
-const title = { margin: 0, fontSize: 34, lineHeight: 1.05 };
-const subtitle = { margin: 0, color: "rgba(255,255,255,.84)", lineHeight: 1.6 };
+
+const title = {
+  margin: 0,
+  fontSize: 34,
+  lineHeight: 1.05,
+};
+
+const subtitle = {
+  margin: 0,
+  color: "rgba(255,255,255,.84)",
+  lineHeight: 1.6,
+};
+
 const metaGrid = {
   marginTop: 8,
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 12,
 };
+
 const metaCard = {
   background: "rgba(255,255,255,.10)",
   border: "1px solid rgba(255,255,255,.14)",
@@ -454,12 +620,14 @@ const metaCard = {
   display: "grid",
   gap: 6,
 };
+
 const metaLabel = {
   fontSize: 12,
   textTransform: "uppercase",
   letterSpacing: ".04em",
   color: "rgba(255,255,255,.68)",
 };
+
 const uploadCard = {
   marginTop: 16,
   background: "#fff",
@@ -473,7 +641,14 @@ const uploadCard = {
   alignItems: "center",
   flexWrap: "wrap",
 };
-const uploadActions = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
+
+const uploadActions = {
+  display: "flex",
+  gap: 10,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
 const btnImportar = {
   background: "#2563eb",
   color: "#fff",
@@ -483,12 +658,14 @@ const btnImportar = {
   cursor: "pointer",
   fontWeight: 700,
 };
+
 const statsGrid = {
   marginTop: 16,
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
   gap: 12,
 };
+
 const statCard = {
   background: "#fff",
   borderRadius: 16,
@@ -496,8 +673,19 @@ const statCard = {
   border: "1px solid #e2e8f0",
   boxShadow: "0 10px 24px rgba(15,23,42,.05)",
 };
-const statLabel = { color: "#64748b", fontSize: 13 };
-const statValue = { marginTop: 6, fontSize: 32, fontWeight: 800, color: "#0f172a" };
+
+const statLabel = {
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const statValue = {
+  marginTop: 6,
+  fontSize: 32,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
 const contentCard = {
   marginTop: 16,
   background: "#fff",
@@ -506,6 +694,7 @@ const contentCard = {
   border: "1px solid #e2e8f0",
   boxShadow: "0 12px 28px rgba(15,23,42,.05)",
 };
+
 const tableHeader = {
   display: "flex",
   justifyContent: "space-between",
@@ -513,87 +702,229 @@ const tableHeader = {
   gap: 12,
   marginBottom: 16,
 };
-const sectionTitle = { margin: 0, fontSize: 24, color: "#0f172a" };
-const sectionSubtitle = { margin: "6px 0 0", color: "#64748b", lineHeight: 1.5 };
-const btnSalvar = {
+
+const sectionTitle = {
+  margin: 0,
+  fontSize: 24,
+  color: "#0f172a",
+};
+
+const sectionSubtitle = {
+  margin: "6px 0 0",
+  color: "#64748b",
+  lineHeight: 1.5,
+};
+
+const bulkCard = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 14,
+  marginBottom: 16,
+  display: "grid",
+  gap: 12,
+};
+
+const bulkHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const bulkTitle = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const bulkSub = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const bulkActions = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const bulkSecondary = {
+  border: "1px solid #cbd5e1",
+  background: "#fff",
+  color: "#334155",
+  borderRadius: 10,
+  padding: "9px 12px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const bulkStatusActions = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const tableWrap = {
+  overflowX: "auto",
+};
+
+const table = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const th = {
+  textAlign: "left",
+  padding: "14px 12px",
+  borderBottom: "1px solid #e2e8f0",
+  color: "#334155",
+  fontSize: 13,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+};
+
+const thCheck = {
+  ...th,
+  width: 40,
+};
+
+const tr = {
+  borderBottom: "1px solid #f1f5f9",
+};
+
+const td = {
+  padding: "14px 12px",
+  verticalAlign: "top",
+};
+
+const tdCheck = {
+  ...td,
+  width: 40,
+};
+
+const participantName = {
+  fontWeight: 700,
+  color: "#0f172a",
+};
+
+const participantMeta = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 12,
+};
+
+const statusActions = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const btnStatusBase = {
+  border: 0,
+  padding: "8px 12px",
+  borderRadius: 10,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const btnPresente = {
+  background: "#dcfce7",
+  color: "#166534",
+};
+
+const btnPresenteActive = {
   background: "#16a34a",
+  color: "#fff",
+};
+
+const btnAusente = {
+  background: "#fee2e2",
+  color: "#b91c1c",
+};
+
+const btnAusenteActive = {
+  background: "#dc2626",
+  color: "#fff",
+};
+
+const btnJustificado = {
+  background: "#fef3c7",
+  color: "#92400e",
+};
+
+const btnJustificadoActive = {
+  background: "#f59e0b",
+  color: "#fff",
+};
+
+const btnPendente = {
+  background: "#e2e8f0",
+  color: "#475569",
+};
+
+const btnPendenteActive = {
+  background: "#64748b",
+  color: "#fff",
+};
+
+const input = {
+  width: "100%",
+  minWidth: 220,
+  boxSizing: "border-box",
+  padding: 10,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+};
+
+const inputDate = {
+  ...input,
+  minWidth: 220,
+};
+
+const btnSalvar = {
+  background: "#2563eb",
   color: "#fff",
   border: 0,
   borderRadius: 10,
   padding: "11px 16px",
   cursor: "pointer",
-  fontWeight: 800,
-};
-const errorBox = {
-  marginTop: 16,
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
-  borderRadius: 14,
-  padding: 14,
   fontWeight: 700,
 };
-const emptyState = {
-  display: "grid",
-  gap: 6,
-  padding: 22,
-  borderRadius: 16,
-  background: "#f8fafc",
-  color: "#475569",
-  textAlign: "center",
-};
-const tableWrap = { overflowX: "auto" };
-const table = { width: "100%", borderCollapse: "collapse" };
-const th = {
-  textAlign: "left",
-  padding: "12px 10px",
-  borderBottom: "1px solid #e2e8f0",
-  color: "#475569",
-  fontSize: 13,
-};
-const tr = { borderBottom: "1px solid #f1f5f9" };
-const td = { padding: "14px 10px", verticalAlign: "top", color: "#0f172a" };
-const participantName = { fontWeight: 800 };
-const participantMeta = { marginTop: 4, color: "#64748b", fontSize: 12 };
-const statusActions = { display: "flex", gap: 8, flexWrap: "wrap" };
-const btnStatusBase = {
-  border: 0,
-  borderRadius: 999,
-  padding: "8px 12px",
-  cursor: "pointer",
-  fontWeight: 700,
-  fontSize: 12,
-};
-const btnPresente = { background: "#ecfdf5", color: "#047857" };
-const btnPresenteActive = { background: "#16a34a", color: "#fff" };
-const btnAusente = { background: "#fef2f2", color: "#b91c1c" };
-const btnAusenteActive = { background: "#dc2626", color: "#fff" };
-const btnJustificado = { background: "#fffbeb", color: "#b45309" };
-const btnJustificadoActive = { background: "#f59e0b", color: "#fff" };
-const input = {
-  width: "100%",
-  minWidth: 180,
-  height: 40,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  outline: "none",
-  boxSizing: "border-box",
-};
-const inputDate = {
-  ...input,
-  minWidth: 220,
-};
+
 const footerActions = {
   marginTop: 18,
   display: "flex",
   justifyContent: "flex-end",
 };
+
+const emptyState = {
+  background: "#f8fafc",
+  border: "1px dashed #cbd5e1",
+  borderRadius: 16,
+  padding: 24,
+  display: "grid",
+  gap: 8,
+  color: "#475569",
+};
+
+const errorBox = {
+  marginTop: 14,
+  background: "#fef2f2",
+  color: "#b91c1c",
+  border: "1px solid #fecaca",
+  borderRadius: 14,
+  padding: 12,
+  fontWeight: 700,
+};
+
 const loadingWrap = {
   minHeight: "100vh",
-  display: "grid",
-  placeItems: "center",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
   background: "#f8fafc",
-  color: "#0f172a",
+  color: "#334155",
   fontWeight: 700,
 };
