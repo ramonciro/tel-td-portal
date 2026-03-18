@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -59,34 +58,22 @@ function acaoRecomendada(item) {
   return "Aplicar reforço";
 }
 
-function novaQuestao() {
-  return {
-    enunciado: "",
-    alternativa_a: "",
-    alternativa_b: "",
-    alternativa_c: "",
-    alternativa_d: "",
-    alternativa_correta: "A",
-    peso: 1,
-  };
-}
-
 export default function AvaliacoesPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [avaliacoes, setAvaliacoes] = useState([]);
   const [participantesMap, setParticipantesMap] = useState({});
   const [materiais, setMateriais] = useState([]);
+
   const [materialForm, setMaterialForm] = useState({
+    treinamento_id: "",
     titulo: "",
-    cliente: "",
     tipo: "prova",
-    tema: "",
+    link_arquivo: "",
     descricao: "",
-    instrucoes: "",
-    status: "rascunho",
-    tempo_minutos: "",
+    nota_maxima: "",
+    data_aplicacao: "",
   });
-  const [questoes, setQuestoes] = useState([novaQuestao()]);
+
   const [editingMaterialId, setEditingMaterialId] = useState(null);
   const [materialErro, setMaterialErro] = useState("");
   const [materialSucesso, setMaterialSucesso] = useState("");
@@ -140,14 +127,12 @@ export default function AvaliacoesPage() {
   }, [treinamentos]);
 
   const materialOptions = useMemo(() => {
-    return materiais
-      .filter((item) => String(item.status || "").toLowerCase() !== "inativo")
-      .map((item) => ({
-        value: item.titulo,
-        label: `${item.titulo} • ${item.tipo || "material"}${
-          item.cliente ? ` • ${item.cliente}` : ""
-        }`,
-      }));
+    return materiais.map((item) => ({
+      value: item.titulo,
+      label: `${item.titulo} • ${item.tipo || "material"}${
+        item.nota_maxima ? ` • nota máx. ${item.nota_maxima}` : ""
+      }`,
+    }));
   }, [materiais]);
 
   const participanteOptionsPorTreinamento = useMemo(() => {
@@ -246,7 +231,6 @@ export default function AvaliacoesPage() {
 
     const provas = materiais.filter((m) => String(m.tipo).toLowerCase() === "prova").length;
     const simulados = materiais.filter((m) => String(m.tipo).toLowerCase() === "simulado").length;
-    const materiaisAtivos = materiais.filter((m) => String(m.status).toLowerCase() === "ativo").length;
 
     const porInstrutorMap = {};
     const porClienteMap = {};
@@ -314,7 +298,7 @@ export default function AvaliacoesPage() {
       reforco,
       provas,
       simulados,
-      materiaisAtivos,
+      materiaisAtivos: materiais.length,
       porCliente,
       rankingInstrutores,
     };
@@ -376,38 +360,19 @@ export default function AvaliacoesPage() {
     }));
   }
 
-  function updateQuestao(index, field, value) {
-    setQuestoes((prev) =>
-      prev.map((q, i) => (i === index ? { ...q, [field]: value } : q))
-    );
-  }
-
-  function addQuestao() {
-    setQuestoes((prev) => [...prev, novaQuestao()]);
-  }
-
-  function removeQuestao(index) {
-    setQuestoes((prev) => {
-      if (prev.length === 1) return prev;
-      return prev.filter((_, i) => i !== index);
-    });
-  }
-
   function limparMaterialForm() {
     setEditingMaterialId(null);
     setMaterialErro("");
     setMaterialSucesso("");
     setMaterialForm({
+      treinamento_id: "",
       titulo: "",
-      cliente: "",
       tipo: "prova",
-      tema: "",
+      link_arquivo: "",
       descricao: "",
-      instrucoes: "",
-      status: "rascunho",
-      tempo_minutos: "",
+      nota_maxima: "",
+      data_aplicacao: "",
     });
-    setQuestoes([novaQuestao()]);
   }
 
   function editarMaterial(item) {
@@ -415,23 +380,14 @@ export default function AvaliacoesPage() {
     setMaterialErro("");
     setMaterialSucesso("");
     setMaterialForm({
+      treinamento_id: item.treinamento_id || "",
       titulo: item.titulo || "",
-      cliente: item.cliente || "",
       tipo: item.tipo || "prova",
-      tema: item.tema || "",
+      link_arquivo: item.link_arquivo || "",
       descricao: item.descricao || "",
-      instrucoes: item.instrucoes || "",
-      status: item.status || "rascunho",
-      tempo_minutos: item.tempo_minutos || "",
+      nota_maxima: item.nota_maxima || "",
+      data_aplicacao: item.data_aplicacao ? String(item.data_aplicacao).slice(0, 10) : "",
     });
-
-    try {
-      const parsed = item.questoes_json ? JSON.parse(item.questoes_json) : [novaQuestao()];
-      setQuestoes(Array.isArray(parsed) && parsed.length ? parsed : [novaQuestao()]);
-    } catch {
-      setQuestoes([novaQuestao()]);
-    }
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -440,25 +396,14 @@ export default function AvaliacoesPage() {
       setMaterialErro("");
       setMaterialSucesso("");
 
-      if (!materialForm.titulo || !materialForm.tipo) {
-        setMaterialErro("Preencha pelo menos título e tipo do material.");
+      if (!materialForm.treinamento_id || !materialForm.titulo || !materialForm.tipo) {
+        setMaterialErro("Preencha turma, título e tipo do material.");
         return;
       }
 
-      const questoesValidas = questoes.filter(
-        (q) =>
-          q.enunciado &&
-          q.alternativa_a &&
-          q.alternativa_b &&
-          q.alternativa_c &&
-          q.alternativa_d &&
-          q.alternativa_correta
-      );
-
       const payload = {
         ...materialForm,
-        tempo_minutos: materialForm.tempo_minutos || null,
-        questoes_json: JSON.stringify(questoesValidas),
+        nota_maxima: materialForm.nota_maxima || 0,
       };
 
       const url = editingMaterialId
@@ -515,7 +460,7 @@ export default function AvaliacoesPage() {
   return (
     <CrudPageV2
       title="Gestão de Avaliações"
-      subtitle="Resultados por treinando, banco de provas e simulados e aplicação operacional."
+      subtitle="Resultados por treinando, provas e simulados em formato operacional."
       endpoint="/avaliacoes"
       fields={fields}
       columns={columns}
@@ -570,7 +515,7 @@ export default function AvaliacoesPage() {
               accent="#b91c1c"
             />
             <StatCard
-              title="Materiais ativos"
+              title="Materiais"
               value={fmt(kpis.materiaisAtivos)}
               subtitle={`${fmt(kpis.provas)} prova(s) • ${fmt(kpis.simulados)} simulado(s)`}
               accent="#0f766e"
@@ -627,7 +572,7 @@ export default function AvaliacoesPage() {
 
           <SectionCard
             title="Banco de provas e simulados"
-            subtitle="Crie materiais avaliativos pelo site e use o título deles no lançamento dos resultados."
+            subtitle="Cadastre materiais avaliativos por turma com link/arquivo, tipo e nota máxima."
           >
             {materialErro ? <div style={errorBoxInline}>{materialErro}</div> : null}
             {materialSucesso ? <div style={successBoxInline}>{materialSucesso}</div> : null}
@@ -647,22 +592,28 @@ export default function AvaliacoesPage() {
 
                 <div style={formGridMaterial}>
                   <div style={fieldWrap}>
+                    <label style={label}>Turma</label>
+                    <select
+                      style={input}
+                      value={materialForm.treinamento_id}
+                      onChange={(e) => handleMaterialField("treinamento_id", e.target.value)}
+                    >
+                      <option value="">Selecione a turma</option>
+                      {treinamentoOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={fieldWrap}>
                     <label style={label}>Título</label>
                     <input
                       style={input}
                       value={materialForm.titulo}
                       onChange={(e) => handleMaterialField("titulo", e.target.value)}
-                      placeholder="Ex.: Simulado Mercantil - Atendimento"
-                    />
-                  </div>
-
-                  <div style={fieldWrap}>
-                    <label style={label}>Cliente</label>
-                    <input
-                      style={input}
-                      value={materialForm.cliente}
-                      onChange={(e) => handleMaterialField("cliente", e.target.value)}
-                      placeholder="Cliente vinculado"
+                      placeholder="Ex.: Simulado Mercantil"
                     />
                   </div>
 
@@ -679,36 +630,35 @@ export default function AvaliacoesPage() {
                   </div>
 
                   <div style={fieldWrap}>
-                    <label style={label}>Status</label>
-                    <select
-                      style={input}
-                      value={materialForm.status}
-                      onChange={(e) => handleMaterialField("status", e.target.value)}
-                    >
-                      <option value="rascunho">Rascunho</option>
-                      <option value="ativo">Ativo</option>
-                      <option value="inativo">Inativo</option>
-                    </select>
-                  </div>
-
-                  <div style={fieldWrap}>
-                    <label style={label}>Tema</label>
+                    <label style={label}>Nota máxima</label>
                     <input
                       style={input}
-                      value={materialForm.tema}
-                      onChange={(e) => handleMaterialField("tema", e.target.value)}
-                      placeholder="Tema principal"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={materialForm.nota_maxima}
+                      onChange={(e) => handleMaterialField("nota_maxima", e.target.value)}
+                      placeholder="Ex.: 10"
                     />
                   </div>
 
                   <div style={fieldWrap}>
-                    <label style={label}>Tempo (min)</label>
+                    <label style={label}>Data de aplicação</label>
                     <input
                       style={input}
-                      type="number"
-                      value={materialForm.tempo_minutos}
-                      onChange={(e) => handleMaterialField("tempo_minutos", e.target.value)}
-                      placeholder="Tempo sugerido"
+                      type="date"
+                      value={materialForm.data_aplicacao}
+                      onChange={(e) => handleMaterialField("data_aplicacao", e.target.value)}
+                    />
+                  </div>
+
+                  <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
+                    <label style={label}>Link do arquivo</label>
+                    <input
+                      style={input}
+                      value={materialForm.link_arquivo}
+                      onChange={(e) => handleMaterialField("link_arquivo", e.target.value)}
+                      placeholder="Link do formulário, PDF ou arquivo"
                     />
                   </div>
 
@@ -716,123 +666,12 @@ export default function AvaliacoesPage() {
                     <label style={label}>Descrição</label>
                     <textarea
                       style={textarea}
-                      rows={2}
+                      rows={3}
                       value={materialForm.descricao}
                       onChange={(e) => handleMaterialField("descricao", e.target.value)}
-                      placeholder="Objetivo do material"
+                      placeholder="Orientações ou descrição do material"
                     />
                   </div>
-
-                  <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
-                    <label style={label}>Instruções</label>
-                    <textarea
-                      style={textarea}
-                      rows={3}
-                      value={materialForm.instrucoes}
-                      onChange={(e) => handleMaterialField("instrucoes", e.target.value)}
-                      placeholder="Orientações para aplicação"
-                    />
-                  </div>
-                </div>
-
-                <div style={questionsHeader}>
-                  <h4 style={{ margin: 0 }}>Questões</h4>
-                  <button style={btnSecondary} onClick={addQuestao}>
-                    Adicionar questão
-                  </button>
-                </div>
-
-                <div style={questionsGrid}>
-                  {questoes.map((questao, index) => (
-                    <div key={index} style={questionCard}>
-                      <div style={questionCardHeader}>
-                        <strong>Questão {index + 1}</strong>
-                        {questoes.length > 1 ? (
-                          <button
-                            style={btnDangerGhost}
-                            onClick={() => removeQuestao(index)}
-                          >
-                            Remover
-                          </button>
-                        ) : null}
-                      </div>
-
-                      <div style={{ ...fieldWrap, marginTop: 10 }}>
-                        <label style={label}>Enunciado</label>
-                        <textarea
-                          style={textarea}
-                          rows={2}
-                          value={questao.enunciado}
-                          onChange={(e) => updateQuestao(index, "enunciado", e.target.value)}
-                          placeholder="Digite a pergunta"
-                        />
-                      </div>
-
-                      <div style={formGridMaterial}>
-                        <div style={fieldWrap}>
-                          <label style={label}>Alternativa A</label>
-                          <input
-                            style={input}
-                            value={questao.alternativa_a}
-                            onChange={(e) => updateQuestao(index, "alternativa_a", e.target.value)}
-                          />
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Alternativa B</label>
-                          <input
-                            style={input}
-                            value={questao.alternativa_b}
-                            onChange={(e) => updateQuestao(index, "alternativa_b", e.target.value)}
-                          />
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Alternativa C</label>
-                          <input
-                            style={input}
-                            value={questao.alternativa_c}
-                            onChange={(e) => updateQuestao(index, "alternativa_c", e.target.value)}
-                          />
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Alternativa D</label>
-                          <input
-                            style={input}
-                            value={questao.alternativa_d}
-                            onChange={(e) => updateQuestao(index, "alternativa_d", e.target.value)}
-                          />
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Correta</label>
-                          <select
-                            style={input}
-                            value={questao.alternativa_correta}
-                            onChange={(e) => updateQuestao(index, "alternativa_correta", e.target.value)}
-                          >
-                            <option value="A">A</option>
-                            <option value="B">B</option>
-                            <option value="C">C</option>
-                            <option value="D">D</option>
-                          </select>
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Peso</label>
-                          <input
-                            style={input}
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={questao.peso}
-                            onChange={(e) => updateQuestao(index, "peso", e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
                 </div>
 
                 <div style={actionsRowInline}>
@@ -850,45 +689,52 @@ export default function AvaliacoesPage() {
 
                 <div style={listGrid}>
                   {materiais.length ? (
-                    materiais.map((item) => {
-                      let totalQuestoes = 0;
-
-                      try {
-                        const parsed = item.questoes_json ? JSON.parse(item.questoes_json) : [];
-                        totalQuestoes = Array.isArray(parsed) ? parsed.length : 0;
-                      } catch {
-                        totalQuestoes = 0;
-                      }
-
-                      return (
-                        <div key={item.id} style={listItem}>
-                          <div style={itemHeader}>
-                            <div style={itemTitle}>{item.titulo}</div>
-                            <div style={miniTagBlue}>{item.tipo || "material"}</div>
-                          </div>
-
-                          <div style={itemMeta}>
-                            {(item.cliente || "Sem cliente") +
-                              " • " +
-                              (item.tema || "Sem tema")}
-                          </div>
-
-                          <div style={itemSubMeta}>
-                            {totalQuestoes} questão(ões) • {item.status || "sem status"} •{" "}
-                            {item.tempo_minutos ? `${item.tempo_minutos} min` : "tempo livre"}
-                          </div>
-
-                          <div style={materialCardActions}>
-                            <button style={btnSmallEdit} onClick={() => editarMaterial(item)}>
-                              Editar
-                            </button>
-                            <button style={btnSmallDelete} onClick={() => excluirMaterial(item.id)}>
-                              Excluir
-                            </button>
-                          </div>
+                    materiais.map((item) => (
+                      <div key={item.id} style={listItem}>
+                        <div style={itemHeader}>
+                          <div style={itemTitle}>{item.titulo}</div>
+                          <div style={miniTagBlue}>{item.tipo || "material"}</div>
                         </div>
-                      );
-                    })
+
+                        <div style={itemMeta}>
+                          {(() => {
+                            const treinamento = treinamentos.find(
+                              (t) => String(t.id) === String(item.treinamento_id)
+                            );
+                            return treinamento?.tema || `Turma #${item.treinamento_id}`;
+                          })()}
+                        </div>
+
+                        <div style={itemSubMeta}>
+                          Nota máxima: {item.nota_maxima ?? 0} •{" "}
+                          {item.data_aplicacao
+                            ? `Aplicação: ${String(item.data_aplicacao).slice(0, 10)}`
+                            : "Sem data"}
+                        </div>
+
+                        {item.link_arquivo ? (
+                          <div style={{ marginTop: 8 }}>
+                            <a
+                              href={item.link_arquivo}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={linkStyle}
+                            >
+                              Abrir arquivo / link
+                            </a>
+                          </div>
+                        ) : null}
+
+                        <div style={materialCardActions}>
+                          <button style={btnSmallEdit} onClick={() => editarMaterial(item)}>
+                            Editar
+                          </button>
+                          <button style={btnSmallDelete} onClick={() => excluirMaterial(item.id)}>
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    ))
                   ) : (
                     <div style={emptyText}>Nenhum material avaliativo cadastrado.</div>
                   )}
@@ -993,7 +839,7 @@ const obsCell = {
 
 const materialGrid = {
   display: "grid",
-  gridTemplateColumns: "1.3fr 1fr",
+  gridTemplateColumns: "1.2fr 1fr",
   gap: 14,
 };
 
@@ -1063,36 +909,6 @@ const textarea = {
   minHeight: 76,
 };
 
-const questionsHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 10,
-  marginTop: 18,
-  marginBottom: 12,
-  flexWrap: "wrap",
-};
-
-const questionsGrid = {
-  display: "grid",
-  gap: 12,
-};
-
-const questionCard = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-};
-
-const questionCardHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
 const actionsRowInline = {
   display: "flex",
   gap: 8,
@@ -1120,17 +936,6 @@ const btnSecondary = {
   fontWeight: 800,
   cursor: "pointer",
   fontSize: 14,
-};
-
-const btnDangerGhost = {
-  border: "none",
-  borderRadius: 10,
-  padding: "8px 12px",
-  background: "#fee2e2",
-  color: "#b91c1c",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 13,
 };
 
 const miniTagBlue = {
@@ -1189,4 +994,10 @@ const successBoxInline = {
   padding: 12,
   fontWeight: 700,
   marginBottom: 12,
+};
+
+const linkStyle = {
+  color: "#2563eb",
+  fontWeight: 700,
+  textDecoration: "none",
 };
