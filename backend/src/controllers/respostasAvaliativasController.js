@@ -1,4 +1,4 @@
-import pool from "../db.js";
+const pool = require("../lib/db");
 
 function safeParseQuestoes(raw) {
   try {
@@ -13,7 +13,7 @@ function normalizarResposta(valor) {
   return String(valor || "").trim().toUpperCase();
 }
 
-export async function listRespostasAvaliativas(req, res) {
+async function listRespostasAvaliativas(req, res) {
   try {
     const [rows] = await pool.query(`
       SELECT
@@ -32,9 +32,9 @@ export async function listRespostasAvaliativas(req, res) {
       ORDER BY id DESC
     `);
 
-    res.json(rows);
+    return res.json(rows);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao listar respostas avaliativas",
       error: error.message,
@@ -42,7 +42,7 @@ export async function listRespostasAvaliativas(req, res) {
   }
 }
 
-export async function submitRespostaAvaliativa(req, res) {
+async function submitRespostaAvaliativa(req, res) {
   try {
     const { material_id, treinando_nome, respostas } = req.body || {};
 
@@ -228,7 +228,7 @@ export async function submitRespostaAvaliativa(req, res) {
       );
     }
 
-    res.json({
+    return res.json({
       ok: true,
       material_id: material.id,
       treinamento_id: material.treinamento_id,
@@ -240,10 +240,15 @@ export async function submitRespostaAvaliativa(req, res) {
       nota_final,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao enviar respostas da avaliação",
       error: error.message,
     });
   }
 }
+
+module.exports = {
+  listRespostasAvaliativas,
+  submitRespostaAvaliativa,
+};
