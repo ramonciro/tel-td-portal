@@ -1,0 +1,424 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import PortalShell from "../../components/PortalShell";
+import SectionCard from "../../components/SectionCard";
+import StatCard from "../../components/StatCard";
+import { apiFetch } from "../../services/api";
+
+function fmt(n) {
+  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
+}
+
+function fmtDec(n) {
+  return Number(n || 0).toFixed(1);
+}
+
+function groupBy(array, keyFn) {
+  return array.reduce((acc, item) => {
+    const key = keyFn(item);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+}
+
+export default function ResultadosAvaliacoesPage() {
+  const [respostas, setRespostas] = useState([]);
+  const [materiais, setMateriais] = useState([]);
+  const [treinamentos, setTreinamentos] = useState([]);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function carregar() {
+      try {
+        setLoading(true);
+        setErro("");
+
+        const [respostasData, materiaisData, treinamentosData] = await Promise.all([
+          apiFetch("/respostas-avaliativas").catch(() => []),
+          apiFetch("/materiais-avaliativos").catch(() => []),
+          apiFetch("/treinamentos").catch(() => []),
+        ]);
+
+        setRespostas(Array.isArray(respostasData) ? respostasData : []);
+        setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
+        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+      } catch (error) {
+        setErro(error.message || "Erro ao carregar resultados das avaliações.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    carregar();
+  }, []);
+
+  const materiaisMap = useMemo(() => {
+    const map = {};
+    materiais.forEach((item) => {
+      map[String(item.id)] = item;
+    });
+    return map;
+  }, [materiais]);
+
+  const treinamentosMap = useMemo(() => {
+    const map = {};
+    treinamentos.forEach((item) => {
+      map[String(item.id)] = item;
+    });
+    return map;
+  }, [treinamentos]);
+
+  const kpis = useMemo(() => {
+    const totalRespostas = respostas.length;
+    const mediaAcertos =
+      totalRespostas > 0
+        ? respostas.reduce((acc, item) => acc + Number(item.acertos || 0), 0) / totalRespostas
+        : 0;
+
+    const mediaPercentual =
+      totalRespostas > 0
+        ? respostas.reduce((acc, item) => acc + Number(item.percentual || 0), 0) / totalRespostas
+        : 0;
+
+    const mediaNotaFinal =
+      totalRespostas > 0
+        ? respostas.reduce((acc, item) => acc + Number(item.nota_final || 0), 0) / totalRespostas
+        : 0;
+
+    const aprovados = respostas.filter((item) => Number(item.nota_final || 0) >= 8).length;
+    const atencao = respostas.filter(
+      (item) => Number(item.nota_final || 0) >= 6 && Number(item.nota_final || 0) < 8
+    ).length;
+    const reforco = respostas.filter((item) => Number(item.nota_final || 0) < 6).length;
+
+    return {
+      totalRespostas,
+      mediaAcertos,
+      mediaPercentual,
+      mediaNotaFinal,
+      aprovados,
+      atencao,
+      reforco,
+    };
+  }, [respostas]);
+
+  const rankingPorProva = useMemo(() => {
+    const grupos = groupBy(respostas, (item) => {
+      const material = materiaisMap[String(item.material_id)];
+      return material?.titulo || `Material #${item.material_id}`;
+    });
+
+    return Object.entries(grupos)
+      .map(([titulo, lista]) => {
+        const mediaNota =
+          lista.reduce((acc, item) => acc + Number(item.nota_final || 0), 0) / lista.length;
+        const mediaPercentual =
+          lista.reduce((acc, item) => acc + Number(item.percentual || 0), 0) / lista.length;
+
+        return {
+          titulo,
+          total: lista.length,
+          mediaNota,
+          mediaPercentual,
+        };
+      })
+      .sort((a, b) => b.mediaNota - a.mediaNota);
+  }, [respostas, materiaisMap]);
+
+  const rankingPorTurma = useMemo(() => {
+    const grupos = groupBy(respostas, (item) => {
+      const treinamento = treinamentosMap[String(item.treinamento_id)];
+      return treinamento?.tema || `Turma #${item.treinamento_id}`;
+    });
+
+    return Object.entries(grupos)
+      .map(([tema, lista]) => {
+        const mediaNota =
+          lista.reduce((acc, item) => acc + Number(item.nota_final || 0), 0) / lista.length;
+        const mediaPercentual =
+          lista.reduce((acc, item) => acc + Number(item.percentual || 0), 0) / lista.length;
+
+        return {
+          tema,
+          total: lista.length,
+          mediaNota,
+          mediaPercentual,
+        };
+      })
+      .sort((a, b) => b.mediaNota - a.mediaNota);
+  }, [respostas, treinamentosMap]);
+
+  return (
+    <PortalShell
+      title="Resultados das Avaliações"
+      subtitle="Painel de acompanhamento das respostas, acertos, notas e desempenho das provas e simulados."
+    >
+      {loading ? (
+        <div style={loadingBox}>Carregando resultados...</div>
+      ) : erro ? (
+        <div style={errorBox}>{erro}</div>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          <div style={gridCards}>
+            <StatCard
+              title="Respostas"
+              value={fmt(kpis.totalRespostas)}
+              subtitle="Envios realizados"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Média de acertos"
+              value={fmtDec(kpis.mediaAcertos)}
+              subtitle="Acertos por tentativa"
+              accent="#0891b2"
+            />
+            <StatCard
+              title="Média percentual"
+              value={`${fmtDec(kpis.mediaPercentual)}%`}
+              subtitle="Taxa média de acerto"
+              accent="#059669"
+            />
+            <StatCard
+              title="Média nota final"
+              value={fmtDec(kpis.mediaNotaFinal)}
+              subtitle="Nota média das avaliações"
+              accent="#7c3aed"
+            />
+          </div>
+
+          <div style={gridCards}>
+            <StatCard
+              title="Aprovados"
+              value={fmt(kpis.aprovados)}
+              subtitle="Nota final ≥ 8"
+              accent="#16a34a"
+            />
+            <StatCard
+              title="Atenção"
+              value={fmt(kpis.atencao)}
+              subtitle="Nota entre 6 e 7,9"
+              accent="#f59e0b"
+            />
+            <StatCard
+              title="Reforço"
+              value={fmt(kpis.reforco)}
+              subtitle="Nota abaixo de 6"
+              accent="#dc2626"
+            />
+          </div>
+
+          <div style={twoCol}>
+            <SectionCard
+              title="Ranking por prova"
+              subtitle="Média de nota e percentual por material aplicado."
+            >
+              <div style={listGrid}>
+                {rankingPorProva.length ? (
+                  rankingPorProva.map((item, index) => (
+                    <div key={`${item.titulo}-${index}`} style={listItem}>
+                      <div style={itemHeader}>
+                        <div style={itemTitle}>{item.titulo}</div>
+                        <div style={badgeBlue}>{fmtDec(item.mediaNota)}</div>
+                      </div>
+                      <div style={itemMeta}>
+                        {fmt(item.total)} resposta(s) • {fmtDec(item.mediaPercentual)}% média de acerto
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={emptyText}>Nenhuma prova respondida ainda.</div>
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Ranking por turma"
+              subtitle="Desempenho consolidado por turma."
+            >
+              <div style={listGrid}>
+                {rankingPorTurma.length ? (
+                  rankingPorTurma.map((item, index) => (
+                    <div key={`${item.tema}-${index}`} style={listItem}>
+                      <div style={itemHeader}>
+                        <div style={itemTitle}>{item.tema}</div>
+                        <div style={badgePurple}>{fmtDec(item.mediaNota)}</div>
+                      </div>
+                      <div style={itemMeta}>
+                        {fmt(item.total)} resposta(s) • {fmtDec(item.mediaPercentual)}% média de acerto
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={emptyText}>Nenhuma turma com respostas ainda.</div>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+
+          <SectionCard
+            title="Base detalhada de respostas"
+            subtitle="Visão individual do desempenho dos treinandos."
+          >
+            <div style={tableWrap}>
+              <table style={table}>
+                <thead>
+                  <tr>
+                    <th style={th}>Treinando</th>
+                    <th style={th}>Prova</th>
+                    <th style={th}>Turma</th>
+                    <th style={th}>Acertos</th>
+                    <th style={th}>Percentual</th>
+                    <th style={th}>Nota</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {respostas.length ? (
+                    respostas.map((item) => {
+                      const material = materiaisMap[String(item.material_id)];
+                      const treinamento = treinamentosMap[String(item.treinamento_id)];
+
+                      return (
+                        <tr key={item.id}>
+                          <td style={td}>{item.treinando_nome || "-"}</td>
+                          <td style={td}>{material?.titulo || `Material #${item.material_id}`}</td>
+                          <td style={td}>{treinamento?.tema || `Turma #${item.treinamento_id}`}</td>
+                          <td style={td}>
+                            {fmt(item.acertos)}/{fmt(item.total_questoes)}
+                          </td>
+                          <td style={td}>{fmtDec(item.percentual)}%</td>
+                          <td style={td}>{fmtDec(item.nota_final)}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td style={tdEmpty} colSpan={6}>
+                        Nenhuma resposta registrada.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+        </div>
+      )}
+    </PortalShell>
+  );
+}
+
+const loadingBox = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 18,
+  color: "#475569",
+  fontWeight: 700,
+};
+
+const errorBox = {
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  borderRadius: 16,
+  padding: 16,
+  fontWeight: 700,
+};
+
+const gridCards = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 14,
+};
+
+const twoCol = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 14,
+};
+
+const listGrid = {
+  display: "grid",
+  gap: 10,
+};
+
+const listItem = {
+  background: "#f8fafc",
+  padding: 12,
+  borderRadius: 14,
+  border: "1px solid #e2e8f0",
+};
+
+const itemHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "center",
+};
+
+const itemTitle = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const itemMeta = {
+  marginTop: 5,
+  color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const emptyText = {
+  color: "#64748b",
+};
+
+const badgeBlue = {
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  padding: "4px 8px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const badgePurple = {
+  background: "#ede9fe",
+  color: "#6d28d9",
+  padding: "4px 8px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const tableWrap = {
+  overflowX: "auto",
+};
+
+const table = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const th = {
+  textAlign: "left",
+  padding: "12px 10px",
+  borderBottom: "1px solid #e2e8f0",
+  color: "#475569",
+  fontSize: 13,
+};
+
+const td = {
+  padding: "12px 10px",
+  borderBottom: "1px solid #f1f5f9",
+  color: "#0f172a",
+  fontSize: 14,
+};
+
+const tdEmpty = {
+  padding: "16px 10px",
+  color: "#64748b",
+  textAlign: "center",
+};
