@@ -19,12 +19,16 @@ function buildWhere(alias = "t", query = {}) {
   }
 
   if (query.inicio) {
-    where.push(`DATE(COALESCE(${alias}.data_fim, ${alias}.data_inicio, ${alias}.data)) >= ?`);
+    where.push(
+      `DATE(COALESCE(${alias}.data_fim, ${alias}.data_inicio, ${alias}.data)) >= ?`
+    );
     params.push(query.inicio);
   }
 
   if (query.fim) {
-    where.push(`DATE(COALESCE(${alias}.data_inicio, ${alias}.data)) <= ?`);
+    where.push(
+      `DATE(COALESCE(${alias}.data_inicio, ${alias}.data)) <= ?`
+    );
     params.push(query.fim);
   }
 
@@ -96,6 +100,9 @@ export async function getDashboardTreinamentos(req, res) {
       SELECT COUNT(*) AS total
       FROM presencas p
       INNER JOIN treinamentos t ON t.id = p.treinamento_id
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
       ${clause}
       `,
       params
@@ -106,6 +113,9 @@ export async function getDashboardTreinamentos(req, res) {
       SELECT COUNT(*) AS total
       FROM presencas p
       INNER JOIN treinamentos t ON t.id = p.treinamento_id
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
       ${
         clause
           ? `${clause} AND p.status = 'presente'`
@@ -120,6 +130,9 @@ export async function getDashboardTreinamentos(req, res) {
       SELECT COUNT(*) AS total
       FROM presencas p
       INNER JOIN treinamentos t ON t.id = p.treinamento_id
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
       ${
         clause
           ? `${clause} AND p.status = 'ausente'`
@@ -134,6 +147,9 @@ export async function getDashboardTreinamentos(req, res) {
       SELECT COUNT(*) AS total
       FROM presencas p
       INNER JOIN treinamentos t ON t.id = p.treinamento_id
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
       ${
         clause
           ? `${clause} AND p.status = 'justificado'`
@@ -148,6 +164,9 @@ export async function getDashboardTreinamentos(req, res) {
       SELECT COUNT(*) AS total
       FROM presencas p
       INNER JOIN treinamentos t ON t.id = p.treinamento_id
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
       ${
         clause
           ? `${clause} AND (p.status IS NULL OR p.status = '' OR p.status = 'pendente')`
@@ -197,7 +216,10 @@ export async function getDashboardTreinamentos(req, res) {
       FROM treinamentos t
       LEFT JOIN presencas p
         ON p.treinamento_id = t.id
-      ${clause}
+      LEFT JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
+      ${clause ? `${clause} AND (p.id IS NULL OR tp.id IS NOT NULL)` : "WHERE p.id IS NULL OR tp.id IS NOT NULL"}
       GROUP BY
         t.id,
         t.carga_horaria,
@@ -247,6 +269,9 @@ export async function getDashboardTreinamentos(req, res) {
       FROM treinamentos t
       INNER JOIN presencas p
         ON p.treinamento_id = t.id
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
       ${
         clause
           ? `${clause} AND t.cliente IS NOT NULL AND t.cliente <> ''`
@@ -280,10 +305,13 @@ export async function getDashboardTreinamentos(req, res) {
       FROM treinamentos t
       LEFT JOIN presencas p
         ON p.treinamento_id = t.id
+      LEFT JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
       ${
         clause
-          ? `${clause} AND t.instrutor IS NOT NULL AND t.instrutor <> ''`
-          : "WHERE t.instrutor IS NOT NULL AND t.instrutor <> ''"
+          ? `${clause} AND t.instrutor IS NOT NULL AND t.instrutor <> '' AND (p.id IS NULL OR tp.id IS NOT NULL)`
+          : "WHERE t.instrutor IS NOT NULL AND t.instrutor <> '' AND (p.id IS NULL OR tp.id IS NOT NULL)"
       }
       GROUP BY t.instrutor
       ORDER BY total_turmas DESC, treinandos_previstos DESC
@@ -316,63 +344,46 @@ export async function getDashboardTreinamentos(req, res) {
       FROM treinamentos t
       LEFT JOIN presencas p
         ON p.treinamento_id = t.id
-      ${clause}
+      LEFT JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
+      ${clause ? `${clause} AND (p.id IS NULL OR tp.id IS NOT NULL)` : "WHERE p.id IS NULL OR tp.id IS NOT NULL"}
       GROUP BY
         t.id,
         t.tema,
         t.cliente,
         t.instrutor,
+        t.data,
+        t.data_inicio,
+        t.data_fim,
         t.carga_horaria,
         t.participantes
       ORDER BY data DESC, t.id DESC
-      LIMIT 8
+      LIMIT 10
       `,
       params
     );
 
-    const [npsRows] = await pool.query(
+    const [[npsBase]] = await pool.query(
       `
       SELECT
-        at.nota_nps,
-        t.cliente
-      FROM avaliacoes_treinandos at
-      INNER JOIN treinamentos t ON t.id = at.treinamento_id
-      ${clause}
-      `,
-      params
-    );
-
-    const totalNps = npsRows.length;
-    const promotores = npsRows.filter((n) => Number(n.nota_nps) >= 9).length;
-    const detratores = npsRows.filter((n) => Number(n.nota_nps) <= 6).length;
-
-    const nps =
-      totalNps > 0
-        ? Math.round((promotores / totalNps) * 100 - (detratores / totalNps) * 100)
-        : 0;
-
-    const [avaliacoes] = await pool.query(
-      `
-      SELECT
-        a.nota_qualidade,
-        a.nota_prova
-      FROM avaliacoes a
+        COUNT(*) AS respostas,
+        SUM(CASE WHEN nota_nps >= 9 THEN 1 ELSE 0 END) AS promotores,
+        SUM(CASE WHEN nota_nps <= 6 THEN 1 ELSE 0 END) AS detratores
+      FROM avaliacoes_treinandos a
       INNER JOIN treinamentos t ON t.id = a.treinamento_id
       ${clause}
       `,
       params
     );
 
-    const mediaQualidade =
-      avaliacoes.length > 0
-        ? Number(
-            (
-              avaliacoes.reduce(
-                (acc, a) => acc + Number(a.nota_qualidade || 0),
-                0
-              ) / avaliacoes.length
-            ).toFixed(1)
-          )
+    const respostasNps = Number(npsBase.respostas || 0);
+    const promotores = Number(npsBase.promotores || 0);
+    const detratores = Number(npsBase.detratores || 0);
+
+    const nps =
+      respostasNps > 0
+        ? Math.round(((promotores - detratores) / respostasNps) * 100)
         : 0;
 
     const [rankingNps] = await pool.query(
@@ -380,98 +391,117 @@ export async function getDashboardTreinamentos(req, res) {
       SELECT
         t.cliente,
         COUNT(*) AS respostas,
-        COALESCE(
-          ROUND(
+        SUM(CASE WHEN a.nota_nps >= 9 THEN 1 ELSE 0 END) AS promotores,
+        SUM(CASE WHEN a.nota_nps <= 6 THEN 1 ELSE 0 END) AS detratores,
+        ROUND(
+          (
             (
-              (
-                SUM(CASE WHEN at.nota_nps >= 9 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)
-              ) * 100
-            ) -
-            (
-              (
-                SUM(CASE WHEN at.nota_nps <= 6 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)
-              ) * 100
-            ),
-            0
-          ),
+              SUM(CASE WHEN a.nota_nps >= 9 THEN 1 ELSE 0 END) -
+              SUM(CASE WHEN a.nota_nps <= 6 THEN 1 ELSE 0 END)
+            ) / NULLIF(COUNT(*), 0)
+          ) * 100,
           0
         ) AS nps
-      FROM avaliacoes_treinandos at
-      INNER JOIN treinamentos t ON t.id = at.treinamento_id
+      FROM avaliacoes_treinandos a
+      INNER JOIN treinamentos t ON t.id = a.treinamento_id
       ${
         clause
           ? `${clause} AND t.cliente IS NOT NULL AND t.cliente <> ''`
           : "WHERE t.cliente IS NOT NULL AND t.cliente <> ''"
       }
       GROUP BY t.cliente
-      ORDER BY nps DESC, respostas DESC
+      ORDER BY respostas DESC, nps DESC
       LIMIT 10
       `,
       params
     );
 
-    const totalTreinamentos = Number(treinamentos.total || 0);
-    const totalTreinados = Number(registrosChamada.total || 0);
-    const totalPrevistos = Number(participantesPrevistos.total || 0);
-    const totalPresentes = Number(presentes.total || 0);
-    const totalAusentes = Number(ausentes.total || 0);
-    const totalJustificados = Number(justificados.total || 0);
-    const totalPendentes = Number(pendentes.total || 0);
+    const [[mediaQualidadeBase]] = await pool.query(
+      `
+      SELECT COALESCE(ROUND(AVG(a.nota_final), 1), 0) AS media
+      FROM respostas_avaliativas a
+      INNER JOIN treinamentos t ON t.id = a.treinamento_id
+      ${clause}
+      `,
+      params
+    );
 
     const taxaPresenca =
-      totalTreinados > 0 ? Math.round((totalPresentes / totalTreinados) * 100) : 0;
+      Number(registrosChamada.total || 0) > 0
+        ? Math.round(
+            (Number(presentes.total || 0) / Number(registrosChamada.total || 0)) *
+              100
+          )
+        : 0;
 
     const taxaConclusaoChamada =
-      totalTreinados > 0
-        ? Math.round(((totalTreinados - totalPendentes) / totalTreinados) * 100)
+      Number(participantesPrevistos.total || 0) > 0
+        ? Math.round(
+            (Number(registrosChamada.total || 0) /
+              Number(participantesPrevistos.total || 0)) *
+              100
+          )
         : 0;
 
     return res.json({
-      ok: true,
-      filtros: {
-        cliente: req.query?.cliente || "",
-        inicio: req.query?.inicio || "",
-        fim: req.query?.fim || "",
-      },
       kpis: {
-        treinamentos: totalTreinamentos,
-        treinados: totalTreinados,
-        participantes_previstos: totalPrevistos,
-        presentes: totalPresentes,
-        ausentes: totalAusentes,
-        justificados: totalJustificados,
-        pendentes: totalPendentes,
+        treinamentos: Number(treinamentos.total || 0),
+        clientes_carteira: Number(clientesCarteira.total || 0),
+        clientes_com_treinamento: Number(clientesComTreinamento.total || 0),
+        participantes_previstos: Number(participantesPrevistos.total || 0),
+        treinados: Number(registrosChamada.total || 0),
+        presentes: Number(presentes.total || 0),
+        ausentes: Number(ausentes.total || 0),
+        justificados: Number(justificados.total || 0),
+        pendentes: Number(pendentes.total || 0),
         taxa_presenca: taxaPresenca,
         taxa_conclusao_chamada: taxaConclusaoChamada,
-        media_participantes_por_turma: Number(mediaParticipantesPorTurma.total || 0),
-        horas_treinadas: Number(horasTreinadas || 0),
-        carga_horaria_total: Number(cargaHorariaTotal || 0),
-        clientes_ativos: Number(clientesCarteira.total || 0),
-        clientes_com_treinamento: Number(clientesComTreinamento.total || 0),
-        nps: Number(nps || 0),
-        media_qualidade: Number(mediaQualidade || 0),
-        respostas_nps: Number(totalNps || 0),
-        promotores: Number(promotores || 0),
-        detratores: Number(detratores || 0),
+        media_treinandos_turma: Number(mediaParticipantesPorTurma.total || 0),
+        carga_horaria_total: Number(cargaHorariaTotal.toFixed(1)),
+        horas_treinadas: Number(horasTreinadas.toFixed(1)),
+        nps,
+        respostas_nps: respostasNps,
+        media_qualidade: Number(mediaQualidadeBase.media || 0),
       },
       presenca_por_cliente: presencaPorCliente.map((item) => ({
         ...item,
+        total_turmas: Number(item.total_turmas || 0),
         total_treinados: Number(item.total_chamada || 0),
+        presentes: Number(item.presentes || 0),
+        ausentes: Number(item.ausentes || 0),
+        justificados: Number(item.justificados || 0),
+        pendentes: Number(item.pendentes || 0),
+        taxa_presenca: Number(item.taxa_presenca || 0),
       })),
       ranking_instrutores: rankingInstrutores.map((item) => ({
         ...item,
-        total_treinados:
-          Number(item.treinandos_vinculados || 0) > 0
-            ? Number(item.treinandos_vinculados || 0)
-            : Number(item.treinandos_previstos || 0),
+        total_turmas: Number(item.total_turmas || 0),
+        total_treinados: Number(item.treinandos_vinculados || 0),
+        treinandos_previstos: Number(item.treinandos_previstos || 0),
+        presentes: Number(item.presentes || 0),
+        taxa_presenca: Number(item.taxa_presenca || 0),
       })),
-      ranking_nps: rankingNps,
-      ultimas_turmas: ultimasTurmas,
+      ranking_nps: rankingNps.map((item) => ({
+        ...item,
+        respostas: Number(item.respostas || 0),
+        promotores: Number(item.promotores || 0),
+        detratores: Number(item.detratores || 0),
+        nps: Number(item.nps || 0),
+      })),
+      ultimas_turmas: ultimasTurmas.map((item) => ({
+        ...item,
+        treinados: Number(item.treinados || 0),
+        presentes: Number(item.presentes || 0),
+        ausentes: Number(item.ausentes || 0),
+        justificados: Number(item.justificados || 0),
+        pendentes: Number(item.pendentes || 0),
+      })),
     });
   } catch (error) {
+    console.error("Erro no dashboard de treinamentos:", error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao carregar dashboard blindado de treinamentos",
+      message: "Erro ao carregar dashboard de treinamentos",
       error: error.message,
     });
   }
