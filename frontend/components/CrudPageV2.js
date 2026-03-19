@@ -233,9 +233,7 @@ export default function CrudPageV2({
         <div style={panel}>
           <div style={panelHeaderCompact}>
             <h3 style={panelTitle}>{editingId ? "Editar registro" : "Novo registro"}</h3>
-            {editingId ? (
-              <span style={editingTag}>Modo edição</span>
-            ) : null}
+            {editingId ? <span style={editingTag}>Modo edição</span> : null}
           </div>
 
           <form onSubmit={salvar} style={formGrid}>
