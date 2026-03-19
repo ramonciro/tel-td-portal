@@ -21,6 +21,23 @@ const {
   deleteParticipantesTreinamentoBulk,
 } = require("./controllers/treinamentoParticipantesController");
 
+const {
+  getFrequenciaIndividual,
+} = require("./controllers/frequenciaIndividualController");
+
+const {
+  listMateriaisAvaliativos,
+  createMaterialAvaliativo,
+  updateMaterialAvaliativo,
+  deleteMaterialAvaliativo,
+} = require("./controllers/materiaisAvaliativosController");
+
+const {
+  listAvaliacoesTreinandos,
+  listNpsDisponivel,
+  createAvaliacaoTreinando,
+} = require("./controllers/avaliacoesTreinandosController");
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -279,6 +296,65 @@ app.use(
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
   })
+);
+
+// NOVAS ROTAS: frequência individual
+app.get(
+  "/api/frequencia-individual",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  getFrequenciaIndividual
+);
+
+// NOVAS ROTAS: NPS real do treinando
+app.get(
+  "/api/avaliacoes-treinandos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listAvaliacoesTreinandos
+);
+
+app.get(
+  "/api/nps-disponivel",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listNpsDisponivel
+);
+
+app.post(
+  "/api/avaliacoes-treinandos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  createAvaliacaoTreinando
+);
+
+// NOVAS ROTAS: materiais avaliativos
+app.get(
+  "/api/materiais-avaliativos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listMateriaisAvaliativos
+);
+
+app.post(
+  "/api/materiais-avaliativos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  createMaterialAvaliativo
+);
+
+app.put(
+  "/api/materiais-avaliativos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  updateMaterialAvaliativo
+);
+
+app.delete(
+  "/api/materiais-avaliativos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteMaterialAvaliativo
 );
 
 app.use(
