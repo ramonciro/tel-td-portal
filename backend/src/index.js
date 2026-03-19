@@ -10,22 +10,16 @@ const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { authRequired, authorizeRoles } = require("./middlewares/auth");
 
 const {
+  getDashboardTreinamentos,
+} = require("./controllers/dashboardTreinamentosController");
+
+const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
 } = require("./controllers/treinamentoParticipantesController");
-
-const {
-  getParticipantesByTreinamento,
-  importarParticipantesExcel,
-  salvarChamadaParticipantes,
-} = require("./controllers/treinamentoParticipantesController");
-
-const {
-  getFrequenciaIndividual,
-} = require("./controllers/frequenciaIndividualController");
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -285,13 +279,6 @@ app.use(
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
   })
-);
-
-app.get(
-  "/api/frequencia-individual",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
-  getFrequenciaIndividual
 );
 
 app.use(
