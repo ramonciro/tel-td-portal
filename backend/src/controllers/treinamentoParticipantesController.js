@@ -246,19 +246,21 @@ async function salvarChamadaParticipantes(req, res) {
         );
       }
 
-      await db.query(
-        `
-        UPDATE treinamento_participantes
-        SET status_presenca = ?, justificativa = ?
-        WHERE id = ? AND treinamento_id = ?
-        `,
-        [
-          status,
-          item.justificativa || null,
-          item.id,
-          treinamento_id,
-        ]
-      );
+      if (item.id) {
+        await db.query(
+          `
+          UPDATE treinamento_participantes
+          SET status_presenca = ?, justificativa = ?
+          WHERE id = ? AND treinamento_id = ?
+          `,
+          [
+            status,
+            item.justificativa || null,
+            item.id,
+            treinamento_id,
+          ]
+        );
+      }
     }
 
     return res.json({
