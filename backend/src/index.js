@@ -10,8 +10,12 @@ const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { authRequired, authorizeRoles } = require("./middlewares/auth");
 
 const {
-  getDashboardTreinamentos,
-} = require("./controllers/dashboardTreinamentosController");
+  getParticipantesByTreinamento,
+  importarParticipantesExcel,
+  salvarChamadaParticipantes,
+  deleteParticipanteTreinamento,
+  deleteParticipantesTreinamentoBulk,
+} = require("./controllers/treinamentoParticipantesController");
 
 const {
   getParticipantesByTreinamento,
@@ -225,6 +229,20 @@ app.post(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   salvarChamadaParticipantes
+);
+
+app.delete(
+  "/api/treinamentos/participantes/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteParticipanteTreinamento
+);
+
+app.post(
+  "/api/treinamentos/participantes/excluir-lote",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteParticipantesTreinamentoBulk
 );
 
 app.use(
