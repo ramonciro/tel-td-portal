@@ -109,11 +109,9 @@ export default function ChamadaTurma({ params }) {
 
   function selecionarTodosFiltrados() {
     const mapa = { ...selecionados };
-
     participantesFiltrados.forEach((item) => {
       mapa[item._rowKey] = true;
     });
-
     setSelecionados(mapa);
   }
 
@@ -131,6 +129,54 @@ export default function ChamadaTurma({ params }) {
     });
 
     setParticipantes(copia);
+  }
+
+  async function excluirParticipante(idParticipante) {
+    const confirmar = window.confirm(
+      "Deseja realmente excluir este participante da turma? As presenças relacionadas também serão removidas."
+    );
+    if (!confirmar) return;
+
+    try {
+      setErro("");
+
+      await apiFetch(`/treinamentos/participantes/${idParticipante}`, {
+        method: "DELETE",
+      });
+
+      await carregarParticipantesPorData(dataChamada);
+    } catch (err) {
+      setErro(err.message || "Erro ao excluir participante.");
+    }
+  }
+
+  async function excluirSelecionados() {
+    const ids = participantesFiltrados
+      .filter((item) => selecionados[item._rowKey] && item.id)
+      .map((item) => item.id);
+
+    if (!ids.length) {
+      alert("Selecione ao menos um participante com registro válido para excluir.");
+      return;
+    }
+
+    const confirmar = window.confirm(
+      `Deseja excluir ${ids.length} participante(s) selecionado(s)? As presenças relacionadas também serão removidas.`
+    );
+    if (!confirmar) return;
+
+    try {
+      setErro("");
+
+      await apiFetch("/treinamentos/participantes/excluir-lote", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      });
+
+      await carregarParticipantesPorData(dataChamada);
+    } catch (err) {
+      setErro(err.message || "Erro ao excluir participantes selecionados.");
+    }
   }
 
   async function importarExcel() {
@@ -417,6 +463,9 @@ export default function ChamadaTurma({ params }) {
                   <button style={bulkSecondary} onClick={limparSelecao}>
                     Limpar seleção
                   </button>
+                  <button style={bulkDelete} onClick={excluirSelecionados}>
+                    Excluir selecionados
+                  </button>
                 </div>
               </div>
 
@@ -471,6 +520,7 @@ export default function ChamadaTurma({ params }) {
                   <th style={th}>Operação</th>
                   <th style={th}>Status do dia</th>
                   <th style={th}>Justificativa</th>
+                  <th style={th}>Ações</th>
                 </tr>
               </thead>
 
@@ -561,6 +611,19 @@ export default function ChamadaTurma({ params }) {
                           placeholder="Informar justificativa"
                           style={input}
                         />
+                      </td>
+
+                      <td style={td}>
+                        {p.id ? (
+                          <button
+                            style={deleteLineBtn}
+                            onClick={() => excluirParticipante(p.id)}
+                          >
+                            Excluir
+                          </button>
+                        ) : (
+                          <span style={smallMuted}>Sem ID</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -827,6 +890,16 @@ const bulkSecondary = {
   fontWeight: 700,
 };
 
+const bulkDelete = {
+  border: "1px solid #fecaca",
+  background: "#fff1f2",
+  color: "#be123c",
+  borderRadius: 10,
+  padding: "9px 12px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
 const bulkStatusActions = {
   display: "flex",
   gap: 8,
@@ -958,6 +1031,21 @@ const btnSalvar = {
   padding: "11px 16px",
   cursor: "pointer",
   fontWeight: 700,
+};
+
+const deleteLineBtn = {
+  border: "1px solid #fecaca",
+  background: "#fff1f2",
+  color: "#be123c",
+  borderRadius: 10,
+  padding: "8px 12px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const smallMuted = {
+  color: "#94a3b8",
+  fontSize: 12,
 };
 
 const footerActions = {
