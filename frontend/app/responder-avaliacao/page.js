@@ -24,6 +24,41 @@ function formatTreinamentoLabel(material, treinamentos) {
   }`;
 }
 
+function calcularResultado(materialSelecionado, questoes, respostas) {
+  const totalQuestoes = questoes.length;
+
+  let acertos = 0;
+
+  questoes.forEach((questao, index) => {
+    const respostaMarcada = String(respostas[index] || "").toUpperCase();
+    const respostaCorreta = String(
+      questao.resposta_correta || questao.gabarito || ""
+    )
+      .trim()
+      .toUpperCase();
+
+    if (respostaMarcada && respostaCorreta && respostaMarcada === respostaCorreta) {
+      acertos += 1;
+    }
+  });
+
+  const percentual =
+    totalQuestoes > 0 ? Number(((acertos / totalQuestoes) * 100).toFixed(2)) : 0;
+
+  const notaMaxima = Number(materialSelecionado?.nota_maxima || 0);
+  const notaFinal =
+    totalQuestoes > 0
+      ? Number(((acertos / totalQuestoes) * notaMaxima).toFixed(2))
+      : 0;
+
+  return {
+    acertos,
+    total_questoes: totalQuestoes,
+    percentual,
+    nota_final: notaFinal,
+  };
+}
+
 export default function ResponderAvaliacaoPage() {
   const [materiais, setMateriais] = useState([]);
   const [treinamentos, setTreinamentos] = useState([]);
@@ -34,6 +69,7 @@ export default function ResponderAvaliacaoPage() {
   const [sucesso, setSucesso] = useState("");
   const [resultado, setResultado] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
     async function carregar() {
@@ -75,6 +111,16 @@ export default function ResponderAvaliacaoPage() {
     return materiais.find((item) => String(item.id) === String(materialId)) || null;
   }, [materiais, materialId]);
 
+  const treinamentoSelecionado = useMemo(() => {
+    if (!materialSelecionado) return null;
+
+    return (
+      treinamentos.find(
+        (item) => String(item.id) === String(materialSelecionado.treinamento_id)
+      ) || null
+    );
+  }, [materialSelecionado, treinamentos]);
+
   const questoes = useMemo(() => {
     return materialSelecionado ? safeParseQuestoes(materialSelecionado.questoes_json) : [];
   }, [materialSelecionado]);
@@ -97,7 +143,12 @@ export default function ResponderAvaliacaoPage() {
         return;
       }
 
-      if (!treinandoNome) {
+      if (!materialSelecionado.treinamento_id) {
+        setErro("Este material não está vinculado a um treinamento.");
+        return;
+      }
+
+      if (!treinandoNome || !String(treinandoNome).trim()) {
         setErro("Informe o nome do treinando.");
         return;
       }
@@ -114,19 +165,38 @@ export default function ResponderAvaliacaoPage() {
         return;
       }
 
+      const calculo = calcularResultado(materialSelecionado, questoes, respostas);
+
+      const payload = {
+        material_id: Number(materialSelecionado.id),
+        treinamento_id: Number(materialSelecionado.treinamento_id),
+        treinando_nome: String(treinandoNome).trim(),
+        respostas_json: JSON.stringify(respostas),
+        acertos: calculo.acertos,
+        total_questoes: calculo.total_questoes,
+        percentual: calculo.percentual,
+        nota_final: calculo.nota_final,
+      };
+
+      setEnviando(true);
+
       const response = await apiFetch("/respostas-avaliativas", {
         method: "POST",
-        body: JSON.stringify({
-          material_id: materialSelecionado.id,
-          treinando_nome: treinandoNome,
-          respostas,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      setResultado(response);
+      setResultado({
+        acertos: response?.acertos ?? calculo.acertos,
+        total_questoes: response?.total_questoes ?? calculo.total_questoes,
+        percentual: response?.percentual ?? calculo.percentual,
+        nota_final: response?.nota_final ?? calculo.nota_final,
+      });
+
       setSucesso("Respostas enviadas com sucesso.");
     } catch (error) {
       setErro(error.message || "Erro ao enviar respostas.");
+    } finally {
+      setEnviando(false);
     }
   }
 
@@ -185,9 +255,16 @@ export default function ResponderAvaliacaoPage() {
                 <div style={materialTitle}>{materialSelecionado.titulo}</div>
                 <div style={materialMeta}>
                   Tipo: {materialSelecionado.tipo || "-"} • Nota máxima:{" "}
-                  {materialSelecionado.nota_maxima ?? 0} •{" "}
+                  {Number(materialSelecionado.nota_maxima ?? 0).toFixed(2)} •{" "}
                   {questoes.length} questão(ões)
                 </div>
+
+                {treinamentoSelecionado ? (
+                  <div style={materialDescription}>
+                    Treinamento vinculado: {treinamentoSelecionado.tema || "-"}
+                  </div>
+                ) : null}
+
                 {materialSelecionado.descricao ? (
                   <div style={materialDescription}>{materialSelecionado.descricao}</div>
                 ) : null}
@@ -232,8 +309,13 @@ export default function ResponderAvaliacaoPage() {
               </div>
 
               <div style={{ marginTop: 16 }}>
-                <button type="button" style={btnPrimary} onClick={enviarRespostas}>
-                  Enviar respostas
+                <button
+                  type="button"
+                  style={btnPrimary}
+                  onClick={enviarRespostas}
+                  disabled={enviando}
+                >
+                  {enviando ? "Enviando..." : "Enviar respostas"}
                 </button>
               </div>
             </SectionCard>
