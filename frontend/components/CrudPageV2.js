@@ -30,13 +30,17 @@ function normalizeDateValue(value) {
 }
 
 function buildInitialForm(item, fields) {
-  const next = { ...item };
+  const next = {};
 
   fields.forEach((field) => {
+    const rawValue = item?.[field.name];
+
     if (field.type === "date") {
-      next[field.name] = normalizeDateValue(item?.[field.name]);
-    } else if (next[field.name] === null || next[field.name] === undefined) {
+      next[field.name] = normalizeDateValue(rawValue);
+    } else if (rawValue === null || rawValue === undefined) {
       next[field.name] = "";
+    } else {
+      next[field.name] = rawValue;
     }
   });
 
@@ -44,13 +48,20 @@ function buildInitialForm(item, fields) {
 }
 
 function buildPayload(form, fields) {
-  const payload = { ...form };
+  const payload = {};
 
   fields.forEach((field) => {
+    let value = form[field.name];
+
     if (field.type === "date") {
-      const value = payload[field.name];
-      payload[field.name] = value ? normalizeDateValue(value) : null;
+      value = value ? normalizeDateValue(value) : null;
     }
+
+    if (value === undefined) {
+      value = "";
+    }
+
+    payload[field.name] = value;
   });
 
   return payload;
@@ -99,6 +110,8 @@ export default function CrudPageV2({
     try {
       setCarregando(true);
       setErro("");
+      setSucesso("");
+
       const data = await apiFetch(`${endpoint}?t=${Date.now()}`).catch(() => []);
       setItems(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -128,7 +141,12 @@ export default function CrudPageV2({
   }
 
   function limparFormulario() {
-    setForm({});
+    const empty = {};
+    fields.forEach((field) => {
+      empty[field.name] = "";
+    });
+
+    setForm(empty);
     setEditingId(null);
     setErro("");
     setSucesso("");
@@ -144,7 +162,10 @@ export default function CrudPageV2({
     setEditingId(item?.id || null);
     setErro("");
     setSucesso("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   async function excluirRegistro(id) {
@@ -201,9 +222,13 @@ export default function CrudPageV2({
         body: JSON.stringify(payload),
       });
 
-      setSucesso(editingId ? "Registro atualizado com sucesso." : "Registro criado com sucesso.");
-      setForm({});
-      setEditingId(null);
+      setSucesso(
+        editingId
+          ? "Registro atualizado com sucesso."
+          : "Registro criado com sucesso."
+      );
+
+      limparFormulario();
       await carregar();
     } catch (error) {
       setErro(error.message || "Erro ao salvar registro.");
@@ -212,8 +237,12 @@ export default function CrudPageV2({
 
   const filteredItems = useMemo(() => {
     if (!search.trim()) return items;
+
     const termo = search.toLowerCase();
-    return items.filter((item) => JSON.stringify(item).toLowerCase().includes(termo));
+
+    return items.filter((item) =>
+      JSON.stringify(item).toLowerCase().includes(termo)
+    );
   }, [items, search]);
 
   const gridStyle = recordsGridStyle || {
@@ -232,7 +261,9 @@ export default function CrudPageV2({
       {canCreate || (editingId && canEdit) ? (
         <div style={panel}>
           <div style={panelHeaderCompact}>
-            <h3 style={panelTitle}>{editingId ? "Editar registro" : "Novo registro"}</h3>
+            <h3 style={panelTitle}>
+              {editingId ? "Editar registro" : "Novo registro"}
+            </h3>
             {editingId ? <span style={editingTag}>Modo edição</span> : null}
           </div>
 
@@ -242,7 +273,10 @@ export default function CrudPageV2({
 
               if (field.type === "textarea") {
                 return (
-                  <div key={field.name} style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
+                  <div
+                    key={field.name}
+                    style={{ ...fieldWrap, gridColumn: "1 / -1" }}
+                  >
                     <label style={label}>{field.label}</label>
                     <textarea
                       name={field.name}
@@ -271,14 +305,20 @@ export default function CrudPageV2({
                       disabled={!parentValue}
                     >
                       <option value="">
-                        {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
+                        {field.placeholder ||
+                          `Selecione ${field.label.toLowerCase()}`}
                       </option>
                       {options.map((option) => {
-                        const optionValue = typeof option === "object" ? option.value : option;
-                        const optionLabel = typeof option === "object" ? option.label : option;
+                        const optionValue =
+                          typeof option === "object" ? option.value : option;
+                        const optionLabel =
+                          typeof option === "object" ? option.label : option;
 
                         return (
-                          <option key={`${field.name}-${optionValue}`} value={optionValue}>
+                          <option
+                            key={`${field.name}-${optionValue}`}
+                            value={optionValue}
+                          >
                             {optionLabel}
                           </option>
                         );
@@ -299,14 +339,20 @@ export default function CrudPageV2({
                       style={input}
                     >
                       <option value="">
-                        {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
+                        {field.placeholder ||
+                          `Selecione ${field.label.toLowerCase()}`}
                       </option>
                       {(field.options || []).map((option) => {
-                        const optionValue = typeof option === "object" ? option.value : option;
-                        const optionLabel = typeof option === "object" ? option.label : option;
+                        const optionValue =
+                          typeof option === "object" ? option.value : option;
+                        const optionLabel =
+                          typeof option === "object" ? option.label : option;
 
                         return (
-                          <option key={`${field.name}-${optionValue}`} value={optionValue}>
+                          <option
+                            key={`${field.name}-${optionValue}`}
+                            value={optionValue}
+                          >
                             {optionLabel}
                           </option>
                         );
@@ -338,7 +384,11 @@ export default function CrudPageV2({
               <button type="submit" style={buttonPrimary}>
                 {editingId ? "Atualizar" : "Salvar"}
               </button>
-              <button type="button" onClick={limparFormulario} style={buttonSecondary}>
+              <button
+                type="button"
+                onClick={limparFormulario}
+                style={buttonSecondary}
+              >
                 Limpar
               </button>
             </div>
@@ -350,7 +400,9 @@ export default function CrudPageV2({
         <div style={recordsHeader}>
           <div>
             <h3 style={panelTitle}>{recordsTitle}</h3>
-            {recordsSubtitle ? <p style={helperText}>{recordsSubtitle}</p> : null}
+            {recordsSubtitle ? (
+              <p style={helperText}>{recordsSubtitle}</p>
+            ) : null}
           </div>
 
           <input
@@ -388,15 +440,23 @@ export default function CrudPageV2({
                   ))}
                 </div>
 
-                {(canEdit || canDelete) ? (
+                {canEdit || canDelete ? (
                   <div style={cardActions}>
                     {canEdit ? (
-                      <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
+                      <button
+                        type="button"
+                        onClick={() => editarRegistro(item)}
+                        style={miniEditButton}
+                      >
                         Editar
                       </button>
                     ) : null}
                     {canDelete ? (
-                      <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
+                      <button
+                        type="button"
+                        onClick={() => excluirRegistro(item.id)}
+                        style={miniDeleteButton}
+                      >
                         Excluir
                       </button>
                     ) : null}
@@ -415,7 +475,7 @@ export default function CrudPageV2({
                       {column.label}
                     </th>
                   ))}
-                  {(canEdit || canDelete) ? <th style={th}>Ações</th> : null}
+                  {canEdit || canDelete ? <th style={th}>Ações</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -426,16 +486,24 @@ export default function CrudPageV2({
                         {column.render ? column.render(item) : item[column.key] ?? "-"}
                       </td>
                     ))}
-                    {(canEdit || canDelete) ? (
+                    {canEdit || canDelete ? (
                       <td style={td}>
                         <div style={tableActions}>
                           {canEdit ? (
-                            <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
+                            <button
+                              type="button"
+                              onClick={() => editarRegistro(item)}
+                              style={miniEditButton}
+                            >
                               Editar
                             </button>
                           ) : null}
                           {canDelete ? (
-                            <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
+                            <button
+                              type="button"
+                              onClick={() => excluirRegistro(item.id)}
+                              style={miniDeleteButton}
+                            >
                               Excluir
                             </button>
                           ) : null}
