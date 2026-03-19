@@ -33,6 +33,7 @@ export default function ChamadaTurma({ params }) {
   const [erro, setErro] = useState("");
   const [dataChamada, setDataChamada] = useState("");
   const [selecionados, setSelecionados] = useState({});
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     carregarBase();
@@ -79,6 +80,7 @@ export default function ChamadaTurma({ params }) {
       const lista = Array.isArray(dadosParticipantes) ? dadosParticipantes : [];
       setParticipantes(lista);
       setSelecionados({});
+      setBusca("");
     } catch (err) {
       setErro(err.message || "Erro ao buscar participantes.");
     } finally {
@@ -86,31 +88,32 @@ export default function ChamadaTurma({ params }) {
     }
   }
 
-  function alterarStatus(index, status) {
+  function alterarStatus(indexReal, status) {
     const copia = [...participantes];
-    copia[index].status_presenca = status;
+    copia[indexReal].status_presenca = status;
     setParticipantes(copia);
   }
 
-  function alterarJustificativa(index, valor) {
+  function alterarJustificativa(indexReal, valor) {
     const copia = [...participantes];
-    copia[index].justificativa = valor;
+    copia[indexReal].justificativa = valor;
     setParticipantes(copia);
   }
 
-  function toggleSelecionado(participanteId) {
+  function toggleSelecionado(chave) {
     setSelecionados((prev) => ({
       ...prev,
-      [participanteId]: !prev[participanteId],
+      [chave]: !prev[chave],
     }));
   }
 
-  function selecionarTodos() {
-    const mapa = {};
-    participantes.forEach((p, index) => {
-      const chave = p.id || `idx-${index}`;
-      mapa[chave] = true;
+  function selecionarTodosFiltrados() {
+    const mapa = { ...selecionados };
+
+    participantesFiltrados.forEach((item) => {
+      mapa[item._rowKey] = true;
     });
+
     setSelecionados(mapa);
   }
 
@@ -121,10 +124,9 @@ export default function ChamadaTurma({ params }) {
   function aplicarStatusEmMassa(status) {
     const copia = [...participantes];
 
-    copia.forEach((p, index) => {
-      const chave = p.id || `idx-${index}`;
-      if (selecionados[chave]) {
-        copia[index].status_presenca = status;
+    participantesFiltrados.forEach((item) => {
+      if (selecionados[item._rowKey]) {
+        copia[item._indexReal].status_presenca = status;
       }
     });
 
@@ -203,6 +205,27 @@ export default function ChamadaTurma({ params }) {
     }
   }
 
+  const participantesFiltrados = useMemo(() => {
+    const termo = String(busca || "").trim().toLowerCase();
+
+    const base = participantes.map((p, indexReal) => ({
+      ...p,
+      _indexReal: indexReal,
+      _rowKey: p.id || `idx-${indexReal}`,
+    }));
+
+    if (!termo) return base;
+
+    return base.filter((p) => {
+      return (
+        String(p.nome || "").toLowerCase().includes(termo) ||
+        String(p.matricula || "").toLowerCase().includes(termo) ||
+        String(p.operacao || "").toLowerCase().includes(termo) ||
+        String(p.supervisor || "").toLowerCase().includes(termo)
+      );
+    });
+  }, [participantes, busca]);
+
   const resumo = useMemo(() => {
     const presentes = participantes.filter(
       (p) => String(p.status_presenca || "").toLowerCase() === "presente"
@@ -231,8 +254,9 @@ export default function ChamadaTurma({ params }) {
       justificados,
       pendentes,
       totalSelecionados,
+      exibidos: participantesFiltrados.length,
     };
-  }, [participantes, selecionados]);
+  }, [participantes, selecionados, participantesFiltrados]);
 
   function voltar() {
     window.location.href = "/treinamentos";
@@ -335,6 +359,7 @@ export default function ChamadaTurma({ params }) {
 
       <div style={statsGrid}>
         <Stat label="Total" value={resumo.total} color="#2563eb" />
+        <Stat label="Exibidos" value={resumo.exibidos} color="#0f766e" />
         <Stat label="Presentes" value={resumo.presentes} color="#16a34a" />
         <Stat label="Ausentes" value={resumo.ausentes} color="#dc2626" />
         <Stat label="Justificados" value={resumo.justificados} color="#f59e0b" />
@@ -358,55 +383,74 @@ export default function ChamadaTurma({ params }) {
         </div>
 
         {participantes.length > 0 ? (
-          <div style={bulkCard}>
-            <div style={bulkHeader}>
-              <div>
-                <div style={bulkTitle}>Ação em massa</div>
+          <>
+            <div style={searchCard}>
+              <div style={searchInfo}>
+                <div style={bulkTitle}>Buscar participante</div>
                 <div style={bulkSub}>
-                  {resumo.totalSelecionados} participante(s) selecionado(s)
+                  Filtre por nome, matrícula, operação ou supervisor.
                 </div>
               </div>
 
-              <div style={bulkActions}>
-                <button style={bulkSecondary} onClick={selecionarTodos}>
-                  Selecionar todos
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar por nome, matrícula, operação ou supervisor"
+                style={inputBusca}
+              />
+            </div>
+
+            <div style={bulkCard}>
+              <div style={bulkHeader}>
+                <div>
+                  <div style={bulkTitle}>Ação em massa</div>
+                  <div style={bulkSub}>
+                    {resumo.totalSelecionados} participante(s) selecionado(s) •{" "}
+                    {resumo.exibidos} exibido(s)
+                  </div>
+                </div>
+
+                <div style={bulkActions}>
+                  <button style={bulkSecondary} onClick={selecionarTodosFiltrados}>
+                    Selecionar exibidos
+                  </button>
+                  <button style={bulkSecondary} onClick={limparSelecao}>
+                    Limpar seleção
+                  </button>
+                </div>
+              </div>
+
+              <div style={bulkStatusActions}>
+                <button
+                  style={{ ...btnStatusBase, ...btnPresenteActive }}
+                  onClick={() => aplicarStatusEmMassa("presente")}
+                >
+                  Marcar selecionados como presentes
                 </button>
-                <button style={bulkSecondary} onClick={limparSelecao}>
-                  Limpar seleção
+
+                <button
+                  style={{ ...btnStatusBase, ...btnAusenteActive }}
+                  onClick={() => aplicarStatusEmMassa("ausente")}
+                >
+                  Marcar selecionados como ausentes
+                </button>
+
+                <button
+                  style={{ ...btnStatusBase, ...btnJustificadoActive }}
+                  onClick={() => aplicarStatusEmMassa("justificado")}
+                >
+                  Marcar selecionados como justificados
+                </button>
+
+                <button
+                  style={{ ...btnStatusBase, ...btnPendenteActive }}
+                  onClick={() => aplicarStatusEmMassa("pendente")}
+                >
+                  Marcar selecionados como pendentes
                 </button>
               </div>
             </div>
-
-            <div style={bulkStatusActions}>
-              <button
-                style={{ ...btnStatusBase, ...btnPresenteActive }}
-                onClick={() => aplicarStatusEmMassa("presente")}
-              >
-                Marcar selecionados como presentes
-              </button>
-
-              <button
-                style={{ ...btnStatusBase, ...btnAusenteActive }}
-                onClick={() => aplicarStatusEmMassa("ausente")}
-              >
-                Marcar selecionados como ausentes
-              </button>
-
-              <button
-                style={{ ...btnStatusBase, ...btnJustificadoActive }}
-                onClick={() => aplicarStatusEmMassa("justificado")}
-              >
-                Marcar selecionados como justificados
-              </button>
-
-              <button
-                style={{ ...btnStatusBase, ...btnPendenteActive }}
-                onClick={() => aplicarStatusEmMassa("pendente")}
-              >
-                Marcar selecionados como pendentes
-              </button>
-            </div>
-          </div>
+          </>
         ) : null}
 
         {participantes.length === 0 ? (
@@ -431,17 +475,16 @@ export default function ChamadaTurma({ params }) {
               </thead>
 
               <tbody>
-                {participantes.map((p, i) => {
-                  const chave = p.id || `idx-${i}`;
-                  const marcado = !!selecionados[chave];
+                {participantesFiltrados.map((p) => {
+                  const marcado = !!selecionados[p._rowKey];
 
                   return (
-                    <tr key={chave} style={tr}>
+                    <tr key={p._rowKey} style={tr}>
                       <td style={tdCheck}>
                         <input
                           type="checkbox"
                           checked={marcado}
-                          onChange={() => toggleSelecionado(chave)}
+                          onChange={() => toggleSelecionado(p._rowKey)}
                         />
                       </td>
 
@@ -458,7 +501,7 @@ export default function ChamadaTurma({ params }) {
                       <td style={td}>
                         <div style={statusActions}>
                           <button
-                            onClick={() => alterarStatus(i, "presente")}
+                            onClick={() => alterarStatus(p._indexReal, "presente")}
                             style={{
                               ...btnStatusBase,
                               ...(String(p.status_presenca || "").toLowerCase() ===
@@ -471,7 +514,7 @@ export default function ChamadaTurma({ params }) {
                           </button>
 
                           <button
-                            onClick={() => alterarStatus(i, "ausente")}
+                            onClick={() => alterarStatus(p._indexReal, "ausente")}
                             style={{
                               ...btnStatusBase,
                               ...(String(p.status_presenca || "").toLowerCase() ===
@@ -484,7 +527,7 @@ export default function ChamadaTurma({ params }) {
                           </button>
 
                           <button
-                            onClick={() => alterarStatus(i, "justificado")}
+                            onClick={() => alterarStatus(p._indexReal, "justificado")}
                             style={{
                               ...btnStatusBase,
                               ...(String(p.status_presenca || "").toLowerCase() ===
@@ -497,7 +540,7 @@ export default function ChamadaTurma({ params }) {
                           </button>
 
                           <button
-                            onClick={() => alterarStatus(i, "pendente")}
+                            onClick={() => alterarStatus(p._indexReal, "pendente")}
                             style={{
                               ...btnStatusBase,
                               ...(String(p.status_presenca || "").toLowerCase() ===
@@ -514,7 +557,7 @@ export default function ChamadaTurma({ params }) {
                       <td style={td}>
                         <input
                           value={p.justificativa || ""}
-                          onChange={(e) => alterarJustificativa(i, e.target.value)}
+                          onChange={(e) => alterarJustificativa(p._indexReal, e.target.value)}
                           placeholder="Informar justificativa"
                           style={input}
                         />
@@ -662,7 +705,7 @@ const btnImportar = {
 const statsGrid = {
   marginTop: 16,
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
   gap: 12,
 };
 
@@ -713,6 +756,30 @@ const sectionSubtitle = {
   margin: "6px 0 0",
   color: "#64748b",
   lineHeight: 1.5,
+};
+
+const searchCard = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 14,
+  marginBottom: 14,
+  display: "grid",
+  gap: 10,
+};
+
+const searchInfo = {
+  display: "grid",
+  gap: 4,
+};
+
+const inputBusca = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  outline: "none",
 };
 
 const bulkCard = {
