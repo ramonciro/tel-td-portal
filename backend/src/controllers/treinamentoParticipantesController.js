@@ -274,6 +274,119 @@ async function salvarChamadaParticipantes(req, res) {
   }
 }
 
+async function deleteParticipanteTreinamento(req, res) {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.query(
+      `
+      SELECT id, treinamento_id, nome
+      FROM treinamento_participantes
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        ok: false,
+        message: "Participante não encontrado",
+      });
+    }
+
+    const participante = rows[0];
+
+    await db.query(
+      `
+      DELETE FROM presencas
+      WHERE treinamento_id = ? AND treinando_nome = ?
+      `,
+      [participante.treinamento_id, participante.nome]
+    );
+
+    await db.query(
+      `
+      DELETE FROM treinamento_participantes
+      WHERE id = ?
+      `,
+      [id]
+    );
+
+    return res.json({
+      ok: true,
+      message: "Participante excluído com sucesso",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao excluir participante",
+      error: error.message,
+    });
+  }
+}
+
+async function deleteParticipantesTreinamentoBulk(req, res) {
+  try {
+    const { ids } = req.body || {};
+
+    if (!Array.isArray(ids) || !ids.length) {
+      return res.status(400).json({
+        ok: false,
+        message: "Informe os ids dos participantes",
+      });
+    }
+
+    const placeholders = ids.map(() => "?").join(", ");
+
+    const [rows] = await db.query(
+      `
+      SELECT id, treinamento_id, nome
+      FROM treinamento_participantes
+      WHERE id IN (${placeholders})
+      `,
+      ids
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        ok: false,
+        message: "Nenhum participante encontrado",
+      });
+    }
+
+    for (const participante of rows) {
+      await db.query(
+        `
+        DELETE FROM presencas
+        WHERE treinamento_id = ? AND treinando_nome = ?
+        `,
+        [participante.treinamento_id, participante.nome]
+      );
+    }
+
+    await db.query(
+      `
+      DELETE FROM treinamento_participantes
+      WHERE id IN (${placeholders})
+      `,
+      ids
+    );
+
+    return res.json({
+      ok: true,
+      message: "Participantes excluídos com sucesso",
+      total: rows.length,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao excluir participantes",
+      error: error.message,
+    });
+  }
+}
+
 function formatExcelDateToMySQL(value) {
   if (!value) return null;
 
@@ -308,4 +421,6 @@ module.exports = {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
+  deleteParticipanteTreinamento,
+  deleteParticipantesTreinamentoBulk,
 };
