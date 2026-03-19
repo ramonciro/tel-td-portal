@@ -92,7 +92,6 @@ function getActionConfig(statusTurma) {
 
 export default function GestaoTurmasPage() {
   const [treinamentos, setTreinamentos] = useState([]);
-  const [presencas, setPresencas] = useState([]);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -106,37 +105,68 @@ export default function GestaoTurmasPage() {
         setLoading(true);
         setErro("");
 
-        const [treinamentosResult, presencasResult] = await Promise.allSettled([
-          apiFetch("/treinamentos", { timeoutMs: 15000 }),
-          apiFetch("/presencas", { timeoutMs: 15000 }),
-        ]);
+        const treinamentosData = await apiFetch("/treinamentos", {
+          timeoutMs: 15000,
+        }).catch(() => []);
 
-        let treinamentosData = [];
-        let presencasData = [];
-        const erros = [];
+        const lista = Array.isArray(treinamentosData) ? treinamentosData : [];
 
-        if (treinamentosResult.status === "fulfilled") {
-          treinamentosData = Array.isArray(treinamentosResult.value)
-            ? treinamentosResult.value
-            : [];
-        } else {
-          erros.push(`Treinamentos: ${treinamentosResult.reason?.message || "falha ao carregar"}`);
-        }
+        const turmasComBase = await Promise.all(
+          lista.map(async (t) => {
+            const participantes = await apiFetch(
+              `/treinamentos/${t.id}/participantes`,
+              { timeoutMs: 15000 }
+            ).catch(() => []);
 
-        if (presencasResult.status === "fulfilled") {
-          presencasData = Array.isArray(presencasResult.value)
-            ? presencasResult.value
-            : [];
-        } else {
-          erros.push(`Presenças: ${presencasResult.reason?.message || "falha ao carregar"}`);
-        }
+            const registros = Array.isArray(participantes) ? participantes : [];
 
-        setTreinamentos(treinamentosData);
-        setPresencas(presencasData);
+            const presentes = registros.filter(
+              (p) => normalizeStatus(p.status_presenca) === "presente"
+            ).length;
 
-        if (erros.length) {
-          setErro(erros.join(" | "));
-        }
+            const ausentes = registros.filter(
+              (p) => normalizeStatus(p.status_presenca) === "ausente"
+            ).length;
+
+            const justificados = registros.filter(
+              (p) => normalizeStatus(p.status_presenca) === "justificado"
+            ).length;
+
+            const treinandos = registros.length || Number(t.participantes || 0);
+            const totalLancados = presentes + ausentes + justificados;
+            const pendentes = Math.max(treinandos - totalLancados, 0);
+            const taxa = treinandos ? Math.round((presentes / treinandos) * 100) : 0;
+
+            const statusTurma = getStatusTurma({
+              treinandos,
+              presentes,
+              ausentes,
+              justificados,
+              pendentes,
+            });
+
+            const classificacao = getClassificacao({
+              taxa,
+              treinandos,
+              pendentes,
+              statusTurma,
+            });
+
+            return {
+              ...t,
+              treinandos,
+              presentes,
+              ausentes,
+              justificados,
+              pendentes,
+              taxa,
+              classificacao,
+              statusTurma,
+            };
+          })
+        );
+
+        setTreinamentos(turmasComBase);
       } catch (error) {
         setErro(error.message || "Erro ao carregar gestão de turmas.");
       } finally {
@@ -148,71 +178,21 @@ export default function GestaoTurmasPage() {
   }, []);
 
   const turmas = useMemo(() => {
-    return treinamentos
-      .map((t) => {
-        const registros = presencas.filter(
-          (p) => String(p.treinamento_id) === String(t.id)
-        );
+    return [...treinamentos].sort((a, b) => {
+      const ordemStatus = {
+        "Sem treinandos": 1,
+        "Chamada pendente": 2,
+        "Em andamento": 3,
+        "Concluída": 4,
+      };
 
-        const presentes = registros.filter(
-          (p) => normalizeStatus(p.status) === "presente"
-        ).length;
+      const aOrdem = ordemStatus[a.statusTurma] || 99;
+      const bOrdem = ordemStatus[b.statusTurma] || 99;
 
-        const ausentes = registros.filter(
-          (p) => normalizeStatus(p.status) === "ausente"
-        ).length;
-
-        const justificados = registros.filter(
-          (p) => normalizeStatus(p.status) === "justificado"
-        ).length;
-
-        const treinandos = Number(t.participantes || registros.length || 0);
-        const totalLancados = presentes + ausentes + justificados;
-        const pendentes = Math.max(treinandos - totalLancados, 0);
-        const taxa = treinandos ? Math.round((presentes / treinandos) * 100) : 0;
-
-        const statusTurma = getStatusTurma({
-          treinandos,
-          presentes,
-          ausentes,
-          justificados,
-          pendentes,
-        });
-
-        const classificacao = getClassificacao({
-          taxa,
-          treinandos,
-          pendentes,
-          statusTurma,
-        });
-
-        return {
-          ...t,
-          treinandos,
-          presentes,
-          ausentes,
-          justificados,
-          pendentes,
-          taxa,
-          classificacao,
-          statusTurma,
-        };
-      })
-      .sort((a, b) => {
-        const ordemStatus = {
-          "Sem treinandos": 1,
-          "Chamada pendente": 2,
-          "Em andamento": 3,
-          "Concluída": 4,
-        };
-
-        const aOrdem = ordemStatus[a.statusTurma] || 99;
-        const bOrdem = ordemStatus[b.statusTurma] || 99;
-
-        if (aOrdem !== bOrdem) return aOrdem - bOrdem;
-        return a.taxa - b.taxa;
-      });
-  }, [treinamentos, presencas]);
+      if (aOrdem !== bOrdem) return aOrdem - bOrdem;
+      return a.taxa - b.taxa;
+    });
+  }, [treinamentos]);
 
   const clientesOptions = useMemo(() => {
     const lista = [...new Set(turmas.map((item) => item.cliente).filter(Boolean))];
@@ -293,7 +273,7 @@ export default function GestaoTurmasPage() {
     >
       {loading ? (
         <div style={loadingBox}>Carregando gestão de turmas...</div>
-           ) : erro ? (
+      ) : erro ? (
         <div style={errorBox}>
           <div style={{ fontWeight: 800, marginBottom: 8 }}>
             Não foi possível concluir o carregamento da Gestão de Turmas.
@@ -380,7 +360,7 @@ export default function GestaoTurmasPage() {
             <StatCard
               title="Treinandos"
               value={fmt(resumo.treinandos)}
-              subtitle="Capacidade planejada"
+              subtitle="Base ativa vinculada"
               accent="#38bdf8"
             />
             <StatCard
@@ -518,7 +498,6 @@ const filtersGrid = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr 1.4fr auto",
   gap: 12,
-  alignItems: "end",
 };
 
 const fieldWrap = {
@@ -527,63 +506,54 @@ const fieldWrap = {
 };
 
 const label = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#334155",
+  fontWeight: 800,
+  color: "#0f172a",
+  fontSize: 14,
 };
 
 const input = {
   width: "100%",
-  padding: "11px 12px",
+  height: 42,
   borderRadius: 10,
   border: "1px solid #cbd5e1",
-  background: "#fff",
-  color: "#0f172a",
+  padding: "0 12px",
   fontSize: 14,
+  color: "#0f172a",
   outline: "none",
+  background: "#ffffff",
+  boxSizing: "border-box",
 };
 
 const actionsWrap = {
   display: "flex",
-  justifyContent: "flex-end",
-};
-
-const btnSecundario = {
-  background: "#e2e8f0",
-  color: "#0f172a",
-  border: 0,
-  borderRadius: 10,
-  padding: "11px 14px",
-  cursor: "pointer",
-  fontWeight: 700,
+  alignItems: "flex-end",
 };
 
 const statsGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 14,
-  marginBottom: 16,
+  marginTop: 14,
 };
 
 const statusGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 14,
-  marginBottom: 16,
+  marginTop: 14,
 };
 
 const cardsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   gap: 14,
 };
 
 const turmaCard = {
-  background: "#fff",
+  background: "#f8fafc",
   border: "1px solid #e2e8f0",
   borderRadius: 18,
-  padding: 16,
-  boxShadow: "0 8px 22px rgba(15,23,42,.05)",
+  padding: 14,
   display: "grid",
   gap: 10,
 };
@@ -592,112 +562,123 @@ const cardTop = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
+  gap: 10,
 };
 
 const statusWrap = {
-  marginTop: -2,
+  display: "flex",
+  justifyContent: "flex-start",
 };
 
 const badgeCritico = {
-  background: "#fef2f2",
-  color: "#b91c1c",
+  display: "inline-block",
+  padding: "5px 9px",
   borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 12,
+  background: "#fee2e2",
+  color: "#b91c1c",
   fontWeight: 800,
+  fontSize: 11,
 };
 
 const badgeAtencao = {
-  background: "#fff7ed",
-  color: "#c2410c",
+  display: "inline-block",
+  padding: "5px 9px",
   borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 12,
+  background: "#fef3c7",
+  color: "#92400e",
   fontWeight: 800,
+  fontSize: 11,
 };
 
 const badgeEstavel = {
-  background: "#ecfdf5",
-  color: "#047857",
+  display: "inline-block",
+  padding: "5px 9px",
   borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 12,
+  background: "#dcfce7",
+  color: "#166534",
   fontWeight: 800,
+  fontSize: 11,
 };
 
 const badgeTaxa = {
+  display: "inline-block",
+  padding: "5px 10px",
+  borderRadius: 999,
   background: "#eff6ff",
   color: "#1d4ed8",
-  borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 12,
   fontWeight: 800,
+  fontSize: 12,
 };
 
 const turmaTitulo = {
-  fontSize: 20,
+  fontSize: 18,
   fontWeight: 800,
   color: "#0f172a",
 };
 
 const turmaMeta = {
   color: "#64748b",
-  fontSize: 14,
+  fontSize: 13,
 };
 
 const miniLinha = {
   display: "flex",
-  gap: 18,
   flexWrap: "wrap",
-  color: "#64748b",
+  gap: 10,
+  color: "#334155",
   fontSize: 13,
+  fontWeight: 600,
 };
 
 const infoBloco = {
   display: "grid",
-  gap: 6,
-  color: "#475569",
-  fontSize: 14,
+  gap: 4,
+  color: "#334155",
+  fontSize: 13,
 };
 
 const acoesWrapCard = {
   marginTop: 4,
-  display: "flex",
-  justifyContent: "flex-end",
 };
 
 const btnPrimario = {
-  background: "#2563eb",
-  color: "#fff",
-  border: 0,
+  border: "none",
   borderRadius: 10,
   padding: "10px 14px",
+  background: "#2563eb",
+  color: "#fff",
+  fontWeight: 800,
   cursor: "pointer",
-  fontWeight: 700,
+};
+
+const btnSecundario = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  padding: "10px 14px",
+  background: "#fff",
+  color: "#334155",
+  fontWeight: 800,
+  cursor: "pointer",
 };
 
 const btnSecundarioAzul = {
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  border: 0,
+  border: "1px solid #bfdbfe",
   borderRadius: 10,
   padding: "10px 14px",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontWeight: 800,
   cursor: "pointer",
-  fontWeight: 700,
 };
 
 const btnAlerta = {
-  background: "#fff7ed",
-  color: "#c2410c",
-  border: "1px solid #fdba74",
+  border: "1px solid #fed7aa",
   borderRadius: 10,
   padding: "10px 14px",
+  background: "#fff7ed",
+  color: "#c2410c",
+  fontWeight: 800,
   cursor: "pointer",
-  fontWeight: 700,
-};
-
-const emptyText = {
-  color: "#64748b",
 };
 
 const loadingBox = {
@@ -716,4 +697,8 @@ const errorBox = {
   borderRadius: 16,
   padding: 16,
   fontWeight: 700,
+};
+
+const emptyText = {
+  color: "#64748b",
 };
