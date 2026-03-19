@@ -2,10 +2,8 @@ import pool from "../db.js";
 
 function parseHorasTexto(valor) {
   if (valor === null || valor === undefined || valor === "") return 0;
-
   const texto = String(valor).toLowerCase().replace(",", ".").trim();
   const match = texto.match(/(\d+(\.\d+)?)/);
-
   return match ? Number(match[1]) || 0 : 0;
 }
 
@@ -49,7 +47,12 @@ function getDiasPeriodo(item) {
 
   if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return 1;
 
-  const diffMs = d2.setHours(0, 0, 0, 0) - d1.setHours(0, 0, 0, 0);
+  const a = new Date(d1);
+  const b = new Date(d2);
+  a.setHours(0, 0, 0, 0);
+  b.setHours(0, 0, 0, 0);
+
+  const diffMs = b - a;
   const dias = Math.floor(diffMs / 86400000) + 1;
 
   return dias > 0 ? dias : 1;
@@ -236,7 +239,6 @@ export async function getDashboardTreinamentos(req, res) {
       const diasPeriodo = getDiasPeriodo(item);
       const cargaDia = diasPeriodo > 0 ? horasTotais / diasPeriodo : horasTotais;
       const presentesDia = Number(item.presentes_dia || 0);
-
       return acc + cargaDia * presentesDia;
     }, 0);
 
@@ -429,17 +431,14 @@ export async function getDashboardTreinamentos(req, res) {
     const taxaPresenca =
       Number(registrosChamada.total || 0) > 0
         ? Math.round(
-            (Number(presentes.total || 0) / Number(registrosChamada.total || 0)) *
-              100
+            (Number(presentes.total || 0) / Number(registrosChamada.total || 0)) * 100
           )
         : 0;
 
     const taxaConclusaoChamada =
       Number(participantesPrevistos.total || 0) > 0
         ? Math.round(
-            (Number(registrosChamada.total || 0) /
-              Number(participantesPrevistos.total || 0)) *
-              100
+            (Number(registrosChamada.total || 0) / Number(participantesPrevistos.total || 0)) * 100
           )
         : 0;
 
