@@ -55,7 +55,41 @@ async function getDashboardTreinamentos(req, res) {
       FROM treinamentos
     `);
 
-    // Base ativa atual da turma
+    const [[mediaParticipantesPorTurma]] = await pool.query(`
+      SELECT COALESCE(ROUND(AVG(participantes), 1), 0) AS total
+      FROM treinamentos
+    `);
+
+    const [baseTurmas] = await pool.query(`
+      SELECT
+        id,
+        participantes,
+        carga_horaria,
+        data,
+        data_inicio,
+        data_fim
+      FROM treinamentos
+    `);
+
+    const capacidadeDiariaPrevista = baseTurmas.reduce((acc, item) => {
+      const participantes = Number(item.participantes || 0);
+      const dias = getDiasPeriodo(item);
+      return acc + participantes * dias;
+    }, 0);
+
+    const [cargas] = await pool.query(`
+      SELECT carga_horaria
+      FROM treinamentos
+      WHERE carga_horaria IS NOT NULL
+        AND carga_horaria <> ''
+    `);
+
+    const cargaHorariaTotal = cargas.reduce(
+      (acc, item) => acc + parseHorasTexto(item.carga_horaria),
+      0
+    );
+
+    // Base ativa da turma (sem inflar por dias)
     const [[treinadosAtivos]] = await pool.query(`
       SELECT COUNT(*) AS total
       FROM treinamento_participantes tp
@@ -92,7 +126,7 @@ async function getDashboardTreinamentos(req, res) {
          OR tp.status_presenca = 'pendente'
     `);
 
-    // Registros diários reais, mas só de pessoas ainda ativas na turma
+    // Base diária real: só presenças de pessoas ainda ativas na turma
     const [[registrosChamada]] = await pool.query(`
       SELECT COUNT(*) AS total
       FROM presencas p
@@ -103,22 +137,43 @@ async function getDashboardTreinamentos(req, res) {
         ON t.id = p.treinamento_id
     `);
 
-    const [[mediaParticipantesPorTurma]] = await pool.query(`
-      SELECT COALESCE(ROUND(AVG(participantes), 1), 0) AS total
-      FROM treinamentos
+    const [[presentesDiarios]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM presencas p
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
+      WHERE p.status = 'presente'
     `);
 
-    const [cargas] = await pool.query(`
-      SELECT carga_horaria
-      FROM treinamentos
-      WHERE carga_horaria IS NOT NULL
-        AND carga_horaria <> ''
+    const [[ausentesDiarios]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM presencas p
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
+      WHERE p.status = 'ausente'
     `);
 
-    const cargaHorariaTotal = cargas.reduce(
-      (acc, item) => acc + parseHorasTexto(item.carga_horaria),
-      0
-    );
+    const [[justificadosDiarios]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM presencas p
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
+      WHERE p.status = 'justificado'
+    `);
+
+    const [[pendentesDiarios]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM presencas p
+      INNER JOIN treinamento_participantes tp
+        ON tp.treinamento_id = p.treinamento_id
+       AND tp.nome = p.treinando_nome
+      WHERE p.status IS NULL
+         OR p.status = ''
+         OR p.status = 'pendente'
+    `);
 
     const [horasTreinadasBase] = await pool.query(`
       SELECT
@@ -154,7 +209,6 @@ async function getDashboardTreinamentos(req, res) {
       return acc + cargaDia * presentesDia;
     }, 0);
 
-    // Presença por cliente baseada só na base ativa
     const [presencaPorCliente] = await pool.query(`
       SELECT
         t.cliente,
@@ -270,20 +324,37 @@ async function getDashboardTreinamentos(req, res) {
         : 0;
 
     const totalTreinamentos = Number(treinamentos.total || 0);
-    const totalTreinados = Number(treinadosAtivos.total || 0);
     const totalPrevistos = Number(participantesPrevistos.total || 0);
-    const totalPresentes = Number(presentesAtivos.total || 0);
-    const totalAusentes = Number(ausentesAtivos.total || 0);
-    const totalJustificados = Number(justificadosAtivos.total || 0);
-    const totalPendentes = Number(pendentesAtivos.total || 0);
+
+    const totalTreinadosAtivos = Number(treinadosAtivos.total || 0);
+    const totalPresentesAtivos = Number(presentesAtivos.total || 0);
+    const totalAusentesAtivos = Number(ausentesAtivos.total || 0);
+    const totalJustificadosAtivos = Number(justificadosAtivos.total || 0);
+    const totalPendentesAtivos = Number(pendentesAtivos.total || 0);
+
     const totalRegistrosChamada = Number(registrosChamada.total || 0);
+    const totalPresentesDiarios = Number(presentesDiarios.total || 0);
+    const totalAusentesDiarios = Number(ausentesDiarios.total || 0);
+    const totalJustificadosDiarios = Number(justificadosDiarios.total || 0);
+    const totalPendentesDiarios = Number(pendentesDiarios.total || 0);
 
     const taxaPresenca =
-      totalTreinados > 0 ? Math.round((totalPresentes / totalTreinados) * 100) : 0;
+      totalRegistrosChamada > 0
+        ? Math.round((totalPresentesDiarios / totalRegistrosChamada) * 100)
+        : 0;
+
+    const taxaExecucaoDiaria =
+      capacidadeDiariaPrevista > 0
+        ? Math.round((totalRegistrosChamada / capacidadeDiariaPrevista) * 100)
+        : 0;
+
+    const gapDiario = Math.max(capacidadeDiariaPrevista - totalRegistrosChamada, 0);
 
     const taxaConclusaoChamada =
-      totalTreinados > 0
-        ? Math.round(((totalTreinados - totalPendentes) / totalTreinados) * 100)
+      totalTreinadosAtivos > 0
+        ? Math.round(
+            ((totalTreinadosAtivos - totalPendentesAtivos) / totalTreinadosAtivos) * 100
+          )
         : 0;
 
     return res.json({
@@ -292,11 +363,14 @@ async function getDashboardTreinamentos(req, res) {
         treinamentos: totalTreinamentos,
         treinados: totalRegistrosChamada,
         participantes_previstos: totalPrevistos,
-        presentes: totalPresentes,
-        ausentes: totalAusentes,
-        justificados: totalJustificados,
-        pendentes: totalPendentes,
+        capacidade_diaria_prevista: capacidadeDiariaPrevista,
+        presentes: totalPresentesDiarios,
+        ausentes: totalAusentesDiarios,
+        justificados: totalJustificadosDiarios,
+        pendentes: totalPendentesDiarios,
         taxa_presenca: taxaPresenca,
+        taxa_execucao_diaria: taxaExecucaoDiaria,
+        gap_diario: gapDiario,
         taxa_conclusao_chamada: taxaConclusaoChamada,
         media_participantes_por_turma: Number(mediaParticipantesPorTurma.total || 0),
         horas_treinadas: Number(horasTreinadas.toFixed(1)),
@@ -305,6 +379,11 @@ async function getDashboardTreinamentos(req, res) {
         clientes_com_treinamento: Number(clientesComTreinamento.total || 0),
         nps,
         respostas_nps: respostasNps,
+        base_ativa_total: totalTreinadosAtivos,
+        base_ativa_presentes: totalPresentesAtivos,
+        base_ativa_ausentes: totalAusentesAtivos,
+        base_ativa_justificados: totalJustificadosAtivos,
+        base_ativa_pendentes: totalPendentesAtivos,
       },
       presenca_por_cliente: presencaPorCliente.map((item) => ({
         ...item,
