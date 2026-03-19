@@ -38,6 +38,13 @@ const {
   createAvaliacaoTreinando,
 } = require("./controllers/avaliacoesTreinandosController");
 
+const {
+  listRespostasAvaliativas,
+  createRespostaAvaliativa,
+  updateRespostaAvaliativa,
+  deleteRespostaAvaliativa,
+} = require("./controllers/respostasAvaliativasController");
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -296,6 +303,34 @@ app.use(
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
   })
+);
+
+app.get(
+  "/api/respostas-avaliativas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listRespostasAvaliativas
+);
+
+app.post(
+  "/api/respostas-avaliativas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  createRespostaAvaliativa
+);
+
+app.put(
+  "/api/respostas-avaliativas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  updateRespostaAvaliativa
+);
+
+app.delete(
+  "/api/respostas-avaliativas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteRespostaAvaliativa
 );
 
 // NOVAS ROTAS: frequência individual
