@@ -1,6 +1,6 @@
-import pool from "../db.js";
+const pool = require("../lib/db");
 
-export async function listMateriaisAvaliativos(req, res) {
+async function listMateriaisAvaliativos(req, res) {
   try {
     const [rows] = await pool.query(`
       SELECT
@@ -17,9 +17,10 @@ export async function listMateriaisAvaliativos(req, res) {
       FROM materiais_avaliativos
       ORDER BY id DESC
     `);
-    res.json(rows);
+
+    return res.json(rows);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao listar materiais avaliativos",
       error: error.message,
@@ -27,7 +28,7 @@ export async function listMateriaisAvaliativos(req, res) {
   }
 }
 
-export async function createMaterialAvaliativo(req, res) {
+async function createMaterialAvaliativo(req, res) {
   try {
     const {
       treinamento_id,
@@ -48,7 +49,8 @@ export async function createMaterialAvaliativo(req, res) {
     }
 
     const [result] = await pool.query(
-      `INSERT INTO materiais_avaliativos
+      `
+      INSERT INTO materiais_avaliativos
       (
         treinamento_id,
         titulo,
@@ -59,7 +61,8 @@ export async function createMaterialAvaliativo(req, res) {
         data_aplicacao,
         questoes_json
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
       [
         treinamento_id,
         titulo,
@@ -72,9 +75,13 @@ export async function createMaterialAvaliativo(req, res) {
       ]
     );
 
-    res.status(201).json({ ok: true, id: result.insertId });
+    return res.status(201).json({
+      ok: true,
+      id: result.insertId,
+      message: "Material avaliativo criado com sucesso",
+    });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao criar material avaliativo",
       error: error.message,
@@ -82,7 +89,7 @@ export async function createMaterialAvaliativo(req, res) {
   }
 }
 
-export async function updateMaterialAvaliativo(req, res) {
+async function updateMaterialAvaliativo(req, res) {
   try {
     const { id } = req.params;
     const {
@@ -104,9 +111,19 @@ export async function updateMaterialAvaliativo(req, res) {
     }
 
     await pool.query(
-      `UPDATE materiais_avaliativos
-       SET treinamento_id = ?, titulo = ?, tipo = ?, link_arquivo = ?, descricao = ?, nota_maxima = ?, data_aplicacao = ?, questoes_json = ?
-       WHERE id = ?`,
+      `
+      UPDATE materiais_avaliativos
+      SET
+        treinamento_id = ?,
+        titulo = ?,
+        tipo = ?,
+        link_arquivo = ?,
+        descricao = ?,
+        nota_maxima = ?,
+        data_aplicacao = ?,
+        questoes_json = ?
+      WHERE id = ?
+      `,
       [
         treinamento_id,
         titulo,
@@ -120,9 +137,12 @@ export async function updateMaterialAvaliativo(req, res) {
       ]
     );
 
-    res.json({ ok: true });
+    return res.json({
+      ok: true,
+      message: "Material avaliativo atualizado com sucesso",
+    });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao atualizar material avaliativo",
       error: error.message,
@@ -130,7 +150,7 @@ export async function updateMaterialAvaliativo(req, res) {
   }
 }
 
-export async function deleteMaterialAvaliativo(req, res) {
+async function deleteMaterialAvaliativo(req, res) {
   try {
     const { id } = req.params;
 
@@ -173,15 +193,22 @@ export async function deleteMaterialAvaliativo(req, res) {
       [id]
     );
 
-    res.json({
+    return res.json({
       ok: true,
       message: "Material avaliativo e resultados vinculados excluídos com sucesso",
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao excluir material avaliativo",
       error: error.message,
     });
   }
 }
+
+module.exports = {
+  listMateriaisAvaliativos,
+  createMaterialAvaliativo,
+  updateMaterialAvaliativo,
+  deleteMaterialAvaliativo,
+};
