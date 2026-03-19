@@ -4,6 +4,58 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "./PortalShell";
 import { apiFetch, getStoredUser, hasSomeRole } from "../services/api";
 
+function normalizeDateValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+
+  const text = String(value).trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return text;
+  }
+
+  const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoMatch) {
+    return isoMatch[1];
+  }
+
+  const date = new Date(text);
+  if (!Number.isNaN(date.getTime())) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  return "";
+}
+
+function buildInitialForm(item, fields) {
+  const next = { ...item };
+
+  fields.forEach((field) => {
+    if (field.type === "date") {
+      next[field.name] = normalizeDateValue(item?.[field.name]);
+    } else if (next[field.name] === null || next[field.name] === undefined) {
+      next[field.name] = "";
+    }
+  });
+
+  return next;
+}
+
+function buildPayload(form, fields) {
+  const payload = { ...form };
+
+  fields.forEach((field) => {
+    if (field.type === "date") {
+      const value = payload[field.name];
+      payload[field.name] = value ? normalizeDateValue(value) : null;
+    }
+  });
+
+  return payload;
+}
+
 export default function CrudPageV2({
   title,
   subtitle,
@@ -88,7 +140,7 @@ export default function CrudPageV2({
       return;
     }
 
-    setForm({ ...item });
+    setForm(buildInitialForm(item, fields));
     setEditingId(item?.id || null);
     setErro("");
     setSucesso("");
@@ -142,10 +194,11 @@ export default function CrudPageV2({
 
       const metodo = editingId ? "PUT" : "POST";
       const url = editingId ? `${endpoint}/${editingId}` : endpoint;
+      const payload = buildPayload(form, fields);
 
       await apiFetch(url, {
         method: metodo,
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       setSucesso(editingId ? "Registro atualizado com sucesso." : "Registro criado com sucesso.");
@@ -519,22 +572,31 @@ const buttonSecondary = {
 
 const recordsHeader = {
   display: "flex",
-  gap: 12,
+  alignItems: "center",
   justifyContent: "space-between",
-  alignItems: "flex-start",
+  gap: 12,
   flexWrap: "wrap",
   marginBottom: 12,
 };
 
 const searchInput = {
-  width: 180,
-  height: 38,
+  minWidth: 220,
+  height: 40,
   borderRadius: 10,
   border: "1px solid #cbd5e1",
   padding: "0 12px",
   fontSize: 14,
   outline: "none",
   boxSizing: "border-box",
+};
+
+const emptyState = {
+  padding: 18,
+  borderRadius: 14,
+  background: "#f8fafc",
+  border: "1px dashed #cbd5e1",
+  color: "#64748b",
+  textAlign: "center",
 };
 
 const table = {
@@ -544,64 +606,61 @@ const table = {
 
 const th = {
   textAlign: "left",
-  padding: "10px 8px",
+  padding: "12px 10px",
   borderBottom: "1px solid #e2e8f0",
-  color: "#334155",
-  fontSize: 12,
-  textTransform: "uppercase",
-  letterSpacing: ".03em",
+  color: "#475569",
+  fontSize: 13,
 };
 
 const td = {
-  padding: "12px 8px",
+  padding: "12px 10px",
   borderBottom: "1px solid #f1f5f9",
-  verticalAlign: "top",
+  color: "#0f172a",
   fontSize: 14,
+  verticalAlign: "top",
 };
 
 const tableActions = {
   display: "flex",
-  gap: 6,
+  gap: 8,
   flexWrap: "wrap",
 };
 
+const miniEditButton = {
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  borderRadius: 8,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const miniDeleteButton = {
+  border: "1px solid #fecaca",
+  background: "#fff1f2",
+  color: "#be123c",
+  borderRadius: 8,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
 const cardWrapper = {
-  background: "#ffffff",
+  background: "#f8fafc",
   border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-  boxShadow: "0 6px 14px rgba(15, 23, 42, 0.03)",
+  borderRadius: 16,
+  padding: 14,
   display: "grid",
   gap: 10,
 };
 
 const cardActions = {
   display: "flex",
-  gap: 6,
+  gap: 8,
   flexWrap: "wrap",
-  justifyContent: "flex-end",
-};
-
-const miniEditButton = {
-  border: "none",
-  borderRadius: 10,
-  padding: "8px 12px",
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 13,
-};
-
-const miniDeleteButton = {
-  border: "none",
-  borderRadius: 10,
-  padding: "8px 12px",
-  background: "#fee2e2",
-  color: "#b91c1c",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 13,
 };
 
 const errorBox = {
@@ -622,13 +681,4 @@ const successBox = {
   padding: 12,
   fontWeight: 700,
   marginBottom: 12,
-};
-
-const emptyState = {
-  padding: 14,
-  borderRadius: 12,
-  background: "#f8fafc",
-  color: "#64748b",
-  textAlign: "center",
-  fontSize: 14,
 };
