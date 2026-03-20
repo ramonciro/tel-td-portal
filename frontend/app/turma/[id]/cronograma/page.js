@@ -64,6 +64,22 @@ function statusStyle(value) {
   return { ...base, background: "#e2e8f0", color: "#475569" };
 }
 
+function desempenhoBadge(value) {
+  const taxa = Number(value || 0);
+
+  const base = {
+    display: "inline-block",
+    padding: "5px 10px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 12,
+  };
+
+  if (taxa >= 90) return { ...base, background: "#dcfce7", color: "#166534" };
+  if (taxa >= 70) return { ...base, background: "#fef3c7", color: "#92400e" };
+  return { ...base, background: "#fee2e2", color: "#b91c1c" };
+}
+
 const emptyForm = {
   id: null,
   dia_numero: "",
@@ -89,6 +105,7 @@ export default function CronogramaTurmaPage({ params }) {
 
   const [treinamento, setTreinamento] = useState(null);
   const [aulas, setAulas] = useState([]);
+  const [resumoApi, setResumoApi] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
@@ -105,13 +122,15 @@ export default function CronogramaTurmaPage({ params }) {
       setLoading(true);
       setErro("");
 
-      const [turmaData, aulasData] = await Promise.all([
+      const [turmaData, aulasData, resumoData] = await Promise.all([
         apiFetch(`/treinamentos/${id}`).catch(() => null),
         apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
+        apiFetch(`/turma-aulas/resumo/${id}`).catch(() => null),
       ]);
 
       setTreinamento(turmaData || null);
       setAulas(Array.isArray(aulasData) ? aulasData : []);
+      setResumoApi(resumoData || null);
     } catch (error) {
       setErro(error.message || "Erro ao carregar cronograma da turma.");
     } finally {
@@ -261,6 +280,9 @@ export default function CronogramaTurmaPage({ params }) {
   }
 
   const resumo = useMemo(() => {
+    if (resumoApi?.resumo) return resumoApi.resumo;
+
+    const total = aulas.length;
     const planejadas = aulas.filter((a) => statusLabel(a.status_execucao) === "Planejada").length;
     const ministradas = aulas.filter((a) => statusLabel(a.status_execucao) === "Ministrada").length;
     const parciais = aulas.filter((a) => statusLabel(a.status_execucao) === "Parcial").length;
@@ -277,22 +299,20 @@ export default function CronogramaTurmaPage({ params }) {
       0
     );
 
-    const aderencia = aulas.length
-      ? Math.round(((ministradas + parciais) / aulas.length) * 100)
-      : 0;
-
     return {
-      total: aulas.length,
+      total_aulas: total,
       planejadas,
       ministradas,
       parciais,
       reprogramadas,
       canceladas,
-      cargaPlanejada,
-      cargaReal,
-      aderencia,
+      carga_planejada: cargaPlanejada,
+      carga_real: cargaReal,
+      aderencia_aulas: total ? Math.round(((ministradas + parciais) / total) * 100) : 0,
+      aderencia_carga: cargaPlanejada > 0 ? Math.round((cargaReal / cargaPlanejada) * 100) : 0,
+      desvio_carga: Number((cargaReal - cargaPlanejada).toFixed(2)),
     };
-  }, [aulas]);
+  }, [resumoApi, aulas]);
 
   const agrupadas = useMemo(() => {
     const mapa = {};
@@ -314,6 +334,14 @@ export default function CronogramaTurmaPage({ params }) {
       return String(a.data_aula).localeCompare(String(b.data_aula));
     });
   }, [aulas]);
+
+  const resumoDias = useMemo(() => {
+    return Array.isArray(resumoApi?.por_dia) ? resumoApi.por_dia : [];
+  }, [resumoApi]);
+
+  const alertas = useMemo(() => {
+    return Array.isArray(resumoApi?.alertas) ? resumoApi.alertas : [];
+  }, [resumoApi]);
 
   const topRight = (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -348,19 +376,99 @@ export default function CronogramaTurmaPage({ params }) {
           {erro ? <div style={errorBox}>{erro}</div> : null}
           {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
-          <div style={heroGrid}>
-            <StatCard title="Aulas" value={fmt(resumo.total)} subtitle="Total planejado" accent="#2563eb" />
-            <StatCard title="Ministradas" value={fmt(resumo.ministradas)} subtitle="Execução concluída" accent="#16a34a" />
-            <StatCard title="Parciais" value={fmt(resumo.parciais)} subtitle="Execução incompleta" accent="#f59e0b" />
-            <StatCard title="Aderência" value={`${fmt(resumo.aderencia)}%`} subtitle="Planejado x executado" accent="#7c3aed" />
+          <div style={heroPanel}>
+            <div>
+              <div style={heroBadge}>Plano de execução</div>
+              <h2 style={heroTitle}>Aderência da turma</h2>
+              <p style={heroText}>
+                Acompanhe o cronograma planejado, o que foi realmente ministrado e os desvios da execução.
+              </p>
+            </div>
+
+            <div style={heroMetrics}>
+              <div style={heroMetricCard}>
+                <span style={heroMetricLabel}>Aderência de aulas</span>
+                <strong style={heroMetricValue}>{fmt(resumo.aderencia_aulas || 0)}%</strong>
+              </div>
+              <div style={heroMetricCard}>
+                <span style={heroMetricLabel}>Aderência de carga</span>
+                <strong style={heroMetricValue}>{fmt(resumo.aderencia_carga || 0)}%</strong>
+              </div>
+              <div style={heroMetricCard}>
+                <span style={heroMetricLabel}>Desvio de carga</span>
+                <strong style={heroMetricValue}>{fmt(resumo.desvio_carga || 0)}h</strong>
+              </div>
+            </div>
           </div>
 
           <div style={heroGrid}>
-            <StatCard title="Reprogramadas" value={fmt(resumo.reprogramadas)} subtitle="Aulas remanejadas" accent="#1d4ed8" />
-            <StatCard title="Canceladas" value={fmt(resumo.canceladas)} subtitle="Não executadas" accent="#dc2626" />
-            <StatCard title="Carga planejada" value={`${fmt(resumo.cargaPlanejada)}h`} subtitle="Somatório previsto" accent="#06b6d4" />
-            <StatCard title="Carga real" value={`${fmt(resumo.cargaReal)}h`} subtitle="Somatório ministrado" accent="#0891b2" />
+            <StatCard title="Aulas" value={fmt(resumo.total_aulas || 0)} subtitle="Total planejado" accent="#2563eb" />
+            <StatCard title="Ministradas" value={fmt(resumo.ministradas || 0)} subtitle="Execução concluída" accent="#16a34a" />
+            <StatCard title="Parciais" value={fmt(resumo.parciais || 0)} subtitle="Execução incompleta" accent="#f59e0b" />
+            <StatCard title="Planejadas" value={fmt(resumo.planejadas || 0)} subtitle="Aguardando execução" accent="#475569" />
           </div>
+
+          <div style={heroGrid}>
+            <StatCard title="Reprogramadas" value={fmt(resumo.reprogramadas || 0)} subtitle="Aulas remanejadas" accent="#1d4ed8" />
+            <StatCard title="Canceladas" value={fmt(resumo.canceladas || 0)} subtitle="Não executadas" accent="#dc2626" />
+            <StatCard title="Carga planejada" value={`${fmt(resumo.carga_planejada || 0)}h`} subtitle="Somatório previsto" accent="#06b6d4" />
+            <StatCard title="Carga real" value={`${fmt(resumo.carga_real || 0)}h`} subtitle="Somatório ministrado" accent="#0891b2" />
+          </div>
+
+          <SectionCard
+            title="Leitura gerencial"
+            subtitle="Alertas prontos para acompanhamento da execução da turma."
+          >
+            {alertas.length ? (
+              <div style={alertsGrid}>
+                {alertas.map((item, index) => (
+                  <div key={`${item}-${index}`} style={alertItem}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyText}>Sem alertas no momento.</div>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Painel por dia"
+            subtitle="Resumo diário da aderência da turma."
+          >
+            {resumoDias.length ? (
+              <div style={daysSummaryGrid}>
+                {resumoDias.map((dia) => (
+                  <div key={`${dia.dia_numero}-${dia.data_aula}`} style={daySummaryCard}>
+                    <div style={daySummaryTop}>
+                      <div>
+                        <div style={daySummaryTitle}>Dia {dia.dia_numero}</div>
+                        <div style={daySummaryMeta}>{formatDate(dia.data_aula)}</div>
+                      </div>
+                      <span style={desempenhoBadge(dia.aderencia_aulas)}>
+                        {fmt(dia.aderencia_aulas)}%
+                      </span>
+                    </div>
+
+                    <div style={daySummaryLine}>
+                      {fmt(dia.total_aulas)} aula(s) • {fmt(dia.ministradas)} ministrada(s) • {fmt(dia.parciais)} parcial(is)
+                    </div>
+                    <div style={daySummaryLine}>
+                      {fmt(dia.planejadas)} planejada(s) • {fmt(dia.reprogramadas)} reprogramada(s) • {fmt(dia.canceladas)} cancelada(s)
+                    </div>
+                    <div style={daySummaryLine}>
+                      Carga: {fmt(dia.carga_real)}h / {fmt(dia.carga_planejada)}h
+                    </div>
+                    <div style={daySummaryLine}>
+                      Desvio: {fmt(dia.desvio_carga)}h
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyText}>Sem dados diários para exibir.</div>
+            )}
+          </SectionCard>
 
           <SectionCard
             title={form.id ? "Editar aula da turma" : "Nova aula da turma"}
@@ -661,10 +769,126 @@ const successBox = {
   fontWeight: 700,
 };
 
+const heroPanel = {
+  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
+  borderRadius: 22,
+  padding: 22,
+  color: "#ffffff",
+  boxShadow: "0 14px 30px rgba(29, 78, 216, 0.18)",
+  display: "grid",
+  gridTemplateColumns: "1.4fr 1fr",
+  gap: 14,
+};
+
+const heroBadge = {
+  display: "inline-block",
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,.14)",
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  marginBottom: 10,
+};
+
+const heroTitle = {
+  margin: 0,
+  fontSize: 28,
+  lineHeight: 1.1,
+};
+
+const heroText = {
+  margin: "10px 0 0",
+  color: "rgba(255,255,255,.88)",
+  lineHeight: 1.6,
+};
+
+const heroMetrics = {
+  display: "grid",
+  gap: 10,
+};
+
+const heroMetricCard = {
+  background: "rgba(255,255,255,.12)",
+  border: "1px solid rgba(255,255,255,.14)",
+  borderRadius: 16,
+  padding: 16,
+  display: "grid",
+  gap: 6,
+};
+
+const heroMetricLabel = {
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  color: "rgba(255,255,255,.82)",
+};
+
+const heroMetricValue = {
+  fontSize: 28,
+  lineHeight: 1.1,
+};
+
 const heroGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 12,
+};
+
+const daysSummaryGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+};
+
+const daySummaryCard = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 14,
+  display: "grid",
+  gap: 8,
+};
+
+const daySummaryTop = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 10,
+};
+
+const daySummaryTitle = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const daySummaryMeta = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const daySummaryLine = {
+  color: "#334155",
+  lineHeight: 1.45,
+  fontSize: 13,
+};
+
+const alertsGrid = {
+  display: "grid",
+  gap: 10,
+};
+
+const alertItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 14,
+  color: "#334155",
+  lineHeight: 1.5,
+  fontWeight: 600,
 };
 
 const formGrid = {
