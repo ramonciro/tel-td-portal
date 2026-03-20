@@ -56,6 +56,13 @@ const {
   getResumoTurmaAulas,
 } = require("./controllers/turmaAulasController");
 
+const {
+  listarPresencaAula,
+  inicializarPresencaAula,
+  salvarPresencaAula,
+  resumoPresencaAula,
+} = require("./controllers/presencaAulasController");
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -137,6 +144,7 @@ app.delete(
         [id]
       );
 
+      await pool.query(`DELETE FROM presenca_aulas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
@@ -333,6 +341,35 @@ app.post(
   duplicarPlanoAulas
 );
 
+// PRESENÇA POR AULA
+app.get(
+  "/api/presenca-aulas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listarPresencaAula
+);
+
+app.post(
+  "/api/presenca-aulas/inicializar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  inicializarPresencaAula
+);
+
+app.post(
+  "/api/presenca-aulas/salvar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  salvarPresencaAula
+);
+
+app.get(
+  "/api/presenca-aulas/resumo/:turma_aula_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  resumoPresencaAula
+);
+
 app.use(
   "/api/presencas",
   createCrudRouter({
@@ -498,6 +535,7 @@ app.get(
       await pool.query("SET FOREIGN_KEY_CHECKS = 0");
 
       await pool.query("TRUNCATE TABLE avaliacoes");
+      await pool.query("TRUNCATE TABLE presenca_aulas");
       await pool.query("TRUNCATE TABLE presencas");
       await pool.query("TRUNCATE TABLE treinamento_participantes");
       await pool.query("TRUNCATE TABLE turma_aulas");
@@ -540,6 +578,7 @@ app.get(
       if (truncate) {
         await pool.query("SET FOREIGN_KEY_CHECKS = 0");
         await pool.query("TRUNCATE TABLE avaliacoes");
+        await pool.query("TRUNCATE TABLE presenca_aulas");
         await pool.query("TRUNCATE TABLE presencas");
         await pool.query("TRUNCATE TABLE treinamento_participantes");
         await pool.query("TRUNCATE TABLE turma_aulas");
