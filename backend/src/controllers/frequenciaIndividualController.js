@@ -1,9 +1,30 @@
 const pool = require("../lib/db");
 
+function parseLocalDate(dateValue) {
+  if (!dateValue) return null;
+
+  if (dateValue instanceof Date) {
+    return new Date(
+      dateValue.getFullYear(),
+      dateValue.getMonth(),
+      dateValue.getDate()
+    );
+  }
+
+  const text = String(dateValue).trim().slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length !== 3) return null;
+
+  const [year, month, day] = parts.map(Number);
+  if (!year || !month || !day) return null;
+
+  return new Date(year, month - 1, day);
+}
+
 function isSunday(dateValue) {
-  if (!dateValue) return false;
-  const d = new Date(dateValue);
-  if (Number.isNaN(d.getTime())) return false;
+  const d = parseLocalDate(dateValue);
+  if (!d || Number.isNaN(d.getTime())) return false;
   return d.getDay() === 0;
 }
 
@@ -33,8 +54,6 @@ async function getFrequenciaIndividual(req, res) {
       where.push("DATE(p.data_chamada) <= ?");
       params.push(fim);
     }
-
-    where.push("DAYOFWEEK(p.data_chamada) <> 1");
 
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -80,11 +99,52 @@ async function getFrequenciaIndividual(req, res) {
       params
     );
 
-    const totalTreinandos = rows.length;
+    const itens = rows.map((item) => {
+      const diasRegistrados = Number(item.dias_registrados || 0);
+      const presentes = Number(item.presentes || 0);
+      const ausentes = Number(item.ausentes || 0);
+      const justificados = Number(item.justificados || 0);
+      const pendentes = Number(item.pendentes || 0);
+
+      const primeira = item.primeira_chamada;
+      const ultima = item.ultima_chamada;
+
+      const sundayCount = [primeira, ultima].filter(
+        (d, idx, arr) => d && isSunday(d) && arr.indexOf(d) === idx
+      ).length;
+
+      const diasValidos = Math.max(diasRegistrados - sundayCount, 0);
+
+      const frequenciaPercentual =
+        diasValidos > 0 ? Number(((presentes / diasValidos) * 100).toFixed(1)) : 0;
+
+      return {
+        ...item,
+        dias_registrados: diasValidos,
+        presentes,
+        ausentes,
+        justificados,
+        pendentes,
+        frequencia_percentual: frequenciaPercentual,
+      };
+    });
+
+    const itensSemDomingo = itens.filter((item) => {
+      const primeira = item.primeira_chamada;
+      const ultima = item.ultima_chamada;
+      const apenasDomingo =
+        item.dias_registrados === 0 &&
+        ((primeira && isSunday(primeira)) || (ultima && isSunday(ultima)));
+
+      return !apenasDomingo;
+    });
+
+    const totalTreinandos = itensSemDomingo.length;
+
     const mediaFrequencia = totalTreinandos
       ? Number(
           (
-            rows.reduce(
+            itensSemDomingo.reduce(
               (acc, item) => acc + Number(item.frequencia_percentual || 0),
               0
             ) / totalTreinandos
@@ -92,16 +152,16 @@ async function getFrequenciaIndividual(req, res) {
         )
       : 0;
 
-    const criticos = rows.filter(
+    const criticos = itensSemDomingo.filter(
       (item) => Number(item.frequencia_percentual || 0) < 75
     ).length;
 
-    const atencao = rows.filter((item) => {
+    const atencao = itensSemDomingo.filter((item) => {
       const freq = Number(item.frequencia_percentual || 0);
       return freq >= 75 && freq < 90;
     }).length;
 
-    const estaveis = rows.filter(
+    const estaveis = itensSemDomingo.filter(
       (item) => Number(item.frequencia_percentual || 0) >= 90
     ).length;
 
@@ -114,7 +174,7 @@ async function getFrequenciaIndividual(req, res) {
         atencao,
         estaveis,
       },
-      itens: rows,
+      itens: itensSemDomingo,
     });
   } catch (error) {
     return res.status(500).json({
