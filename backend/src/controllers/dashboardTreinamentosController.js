@@ -1,9 +1,30 @@
 const pool = require("../lib/db");
 
+function parseLocalDate(dateValue) {
+  if (!dateValue) return null;
+
+  if (dateValue instanceof Date) {
+    return new Date(
+      dateValue.getFullYear(),
+      dateValue.getMonth(),
+      dateValue.getDate()
+    );
+  }
+
+  const text = String(dateValue).trim().slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length !== 3) return null;
+
+  const [year, month, day] = parts.map(Number);
+  if (!year || !month || !day) return null;
+
+  return new Date(year, month - 1, day);
+}
+
 function isSunday(dateValue) {
-  if (!dateValue) return false;
-  const d = new Date(dateValue);
-  if (Number.isNaN(d.getTime())) return false;
+  const d = parseLocalDate(dateValue);
+  if (!d || Number.isNaN(d.getTime())) return false;
   return d.getDay() === 0;
 }
 
@@ -22,23 +43,24 @@ function getDiasPeriodo(item) {
 
   if (!inicio || !fim) return 1;
 
-  const d1 = new Date(inicio);
-  const d2 = new Date(fim);
+  const d1 = parseLocalDate(inicio);
+  const d2 = parseLocalDate(fim);
 
-  if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return 1;
-
-  const atual = new Date(d1);
-  const limite = new Date(d2);
-  atual.setHours(0, 0, 0, 0);
-  limite.setHours(0, 0, 0, 0);
-
-  let dias = 0;
-  while (atual <= limite) {
-    if (!isSunday(atual)) dias += 1;
-    atual.setDate(atual.getDate() + 1);
+  if (!d1 || !d2 || Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) {
+    return 1;
   }
 
-  return dias > 0 ? dias : 1;
+  let diasOperacionais = 0;
+  const cursor = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
+
+  while (cursor <= d2) {
+    if (cursor.getDay() !== 0) {
+      diasOperacionais += 1;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return diasOperacionais > 0 ? diasOperacionais : 1;
 }
 
 async function getDashboardTreinamentos(req, res) {
@@ -99,7 +121,6 @@ async function getDashboardTreinamentos(req, res) {
       0
     );
 
-    // Base ativa da turma (sem inflar por dias)
     const [[treinadosAtivos]] = await pool.query(`
       SELECT COUNT(*) AS total
       FROM treinamento_participantes tp
@@ -136,59 +157,38 @@ async function getDashboardTreinamentos(req, res) {
          OR tp.status_presenca = 'pendente'
     `);
 
-    // Base diária real: só presenças de pessoas ainda ativas na turma
-    const [[registrosChamada]] = await pool.query(`
-      SELECT COUNT(*) AS total
+    const [presencasBase] = await pool.query(`
+      SELECT
+        p.id,
+        p.treinamento_id,
+        p.treinando_nome,
+        p.data_chamada,
+        p.status
       FROM presencas p
       INNER JOIN treinamento_participantes tp
         ON tp.treinamento_id = p.treinamento_id
        AND tp.nome = p.treinando_nome
       INNER JOIN treinamentos t
         ON t.id = p.treinamento_id
-      WHERE DAYOFWEEK(p.data_chamada) <> 1
     `);
 
-    const [[presentesDiarios]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM presencas p
-      INNER JOIN treinamento_participantes tp
-        ON tp.treinamento_id = p.treinamento_id
-       AND tp.nome = p.treinando_nome
-      WHERE p.status = 'presente'
-        AND DAYOFWEEK(p.data_chamada) <> 1
-    `);
+    const presencasValidas = presencasBase.filter(
+      (item) => !isSunday(item.data_chamada)
+    );
 
-    const [[ausentesDiarios]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM presencas p
-      INNER JOIN treinamento_participantes tp
-        ON tp.treinamento_id = p.treinamento_id
-       AND tp.nome = p.treinando_nome
-      WHERE p.status = 'ausente'
-        AND DAYOFWEEK(p.data_chamada) <> 1
-    `);
-
-    const [[justificadosDiarios]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM presencas p
-      INNER JOIN treinamento_participantes tp
-        ON tp.treinamento_id = p.treinamento_id
-       AND tp.nome = p.treinando_nome
-      WHERE p.status = 'justificado'
-        AND DAYOFWEEK(p.data_chamada) <> 1
-    `);
-
-    const [[pendentesDiarios]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM presencas p
-      INNER JOIN treinamento_participantes tp
-        ON tp.treinamento_id = p.treinamento_id
-       AND tp.nome = p.treinando_nome
-      WHERE (p.status IS NULL
-         OR p.status = ''
-         OR p.status = 'pendente')
-        AND DAYOFWEEK(p.data_chamada) <> 1
-    `);
+    const totalRegistrosChamada = presencasValidas.length;
+    const totalPresentesDiarios = presencasValidas.filter(
+      (item) => item.status === "presente"
+    ).length;
+    const totalAusentesDiarios = presencasValidas.filter(
+      (item) => item.status === "ausente"
+    ).length;
+    const totalJustificadosDiarios = presencasValidas.filter(
+      (item) => item.status === "justificado"
+    ).length;
+    const totalPendentesDiarios = presencasValidas.filter(
+      (item) => !item.status || item.status === "" || item.status === "pendente"
+    ).length;
 
     const [horasTreinadasBase] = await pool.query(`
       SELECT
@@ -205,7 +205,7 @@ async function getDashboardTreinamentos(req, res) {
       LEFT JOIN treinamento_participantes tp
         ON tp.treinamento_id = p.treinamento_id
        AND tp.nome = p.treinando_nome
-      WHERE p.id IS NULL OR (tp.id IS NOT NULL AND DAYOFWEEK(p.data_chamada) <> 1)
+      WHERE p.id IS NULL OR tp.id IS NOT NULL
       GROUP BY
         t.id,
         t.carga_horaria,
@@ -216,6 +216,10 @@ async function getDashboardTreinamentos(req, res) {
     `);
 
     const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
+      if (item.data_chamada && isSunday(item.data_chamada)) {
+        return acc;
+      }
+
       const horasTotais = parseHorasTexto(item.carga_horaria);
       const diasPeriodo = getDiasPeriodo(item);
       const cargaDia = diasPeriodo > 0 ? horasTotais / diasPeriodo : horasTotais;
@@ -224,7 +228,7 @@ async function getDashboardTreinamentos(req, res) {
       return acc + cargaDia * presentesDia;
     }, 0);
 
-    const [presencaPorCliente] = await pool.query(`
+    const [presencaPorClienteRaw] = await pool.query(`
       SELECT
         t.cliente,
         COUNT(DISTINCT t.id) AS total_turmas,
@@ -347,12 +351,6 @@ async function getDashboardTreinamentos(req, res) {
     const totalJustificadosAtivos = Number(justificadosAtivos.total || 0);
     const totalPendentesAtivos = Number(pendentesAtivos.total || 0);
 
-    const totalRegistrosChamada = Number(registrosChamada.total || 0);
-    const totalPresentesDiarios = Number(presentesDiarios.total || 0);
-    const totalAusentesDiarios = Number(ausentesDiarios.total || 0);
-    const totalJustificadosDiarios = Number(justificadosDiarios.total || 0);
-    const totalPendentesDiarios = Number(pendentesDiarios.total || 0);
-
     const taxaPresenca =
       totalRegistrosChamada > 0
         ? Math.round((totalPresentesDiarios / totalRegistrosChamada) * 100)
@@ -400,7 +398,7 @@ async function getDashboardTreinamentos(req, res) {
         base_ativa_justificados: totalJustificadosAtivos,
         base_ativa_pendentes: totalPendentesAtivos,
       },
-      presenca_por_cliente: presencaPorCliente.map((item) => ({
+      presenca_por_cliente: presencaPorClienteRaw.map((item) => ({
         ...item,
         total_turmas: Number(item.total_turmas || 0),
         total_treinados: Number(item.total_treinados || 0),
