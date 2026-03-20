@@ -7,6 +7,13 @@ function toDateOnly(value) {
   return date.toISOString().slice(0, 10);
 }
 
+function isSunday(dateValue) {
+  if (!dateValue) return false;
+  const d = new Date(dateValue);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getDay() === 0;
+}
+
 function addDays(dateString, days) {
   const d = new Date(dateString);
   if (Number.isNaN(d.getTime())) return null;
@@ -395,8 +402,15 @@ async function gerarCronogramaTurma(req, res) {
       });
     }
 
+    let diaNumero = 1;
+    let totalDiasGerados = 0;
+
     for (let i = 0; i < totalDias; i += 1) {
       const dataAula = addDays(inicio, i);
+
+      if (isSunday(dataAula)) {
+        continue;
+      }
 
       await pool.query(
         `
@@ -418,11 +432,11 @@ async function gerarCronogramaTurma(req, res) {
         `,
         [
           Number(treinamento_id),
-          i + 1,
+          diaNumero,
           dataAula,
           1,
-          `Aula do Dia ${i + 1}`,
-          `Execução do Dia ${i + 1} da turma ${turma.tema || ""}`.trim(),
+          `Aula do Dia ${diaNumero}`,
+          `Execução do Dia ${diaNumero} da turma ${turma.tema || ""}`.trim(),
           null,
           null,
           0,
@@ -430,12 +444,15 @@ async function gerarCronogramaTurma(req, res) {
           "planejada",
         ]
       );
+
+      diaNumero += 1;
+      totalDiasGerados += 1;
     }
 
     return res.json({
       ok: true,
       message: "Cronograma base gerado com sucesso",
-      total_dias: totalDias,
+      total_dias: totalDiasGerados,
     });
   } catch (error) {
     return res.status(500).json({
