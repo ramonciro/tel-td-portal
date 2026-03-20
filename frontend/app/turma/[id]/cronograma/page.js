@@ -10,18 +10,46 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
+function parseDateSafe(value) {
+  if (!value) return null;
+
+  if (value instanceof Date) return value;
+
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length === 3) {
+    const [year, month, day] = parts.map(Number);
+    if (year && month && day) {
+      return new Date(year, month - 1, day, 12, 0, 0);
+    }
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
 function formatDate(value) {
   if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+
+  const date = parseDateSafe(value);
+  if (!date) return String(value).slice(0, 10);
+
   return date.toLocaleDateString("pt-BR");
 }
 
 function toInputDate(value) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
-  return date.toISOString().slice(0, 10);
+
+  const date = parseDateSafe(value);
+  if (!date) return String(value).slice(0, 10);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function statusLabel(value) {
