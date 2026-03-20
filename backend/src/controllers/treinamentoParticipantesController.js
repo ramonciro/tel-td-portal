@@ -1,10 +1,31 @@
 const XLSX = require("xlsx");
 const db = require("../lib/db");
 
+function parseLocalDate(dateValue) {
+  if (!dateValue) return null;
+
+  if (dateValue instanceof Date) {
+    return new Date(
+      dateValue.getFullYear(),
+      dateValue.getMonth(),
+      dateValue.getDate()
+    );
+  }
+
+  const text = String(dateValue).trim().slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length !== 3) return null;
+
+  const [year, month, day] = parts.map(Number);
+  if (!year || !month || !day) return null;
+
+  return new Date(year, month - 1, day);
+}
+
 function isSunday(dateValue) {
-  if (!dateValue) return false;
-  const d = new Date(dateValue);
-  if (Number.isNaN(d.getTime())) return false;
+  const d = parseLocalDate(dateValue);
+  if (!d || Number.isNaN(d.getTime())) return false;
   return d.getDay() === 0;
 }
 
