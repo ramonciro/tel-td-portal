@@ -1,6 +1,13 @@
 const XLSX = require("xlsx");
 const db = require("../lib/db");
 
+function isSunday(dateValue) {
+  if (!dateValue) return false;
+  const d = new Date(dateValue);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getDay() === 0;
+}
+
 async function getParticipantesByTreinamento(req, res) {
   try {
     const { id } = req.params;
@@ -196,6 +203,13 @@ async function salvarChamadaParticipantes(req, res) {
       return res.status(400).json({
         ok: false,
         message: "Informe a data da chamada",
+      });
+    }
+
+    if (isSunday(data_chamada)) {
+      return res.status(400).json({
+        ok: false,
+        message: "Domingo é considerado dia não letivo e não gera chamada.",
       });
     }
 

@@ -1,5 +1,12 @@
 const pool = require("../lib/db");
 
+function isSunday(dateValue) {
+  if (!dateValue) return false;
+  const d = new Date(dateValue);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getDay() === 0;
+}
+
 function parseHorasTexto(valor) {
   if (valor === null || valor === undefined || valor === "") return 0;
 
@@ -20,13 +27,16 @@ function getDiasPeriodo(item) {
 
   if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return 1;
 
-  const a = new Date(d1);
-  const b = new Date(d2);
-  a.setHours(0, 0, 0, 0);
-  b.setHours(0, 0, 0, 0);
+  const atual = new Date(d1);
+  const limite = new Date(d2);
+  atual.setHours(0, 0, 0, 0);
+  limite.setHours(0, 0, 0, 0);
 
-  const diffMs = b - a;
-  const dias = Math.floor(diffMs / 86400000) + 1;
+  let dias = 0;
+  while (atual <= limite) {
+    if (!isSunday(atual)) dias += 1;
+    atual.setDate(atual.getDate() + 1);
+  }
 
   return dias > 0 ? dias : 1;
 }
@@ -135,6 +145,7 @@ async function getDashboardTreinamentos(req, res) {
        AND tp.nome = p.treinando_nome
       INNER JOIN treinamentos t
         ON t.id = p.treinamento_id
+      WHERE DAYOFWEEK(p.data_chamada) <> 1
     `);
 
     const [[presentesDiarios]] = await pool.query(`
@@ -144,6 +155,7 @@ async function getDashboardTreinamentos(req, res) {
         ON tp.treinamento_id = p.treinamento_id
        AND tp.nome = p.treinando_nome
       WHERE p.status = 'presente'
+        AND DAYOFWEEK(p.data_chamada) <> 1
     `);
 
     const [[ausentesDiarios]] = await pool.query(`
@@ -153,6 +165,7 @@ async function getDashboardTreinamentos(req, res) {
         ON tp.treinamento_id = p.treinamento_id
        AND tp.nome = p.treinando_nome
       WHERE p.status = 'ausente'
+        AND DAYOFWEEK(p.data_chamada) <> 1
     `);
 
     const [[justificadosDiarios]] = await pool.query(`
@@ -162,6 +175,7 @@ async function getDashboardTreinamentos(req, res) {
         ON tp.treinamento_id = p.treinamento_id
        AND tp.nome = p.treinando_nome
       WHERE p.status = 'justificado'
+        AND DAYOFWEEK(p.data_chamada) <> 1
     `);
 
     const [[pendentesDiarios]] = await pool.query(`
@@ -170,9 +184,10 @@ async function getDashboardTreinamentos(req, res) {
       INNER JOIN treinamento_participantes tp
         ON tp.treinamento_id = p.treinamento_id
        AND tp.nome = p.treinando_nome
-      WHERE p.status IS NULL
+      WHERE (p.status IS NULL
          OR p.status = ''
-         OR p.status = 'pendente'
+         OR p.status = 'pendente')
+        AND DAYOFWEEK(p.data_chamada) <> 1
     `);
 
     const [horasTreinadasBase] = await pool.query(`
@@ -190,7 +205,7 @@ async function getDashboardTreinamentos(req, res) {
       LEFT JOIN treinamento_participantes tp
         ON tp.treinamento_id = p.treinamento_id
        AND tp.nome = p.treinando_nome
-      WHERE p.id IS NULL OR tp.id IS NOT NULL
+      WHERE p.id IS NULL OR (tp.id IS NOT NULL AND DAYOFWEEK(p.data_chamada) <> 1)
       GROUP BY
         t.id,
         t.carga_horaria,

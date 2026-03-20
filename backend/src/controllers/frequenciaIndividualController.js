@@ -1,5 +1,12 @@
 const pool = require("../lib/db");
 
+function isSunday(dateValue) {
+  if (!dateValue) return false;
+  const d = new Date(dateValue);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getDay() === 0;
+}
+
 async function getFrequenciaIndividual(req, res) {
   try {
     const { cliente, treinamento_id, inicio, fim } = req.query || {};
@@ -26,6 +33,8 @@ async function getFrequenciaIndividual(req, res) {
       where.push("DATE(p.data_chamada) <= ?");
       params.push(fim);
     }
+
+    where.push("DAYOFWEEK(p.data_chamada) <> 1");
 
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
