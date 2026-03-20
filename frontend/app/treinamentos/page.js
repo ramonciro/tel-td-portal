@@ -93,7 +93,22 @@ export default function TreinamentosPage() {
       .map((item) => ({
         value: item.nome,
         label: `${item.nome}${item.cliente ? ` - ${item.cliente}` : ""}`,
-      }));
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [usuarios]);
+
+  const supervisores = useMemo(() => {
+    return usuarios
+      .filter((item) =>
+        ["supervisor", "coordenador"].includes(
+          String(item.perfil || "").toLowerCase()
+        )
+      )
+      .map((item) => ({
+        value: item.nome,
+        label: `${item.nome}${item.cliente ? ` - ${item.cliente}` : ""}`,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
   }, [usuarios]);
 
   const clientesOptions = useMemo(() => {
@@ -131,7 +146,9 @@ export default function TreinamentosPage() {
     {
       name: "supervisor",
       label: "Supervisor",
-      placeholder: "Supervisor responsável",
+      type: "select",
+      options: supervisores,
+      placeholder: "Selecione o supervisor",
     },
     {
       name: "publico",
@@ -257,6 +274,11 @@ export default function TreinamentosPage() {
     const semInstrutor = turmas.filter((item) => !item.instrutor).length;
     if (semInstrutor > 0) {
       alertas.push(`${semInstrutor} turma(s) sem instrutor definido.`);
+    }
+
+    const semSupervisor = turmas.filter((item) => !item.supervisor).length;
+    if (semSupervisor > 0) {
+      alertas.push(`${semSupervisor} turma(s) sem supervisor definido.`);
     }
 
     const semCliente = turmas.filter((item) => !item.cliente).length;
@@ -432,6 +454,12 @@ export default function TreinamentosPage() {
               value={fmt(clientesOptions.length)}
               subtitle="Clientes cadastrados para seleção"
               accent="#0f766e"
+            />
+            <StatCard
+              title="Supervisores"
+              value={fmt(supervisores.length)}
+              subtitle="Disponíveis para seleção"
+              accent="#334155"
             />
           </div>
 
