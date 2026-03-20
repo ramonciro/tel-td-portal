@@ -36,6 +36,66 @@ function serializeMultiValue(value) {
   return String(value || "").trim();
 }
 
+function toggleMultiValue(currentValues, optionValue) {
+  const current = Array.isArray(currentValues) ? currentValues : [];
+  if (current.includes(optionValue)) {
+    return current.filter((item) => item !== optionValue);
+  }
+  return [...current, optionValue];
+}
+
+function MultiSelectField({
+  field,
+  value,
+  onChange,
+}) {
+  const selectedValues = Array.isArray(value) ? value : [];
+  const options = Array.isArray(field.options) ? field.options : [];
+
+  return (
+    <div style={multiWrap}>
+      <div style={multiHeader}>
+        {selectedValues.length ? (
+          <div style={chipsWrap}>
+            {selectedValues.map((item) => (
+              <span key={item} style={chip}>
+                {item}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span style={multiPlaceholder}>
+            {field.placeholder || "Selecione uma ou mais opções"}
+          </span>
+        )}
+      </div>
+
+      <div style={multiList}>
+        {options.length ? (
+          options.map((option) => {
+            const checked = selectedValues.includes(option.value);
+
+            return (
+              <label key={option.value} style={multiOption}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() =>
+                    onChange(toggleMultiValue(selectedValues, option.value))
+                  }
+                />
+                <span style={multiOptionText}>{option.label}</span>
+              </label>
+            );
+          })
+        ) : (
+          <div style={multiEmpty}>Nenhuma opção disponível.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CrudPageV2({
   title,
   subtitle,
@@ -85,23 +145,18 @@ export default function CrudPageV2({
   }
 
   function handleChange(event, field) {
-    if (field.type === "multiselect") {
-      const selectedValues = Array.from(event.target.selectedOptions).map(
-        (option) => option.value
-      );
-
-      setForm((prev) => ({
-        ...prev,
-        [field.name]: selectedValues,
-      }));
-      return;
-    }
-
     const { name, value } = event.target;
 
     setForm((prev) => ({
       ...prev,
       [name]: value,
+    }));
+  }
+
+  function handleMultiChange(fieldName, nextValues) {
+    setForm((prev) => ({
+      ...prev,
+      [fieldName]: nextValues,
     }));
   }
 
@@ -174,9 +229,7 @@ export default function CrudPageV2({
   }
 
   async function handleDelete(id) {
-    const confirmed = window.confirm(
-      "Deseja realmente excluir este registro?"
-    );
+    const confirmed = window.confirm("Deseja realmente excluir este registro?");
     if (!confirmed) return;
 
     try {
@@ -223,7 +276,10 @@ export default function CrudPageV2({
                 key={field.name}
                 style={{
                   ...fieldWrap,
-                  gridColumn: field.type === "textarea" ? "1 / -1" : "auto",
+                  gridColumn:
+                    field.type === "textarea" || field.type === "multiselect"
+                      ? "1 / -1"
+                      : "auto",
                 }}
               >
                 <label style={label}>{field.label}</label>
@@ -254,19 +310,13 @@ export default function CrudPageV2({
                     ))}
                   </select>
                 ) : field.type === "multiselect" ? (
-                  <select
-                    name={field.name}
-                    multiple
-                    value={Array.isArray(form[field.name]) ? form[field.name] : []}
-                    onChange={(e) => handleChange(e, field)}
-                    style={multiselect}
-                  >
-                    {(field.options || []).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <MultiSelectField
+                    field={field}
+                    value={form[field.name]}
+                    onChange={(nextValues) =>
+                      handleMultiChange(field.name, nextValues)
+                    }
+                  />
                 ) : (
                   <input
                     type={field.type || "text"}
@@ -286,11 +336,7 @@ export default function CrudPageV2({
 
             <div style={actionsRow}>
               <button type="submit" style={btnPrimary} disabled={saving}>
-                {saving
-                  ? "Salvando..."
-                  : editingId
-                  ? "Atualizar"
-                  : "Cadastrar"}
+                {saving ? "Salvando..." : editingId ? "Atualizar" : "Cadastrar"}
               </button>
 
               <button type="button" style={btnSecondary} onClick={resetForm}>
@@ -435,17 +481,73 @@ const textarea = {
   resize: "vertical",
 };
 
-const multiselect = {
+const multiWrap = {
   width: "100%",
-  minHeight: 120,
   borderRadius: 12,
   border: "1px solid #cbd5e1",
-  padding: "10px 12px",
-  fontSize: 14,
-  color: "#0f172a",
-  outline: "none",
   background: "#ffffff",
-  boxSizing: "border-box",
+  overflow: "hidden",
+};
+
+const multiHeader = {
+  padding: "12px 14px",
+  borderBottom: "1px solid #e2e8f0",
+  background: "#f8fafc",
+  minHeight: 50,
+  display: "flex",
+  alignItems: "center",
+};
+
+const multiPlaceholder = {
+  color: "#94a3b8",
+  fontSize: 14,
+};
+
+const chipsWrap = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+};
+
+const chip = {
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  border: "1px solid #bfdbfe",
+  borderRadius: 999,
+  padding: "5px 10px",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const multiList = {
+  display: "grid",
+  gap: 8,
+  padding: 12,
+  maxHeight: 180,
+  overflowY: "auto",
+};
+
+const multiOption = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "8px 10px",
+  borderRadius: 10,
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  cursor: "pointer",
+};
+
+const multiOptionText = {
+  color: "#0f172a",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const multiEmpty = {
+  color: "#64748b",
+  fontSize: 14,
+  padding: "4px 2px",
 };
 
 const actionsRow = {
