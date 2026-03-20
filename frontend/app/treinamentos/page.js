@@ -64,17 +64,11 @@ function parseClientes(value) {
     .filter(Boolean);
 }
 
-function compactClientesLabel(value) {
-  const items = parseClientes(value);
-
-  if (!items.length) return "";
-  if (items.length <= 2) return items.join(", ");
-  return `${items[0]}, ${items[1]}, +${items.length - 2}`;
-}
-
 function usuarioOptionLabel(usuario) {
-  const clientes = compactClientesLabel(usuario.cliente);
-  return clientes ? `${usuario.nome} - ${clientes}` : usuario.nome;
+  const clientes = parseClientes(usuario.cliente);
+  if (!clientes.length) return usuario.nome;
+  if (clientes.length === 1) return `${usuario.nome} • ${clientes[0]}`;
+  return `${usuario.nome} • ${clientes.length} operações`;
 }
 
 export default function TreinamentosPage() {
