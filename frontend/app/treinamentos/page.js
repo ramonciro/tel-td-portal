@@ -56,6 +56,27 @@ function formatDate(value) {
   return date.toLocaleDateString("pt-BR");
 }
 
+function parseClientes(value) {
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function compactClientesLabel(value) {
+  const items = parseClientes(value);
+
+  if (!items.length) return "";
+  if (items.length <= 2) return items.join(", ");
+  return `${items[0]}, ${items[1]}, +${items.length - 2}`;
+}
+
+function usuarioOptionLabel(usuario) {
+  const clientes = compactClientesLabel(usuario.cliente);
+  return clientes ? `${usuario.nome} - ${clientes}` : usuario.nome;
+}
+
 export default function TreinamentosPage() {
   const [turmas, setTurmas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -92,7 +113,7 @@ export default function TreinamentosPage() {
       )
       .map((item) => ({
         value: item.nome,
-        label: `${item.nome}${item.cliente ? ` - ${item.cliente}` : ""}`,
+        label: usuarioOptionLabel(item),
       }))
       .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
   }, [usuarios]);
@@ -106,7 +127,7 @@ export default function TreinamentosPage() {
       )
       .map((item) => ({
         value: item.nome,
-        label: `${item.nome}${item.cliente ? ` - ${item.cliente}` : ""}`,
+        label: usuarioOptionLabel(item),
       }))
       .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
   }, [usuarios]);
@@ -463,6 +484,43 @@ export default function TreinamentosPage() {
             />
           </div>
 
+          <SectionCard
+            title="Equipe disponível"
+            subtitle="Leitura rápida dos usuários elegíveis para condução das turmas."
+          >
+            <div style={teamGrid}>
+              <div style={teamBlock}>
+                <div style={teamTitle}>Instrutores</div>
+                <div style={teamList}>
+                  {instrutores.length ? (
+                    instrutores.slice(0, 8).map((item) => (
+                      <div key={item.value} style={teamItem}>
+                        {item.label}
+                      </div>
+                    ))
+                  ) : (
+                    <div style={emptyText}>Nenhum instrutor disponível.</div>
+                  )}
+                </div>
+              </div>
+
+              <div style={teamBlock}>
+                <div style={teamTitle}>Supervisores</div>
+                <div style={teamList}>
+                  {supervisores.length ? (
+                    supervisores.slice(0, 8).map((item) => (
+                      <div key={item.value} style={teamItem}>
+                        {item.label}
+                      </div>
+                    ))
+                  ) : (
+                    <div style={emptyText}>Nenhum supervisor disponível.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
           <div style={twoCol}>
             <SectionCard
               title="Volume por cliente"
@@ -549,6 +607,41 @@ const listItem = {
   border: "1px solid #e2e8f0",
   display: "grid",
   gap: 6,
+};
+
+const teamGrid = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 14,
+};
+
+const teamBlock = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 14,
+  display: "grid",
+  gap: 10,
+};
+
+const teamTitle = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const teamList = {
+  display: "grid",
+  gap: 8,
+};
+
+const teamItem = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 10,
+  padding: "10px 12px",
+  color: "#334155",
+  fontWeight: 600,
+  fontSize: 13,
 };
 
 const itemTitle = {
