@@ -56,15 +56,6 @@ function formatDate(value) {
   return date.toLocaleDateString("pt-BR");
 }
 
-function formatPeriodo(item) {
-  if (item.data_inicio && item.data_fim) {
-    return `${formatDate(item.data_inicio)} até ${formatDate(item.data_fim)}`;
-  }
-  if (item.data_inicio) return formatDate(item.data_inicio);
-  if (item.data) return formatDate(item.data);
-  return "-";
-}
-
 export default function TreinamentosPage() {
   const [turmas, setTurmas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -131,7 +122,7 @@ export default function TreinamentosPage() {
     },
     {
       name: "carga_horaria",
-      label: "Carga horária total",
+      label: "Carga horária",
       placeholder: "Ex.: 20h",
     },
     {
@@ -153,12 +144,12 @@ export default function TreinamentosPage() {
     },
     {
       name: "data_inicio",
-      label: "Data de início",
+      label: "Data início",
       type: "date",
     },
     {
       name: "data_fim",
-      label: "Data de fim",
+      label: "Data fim",
       type: "date",
     },
     {
@@ -191,6 +182,50 @@ export default function TreinamentosPage() {
       0
     );
 
+    const porClienteMap = {};
+    const porInstrutorMap = {};
+
+    turmas.forEach((item) => {
+      const cliente = item.cliente || "Sem cliente";
+      const instrutor = item.instrutor || "Sem instrutor";
+      const carga = parseHoras(item.carga_horaria);
+      const treinandosTurma = Number(item.participantes || 0);
+
+      if (!porClienteMap[cliente]) {
+        porClienteMap[cliente] = {
+          cliente,
+          turmas: 0,
+          treinandos: 0,
+          horas: 0,
+        };
+      }
+
+      porClienteMap[cliente].turmas += 1;
+      porClienteMap[cliente].treinandos += treinandosTurma;
+      porClienteMap[cliente].horas += carga;
+
+      if (!porInstrutorMap[instrutor]) {
+        porInstrutorMap[instrutor] = {
+          instrutor,
+          turmas: 0,
+          treinandos: 0,
+          horas: 0,
+        };
+      }
+
+      porInstrutorMap[instrutor].turmas += 1;
+      porInstrutorMap[instrutor].treinandos += treinandosTurma;
+      porInstrutorMap[instrutor].horas += carga;
+    });
+
+    const porCliente = Object.values(porClienteMap).sort(
+      (a, b) => b.turmas - a.turmas
+    );
+
+    const rankingInstrutores = Object.values(porInstrutorMap).sort(
+      (a, b) => b.turmas - a.turmas || b.horas - a.horas
+    );
+
     const alertas = [];
 
     if (planejadas > 0) {
@@ -199,6 +234,16 @@ export default function TreinamentosPage() {
 
     if (andamento > 0) {
       alertas.push(`${andamento} turma(s) estão em andamento.`);
+    }
+
+    const semInstrutor = turmas.filter((item) => !item.instrutor).length;
+    if (semInstrutor > 0) {
+      alertas.push(`${semInstrutor} turma(s) sem instrutor definido.`);
+    }
+
+    const semCliente = turmas.filter((item) => !item.cliente).length;
+    if (semCliente > 0) {
+      alertas.push(`${semCliente} turma(s) sem cliente vinculado.`);
     }
 
     if (!alertas.length) {
@@ -212,6 +257,8 @@ export default function TreinamentosPage() {
       concluidas,
       treinandos,
       horas,
+      porCliente,
+      rankingInstrutores,
       alertas,
     };
   }, [turmas]);
@@ -241,7 +288,17 @@ export default function TreinamentosPage() {
     {
       key: "periodo",
       label: "Período",
-      render: (item) => <span style={plainCell}>{formatPeriodo(item)}</span>,
+      render: (item) => (
+        <span style={plainCell}>
+          {formatDate(item.data_inicio || item.data)} até{" "}
+          {formatDate(item.data_fim || item.data_inicio || item.data)}
+        </span>
+      ),
+    },
+    {
+      key: "publico",
+      label: "Público",
+      render: (item) => <span style={plainCell}>{item.publico || "-"}</span>,
     },
     {
       key: "participantes",
@@ -273,7 +330,16 @@ export default function TreinamentosPage() {
               window.location.href = `/turma/${item.id}`;
             }}
           >
-            Chamada diária
+            Gestão da turma
+          </button>
+
+          <button
+            style={btnCronograma}
+            onClick={() => {
+              window.location.href = `/turma/${item.id}/cronograma`;
+            }}
+          >
+            Cronograma
           </button>
         </div>
       ),
@@ -283,15 +349,12 @@ export default function TreinamentosPage() {
   return (
     <CrudPageV2
       title="Gestão de Turmas"
-      subtitle="Execução operacional das turmas com período de formação e controle de chamada diária."
+      subtitle="Execução operacional das turmas de treinamento, treinandos e controle de presença."
       endpoint="/treinamentos"
       fields={fields}
       columns={columns}
       recordsTitle="Base de turmas"
       recordsSubtitle="Visão consolidada das turmas cadastradas no portal."
-      allowedCreateRoles={["coordenador", "supervisor"]}
-      allowedEditRoles={["coordenador", "supervisor"]}
-      allowedDeleteRoles={["coordenador"]}
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
@@ -329,20 +392,64 @@ export default function TreinamentosPage() {
               accent="#06b6d4"
             />
             <StatCard
-              title="Carga horária total"
+              title="Carga horária"
               value={`${fmt(kpis.horas)}h`}
               subtitle="Carga consolidada"
               accent="#7c3aed"
             />
           </div>
 
+          <div style={twoCol}>
+            <SectionCard
+              title="Volume por cliente"
+              subtitle="Distribuição das turmas por operação."
+            >
+              <div style={listGrid}>
+                {kpis.porCliente.length ? (
+                  kpis.porCliente.slice(0, 6).map((item) => (
+                    <div key={item.cliente} style={listItem}>
+                      <div style={itemTitle}>{item.cliente}</div>
+                      <div style={itemMeta}>
+                        {item.turmas} turma(s) • {fmt(item.treinandos)} treinandos
+                        previstos • {fmt(item.horas)}h
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={emptyText}>Nenhum cliente com turmas cadastradas.</div>
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Ranking de instrutores"
+              subtitle="Leitura rápida de volume por instrutor."
+            >
+              <div style={listGrid}>
+                {kpis.rankingInstrutores.length ? (
+                  kpis.rankingInstrutores.slice(0, 6).map((item) => (
+                    <div key={item.instrutor} style={listItem}>
+                      <div style={itemTitle}>{item.instrutor}</div>
+                      <div style={itemMeta}>
+                        {item.turmas} turma(s) • {fmt(item.treinandos)} treinandos
+                        previstos • {fmt(item.horas)}h
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={emptyText}>Nenhum instrutor com turmas cadastradas.</div>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+
           <SectionCard
             title="Leitura gerencial"
-            subtitle="Turmas com período permitem chamada diária sem perder o histórico da formação."
+            subtitle="Alertas operacionais da base de turmas."
           >
-            <div style={alertGrid}>
+            <div style={alertsGrid}>
               {kpis.alertas.map((item, index) => (
-                <div key={index} style={alertItem}>
+                <div key={`${item}-${index}`} style={alertItem}>
                   {item}
                 </div>
               ))}
@@ -354,34 +461,60 @@ export default function TreinamentosPage() {
   );
 }
 
-const btnChamada = {
-  background: "#2563eb",
-  color: "#fff",
-  border: 0,
-  borderRadius: 8,
-  padding: "8px 12px",
-  cursor: "pointer",
-  fontWeight: 700,
-};
-
 const heroGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
+
+const twoCol = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 14,
+};
+
+const listGrid = {
+  display: "grid",
   gap: 10,
 };
 
-const alertGrid = {
+const listItem = {
+  background: "#f8fafc",
+  padding: 12,
+  borderRadius: 14,
+  border: "1px solid #e2e8f0",
+  display: "grid",
+  gap: 6,
+};
+
+const itemTitle = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const itemMeta = {
+  color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const alertsGrid = {
   display: "grid",
   gap: 10,
 };
 
 const alertItem = {
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  color: "#1d4ed8",
-  borderRadius: 12,
-  padding: 12,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 14,
+  color: "#334155",
+  lineHeight: 1.5,
   fontWeight: 600,
+};
+
+const emptyText = {
+  color: "#64748b",
 };
 
 const titleCell = {
@@ -393,7 +526,6 @@ const subCell = {
   marginTop: 4,
   color: "#64748b",
   fontSize: 12,
-  lineHeight: 1.35,
 };
 
 const plainCell = {
@@ -401,11 +533,31 @@ const plainCell = {
 };
 
 const scoreBlue = {
-  color: "#1d4ed8",
-  fontWeight: 800,
+  color: "#2563eb",
 };
 
 const scoreGreen = {
-  color: "#15803d",
+  color: "#16a34a",
+};
+
+const btnChamada = {
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  borderRadius: 8,
+  padding: "7px 10px",
   fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const btnCronograma = {
+  border: "1px solid #ddd6fe",
+  background: "#f5f3ff",
+  color: "#7c3aed",
+  borderRadius: 8,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
 };
