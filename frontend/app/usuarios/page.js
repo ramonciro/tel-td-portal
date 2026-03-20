@@ -18,13 +18,6 @@ function normalizarListaClientes(valor) {
     .filter(Boolean);
 }
 
-function clienteLabel(item) {
-  const lista = normalizarListaClientes(item.cliente);
-  if (!lista.length) return "Sem operação vinculada";
-  if (lista.length <= 2) return lista.join(", ");
-  return `${lista.slice(0, 2).join(", ")} +${lista.length - 2}`;
-}
-
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState([]);
   const [clientes, setClientes] = useState([]);
@@ -139,7 +132,21 @@ export default function UsuariosPage() {
     {
       key: "cliente",
       label: "Operações",
-      render: (item) => <span style={plainCell}>{clienteLabel(item)}</span>,
+      render: (item) => {
+        const lista = normalizarListaClientes(item.cliente);
+
+        return lista.length ? (
+          <div style={chipsWrap}>
+            {lista.map((cliente) => (
+              <span key={`${item.id}-${cliente}`} style={chip}>
+                {cliente}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span style={plainCell}>Sem operação vinculada</span>
+        );
+      },
     },
     {
       key: "ativo",
@@ -209,10 +216,7 @@ export default function UsuariosPage() {
     return {
       total,
       ativos,
-      coordenadores,
-      supervisores,
       instrutores,
-      treinandos,
       multiOperacao,
       porPerfil,
       alertas,
@@ -351,4 +355,20 @@ const subCell = {
 
 const plainCell = {
   color: "#334155",
+};
+
+const chipsWrap = {
+  display: "flex",
+  gap: 6,
+  flexWrap: "wrap",
+};
+
+const chip = {
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  border: "1px solid #bfdbfe",
+  borderRadius: 999,
+  padding: "5px 10px",
+  fontSize: 12,
+  fontWeight: 700,
 };
