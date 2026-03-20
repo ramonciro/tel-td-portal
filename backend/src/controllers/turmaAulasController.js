@@ -1,36 +1,71 @@
 const pool = require("../lib/db");
 
+function parseLocalDate(dateValue) {
+  if (!dateValue) return null;
+
+  if (dateValue instanceof Date) {
+    return new Date(
+      dateValue.getFullYear(),
+      dateValue.getMonth(),
+      dateValue.getDate()
+    );
+  }
+
+  const text = String(dateValue).trim().slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length !== 3) return null;
+
+  const [year, month, day] = parts.map(Number);
+  if (!year || !month || !day) return null;
+
+  return new Date(year, month - 1, day);
+}
+
+function formatDateOnly(value) {
+  const date = parseLocalDate(value);
+  if (!date || Number.isNaN(date.getTime())) return null;
+
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function toDateOnly(value) {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
-  return date.toISOString().slice(0, 10);
+  return formatDateOnly(value) || String(value).slice(0, 10);
+}
+
+function addDays(dateValue, days) {
+  const d = parseLocalDate(dateValue);
+  if (!d || Number.isNaN(d.getTime())) return null;
+
+  const next = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  next.setDate(next.getDate() + days);
+
+  return formatDateOnly(next);
 }
 
 function isSunday(dateValue) {
-  if (!dateValue) return false;
-  const d = new Date(dateValue);
-  if (Number.isNaN(d.getTime())) return false;
+  const d = parseLocalDate(dateValue);
+  if (!d || Number.isNaN(d.getTime())) return false;
   return d.getDay() === 0;
 }
 
-function addDays(dateString, days) {
-  const d = new Date(dateString);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
 function diffDaysInclusive(start, end) {
-  const d1 = new Date(start);
-  const d2 = new Date(end);
+  const d1 = parseLocalDate(start);
+  const d2 = parseLocalDate(end);
 
-  if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return 1;
+  if (!d1 || !d2 || Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) {
+    return 1;
+  }
 
-  d1.setHours(0, 0, 0, 0);
-  d2.setHours(0, 0, 0, 0);
+  const a = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
+  const b = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
 
-  const diff = Math.floor((d2 - d1) / 86400000) + 1;
+  const diff = Math.floor((b - a) / 86400000) + 1;
   return diff > 0 ? diff : 1;
 }
 
@@ -403,14 +438,12 @@ async function gerarCronogramaTurma(req, res) {
     }
 
     let diaNumero = 1;
-    let totalDiasGerados = 0;
 
     for (let i = 0; i < totalDias; i += 1) {
       const dataAula = addDays(inicio, i);
 
-      if (isSunday(dataAula)) {
-        continue;
-      }
+      if (!dataAula) continue;
+      if (isSunday(dataAula)) continue;
 
       await pool.query(
         `
@@ -446,13 +479,12 @@ async function gerarCronogramaTurma(req, res) {
       );
 
       diaNumero += 1;
-      totalDiasGerados += 1;
     }
 
     return res.json({
       ok: true,
       message: "Cronograma base gerado com sucesso",
-      total_dias: totalDiasGerados,
+      total_dias: diaNumero - 1,
     });
   } catch (error) {
     return res.status(500).json({
@@ -632,9 +664,8 @@ async function getResumoTurmaAulas(req, res) {
       ? Math.round(((ministradas + parciais) / totalAulas) * 100)
       : 0;
 
-    const aderenciaCarga = cargaPlanejada > 0
-      ? Math.round((cargaReal / cargaPlanejada) * 100)
-      : 0;
+    const aderenciaCarga =
+      cargaPlanejada > 0 ? Math.round((cargaReal / cargaPlanejada) * 100) : 0;
 
     const desvioCarga = Number((cargaReal - cargaPlanejada).toFixed(2));
 
@@ -658,41 +689,40 @@ async function getResumoTurmaAulas(req, res) {
         };
       }
 
-      const dia = porDiaMap[key];
+      const bucket = porDiaMap[key];
       const status = normalizeStatus(item.status_execucao);
 
-      dia.total_aulas += 1;
-      dia.carga_planejada += Number(item.carga_horaria_planejada || 0);
-      dia.carga_real += Number(item.carga_horaria_real || 0);
+      bucket.total_aulas += 1;
+      bucket.carga_planejada += Number(item.carga_horaria_planejada || 0);
+      bucket.carga_real += Number(item.carga_horaria_real || 0);
 
-      if (status === "ministrada") dia.ministradas += 1;
-      else if (status === "parcial") dia.parciais += 1;
-      else if (status === "reprogramada" || Number(item.reprogramada || 0) === 1) dia.reprogramadas += 1;
-      else if (status === "cancelada") dia.canceladas += 1;
-      else dia.planejadas += 1;
+      if (status === "ministrada") bucket.ministradas += 1;
+      else if (status === "parcial") bucket.parciais += 1;
+      else if (status === "reprogramada" || Number(item.reprogramada || 0) === 1)
+        bucket.reprogramadas += 1;
+      else if (status === "cancelada") bucket.canceladas += 1;
+      else bucket.planejadas += 1;
     });
 
     const porDia = Object.values(porDiaMap)
-      .map((item) => ({
-        ...item,
-        aderencia_aulas: item.total_aulas
-          ? Math.round(((item.ministradas + item.parciais) / item.total_aulas) * 100)
-          : 0,
-        aderencia_carga: item.carga_planejada > 0
-          ? Math.round((item.carga_real / item.carga_planejada) * 100)
-          : 0,
-        desvio_carga: Number((item.carga_real - item.carga_planejada).toFixed(2)),
-      }))
-      .sort((a, b) => a.dia_numero - b.dia_numero);
+      .sort((a, b) => a.dia_numero - b.dia_numero)
+      .map((item) => {
+        const aderencia =
+          item.total_aulas > 0
+            ? Math.round(((item.ministradas + item.parciais) / item.total_aulas) * 100)
+            : 0;
+
+        return {
+          ...item,
+          aderencia_aulas: aderencia,
+          desvio_carga: Number((item.carga_real - item.carga_planejada).toFixed(2)),
+        };
+      });
 
     const alertas = [];
 
-    if (totalAulas === 0) {
-      alertas.push("A turma ainda não possui aulas cadastradas.");
-    }
-
     if (planejadas > 0) {
-      alertas.push(`${planejadas} aula(s) seguem apenas planejadas.`);
+      alertas.push(`${planejadas} aula(s) ainda estão planejadas.`);
     }
 
     if (parciais > 0) {
@@ -700,21 +730,15 @@ async function getResumoTurmaAulas(req, res) {
     }
 
     if (reprogramadas > 0) {
-      alertas.push(`${reprogramadas} aula(s) foram reprogramadas.`);
+      alertas.push(`${reprogramadas} aula(s) estão reprogramadas.`);
     }
 
     if (canceladas > 0) {
       alertas.push(`${canceladas} aula(s) foram canceladas.`);
     }
 
-    if (cargaPlanejada > 0 && cargaReal < cargaPlanejada) {
-      alertas.push(
-        `A carga realizada está ${Number((cargaPlanejada - cargaReal).toFixed(2))}h abaixo da carga planejada.`
-      );
-    }
-
     if (!alertas.length) {
-      alertas.push("Cronograma da turma sem desvios críticos no momento.");
+      alertas.push("Cronograma sem alertas críticos no momento.");
     }
 
     return res.json({
@@ -738,7 +762,7 @@ async function getResumoTurmaAulas(req, res) {
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      message: "Erro ao carregar resumo do cronograma da turma",
+      message: "Erro ao carregar resumo do cronograma",
       error: error.message,
     });
   }
