@@ -53,6 +53,7 @@ const {
   deleteTurmaAula,
   gerarCronogramaTurma,
   duplicarPlanoAulas,
+  getResumoTurmaAulas,
 } = require("./controllers/turmaAulasController");
 
 const app = express();
@@ -281,6 +282,13 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   listTurmaAulas
+);
+
+app.get(
+  "/api/turma-aulas/resumo/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  getResumoTurmaAulas
 );
 
 app.get(
