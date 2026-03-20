@@ -131,11 +131,15 @@ app.delete(
     try {
       const { id } = req.params;
 
-      await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
+      await pool.query(
+        `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
+        [id]
       );
 
+      await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
 
       return res.json({
@@ -257,6 +261,21 @@ app.post(
   salvarChamadaParticipantes
 );
 
+app.delete(
+  "/api/treinamentos/participantes/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteParticipanteTreinamento
+);
+
+app.post(
+  "/api/treinamentos/participantes/excluir-lote",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteParticipantesTreinamentoBulk
+);
+
+// TURMA AULAS / CRONOGRAMA
 app.get(
   "/api/turma-aulas",
   authRequired,
@@ -306,20 +325,6 @@ app.post(
   duplicarPlanoAulas
 );
 
-app.delete(
-  "/api/treinamentos/participantes/:id",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  deleteParticipanteTreinamento
-);
-
-app.post(
-  "/api/treinamentos/participantes/excluir-lote",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  deleteParticipantesTreinamentoBulk
-);
-
 app.use(
   "/api/presencas",
   createCrudRouter({
@@ -362,35 +367,7 @@ app.use(
   })
 );
 
-app.get(
-  "/api/respostas-avaliativas",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
-  listRespostasAvaliativas
-);
-
-app.post(
-  "/api/respostas-avaliativas",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
-  createRespostaAvaliativa
-);
-
-app.put(
-  "/api/respostas-avaliativas/:id",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
-  updateRespostaAvaliativa
-);
-
-app.delete(
-  "/api/respostas-avaliativas/:id",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  deleteRespostaAvaliativa
-);
-
-// NOVAS ROTAS: frequência individual
+// FREQUÊNCIA INDIVIDUAL
 app.get(
   "/api/frequencia-individual",
   authRequired,
@@ -398,7 +375,7 @@ app.get(
   getFrequenciaIndividual
 );
 
-// NOVAS ROTAS: NPS real do treinando
+// NPS REAL / AVALIAÇÕES TREINANDOS
 app.get(
   "/api/avaliacoes-treinandos",
   authRequired,
@@ -420,7 +397,7 @@ app.post(
   createAvaliacaoTreinando
 );
 
-// NOVAS ROTAS: materiais avaliativos
+// MATERIAIS AVALIATIVOS
 app.get(
   "/api/materiais-avaliativos",
   authRequired,
@@ -447,6 +424,35 @@ app.delete(
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   deleteMaterialAvaliativo
+);
+
+// RESPOSTAS AVALIATIVAS
+app.get(
+  "/api/respostas-avaliativas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listRespostasAvaliativas
+);
+
+app.post(
+  "/api/respostas-avaliativas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  createRespostaAvaliativa
+);
+
+app.put(
+  "/api/respostas-avaliativas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  updateRespostaAvaliativa
+);
+
+app.delete(
+  "/api/respostas-avaliativas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteRespostaAvaliativa
 );
 
 app.use(
@@ -486,6 +492,7 @@ app.get(
       await pool.query("TRUNCATE TABLE avaliacoes");
       await pool.query("TRUNCATE TABLE presencas");
       await pool.query("TRUNCATE TABLE treinamento_participantes");
+      await pool.query("TRUNCATE TABLE turma_aulas");
       await pool.query("TRUNCATE TABLE treinamentos");
       await pool.query("TRUNCATE TABLE usuarios");
       await pool.query("TRUNCATE TABLE clientes");
@@ -527,6 +534,7 @@ app.get(
         await pool.query("TRUNCATE TABLE avaliacoes");
         await pool.query("TRUNCATE TABLE presencas");
         await pool.query("TRUNCATE TABLE treinamento_participantes");
+        await pool.query("TRUNCATE TABLE turma_aulas");
         await pool.query("TRUNCATE TABLE treinamentos");
         await pool.query("TRUNCATE TABLE usuarios");
         await pool.query("TRUNCATE TABLE clientes");
