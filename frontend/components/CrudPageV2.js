@@ -44,11 +44,7 @@ function toggleMultiValue(currentValues, optionValue) {
   return [...current, optionValue];
 }
 
-function MultiSelectField({
-  field,
-  value,
-  onChange,
-}) {
+function MultiSelectField({ field, value, onChange }) {
   const selectedValues = Array.isArray(value) ? value : [];
   const options = Array.isArray(field.options) ? field.options : [];
 
