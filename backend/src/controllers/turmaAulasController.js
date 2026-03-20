@@ -1,13 +1,18 @@
 const pool = require("../lib/db");
 
-function parseLocalDate(dateValue) {
+function parseDateUTC(dateValue) {
   if (!dateValue) return null;
 
   if (dateValue instanceof Date) {
     return new Date(
-      dateValue.getFullYear(),
-      dateValue.getMonth(),
-      dateValue.getDate()
+      Date.UTC(
+        dateValue.getUTCFullYear(),
+        dateValue.getUTCMonth(),
+        dateValue.getUTCDate(),
+        12,
+        0,
+        0
+      )
     );
   }
 
@@ -19,54 +24,53 @@ function parseLocalDate(dateValue) {
   const [year, month, day] = parts.map(Number);
   if (!year || !month || !day) return null;
 
-  return new Date(year, month - 1, day);
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
 }
 
-function formatDateOnly(value) {
-  const date = parseLocalDate(value);
-  if (!date || Number.isNaN(date.getTime())) return null;
+function formatDateOnly(dateValue) {
+  const d = parseDateUTC(dateValue);
+  if (!d || Number.isNaN(d.getTime())) return null;
 
-  const year = String(date.getFullYear()).padStart(4, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
-function toDateOnly(value) {
-  if (!value) return null;
-  return formatDateOnly(value) || String(value).slice(0, 10);
-}
-
 function addDays(dateValue, days) {
-  const d = parseLocalDate(dateValue);
+  const d = parseDateUTC(dateValue);
   if (!d || Number.isNaN(d.getTime())) return null;
 
-  const next = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  next.setDate(next.getDate() + days);
+  d.setUTCDate(d.getUTCDate() + days);
 
-  return formatDateOnly(next);
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function isSunday(dateValue) {
-  const d = parseLocalDate(dateValue);
+  const d = parseDateUTC(dateValue);
   if (!d || Number.isNaN(d.getTime())) return false;
-  return d.getDay() === 0;
+  return d.getUTCDay() === 0;
 }
 
 function diffDaysInclusive(start, end) {
-  const d1 = parseLocalDate(start);
-  const d2 = parseLocalDate(end);
+  const d1 = parseDateUTC(start);
+  const d2 = parseDateUTC(end);
 
   if (!d1 || !d2 || Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) {
     return 1;
   }
 
-  const a = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
-  const b = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
-
-  const diff = Math.floor((b - a) / 86400000) + 1;
+  const diff = Math.floor((d2.getTime() - d1.getTime()) / 86400000) + 1;
   return diff > 0 ? diff : 1;
+}
+
+function toDateOnly(value) {
+  return formatDateOnly(value);
 }
 
 function normalizeStatus(value) {
