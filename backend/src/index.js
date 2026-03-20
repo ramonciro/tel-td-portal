@@ -45,6 +45,16 @@ const {
   deleteRespostaAvaliativa,
 } = require("./controllers/respostasAvaliativasController");
 
+const {
+  listTurmaAulas,
+  getTurmaAulaById,
+  createTurmaAula,
+  updateTurmaAula,
+  deleteTurmaAula,
+  gerarCronogramaTurma,
+  duplicarPlanoAulas,
+} = require("./controllers/turmaAulasController");
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -121,9 +131,7 @@ app.delete(
     try {
       const { id } = req.params;
 
-      await pool.query(
-        `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
-        [id]
+      await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
       );
 
       await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
@@ -247,6 +255,55 @@ app.post(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   salvarChamadaParticipantes
+);
+
+app.get(
+  "/api/turma-aulas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listTurmaAulas
+);
+
+app.get(
+  "/api/turma-aulas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  getTurmaAulaById
+);
+
+app.post(
+  "/api/turma-aulas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  createTurmaAula
+);
+
+app.put(
+  "/api/turma-aulas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  updateTurmaAula
+);
+
+app.delete(
+  "/api/turma-aulas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteTurmaAula
+);
+
+app.post(
+  "/api/turma-aulas/gerar-cronograma",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  gerarCronogramaTurma
+);
+
+app.post(
+  "/api/turma-aulas/duplicar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  duplicarPlanoAulas
 );
 
 app.delete(
