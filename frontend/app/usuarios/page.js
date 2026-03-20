@@ -1,45 +1,61 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import AccessGate from "../../components/AccessGate";
+import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
+import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 
+function fmt(n) {
+  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
+}
+
+function normalizarListaClientes(valor) {
+  if (!valor) return [];
+  return String(valor)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function clienteLabel(item) {
+  const lista = normalizarListaClientes(item.cliente);
+  if (!lista.length) return "Sem operação vinculada";
+  if (lista.length <= 2) return lista.join(", ");
+  return `${lista.slice(0, 2).join(", ")} +${lista.length - 2}`;
+}
+
 export default function UsuariosPage() {
-  const [clientes, setClientes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [clientes, setClientes] = useState([]);
 
   useEffect(() => {
     async function carregar() {
       try {
-        const [clientesData, usuariosData] = await Promise.all([
-          apiFetch("/clientes").catch(() => []),
+        const [usuariosData, clientesData] = await Promise.all([
           apiFetch("/usuarios").catch(() => []),
+          apiFetch("/clientes").catch(() => []),
         ]);
 
-        setClientes(Array.isArray(clientesData) ? clientesData : []);
         setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+        setClientes(Array.isArray(clientesData) ? clientesData : []);
       } catch {
-        setClientes([]);
         setUsuarios([]);
+        setClientes([]);
       }
     }
 
     carregar();
   }, []);
 
-  const clienteOptions = clientes.map((cliente) => ({
-    value: cliente.nome || cliente.cliente || "",
-    label: cliente.nome || cliente.cliente || "",
-  }));
-
-  const totalUsuarios = usuarios.length;
-  const ativos = usuarios.filter((u) => Number(u.ativo) === 1).length;
-  const inativos = usuarios.filter((u) => Number(u.ativo) === 0).length;
-  const primeiroAcesso = usuarios.filter(
-    (u) => Number(u.troca_senha_obrigatoria) === 1
-  ).length;
+  const clientesOptions = useMemo(() => {
+    return clientes
+      .map((item) => ({
+        value: item.nome,
+        label: item.nome,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [clientes]);
 
   const fields = [
     {
@@ -55,6 +71,7 @@ export default function UsuariosPage() {
     {
       name: "senha",
       label: "Senha",
+      type: "password",
       placeholder: "Senha de acesso",
     },
     {
@@ -67,34 +84,39 @@ export default function UsuariosPage() {
         { value: "instrutor", label: "Instrutor" },
         { value: "treinando", label: "Treinando" },
       ],
-      placeholder: "Selecione perfil",
+      placeholder: "Selecione o perfil",
     },
     {
       name: "cliente",
-      label: "Cliente",
-      type: "select",
-      options: clienteOptions,
-      placeholder: "Selecione cliente",
+      label: "Operações / clientes",
+      type: "multiselect",
+      options: clientesOptions,
+      placeholder:
+        clientesOptions.length > 0
+          ? "Selecione uma ou mais operações"
+          : "Cadastre clientes antes de vincular operações",
+      helperText:
+        "Para usuários que atuam em mais de uma operação, selecione múltiplos clientes.",
     },
     {
       name: "ativo",
-      label: "Status",
+      label: "Ativo",
       type: "select",
       options: [
-        { value: 1, label: "Ativo" },
-        { value: 0, label: "Inativo" },
+        { value: "1", label: "Sim" },
+        { value: "0", label: "Não" },
       ],
-      placeholder: "Selecione status",
+      placeholder: "Selecione",
     },
     {
       name: "troca_senha_obrigatoria",
-      label: "Primeiro acesso",
+      label: "Troca de senha obrigatória",
       type: "select",
       options: [
-        { value: 1, label: "Sim" },
-        { value: 0, label: "Não" },
+        { value: "1", label: "Sim" },
+        { value: "0", label: "Não" },
       ],
-      placeholder: "Selecione primeiro acesso",
+      placeholder: "Selecione",
     },
   ];
 
@@ -105,248 +127,215 @@ export default function UsuariosPage() {
       render: (item) => (
         <div>
           <div style={titleCell}>{item.nome || "-"}</div>
-          <div style={subCell}>{item.email || "Sem e-mail informado"}</div>
+          <div style={subCell}>{item.email || "-"}</div>
         </div>
       ),
     },
     {
       key: "perfil",
       label: "Perfil",
-      render: (item) => (
-        <span style={tagPerfil(item.perfil)}>
-          {formatPerfil(item.perfil)}
-        </span>
-      ),
+      render: (item) => <span style={badgePerfil(item.perfil)}>{item.perfil || "-"}</span>,
     },
     {
       key: "cliente",
-      label: "Cliente",
-      render: (item) => (
-        <span style={plainCell}>{item.cliente || "Não vinculado"}</span>
-      ),
+      label: "Operações",
+      render: (item) => <span style={plainCell}>{clienteLabel(item)}</span>,
     },
     {
       key: "ativo",
-      label: "Status",
+      label: "Ativo",
       render: (item) => (
-        <span style={tagStatus(item.ativo)}>
-          {Number(item.ativo) === 1 ? "Ativo" : "Inativo"}
+        <span style={badgeStatus(String(item.ativo) === "1")}>
+          {String(item.ativo) === "1" ? "Sim" : "Não"}
         </span>
       ),
     },
     {
       key: "troca_senha_obrigatoria",
-      label: "Primeiro acesso",
+      label: "Troca de senha",
       render: (item) => (
-        <span style={tagPrimeiroAcesso(item.troca_senha_obrigatoria)}>
-          {Number(item.troca_senha_obrigatoria) === 1 ? "Pendente" : "Concluído"}
+        <span style={plainCell}>
+          {String(item.troca_senha_obrigatoria) === "1" ? "Obrigatória" : "Normal"}
         </span>
       ),
     },
   ];
 
-  return (
-    <AccessGate allowed={["admin", "coordenador"]}>
-      <CrudPageV2
-        title="Usuários"
-        subtitle="Gestão dos acessos do portal com controle de perfil, cliente e status de uso."
-        endpoint="/usuarios"
-        fields={fields}
-        columns={columns}
-        recordsTitle="Usuários cadastrados"
-        recordsSubtitle="Base atual de acessos disponíveis no Portal T&D."
-        hero={
-          <div style={heroWrap}>
-            <div style={heroText}>
-              <div style={heroEyebrow}>Acessos do portal</div>
-              <h2 style={heroTitle}>
-                Controle central de usuários e perfis de navegação
-              </h2>
-              <p style={heroSubtitle}>
-                Gerencie os acessos ao ambiente, organize os perfis por nível de
-                atuação e acompanhe rapidamente quem está ativo, pendente de
-                primeiro acesso ou sem vínculo operacional.
-              </p>
-            </div>
+  const kpis = useMemo(() => {
+    const total = usuarios.length;
+    const ativos = usuarios.filter((item) => String(item.ativo) === "1").length;
+    const coordenadores = usuarios.filter(
+      (item) => String(item.perfil).toLowerCase() === "coordenador"
+    ).length;
+    const supervisores = usuarios.filter(
+      (item) => String(item.perfil).toLowerCase() === "supervisor"
+    ).length;
+    const instrutores = usuarios.filter(
+      (item) => String(item.perfil).toLowerCase() === "instrutor"
+    ).length;
+    const treinandos = usuarios.filter(
+      (item) => String(item.perfil).toLowerCase() === "treinando"
+    ).length;
 
-            <div style={statsWrap}>
-              <StatCard
-                title="Usuários"
-                value={totalUsuarios}
-                subtitle="Base total"
-                accent="#2563eb"
-              />
-              <StatCard
-                title="Ativos"
-                value={ativos}
-                subtitle="Acessos em uso"
-                accent="#059669"
-              />
-              <StatCard
-                title="Inativos"
-                value={inativos}
-                subtitle="Acessos desabilitados"
-                accent="#dc2626"
-              />
-              <StatCard
-                title="1º acesso"
-                value={primeiroAcesso}
-                subtitle="Pendentes de senha"
-                accent="#7c3aed"
-              />
-            </div>
+    const multiOperacao = usuarios.filter(
+      (item) => normalizarListaClientes(item.cliente).length > 1
+    ).length;
+
+    const porPerfil = [
+      { label: "Coordenadores", value: coordenadores },
+      { label: "Supervisores", value: supervisores },
+      { label: "Instrutores", value: instrutores },
+      { label: "Treinandos", value: treinandos },
+    ];
+
+    const alertas = [];
+
+    if (multiOperacao > 0) {
+      alertas.push(`${multiOperacao} usuário(s) já estão vinculados a múltiplas operações.`);
+    }
+
+    const semOperacao = usuarios.filter(
+      (item) => normalizarListaClientes(item.cliente).length === 0
+    ).length;
+
+    if (semOperacao > 0) {
+      alertas.push(`${semOperacao} usuário(s) estão sem operação vinculada.`);
+    }
+
+    if (!alertas.length) {
+      alertas.push("Base de usuários organizada, sem pendências críticas no momento.");
+    }
+
+    return {
+      total,
+      ativos,
+      coordenadores,
+      supervisores,
+      instrutores,
+      treinandos,
+      multiOperacao,
+      porPerfil,
+      alertas,
+    };
+  }, [usuarios]);
+
+  return (
+    <CrudPageV2
+      title="Usuários"
+      subtitle="Gestão de acessos, perfis e operações vinculadas."
+      endpoint="/usuarios"
+      fields={fields}
+      columns={columns}
+      recordsTitle="Base de usuários"
+      recordsSubtitle="Visão consolidada dos usuários cadastrados no portal."
+      hero={
+        <div style={{ display: "grid", gap: 14 }}>
+          {!clientesOptions.length ? (
+            <SectionCard
+              title="Atenção"
+              subtitle="Para vincular operações aos usuários, é necessário ter clientes cadastrados."
+            >
+              <div style={warningBox}>
+                Nenhum cliente encontrado na base. Cadastre clientes antes de configurar usuários multioperação.
+              </div>
+            </SectionCard>
+          ) : null}
+
+          <div style={heroGrid}>
+            <StatCard title="Usuários" value={fmt(kpis.total)} subtitle="Base total" accent="#2563eb" />
+            <StatCard title="Ativos" value={fmt(kpis.ativos)} subtitle="Usuários liberados" accent="#16a34a" />
+            <StatCard title="Instrutores" value={fmt(kpis.instrutores)} subtitle="Perfis de instrução" accent="#7c3aed" />
+            <StatCard title="Multioperação" value={fmt(kpis.multiOperacao)} subtitle="Mais de um cliente" accent="#ea580c" />
           </div>
-        }
-      />
-    </AccessGate>
+
+          <div style={heroGrid}>
+            {kpis.porPerfil.map((item) => (
+              <StatCard
+                key={item.label}
+                title={item.label}
+                value={fmt(item.value)}
+                subtitle="Distribuição por perfil"
+                accent="#475569"
+              />
+            ))}
+          </div>
+
+          <SectionCard
+            title="Leitura gerencial"
+            subtitle="Alertas operacionais da base de usuários."
+          >
+            <div style={alertsGrid}>
+              {kpis.alertas.map((item, index) => (
+                <div key={`${item}-${index}`} style={alertItem}>
+                  {item}
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      }
+    />
   );
 }
 
-function formatPerfil(perfil) {
-  const key = String(perfil || "").toLowerCase();
-
-  const mapa = {
-    coordenador: "Coordenador",
-    supervisor: "Supervisor",
-    instrutor: "Instrutor",
-    treinando: "Treinando",
-    admin: "Administrador",
-  };
-
-  return mapa[key] || perfil || "-";
-}
-
-function tagPerfil(perfil) {
+function badgePerfil(perfil) {
   const key = String(perfil || "").toLowerCase();
 
   const base = {
     display: "inline-block",
-    padding: "6px 10px",
+    padding: "5px 9px",
     borderRadius: 999,
     fontWeight: 800,
-    fontSize: 12,
+    fontSize: 11,
   };
 
-  if (key === "coordenador" || key === "admin") {
-    return {
-      ...base,
-      background: "#dbeafe",
-      color: "#1d4ed8",
-    };
-  }
-
-  if (key === "supervisor") {
-    return {
-      ...base,
-      background: "#ede9fe",
-      color: "#6d28d9",
-    };
-  }
-
-  if (key === "instrutor") {
-    return {
-      ...base,
-      background: "#dcfce7",
-      color: "#166534",
-    };
-  }
-
-  return {
-    ...base,
-    background: "#ffedd5",
-    color: "#9a3412",
-  };
+  if (key === "coordenador") return { ...base, background: "#dbeafe", color: "#1d4ed8" };
+  if (key === "supervisor") return { ...base, background: "#ede9fe", color: "#6d28d9" };
+  if (key === "instrutor") return { ...base, background: "#dcfce7", color: "#166534" };
+  return { ...base, background: "#f3f4f6", color: "#374151" };
 }
 
-function tagStatus(ativo) {
-  const base = {
+function badgeStatus(ativo) {
+  return {
     display: "inline-block",
-    padding: "6px 10px",
+    padding: "5px 9px",
     borderRadius: 999,
     fontWeight: 800,
-    fontSize: 12,
-  };
-
-  if (Number(ativo) === 1) {
-    return {
-      ...base,
-      background: "#dcfce7",
-      color: "#166534",
-    };
-  }
-
-  return {
-    ...base,
-    background: "#fee2e2",
-    color: "#b91c1c",
+    fontSize: 11,
+    background: ativo ? "#dcfce7" : "#fee2e2",
+    color: ativo ? "#166534" : "#b91c1c",
   };
 }
 
-function tagPrimeiroAcesso(valor) {
-  const base = {
-    display: "inline-block",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 12,
-  };
-
-  if (Number(valor) === 1) {
-    return {
-      ...base,
-      background: "#fef3c7",
-      color: "#92400e",
-    };
-  }
-
-  return {
-    ...base,
-    background: "#e0f2fe",
-    color: "#075985",
-  };
-}
-
-const heroWrap = {
+const heroGrid = {
   display: "grid",
-  gap: 16,
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
 };
 
-const heroText = {
-  background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
-  border: "1px solid #dbeafe",
-  borderRadius: 20,
-  padding: 22,
-};
-
-const heroEyebrow = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  fontSize: 12,
-  textTransform: "uppercase",
-  letterSpacing: ".03em",
-};
-
-const heroTitle = {
-  margin: "14px 0 8px",
-  color: "#0f172a",
-  fontSize: 28,
-  lineHeight: 1.1,
-};
-
-const heroSubtitle = {
-  margin: 0,
-  color: "#64748b",
-  lineHeight: 1.65,
-};
-
-const statsWrap = {
+const alertsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
-  gap: 14,
+  gap: 10,
+};
+
+const alertItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 14,
+  color: "#334155",
+  lineHeight: 1.5,
+  fontWeight: 600,
+};
+
+const warningBox = {
+  background: "#fff7ed",
+  border: "1px solid #fdba74",
+  color: "#9a3412",
+  borderRadius: 14,
+  padding: 14,
+  fontWeight: 700,
+  lineHeight: 1.5,
 };
 
 const titleCell = {
@@ -357,10 +346,9 @@ const titleCell = {
 const subCell = {
   marginTop: 4,
   color: "#64748b",
-  fontSize: 13,
+  fontSize: 12,
 };
 
 const plainCell = {
   color: "#334155",
-  fontWeight: 600,
 };
