@@ -1,50 +1,91 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
+import PortalShell from "../../components/PortalShell";
 import { apiFetch } from "../../services/api";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function fmtDec(n) {
-  return Number(n || 0).toFixed(1);
+function avg(arr, field) {
+  if (!arr.length) return 0;
+  const total = arr.reduce((acc, item) => acc + Number(item?.[field] || 0), 0);
+  return total / arr.length;
 }
 
-function groupBy(array, keyFn) {
-  return array.reduce((acc, item) => {
-    const key = keyFn(item);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
+function getNotaFinal(item) {
+  return Number(item?.nota_final || 0);
 }
 
-export default function ResultadosAvaliacoesPage() {
-  const [respostas, setRespostas] = useState([]);
-  const [materiais, setMateriais] = useState([]);
+function classificarResultado(item) {
+  const nota = getNotaFinal(item);
+  if (nota >= 8) return "Aprovado";
+  if (nota >= 6) return "Atenção";
+  return "Reforço";
+}
+
+function badgeClassificacao(label) {
+  const base = {
+    display: "inline-block",
+    padding: "5px 9px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 11,
+  };
+
+  if (label === "Aprovado") {
+    return { ...base, background: "#dcfce7", color: "#166534" };
+  }
+
+  if (label === "Atenção") {
+    return { ...base, background: "#fff7ed", color: "#c2410c" };
+  }
+
+  return { ...base, background: "#fee2e2", color: "#b91c1c" };
+}
+
+function getTreinamento(item, treinamentos) {
+  return treinamentos.find(
+    (t) => String(t.id) === String(item.treinamento_id)
+  );
+}
+
+function getMaterial(item, materiais) {
+  return materiais.find(
+    (m) => String(m.id) === String(item.material_id)
+  );
+}
+
+export default function ResultadosDasAvaliacoesPage() {
   const [treinamentos, setTreinamentos] = useState([]);
+  const [materiais, setMateriais] = useState([]);
+  const [respostas, setRespostas] = useState([]);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
+
+  const [filtroCliente, setFiltroCliente] = useState("todos");
+  const [filtroTreinamento, setFiltroTreinamento] = useState("todos");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     async function carregar() {
       try {
-        setLoading(true);
         setErro("");
+        setLoading(true);
 
-        const [respostasData, materiaisData, treinamentosData] = await Promise.all([
-          apiFetch("/respostas-avaliativas").catch(() => []),
-          apiFetch("/materiais-avaliativos").catch(() => []),
+        const [treinamentosData, materiaisData, respostasData] = await Promise.all([
           apiFetch("/treinamentos").catch(() => []),
+          apiFetch("/materiais-avaliativos").catch(() => []),
+          apiFetch("/respostas-avaliativas").catch(() => []),
         ]);
 
-        setRespostas(Array.isArray(respostasData) ? respostasData : []);
-        setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
         setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+        setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
+        setRespostas(Array.isArray(respostasData) ? respostasData : []);
       } catch (error) {
         setErro(error.message || "Erro ao carregar resultados das avaliações.");
       } finally {
@@ -55,44 +96,140 @@ export default function ResultadosAvaliacoesPage() {
     carregar();
   }, []);
 
-  const materiaisMap = useMemo(() => {
-    const map = {};
-    materiais.forEach((item) => {
-      map[String(item.id)] = item;
-    });
-    return map;
-  }, [materiais]);
-
-  const treinamentosMap = useMemo(() => {
-    const map = {};
-    treinamentos.forEach((item) => {
-      map[String(item.id)] = item;
-    });
-    return map;
+  const clienteOptions = useMemo(() => {
+    const lista = [...new Set(
+      treinamentos.map((item) => item.cliente).filter(Boolean)
+    )];
+    return lista.sort((a, b) => String(a).localeCompare(String(b)));
   }, [treinamentos]);
 
+  const treinamentoOptions = useMemo(() => {
+    const lista = treinamentos.map((item) => ({
+      value: String(item.id),
+      label: `${item.tema || "Treinamento"}${item.cliente ? ` - ${item.cliente}` : ""}`,
+    }));
+
+    return lista.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  }, [treinamentos]);
+
+  const baseFiltrada = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+
+    return respostas.filter((item) => {
+      const treinamento = getTreinamento(item, treinamentos);
+      const material = getMaterial(item, materiais);
+      const status = classificarResultado(item);
+
+      const matchCliente =
+        filtroCliente === "todos" ||
+        String(treinamento?.cliente || "") === filtroCliente;
+
+      const matchTreinamento =
+        filtroTreinamento === "todos" ||
+        String(item.treinamento_id) === filtroTreinamento;
+
+      const matchStatus =
+        filtroStatus === "todos" ||
+        status === filtroStatus;
+
+      const alvoBusca = [
+        item.treinando_nome,
+        material?.titulo,
+        treinamento?.tema,
+        treinamento?.cliente,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchBusca = !termo || alvoBusca.includes(termo);
+
+      return matchCliente && matchTreinamento && matchStatus && matchBusca;
+    });
+  }, [
+    respostas,
+    treinamentos,
+    materiais,
+    filtroCliente,
+    filtroTreinamento,
+    filtroStatus,
+    busca,
+  ]);
+
   const kpis = useMemo(() => {
-    const totalRespostas = respostas.length;
-    const mediaAcertos =
-      totalRespostas > 0
-        ? respostas.reduce((acc, item) => acc + Number(item.acertos || 0), 0) / totalRespostas
-        : 0;
+    const totalRespostas = baseFiltrada.length;
+    const mediaAcertos = avg(baseFiltrada, "acertos").toFixed(1);
+    const mediaPercentual = avg(baseFiltrada, "percentual").toFixed(1);
+    const mediaNotaFinal = avg(baseFiltrada, "nota_final").toFixed(1);
 
-    const mediaPercentual =
-      totalRespostas > 0
-        ? respostas.reduce((acc, item) => acc + Number(item.percentual || 0), 0) / totalRespostas
-        : 0;
-
-    const mediaNotaFinal =
-      totalRespostas > 0
-        ? respostas.reduce((acc, item) => acc + Number(item.nota_final || 0), 0) / totalRespostas
-        : 0;
-
-    const aprovados = respostas.filter((item) => Number(item.nota_final || 0) >= 8).length;
-    const atencao = respostas.filter(
-      (item) => Number(item.nota_final || 0) >= 6 && Number(item.nota_final || 0) < 8
+    const aprovados = baseFiltrada.filter(
+      (item) => classificarResultado(item) === "Aprovado"
     ).length;
-    const reforco = respostas.filter((item) => Number(item.nota_final || 0) < 6).length;
+
+    const atencao = baseFiltrada.filter(
+      (item) => classificarResultado(item) === "Atenção"
+    ).length;
+
+    const reforco = baseFiltrada.filter(
+      (item) => classificarResultado(item) === "Reforço"
+    ).length;
+
+    const porProvaMap = {};
+    const porTurmaMap = {};
+
+    baseFiltrada.forEach((item) => {
+      const treinamento = getTreinamento(item, treinamentos);
+      const material = getMaterial(item, materiais);
+
+      const chaveProva = String(item.material_id || "sem-material");
+      const chaveTurma = String(item.treinamento_id || "sem-treinamento");
+
+      if (!porProvaMap[chaveProva]) {
+        porProvaMap[chaveProva] = {
+          titulo: material?.titulo || `Material #${item.material_id || "-"}`,
+          total: 0,
+          somaNota: 0,
+          somaPercentual: 0,
+        };
+      }
+
+      porProvaMap[chaveProva].total += 1;
+      porProvaMap[chaveProva].somaNota += Number(item.nota_final || 0);
+      porProvaMap[chaveProva].somaPercentual += Number(item.percentual || 0);
+
+      if (!porTurmaMap[chaveTurma]) {
+        porTurmaMap[chaveTurma] = {
+          turma: treinamento?.tema || `Turma #${item.treinamento_id || "-"}`,
+          total: 0,
+          somaNota: 0,
+          somaPercentual: 0,
+        };
+      }
+
+      porTurmaMap[chaveTurma].total += 1;
+      porTurmaMap[chaveTurma].somaNota += Number(item.nota_final || 0);
+      porTurmaMap[chaveTurma].somaPercentual += Number(item.percentual || 0);
+    });
+
+    const rankingProva = Object.values(porProvaMap)
+      .map((item) => ({
+        ...item,
+        mediaNota: item.total ? (item.somaNota / item.total).toFixed(1) : "0.0",
+        mediaPercentual: item.total
+          ? (item.somaPercentual / item.total).toFixed(1)
+          : "0.0",
+      }))
+      .sort((a, b) => Number(b.mediaNota) - Number(a.mediaNota));
+
+    const rankingTurma = Object.values(porTurmaMap)
+      .map((item) => ({
+        ...item,
+        mediaNota: item.total ? (item.somaNota / item.total).toFixed(1) : "0.0",
+        mediaPercentual: item.total
+          ? (item.somaPercentual / item.total).toFixed(1)
+          : "0.0",
+      }))
+      .sort((a, b) => Number(b.mediaNota) - Number(a.mediaNota));
 
     return {
       totalRespostas,
@@ -102,67 +239,102 @@ export default function ResultadosAvaliacoesPage() {
       aprovados,
       atencao,
       reforco,
+      rankingProva,
+      rankingTurma,
     };
-  }, [respostas]);
-
-  const rankingPorProva = useMemo(() => {
-    const grupos = groupBy(respostas, (item) => {
-      const material = materiaisMap[String(item.material_id)];
-      return material?.titulo || `Material #${item.material_id}`;
-    });
-
-    return Object.entries(grupos)
-      .map(([titulo, lista]) => {
-        const mediaNota =
-          lista.reduce((acc, item) => acc + Number(item.nota_final || 0), 0) / lista.length;
-        const mediaPercentual =
-          lista.reduce((acc, item) => acc + Number(item.percentual || 0), 0) / lista.length;
-
-        return {
-          titulo,
-          total: lista.length,
-          mediaNota,
-          mediaPercentual,
-        };
-      })
-      .sort((a, b) => b.mediaNota - a.mediaNota);
-  }, [respostas, materiaisMap]);
-
-  const rankingPorTurma = useMemo(() => {
-    const grupos = groupBy(respostas, (item) => {
-      const treinamento = treinamentosMap[String(item.treinamento_id)];
-      return treinamento?.tema || `Turma #${item.treinamento_id}`;
-    });
-
-    return Object.entries(grupos)
-      .map(([tema, lista]) => {
-        const mediaNota =
-          lista.reduce((acc, item) => acc + Number(item.nota_final || 0), 0) / lista.length;
-        const mediaPercentual =
-          lista.reduce((acc, item) => acc + Number(item.percentual || 0), 0) / lista.length;
-
-        return {
-          tema,
-          total: lista.length,
-          mediaNota,
-          mediaPercentual,
-        };
-      })
-      .sort((a, b) => b.mediaNota - a.mediaNota);
-  }, [respostas, treinamentosMap]);
+  }, [baseFiltrada, treinamentos, materiais]);
 
   return (
     <PortalShell
       title="Resultados das Avaliações"
-      subtitle="Painel de acompanhamento das respostas, acertos, notas e desempenho das provas e simulados."
+      subtitle="Consolidado dos resultados de provas e simulados com leitura prática do desempenho."
     >
       {loading ? (
         <div style={loadingBox}>Carregando resultados...</div>
       ) : erro ? (
         <div style={errorBox}>{erro}</div>
       ) : (
-        <div style={{ display: "grid", gap: 16 }}>
-          <div style={gridCards}>
+        <div style={{ display: "grid", gap: 14 }}>
+          <SectionCard
+            title="Filtros"
+            subtitle="Refine a visualização por cliente, turma, status ou busca."
+          >
+            <div style={filtersGrid}>
+              <div style={fieldWrap}>
+                <label style={label}>Cliente</label>
+                <select
+                  value={filtroCliente}
+                  onChange={(e) => setFiltroCliente(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todos</option>
+                  {clienteOptions.map((cliente) => (
+                    <option key={cliente} value={cliente}>
+                      {cliente}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Turma</label>
+                <select
+                  value={filtroTreinamento}
+                  onChange={(e) => setFiltroTreinamento(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todas</option>
+                  {treinamentoOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Status</label>
+                <select
+                  value={filtroStatus}
+                  onChange={(e) => setFiltroStatus(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="Aprovado">Aprovado</option>
+                  <option value="Atenção">Atenção</option>
+                  <option value="Reforço">Reforço</option>
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Busca</label>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar por treinando, prova, turma ou cliente"
+                  style={input}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                style={btnSecundario}
+                onClick={() => {
+                  setFiltroCliente("todos");
+                  setFiltroTreinamento("todos");
+                  setFiltroStatus("todos");
+                  setBusca("");
+                }}
+              >
+                Limpar filtros
+              </button>
+            </div>
+          </SectionCard>
+
+          <div style={heroGrid}>
             <StatCard
               title="Respostas"
               value={fmt(kpis.totalRespostas)}
@@ -171,25 +343,25 @@ export default function ResultadosAvaliacoesPage() {
             />
             <StatCard
               title="Média de acertos"
-              value={fmtDec(kpis.mediaAcertos)}
+              value={kpis.mediaAcertos}
               subtitle="Acertos por tentativa"
               accent="#0891b2"
             />
             <StatCard
               title="Média percentual"
-              value={`${fmtDec(kpis.mediaPercentual)}%`}
+              value={`${kpis.mediaPercentual}%`}
               subtitle="Taxa média de acerto"
-              accent="#059669"
+              accent="#06b6d4"
             />
             <StatCard
               title="Média nota final"
-              value={fmtDec(kpis.mediaNotaFinal)}
+              value={kpis.mediaNotaFinal}
               subtitle="Nota média das avaliações"
               accent="#7c3aed"
             />
           </div>
 
-          <div style={gridCards}>
+          <div style={heroGrid}>
             <StatCard
               title="Aprovados"
               value={fmt(kpis.aprovados)}
@@ -206,7 +378,13 @@ export default function ResultadosAvaliacoesPage() {
               title="Reforço"
               value={fmt(kpis.reforco)}
               subtitle="Nota abaixo de 6"
-              accent="#dc2626"
+              accent="#b91c1c"
+            />
+            <StatCard
+              title="Base filtrada"
+              value={fmt(baseFiltrada.length)}
+              subtitle="Registros considerados"
+              accent="#475569"
             />
           </div>
 
@@ -216,16 +394,14 @@ export default function ResultadosAvaliacoesPage() {
               subtitle="Média de nota e percentual por material aplicado."
             >
               <div style={listGrid}>
-                {rankingPorProva.length ? (
-                  rankingPorProva.map((item, index) => (
-                    <div key={`${item.titulo}-${index}`} style={listItem}>
-                      <div style={itemHeader}>
-                        <div style={itemTitle}>{item.titulo}</div>
-                        <div style={badgeBlue}>{fmtDec(item.mediaNota)}</div>
-                      </div>
+                {kpis.rankingProva.length ? (
+                  kpis.rankingProva.slice(0, 8).map((item) => (
+                    <div key={item.titulo} style={listItem}>
+                      <div style={itemTitle}>{item.titulo}</div>
                       <div style={itemMeta}>
-                        {fmt(item.total)} resposta(s) • {fmtDec(item.mediaPercentual)}% média de acerto
+                        {fmt(item.total)} resposta(s) • {item.mediaPercentual}% média de acerto
                       </div>
+                      <div style={itemBadgeBlue}>{item.mediaNota}</div>
                     </div>
                   ))
                 ) : (
@@ -239,16 +415,14 @@ export default function ResultadosAvaliacoesPage() {
               subtitle="Desempenho consolidado por turma."
             >
               <div style={listGrid}>
-                {rankingPorTurma.length ? (
-                  rankingPorTurma.map((item, index) => (
-                    <div key={`${item.tema}-${index}`} style={listItem}>
-                      <div style={itemHeader}>
-                        <div style={itemTitle}>{item.tema}</div>
-                        <div style={badgePurple}>{fmtDec(item.mediaNota)}</div>
-                      </div>
+                {kpis.rankingTurma.length ? (
+                  kpis.rankingTurma.slice(0, 8).map((item) => (
+                    <div key={item.turma} style={listItem}>
+                      <div style={itemTitle}>{item.turma}</div>
                       <div style={itemMeta}>
-                        {fmt(item.total)} resposta(s) • {fmtDec(item.mediaPercentual)}% média de acerto
+                        {fmt(item.total)} resposta(s) • {item.mediaPercentual}% média de acerto
                       </div>
+                      <div style={itemBadgePurple}>{item.mediaNota}</div>
                     </div>
                   ))
                 ) : (
@@ -262,47 +436,48 @@ export default function ResultadosAvaliacoesPage() {
             title="Base detalhada de respostas"
             subtitle="Visão individual do desempenho dos treinandos."
           >
-            <div style={tableWrap}>
-              <table style={table}>
-                <thead>
-                  <tr>
-                    <th style={th}>Treinando</th>
-                    <th style={th}>Prova</th>
-                    <th style={th}>Turma</th>
-                    <th style={th}>Acertos</th>
-                    <th style={th}>Percentual</th>
-                    <th style={th}>Nota</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {respostas.length ? (
-                    respostas.map((item) => {
-                      const material = materiaisMap[String(item.material_id)];
-                      const treinamento = treinamentosMap[String(item.treinamento_id)];
+            {baseFiltrada.length ? (
+              <div style={{ overflowX: "auto" }}>
+                <table style={table}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Treinando</th>
+                      <th style={th}>Prova</th>
+                      <th style={th}>Turma</th>
+                      <th style={th}>Acertos</th>
+                      <th style={th}>Percentual</th>
+                      <th style={th}>Nota</th>
+                      <th style={th}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {baseFiltrada.map((item) => {
+                      const treinamento = getTreinamento(item, treinamentos);
+                      const material = getMaterial(item, materiais);
+                      const status = classificarResultado(item);
 
                       return (
                         <tr key={item.id}>
                           <td style={td}>{item.treinando_nome || "-"}</td>
-                          <td style={td}>{material?.titulo || `Material #${item.material_id}`}</td>
-                          <td style={td}>{treinamento?.tema || `Turma #${item.treinamento_id}`}</td>
+                          <td style={td}>{material?.titulo || `Material #${item.material_id || "-"}`}</td>
+                          <td style={td}>{treinamento?.tema || "-"}</td>
                           <td style={td}>
-                            {fmt(item.acertos)}/{fmt(item.total_questoes)}
+                            {fmt(item.acertos || 0)}/{fmt(item.total_questoes || 0)}
                           </td>
-                          <td style={td}>{fmtDec(item.percentual)}%</td>
-                          <td style={td}>{fmtDec(item.nota_final)}</td>
+                          <td style={td}>{Number(item.percentual || 0).toFixed(1)}%</td>
+                          <td style={td}>{Number(item.nota_final || 0).toFixed(1)}</td>
+                          <td style={td}>
+                            <span style={badgeClassificacao(status)}>{status}</span>
+                          </td>
                         </tr>
                       );
-                    })
-                  ) : (
-                    <tr>
-                      <td style={tdEmpty} colSpan={6}>
-                        Nenhuma resposta registrada.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={emptyText}>Nenhuma resposta registrada para os filtros aplicados.</div>
+            )}
           </SectionCard>
         </div>
       )}
@@ -310,34 +485,57 @@ export default function ResultadosAvaliacoesPage() {
   );
 }
 
-const loadingBox = {
-  background: "#fff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 16,
-  padding: 18,
-  color: "#475569",
-  fontWeight: 700,
-};
-
-const errorBox = {
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
-  borderRadius: 16,
-  padding: 16,
-  fontWeight: 700,
-};
-
-const gridCards = {
+const heroGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 14,
+  gap: 12,
 };
 
 const twoCol = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: 14,
+};
+
+const filtersGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+};
+
+const fieldWrap = {
+  display: "grid",
+  gap: 6,
+};
+
+const label = {
+  fontWeight: 800,
+  color: "#0f172a",
+  fontSize: 14,
+};
+
+const input = {
+  width: "100%",
+  height: 42,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "0 12px",
+  fontSize: 14,
+  color: "#0f172a",
+  outline: "none",
+  background: "#ffffff",
+  boxSizing: "border-box",
+};
+
+const btnSecundario = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  padding: "10px 16px",
+  background: "#ffffff",
+  color: "#334155",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 14,
 };
 
 const listGrid = {
@@ -350,13 +548,8 @@ const listItem = {
   padding: 12,
   borderRadius: 14,
   border: "1px solid #e2e8f0",
-};
-
-const itemHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 10,
-  alignItems: "center",
+  display: "grid",
+  gap: 6,
 };
 
 const itemTitle = {
@@ -365,36 +558,31 @@ const itemTitle = {
 };
 
 const itemMeta = {
-  marginTop: 5,
   color: "#475569",
   fontSize: 13,
   lineHeight: 1.45,
 };
 
-const emptyText = {
-  color: "#64748b",
-};
-
-const badgeBlue = {
-  background: "#dbeafe",
+const itemBadgeBlue = {
+  display: "inline-block",
+  justifySelf: "start",
+  padding: "4px 10px",
+  borderRadius: 999,
+  background: "#eff6ff",
   color: "#1d4ed8",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 12,
   fontWeight: 800,
+  fontSize: 12,
 };
 
-const badgePurple = {
-  background: "#ede9fe",
-  color: "#6d28d9",
-  padding: "4px 8px",
+const itemBadgePurple = {
+  display: "inline-block",
+  justifySelf: "start",
+  padding: "4px 10px",
   borderRadius: 999,
-  fontSize: 12,
+  background: "#f5f3ff",
+  color: "#7c3aed",
   fontWeight: 800,
-};
-
-const tableWrap = {
-  overflowX: "auto",
+  fontSize: 12,
 };
 
 const table = {
@@ -417,8 +605,24 @@ const td = {
   fontSize: 14,
 };
 
-const tdEmpty = {
-  padding: "16px 10px",
+const loadingBox = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 18,
+  color: "#475569",
+  fontWeight: 700,
+};
+
+const errorBox = {
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  borderRadius: 16,
+  padding: 16,
+  fontWeight: 700,
+};
+
+const emptyText = {
   color: "#64748b",
-  textAlign: "center",
 };
