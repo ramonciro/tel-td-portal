@@ -27,6 +27,10 @@ function diffDaysInclusive(start, end) {
   return diff > 0 ? diff : 1;
 }
 
+function normalizeStatus(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
 async function listTurmaAulas(req, res) {
   try {
     const { treinamento_id } = req.query || {};
@@ -545,6 +549,184 @@ async function duplicarPlanoAulas(req, res) {
   }
 }
 
+async function getResumoTurmaAulas(req, res) {
+  try {
+    const { treinamento_id } = req.params;
+
+    const [aulas] = await pool.query(
+      `
+      SELECT
+        id,
+        treinamento_id,
+        dia_numero,
+        data_aula,
+        ordem,
+        titulo,
+        objetivo,
+        conteudo_planejado,
+        metodologia,
+        carga_horaria_planejada,
+        instrutor_responsavel,
+        material_apoio,
+        status_execucao,
+        conteudo_ministrado,
+        carga_horaria_real,
+        observacoes_execucao,
+        reprogramada,
+        motivo_reprogramacao,
+        ministrada_em
+      FROM turma_aulas
+      WHERE treinamento_id = ?
+      ORDER BY dia_numero ASC, ordem ASC, id ASC
+      `,
+      [treinamento_id]
+    );
+
+    const totalAulas = aulas.length;
+    const planejadas = aulas.filter(
+      (item) => normalizeStatus(item.status_execucao) === "planejada"
+    ).length;
+    const ministradas = aulas.filter(
+      (item) => normalizeStatus(item.status_execucao) === "ministrada"
+    ).length;
+    const parciais = aulas.filter(
+      (item) => normalizeStatus(item.status_execucao) === "parcial"
+    ).length;
+    const reprogramadas = aulas.filter(
+      (item) =>
+        normalizeStatus(item.status_execucao) === "reprogramada" ||
+        Number(item.reprogramada || 0) === 1
+    ).length;
+    const canceladas = aulas.filter(
+      (item) => normalizeStatus(item.status_execucao) === "cancelada"
+    ).length;
+
+    const cargaPlanejada = aulas.reduce(
+      (acc, item) => acc + Number(item.carga_horaria_planejada || 0),
+      0
+    );
+
+    const cargaReal = aulas.reduce(
+      (acc, item) => acc + Number(item.carga_horaria_real || 0),
+      0
+    );
+
+    const aderenciaAulas = totalAulas
+      ? Math.round(((ministradas + parciais) / totalAulas) * 100)
+      : 0;
+
+    const aderenciaCarga = cargaPlanejada > 0
+      ? Math.round((cargaReal / cargaPlanejada) * 100)
+      : 0;
+
+    const desvioCarga = Number((cargaReal - cargaPlanejada).toFixed(2));
+
+    const porDiaMap = {};
+
+    aulas.forEach((item) => {
+      const key = `${item.dia_numero}-${toDateOnly(item.data_aula)}`;
+
+      if (!porDiaMap[key]) {
+        porDiaMap[key] = {
+          dia_numero: Number(item.dia_numero || 0),
+          data_aula: toDateOnly(item.data_aula),
+          total_aulas: 0,
+          ministradas: 0,
+          parciais: 0,
+          planejadas: 0,
+          reprogramadas: 0,
+          canceladas: 0,
+          carga_planejada: 0,
+          carga_real: 0,
+        };
+      }
+
+      const dia = porDiaMap[key];
+      const status = normalizeStatus(item.status_execucao);
+
+      dia.total_aulas += 1;
+      dia.carga_planejada += Number(item.carga_horaria_planejada || 0);
+      dia.carga_real += Number(item.carga_horaria_real || 0);
+
+      if (status === "ministrada") dia.ministradas += 1;
+      else if (status === "parcial") dia.parciais += 1;
+      else if (status === "reprogramada" || Number(item.reprogramada || 0) === 1) dia.reprogramadas += 1;
+      else if (status === "cancelada") dia.canceladas += 1;
+      else dia.planejadas += 1;
+    });
+
+    const porDia = Object.values(porDiaMap)
+      .map((item) => ({
+        ...item,
+        aderencia_aulas: item.total_aulas
+          ? Math.round(((item.ministradas + item.parciais) / item.total_aulas) * 100)
+          : 0,
+        aderencia_carga: item.carga_planejada > 0
+          ? Math.round((item.carga_real / item.carga_planejada) * 100)
+          : 0,
+        desvio_carga: Number((item.carga_real - item.carga_planejada).toFixed(2)),
+      }))
+      .sort((a, b) => a.dia_numero - b.dia_numero);
+
+    const alertas = [];
+
+    if (totalAulas === 0) {
+      alertas.push("A turma ainda não possui aulas cadastradas.");
+    }
+
+    if (planejadas > 0) {
+      alertas.push(`${planejadas} aula(s) seguem apenas planejadas.`);
+    }
+
+    if (parciais > 0) {
+      alertas.push(`${parciais} aula(s) foram executadas parcialmente.`);
+    }
+
+    if (reprogramadas > 0) {
+      alertas.push(`${reprogramadas} aula(s) foram reprogramadas.`);
+    }
+
+    if (canceladas > 0) {
+      alertas.push(`${canceladas} aula(s) foram canceladas.`);
+    }
+
+    if (cargaPlanejada > 0 && cargaReal < cargaPlanejada) {
+      alertas.push(
+        `A carga realizada está ${Number((cargaPlanejada - cargaReal).toFixed(2))}h abaixo da carga planejada.`
+      );
+    }
+
+    if (!alertas.length) {
+      alertas.push("Cronograma da turma sem desvios críticos no momento.");
+    }
+
+    return res.json({
+      ok: true,
+      resumo: {
+        total_aulas: totalAulas,
+        planejadas,
+        ministradas,
+        parciais,
+        reprogramadas,
+        canceladas,
+        carga_planejada: Number(cargaPlanejada.toFixed(2)),
+        carga_real: Number(cargaReal.toFixed(2)),
+        aderencia_aulas: aderenciaAulas,
+        aderencia_carga: aderenciaCarga,
+        desvio_carga: desvioCarga,
+      },
+      por_dia: porDia,
+      alertas,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao carregar resumo do cronograma da turma",
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   listTurmaAulas,
   getTurmaAulaById,
@@ -553,4 +735,5 @@ module.exports = {
   deleteTurmaAula,
   gerarCronogramaTurma,
   duplicarPlanoAulas,
+  getResumoTurmaAulas,
 };
