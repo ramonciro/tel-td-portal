@@ -59,20 +59,24 @@ function formatDate(value) {
 export default function TreinamentosPage() {
   const [turmas, setTurmas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [clientes, setClientes] = useState([]);
 
   useEffect(() => {
     async function carregar() {
       try {
-        const [treinamentosData, usuariosData] = await Promise.all([
+        const [treinamentosData, usuariosData, clientesData] = await Promise.all([
           apiFetch("/treinamentos").catch(() => []),
           apiFetch("/usuarios").catch(() => []),
+          apiFetch("/clientes").catch(() => []),
         ]);
 
         setTurmas(Array.isArray(treinamentosData) ? treinamentosData : []);
         setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+        setClientes(Array.isArray(clientesData) ? clientesData : []);
       } catch {
         setTurmas([]);
         setUsuarios([]);
+        setClientes([]);
       }
     }
 
@@ -92,6 +96,15 @@ export default function TreinamentosPage() {
       }));
   }, [usuarios]);
 
+  const clientesOptions = useMemo(() => {
+    return clientes
+      .map((item) => ({
+        value: item.nome,
+        label: item.nome,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [clientes]);
+
   const fields = [
     {
       name: "tema",
@@ -101,7 +114,12 @@ export default function TreinamentosPage() {
     {
       name: "cliente",
       label: "Cliente",
-      placeholder: "Cliente vinculado",
+      type: "select",
+      options: clientesOptions,
+      placeholder:
+        clientesOptions.length > 0
+          ? "Selecione o cliente"
+          : "Cadastre um cliente antes de criar o treinamento",
     },
     {
       name: "instrutor",
@@ -357,6 +375,18 @@ export default function TreinamentosPage() {
       recordsSubtitle="Visão consolidada das turmas cadastradas no portal."
       hero={
         <div style={{ display: "grid", gap: 14 }}>
+          {!clientesOptions.length ? (
+            <SectionCard
+              title="Atenção"
+              subtitle="Para cadastrar treinamentos, é necessário ter clientes cadastrados."
+            >
+              <div style={warningBox}>
+                Nenhum cliente encontrado na base. Cadastre pelo menos um cliente
+                antes de criar um novo treinamento.
+              </div>
+            </SectionCard>
+          ) : null}
+
           <div style={heroGrid}>
             <StatCard
               title="Turmas"
@@ -396,6 +426,12 @@ export default function TreinamentosPage() {
               value={`${fmt(kpis.horas)}h`}
               subtitle="Carga consolidada"
               accent="#7c3aed"
+            />
+            <StatCard
+              title="Clientes disponíveis"
+              value={fmt(clientesOptions.length)}
+              subtitle="Clientes cadastrados para seleção"
+              accent="#0f766e"
             />
           </div>
 
@@ -511,6 +547,16 @@ const alertItem = {
   color: "#334155",
   lineHeight: 1.5,
   fontWeight: 600,
+};
+
+const warningBox = {
+  background: "#fff7ed",
+  border: "1px solid #fdba74",
+  color: "#9a3412",
+  borderRadius: 14,
+  padding: 14,
+  fontWeight: 700,
+  lineHeight: 1.5,
 };
 
 const emptyText = {
