@@ -92,6 +92,7 @@ export default function CronogramaTurmaPage({ params }) {
   const { id } = params;
 
   const [treinamento, setTreinamento] = useState(null);
+  const [treinamentos, setTreinamentos] = useState([]);
   const [aulas, setAulas] = useState([]);
   const [resumoApi, setResumoApi] = useState(null);
   const [presencaResumoMap, setPresencaResumoMap] = useState({});
@@ -101,6 +102,11 @@ export default function CronogramaTurmaPage({ params }) {
     registros: [],
   });
 
+  const [duplicarModal, setDuplicarModal] = useState({
+    open: false,
+    origemId: "",
+  });
+
   const [form, setForm] = useState(emptyForm);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
@@ -108,6 +114,7 @@ export default function CronogramaTurmaPage({ params }) {
   const [salvando, setSalvando] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [salvandoPresenca, setSalvandoPresenca] = useState(false);
+  const [duplicando, setDuplicando] = useState(false);
 
   useEffect(() => {
     carregar();
@@ -118,8 +125,9 @@ export default function CronogramaTurmaPage({ params }) {
       setLoading(true);
       setErro("");
 
-      const [turmaData, aulasData, resumoData] = await Promise.all([
+      const [turmaData, treinamentosData, aulasData, resumoData] = await Promise.all([
         apiFetch(`/treinamentos/${id}`).catch(() => null),
+        apiFetch("/treinamentos").catch(() => []),
         apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
         apiFetch(`/turma-aulas/resumo/${id}`).catch(() => null),
       ]);
@@ -127,6 +135,7 @@ export default function CronogramaTurmaPage({ params }) {
       const listaAulas = Array.isArray(aulasData) ? aulasData : [];
 
       setTreinamento(turmaData || null);
+      setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
       setAulas(listaAulas);
       setResumoApi(resumoData || null);
 
@@ -362,6 +371,40 @@ export default function CronogramaTurmaPage({ params }) {
     }
   }
 
+  async function duplicarCronograma() {
+    if (!duplicarModal.origemId) {
+      setErro("Selecione a turma de origem para copiar o cronograma.");
+      return;
+    }
+
+    const confirmar = window.confirm(
+      "Deseja copiar o cronograma da turma selecionada para a turma atual?"
+    );
+    if (!confirmar) return;
+
+    try {
+      setDuplicando(true);
+      setErro("");
+      setSucesso("");
+
+      await apiFetch("/turma-aulas/duplicar", {
+        method: "POST",
+        body: JSON.stringify({
+          treinamento_origem_id: Number(duplicarModal.origemId),
+          treinamento_destino_id: Number(id),
+        }),
+      });
+
+      setSucesso("Cronograma copiado com sucesso.");
+      setDuplicarModal({ open: false, origemId: "" });
+      await carregar();
+    } catch (error) {
+      setErro(error.message || "Erro ao copiar cronograma.");
+    } finally {
+      setDuplicando(false);
+    }
+  }
+
   const resumo = useMemo(() => {
     return resumoApi?.resumo || {
       total_aulas: 0,
@@ -407,6 +450,10 @@ export default function CronogramaTurmaPage({ params }) {
     return Array.isArray(resumoApi?.alertas) ? resumoApi.alertas : [];
   }, [resumoApi]);
 
+  const turmasDisponiveis = useMemo(() => {
+    return treinamentos.filter((item) => Number(item.id) !== Number(id));
+  }, [treinamentos, id]);
+
   const topRight = (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       <button
@@ -416,6 +463,15 @@ export default function CronogramaTurmaPage({ params }) {
       >
         Voltar para turma
       </button>
+
+      <button
+        type="button"
+        onClick={() => setDuplicarModal({ open: true, origemId: "" })}
+        style={btnPurple}
+      >
+        Copiar cronograma
+      </button>
+
       <button
         type="button"
         onClick={gerarCronogramaBase}
@@ -726,7 +782,7 @@ export default function CronogramaTurmaPage({ params }) {
               </div>
             ) : (
               <div style={emptyText}>
-                Nenhuma aula cadastrada. Você pode gerar o cronograma base ou cadastrar manualmente.
+                Nenhuma aula cadastrada. Você pode gerar o cronograma base, copiar de outra turma ou cadastrar manualmente.
               </div>
             )}
           </SectionCard>
@@ -776,6 +832,56 @@ export default function CronogramaTurmaPage({ params }) {
                 >
                   Fechar
                 </button>
+              </div>
+            </SectionCard>
+          ) : null}
+
+          {duplicarModal.open ? (
+            <SectionCard
+              title="Copiar cronograma de outra turma"
+              subtitle="Selecione uma turma já cadastrada para reaproveitar o plano de aulas."
+            >
+              <div style={copyBox}>
+                <div style={fieldWrap}>
+                  <label style={label}>Turma de origem</label>
+                  <select
+                    style={input}
+                    value={duplicarModal.origemId}
+                    onChange={(e) =>
+                      setDuplicarModal((prev) => ({
+                        ...prev,
+                        origemId: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Selecione</option>
+                    {turmasDisponiveis.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.tema || "Sem nome"} • {item.cliente || "Sem cliente"} •{" "}
+                        {formatDate(item.data_inicio || item.data)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={actionsRow}>
+                  <button
+                    type="button"
+                    style={btnPurple}
+                    onClick={duplicarCronograma}
+                    disabled={duplicando}
+                  >
+                    {duplicando ? "Copiando..." : "Copiar cronograma"}
+                  </button>
+
+                  <button
+                    type="button"
+                    style={btnSecondary}
+                    onClick={() => setDuplicarModal({ open: false, origemId: "" })}
+                  >
+                    Fechar
+                  </button>
+                </div>
               </div>
             </SectionCard>
           ) : null}
@@ -1015,6 +1121,17 @@ const btnSecondary = {
   fontSize: 14,
 };
 
+const btnPurple = {
+  border: "1px solid #ddd6fe",
+  borderRadius: 10,
+  padding: "10px 16px",
+  background: "#f5f3ff",
+  color: "#7c3aed",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 14,
+};
+
 const btnEdit = {
   border: "1px solid #bfdbfe",
   borderRadius: 8,
@@ -1169,6 +1286,11 @@ const presenceControls = {
   display: "grid",
   gridTemplateColumns: "220px 1fr",
   gap: 10,
+};
+
+const copyBox = {
+  display: "grid",
+  gap: 12,
 };
 
 const emptyText = {
