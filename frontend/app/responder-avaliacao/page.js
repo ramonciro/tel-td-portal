@@ -24,18 +24,56 @@ function formatTreinamentoLabel(material, treinamentos) {
   }`;
 }
 
+function normalizarAlternativa(valor) {
+  if (valor === null || valor === undefined) return "";
+
+  const texto = String(valor).trim().toUpperCase();
+
+  if (!texto) return "";
+
+  if (["A", "B", "C", "D"].includes(texto)) return texto;
+
+  const matchLetra = texto.match(/\b([ABCD])\b/);
+  if (matchLetra) return matchLetra[1];
+
+  if (texto.startsWith("ALTERNATIVA A")) return "A";
+  if (texto.startsWith("ALTERNATIVA B")) return "B";
+  if (texto.startsWith("ALTERNATIVA C")) return "C";
+  if (texto.startsWith("ALTERNATIVA D")) return "D";
+
+  if (texto.startsWith("A)")) return "A";
+  if (texto.startsWith("B)")) return "B";
+  if (texto.startsWith("C)")) return "C";
+  if (texto.startsWith("D)")) return "D";
+
+  return "";
+}
+
+function obterRespostaCorreta(questao) {
+  const possiveisCampos = [
+    questao?.resposta_correta,
+    questao?.gabarito,
+    questao?.correta,
+    questao?.alternativa_correta,
+    questao?.resposta,
+  ];
+
+  for (const valor of possiveisCampos) {
+    const normalizada = normalizarAlternativa(valor);
+    if (normalizada) return normalizada;
+  }
+
+  return "";
+}
+
 function calcularResultado(materialSelecionado, questoes, respostas) {
   const totalQuestoes = questoes.length;
 
   let acertos = 0;
 
   questoes.forEach((questao, index) => {
-    const respostaMarcada = String(respostas[index] || "").toUpperCase();
-    const respostaCorreta = String(
-      questao.resposta_correta || questao.gabarito || ""
-    )
-      .trim()
-      .toUpperCase();
+    const respostaMarcada = normalizarAlternativa(respostas[index]);
+    const respostaCorreta = obterRespostaCorreta(questao);
 
     if (respostaMarcada && respostaCorreta && respostaMarcada === respostaCorreta) {
       acertos += 1;
