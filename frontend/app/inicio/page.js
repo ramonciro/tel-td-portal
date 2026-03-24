@@ -10,57 +10,135 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function formatDate(value) {
-  if (!value) return "-";
+function parseDateSafe(value) {
+  if (!value) return null;
+
+  if (value instanceof Date) return value;
+
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length === 3) {
+    const [year, month, day] = parts.map(Number);
+    if (year && month && day) {
+      return new Date(year, month - 1, day, 12, 0, 0);
+    }
+  }
+
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function formatDateSafe(value) {
+  if (!value) return "-";
+
+  const date = parseDateSafe(value);
+  if (!date) return String(value);
+
   return date.toLocaleDateString("pt-BR");
 }
 
-function getBadgeStyleByTax(value) {
-  const taxa = Number(value || 0);
+function getSaudeOperacao(taxaPresenca, nps, qualidade) {
+  const presenca = Number(taxaPresenca || 0);
+  const npsValor = Number(nps || 0);
+  const qualidadeValor = Number(qualidade || 0);
 
-  if (taxa >= 90) {
-    return { background: "#dcfce7", color: "#166534" };
-  }
-
-  if (taxa >= 75) {
-    return { background: "#fef3c7", color: "#92400e" };
-  }
-
-  return { background: "#fee2e2", color: "#b91c1c" };
-}
-
-function getResumoStatus(kpis) {
-  const taxaExecucao = Number(kpis.taxa_execucao_diaria || 0);
-  const taxaPresenca = Number(kpis.taxa_presenca || 0);
-  const gapDiario = Number(kpis.gap_diario || 0);
-  const pendentes = Number(kpis.pendentes || 0);
-
-  if (gapDiario > 0 || pendentes > 0 || taxaExecucao < 85 || taxaPresenca < 80) {
+  if (
+    presenca >= 90 &&
+    (npsValor >= 70 || npsValor === 0) &&
+    (qualidadeValor >= 8 || qualidadeValor === 0)
+  ) {
     return {
-      rotulo: "Crítico",
-      texto:
-        "Os indicadores apontam necessidade de atuação imediata na execução das turmas e no fechamento das chamadas diárias.",
-      estilo: badgeCritico,
+      label: "Estável",
+      color: "#166534",
+      bg: "#dcfce7",
+      border: "#86efac",
+      message:
+        "A operação apresenta execução consistente, com presença diária saudável e sem desvios críticos relevantes.",
     };
   }
 
-  if (taxaExecucao < 95 || taxaPresenca < 90) {
+  if (presenca >= 80) {
     return {
-      rotulo: "Atenção",
-      texto:
-        "Os indicadores mostram avanço operacional, porém ainda existem pontos de ajuste para estabilizar a rotina.",
-      estilo: badgeAtencao,
+      label: "Atenção",
+      color: "#92400e",
+      bg: "#fef3c7",
+      border: "#fcd34d",
+      message:
+        "Há estabilidade parcial, porém já existem sinais de atenção em presença diária, satisfação ou qualidade.",
     };
   }
 
   return {
-    rotulo: "Estável",
-    texto:
-      "A operação apresenta boa aderência entre capacidade diária, registros lançados e presença consolidada.",
-    estilo: badgeEstavel,
+    label: "Crítico",
+    color: "#b91c1c",
+    bg: "#fee2e2",
+    border: "#fca5a5",
+    message:
+      "Os indicadores apontam necessidade de atuação imediata na execução das turmas e no fechamento das chamadas diárias.",
   };
+}
+
+function getPriorityList(kpis, ultimasTurmas) {
+  const prioridades = [];
+
+  if (Number(kpis.pendentes || 0) > 0) {
+    prioridades.push({
+      titulo: "Finalizar chamadas pendentes",
+      descricao: `${fmt(kpis.pendentes)} registro(s) ainda estão sem fechamento de chamada diária.`,
+      tag: "Execução",
+    });
+  }
+
+  if (Number(kpis.ausentes || 0) > 0) {
+    prioridades.push({
+      titulo: "Atuar sobre ausências",
+      descricao: `${fmt(kpis.ausentes)} ausência(s) registradas nas chamadas diárias das turmas acompanhadas.`,
+      tag: "Presença",
+    });
+  }
+
+  if (Number(kpis.respostas_nps || 0) === 0) {
+    prioridades.push({
+      titulo: "Iniciar coleta de NPS",
+      descricao: "Ainda não há respostas de satisfação registradas na base.",
+      tag: "Experiência",
+    });
+  }
+
+  if (
+    Number(kpis.media_qualidade || 0) > 0 &&
+    Number(kpis.media_qualidade || 0) < 7
+  ) {
+    prioridades.push({
+      titulo: "Reforçar qualidade dos treinamentos",
+      descricao: `A média de qualidade está em ${kpis.media_qualidade}, abaixo do patamar desejado.`,
+      tag: "Qualidade",
+    });
+  }
+
+  const turmaCritica = (ultimasTurmas || []).find(
+    (item) => Number(item.ausentes || 0) > 0 || Number(item.pendentes || 0) > 0
+  );
+
+  if (turmaCritica) {
+    prioridades.push({
+      titulo: "Acompanhar turma com maior risco operacional",
+      descricao: `${turmaCritica.tema || "Treinamento"} • ${turmaCritica.cliente || "Sem cliente"}`,
+      tag: "Turma",
+    });
+  }
+
+  if (!prioridades.length) {
+    prioridades.push({
+      titulo: "Operação dentro do esperado",
+      descricao: "No momento, não há prioridades críticas abertas no portal.",
+      tag: "Status",
+    });
+  }
+
+  return prioridades.slice(0, 5);
 }
 
 export default function InicioPage() {
@@ -77,7 +155,7 @@ export default function InicioPage() {
         const response = await apiFetch("/dashboard/treinamentos");
         setDados(response || null);
       } catch (error) {
-        setErro(error.message || "Erro ao carregar painel inicial.");
+        setErro(error.message || "Erro ao carregar a visão inicial.");
       } finally {
         setLoading(false);
       }
@@ -89,42 +167,67 @@ export default function InicioPage() {
   const kpis = dados?.kpis || {};
   const presencaPorCliente = dados?.presenca_por_cliente || [];
   const rankingInstrutores = dados?.ranking_instrutores || [];
+  const rankingNps = dados?.ranking_nps || [];
   const ultimasTurmas = dados?.ultimas_turmas || [];
 
-  const resumo = useMemo(() => getResumoStatus(kpis), [kpis]);
+  const saudeOperacao = useMemo(() => {
+    return getSaudeOperacao(
+      kpis.taxa_presenca,
+      kpis.nps,
+      kpis.media_qualidade
+    );
+  }, [kpis]);
 
-  const focosImediatos = useMemo(() => {
-    const itens = [];
+  const prioridades = useMemo(() => {
+    return getPriorityList(kpis, ultimasTurmas);
+  }, [kpis, ultimasTurmas]);
 
-    if (Number(kpis.gap_diario || 0) > 0) {
-      itens.push(
-        `${fmt(kpis.gap_diario)} registro(s) ainda faltam para fechar a capacidade diária prevista.`
+  const taxaExecucao = useMemo(() => {
+    const registrosChamada = Number(kpis.treinados || 0);
+    const previstos = Number(kpis.participantes_previstos || 0);
+
+    if (!previstos) return 0;
+    return Math.round((registrosChamada / previstos) * 100);
+  }, [kpis]);
+
+  const gapPresenca = useMemo(() => {
+    const presentes = Number(kpis.presentes || 0);
+    const registrosChamada = Number(kpis.treinados || 0);
+
+    if (!registrosChamada) return 0;
+    return registrosChamada - presentes;
+  }, [kpis]);
+
+  const narrativaExecutiva = useMemo(() => {
+    const frases = [];
+
+    frases.push(
+      `A área acumula ${fmt(kpis.treinamentos || 0)} turma(s), com ${fmt(kpis.treinados || 0)} registro(s) de chamada considerados na base real diária.`
+    );
+
+    if (Number(kpis.taxa_presenca || 0) > 0) {
+      frases.push(
+        `A taxa consolidada de presença diária está em ${kpis.taxa_presenca}%, com ${fmt(kpis.presentes || 0)} presentes, ${fmt(kpis.ausentes || 0)} ausências e ${fmt(kpis.pendentes || 0)} pendência(s).`
       );
     }
 
-    if (Number(kpis.pendentes || 0) > 0) {
-      itens.push(
-        `${fmt(kpis.pendentes)} registro(s) seguem pendentes na chamada diária.`
+    if (Number(kpis.respostas_nps || 0) > 0) {
+      frases.push(
+        `A satisfação do treinando registra NPS ${kpis.nps}, com ${fmt(kpis.respostas_nps || 0)} resposta(s) já coletadas.`
+      );
+    } else {
+      frases.push(
+        "Ainda não há base consolidada de NPS para leitura de satisfação."
       );
     }
 
-    if (Number(kpis.taxa_execucao_diaria || 0) < 90) {
-      itens.push(
-        `A taxa de execução diária está em ${fmt(kpis.taxa_execucao_diaria || 0)}%, abaixo do ideal operacional.`
+    if (Number(kpis.media_qualidade || 0) > 0) {
+      frases.push(
+        `A qualidade média dos treinamentos está em ${kpis.media_qualidade}.`
       );
     }
 
-    if (Number(kpis.taxa_presenca || 0) < 85) {
-      itens.push(
-        `A taxa de presença consolidada está em ${fmt(kpis.taxa_presenca || 0)}%, demandando acompanhamento.`
-      );
-    }
-
-    if (!itens.length) {
-      itens.push("Sem alertas críticos no momento. Acompanhar manutenção da rotina.");
-    }
-
-    return itens;
+    return frases;
   }, [kpis]);
 
   return (
@@ -133,7 +236,7 @@ export default function InicioPage() {
       subtitle="Painel executivo da operação de Treinamento & Desenvolvimento."
     >
       {loading ? (
-        <div style={loadingBox}>Carregando painel inicial...</div>
+        <div style={loadingBox}>Carregando visão executiva...</div>
       ) : erro ? (
         <div style={errorBox}>{erro}</div>
       ) : (
@@ -141,47 +244,59 @@ export default function InicioPage() {
           <div style={heroWrap}>
             <div style={heroMain}>
               <div style={heroBadge}>Resumo executivo</div>
-              <h2 style={heroTitle}>Panorama estratégico da área de T&D</h2>
+              <h2 style={heroTitle}>Panorama estratégico da área de T&amp;D</h2>
               <p style={heroText}>
-                Acompanhe execução, presença diária, satisfação e qualidade em uma
-                visão pensada para acompanhamento gerencial e apresentação de resultados.
+                Acompanhe execução, presença diária, satisfação e qualidade em
+                uma visão pensada para acompanhamento gerencial e apresentação
+                de resultados.
               </p>
 
-              <div style={heroStatusRow}>
-                <span style={resumo.estilo}>{resumo.rotulo}</span>
+              <div
+                style={{
+                  ...healthPill,
+                  background: saudeOperacao.bg,
+                  color: saudeOperacao.color,
+                  border: `1px solid ${saudeOperacao.border}`,
+                }}
+              >
+                {saudeOperacao.label}
               </div>
 
-              <p style={heroInsight}>{resumo.texto}</p>
+              <p style={{ ...heroText, marginTop: 14 }}>
+                {saudeOperacao.message}
+              </p>
             </div>
 
             <div style={heroSide}>
-              <div style={sideCard}>
-                <div style={sideTitle}>Taxa de execução diária</div>
-                <div style={sideValue}>{fmt(kpis.taxa_execucao_diaria || 0)}%</div>
-                <div style={sideText}>
-                  relação entre registros lançados e capacidade diária prevista
-                </div>
+              <div style={heroSideCard}>
+                <span style={heroSideLabel}>Taxa de execução</span>
+                <strong style={heroSideValue}>{taxaExecucao}%</strong>
+                <span style={heroSideSub}>
+                  relação entre registros de chamada e capacidade planejada
+                </span>
               </div>
 
-              <div style={sideCard}>
-                <div style={sideTitle}>Gap diário</div>
-                <div style={sideValue}>{fmt(kpis.gap_diario || 0)}</div>
-                <div style={sideText}>
-                  diferença entre capacidade diária prevista e registros realizados
-                </div>
+              <div style={heroSideCard}>
+                <span style={heroSideLabel}>Gap de presença</span>
+                <strong style={heroSideValue}>{fmt(gapPresenca)}</strong>
+                <span style={heroSideSub}>
+                  diferença entre registros de chamada e presentes
+                </span>
               </div>
 
-              <div style={sideCard}>
-                <div style={sideTitle}>Carga efetiva</div>
-                <div style={sideValue}>{fmt(kpis.horas_treinadas || 0)}h</div>
-                <div style={sideText}>
+              <div style={heroSideCard}>
+                <span style={heroSideLabel}>Carga efetiva</span>
+                <strong style={heroSideValue}>
+                  {fmt(kpis.horas_treinadas || 0)}h
+                </strong>
+                <span style={heroSideSub}>
                   horas realmente assistidas na base acompanhada
-                </div>
+                </span>
               </div>
             </div>
           </div>
 
-          <div style={gridFour}>
+          <div style={gridFive}>
             <StatCard
               title="Turmas"
               value={fmt(kpis.treinamentos || 0)}
@@ -192,23 +307,29 @@ export default function InicioPage() {
               title="Registros de chamada"
               value={fmt(kpis.treinados || 0)}
               subtitle="Base real diária"
-              accent="#3b82f6"
-            />
-            <StatCard
-              title="Presença"
-              value={`${fmt(kpis.taxa_presenca || 0)}%`}
-              subtitle="Presença diária consolidada"
               accent="#06b6d4"
             />
             <StatCard
+              title="Presença"
+              value={`${kpis.taxa_presenca || 0}%`}
+              subtitle="Presença diária consolidada"
+              accent="#0891b2"
+            />
+            <StatCard
               title="NPS"
-              value={fmt(kpis.nps || 0)}
+              value={kpis.nps || 0}
               subtitle="Satisfação do treinando"
-              accent="#6366f1"
+              accent="#1d4ed8"
+            />
+            <StatCard
+              title="Qualidade"
+              value={kpis.media_qualidade || 0}
+              subtitle="Aproveitamento médio"
+              accent="#059669"
             />
           </div>
 
-          <div style={gridFour}>
+          <div style={{ ...gridFour, marginTop: 14 }}>
             <StatCard
               title="Presentes"
               value={fmt(kpis.presentes || 0)}
@@ -219,7 +340,7 @@ export default function InicioPage() {
               title="Ausentes"
               value={fmt(kpis.ausentes || 0)}
               subtitle="Não compareceram"
-              accent="#ef4444"
+              accent="#dc2626"
             />
             <StatCard
               title="Justificados"
@@ -230,59 +351,49 @@ export default function InicioPage() {
             <StatCard
               title="Pendentes"
               value={fmt(kpis.pendentes || 0)}
-              subtitle="Chamada em aberto"
+              subtitle="Chamada diária em aberto"
               accent="#64748b"
             />
           </div>
 
-          <div style={gridFour}>
+          <div style={{ ...gridFour, marginTop: 14 }}>
             <StatCard
               title="Capacidade planejada"
               value={fmt(kpis.participantes_previstos || 0)}
               subtitle="Base prevista"
-              accent="#4f46e5"
-            />
-            <StatCard
-              title="Capacidade diária"
-              value={fmt(kpis.capacidade_diaria_prevista || 0)}
-              subtitle="Participantes × dias das turmas"
-              accent="#8b5cf6"
+              accent="#7c3aed"
             />
             <StatCard
               title="Carga planejada"
               value={`${fmt(kpis.carga_horaria_total || 0)}h`}
               subtitle="Carga consolidada"
-              accent="#0ea5e9"
+              accent="#0f766e"
             />
             <StatCard
               title="Horas assistidas"
               value={`${fmt(kpis.horas_treinadas || 0)}h`}
               subtitle="Execução real"
-              accent="#14b8a6"
+              accent="#ea580c"
+            />
+            <StatCard
+              title="Conclusão"
+              value={`${kpis.taxa_conclusao_chamada || 0}%`}
+              subtitle="Fechamento da chamada diária"
+              accent="#9333ea"
             />
           </div>
 
-          <div style={twoColumns}>
+          <div style={twoCol}>
             <SectionCard
               title="Narrativa executiva"
               subtitle="Leitura pronta para acompanhamento gerencial."
             >
-              <div style={narrativaGrid}>
-                <div style={narrativaRow}>
-                  <strong>Clientes da carteira:</strong> {fmt(kpis.clientes_ativos || 0)}
-                </div>
-                <div style={narrativaRow}>
-                  <strong>Clientes com treinamento:</strong>{" "}
-                  {fmt(kpis.clientes_com_treinamento || 0)}
-                </div>
-                <div style={narrativaRow}>
-                  <strong>Média por turma:</strong>{" "}
-                  {fmt(kpis.media_participantes_por_turma || 0)}
-                </div>
-                <div style={narrativaRow}>
-                  <strong>Respostas de NPS:</strong>{" "}
-                  {fmt(kpis.respostas_nps || 0)}
-                </div>
+              <div style={narrativeGrid}>
+                {narrativaExecutiva.map((item, index) => (
+                  <div key={index} style={narrativeItem}>
+                    {item}
+                  </div>
+                ))}
               </div>
             </SectionCard>
 
@@ -290,135 +401,492 @@ export default function InicioPage() {
               title="Prioridades imediatas"
               subtitle="Focos de atuação para a rotina da área."
             >
-              <div style={alertsGrid}>
-                {focosImediatos.map((item, index) => (
-                  <div key={`${item}-${index}`} style={alertItem}>
-                    {item}
+              <div style={priorityGrid}>
+                {prioridades.map((item, index) => (
+                  <div key={index} style={priorityItem}>
+                    <div style={priorityHeader}>
+                      <span style={priorityTag}>{item.tag}</span>
+                      <strong style={priorityTitle}>{item.titulo}</strong>
+                    </div>
+                    <div style={priorityDescription}>{item.descricao}</div>
                   </div>
                 ))}
               </div>
             </SectionCard>
           </div>
 
-          <div style={twoColumns}>
+          <div style={{ ...twoCol, marginTop: 14 }}>
             <SectionCard
               title="Presença por cliente"
-              subtitle="Leitura consolidada por cliente com base ativa."
+              subtitle="Clientes com chamada registrada e taxa real de presença diária."
             >
-              <div style={listGrid}>
-                {presencaPorCliente.length ? (
-                  presencaPorCliente.map((item) => {
-                    const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
-
-                    return (
-                      <div key={item.cliente} style={listRow}>
-                        <div>
-                          <div style={rowTitle}>{item.cliente}</div>
-                          <div style={rowMeta}>
-                            {fmt(item.total_treinados)} treinando(s) •{" "}
-                            {fmt(item.presentes)} presentes •{" "}
-                            {fmt(item.ausentes)} ausentes •{" "}
-                            {fmt(item.justificados)} justificados •{" "}
-                            {fmt(item.pendentes)} pendentes
-                          </div>
+              {presencaPorCliente.length ? (
+                <div style={listGrid}>
+                  {presencaPorCliente.map((item, index) => (
+                    <div key={index} style={listItem}>
+                      <div style={itemHeader}>
+                        <div style={itemTitle}>
+                          {item.cliente || "Sem cliente"}
                         </div>
-
-                        <div style={{ ...pill, ...badgeStyle }}>
-                          {fmt(item.taxa_presenca)}%
+                        <div style={itemBadgeBlue}>
+                          {Number(item.taxa_presenca || 0)}%
                         </div>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div style={emptyState}>Sem dados por cliente.</div>
-                )}
-              </div>
+
+                      <div style={itemMeta}>
+                        {fmt(item.total_treinados || 0)} registro(s) •{" "}
+                        {fmt(item.presentes || 0)} presentes •{" "}
+                        {fmt(item.ausentes || 0)} ausentes •{" "}
+                        {fmt(item.justificados || 0)} justificados
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={emptyText}>
+                  Sem clientes com chamada registrada no momento.
+                </div>
+              )}
             </SectionCard>
 
             <SectionCard
               title="Ranking de instrutores"
-              subtitle="Produtividade por turma e presença consolidada."
+              subtitle="Leitura de produtividade por turmas e presença consolidada."
             >
-              <div style={listGrid}>
-                {rankingInstrutores.length ? (
-                  rankingInstrutores.map((item) => {
-                    const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
-
-                    return (
-                      <div key={item.instrutor} style={listRow}>
-                        <div>
-                          <div style={rowTitle}>{item.instrutor}</div>
-                          <div style={rowMeta}>
-                            {fmt(item.total_turmas)} turma(s) •{" "}
-                            {fmt(item.total_treinados)} treinando(s) •{" "}
-                            {fmt(item.presentes)} presentes
-                          </div>
+              {rankingInstrutores.length ? (
+                <div style={listGrid}>
+                  {rankingInstrutores.map((item, index) => (
+                    <div key={index} style={listItem}>
+                      <div style={itemHeader}>
+                        <div style={itemTitle}>
+                          {item.instrutor || "Sem instrutor"}
                         </div>
-
-                        <div style={{ ...pill, ...badgeStyle }}>
-                          {fmt(item.taxa_presenca)}%
+                        <div style={itemBadgePurple}>
+                          {Number(item.taxa_presenca || 0)}%
                         </div>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div style={emptyState}>Sem dados de instrutores.</div>
-                )}
-              </div>
+
+                      <div style={itemMeta}>
+                        {fmt(item.total_turmas || 0)} turma(s) •{" "}
+                        {fmt(item.total_treinados || 0)} registro(s) •{" "}
+                        {fmt(item.presentes || 0)} presentes
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={emptyText}>
+                  Sem dados de instrutores no momento.
+                </div>
+              )}
             </SectionCard>
           </div>
 
-          <SectionCard
-            title="Últimas turmas"
-            subtitle="Resumo operacional das turmas mais recentes."
-          >
-            {ultimasTurmas.length ? (
-              <div style={{ overflowX: "auto" }}>
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Turma</th>
-                      <th style={th}>Cliente</th>
-                      <th style={th}>Instrutor</th>
-                      <th style={th}>Data</th>
-                      <th style={th}>Base ativa</th>
-                      <th style={th}>Presentes</th>
-                      <th style={th}>Ausentes</th>
-                      <th style={th}>Justificados</th>
-                      <th style={th}>Pendentes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ultimasTurmas.map((item) => (
-                      <tr key={item.id}>
-                        <td style={td}>{item.tema || "-"}</td>
-                        <td style={td}>{item.cliente || "-"}</td>
-                        <td style={td}>{item.instrutor || "-"}</td>
-                        <td style={td}>{formatDate(item.data)}</td>
-                        <td style={td}>{fmt(item.treinados || 0)}</td>
-                        <td style={td}>{fmt(item.presentes || 0)}</td>
-                        <td style={td}>{fmt(item.ausentes || 0)}</td>
-                        <td style={td}>{fmt(item.justificados || 0)}</td>
-                        <td style={td}>{fmt(item.pendentes || 0)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div style={emptyState}>Sem turmas recentes para exibir.</div>
-            )}
-          </SectionCard>
+          <div style={{ ...twoCol, marginTop: 14 }}>
+            <SectionCard
+              title="Ranking de satisfação"
+              subtitle="Clientes com base de NPS já registrada."
+            >
+              {rankingNps.length ? (
+                <div style={listGrid}>
+                  {rankingNps.map((item, index) => (
+                    <div key={index} style={listItem}>
+                      <div style={itemHeader}>
+                        <div style={itemTitle}>
+                          {item.cliente || "Sem cliente"}
+                        </div>
+                        <div style={itemBadgeBlue}>{Number(item.nps || 0)}</div>
+                      </div>
+
+                      <div style={itemMeta}>
+                        {fmt(item.respostas || 0)} resposta(s) de NPS
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={emptyText}>Sem ranking de NPS no momento.</div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              title="Últimas turmas"
+              subtitle="Resumo operacional das turmas mais recentes."
+            >
+              {ultimasTurmas.length ? (
+                <div style={ultimasTurmasGrid}>
+                  {ultimasTurmas.slice(0, 6).map((item) => (
+                    <div key={item.id} style={turmaResumoCard}>
+                      <div style={turmaResumoTop}>
+                        <div>
+                          <div style={turmaResumoTitulo}>
+                            {item.tema || "Turma"}
+                          </div>
+                          <div style={turmaResumoMeta}>
+                            {(item.cliente || "Sem cliente") +
+                              " • " +
+                              (item.instrutor || "Sem instrutor")}
+                          </div>
+                        </div>
+
+                        <div style={turmaResumoData}>
+                          {formatDateSafe(item.data_inicio || item.data)}
+                        </div>
+                      </div>
+
+                      <div style={turmaResumoNumbers}>
+                        <div style={turmaMiniBox}>
+                          <span style={turmaMiniLabel}>Base ativa</span>
+                          <strong style={turmaMiniValue}>
+                            {fmt(item.base_ativa || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={turmaMiniBox}>
+                          <span style={turmaMiniLabel}>Presentes</span>
+                          <strong style={turmaMiniValue}>
+                            {fmt(item.presentes || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={turmaMiniBox}>
+                          <span style={turmaMiniLabel}>Ausentes</span>
+                          <strong style={turmaMiniValue}>
+                            {fmt(item.ausentes || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={turmaMiniBox}>
+                          <span style={turmaMiniLabel}>Justificados</span>
+                          <strong style={turmaMiniValue}>
+                            {fmt(item.justificados || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={turmaMiniBox}>
+                          <span style={turmaMiniLabel}>Pendentes</span>
+                          <strong style={turmaMiniValue}>
+                            {fmt(item.pendentes || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={turmaMiniBoxDestaque}>
+                          <span style={turmaMiniLabel}>Carga</span>
+                          <strong style={turmaMiniValue}>
+                            {item.carga_horaria || "-"}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={emptyText}>Nenhuma turma recente encontrada.</div>
+              )}
+            </SectionCard>
+          </div>
         </>
       )}
     </PortalShell>
   );
 }
 
-const loadingBox = {
-  background: "#ffffff",
+const heroWrap = {
+  display: "grid",
+  gridTemplateColumns: "1.4fr 1fr",
+  gap: 14,
+  marginBottom: 14,
+};
+
+const heroMain = {
+  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
+  borderRadius: 20,
+  padding: 22,
+  color: "#fff",
+  boxShadow: "0 16px 30px rgba(29,78,216,.18)",
+};
+
+const heroBadge = {
+  display: "inline-block",
+  background: "rgba(255,255,255,.14)",
+  padding: "6px 10px",
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".05em",
+};
+
+const heroTitle = {
+  margin: "14px 0 8px",
+  fontSize: 30,
+  lineHeight: 1.05,
+};
+
+const heroText = {
+  margin: 0,
+  color: "rgba(255,255,255,.84)",
+  lineHeight: 1.6,
+};
+
+const healthPill = {
+  display: "inline-flex",
+  marginTop: 16,
+  padding: "7px 12px",
+  borderRadius: 999,
+  fontWeight: 800,
+  fontSize: 12,
+};
+
+const heroSide = {
+  display: "grid",
+  gap: 10,
+};
+
+const heroSideCard = {
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  border: "1px solid #dbeafe",
+  borderRadius: 18,
+  padding: 16,
+  boxShadow: "0 10px 22px rgba(15,23,42,.05)",
+  display: "grid",
+  gap: 4,
+};
+
+const heroSideLabel = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: ".03em",
+};
+
+const heroSideValue = {
+  fontSize: 28,
+  fontWeight: 800,
+  color: "#0f172a",
+  lineHeight: 1.1,
+};
+
+const heroSideSub = {
+  color: "#64748b",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const gridFive = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  gap: 14,
+};
+
+const gridFour = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 14,
+};
+
+const twoCol = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 14,
+  marginTop: 16,
+};
+
+const narrativeGrid = {
+  display: "grid",
+  gap: 10,
+};
+
+const narrativeItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 12,
+  color: "#334155",
+  lineHeight: 1.6,
+  fontWeight: 500,
+};
+
+const priorityGrid = {
+  display: "grid",
+  gap: 10,
+};
+
+const priorityItem = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 12,
+};
+
+const priorityHeader = {
+  display: "grid",
+  gap: 6,
+};
+
+const priorityTag = {
+  display: "inline-block",
+  width: "fit-content",
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  padding: "4px 8px",
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 800,
+};
+
+const priorityTitle = {
+  color: "#0f172a",
+};
+
+const priorityDescription = {
+  marginTop: 6,
+  color: "#64748b",
+  lineHeight: 1.5,
+  fontSize: 13,
+};
+
+const listGrid = {
+  display: "grid",
+  gap: 10,
+};
+
+const listItem = {
+  background: "#f8fafc",
+  padding: 12,
+  borderRadius: 14,
+  border: "1px solid #e2e8f0",
+};
+
+const itemHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "center",
+};
+
+const itemTitle = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const itemMeta = {
+  marginTop: 5,
+  color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const itemBadgeBlue = {
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  padding: "4px 8px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const itemBadgePurple = {
+  background: "#ede9fe",
+  color: "#6d28d9",
+  padding: "4px 8px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const emptyText = {
+  color: "#64748b",
+};
+
+const ultimasTurmasGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: 14,
+};
+
+const turmaResumoCard = {
+  background: "#f8fafc",
   border: "1px solid #e2e8f0",
   borderRadius: 18,
+  padding: 16,
+  display: "grid",
+  gap: 12,
+};
+
+const turmaResumoTop = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+};
+
+const turmaResumoTitulo = {
+  fontSize: 18,
+  fontWeight: 800,
+  color: "#0f172a",
+  lineHeight: 1.25,
+};
+
+const turmaResumoMeta = {
+  marginTop: 6,
+  color: "#64748b",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const turmaResumoData = {
+  display: "inline-block",
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  fontSize: 12,
+  whiteSpace: "nowrap",
+};
+
+const turmaResumoNumbers = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 10,
+};
+
+const turmaMiniBox = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 12,
+  padding: 10,
+  display: "grid",
+  gap: 4,
+};
+
+const turmaMiniBoxDestaque = {
+  background: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  borderRadius: 12,
+  padding: 10,
+  display: "grid",
+  gap: 4,
+};
+
+const turmaMiniLabel = {
+  color: "#64748b",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const turmaMiniValue = {
+  color: "#0f172a",
+  fontSize: 18,
+  fontWeight: 800,
+};
+
+const loadingBox = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
   padding: 18,
   color: "#475569",
   fontWeight: 700,
@@ -428,224 +896,7 @@ const errorBox = {
   background: "#fef2f2",
   border: "1px solid #fecaca",
   color: "#b91c1c",
-  borderRadius: 18,
+  borderRadius: 16,
   padding: 16,
   fontWeight: 700,
-};
-
-const heroWrap = {
-  display: "grid",
-  gridTemplateColumns: "1.5fr 1fr",
-  gap: 14,
-  marginBottom: 14,
-};
-
-const heroMain = {
-  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
-  borderRadius: 22,
-  padding: 22,
-  color: "#ffffff",
-  boxShadow: "0 14px 30px rgba(29, 78, 216, 0.18)",
-};
-
-const heroBadge = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "rgba(255,255,255,.14)",
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-  marginBottom: 10,
-};
-
-const heroTitle = {
-  margin: 0,
-  fontSize: 28,
-  lineHeight: 1.1,
-};
-
-const heroText = {
-  margin: "10px 0 0",
-  color: "rgba(255,255,255,.86)",
-  lineHeight: 1.6,
-};
-
-const heroStatusRow = {
-  marginTop: 18,
-  marginBottom: 12,
-};
-
-const heroInsight = {
-  margin: 0,
-  color: "rgba(255,255,255,.95)",
-  fontSize: 16,
-  lineHeight: 1.6,
-};
-
-const heroSide = {
-  display: "grid",
-  gap: 12,
-};
-
-const sideCard = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 18,
-  display: "grid",
-  gap: 6,
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
-};
-
-const sideTitle = {
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-  color: "#475569",
-};
-
-const sideValue = {
-  fontSize: 28,
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const sideText = {
-  color: "#64748b",
-  lineHeight: 1.5,
-};
-
-const gridFour = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 14,
-  marginBottom: 14,
-};
-
-const twoColumns = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 14,
-  marginBottom: 14,
-};
-
-const narrativaGrid = {
-  display: "grid",
-  gap: 12,
-};
-
-const narrativaRow = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 14,
-  color: "#334155",
-};
-
-const alertsGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const alertItem = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 14,
-  color: "#334155",
-  lineHeight: 1.5,
-  fontWeight: 600,
-};
-
-const listGrid = {
-  display: "grid",
-  gap: 12,
-};
-
-const listRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12,
-  padding: "12px 0",
-  borderBottom: "1px solid #f1f5f9",
-};
-
-const rowTitle = {
-  fontWeight: 800,
-  color: "#0f172a",
-  fontSize: 16,
-};
-
-const rowMeta = {
-  marginTop: 4,
-  color: "#64748b",
-  lineHeight: 1.5,
-};
-
-const pill = {
-  padding: "7px 10px",
-  borderRadius: 999,
-  fontWeight: 800,
-  fontSize: 12,
-  whiteSpace: "nowrap",
-};
-
-const table = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
-const th = {
-  textAlign: "left",
-  padding: "12px 10px",
-  borderBottom: "1px solid #e2e8f0",
-  color: "#475569",
-  fontSize: 13,
-};
-
-const td = {
-  padding: "12px 10px",
-  borderBottom: "1px solid #f1f5f9",
-  color: "#0f172a",
-  fontSize: 14,
-};
-
-const emptyState = {
-  padding: 16,
-  borderRadius: 14,
-  background: "#f8fafc",
-  border: "1px dashed #cbd5e1",
-  color: "#64748b",
-  textAlign: "center",
-};
-
-const badgeCritico = {
-  display: "inline-block",
-  padding: "6px 12px",
-  borderRadius: 999,
-  background: "#fee2e2",
-  color: "#b91c1c",
-  fontWeight: 800,
-};
-
-const badgeAtencao = {
-  display: "inline-block",
-  padding: "6px 12px",
-  borderRadius: 999,
-  background: "#fef3c7",
-  color: "#92400e",
-  fontWeight: 800,
-};
-
-const badgeEstavel = {
-  display: "inline-block",
-  padding: "6px 12px",
-  borderRadius: 999,
-  background: "#dcfce7",
-  color: "#166534",
-  fontWeight: 800,
 };
