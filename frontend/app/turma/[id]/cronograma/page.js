@@ -332,10 +332,23 @@ export default function CronogramaTurmaPage({ params }) {
       setErro("");
       setSucesso("");
 
-      await apiFetch("/presenca-aulas/inicializar", {
+      const initData = await apiFetch("/presenca-aulas/inicializar", {
         method: "POST",
         body: JSON.stringify({ turma_aula_id: Number(aula.id) }),
       });
+
+      const registrosInit = Array.isArray(initData?.registros)
+        ? initData.registros
+        : [];
+
+      if (registrosInit.length) {
+        setPresencaModal({
+          open: true,
+          aula,
+          registros: registrosInit,
+        });
+        return;
+      }
 
       const registros = await apiFetch(`/presenca-aulas?turma_aula_id=${aula.id}`).catch(() => []);
 
@@ -351,7 +364,7 @@ export default function CronogramaTurmaPage({ params }) {
 
   function alterarStatusPresenca(index, status) {
     setPresencaModal((prev) => {
-      const next = [...prev.registros];
+      const next = [...(prev.registros || [])];
       next[index] = {
         ...next[index],
         status,
@@ -362,7 +375,7 @@ export default function CronogramaTurmaPage({ params }) {
 
   function alterarJustificativa(index, justificativa) {
     setPresencaModal((prev) => {
-      const next = [...prev.registros];
+      const next = [...(prev.registros || [])];
       next[index] = {
         ...next[index],
         justificativa,
@@ -381,7 +394,7 @@ export default function CronogramaTurmaPage({ params }) {
         method: "POST",
         body: JSON.stringify({
           turma_aula_id: Number(presencaModal.aula.id),
-          registros: presencaModal.registros.map((item) => ({
+          registros: (presencaModal.registros || []).map((item) => ({
             treinando_nome: item.treinando_nome,
             status: item.status,
             justificativa: item.justificativa,
@@ -821,7 +834,7 @@ export default function CronogramaTurmaPage({ params }) {
               subtitle="Atualize o status de presença dos treinandos vinculados a esta aula."
             >
               <div style={presenceList}>
-                {presencaModal.registros.map((item, index) => (
+                {(presencaModal.registros || []).map((item, index) => (
                   <div key={`${item.treinando_nome}-${index}`} style={presenceRow}>
                     <div style={presenceName}>{item.treinando_nome}</div>
 
