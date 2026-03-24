@@ -319,21 +319,21 @@ app.put(
 app.delete(
   "/api/turma-aulas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
   deleteTurmaAula
 );
 
 app.post(
   "/api/turma-aulas/gerar-cronograma",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
   gerarCronogramaTurma
 );
 
 app.post(
   "/api/turma-aulas/duplicar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
   duplicarPlanoAulas
 );
 
