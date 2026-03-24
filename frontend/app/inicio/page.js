@@ -183,19 +183,19 @@ export default function InicioPage() {
   }, [kpis, ultimasTurmas]);
 
   const taxaExecucao = useMemo(() => {
-    const registrosChamada = Number(kpis.treinados || 0);
-    const previstos = Number(kpis.participantes_previstos || 0);
+    const horasTreinadas = Number(kpis.horas_treinadas || 0);
+    const cargaPlanejada = Number(kpis.carga_horaria_total || 0);
 
-    if (!previstos) return 0;
-    return Math.round((registrosChamada / previstos) * 100);
+    if (!cargaPlanejada) return 0;
+    return Math.round((horasTreinadas / cargaPlanejada) * 100);
   }, [kpis]);
 
   const gapPresenca = useMemo(() => {
-    const presentes = Number(kpis.presentes || 0);
-    const registrosChamada = Number(kpis.treinados || 0);
+    const previstosNoDia = Number(kpis.previstos_no_dia || 0);
+    const presentesNoDia = Number(kpis.presentes_no_dia || 0);
 
-    if (!registrosChamada) return 0;
-    return registrosChamada - presentes;
+    const gap = previstosNoDia - presentesNoDia;
+    return gap > 0 ? gap : 0;
   }, [kpis]);
 
   const narrativaExecutiva = useMemo(() => {
@@ -272,7 +272,7 @@ export default function InicioPage() {
                 <span style={heroSideLabel}>Taxa de execução</span>
                 <strong style={heroSideValue}>{taxaExecucao}%</strong>
                 <span style={heroSideSub}>
-                  relação entre registros de chamada e capacidade planejada
+                  horas treinadas em relação à carga horária planejada
                 </span>
               </div>
 
@@ -280,7 +280,7 @@ export default function InicioPage() {
                 <span style={heroSideLabel}>Gap de presença</span>
                 <strong style={heroSideValue}>{fmt(gapPresenca)}</strong>
                 <span style={heroSideSub}>
-                  diferença entre registros de chamada e presentes
+                  diferença entre previstos no dia e presença efetiva do dia
                 </span>
               </div>
 
