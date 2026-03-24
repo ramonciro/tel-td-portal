@@ -1,33 +1,5 @@
 const pool = require("../lib/db");
 
-function parseLocalDate(dateValue) {
-  if (!dateValue) return null;
-
-  if (dateValue instanceof Date) {
-    return new Date(
-      dateValue.getFullYear(),
-      dateValue.getMonth(),
-      dateValue.getDate()
-    );
-  }
-
-  const text = String(dateValue).trim().slice(0, 10);
-  const parts = text.split("-");
-
-  if (parts.length !== 3) return null;
-
-  const [year, month, day] = parts.map(Number);
-  if (!year || !month || !day) return null;
-
-  return new Date(year, month - 1, day);
-}
-
-function isSunday(dateValue) {
-  const d = parseLocalDate(dateValue);
-  if (!d || Number.isNaN(d.getTime())) return false;
-  return d.getDay() === 0;
-}
-
 function parseHorasTexto(valor) {
   if (valor === null || valor === undefined || valor === "") return 0;
 
@@ -35,32 +7,6 @@ function parseHorasTexto(valor) {
   const match = texto.match(/(\d+(\.\d+)?)/);
 
   return match ? Number(match[1]) || 0 : 0;
-}
-
-function getDiasPeriodo(item) {
-  const inicio = item.data_inicio || item.data;
-  const fim = item.data_fim || item.data_inicio || item.data;
-
-  if (!inicio || !fim) return 1;
-
-  const d1 = parseLocalDate(inicio);
-  const d2 = parseLocalDate(fim);
-
-  if (!d1 || !d2 || Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) {
-    return 1;
-  }
-
-  let diasOperacionais = 0;
-  const cursor = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
-
-  while (cursor <= d2) {
-    if (cursor.getDay() !== 0) {
-      diasOperacionais += 1;
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return diasOperacionais > 0 ? diasOperacionais : 1;
 }
 
 async function getDashboardTreinamentos(req, res) {
@@ -87,27 +33,46 @@ async function getDashboardTreinamentos(req, res) {
       FROM treinamentos
     `);
 
+    const [[treinadosImportados]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM treinamento_participantes tp
+      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
+    `);
+
+    const [[presentes]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM treinamento_participantes tp
+      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
+      WHERE tp.status_presenca = 'presente'
+    `);
+
+    const [[ausentes]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM treinamento_participantes tp
+      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
+      WHERE tp.status_presenca = 'ausente'
+    `);
+
+    const [[justificados]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM treinamento_participantes tp
+      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
+      WHERE tp.status_presenca = 'justificado'
+    `);
+
+    const [[pendentes]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM treinamento_participantes tp
+      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
+      WHERE tp.status_presenca IS NULL
+         OR tp.status_presenca = ''
+         OR tp.status_presenca = 'pendente'
+    `);
+
     const [[mediaParticipantesPorTurma]] = await pool.query(`
       SELECT COALESCE(ROUND(AVG(participantes), 1), 0) AS total
       FROM treinamentos
     `);
-
-    const [baseTurmas] = await pool.query(`
-      SELECT
-        id,
-        participantes,
-        carga_horaria,
-        data,
-        data_inicio,
-        data_fim
-      FROM treinamentos
-    `);
-
-    const capacidadeDiariaPrevista = baseTurmas.reduce((acc, item) => {
-      const participantes = Number(item.participantes || 0);
-      const dias = getDiasPeriodo(item);
-      return acc + participantes * dias;
-    }, 0);
 
     const [cargas] = await pool.query(`
       SELECT carga_horaria
@@ -121,134 +86,47 @@ async function getDashboardTreinamentos(req, res) {
       0
     );
 
-    const [[treinadosAtivos]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM treinamento_participantes tp
-      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
-    `);
-
-    const [[presentesAtivos]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM treinamento_participantes tp
-      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
-      WHERE tp.status_presenca = 'presente'
-    `);
-
-    const [[ausentesAtivos]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM treinamento_participantes tp
-      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
-      WHERE tp.status_presenca = 'ausente'
-    `);
-
-    const [[justificadosAtivos]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM treinamento_participantes tp
-      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
-      WHERE tp.status_presenca = 'justificado'
-    `);
-
-    const [[pendentesAtivos]] = await pool.query(`
-      SELECT COUNT(*) AS total
-      FROM treinamento_participantes tp
-      INNER JOIN treinamentos t ON t.id = tp.treinamento_id
-      WHERE tp.status_presenca IS NULL
-         OR tp.status_presenca = ''
-         OR tp.status_presenca = 'pendente'
-    `);
-
-    const [presencasBase] = await pool.query(`
-      SELECT
-        p.id,
-        p.treinamento_id,
-        p.treinando_nome,
-        p.data_chamada,
-        p.status
-      FROM presencas p
-      INNER JOIN treinamento_participantes tp
-        ON tp.treinamento_id = p.treinamento_id
-       AND tp.nome = p.treinando_nome
-      INNER JOIN treinamentos t
-        ON t.id = p.treinamento_id
-    `);
-
-    const presencasValidas = presencasBase.filter(
-      (item) => !isSunday(item.data_chamada)
-    );
-
-    const totalRegistrosChamada = presencasValidas.length;
-    const totalPresentesDiarios = presencasValidas.filter(
-      (item) => item.status === "presente"
-    ).length;
-    const totalAusentesDiarios = presencasValidas.filter(
-      (item) => item.status === "ausente"
-    ).length;
-    const totalJustificadosDiarios = presencasValidas.filter(
-      (item) => item.status === "justificado"
-    ).length;
-    const totalPendentesDiarios = presencasValidas.filter(
-      (item) => !item.status || item.status === "" || item.status === "pendente"
-    ).length;
-
     const [horasTreinadasBase] = await pool.query(`
       SELECT
         t.id,
         t.carga_horaria,
-        t.data,
-        t.data_inicio,
-        t.data_fim,
-        p.data_chamada,
-        SUM(CASE WHEN p.status = 'presente' THEN 1 ELSE 0 END) AS presentes_dia
+        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
+        COUNT(tp.id) AS registros_total
       FROM treinamentos t
-      LEFT JOIN presencas p
-        ON p.treinamento_id = t.id
       LEFT JOIN treinamento_participantes tp
-        ON tp.treinamento_id = p.treinamento_id
-       AND tp.nome = p.treinando_nome
-      WHERE p.id IS NULL OR tp.id IS NOT NULL
-      GROUP BY
-        t.id,
-        t.carga_horaria,
-        t.data,
-        t.data_inicio,
-        t.data_fim,
-        p.data_chamada
+        ON tp.treinamento_id = t.id
+      GROUP BY t.id, t.carga_horaria
     `);
 
+    // Horas assistidas (hora-pessoa)
     const horasTreinadas = horasTreinadasBase.reduce((acc, item) => {
-      if (item.data_chamada && isSunday(item.data_chamada)) {
-        return acc;
-      }
-
-      const horasTotais = parseHorasTexto(item.carga_horaria);
-      const diasPeriodo = getDiasPeriodo(item);
-      const cargaDia = diasPeriodo > 0 ? horasTotais / diasPeriodo : horasTotais;
-      const presentesDia = Number(item.presentes_dia || 0);
-
-      return acc + cargaDia * presentesDia;
+      const horas = parseHorasTexto(item.carga_horaria);
+      const presentesTurma = Number(item.presentes || 0);
+      return acc + horas * presentesTurma;
     }, 0);
 
-    const [presencaPorClienteRaw] = await pool.query(`
+    // Horas ministradas (execução da grade)
+    const horasMinistradas = horasTreinadasBase.reduce((acc, item) => {
+      const horas = parseHorasTexto(item.carga_horaria);
+      const registrosTotal = Number(item.registros_total || 0);
+
+      // conta a carga da turma 1 vez se houve qualquer registro nela
+      return acc + (registrosTotal > 0 ? horas : 0);
+    }, 0);
+
+    const [presencaPorCliente] = await pool.query(`
       SELECT
         t.cliente,
         COUNT(DISTINCT t.id) AS total_turmas,
-        COUNT(tp.id) AS total_treinados,
-        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
-        SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
-        SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados,
-        SUM(
-          CASE
-            WHEN tp.status_presenca IS NULL
-              OR tp.status_presenca = ''
-              OR tp.status_presenca = 'pendente'
-            THEN 1
-            ELSE 0
-          END
-        ) AS pendentes,
+        COALESCE(SUM(CASE WHEN tp.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS treinados_importados,
+        COALESCE(SUM(t.participantes), 0) AS previstos,
+        COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) AS presentes,
+        COALESCE(SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END), 0) AS ausentes,
+        COALESCE(SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END), 0) AS justificados,
         ROUND(
           (
-            SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) /
-            NULLIF(COUNT(tp.id), 0)
+            COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) /
+            NULLIF(COALESCE(SUM(CASE WHEN tp.id IS NOT NULL THEN 1 ELSE 0 END), 0), 0)
           ) * 100,
           0
         ) AS taxa_presenca
@@ -258,7 +136,7 @@ async function getDashboardTreinamentos(req, res) {
       WHERE t.cliente IS NOT NULL
         AND t.cliente <> ''
       GROUP BY t.cliente
-      ORDER BY total_turmas DESC, total_treinados DESC
+      ORDER BY total_turmas DESC, previstos DESC
       LIMIT 10
     `);
 
@@ -267,12 +145,12 @@ async function getDashboardTreinamentos(req, res) {
         t.instrutor,
         COUNT(DISTINCT t.id) AS total_turmas,
         COALESCE(SUM(t.participantes), 0) AS treinandos_previstos,
-        COUNT(tp.id) AS treinandos_vinculados,
-        SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
+        COALESCE(SUM(CASE WHEN tp.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS treinandos_vinculados,
+        COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) AS presentes,
         ROUND(
           (
-            SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END) /
-            NULLIF(COUNT(tp.id), 0)
+            COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) /
+            NULLIF(COALESCE(SUM(CASE WHEN tp.id IS NOT NULL THEN 1 ELSE 0 END), 0), 0)
           ) * 100,
           0
         ) AS taxa_presenca
@@ -292,7 +170,9 @@ async function getDashboardTreinamentos(req, res) {
         t.tema,
         t.cliente,
         t.instrutor,
-        COALESCE(t.data_fim, t.data_inicio, t.data) AS data,
+        t.data,
+        t.data_inicio,
+        t.data_fim,
         t.carga_horaria,
         t.participantes,
         COUNT(tp.id) AS treinados,
@@ -325,110 +205,67 @@ async function getDashboardTreinamentos(req, res) {
       LIMIT 8
     `);
 
-    const [[npsBase]] = await pool.query(`
-      SELECT
-        COUNT(*) AS respostas,
-        SUM(CASE WHEN nota_nps >= 9 THEN 1 ELSE 0 END) AS promotores,
-        SUM(CASE WHEN nota_nps <= 6 THEN 1 ELSE 0 END) AS detratores
-      FROM avaliacoes_treinandos
-    `);
-
-    const respostasNps = Number(npsBase.respostas || 0);
-    const promotores = Number(npsBase.promotores || 0);
-    const detratores = Number(npsBase.detratores || 0);
-
-    const nps =
-      respostasNps > 0
-        ? Math.round(((promotores - detratores) / respostasNps) * 100)
-        : 0;
-
     const totalTreinamentos = Number(treinamentos.total || 0);
+    const totalTreinados = Number(treinadosImportados.total || 0);
     const totalPrevistos = Number(participantesPrevistos.total || 0);
-
-    const totalTreinadosAtivos = Number(treinadosAtivos.total || 0);
-    const totalPresentesAtivos = Number(presentesAtivos.total || 0);
-    const totalAusentesAtivos = Number(ausentesAtivos.total || 0);
-    const totalJustificadosAtivos = Number(justificadosAtivos.total || 0);
-    const totalPendentesAtivos = Number(pendentesAtivos.total || 0);
+    const totalPresentes = Number(presentes.total || 0);
+    const totalAusentes = Number(ausentes.total || 0);
+    const totalJustificados = Number(justificados.total || 0);
+    const totalPendentes = Number(pendentes.total || 0);
 
     const taxaPresenca =
-      totalRegistrosChamada > 0
-        ? Math.round((totalPresentesDiarios / totalRegistrosChamada) * 100)
+      totalTreinados > 0
+        ? Math.round((totalPresentes / totalTreinados) * 100)
         : 0;
-
-    const taxaExecucaoDiaria =
-      capacidadeDiariaPrevista > 0
-        ? Math.round((totalRegistrosChamada / capacidadeDiariaPrevista) * 100)
-        : 0;
-
-    const gapDiario = Math.max(capacidadeDiariaPrevista - totalRegistrosChamada, 0);
 
     const taxaConclusaoChamada =
-      totalTreinadosAtivos > 0
-        ? Math.round(
-            ((totalTreinadosAtivos - totalPendentesAtivos) / totalTreinadosAtivos) * 100
-          )
+      totalTreinados > 0
+        ? Math.round(((totalTreinados - totalPendentes) / totalTreinados) * 100)
         : 0;
 
     return res.json({
       ok: true,
       kpis: {
         treinamentos: totalTreinamentos,
-        treinados: totalRegistrosChamada,
+        treinados: totalTreinados,
         participantes_previstos: totalPrevistos,
-        capacidade_diaria_prevista: capacidadeDiariaPrevista,
-        presentes: totalPresentesDiarios,
-        ausentes: totalAusentesDiarios,
-        justificados: totalJustificadosDiarios,
-        pendentes: totalPendentesDiarios,
+        presentes: totalPresentes,
+        ausentes: totalAusentes,
+        justificados: totalJustificados,
+        pendentes: totalPendentes,
         taxa_presenca: taxaPresenca,
-        taxa_execucao_diaria: taxaExecucaoDiaria,
-        gap_diario: gapDiario,
         taxa_conclusao_chamada: taxaConclusaoChamada,
         media_participantes_por_turma: Number(mediaParticipantesPorTurma.total || 0),
-        horas_treinadas: Number(horasTreinadas.toFixed(1)),
-        carga_horaria_total: Number(cargaHorariaTotal.toFixed(1)),
+        horas_treinadas: Number(horasTreinadas || 0),   // horas assistidas
+        horas_ministradas: Number(horasMinistradas || 0), // execução da grade
+        carga_horaria_total: Number(cargaHorariaTotal || 0),
         clientes_ativos: Number(clientesCarteira.total || 0),
         clientes_com_treinamento: Number(clientesComTreinamento.total || 0),
-        nps,
-        respostas_nps: respostasNps,
-        base_ativa_total: totalTreinadosAtivos,
-        base_ativa_presentes: totalPresentesAtivos,
-        base_ativa_ausentes: totalAusentesAtivos,
-        base_ativa_justificados: totalJustificadosAtivos,
-        base_ativa_pendentes: totalPendentesAtivos,
+
+        // fallback do gap no frontend enquanto não houver cálculo diário real no backend
+        previstos_no_dia: 0,
+        presentes_no_dia: 0,
       },
-      presenca_por_cliente: presencaPorClienteRaw.map((item) => ({
+      presenca_por_cliente: presencaPorCliente.map((item) => ({
         ...item,
-        total_turmas: Number(item.total_turmas || 0),
-        total_treinados: Number(item.total_treinados || 0),
-        presentes: Number(item.presentes || 0),
-        ausentes: Number(item.ausentes || 0),
-        justificados: Number(item.justificados || 0),
-        pendentes: Number(item.pendentes || 0),
-        taxa_presenca: Number(item.taxa_presenca || 0),
+        total_treinados:
+          Number(item.treinados_importados || 0) > 0
+            ? Number(item.treinados_importados || 0)
+            : Number(item.previstos || 0),
       })),
       ranking_instrutores: rankingInstrutores.map((item) => ({
         ...item,
-        total_turmas: Number(item.total_turmas || 0),
-        total_treinados: Number(item.treinandos_vinculados || 0),
-        treinandos_previstos: Number(item.treinandos_previstos || 0),
-        presentes: Number(item.presentes || 0),
-        taxa_presenca: Number(item.taxa_presenca || 0),
+        total_treinados:
+          Number(item.treinandos_vinculados || 0) > 0
+            ? Number(item.treinandos_vinculados || 0)
+            : Number(item.treinandos_previstos || 0),
       })),
-      ultimas_turmas: ultimasTurmas.map((item) => ({
-        ...item,
-        treinados: Number(item.treinados || 0),
-        presentes: Number(item.presentes || 0),
-        ausentes: Number(item.ausentes || 0),
-        justificados: Number(item.justificados || 0),
-        pendentes: Number(item.pendentes || 0),
-      })),
+      ultimas_turmas: ultimasTurmas,
     });
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      message: "Erro ao carregar dashboard de treinamentos",
+      message: "Erro ao carregar dashboard blindado de treinamentos",
       error: error.message,
     });
   }
