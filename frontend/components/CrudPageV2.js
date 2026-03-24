@@ -2,18 +2,94 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "./PortalShell";
+import SectionCard from "./SectionCard";
 import { apiFetch, getStoredUser, hasSomeRole } from "../services/api";
 
+function normalizeInitialValue(field) {
+  if (field.type === "multiselect") return [];
+  return "";
+}
+
 function buildInitialForm(fields) {
-  const initial = {};
-  fields.forEach((field) => {
-    if (field.defaultValue !== undefined) {
-      initial[field.name] = field.defaultValue;
-    } else {
-      initial[field.name] = "";
-    }
-  });
-  return initial;
+  return fields.reduce((acc, field) => {
+    acc[field.name] =
+      field.defaultValue !== undefined
+        ? field.defaultValue
+        : normalizeInitialValue(field);
+    return acc;
+  }, {});
+}
+
+function parseMultiValue(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function serializeMultiValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean).join(", ");
+  }
+  return String(value || "").trim();
+}
+
+function toggleMultiValue(currentValues, optionValue) {
+  const current = Array.isArray(currentValues) ? currentValues : [];
+  if (current.includes(optionValue)) {
+    return current.filter((item) => item !== optionValue);
+  }
+  return [...current, optionValue];
+}
+
+function MultiSelectField({ field, value, onChange }) {
+  const selectedValues = Array.isArray(value) ? value : [];
+  const options = Array.isArray(field.options) ? field.options : [];
+
+  return (
+    <div style={multiWrap}>
+      <div style={multiHeader}>
+        {selectedValues.length ? (
+          <div style={chipsWrap}>
+            {selectedValues.map((item) => (
+              <span key={item} style={chip}>
+                {item}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span style={multiPlaceholder}>
+            {field.placeholder || "Selecione uma ou mais opções"}
+          </span>
+        )}
+      </div>
+
+      <div style={multiList}>
+        {options.length ? (
+          options.map((option) => {
+            const checked = selectedValues.includes(option.value);
+
+            return (
+              <label key={option.value} style={multiOption}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() =>
+                    onChange(toggleMultiValue(selectedValues, option.value))
+                  }
+                />
+                <span style={multiOptionText}>{option.label}</span>
+              </label>
+            );
+          })
+        ) : (
+          <div style={multiEmpty}>Nenhuma opção disponível.</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function CrudPageV2({
@@ -23,22 +99,20 @@ export default function CrudPageV2({
   fields = [],
   columns = [],
   hero = null,
-  recordsSubtitle = "",
-  recordsMode = "table",
-  recordsGridStyle = null,
   recordsTitle = "Registros",
-  renderRecordCard = null,
+  recordsSubtitle = "Base cadastrada",
   allowedCreateRoles = [],
   allowedEditRoles = [],
   allowedDeleteRoles = [],
 }) {
-  const [items, setItems] = useState([]);
+  const [records, setRecords] = useState([]);
   const [form, setForm] = useState(buildInitialForm(fields));
   const [editingId, setEditingId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [search, setSearch] = useState("");
-  const [erro, setErro] = useState("");
-  const [sucesso, setSucesso] = useState("");
-  const [carregando, setCarregando] = useState(false);
 
   const user = getStoredUser();
 
@@ -52,429 +126,357 @@ export default function CrudPageV2({
     !allowedDeleteRoles.length || hasSomeRole(user, allowedDeleteRoles);
 
   useEffect(() => {
+    loadRecords();
+  }, [endpoint]);
+
+  useEffect(() => {
     setForm(buildInitialForm(fields));
   }, [fields]);
 
-  useEffect(() => {
-    carregar();
-  }, [endpoint]);
-
-  async function carregar() {
+  async function loadRecords() {
     try {
-      setCarregando(true);
-      setErro("");
-      const data = await apiFetch(`${endpoint}?t=${Date.now()}`).catch(() => []);
-      setItems(Array.isArray(data) ? data : []);
-    } catch (error) {
-      setErro(`Erro ao carregar ${String(title || "registros").toLowerCase()}.`);
+      setLoading(true);
+      setError("");
+      const data = await apiFetch(endpoint);
+      setRecords(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.message || "Erro ao carregar registros.");
+      setRecords([]);
     } finally {
-      setCarregando(false);
+      setLoading(false);
     }
+  }
+
+  function resetForm() {
+    setForm(buildInitialForm(fields));
+    setEditingId(null);
+    setError("");
+    setSuccess("");
   }
 
   function handleChange(event) {
     const { name, value } = event.target;
 
-    setForm((prev) => {
-      const next = {
-        ...prev,
-        [name]: value,
-      };
-
-      fields.forEach((field) => {
-        if (field.type === "dependent-select" && field.dependsOn === name) {
-          next[field.name] = "";
-        }
-      });
-
-      return next;
-    });
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   }
 
-  function limparFormulario() {
-    setForm(buildInitialForm(fields));
-    setEditingId(null);
-    setErro("");
-    setSucesso("");
+  function handleMultiChange(fieldName, nextValues) {
+    setForm((prev) => ({
+      ...prev,
+      [fieldName]: nextValues,
+    }));
   }
 
-  function editarRegistro(item) {
+  function startEdit(record) {
     if (!canEdit) {
-      setErro("Você não tem permissão para editar este registro.");
+      setError("Você não tem permissão para editar este registro.");
       return;
     }
 
-    const next = {};
+    const nextForm = {};
+
     fields.forEach((field) => {
-      if (item[field.name] !== undefined && item[field.name] !== null) {
-        next[field.name] = item[field.name];
-      } else if (field.defaultValue !== undefined) {
-        next[field.name] = field.defaultValue;
+      const rawValue = record[field.name];
+
+      if (field.type === "multiselect") {
+        nextForm[field.name] = parseMultiValue(rawValue);
+      } else if (rawValue === null || rawValue === undefined) {
+        nextForm[field.name] =
+          field.defaultValue !== undefined
+            ? field.defaultValue
+            : normalizeInitialValue(field);
       } else {
-        next[field.name] = "";
+        nextForm[field.name] = rawValue;
       }
     });
 
-    setForm(next);
-    setEditingId(item?.id || null);
-    setErro("");
-    setSucesso("");
+    setForm(nextForm);
+    setEditingId(record.id);
+    setError("");
+    setSuccess("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function excluirRegistro(id) {
-    if (!canDelete) {
-      setErro("Você não tem permissão para excluir este registro.");
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (editingId && !canEdit) {
+      setError("Você não tem permissão para editar este registro.");
       return;
     }
 
-    const confirmar = window.confirm("Deseja realmente excluir este registro?");
-    if (!confirmar) return;
+    if (!editingId && !canCreate) {
+      setError("Você não tem permissão para criar registros nesta área.");
+      return;
+    }
 
     try {
-      setErro("");
-      setSucesso("");
+      setSaving(true);
+      setError("");
+      setSuccess("");
+
+      const payload = {};
+
+      fields.forEach((field) => {
+        const value = form[field.name];
+
+        if (field.type === "multiselect") {
+          payload[field.name] = serializeMultiValue(value);
+        } else {
+          payload[field.name] = value;
+        }
+      });
+
+      if (editingId) {
+        await apiFetch(`${endpoint}/${editingId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        setSuccess("Registro atualizado com sucesso.");
+      } else {
+        await apiFetch(endpoint, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setSuccess("Registro cadastrado com sucesso.");
+      }
+
+      resetForm();
+      await loadRecords();
+    } catch (err) {
+      setError(err.message || "Erro ao salvar registro.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!canDelete) {
+      setError("Você não tem permissão para excluir este registro.");
+      return;
+    }
+
+    const confirmed = window.confirm("Deseja realmente excluir este registro?");
+    if (!confirmed) return;
+
+    try {
+      setError("");
+      setSuccess("");
 
       await apiFetch(`${endpoint}/${id}`, {
         method: "DELETE",
       });
 
-      setSucesso("Registro excluído com sucesso.");
-      await carregar();
-
-      if (editingId === id) {
-        limparFormulario();
-      }
-    } catch (error) {
-      setErro(error.message || "Erro ao excluir registro.");
+      setSuccess("Registro excluído com sucesso.");
+      await loadRecords();
+    } catch (err) {
+      setError(err.message || "Erro ao excluir registro.");
     }
   }
 
-  async function salvar(event) {
-    event.preventDefault();
+  const filteredRecords = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return records;
 
-    if (editingId && !canEdit) {
-      setErro("Você não tem permissão para editar este registro.");
-      return;
-    }
-
-    if (!editingId && !canCreate) {
-      setErro("Você não tem permissão para criar registros nesta área.");
-      return;
-    }
-
-    try {
-      setErro("");
-      setSucesso("");
-
-      const metodo = editingId ? "PUT" : "POST";
-      const url = editingId ? `${endpoint}/${editingId}` : endpoint;
-
-      await apiFetch(url, {
-        method: metodo,
-        body: JSON.stringify(form),
-      });
-
-      setSucesso(editingId ? "Registro atualizado com sucesso." : "Registro criado com sucesso.");
-      setForm(buildInitialForm(fields));
-      setEditingId(null);
-      await carregar();
-    } catch (error) {
-      setErro(error.message || "Erro ao salvar registro.");
-    }
-  }
-
-  const filteredItems = useMemo(() => {
-    if (!search.trim()) return items;
-    const termo = search.toLowerCase();
-    return items.filter((item) => JSON.stringify(item).toLowerCase().includes(termo));
-  }, [items, search]);
-
-  const gridStyle = recordsGridStyle || {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: 12,
-  };
+    return records.filter((record) =>
+      Object.values(record || {}).some((value) =>
+        String(value || "").toLowerCase().includes(term)
+      )
+    );
+  }, [records, search]);
 
   return (
     <PortalShell title={title} subtitle={subtitle}>
-      {erro ? <div style={errorBox}>{erro}</div> : null}
-      {sucesso ? <div style={successBox}>{sucesso}</div> : null}
+      <div style={{ display: "grid", gap: 14 }}>
+        {hero}
 
-      {hero ? <div style={{ marginBottom: 14 }}>{hero}</div> : null}
+        {error ? <div style={errorBox}>{error}</div> : null}
+        {success ? <div style={successBox}>{success}</div> : null}
 
-      {canCreate || (editingId && canEdit) ? (
-        <div style={panel}>
-          <div style={panelHeaderCompact}>
-            <h3 style={panelTitle}>{editingId ? "Editar registro" : "Novo registro"}</h3>
-            {editingId ? <span style={editingTag}>Modo edição</span> : null}
-          </div>
+        {(canCreate || (editingId && canEdit)) ? (
+          <SectionCard
+            title={editingId ? "Editar registro" : "Novo registro"}
+            subtitle="Preencha os campos abaixo para salvar na base."
+          >
+            <form onSubmit={handleSubmit} style={formGrid}>
+              {fields.map((field) => (
+                <div
+                  key={field.name}
+                  style={{
+                    ...fieldWrap,
+                    gridColumn:
+                      field.type === "textarea" || field.type === "multiselect"
+                        ? "1 / -1"
+                        : "auto",
+                  }}
+                >
+                  <label style={label}>{field.label}</label>
 
-          <form onSubmit={salvar} style={formGrid}>
-            {fields.map((field) => {
-              const value = form[field.name] ?? "";
-
-              if (field.type === "textarea") {
-                return (
-                  <div key={field.name} style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
-                    <label style={label}>{field.label}</label>
+                  {field.type === "textarea" ? (
                     <textarea
                       name={field.name}
-                      value={value}
+                      value={form[field.name] ?? ""}
                       onChange={handleChange}
                       placeholder={field.placeholder || ""}
-                      rows={3}
+                      rows={4}
                       style={textarea}
                       disabled={field.disabled}
                     />
-                  </div>
-                );
-              }
-
-              if (field.type === "dependent-select") {
-                const parentValue = form[field.dependsOn] ?? "";
-                const options = field.optionsMap?.[String(parentValue)] || [];
-
-                return (
-                  <div key={field.name} style={fieldWrap}>
-                    <label style={label}>{field.label}</label>
+                  ) : field.type === "select" ? (
                     <select
                       name={field.name}
-                      value={value}
-                      onChange={handleChange}
-                      style={input}
-                      disabled={!parentValue || field.disabled}
-                    >
-                      <option value="">
-                        {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
-                      </option>
-                      {options.map((option) => {
-                        const optionValue = typeof option === "object" ? option.value : option;
-                        const optionLabel = typeof option === "object" ? option.label : option;
-
-                        return (
-                          <option key={`${field.name}-${optionValue}`} value={optionValue}>
-                            {optionLabel}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                );
-              }
-
-              if (field.type === "select") {
-                return (
-                  <div key={field.name} style={fieldWrap}>
-                    <label style={label}>{field.label}</label>
-                    <select
-                      name={field.name}
-                      value={value}
+                      value={form[field.name] ?? ""}
                       onChange={handleChange}
                       style={input}
                       disabled={field.disabled}
                     >
                       <option value="">
-                        {field.placeholder || `Selecione ${field.label.toLowerCase()}`}
+                        {field.placeholder || "Selecione uma opção"}
                       </option>
-                      {(field.options || []).map((option) => {
-                        const optionValue = typeof option === "object" ? option.value : option;
-                        const optionLabel = typeof option === "object" ? option.label : option;
-
-                        return (
-                          <option key={`${field.name}-${optionValue}`} value={optionValue}>
-                            {optionLabel}
-                          </option>
-                        );
-                      })}
+                      {(field.options || []).map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
-                  </div>
-                );
-              }
+                  ) : field.type === "multiselect" ? (
+                    <MultiSelectField
+                      field={field}
+                      value={form[field.name]}
+                      onChange={(nextValues) =>
+                        handleMultiChange(field.name, nextValues)
+                      }
+                    />
+                  ) : (
+                    <input
+                      type={field.type || "text"}
+                      name={field.name}
+                      value={form[field.name] ?? ""}
+                      onChange={handleChange}
+                      placeholder={field.placeholder || ""}
+                      style={input}
+                      disabled={field.disabled}
+                    />
+                  )}
 
-              return (
-                <div key={field.name} style={fieldWrap}>
-                  <label style={label}>{field.label}</label>
-                  <input
-                    type={field.type || "text"}
-                    name={field.name}
-                    value={value}
-                    onChange={handleChange}
-                    placeholder={field.placeholder || ""}
-                    min={field.min}
-                    max={field.max}
-                    step={field.step}
-                    style={input}
-                    disabled={field.disabled}
-                  />
+                  {field.helperText ? (
+                    <span style={helperText}>{field.helperText}</span>
+                  ) : null}
                 </div>
-              );
-            })}
+              ))}
 
-            <div style={actionsRow}>
-              <button type="submit" style={buttonPrimary}>
-                {editingId ? "Atualizar" : "Salvar"}
-              </button>
-              <button type="button" onClick={limparFormulario} style={buttonSecondary}>
-                Limpar
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+              <div style={actionsRow}>
+                <button type="submit" style={btnPrimary} disabled={saving}>
+                  {saving ? "Salvando..." : editingId ? "Atualizar" : "Cadastrar"}
+                </button>
 
-      <div style={panel}>
-        <div style={recordsHeader}>
-          <div>
-            <h3 style={panelTitle}>{recordsTitle}</h3>
-            {recordsSubtitle ? <p style={helperText}>{recordsSubtitle}</p> : null}
-          </div>
-
-          <input
-            type="text"
-            placeholder="Pesquisar"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={searchInput}
-          />
-        </div>
-
-        {carregando ? (
-          <div style={emptyState}>Carregando registros...</div>
-        ) : filteredItems.length === 0 ? (
-          <div style={emptyState}>Nenhum registro encontrado.</div>
-        ) : renderRecordCard ? (
-          <div style={gridStyle}>
-            {filteredItems.map((item) =>
-              renderRecordCard({
-                item,
-                onEdit: canEdit ? () => editarRegistro(item) : null,
-                onDelete: canDelete ? () => excluirRegistro(item.id) : null,
-              })
-            )}
-          </div>
-        ) : recordsMode === "cards" ? (
-          <div style={gridStyle}>
-            {filteredItems.map((item) => (
-              <div key={item.id} style={cardWrapper}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  {columns.map((column) => (
-                    <div key={column.key}>
-                      {column.render ? column.render(item) : item[column.key] ?? "-"}
-                    </div>
-                  ))}
-                </div>
-
-                {canEdit || canDelete ? (
-                  <div style={cardActions}>
-                    {canEdit ? (
-                      <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
-                        Editar
-                      </button>
-                    ) : null}
-                    {canDelete ? (
-                      <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
-                        Excluir
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
+                <button type="button" style={btnSecondary} onClick={resetForm}>
+                  Limpar
+                </button>
               </div>
-            ))}
+            </form>
+          </SectionCard>
+        ) : null}
+
+        <SectionCard title={recordsTitle} subtitle={recordsSubtitle}>
+          <div style={toolbar}>
+            <input
+              type="text"
+              placeholder="Buscar registros..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={searchInput}
+            />
           </div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={table}>
-              <thead>
-                <tr>
-                  {columns.map((column) => (
-                    <th key={column.key} style={th}>
-                      {column.label}
-                    </th>
-                  ))}
-                  {canEdit || canDelete ? <th style={th}>Ações</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item) => (
-                  <tr key={item.id}>
+
+          {loading ? (
+            <div style={emptyState}>Carregando registros...</div>
+          ) : filteredRecords.length === 0 ? (
+            <div style={emptyState}>Nenhum registro encontrado.</div>
+          ) : (
+            <div style={tableWrap}>
+              <table style={table}>
+                <thead>
+                  <tr>
                     {columns.map((column) => (
-                      <td key={column.key} style={td}>
-                        {column.render ? column.render(item) : item[column.key] ?? "-"}
-                      </td>
+                      <th key={column.key} style={th}>
+                        {column.label}
+                      </th>
                     ))}
-                    {canEdit || canDelete ? (
-                      <td style={td}>
-                        <div style={tableActions}>
-                          {canEdit ? (
-                            <button type="button" onClick={() => editarRegistro(item)} style={miniEditButton}>
-                              Editar
-                            </button>
-                          ) : null}
-                          {canDelete ? (
-                            <button type="button" onClick={() => excluirRegistro(item.id)} style={miniDeleteButton}>
-                              Excluir
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    ) : null}
+                    {(canEdit || canDelete) ? <th style={th}>Ações</th> : null}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {filteredRecords.map((record) => (
+                    <tr key={record.id}>
+                      {columns.map((column) => (
+                        <td key={column.key} style={td}>
+                          {column.render
+                            ? column.render(record)
+                            : String(record[column.key] ?? "-")}
+                        </td>
+                      ))}
+                      {(canEdit || canDelete) ? (
+                        <td style={td}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {canEdit ? (
+                              <button
+                                type="button"
+                                style={btnEdit}
+                                onClick={() => startEdit(record)}
+                              >
+                                Editar
+                              </button>
+                            ) : null}
+                            {canDelete ? (
+                              <button
+                                type="button"
+                                style={btnDelete}
+                                onClick={() => handleDelete(record.id)}
+                              >
+                                Excluir
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
       </div>
     </PortalShell>
   );
 }
 
-const panel = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 16,
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
-  marginBottom: 14,
+const errorBox = {
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  borderRadius: 14,
+  padding: 12,
+  fontWeight: 700,
 };
 
-const panelHeaderCompact = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 10,
-  flexWrap: "wrap",
-  marginBottom: 12,
-};
-
-const panelTitle = {
-  margin: 0,
-  fontSize: 16,
-  color: "#0f172a",
-};
-
-const editingTag = {
-  display: "inline-block",
-  padding: "5px 9px",
-  borderRadius: 999,
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  fontSize: 11,
-  fontWeight: 800,
-};
-
-const helperText = {
-  margin: "4px 0 0",
-  color: "#64748b",
-  fontSize: 13,
-  lineHeight: 1.5,
+const successBox = {
+  background: "#f0fdf4",
+  border: "1px solid #bbf7d0",
+  color: "#166534",
+  borderRadius: 14,
+  padding: 12,
+  fontWeight: 700,
 };
 
 const formGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: 14,
 };
 
 const fieldWrap = {
@@ -488,8 +490,167 @@ const label = {
   fontSize: 14,
 };
 
+const helperText = {
+  fontSize: 12,
+  color: "#64748b",
+  lineHeight: 1.4,
+};
+
 const input = {
   width: "100%",
+  height: 46,
+  borderRadius: 12,
+  border: "1px solid #cbd5e1",
+  padding: "0 14px",
+  fontSize: 14,
+  color: "#0f172a",
+  outline: "none",
+  background: "#ffffff",
+  boxSizing: "border-box",
+};
+
+const textarea = {
+  width: "100%",
+  borderRadius: 12,
+  border: "1px solid #cbd5e1",
+  padding: "12px 14px",
+  fontSize: 14,
+  color: "#0f172a",
+  outline: "none",
+  background: "#ffffff",
+  boxSizing: "border-box",
+  resize: "vertical",
+};
+
+const multiWrap = {
+  width: "100%",
+  borderRadius: 12,
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  overflow: "hidden",
+};
+
+const multiHeader = {
+  padding: "12px 14px",
+  borderBottom: "1px solid #e2e8f0",
+  background: "#f8fafc",
+  minHeight: 50,
+  display: "flex",
+  alignItems: "center",
+};
+
+const multiPlaceholder = {
+  color: "#94a3b8",
+  fontSize: 14,
+};
+
+const chipsWrap = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+};
+
+const chip = {
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  border: "1px solid #bfdbfe",
+  borderRadius: 999,
+  padding: "5px 10px",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const multiList = {
+  display: "grid",
+  gap: 8,
+  padding: 12,
+  maxHeight: 180,
+  overflowY: "auto",
+};
+
+const multiOption = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "8px 10px",
+  borderRadius: 10,
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  cursor: "pointer",
+};
+
+const multiOptionText = {
+  color: "#0f172a",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const multiEmpty = {
+  color: "#64748b",
+  fontSize: 14,
+  padding: "4px 2px",
+};
+
+const actionsRow = {
+  display: "flex",
+  gap: 10,
+  gridColumn: "1 / -1",
+  flexWrap: "wrap",
+};
+
+const btnPrimary = {
+  border: "none",
+  borderRadius: 10,
+  padding: "10px 18px",
+  background: "#2563eb",
+  color: "#ffffff",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 14,
+};
+
+const btnSecondary = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  padding: "10px 18px",
+  background: "#ffffff",
+  color: "#334155",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 14,
+};
+
+const btnEdit = {
+  border: "1px solid #bfdbfe",
+  borderRadius: 8,
+  padding: "7px 10px",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const btnDelete = {
+  border: "1px solid #fecaca",
+  borderRadius: 8,
+  padding: "7px 10px",
+  background: "#fff1f2",
+  color: "#be123c",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const toolbar = {
+  display: "flex",
+  justifyContent: "flex-end",
+  marginBottom: 12,
+};
+
+const searchInput = {
+  width: "100%",
+  maxWidth: 320,
   height: 42,
   borderRadius: 10,
   border: "1px solid #cbd5e1",
@@ -501,71 +662,9 @@ const input = {
   boxSizing: "border-box",
 };
 
-const textarea = {
+const tableWrap = {
   width: "100%",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "10px 12px",
-  fontSize: 14,
-  color: "#0f172a",
-  outline: "none",
-  background: "#ffffff",
-  resize: "vertical",
-  boxSizing: "border-box",
-  minHeight: 76,
-};
-
-const actionsRow = {
-  display: "flex",
-  gap: 8,
-  gridColumn: "1 / -1",
-  marginTop: 2,
-  flexWrap: "wrap",
-};
-
-const buttonPrimary = {
-  border: "none",
-  borderRadius: 10,
-  padding: "10px 16px",
-  background: "#2563eb",
-  color: "#ffffff",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 14,
-};
-
-const buttonSecondary = {
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  padding: "10px 16px",
-  background: "#ffffff",
-  color: "#334155",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 14,
-};
-
-const recordsHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12,
-  flexWrap: "wrap",
-  marginBottom: 12,
-};
-
-const searchInput = {
-  width: "100%",
-  maxWidth: 280,
-  height: 40,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  fontSize: 14,
-  color: "#0f172a",
-  outline: "none",
-  background: "#ffffff",
-  boxSizing: "border-box",
+  overflowX: "auto",
 };
 
 const table = {
@@ -590,69 +689,7 @@ const td = {
   verticalAlign: "top",
 };
 
-const tableActions = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const miniEditButton = {
-  border: "1px solid #bfdbfe",
-  borderRadius: 8,
-  padding: "7px 10px",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 12,
-};
-
-const miniDeleteButton = {
-  border: "1px solid #fecaca",
-  borderRadius: 8,
-  padding: "7px 10px",
-  background: "#fff1f2",
-  color: "#be123c",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 12,
-};
-
-const cardWrapper = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 14,
-};
-
-const cardActions = {
-  display: "flex",
-  gap: 8,
-  marginTop: 12,
-  flexWrap: "wrap",
-};
-
 const emptyState = {
   padding: 16,
   color: "#64748b",
-};
-
-const errorBox = {
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
-  marginBottom: 14,
-};
-
-const successBox = {
-  background: "#f0fdf4",
-  border: "1px solid #bbf7d0",
-  color: "#166534",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
-  marginBottom: 14,
 };
