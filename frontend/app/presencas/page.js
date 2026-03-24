@@ -100,26 +100,30 @@ function getActionConfig(statusTurma, usaCronograma) {
     return {
       label: "Importar treinandos",
       style: btnAlerta,
+      hrefType: "turma",
     };
   }
 
   if (usaCronograma && statusTurma === "Sem cronograma") {
     return {
-      label: "Gerar cronograma",
+      label: "Gerir turma",
       style: btnAlerta,
+      hrefType: "turma",
     };
   }
 
   if (statusTurma === "Chamada pendente" || statusTurma === "Em andamento") {
     return {
-      label: usaCronograma ? "Abrir gestão da turma" : "Abrir chamada",
+      label: usaCronograma ? "Gerir turma" : "Abrir chamada",
       style: btnPrimario,
+      hrefType: "turma",
     };
   }
 
   return {
     label: "Ver gestão da turma",
     style: btnSecundarioAzul,
+    hrefType: "turma",
   };
 }
 
@@ -214,7 +218,6 @@ export default function GestaoTurmasPage() {
                   normalizeStatus(p.status) === "pendente"
               ).length;
 
-              // No legado, a base do percentual passa a ser o total lançado
               const totalLancadoLegado =
                 presentes + ausentes + justificados + pendentes;
 
@@ -368,6 +371,10 @@ export default function GestaoTurmasPage() {
       concluidas,
     };
   }, [turmasFiltradas]);
+
+  function abrirTurma(item) {
+    window.location.href = `/turma/${item.id}`;
+  }
 
   return (
     <PortalShell
@@ -584,9 +591,7 @@ export default function GestaoTurmasPage() {
                       <div style={acoesWrapCard}>
                         <button
                           style={action.style}
-                          onClick={() => {
-                            window.location.href = `/turma/${item.id}`;
-                          }}
+                          onClick={() => abrirTurma(item)}
                         >
                           {action.label}
                         </button>
