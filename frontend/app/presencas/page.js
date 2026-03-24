@@ -10,10 +10,30 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
+function parseDateSafe(value) {
+  if (!value) return null;
+
+  if (value instanceof Date) return value;
+
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length === 3) {
+    const [year, month, day] = parts.map(Number);
+    if (year && month && day) {
+      return new Date(year, month - 1, day, 12, 0, 0);
+    }
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
 function fmtDate(value) {
   if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  const d = parseDateSafe(value);
+  if (!d) return String(value).slice(0, 10);
   return d.toLocaleDateString("pt-BR");
 }
 
@@ -34,15 +54,15 @@ function getDiasPeriodo(item) {
 
   if (!inicio || !fim) return 1;
 
-  const d1 = new Date(inicio);
-  const d2 = new Date(fim);
+  const d1 = parseDateSafe(inicio);
+  const d2 = parseDateSafe(fim);
 
-  if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return 1;
+  if (!d1 || !d2 || Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) {
+    return 1;
+  }
 
-  const a = new Date(d1);
-  const b = new Date(d2);
-  a.setHours(0, 0, 0, 0);
-  b.setHours(0, 0, 0, 0);
+  const a = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
+  const b = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
 
   const diffMs = b - a;
   const dias = Math.floor(diffMs / 86400000) + 1;
@@ -70,7 +90,7 @@ function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
 function getStatusBadgeStyle(status) {
   const base = {
     display: "inline-block",
-    padding: "5px 10px",
+    padding: "6px 11px",
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 800,
@@ -133,7 +153,7 @@ function getActionConfig(statusTurma) {
   };
 }
 
-export default function GestaoTurmasPage() {
+export default function FrequenciaDiariaPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
@@ -216,7 +236,7 @@ export default function GestaoTurmasPage() {
 
         setTreinamentos(turmasComBase);
       } catch (error) {
-        setErro(error.message || "Erro ao carregar gestão de turmas.");
+        setErro(error.message || "Erro ao carregar frequência diária.");
       } finally {
         setLoading(false);
       }
@@ -321,15 +341,15 @@ export default function GestaoTurmasPage() {
 
   return (
     <PortalShell
-      title="Gestão de Turmas"
-      subtitle="Visão operacional das turmas, períodos e chamadas diárias."
+      title="Frequência Diária"
+      subtitle="Visão operacional das turmas, períodos de formação e lançamento de chamada."
     >
       {loading ? (
-        <div style={loadingBox}>Carregando gestão de turmas...</div>
+        <div style={loadingBox}>Carregando frequência diária...</div>
       ) : erro ? (
         <div style={errorBox}>
           <div style={{ fontWeight: 800, marginBottom: 8 }}>
-            Não foi possível concluir o carregamento da Gestão de Turmas.
+            Não foi possível concluir o carregamento da frequência diária.
           </div>
           <div style={{ marginBottom: 12 }}>{erro}</div>
           <button style={btnPrimario} onClick={() => window.location.reload()}>
@@ -340,11 +360,11 @@ export default function GestaoTurmasPage() {
         <>
           <div style={heroWrap}>
             <div style={heroMain}>
-              <div style={heroBadge}>Operação de turmas</div>
-              <h2 style={heroTitle}>Acompanhamento tático da execução</h2>
+              <div style={heroBadge}>Operação do dia</div>
+              <h2 style={heroTitle}>Controle diário das turmas em andamento</h2>
               <p style={heroText}>
-                Monitore base ativa, presença, capacidade diária e andamento das
-                turmas em um formato mais compatível com o portal.
+                Acompanhe rapidamente base vinculada, andamento da chamada,
+                volume de presença e prioridade de atuação por turma.
               </p>
             </div>
 
@@ -358,13 +378,13 @@ export default function GestaoTurmasPage() {
               <div style={sideCard}>
                 <div style={sideTitle}>Treinandos ativos</div>
                 <div style={sideValue}>{fmt(resumo.treinandos)}</div>
-                <div style={sideText}>base ativa vinculada às turmas</div>
+                <div style={sideText}>base vinculada às turmas filtradas</div>
               </div>
 
               <div style={sideCard}>
-                <div style={sideTitle}>Capacidade diária</div>
+                <div style={sideTitle}>Capacidade do período</div>
                 <div style={sideValue}>{fmt(resumo.capacidadeDiaria)}</div>
-                <div style={sideText}>participantes × dias dos treinamentos</div>
+                <div style={sideText}>treinandos × dias da formação</div>
               </div>
             </div>
           </div>
@@ -518,12 +538,19 @@ export default function GestaoTurmasPage() {
                           (item.instrutor || "Sem instrutor")}
                       </div>
 
-                      <div style={miniLinha}>
-                        <span>{fmt(item.treinandos)} treinandos</span>
-                        <span>{fmt(item.presentes)} pres.</span>
-                        <span>{fmt(item.ausentes)} aus.</span>
-                        <span>{fmt(item.justificados)} just.</span>
-                        <span>{fmt(item.pendentes)} pend.</span>
+                      <div style={numbersGrid}>
+                        <div style={numberCard}>
+                          <span style={numberLabel}>Treinandos</span>
+                          <strong style={numberValue}>{fmt(item.treinandos)}</strong>
+                        </div>
+                        <div style={numberCard}>
+                          <span style={numberLabel}>Presentes</span>
+                          <strong style={numberValue}>{fmt(item.presentes)}</strong>
+                        </div>
+                        <div style={numberCard}>
+                          <span style={numberLabel}>Pendentes</span>
+                          <strong style={numberValue}>{fmt(item.pendentes)}</strong>
+                        </div>
                       </div>
 
                       <div style={infoBloco}>
@@ -542,7 +569,8 @@ export default function GestaoTurmasPage() {
                           <strong>Supervisor:</strong> {item.supervisor || "-"}
                         </div>
                         <div>
-                          <strong>Capacidade diária:</strong> {fmt(item.capacidadeDiaria)}
+                          <strong>Ausentes / Justificados:</strong>{" "}
+                          {fmt(item.ausentes)} / {fmt(item.justificados)}
                         </div>
                       </div>
 
@@ -689,7 +717,7 @@ const gridFour = {
 
 const cardsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
   gap: 14,
 };
 
@@ -697,9 +725,9 @@ const turmaCard = {
   background: "#f8fafc",
   border: "1px solid #e2e8f0",
   borderRadius: 18,
-  padding: 14,
+  padding: 16,
   display: "grid",
-  gap: 10,
+  gap: 12,
 };
 
 const cardTop = {
@@ -724,7 +752,7 @@ const badgeBase = {
 
 const badgeTaxa = {
   display: "inline-block",
-  padding: "5px 10px",
+  padding: "6px 11px",
   borderRadius: 999,
   background: "#eff6ff",
   color: "#1d4ed8",
@@ -743,24 +771,42 @@ const turmaMeta = {
   fontSize: 13,
 };
 
-const miniLinha = {
-  display: "flex",
-  flexWrap: "wrap",
+const numbersGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
   gap: 10,
-  color: "#334155",
-  fontSize: 13,
-  fontWeight: 600,
+};
+
+const numberCard = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 12,
+  padding: 10,
+  display: "grid",
+  gap: 4,
+};
+
+const numberLabel = {
+  color: "#64748b",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const numberValue = {
+  color: "#0f172a",
+  fontSize: 18,
 };
 
 const infoBloco = {
   display: "grid",
-  gap: 4,
+  gap: 5,
   color: "#334155",
   fontSize: 13,
+  lineHeight: 1.45,
 };
 
 const acoesWrapCard = {
-  marginTop: 4,
+  marginTop: 2,
 };
 
 const btnPrimario = {
