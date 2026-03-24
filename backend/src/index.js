@@ -104,7 +104,7 @@ app.use(
     table: "clientes",
     fields: ["nome", "segmento", "status", "gestor", "descricao"],
     orderBy: "nome ASC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
@@ -124,7 +124,7 @@ app.use(
       "ativo",
       "troca_senha_obrigatoria",
     ],
-    listMiddlewares: [authRequired, authorizeRoles("coordenador")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
@@ -189,8 +189,8 @@ app.use(
     ],
     orderBy: "id DESC",
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
   })
 );
