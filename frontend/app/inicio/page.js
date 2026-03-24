@@ -183,11 +183,13 @@ export default function InicioPage() {
   }, [kpis, ultimasTurmas]);
 
   const taxaExecucao = useMemo(() => {
-    const horasTreinadas = Number(kpis.horas_treinadas || 0);
+    const horasMinistradas = Number(
+      kpis.horas_ministradas || kpis.horas_treinadas || 0
+    );
     const cargaPlanejada = Number(kpis.carga_horaria_total || 0);
 
     if (!cargaPlanejada) return 0;
-    return Math.round((horasTreinadas / cargaPlanejada) * 100);
+    return Math.round((horasMinistradas / cargaPlanejada) * 100);
   }, [kpis]);
 
   const gapPresenca = useMemo(() => {
@@ -269,10 +271,10 @@ export default function InicioPage() {
 
             <div style={heroSide}>
               <div style={heroSideCard}>
-                <span style={heroSideLabel}>Taxa de execução</span>
+                <span style={heroSideLabel}>Execução da grade</span>
                 <strong style={heroSideValue}>{taxaExecucao}%</strong>
                 <span style={heroSideSub}>
-                  horas treinadas em relação à carga horária planejada
+                  horas ministradas em relação à carga horária planejada
                 </span>
               </div>
 
