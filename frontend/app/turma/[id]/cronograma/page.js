@@ -328,39 +328,17 @@ export default function CronogramaTurmaPage({ params }) {
   }
 
   async function abrirPresencaAula(aula) {
-    try {
-      setErro("");
-      setSucesso("");
+  try {
+    setErro("");
+    setSucesso("");
 
-      const initData = await apiFetch("/presenca-aulas/inicializar", {
-        method: "POST",
-        body: JSON.stringify({ turma_aula_id: Number(aula.id) }),
-      });
+    const dataAula = toInputDate(aula?.data_aula);
 
-      const registrosInit = Array.isArray(initData?.registros)
-        ? initData.registros
-        : [];
-
-      if (registrosInit.length) {
-        setPresencaModal({
-          open: true,
-          aula,
-          registros: registrosInit,
-        });
-        return;
-      }
-
-      const registros = await apiFetch(`/presenca-aulas?turma_aula_id=${aula.id}`).catch(() => []);
-
-      setPresencaModal({
-        open: true,
-        aula,
-        registros: Array.isArray(registros) ? registros : [],
-      });
-    } catch (error) {
-      setErro(error.message || "Erro ao abrir presença da aula.");
-    }
+    window.location.href = `/turma/${id}?turma_aula_id=${Number(aula.id)}&data_aula=${encodeURIComponent(dataAula)}&origem=cronograma`;
+  } catch (error) {
+    setErro(error.message || "Erro ao abrir presença da aula.");
   }
+}
 
   function alterarStatusPresenca(index, status) {
     setPresencaModal((prev) => {
