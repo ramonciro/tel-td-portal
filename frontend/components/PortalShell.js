@@ -8,7 +8,7 @@ import { clearSession, getStoredUser, hasSomeRole } from "../services/api";
 const menuItems = [
   { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor"] },
-  { href: "/usuarios", label: "Usuários", icon: "👤", roles: ["coordenador"] },
+  { href: "/usuarios", label: "Usuários", icon: "👤", roles: ["coordenador", "supervisor"] },
   { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
   { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/presencas", label: "Gestão de Turmas", icon: "👥", roles: ["coordenador", "supervisor", "instrutor"] },
@@ -248,207 +248,182 @@ export default function PortalShell({
       )}
 
       <main style={main}>
-        <header style={header}>
-          <div style={{ minWidth: 0 }}>
-            <h1 style={titleStyle}>{title}</h1>
-            {subtitle ? <p style={subtitleStyle}>{subtitle}</p> : null}
+        <div style={headerCard}>
+          <div>
+            <div style={pageTitle}>{title}</div>
+            {subtitle ? <div style={pageSubtitle}>{subtitle}</div> : null}
           </div>
 
-          {topRight ? <div style={headerAction}>{topRight}</div> : null}
-        </header>
+          {topRight ? <div>{topRight}</div> : null}
+        </div>
 
-        <section style={content}>{children}</section>
+        <div style={content}>{children}</div>
       </main>
     </div>
   );
 }
 
 const sidebar = {
-  position: "sticky",
-  top: 0,
-  height: "100vh",
-  overflowY: "auto",
-  overflowX: "hidden",
-  scrollbarWidth: "thin",
-  background: "linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%)",
-  color: "#ffffff",
-  padding: "18px 14px",
+  minHeight: "100vh",
+  background: "linear-gradient(180deg, #0f172a 0%, #1d4ed8 100%)",
+  color: "#fff",
   display: "flex",
   flexDirection: "column",
-  gap: 16,
-  borderRight: "1px solid rgba(255,255,255,0.08)",
+  padding: "20px 18px",
+  position: "sticky",
+  top: 0,
 };
 
 const brandBox = {
   display: "flex",
   alignItems: "center",
-  gap: 12,
-  padding: "4px 6px 10px",
+  gap: 14,
+  marginBottom: 24,
 };
 
 const logo = {
-  width: 58,
-  height: 58,
+  width: 70,
+  height: 70,
+  borderRadius: 18,
+  background: "#fff",
   objectFit: "contain",
-  background: "#ffffff",
-  borderRadius: 14,
-  padding: 7,
-  flexShrink: 0,
-  boxShadow: "0 8px 24px rgba(15,23,42,0.18)",
+  padding: 8,
 };
 
 const brandTitle = {
-  margin: 0,
-  fontSize: 17,
+  fontSize: 20,
   fontWeight: 800,
   lineHeight: 1.1,
-  color: "#ffffff",
 };
 
 const brandSubtitle = {
-  marginTop: 5,
-  fontSize: 12,
+  marginTop: 6,
+  color: "rgba(255,255,255,0.75)",
+  fontSize: 14,
   lineHeight: 1.35,
-  color: "rgba(255,255,255,0.82)",
 };
 
 const nav = {
-  display: "grid",
-  gap: 4,
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  overflowY: "auto",
+  paddingRight: 4,
 };
 
 const navItem = {
   display: "flex",
   alignItems: "center",
   gap: 12,
-  minHeight: 42,
-  padding: "9px 12px",
-  borderRadius: 12,
+  padding: "12px 14px",
+  borderRadius: 16,
+  color: "rgba(255,255,255,0.88)",
   textDecoration: "none",
-  color: "#E2E8F0",
-  background: "transparent",
   fontWeight: 700,
-  fontSize: 14,
-  lineHeight: 1.2,
-  border: "1px solid transparent",
-  boxSizing: "border-box",
+  transition: "all .2s ease",
 };
 
 const navItemActive = {
-  background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
-  color: "#ffffff",
-  boxShadow: "0 8px 18px rgba(0,0,0,0.22)",
-  border: "1px solid rgba(255,255,255,0.14)",
+  background: "#2563eb",
+  color: "#fff",
+  boxShadow: "0 10px 18px rgba(37,99,235,0.35)",
 };
 
 const navIcon = {
-  width: 20,
-  minWidth: 20,
+  width: 22,
   textAlign: "center",
   fontSize: 16,
-  lineHeight: 1,
-  color: "inherit",
-  textDecoration: "none",
 };
 
 const navLabel = {
-  color: "inherit",
-  textDecoration: "none",
-  display: "block",
+  lineHeight: 1.2,
 };
 
 const sidebarFooter = {
   marginTop: "auto",
   display: "grid",
-  gap: 10,
-  paddingTop: 8,
+  gap: 12,
+  paddingTop: 18,
 };
 
 const envCard = {
+  background: "rgba(255,255,255,0.1)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 16,
+  padding: 14,
   display: "grid",
   gap: 4,
-  padding: 14,
-  borderRadius: 16,
-  background: "rgba(255,255,255,0.08)",
-  border: "1px solid rgba(255,255,255,0.10)",
 };
 
 const envLabel = {
   fontSize: 12,
-  color: "rgba(255,255,255,0.76)",
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  color: "rgba(255,255,255,0.68)",
+  fontWeight: 800,
 };
 
 const envValue = {
   fontSize: 14,
   lineHeight: 1.35,
-  color: "#ffffff",
 };
 
 const logoutButton = {
-  width: "100%",
-  minHeight: 44,
-  border: "none",
-  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,0.18)",
+  borderRadius: 14,
+  background: "rgba(255,255,255,0.08)",
+  color: "#fff",
+  padding: "12px 14px",
   cursor: "pointer",
-  background: "#ffffff",
-  color: "#0f172a",
-  fontSize: 14,
   fontWeight: 800,
-  boxShadow: "0 10px 24px rgba(15,23,42,0.16)",
 };
 
 const main = {
+  padding: 18,
   minWidth: 0,
-  padding: 24,
 };
 
-const header = {
+const headerCard = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 22,
+  padding: 20,
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "flex-start",
+  alignItems: "center",
   gap: 16,
-  marginBottom: 20,
   flexWrap: "wrap",
+  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
 };
 
-const titleStyle = {
-  margin: 0,
-  fontSize: 30,
-  lineHeight: 1.1,
-  color: "#0f172a",
+const pageTitle = {
+  fontSize: 28,
   fontWeight: 800,
-  letterSpacing: "-0.02em",
+  color: "#0f172a",
+  lineHeight: 1.1,
 };
 
-const subtitleStyle = {
-  margin: "8px 0 0",
+const pageSubtitle = {
+  marginTop: 8,
   color: "#64748b",
-  fontSize: 15,
   lineHeight: 1.5,
-  maxWidth: 900,
-};
-
-const headerAction = {
-  flexShrink: 0,
 };
 
 const content = {
-  display: "grid",
-  gap: 16,
-  minWidth: 0,
+  marginTop: 16,
 };
 
 const mobileTopbar = {
   position: "sticky",
   top: 0,
   zIndex: 20,
+  background: "linear-gradient(180deg, #0f172a 0%, #1d4ed8 100%)",
+  color: "#fff",
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  gap: 12,
+  gap: 10,
   padding: "14px 16px",
-  background: "linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%)",
-  borderBottom: "1px solid rgba(255,255,255,0.08)",
 };
 
 const mobileBrandWrap = {
@@ -459,113 +434,97 @@ const mobileBrandWrap = {
 };
 
 const mobileLogo = {
-  width: 46,
-  height: 46,
+  width: 48,
+  height: 48,
+  borderRadius: 14,
+  background: "#fff",
   objectFit: "contain",
-  background: "#ffffff",
-  borderRadius: 12,
   padding: 6,
-  flexShrink: 0,
 };
 
 const mobileBrandTitle = {
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
   lineHeight: 1.1,
-  color: "#ffffff",
 };
 
 const mobileBrandSubtitle = {
-  marginTop: 3,
-  fontSize: 11,
+  marginTop: 4,
+  color: "rgba(255,255,255,0.75)",
+  fontSize: 12,
   lineHeight: 1.3,
-  color: "rgba(255,255,255,0.82)",
 };
 
 const mobileMenuButton = {
-  border: "1px solid rgba(255,255,255,0.14)",
-  background: "rgba(255,255,255,0.10)",
-  color: "#ffffff",
-  borderRadius: 10,
-  minHeight: 38,
-  padding: "0 14px",
-  fontWeight: 700,
+  border: "1px solid rgba(255,255,255,0.18)",
+  borderRadius: 12,
+  background: "rgba(255,255,255,0.08)",
+  color: "#fff",
+  padding: "10px 12px",
   cursor: "pointer",
-  flexShrink: 0,
+  fontWeight: 800,
 };
 
 const mobileDrawer = {
-  background: "linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%)",
-  padding: "10px 14px 16px",
-  borderBottom: "1px solid rgba(255,255,255,0.08)",
+  background: "linear-gradient(180deg, #0f172a 0%, #1d4ed8 100%)",
+  color: "#fff",
+  padding: "0 16px 16px",
 };
 
 const mobileNav = {
-  display: "grid",
+  display: "flex",
+  flexDirection: "column",
   gap: 6,
+  paddingTop: 8,
 };
 
 const mobileNavItem = {
   display: "flex",
   alignItems: "center",
   gap: 12,
-  minHeight: 44,
-  padding: "10px 12px",
-  borderRadius: 12,
+  padding: "12px 14px",
+  borderRadius: 14,
+  color: "rgba(255,255,255,0.88)",
   textDecoration: "none",
-  color: "#E2E8F0",
-  background: "transparent",
   fontWeight: 700,
-  fontSize: 14,
-  border: "1px solid transparent",
-  boxSizing: "border-box",
 };
 
 const mobileNavItemActive = {
-  background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
-  color: "#ffffff",
-  border: "1px solid rgba(255,255,255,0.14)",
+  background: "#2563eb",
+  color: "#fff",
 };
 
 const mobileNavIcon = {
-  width: 20,
-  minWidth: 20,
+  width: 22,
   textAlign: "center",
   fontSize: 16,
-  lineHeight: 1,
-  color: "inherit",
-  textDecoration: "none",
 };
 
 const mobileNavLabel = {
-  color: "inherit",
-  textDecoration: "none",
-  display: "block",
+  lineHeight: 1.2,
 };
 
 const mobileFooterBlock = {
   display: "grid",
-  gap: 10,
-  marginTop: 12,
+  gap: 12,
+  marginTop: 14,
 };
 
 const mobileEnvCard = {
+  background: "rgba(255,255,255,0.1)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 16,
+  padding: 14,
   display: "grid",
   gap: 4,
-  padding: 14,
-  borderRadius: 16,
-  background: "rgba(255,255,255,0.08)",
-  border: "1px solid rgba(255,255,255,0.10)",
 };
 
 const logoutButtonMobile = {
-  width: "100%",
-  minHeight: 44,
-  border: "none",
-  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,0.18)",
+  borderRadius: 14,
+  background: "rgba(255,255,255,0.08)",
+  color: "#fff",
+  padding: "12px 14px",
   cursor: "pointer",
-  background: "#ffffff",
-  color: "#0f172a",
-  fontSize: 14,
   fontWeight: 800,
 };
