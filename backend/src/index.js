@@ -139,13 +139,9 @@ app.delete(
     try {
       const { id } = req.params;
 
-      await pool.query(
-        `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
-        [id]
-      );
-
       await pool.query(`DELETE FROM presenca_aulas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM treinamento_participantes WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
@@ -284,6 +280,7 @@ app.post(
   deleteParticipantesTreinamentoBulk
 );
 
+// TURMA AULAS
 app.get(
   "/api/turma-aulas",
   authRequired,
@@ -340,6 +337,7 @@ app.post(
   duplicarPlanoAulas
 );
 
+// PRESENÇA POR AULA
 app.get(
   "/api/presenca-aulas",
   authRequired,
