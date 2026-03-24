@@ -10,10 +10,30 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
+function parseDateSafe(value) {
+  if (!value) return null;
+
+  if (value instanceof Date) return value;
+
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length === 3) {
+    const [year, month, day] = parts.map(Number);
+    if (year && month && day) {
+      return new Date(year, month - 1, day, 12, 0, 0);
+    }
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
 function formatDate(value) {
   if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
+  const date = parseDateSafe(value);
+  if (!date) return String(value);
   return date.toLocaleDateString("pt-BR");
 }
 
@@ -54,6 +74,10 @@ export default function FrequenciaIndividualPage() {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const [busca, setBusca] = useState("");
+  const [filtroRisco, setFiltroRisco] = useState("todos");
+  const [filtroCliente, setFiltroCliente] = useState("todos");
+
   useEffect(() => {
     async function carregar() {
       try {
@@ -73,28 +97,122 @@ export default function FrequenciaIndividualPage() {
   }, []);
 
   const kpis = dados?.kpis || {};
-  const itens = dados?.itens || [];
+  const itens = Array.isArray(dados?.itens) ? dados.itens : [];
+
+  const clientesOptions = useMemo(() => {
+    const lista = [...new Set(itens.map((item) => item.cliente).filter(Boolean))];
+    return lista.sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
+  }, [itens]);
+
+  const itensFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+
+    return itens.filter((item) => {
+      const risco = riscoInfo(item.frequencia_percentual).label;
+
+      const matchRisco = filtroRisco === "todos" || risco === filtroRisco;
+      const matchCliente =
+        filtroCliente === "todos" || String(item.cliente || "") === filtroCliente;
+
+      const alvoBusca = [
+        item.treinando_nome,
+        item.tema,
+        item.cliente,
+        item.instrutor,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchBusca = !termo || alvoBusca.includes(termo);
+
+      return matchRisco && matchCliente && matchBusca;
+    });
+  }, [itens, busca, filtroRisco, filtroCliente]);
 
   const destaques = useMemo(() => {
-    const criticos = itens.filter(
+    const criticos = itensFiltrados.filter(
       (item) => Number(item.frequencia_percentual || 0) < 75
     );
 
-    const alerta = itens.filter((item) => {
+    const alerta = itensFiltrados.filter((item) => {
       const freq = Number(item.frequencia_percentual || 0);
       return freq >= 75 && freq < 90;
     });
 
+    const estaveis = itensFiltrados.filter(
+      (item) => Number(item.frequencia_percentual || 0) >= 90
+    );
+
     return {
       criticos: criticos.slice(0, 5),
       alerta: alerta.slice(0, 5),
+      estaveis: estaveis.slice(0, 5),
     };
-  }, [itens]);
+  }, [itensFiltrados]);
+
+  const resumo = useMemo(() => {
+    const total = itensFiltrados.length;
+    const media =
+      total > 0
+        ? (
+            itensFiltrados.reduce(
+              (acc, item) => acc + Number(item.frequencia_percentual || 0),
+              0
+            ) / total
+          ).toFixed(1)
+        : 0;
+
+    const criticos = itensFiltrados.filter(
+      (item) => Number(item.frequencia_percentual || 0) < 75
+    ).length;
+
+    const atencao = itensFiltrados.filter((item) => {
+      const freq = Number(item.frequencia_percentual || 0);
+      return freq >= 75 && freq < 90;
+    }).length;
+
+    const estaveis = itensFiltrados.filter(
+      (item) => Number(item.frequencia_percentual || 0) >= 90
+    ).length;
+
+    const presentes = itensFiltrados.reduce(
+      (acc, item) => acc + Number(item.presentes || 0),
+      0
+    );
+
+    const ausentes = itensFiltrados.reduce(
+      (acc, item) => acc + Number(item.ausentes || 0),
+      0
+    );
+
+    const justificados = itensFiltrados.reduce(
+      (acc, item) => acc + Number(item.justificados || 0),
+      0
+    );
+
+    const pendentes = itensFiltrados.reduce(
+      (acc, item) => acc + Number(item.pendentes || 0),
+      0
+    );
+
+    return {
+      total,
+      media,
+      criticos,
+      atencao,
+      estaveis,
+      presentes,
+      ausentes,
+      justificados,
+      pendentes,
+    };
+  }, [itensFiltrados]);
 
   return (
     <PortalShell
       title="Frequência Individual"
-      subtitle="Acompanhamento da frequência real por treinando, com leitura de risco e consolidado por chamadas diárias."
+      subtitle="Leitura consolidada por treinando, com visão de risco, recorrência e apoio à tomada de decisão."
     >
       {loading ? (
         <div style={loadingBox}>Carregando frequência individual...</div>
@@ -102,40 +220,159 @@ export default function FrequenciaIndividualPage() {
         <div style={errorBox}>{erro}</div>
       ) : (
         <div style={{ display: "grid", gap: 16 }}>
+          <div style={heroWrap}>
+            <div style={heroMain}>
+              <div style={heroBadge}>Acompanhamento individual</div>
+              <h2 style={heroTitle}>Leitura de risco por treinando</h2>
+              <p style={heroText}>
+                Identifique rapidamente quem está estável, em atenção ou crítico,
+                com base nas chamadas registradas e no histórico real de presença.
+              </p>
+            </div>
+
+            <div style={heroSide}>
+              <div style={sideCard}>
+                <div style={sideTitle}>Base no filtro</div>
+                <div style={sideValue}>{fmt(resumo.total)}</div>
+                <div style={sideText}>treinandos/turmas considerados</div>
+              </div>
+
+              <div style={sideCard}>
+                <div style={sideTitle}>Média de frequência</div>
+                <div style={sideValue}>{resumo.media}%</div>
+                <div style={sideText}>visão consolidada do conjunto filtrado</div>
+              </div>
+
+              <div style={sideCard}>
+                <div style={sideTitle}>Pendências</div>
+                <div style={sideValue}>{fmt(resumo.pendentes)}</div>
+                <div style={sideText}>chamadas ainda não concluídas</div>
+              </div>
+            </div>
+          </div>
+
+          <SectionCard
+            title="Filtros"
+            subtitle="Refine a leitura por risco, cliente ou palavra-chave."
+          >
+            <div style={filtersGrid}>
+              <div style={fieldWrap}>
+                <label style={label}>Risco</label>
+                <select
+                  value={filtroRisco}
+                  onChange={(e) => setFiltroRisco(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="Crítico">Crítico</option>
+                  <option value="Atenção">Atenção</option>
+                  <option value="Estável">Estável</option>
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Cliente</label>
+                <select
+                  value={filtroCliente}
+                  onChange={(e) => setFiltroCliente(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todos</option>
+                  {clientesOptions.map((cliente) => (
+                    <option key={cliente} value={cliente}>
+                      {cliente}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Busca</label>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar por treinando, turma, cliente..."
+                  style={input}
+                />
+              </div>
+
+              <div style={actionsWrap}>
+                <button
+                  style={btnSecundario}
+                  onClick={() => {
+                    setBusca("");
+                    setFiltroRisco("todos");
+                    setFiltroCliente("todos");
+                  }}
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            </div>
+          </SectionCard>
+
           <div style={gridCards}>
             <StatCard
               title="Treinandos"
-              value={fmt(kpis.treinandos || 0)}
+              value={fmt(resumo.total || 0)}
               subtitle="Base acompanhada"
               accent="#2563eb"
             />
             <StatCard
               title="Média de frequência"
-              value={`${kpis.media_frequencia || 0}%`}
+              value={`${resumo.media || 0}%`}
               subtitle="Presença média consolidada"
               accent="#06b6d4"
             />
             <StatCard
               title="Estáveis"
-              value={fmt(kpis.estaveis || 0)}
+              value={fmt(resumo.estaveis || 0)}
               subtitle="Frequência ≥ 90%"
               accent="#16a34a"
             />
             <StatCard
               title="Atenção"
-              value={fmt(kpis.atencao || 0)}
+              value={fmt(resumo.atencao || 0)}
               subtitle="Entre 75% e 89,9%"
               accent="#f59e0b"
             />
             <StatCard
               title="Críticos"
-              value={fmt(kpis.criticos || 0)}
+              value={fmt(resumo.criticos || 0)}
               subtitle="Frequência < 75%"
               accent="#dc2626"
             />
           </div>
 
-          <div style={twoCol}>
+          <div style={gridCards}>
+            <StatCard
+              title="Presentes"
+              value={fmt(resumo.presentes || 0)}
+              subtitle="Participações confirmadas"
+              accent="#16a34a"
+            />
+            <StatCard
+              title="Ausentes"
+              value={fmt(resumo.ausentes || 0)}
+              subtitle="Ausências registradas"
+              accent="#ef4444"
+            />
+            <StatCard
+              title="Justificados"
+              value={fmt(resumo.justificados || 0)}
+              subtitle="Ausências justificadas"
+              accent="#f59e0b"
+            />
+            <StatCard
+              title="Pendentes"
+              value={fmt(resumo.pendentes || 0)}
+              subtitle="Chamadas em aberto"
+              accent="#475569"
+            />
+          </div>
+
+          <div style={threeCol}>
             <SectionCard
               title="Maior risco"
               subtitle="Treinandos com menor frequência."
@@ -170,7 +407,7 @@ export default function FrequenciaIndividualPage() {
 
             <SectionCard
               title="Acompanhamento"
-              subtitle="Treinandos que precisam de observação."
+              subtitle="Treinandos que pedem observação."
             >
               <div style={listGrid}>
                 {destaques.alerta.length ? (
@@ -199,6 +436,38 @@ export default function FrequenciaIndividualPage() {
                 )}
               </div>
             </SectionCard>
+
+            <SectionCard
+              title="Base saudável"
+              subtitle="Treinandos com presença estável."
+            >
+              <div style={listGrid}>
+                {destaques.estaveis.length ? (
+                  destaques.estaveis.map((item, index) => {
+                    const risco = riscoInfo(item.frequencia_percentual);
+                    return (
+                      <div key={index} style={listItem}>
+                        <div style={itemHeader}>
+                          <div style={itemTitle}>{item.treinando_nome}</div>
+                          <div style={{ ...badgeBase, ...risco.style }}>
+                            {risco.label}
+                          </div>
+                        </div>
+                        <div style={itemMeta}>
+                          {item.tema || "Turma"} • {item.cliente || "Sem cliente"}
+                        </div>
+                        <div style={itemMeta}>
+                          Frequência: {item.frequencia_percentual || 0}% • Presentes:{" "}
+                          {fmt(item.presentes || 0)} • Pendentes: {fmt(item.pendentes || 0)}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={emptyText}>Sem base estável no filtro atual.</div>
+                )}
+              </div>
+            </SectionCard>
           </div>
 
           <SectionCard
@@ -222,8 +491,8 @@ export default function FrequenciaIndividualPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {itens.length ? (
-                    itens.map((item, index) => {
+                  {itensFiltrados.length ? (
+                    itensFiltrados.map((item, index) => {
                       const risco = riscoInfo(item.frequencia_percentual);
 
                       return (
@@ -242,7 +511,9 @@ export default function FrequenciaIndividualPage() {
                           <td style={td}>{fmt(item.ausentes || 0)}</td>
                           <td style={td}>{fmt(item.justificados || 0)}</td>
                           <td style={td}>{fmt(item.pendentes || 0)}</td>
-                          <td style={td}>{item.frequencia_percentual || 0}%</td>
+                          <td style={td}>
+                            <strong>{item.frequencia_percentual || 0}%</strong>
+                          </td>
                           <td style={td}>
                             <span style={{ ...badgeBase, ...risco.style }}>
                               {risco.label}
@@ -286,15 +557,132 @@ const errorBox = {
   fontWeight: 700,
 };
 
+const heroWrap = {
+  display: "grid",
+  gridTemplateColumns: "1.5fr 1fr",
+  gap: 14,
+};
+
+const heroMain = {
+  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
+  borderRadius: 22,
+  padding: 22,
+  color: "#ffffff",
+  boxShadow: "0 14px 30px rgba(29, 78, 216, 0.18)",
+};
+
+const heroBadge = {
+  display: "inline-block",
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,.14)",
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  marginBottom: 10,
+};
+
+const heroTitle = {
+  margin: 0,
+  fontSize: 28,
+  lineHeight: 1.1,
+};
+
+const heroText = {
+  margin: "10px 0 0",
+  color: "rgba(255,255,255,.86)",
+  lineHeight: 1.6,
+};
+
+const heroSide = {
+  display: "grid",
+  gap: 12,
+};
+
+const sideCard = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  padding: 18,
+  display: "grid",
+  gap: 6,
+  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
+};
+
+const sideTitle = {
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  color: "#475569",
+};
+
+const sideValue = {
+  fontSize: 28,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const sideText = {
+  color: "#64748b",
+  lineHeight: 1.5,
+};
+
+const filtersGrid = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr 1.4fr auto",
+  gap: 12,
+};
+
+const fieldWrap = {
+  display: "grid",
+  gap: 6,
+};
+
+const label = {
+  fontWeight: 800,
+  color: "#0f172a",
+  fontSize: 14,
+};
+
+const input = {
+  width: "100%",
+  height: 42,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "0 12px",
+  fontSize: 14,
+  color: "#0f172a",
+  outline: "none",
+  background: "#ffffff",
+  boxSizing: "border-box",
+};
+
+const actionsWrap = {
+  display: "flex",
+  alignItems: "flex-end",
+};
+
+const btnSecundario = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  padding: "10px 14px",
+  background: "#fff",
+  color: "#334155",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
 const gridCards = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 14,
 };
 
-const twoCol = {
+const threeCol = {
   display: "grid",
-  gridTemplateColumns: "1fr 1fr",
+  gridTemplateColumns: "1fr 1fr 1fr",
   gap: 14,
 };
 
