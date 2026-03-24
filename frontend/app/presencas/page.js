@@ -43,7 +43,17 @@ function parseHoras(value) {
   return match ? Number(match[1]) || 0 : 0;
 }
 
-function getStatusTurma({ treinandos, diasPlanejados, presencasLancadas, pendentes, usaCronograma }) {
+function normalizeStatus(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
+function getStatusTurma({
+  treinandos,
+  diasPlanejados,
+  presencasLancadas,
+  pendentes,
+  usaCronograma,
+}) {
   if (treinandos === 0) return "Sem treinandos";
   if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
   if (presencasLancadas === 0) return "Chamada pendente";
@@ -52,7 +62,9 @@ function getStatusTurma({ treinandos, diasPlanejados, presencasLancadas, pendent
 }
 
 function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
-  if (statusTurma === "Sem treinandos" || statusTurma === "Sem cronograma") return "Crítico";
+  if (statusTurma === "Sem treinandos" || statusTurma === "Sem cronograma") {
+    return "Crítico";
+  }
   if (statusTurma === "Chamada pendente") return "Atenção";
   if (pendentes > 0) return "Atenção";
   if (treinandos > 0 && taxa < 85) return "Crítico";
@@ -130,7 +142,9 @@ export default function GestaoTurmasPage() {
           apiFetch("/presencas").catch(() => []),
         ]);
 
-        const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
+        const listaTreinamentos = Array.isArray(treinamentosData)
+          ? treinamentosData
+          : [];
         const listaPresencas = Array.isArray(presencasData) ? presencasData : [];
 
         const turmasEnriquecidas = await Promise.all(
@@ -140,10 +154,14 @@ export default function GestaoTurmasPage() {
               apiFetch(`/turma-aulas?treinamento_id=${t.id}`).catch(() => []),
             ]);
 
-            const listaParticipantes = Array.isArray(participantes) ? participantes : [];
+            const listaParticipantes = Array.isArray(participantes)
+              ? participantes
+              : [];
             const listaAulas = Array.isArray(aulas) ? aulas : [];
 
-            const treinandos = Number(t.participantes || listaParticipantes.length || 0);
+            const treinandos = Number(
+              t.participantes || listaParticipantes.length || 0
+            );
             const diasPlanejados = listaAulas.length;
             const usaCronograma = diasPlanejados > 0;
 
@@ -177,20 +195,40 @@ export default function GestaoTurmasPage() {
                 (p) => Number(p.treinamento_id) === Number(t.id)
               );
 
-              presentes = presencasTurma.filter((p) => p.status === "presente").length;
-              ausentes = presencasTurma.filter((p) => p.status === "ausente").length;
-              justificados = presencasTurma.filter((p) => p.status === "justificado").length;
-              pendentes = presencasTurma.filter(
-                (p) => !p.status || p.status === "" || p.status === "pendente"
+              presentes = presencasTurma.filter(
+                (p) => normalizeStatus(p.status) === "presente"
               ).length;
 
-              // no legado, a expectativa é a própria base de treinandos vinculada
-              baseEsperada = treinandos;
+              ausentes = presencasTurma.filter(
+                (p) => normalizeStatus(p.status) === "ausente"
+              ).length;
+
+              justificados = presencasTurma.filter(
+                (p) => normalizeStatus(p.status) === "justificado"
+              ).length;
+
+              pendentes = presencasTurma.filter(
+                (p) =>
+                  !p.status ||
+                  normalizeStatus(p.status) === "" ||
+                  normalizeStatus(p.status) === "pendente"
+              ).length;
+
+              // No legado, a base do percentual passa a ser o total lançado
+              const totalLancadoLegado =
+                presentes + ausentes + justificados + pendentes;
+
+              baseEsperada =
+                totalLancadoLegado > 0 ? totalLancadoLegado : treinandos;
             }
 
-            const presencasLancadas = presentes + ausentes + justificados;
+            const presencasLancadas =
+              presentes + ausentes + justificados + pendentes;
+
             const taxa =
-              baseEsperada > 0 ? Math.round((presentes / baseEsperada) * 100) : 0;
+              baseEsperada > 0
+                ? Math.round((presentes / baseEsperada) * 100)
+                : 0;
 
             const statusTurma = getStatusTurma({
               treinandos,
@@ -244,7 +282,7 @@ export default function GestaoTurmasPage() {
         "Sem cronograma": 2,
         "Chamada pendente": 3,
         "Em andamento": 4,
-        "Concluída": 5,
+        Concluída: 5,
       };
 
       const aOrdem = ordemStatus[a.statusTurma] || 99;
@@ -461,7 +499,7 @@ export default function GestaoTurmasPage() {
 
           <SectionCard
             title="Painel das turmas"
-            subtitle="Leitura híbrida: turmas novas usam cronograma; turmas antigas usam o histórico já lançado."
+            subtitle="Leitura híbrida: turmas novas usam cronograma; turmas antigas usam histórico com percentual sobre lançamentos."
           >
             {turmasFiltradas.length ? (
               <div style={cardsGrid}>
@@ -539,7 +577,7 @@ export default function GestaoTurmasPage() {
                           <strong>Supervisor:</strong> {item.supervisor || "-"}
                         </div>
                         <div>
-                          <strong>Base esperada:</strong> {fmt(item.baseEsperada)}
+                          <strong>Base do cálculo:</strong> {fmt(item.baseEsperada)}
                         </div>
                       </div>
 
