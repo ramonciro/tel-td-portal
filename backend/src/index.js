@@ -284,7 +284,6 @@ app.post(
   deleteParticipantesTreinamentoBulk
 );
 
-// TURMA AULAS / CRONOGRAMA
 app.get(
   "/api/turma-aulas",
   authRequired,
@@ -341,7 +340,6 @@ app.post(
   duplicarPlanoAulas
 );
 
-// PRESENÇA POR AULA
 app.get(
   "/api/presenca-aulas",
   authRequired,
@@ -412,7 +410,6 @@ app.use(
   })
 );
 
-// FREQUÊNCIA INDIVIDUAL
 app.get(
   "/api/frequencia-individual",
   authRequired,
@@ -420,7 +417,6 @@ app.get(
   getFrequenciaIndividual
 );
 
-// NPS REAL / AVALIAÇÕES TREINANDOS
 app.get(
   "/api/avaliacoes-treinandos",
   authRequired,
@@ -442,7 +438,6 @@ app.post(
   createAvaliacaoTreinando
 );
 
-// MATERIAIS AVALIATIVOS
 app.get(
   "/api/materiais-avaliativos",
   authRequired,
@@ -471,7 +466,6 @@ app.delete(
   deleteMaterialAvaliativo
 );
 
-// RESPOSTAS AVALIATIVAS
 app.get(
   "/api/respostas-avaliativas",
   authRequired,
