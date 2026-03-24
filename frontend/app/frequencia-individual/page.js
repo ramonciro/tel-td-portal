@@ -474,64 +474,86 @@ export default function FrequenciaIndividualPage() {
             title="Base detalhada de frequência"
             subtitle="Leitura individual por turma e por treinando."
           >
-            <div style={tableWrap}>
-              <table style={table}>
-                <thead>
-                  <tr>
-                    <th style={th}>Treinando</th>
-                    <th style={th}>Turma</th>
-                    <th style={th}>Cliente</th>
-                    <th style={th}>Dias</th>
-                    <th style={th}>Presentes</th>
-                    <th style={th}>Ausentes</th>
-                    <th style={th}>Justificados</th>
-                    <th style={th}>Pendentes</th>
-                    <th style={th}>Frequência</th>
-                    <th style={th}>Risco</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {itensFiltrados.length ? (
-                    itensFiltrados.map((item, index) => {
-                      const risco = riscoInfo(item.frequencia_percentual);
+            {itensFiltrados.length ? (
+              <div style={cardsGridDetalhado}>
+                {itensFiltrados.map((item, index) => {
+                  const risco = riscoInfo(item.frequencia_percentual);
 
-                      return (
-                        <tr key={`${item.treinando_nome}-${item.treinamento_id}-${index}`}>
-                          <td style={td}>
-                            <div style={cellTitle}>{item.treinando_nome || "-"}</div>
-                            <div style={cellSub}>
-                              {formatDate(item.primeira_chamada)} até{" "}
-                              {formatDate(item.ultima_chamada)}
-                            </div>
-                          </td>
-                          <td style={td}>{item.tema || "-"}</td>
-                          <td style={td}>{item.cliente || "-"}</td>
-                          <td style={td}>{fmt(item.dias_registrados || 0)}</td>
-                          <td style={td}>{fmt(item.presentes || 0)}</td>
-                          <td style={td}>{fmt(item.ausentes || 0)}</td>
-                          <td style={td}>{fmt(item.justificados || 0)}</td>
-                          <td style={td}>{fmt(item.pendentes || 0)}</td>
-                          <td style={td}>
-                            <strong>{item.frequencia_percentual || 0}%</strong>
-                          </td>
-                          <td style={td}>
-                            <span style={{ ...badgeBase, ...risco.style }}>
-                              {risco.label}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td style={tdEmpty} colSpan={10}>
-                        Nenhum registro de frequência encontrado.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  return (
+                    <div
+                      key={`${item.treinando_nome}-${item.treinamento_id}-${index}`}
+                      style={cardDetalhado}
+                    >
+                      <div style={cardDetalhadoTop}>
+                        <div>
+                          <div style={cardDetalhadoNome}>
+                            {item.treinando_nome || "-"}
+                          </div>
+                          <div style={cardDetalhadoMeta}>
+                            {item.tema || "Turma"} • {item.cliente || "Sem cliente"}
+                          </div>
+                        </div>
+
+                        <div style={{ ...badgeBase, ...risco.style }}>
+                          {risco.label}
+                        </div>
+                      </div>
+
+                      <div style={cardDetalhadoPeriodo}>
+                        {formatDate(item.primeira_chamada)} até{" "}
+                        {formatDate(item.ultima_chamada)}
+                      </div>
+
+                      <div style={miniGrid}>
+                        <div style={miniBox}>
+                          <span style={miniLabel}>Dias</span>
+                          <strong style={miniValue}>
+                            {fmt(item.dias_registrados || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={miniBox}>
+                          <span style={miniLabel}>Presentes</span>
+                          <strong style={miniValue}>
+                            {fmt(item.presentes || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={miniBox}>
+                          <span style={miniLabel}>Ausentes</span>
+                          <strong style={miniValue}>
+                            {fmt(item.ausentes || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={miniBox}>
+                          <span style={miniLabel}>Justificados</span>
+                          <strong style={miniValue}>
+                            {fmt(item.justificados || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={miniBox}>
+                          <span style={miniLabel}>Pendentes</span>
+                          <strong style={miniValue}>
+                            {fmt(item.pendentes || 0)}
+                          </strong>
+                        </div>
+
+                        <div style={miniBoxDestaque}>
+                          <span style={miniLabel}>Frequência</span>
+                          <strong style={miniValue}>
+                            {item.frequencia_percentual || 0}%
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={emptyText}>Nenhum registro de frequência encontrado.</div>
+            )}
           </SectionCard>
         </div>
       )}
@@ -728,43 +750,80 @@ const badgeBase = {
   fontWeight: 800,
 };
 
-const tableWrap = {
-  overflowX: "auto",
+const cardsGridDetalhado = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: 14,
 };
 
-const table = {
-  width: "100%",
-  borderCollapse: "collapse",
+const cardDetalhado = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  padding: 16,
+  display: "grid",
+  gap: 12,
 };
 
-const th = {
-  textAlign: "left",
-  padding: "12px 10px",
-  borderBottom: "1px solid #e2e8f0",
+const cardDetalhadoTop = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+};
+
+const cardDetalhadoNome = {
+  fontWeight: 800,
+  fontSize: 18,
+  color: "#0f172a",
+  lineHeight: 1.2,
+};
+
+const cardDetalhadoMeta = {
+  marginTop: 6,
+  color: "#64748b",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const cardDetalhadoPeriodo = {
   color: "#475569",
   fontSize: 13,
+  lineHeight: 1.45,
 };
 
-const td = {
-  padding: "12px 10px",
-  borderBottom: "1px solid #f1f5f9",
-  color: "#0f172a",
-  fontSize: 14,
-  verticalAlign: "top",
+const miniGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 10,
 };
 
-const tdEmpty = {
-  padding: "16px 10px",
-  color: "#64748b",
-  textAlign: "center",
+const miniBox = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 12,
+  padding: 10,
+  display: "grid",
+  gap: 4,
 };
 
-const cellTitle = {
-  fontWeight: 800,
+const miniBoxDestaque = {
+  background: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  borderRadius: 12,
+  padding: 10,
+  display: "grid",
+  gap: 4,
 };
 
-const cellSub = {
-  marginTop: 4,
+const miniLabel = {
   color: "#64748b",
   fontSize: 12,
+  fontWeight: 700,
+};
+
+const miniValue = {
+  color: "#0f172a",
+  fontSize: 18,
+  fontWeight: 800,
 };
