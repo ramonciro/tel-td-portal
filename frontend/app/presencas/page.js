@@ -43,9 +43,9 @@ function parseHoras(value) {
   return match ? Number(match[1]) || 0 : 0;
 }
 
-function getStatusTurma({ treinandos, diasPlanejados, presencasLancadas, pendentes }) {
+function getStatusTurma({ treinandos, diasPlanejados, presencasLancadas, pendentes, usaCronograma }) {
   if (treinandos === 0) return "Sem treinandos";
-  if (diasPlanejados === 0) return "Sem cronograma";
+  if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
   if (presencasLancadas === 0) return "Chamada pendente";
   if (pendentes > 0) return "Em andamento";
   return "Concluída";
@@ -83,7 +83,7 @@ function getStatusBadgeStyle(status) {
   return { ...base, background: "#ecfdf5", color: "#047857" };
 }
 
-function getActionConfig(statusTurma) {
+function getActionConfig(statusTurma, usaCronograma) {
   if (statusTurma === "Sem treinandos") {
     return {
       label: "Importar treinandos",
@@ -91,7 +91,7 @@ function getActionConfig(statusTurma) {
     };
   }
 
-  if (statusTurma === "Sem cronograma") {
+  if (usaCronograma && statusTurma === "Sem cronograma") {
     return {
       label: "Gerar cronograma",
       style: btnAlerta,
@@ -100,7 +100,7 @@ function getActionConfig(statusTurma) {
 
   if (statusTurma === "Chamada pendente" || statusTurma === "Em andamento") {
     return {
-      label: "Abrir chamada",
+      label: usaCronograma ? "Abrir gestão da turma" : "Abrir chamada",
       style: btnPrimario,
     };
   }
@@ -125,8 +125,13 @@ export default function GestaoTurmasPage() {
       try {
         setLoading(true);
 
-        const treinamentosData = await apiFetch("/treinamentos").catch(() => []);
+        const [treinamentosData, presencasData] = await Promise.all([
+          apiFetch("/treinamentos").catch(() => []),
+          apiFetch("/presencas").catch(() => []),
+        ]);
+
         const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
+        const listaPresencas = Array.isArray(presencasData) ? presencasData : [];
 
         const turmasEnriquecidas = await Promise.all(
           listaTreinamentos.map(async (t) => {
@@ -140,13 +145,18 @@ export default function GestaoTurmasPage() {
 
             const treinandos = Number(t.participantes || listaParticipantes.length || 0);
             const diasPlanejados = listaAulas.length;
+            const usaCronograma = diasPlanejados > 0;
 
             let presentes = 0;
             let ausentes = 0;
             let justificados = 0;
             let pendentes = 0;
+            let baseEsperada = 0;
+            let origemFrequencia = "legado";
 
-            if (diasPlanejados > 0) {
+            if (usaCronograma) {
+              origemFrequencia = "cronograma";
+
               const resumos = await Promise.all(
                 listaAulas.map((aula) =>
                   apiFetch(`/presenca-aulas/resumo/${aula.id}`).catch(() => null)
@@ -160,19 +170,34 @@ export default function GestaoTurmasPage() {
                 justificados += Number(resumo.justificados || 0);
                 pendentes += Number(resumo.pendentes || 0);
               }
+
+              baseEsperada = treinandos * diasPlanejados;
+            } else {
+              const presencasTurma = listaPresencas.filter(
+                (p) => Number(p.treinamento_id) === Number(t.id)
+              );
+
+              presentes = presencasTurma.filter((p) => p.status === "presente").length;
+              ausentes = presencasTurma.filter((p) => p.status === "ausente").length;
+              justificados = presencasTurma.filter((p) => p.status === "justificado").length;
+              pendentes = presencasTurma.filter(
+                (p) => !p.status || p.status === "" || p.status === "pendente"
+              ).length;
+
+              // no legado, a expectativa é a própria base de treinandos vinculada
+              baseEsperada = treinandos;
             }
 
-            const baseEsperada = treinandos * diasPlanejados;
             const presencasLancadas = presentes + ausentes + justificados;
-            const taxa = baseEsperada > 0
-              ? Math.round((presentes / baseEsperada) * 100)
-              : 0;
+            const taxa =
+              baseEsperada > 0 ? Math.round((presentes / baseEsperada) * 100) : 0;
 
             const statusTurma = getStatusTurma({
               treinandos,
               diasPlanejados,
               presencasLancadas,
               pendentes,
+              usaCronograma,
             });
 
             const classificacao = getClassificacao({
@@ -194,6 +219,8 @@ export default function GestaoTurmasPage() {
               taxa,
               classificacao,
               statusTurma,
+              usaCronograma,
+              origemFrequencia,
             };
           })
         );
@@ -434,12 +461,12 @@ export default function GestaoTurmasPage() {
 
           <SectionCard
             title="Painel das turmas"
-            subtitle="Leitura rápida das turmas com maior necessidade de acompanhamento."
+            subtitle="Leitura híbrida: turmas novas usam cronograma; turmas antigas usam o histórico já lançado."
           >
             {turmasFiltradas.length ? (
               <div style={cardsGrid}>
                 {turmasFiltradas.map((item) => {
-                  const action = getActionConfig(item.statusTurma);
+                  const action = getActionConfig(item.statusTurma, item.usaCronograma);
 
                   return (
                     <div key={item.id} style={turmaCard}>
@@ -480,6 +507,20 @@ export default function GestaoTurmasPage() {
                         <span>{fmt(item.ausentes)} aus.</span>
                         <span>{fmt(item.justificados)} just.</span>
                         <span>{fmt(item.pendentes)} pend.</span>
+                      </div>
+
+                      <div style={origemWrap}>
+                        <span
+                          style={
+                            item.origemFrequencia === "cronograma"
+                              ? origemBadgeNovo
+                              : origemBadgeLegado
+                          }
+                        >
+                          {item.origemFrequencia === "cronograma"
+                            ? "Base: cronograma"
+                            : "Base: histórico legado"}
+                        </span>
                       </div>
 
                       <div style={infoBloco}>
@@ -642,6 +683,32 @@ const badgeEstavel = {
 const badgeTaxa = {
   background: "#eff6ff",
   color: "#1d4ed8",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const origemWrap = {
+  marginTop: -2,
+};
+
+const origemBadgeNovo = {
+  display: "inline-block",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  border: "1px solid #bfdbfe",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const origemBadgeLegado = {
+  display: "inline-block",
+  background: "#f8fafc",
+  color: "#475569",
+  border: "1px solid #cbd5e1",
   borderRadius: 999,
   padding: "4px 10px",
   fontSize: 12,
