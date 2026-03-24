@@ -8,10 +8,10 @@ import { clearSession, getStoredUser, hasSomeRole } from "../services/api";
 const menuItems = [
   { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor"] },
-  { href: "/usuarios", label: "Usuários", icon: "👤", roles: ["coordenador", "supervisor"] },
   { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
+  { href: "/usuarios", label: "Gestão de Usuários", icon: "👥", roles: ["coordenador", "supervisor"] },
   { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/presencas", label: "Gestão de Turmas", icon: "👥", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/presencas", label: "Gestão de Turmas", icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/frequencia-individual", label: "Frequência Individual", icon: "📍", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/avaliacoes", label: "Avaliações", icon: "⭐", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/responder-avaliacao", label: "Responder Avaliação", icon: "📝", roles: ["treinando", "instrutor", "supervisor", "coordenador"] },
@@ -97,13 +97,8 @@ export default function PortalShell({
     [isMobile]
   );
 
-  if (user === undefined) {
-    return null;
-  }
-
-  if (!user) {
-    return null;
-  }
+  if (user === undefined) return null;
+  if (!user) return null;
 
   if (!currentAllowed) {
     return (
@@ -272,6 +267,7 @@ const sidebar = {
   padding: "20px 18px",
   position: "sticky",
   top: 0,
+  overflowY: "auto",
 };
 
 const brandBox = {
