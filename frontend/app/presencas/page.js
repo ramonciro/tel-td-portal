@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
-import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
+import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
 
 function fmt(n) {
@@ -12,7 +12,6 @@ function fmt(n) {
 
 function parseDateSafe(value) {
   if (!value) return null;
-
   if (value instanceof Date) return value;
 
   const text = String(value).slice(0, 10);
@@ -25,9 +24,9 @@ function parseDateSafe(value) {
     }
   }
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
 }
 
 function fmtDate(value) {
@@ -44,43 +43,16 @@ function parseHoras(value) {
   return match ? Number(match[1]) || 0 : 0;
 }
 
-function normalizeStatus(value) {
-  return String(value || "").toLowerCase().trim();
-}
-
-function getDiasPeriodo(item) {
-  const inicio = item.data_inicio || item.data;
-  const fim = item.data_fim || item.data_inicio || item.data;
-
-  if (!inicio || !fim) return 1;
-
-  const d1 = parseDateSafe(inicio);
-  const d2 = parseDateSafe(fim);
-
-  if (!d1 || !d2 || Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) {
-    return 1;
-  }
-
-  const a = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
-  const b = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
-
-  const diffMs = b - a;
-  const dias = Math.floor(diffMs / 86400000) + 1;
-
-  return dias > 0 ? dias : 1;
-}
-
-function getStatusTurma({ treinandos, presentes, ausentes, justificados, pendentes }) {
-  const totalLancados = presentes + ausentes + justificados;
-
+function getStatusTurma({ treinandos, diasPlanejados, presencasLancadas, pendentes }) {
   if (treinandos === 0) return "Sem treinandos";
-  if (totalLancados === 0) return "Chamada pendente";
+  if (diasPlanejados === 0) return "Sem cronograma";
+  if (presencasLancadas === 0) return "Chamada pendente";
   if (pendentes > 0) return "Em andamento";
   return "Concluída";
 }
 
 function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
-  if (statusTurma === "Sem treinandos") return "Crítico";
+  if (statusTurma === "Sem treinandos" || statusTurma === "Sem cronograma") return "Crítico";
   if (statusTurma === "Chamada pendente") return "Atenção";
   if (pendentes > 0) return "Atenção";
   if (treinandos > 0 && taxa < 85) return "Crítico";
@@ -90,13 +62,13 @@ function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
 function getStatusBadgeStyle(status) {
   const base = {
     display: "inline-block",
-    padding: "6px 11px",
+    padding: "5px 10px",
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 800,
   };
 
-  if (status === "Sem treinandos") {
+  if (status === "Sem treinandos" || status === "Sem cronograma") {
     return { ...base, background: "#fef2f2", color: "#b91c1c" };
   }
 
@@ -111,31 +83,17 @@ function getStatusBadgeStyle(status) {
   return { ...base, background: "#ecfdf5", color: "#047857" };
 }
 
-function getClassificacaoStyle(classificacao) {
-  if (classificacao === "Crítico") {
-    return {
-      background: "#fee2e2",
-      color: "#b91c1c",
-    };
-  }
-
-  if (classificacao === "Atenção") {
-    return {
-      background: "#fef3c7",
-      color: "#92400e",
-    };
-  }
-
-  return {
-    background: "#dcfce7",
-    color: "#166534",
-  };
-}
-
 function getActionConfig(statusTurma) {
   if (statusTurma === "Sem treinandos") {
     return {
       label: "Importar treinandos",
+      style: btnAlerta,
+    };
+  }
+
+  if (statusTurma === "Sem cronograma") {
+    return {
+      label: "Gerar cronograma",
       style: btnAlerta,
     };
   }
@@ -153,7 +111,7 @@ function getActionConfig(statusTurma) {
   };
 }
 
-export default function FrequenciaDiariaPage() {
+export default function GestaoTurmasPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
@@ -166,48 +124,54 @@ export default function FrequenciaDiariaPage() {
     async function load() {
       try {
         setLoading(true);
-        setErro("");
 
-        const treinamentosData = await apiFetch("/treinamentos", {
-          timeoutMs: 15000,
-        }).catch(() => []);
+        const treinamentosData = await apiFetch("/treinamentos").catch(() => []);
+        const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
 
-        const lista = Array.isArray(treinamentosData) ? treinamentosData : [];
+        const turmasEnriquecidas = await Promise.all(
+          listaTreinamentos.map(async (t) => {
+            const [participantes, aulas] = await Promise.all([
+              apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []),
+              apiFetch(`/turma-aulas?treinamento_id=${t.id}`).catch(() => []),
+            ]);
 
-        const turmasComBase = await Promise.all(
-          lista.map(async (t) => {
-            const participantes = await apiFetch(
-              `/treinamentos/${t.id}/participantes`,
-              { timeoutMs: 15000 }
-            ).catch(() => []);
+            const listaParticipantes = Array.isArray(participantes) ? participantes : [];
+            const listaAulas = Array.isArray(aulas) ? aulas : [];
 
-            const registros = Array.isArray(participantes) ? participantes : [];
+            const treinandos = Number(t.participantes || listaParticipantes.length || 0);
+            const diasPlanejados = listaAulas.length;
 
-            const presentes = registros.filter(
-              (p) => normalizeStatus(p.status_presenca) === "presente"
-            ).length;
+            let presentes = 0;
+            let ausentes = 0;
+            let justificados = 0;
+            let pendentes = 0;
 
-            const ausentes = registros.filter(
-              (p) => normalizeStatus(p.status_presenca) === "ausente"
-            ).length;
+            if (diasPlanejados > 0) {
+              const resumos = await Promise.all(
+                listaAulas.map((aula) =>
+                  apiFetch(`/presenca-aulas/resumo/${aula.id}`).catch(() => null)
+                )
+              );
 
-            const justificados = registros.filter(
-              (p) => normalizeStatus(p.status_presenca) === "justificado"
-            ).length;
+              for (const item of resumos) {
+                const resumo = item?.resumo || {};
+                presentes += Number(resumo.presentes || 0);
+                ausentes += Number(resumo.ausentes || 0);
+                justificados += Number(resumo.justificados || 0);
+                pendentes += Number(resumo.pendentes || 0);
+              }
+            }
 
-            const treinandos = registros.length || Number(t.participantes || 0);
-            const totalLancados = presentes + ausentes + justificados;
-            const pendentes = Math.max(treinandos - totalLancados, 0);
-            const taxa = treinandos ? Math.round((presentes / treinandos) * 100) : 0;
-
-            const dias = getDiasPeriodo(t);
-            const capacidadeDiaria = treinandos * dias;
+            const baseEsperada = treinandos * diasPlanejados;
+            const presencasLancadas = presentes + ausentes + justificados;
+            const taxa = baseEsperada > 0
+              ? Math.round((presentes / baseEsperada) * 100)
+              : 0;
 
             const statusTurma = getStatusTurma({
               treinandos,
-              presentes,
-              ausentes,
-              justificados,
+              diasPlanejados,
+              presencasLancadas,
               pendentes,
             });
 
@@ -221,22 +185,23 @@ export default function FrequenciaDiariaPage() {
             return {
               ...t,
               treinandos,
+              diasPlanejados,
+              baseEsperada,
               presentes,
               ausentes,
               justificados,
               pendentes,
               taxa,
-              dias,
-              capacidadeDiaria,
               classificacao,
               statusTurma,
             };
           })
         );
 
-        setTreinamentos(turmasComBase);
+        setTreinamentos(turmasEnriquecidas);
+        setErro("");
       } catch (error) {
-        setErro(error.message || "Erro ao carregar frequência diária.");
+        setErro(error.message || "Erro ao carregar gestão de turmas.");
       } finally {
         setLoading(false);
       }
@@ -249,9 +214,10 @@ export default function FrequenciaDiariaPage() {
     return [...treinamentos].sort((a, b) => {
       const ordemStatus = {
         "Sem treinandos": 1,
-        "Chamada pendente": 2,
-        "Em andamento": 3,
-        "Concluída": 4,
+        "Sem cronograma": 2,
+        "Chamada pendente": 3,
+        "Em andamento": 4,
+        "Concluída": 5,
       };
 
       const aOrdem = ordemStatus[a.statusTurma] || 99;
@@ -264,7 +230,7 @@ export default function FrequenciaDiariaPage() {
 
   const clientesOptions = useMemo(() => {
     const lista = [...new Set(turmas.map((item) => item.cliente).filter(Boolean))];
-    return lista.sort((a, b) => String(a).localeCompare(String(b)));
+    return lista.sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
   }, [turmas]);
 
   const turmasFiltradas = useMemo(() => {
@@ -308,13 +274,12 @@ export default function FrequenciaDiariaPage() {
       (acc, item) => acc + parseHoras(item.carga_horaria),
       0
     );
-    const capacidadeDiaria = turmasFiltradas.reduce(
-      (acc, item) => acc + Number(item.capacidadeDiaria || 0),
-      0
-    );
 
     const semTreinandos = turmasFiltradas.filter(
       (item) => item.statusTurma === "Sem treinandos"
+    ).length;
+    const semCronograma = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Sem cronograma"
     ).length;
     const pendentes = turmasFiltradas.filter(
       (item) => item.statusTurma === "Chamada pendente"
@@ -331,8 +296,8 @@ export default function FrequenciaDiariaPage() {
       treinandos,
       presentes,
       horas,
-      capacidadeDiaria,
       semTreinandos,
+      semCronograma,
       pendentes,
       andamento,
       concluidas,
@@ -341,54 +306,15 @@ export default function FrequenciaDiariaPage() {
 
   return (
     <PortalShell
-      title="Frequência Diária"
-      subtitle="Visão operacional das turmas, períodos de formação e lançamento de chamada."
+      title="Gestão de Turmas"
+      subtitle="Execução operacional das turmas, treinandos e acompanhamento consolidado da presença."
     >
       {loading ? (
-        <div style={loadingBox}>Carregando frequência diária...</div>
+        <div style={loadingBox}>Carregando gestão de turmas...</div>
       ) : erro ? (
-        <div style={errorBox}>
-          <div style={{ fontWeight: 800, marginBottom: 8 }}>
-            Não foi possível concluir o carregamento da frequência diária.
-          </div>
-          <div style={{ marginBottom: 12 }}>{erro}</div>
-          <button style={btnPrimario} onClick={() => window.location.reload()}>
-            Tentar novamente
-          </button>
-        </div>
+        <div style={errorBox}>{erro}</div>
       ) : (
         <>
-          <div style={heroWrap}>
-            <div style={heroMain}>
-              <div style={heroBadge}>Operação do dia</div>
-              <h2 style={heroTitle}>Controle diário das turmas em andamento</h2>
-              <p style={heroText}>
-                Acompanhe rapidamente base vinculada, andamento da chamada,
-                volume de presença e prioridade de atuação por turma.
-              </p>
-            </div>
-
-            <div style={heroSide}>
-              <div style={sideCard}>
-                <div style={sideTitle}>Turmas no filtro</div>
-                <div style={sideValue}>{fmt(resumo.turmasTotal)}</div>
-                <div style={sideText}>volume consolidado da visualização</div>
-              </div>
-
-              <div style={sideCard}>
-                <div style={sideTitle}>Treinandos ativos</div>
-                <div style={sideValue}>{fmt(resumo.treinandos)}</div>
-                <div style={sideText}>base vinculada às turmas filtradas</div>
-              </div>
-
-              <div style={sideCard}>
-                <div style={sideTitle}>Capacidade do período</div>
-                <div style={sideValue}>{fmt(resumo.capacidadeDiaria)}</div>
-                <div style={sideText}>treinandos × dias da formação</div>
-              </div>
-            </div>
-          </div>
-
           <SectionCard
             title="Filtros"
             subtitle="Refine a visualização por status, cliente ou palavras-chave."
@@ -403,6 +329,7 @@ export default function FrequenciaDiariaPage() {
                 >
                   <option value="todos">Todos</option>
                   <option value="Sem treinandos">Sem treinandos</option>
+                  <option value="Sem cronograma">Sem cronograma</option>
                   <option value="Chamada pendente">Chamada pendente</option>
                   <option value="Em andamento">Em andamento</option>
                   <option value="Concluída">Concluída</option>
@@ -451,7 +378,7 @@ export default function FrequenciaDiariaPage() {
             </div>
           </SectionCard>
 
-          <div style={gridFour}>
+          <div style={statsGrid}>
             <StatCard
               title="Turmas"
               value={fmt(resumo.turmasTotal)}
@@ -461,7 +388,7 @@ export default function FrequenciaDiariaPage() {
             <StatCard
               title="Treinandos"
               value={fmt(resumo.treinandos)}
-              subtitle="Base ativa vinculada"
+              subtitle="Capacidade planejada"
               accent="#38bdf8"
             />
             <StatCard
@@ -478,12 +405,18 @@ export default function FrequenciaDiariaPage() {
             />
           </div>
 
-          <div style={gridFour}>
+          <div style={statusGrid}>
             <StatCard
               title="Sem treinandos"
               value={fmt(resumo.semTreinandos)}
               subtitle="Turmas sem base vinculada"
               accent="#dc2626"
+            />
+            <StatCard
+              title="Sem cronograma"
+              value={fmt(resumo.semCronograma)}
+              subtitle="Sem aulas geradas"
+              accent="#b91c1c"
             />
             <StatCard
               title="Chamada pendente"
@@ -497,12 +430,6 @@ export default function FrequenciaDiariaPage() {
               subtitle="Com pendências operacionais"
               accent="#2563eb"
             />
-            <StatCard
-              title="Concluídas"
-              value={fmt(resumo.concluidas)}
-              subtitle="Turmas com chamada finalizada"
-              accent="#16a34a"
-            />
           </div>
 
           <SectionCard
@@ -513,14 +440,22 @@ export default function FrequenciaDiariaPage() {
               <div style={cardsGrid}>
                 {turmasFiltradas.map((item) => {
                   const action = getActionConfig(item.statusTurma);
-                  const classificacaoStyle = getClassificacaoStyle(item.classificacao);
 
                   return (
                     <div key={item.id} style={turmaCard}>
                       <div style={cardTop}>
-                        <span style={{ ...badgeBase, ...classificacaoStyle }}>
+                        <span
+                          style={
+                            item.classificacao === "Crítico"
+                              ? badgeCritico
+                              : item.classificacao === "Atenção"
+                              ? badgeAtencao
+                              : badgeEstavel
+                          }
+                        >
                           {item.classificacao}
                         </span>
+
                         <span style={badgeTaxa}>{item.taxa}%</span>
                       </div>
 
@@ -538,19 +473,13 @@ export default function FrequenciaDiariaPage() {
                           (item.instrutor || "Sem instrutor")}
                       </div>
 
-                      <div style={numbersGrid}>
-                        <div style={numberCard}>
-                          <span style={numberLabel}>Treinandos</span>
-                          <strong style={numberValue}>{fmt(item.treinandos)}</strong>
-                        </div>
-                        <div style={numberCard}>
-                          <span style={numberLabel}>Presentes</span>
-                          <strong style={numberValue}>{fmt(item.presentes)}</strong>
-                        </div>
-                        <div style={numberCard}>
-                          <span style={numberLabel}>Pendentes</span>
-                          <strong style={numberValue}>{fmt(item.pendentes)}</strong>
-                        </div>
+                      <div style={miniLinha}>
+                        <span>{fmt(item.treinandos)} treinandos</span>
+                        <span>{fmt(item.diasPlanejados)} aula(s)</span>
+                        <span>{fmt(item.presentes)} pres.</span>
+                        <span>{fmt(item.ausentes)} aus.</span>
+                        <span>{fmt(item.justificados)} just.</span>
+                        <span>{fmt(item.pendentes)} pend.</span>
                       </div>
 
                       <div style={infoBloco}>
@@ -569,8 +498,7 @@ export default function FrequenciaDiariaPage() {
                           <strong>Supervisor:</strong> {item.supervisor || "-"}
                         </div>
                         <div>
-                          <strong>Ausentes / Justificados:</strong>{" "}
-                          {fmt(item.ausentes)} / {fmt(item.justificados)}
+                          <strong>Base esperada:</strong> {fmt(item.baseEsperada)}
                         </div>
                       </div>
 
@@ -600,83 +528,11 @@ export default function FrequenciaDiariaPage() {
   );
 }
 
-const heroWrap = {
-  display: "grid",
-  gridTemplateColumns: "1.5fr 1fr",
-  gap: 14,
-  marginBottom: 14,
-};
-
-const heroMain = {
-  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
-  borderRadius: 22,
-  padding: 22,
-  color: "#ffffff",
-  boxShadow: "0 14px 30px rgba(29, 78, 216, 0.18)",
-};
-
-const heroBadge = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "rgba(255,255,255,.14)",
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-  marginBottom: 10,
-};
-
-const heroTitle = {
-  margin: 0,
-  fontSize: 28,
-  lineHeight: 1.1,
-};
-
-const heroText = {
-  margin: "10px 0 0",
-  color: "rgba(255,255,255,.86)",
-  lineHeight: 1.6,
-};
-
-const heroSide = {
-  display: "grid",
-  gap: 12,
-};
-
-const sideCard = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 18,
-  display: "grid",
-  gap: 6,
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
-};
-
-const sideTitle = {
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-  color: "#475569",
-};
-
-const sideValue = {
-  fontSize: 28,
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const sideText = {
-  color: "#64748b",
-  lineHeight: 1.5,
-};
-
 const filtersGrid = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr 1.4fr auto",
   gap: 12,
+  alignItems: "end",
 };
 
 const fieldWrap = {
@@ -685,34 +541,49 @@ const fieldWrap = {
 };
 
 const label = {
-  fontWeight: 800,
-  color: "#0f172a",
-  fontSize: 14,
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#334155",
 };
 
 const input = {
   width: "100%",
-  height: 42,
+  padding: "11px 12px",
   borderRadius: 10,
   border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  fontSize: 14,
+  background: "#fff",
   color: "#0f172a",
+  fontSize: 14,
   outline: "none",
-  background: "#ffffff",
-  boxSizing: "border-box",
 };
 
 const actionsWrap = {
   display: "flex",
-  alignItems: "flex-end",
+  justifyContent: "flex-end",
 };
 
-const gridFour = {
+const btnSecundario = {
+  background: "#e2e8f0",
+  color: "#0f172a",
+  border: 0,
+  borderRadius: 10,
+  padding: "11px 14px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const statsGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 14,
-  marginTop: 14,
+  marginBottom: 16,
+};
+
+const statusGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 14,
+  marginBottom: 16,
 };
 
 const cardsGrid = {
@@ -722,131 +593,125 @@ const cardsGrid = {
 };
 
 const turmaCard = {
-  background: "#f8fafc",
+  background: "#fff",
   border: "1px solid #e2e8f0",
   borderRadius: 18,
   padding: 16,
+  boxShadow: "0 8px 22px rgba(15,23,42,.05)",
   display: "grid",
-  gap: 12,
+  gap: 10,
 };
 
 const cardTop = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
-  gap: 10,
 };
 
 const statusWrap = {
-  display: "flex",
-  justifyContent: "flex-start",
+  marginTop: -2,
 };
 
-const badgeBase = {
-  display: "inline-block",
-  padding: "5px 9px",
+const badgeCritico = {
+  background: "#fef2f2",
+  color: "#b91c1c",
   borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
   fontWeight: 800,
-  fontSize: 11,
+};
+
+const badgeAtencao = {
+  background: "#fff7ed",
+  color: "#c2410c",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const badgeEstavel = {
+  background: "#ecfdf5",
+  color: "#047857",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
 };
 
 const badgeTaxa = {
-  display: "inline-block",
-  padding: "6px 11px",
-  borderRadius: 999,
   background: "#eff6ff",
   color: "#1d4ed8",
-  fontWeight: 800,
+  borderRadius: 999,
+  padding: "4px 10px",
   fontSize: 12,
+  fontWeight: 800,
 };
 
 const turmaTitulo = {
-  fontSize: 18,
+  fontSize: 20,
   fontWeight: 800,
   color: "#0f172a",
 };
 
 const turmaMeta = {
   color: "#64748b",
-  fontSize: 13,
+  fontSize: 14,
 };
 
-const numbersGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 10,
-};
-
-const numberCard = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: 10,
-  display: "grid",
-  gap: 4,
-};
-
-const numberLabel = {
+const miniLinha = {
+  display: "flex",
+  gap: 18,
+  flexWrap: "wrap",
   color: "#64748b",
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-const numberValue = {
-  color: "#0f172a",
-  fontSize: 18,
+  fontSize: 13,
 };
 
 const infoBloco = {
   display: "grid",
-  gap: 5,
-  color: "#334155",
-  fontSize: 13,
-  lineHeight: 1.45,
+  gap: 6,
+  color: "#475569",
+  fontSize: 14,
 };
 
 const acoesWrapCard = {
-  marginTop: 2,
+  marginTop: 4,
+  display: "flex",
+  justifyContent: "flex-end",
 };
 
 const btnPrimario = {
-  border: "none",
-  borderRadius: 10,
-  padding: "10px 14px",
   background: "#2563eb",
   color: "#fff",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const btnSecundario = {
-  border: "1px solid #cbd5e1",
+  border: 0,
   borderRadius: 10,
   padding: "10px 14px",
-  background: "#fff",
-  color: "#334155",
-  fontWeight: 800,
   cursor: "pointer",
+  fontWeight: 700,
 };
 
 const btnSecundarioAzul = {
-  border: "1px solid #bfdbfe",
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  border: 0,
   borderRadius: 10,
   padding: "10px 14px",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontWeight: 800,
   cursor: "pointer",
+  fontWeight: 700,
 };
 
 const btnAlerta = {
-  border: "1px solid #fed7aa",
-  borderRadius: 10,
-  padding: "10px 14px",
   background: "#fff7ed",
   color: "#c2410c",
-  fontWeight: 800,
+  border: "1px solid #fdba74",
+  borderRadius: 10,
+  padding: "10px 14px",
   cursor: "pointer",
+  fontWeight: 700,
+};
+
+const emptyText = {
+  color: "#64748b",
 };
 
 const loadingBox = {
@@ -865,8 +730,4 @@ const errorBox = {
   borderRadius: 16,
   padding: 16,
   fontWeight: 700,
-};
-
-const emptyText = {
-  color: "#64748b",
 };
