@@ -29,32 +29,6 @@ function isSunday(dateValue) {
   return d.getDay() === 0;
 }
 
-function normalizeHeader(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-function mapRowKeys(row) {
-  return Object.entries(row || {}).reduce((acc, [key, value]) => {
-    acc[normalizeHeader(key)] = value;
-    return acc;
-  }, {});
-}
-
-function getFirstValue(row, aliases = []) {
-  for (const alias of aliases) {
-    const value = row[alias];
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      return value;
-    }
-  }
-  return "";
-}
-
 async function getParticipantesByTreinamento(req, res) {
   try {
     const { id } = req.params;
@@ -125,8 +99,6 @@ async function getParticipantesByTreinamento(req, res) {
 }
 
 async function importarParticipantesExcel(req, res) {
-  let connection;
-
   try {
     const { treinamento_id } = req.body;
 
@@ -144,11 +116,10 @@ async function importarParticipantesExcel(req, res) {
       });
     }
 
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const primeiraAba = workbook.SheetNames[0];
     const sheet = workbook.Sheets[primeiraAba];
-    const linhasBrutas = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
-    const linhas = linhasBrutas.map(mapRowKeys);
+    const linhas = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
     if (!linhas.length) {
       return res.status(400).json({
@@ -157,57 +128,40 @@ async function importarParticipantesExcel(req, res) {
       });
     }
 
-    const primeiraLinha = linhas[0];
-    const requiredAliases = {
-      nome: ["nome", "treinando_nome", "colaborador", "participante"],
-      matricula: ["matricula", "registro", "id_colaborador"],
-      cliente: ["cliente", "operacao_cliente"],
-      turma: ["turma", "nome_turma", "treinamento", "tema"],
-      supervisor: ["supervisor", "gestor", "lider"],
-      operacao: ["operacao", "area", "produto"],
-      data_admissao: ["data_admissao", "admissao", "data_de_admissao", "data admissao"],
-    };
+    const colunasObrigatorias = [
+      "nome",
+      "matricula",
+      "cliente",
+      "turma",
+      "supervisor",
+      "operacao",
+      "data_admissao",
+    ];
 
-    const faltando = Object.entries(requiredAliases)
-      .filter(([, aliases]) => !aliases.some((alias) => alias in primeiraLinha))
-      .map(([campo]) => campo);
+    const primeiraLinha = linhas[0];
+    const faltando = colunasObrigatorias.filter(
+      (col) => !(col in primeiraLinha)
+    );
 
     if (faltando.length) {
       return res.status(400).json({
         ok: false,
-        message: `Colunas obrigatórias ausentes: ${faltando.join(", ")}` ,
+        message: `Colunas obrigatórias ausentes: ${faltando.join(", ")}`,
       });
     }
 
-    const participantes = linhas
-      .map((linha) => ({
-        nome: String(getFirstValue(linha, requiredAliases.nome) || "").trim(),
-        matricula: String(getFirstValue(linha, requiredAliases.matricula) || "").trim(),
-        cliente: String(getFirstValue(linha, requiredAliases.cliente) || "").trim(),
-        turma: String(getFirstValue(linha, requiredAliases.turma) || "").trim(),
-        supervisor: String(getFirstValue(linha, requiredAliases.supervisor) || "").trim(),
-        operacao: String(getFirstValue(linha, requiredAliases.operacao) || "").trim(),
-        data_admissao: formatExcelDateToMySQL(getFirstValue(linha, requiredAliases.data_admissao)),
-      }))
-      .filter((item) => item.nome);
-
-    if (!participantes.length) {
-      return res.status(400).json({
-        ok: false,
-        message: "Nenhum participante válido foi encontrado na planilha",
-      });
-    }
-
-    connection = await db.getConnection();
-    await connection.beginTransaction();
-
-    await connection.query(
+    await db.query(
       `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
       [treinamento_id]
     );
 
-    for (const item of participantes) {
-      await connection.query(
+    let totalImportados = 0;
+
+    for (const linha of linhas) {
+      const nome = String(linha.nome || "").trim();
+      if (!nome) continue;
+
+      await db.query(
         `
         INSERT INTO treinamento_participantes
         (
@@ -226,45 +180,39 @@ async function importarParticipantesExcel(req, res) {
         `,
         [
           treinamento_id,
-          item.nome,
-          item.matricula,
-          item.cliente,
-          item.turma,
-          item.supervisor,
-          item.operacao,
-          item.data_admissao,
+          nome,
+          String(linha.matricula || "").trim(),
+          String(linha.cliente || "").trim(),
+          String(linha.turma || "").trim(),
+          String(linha.supervisor || "").trim(),
+          String(linha.operacao || "").trim(),
+          formatExcelDateToMySQL(linha.data_admissao),
           "pendente",
           null,
         ]
       );
+
+      totalImportados += 1;
     }
 
-    await connection.query(
-      `
-      UPDATE treinamentos
-      SET participantes = ?, participantes_previstos = ?
-      WHERE id = ?
-      `,
-      [participantes.length, participantes.length, treinamento_id]
-    );
-
-    await connection.commit();
+    try {
+      await db.query(
+        `UPDATE treinamentos SET participantes = ? WHERE id = ?`,
+        [totalImportados, treinamento_id]
+      );
+    } catch {}
 
     return res.json({
       ok: true,
       message: "Participantes importados com sucesso",
-      total: participantes.length,
+      total: totalImportados,
     });
   } catch (error) {
-    if (connection) await connection.rollback();
-
     return res.status(500).json({
       ok: false,
       message: "Erro ao importar participantes",
       error: error.message,
     });
-  } finally {
-    if (connection) connection.release();
   }
 }
 
@@ -326,35 +274,45 @@ async function salvarChamadaParticipantes(req, res) {
         await db.query(
           `
           INSERT INTO presencas
-          (treinamento_id, treinando_nome, presente, status, justificativa, data_chamada)
+          (treinamento_id, treinando_nome, data_chamada, presente, status, justificativa)
           VALUES (?, ?, ?, ?, ?, ?)
           `,
           [
             treinamento_id,
             item.nome,
+            data_chamada,
             presente,
             status,
             item.justificativa || null,
-            data_chamada,
           ]
         );
       }
 
-      await db.query(
-        `
-        UPDATE treinamento_participantes
-        SET status_presenca = ?, justificativa = ?
-        WHERE treinamento_id = ? AND nome = ?
-        `,
-        [status, item.justificativa || null, treinamento_id, item.nome]
-      );
+      if (item.id) {
+        await db.query(
+          `
+          UPDATE treinamento_participantes
+          SET status_presenca = ?, justificativa = ?
+          WHERE id = ? AND treinamento_id = ?
+          `,
+          [
+            status,
+            item.justificativa || null,
+            item.id,
+            treinamento_id,
+          ]
+        );
+      }
     }
 
-    return res.json({ ok: true, message: "Chamada salva com sucesso" });
+    return res.json({
+      ok: true,
+      message: "Chamada diária salva com sucesso",
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      message: "Erro ao salvar chamada",
+      message: "Erro ao salvar chamada diária",
       error: error.message,
     });
   }
@@ -375,22 +333,34 @@ async function deleteParticipanteTreinamento(req, res) {
     );
 
     if (!rows.length) {
-      return res.status(404).json({ ok: false, message: "Participante não encontrado" });
+      return res.status(404).json({
+        ok: false,
+        message: "Participante não encontrado",
+      });
     }
 
     const participante = rows[0];
 
     await db.query(
-      `DELETE FROM presencas WHERE treinamento_id = ? AND treinando_nome = ?`,
+      `
+      DELETE FROM presencas
+      WHERE treinamento_id = ? AND treinando_nome = ?
+      `,
       [participante.treinamento_id, participante.nome]
     );
 
     await db.query(
-      `DELETE FROM treinamento_participantes WHERE id = ?`,
+      `
+      DELETE FROM treinamento_participantes
+      WHERE id = ?
+      `,
       [id]
     );
 
-    return res.json({ ok: true, message: "Participante excluído com sucesso" });
+    return res.json({
+      ok: true,
+      message: "Participante excluído com sucesso",
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -411,11 +381,13 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
       });
     }
 
+    const placeholders = ids.map(() => "?").join(", ");
+
     const [rows] = await db.query(
       `
       SELECT id, treinamento_id, nome
       FROM treinamento_participantes
-      WHERE id IN (${ids.map(() => "?").join(",")})
+      WHERE id IN (${placeholders})
       `,
       ids
     );
@@ -423,23 +395,33 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
     if (!rows.length) {
       return res.status(404).json({
         ok: false,
-        message: "Nenhum participante encontrado para exclusão",
+        message: "Nenhum participante encontrado",
       });
     }
 
     for (const participante of rows) {
       await db.query(
-        `DELETE FROM presencas WHERE treinamento_id = ? AND treinando_nome = ?`,
+        `
+        DELETE FROM presencas
+        WHERE treinamento_id = ? AND treinando_nome = ?
+        `,
         [participante.treinamento_id, participante.nome]
       );
     }
 
     await db.query(
-      `DELETE FROM treinamento_participantes WHERE id IN (${ids.map(() => "?").join(",")})`,
+      `
+      DELETE FROM treinamento_participantes
+      WHERE id IN (${placeholders})
+      `,
       ids
     );
 
-    return res.json({ ok: true, message: "Participantes excluídos com sucesso" });
+    return res.json({
+      ok: true,
+      message: "Participantes excluídos com sucesso",
+      total: rows.length,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -459,13 +441,6 @@ function formatExcelDateToMySQL(value) {
     const yyyy = String(jsDate.y).padStart(4, "0");
     const mm = String(jsDate.m).padStart(2, "0");
     const dd = String(jsDate.d).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const yyyy = String(value.getFullYear()).padStart(4, "0");
-    const mm = String(value.getMonth() + 1).padStart(2, "0");
-    const dd = String(value.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   }
 
