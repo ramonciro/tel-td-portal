@@ -244,6 +244,23 @@ async function resumoPresencaAula(req, res) {
   try {
     const { turma_aula_id } = req.params;
 
+    const [[aula]] = await pool.query(
+      `
+      SELECT id, treinamento_id
+      FROM turma_aulas
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [turma_aula_id]
+    );
+
+    if (!aula) {
+      return res.status(404).json({
+        ok: false,
+        message: "Aula não encontrada",
+      });
+    }
+
     const [rows] = await pool.query(
       `
       SELECT
@@ -258,20 +275,50 @@ async function resumoPresencaAula(req, res) {
       [turma_aula_id]
     );
 
-    const base = rows[0] || {};
+    const [[participantesBase]] = await pool.query(
+      `
+      SELECT COUNT(*) AS total
+      FROM treinamento_participantes
+      WHERE treinamento_id = ?
+      `,
+      [aula.treinamento_id]
+    );
 
-    const total = Number(base.total || 0);
-    const presentes = Number(base.presentes || 0);
+    const base = rows[0] || {};
+    const totalParticipantes = Number(participantesBase?.total || 0);
+
+    let total = Number(base.total || 0);
+    let presentes = Number(base.presentes || 0);
+    let ausentes = Number(base.ausentes || 0);
+    let justificados = Number(base.justificados || 0);
+    let pendentes = Number(base.pendentes || 0);
+
+    if (total === 0 && totalParticipantes > 0) {
+      total = totalParticipantes;
+      pendentes = totalParticipantes;
+    } else if (total < totalParticipantes) {
+      pendentes += totalParticipantes - total;
+      total = totalParticipantes;
+    }
+
     const taxa_presenca = total > 0 ? Math.round((presentes / total) * 100) : 0;
 
     return res.json({
       ok: true,
+      total,
+      presentes,
+      ausentes,
+      justificados,
+      pendentes,
+      percentual: taxa_presenca,
+      taxa_presenca,
       resumo: {
         total,
         presentes,
-        ausentes: Number(base.ausentes || 0),
-        justificados: Number(base.justificados || 0),
-        pendentes: Number(base.pendentes || 0),
+        ausentes,
+        justificados,
+        pendentes,
+        percentual: taxa_presenca,
         taxa_presenca,
       },
     });
