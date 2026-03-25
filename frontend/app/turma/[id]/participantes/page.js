@@ -78,36 +78,36 @@ export default function ParticipantesTurmaPage() {
     }
   }
 
-  async function importarExcel() {
-    try {
-      if (!arquivo) {
-        setErro("Selecione um arquivo Excel para importar.");
-        return;
-      }
-
-      setImportando(true);
-      setErro("");
-      setSucesso("");
-
-      const formData = new FormData();
-      formData.append("arquivo", arquivo);
-      formData.append("treinamento_id", String(id));
-
-      await apiFetch("/treinamentos/importar-participantes", {
-        method: "POST",
-        body: formData,
-      });
-
-      setSucesso("Participantes importados com sucesso.");
-      setArquivo(null);
-      await carregarTudo();
-    } catch (err) {
-      setErro(err.message || "Erro ao importar Excel");
-    } finally {
-      setImportando(false);
+async function importarExcel() {
+  try {
+    if (!arquivo) {
+      setErro("Selecione um arquivo Excel para importar.");
+      return;
     }
-  }
 
+    setImportando(true);
+    setErro("");
+    setSucesso("");
+
+    const formData = new FormData();
+    formData.append("arquivo", arquivo);
+    formData.append("treinamento_id", String(id));
+
+    await apiFetch("/treinamentos/importar-participantes", {
+      method: "POST",
+      body: formData,
+    });
+
+    setSucesso("Participantes importados com sucesso.");
+    setArquivo(null);
+    await carregarTudo();
+  } catch (err) {
+    setErro(err.message || "Erro ao importar Excel");
+  } finally {
+    setImportando(false);
+  }
+}
+  
   async function adicionarParticipanteManual() {
     try {
       if (!form.nome || !form.matricula || !form.cliente || !form.turma) {
