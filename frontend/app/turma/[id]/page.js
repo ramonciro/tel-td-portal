@@ -505,7 +505,7 @@ export default function ChamadaTurmaPage() {
             value={resumoTurma.nomeTurma}
           />
           <OperationalItem
-            label="Instrutor ministrando"
+            label="Instrutor"
             value={resumoTurma.instrutorMinistrando}
           />
           <OperationalItem
