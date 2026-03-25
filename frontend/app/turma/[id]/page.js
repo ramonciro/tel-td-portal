@@ -205,14 +205,53 @@ export default function ChamadaTurmaPage() {
         0
     );
 
+    const percentualMedio = modoAula ? resumo.percentual : 0;
+    const pendencias = modoAula ? resumo.pendentes : 0;
+
+    let statusGeral = {
+      label: "Não iniciada",
+      bg: "#fef3c7",
+      color: "#92400e",
+      border: "1px solid #fde68a",
+    };
+
+    if (totalAulas > 0 && aulasComRegistro > 0 && aulasComRegistro < totalAulas) {
+      statusGeral = {
+        label: "Em andamento",
+        bg: "#dbeafe",
+        color: "#1d4ed8",
+        border: "1px solid #bfdbfe",
+      };
+    }
+
+    if (modoAula && pendencias > 0) {
+      statusGeral = {
+        label: "Com pendências",
+        bg: "#fee2e2",
+        color: "#b91c1c",
+        border: "1px solid #fecaca",
+      };
+    }
+
+    if (totalAulas > 0 && aulasComRegistro >= totalAulas && pendencias === 0) {
+      statusGeral = {
+        label: "Concluída",
+        bg: "#dcfce7",
+        color: "#166534",
+        border: "1px solid #bbf7d0",
+      };
+    }
+
     return {
+      nomeTurma: treinamento?.tema || `Turma #${id || "-"}`,
       idTurma: id || "-",
       previstos,
       totalAulas,
       aulasComRegistro,
-      percentualMedio: modoAula ? resumo.percentual : 0,
-      pendencias: modoAula ? resumo.pendentes : 0,
+      percentualMedio,
+      pendencias,
       instrutorMinistrando: treinamento?.instrutor || "-",
+      statusGeral,
     };
   }, [aulasTurma, treinamento, registrosAula, resumo, modoAula, id]);
 
@@ -268,7 +307,7 @@ export default function ChamadaTurmaPage() {
         </p>
 
         <div style={heroGrid}>
-          <InfoCard label="Turma ID" value={`#${id || "-"}`} />
+          <InfoCard label="Turma" value={resumoTurma.nomeTurma} />
           <InfoCard label="Cliente" value={treinamento?.cliente || "-"} />
           <InfoCard label="Instrutor" value={treinamento?.instrutor || "-"} />
           <InfoCard
@@ -289,6 +328,20 @@ export default function ChamadaTurmaPage() {
         <StatCard title="Aulas mapeadas" value={resumoTurma.aulasComRegistro} />
         <StatCard title="Pendências" value={resumoTurma.pendencias} />
         <StatCard title="Percentual médio" value={`${resumoTurma.percentualMedio}%`} />
+      </div>
+
+      <div style={statusCard}>
+        <div style={statusLabel}>Status geral da turma</div>
+        <div
+          style={{
+            ...statusBadge,
+            background: resumoTurma.statusGeral.bg,
+            color: resumoTurma.statusGeral.color,
+            border: resumoTurma.statusGeral.border,
+          }}
+        >
+          {resumoTurma.statusGeral.label}
+        </div>
       </div>
 
       <div style={sectionCard}>
@@ -327,7 +380,7 @@ export default function ChamadaTurmaPage() {
         </div>
 
         <div style={operationalGrid}>
-          <OperationalItem label="Turma ID" value={`#${resumoTurma.idTurma}`} />
+          <OperationalItem label="Turma" value={resumoTurma.nomeTurma} />
           <OperationalItem
             label="Público"
             value={treinamento?.publico || "-"}
@@ -337,7 +390,7 @@ export default function ChamadaTurmaPage() {
             value={treinamento?.carga_horaria || "-"}
           />
           <OperationalItem
-            label="Instrutor"
+            label="Instrutor ministrando"
             value={resumoTurma.instrutorMinistrando}
           />
           <OperationalItem
@@ -609,6 +662,33 @@ const statValue = {
   fontSize: 30,
   fontWeight: 800,
   color: "#0f172a",
+};
+
+const statusCard = {
+  marginTop: 16,
+  background: "#fff",
+  borderRadius: 20,
+  padding: 20,
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const statusLabel = {
+  fontSize: 16,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const statusBadge = {
+  borderRadius: 999,
+  padding: "8px 14px",
+  fontSize: 13,
+  fontWeight: 800,
 };
 
 const sectionCard = {
