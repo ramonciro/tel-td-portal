@@ -10,695 +10,881 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function avg(arr, field) {
-  if (!arr.length) return 0;
-  const total = arr.reduce((acc, item) => acc + Number(item?.[field] || 0), 0);
-  return total / arr.length;
+function normalize(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
-function maturityLabel(totalTreinamentos, assiduidade, mediaQualidade) {
-  if (totalTreinamentos >= 6 && assiduidade >= 90 && mediaQualidade >= 8.5) {
-    return "Especialista";
-  }
-  if (totalTreinamentos >= 4 && assiduidade >= 85 && mediaQualidade >= 7.5) {
-    return "Avançado";
-  }
-  if (totalTreinamentos >= 2 && assiduidade >= 70) {
-    return "Em desenvolvimento";
-  }
-  return "Inicial";
+function toNumber(value) {
+  const num = Number(value || 0);
+  return Number.isFinite(num) ? num : 0;
 }
 
-function maturityStyle(label) {
-  const base = {
-    display: "inline-block",
-    padding: "5px 9px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 11,
-  };
-
-  if (label === "Especialista") {
-    return { ...base, background: "#dcfce7", color: "#166534" };
-  }
-  if (label === "Avançado") {
-    return { ...base, background: "#dbeafe", color: "#1d4ed8" };
-  }
-  if (label === "Em desenvolvimento") {
-    return { ...base, background: "#ffedd5", color: "#9a3412" };
-  }
-  return { ...base, background: "#fee2e2", color: "#b91c1c" };
+function round1(value) {
+  return Math.round(Number(value || 0) * 10) / 10;
 }
 
-function progressColor(percent) {
-  if (percent >= 85) return "#16a34a";
-  if (percent >= 70) return "#2563eb";
-  if (percent >= 50) return "#ea580c";
-  return "#dc2626";
+function isCoachingRecord(item) {
+  const text = [item?.tema, item?.descricao, item?.publico].join(" ").toLowerCase();
+  return text.includes("coaching");
+}
+
+function getJourneyName(cliente) {
+  const base = String(cliente || "GLOBAL").trim() || "GLOBAL";
+  return `Jornada ${base}`;
+}
+
+function getTrainingStatus(item) {
+  const status = normalize(item?.status);
+  if (status.includes("concl")) return "Concluído";
+  if (status.includes("andamento") || status.includes("andam")) return "Em andamento";
+  if (status.includes("planej") || status.includes("agend")) return "Planejado";
+  return item?.status || "Em andamento";
+}
+
+function uniqueParticipantCountFromPresencas(presencas, treinamentoId) {
+  const names = new Set(
+    presencas
+      .filter((item) => String(item?.treinamento_id) === String(treinamentoId))
+      .map((item) => normalize(item?.treinando_nome))
+      .filter(Boolean)
+  );
+  return names.size;
+}
+
+function presentParticipantCountFromPresencas(presencas, treinamentoId) {
+  const names = new Set(
+    presencas
+      .filter(
+        (item) =>
+          String(item?.treinamento_id) === String(treinamentoId) && normalize(item?.status) === "presente"
+      )
+      .map((item) => normalize(item?.treinando_nome))
+      .filter(Boolean)
+  );
+  return names.size;
+}
+
+function formatHours(value) {
+  return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(
+    round1(value)
+  );
 }
 
 export default function MapaDesenvolvimentoPage() {
   const [usuarios, setUsuarios] = useState([]);
   const [treinamentos, setTreinamentos] = useState([]);
   const [presencas, setPresencas] = useState([]);
-  const [avaliacoes, setAvaliacoes] = useState([]);
-  const [trilhas, setTrilhas] = useState([]);
-  const [erro, setErro] = useState("");
+  const [activeTab, setActiveTab] = useState("geral");
+  const [selectedClient, setSelectedClient] = useState("todos");
+  const [selectedJourney, setSelectedJourney] = useState("todos");
+  const [selectedStatus, setSelectedStatus] = useState("todos");
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function carregar() {
-      try {
-        const [usuariosData, treinamentosData, presencasData, avaliacoesData, trilhasData] =
-          await Promise.all([
-            apiFetch("/usuarios").catch(() => []),
-            apiFetch("/treinamentos").catch(() => []),
-            apiFetch("/presencas").catch(() => []),
-            apiFetch("/avaliacoes").catch(() => []),
-            apiFetch("/trilhas").catch(() => []),
-          ]);
-
-        setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
-        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
-        setPresencas(Array.isArray(presencasData) ? presencasData : []);
-        setAvaliacoes(Array.isArray(avaliacoesData) ? avaliacoesData : []);
-        setTrilhas(Array.isArray(trilhasData) ? trilhasData : []);
-        setErro("");
-      } catch (error) {
-        setErro(error.message || "Erro ao carregar mapa de desenvolvimento.");
-      }
-    }
-
-    carregar();
+    loadData();
   }, []);
 
-  const colaboradores = useMemo(() => {
-    const baseUsuarios = usuarios.filter((u) => {
-      const perfil = String(u.perfil || "").toLowerCase();
-      return !["admin", "coordenador", "supervisor"].includes(perfil);
+  async function loadData() {
+    try {
+      setLoading(true);
+      setError("");
+      const [usuariosData, treinamentosData, presencasData] = await Promise.all([
+        apiFetch("/usuarios").catch(() => []),
+        apiFetch("/treinamentos").catch(() => []),
+        apiFetch("/presencas").catch(() => []),
+      ]);
+      setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+      setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+      setPresencas(Array.isArray(presencasData) ? presencasData : []);
+    } catch (err) {
+      setError(err.message || "Erro ao carregar mapa de desenvolvimento.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const normalizedActions = useMemo(() => {
+    return treinamentos.map((item) => {
+      const cliente = item?.cliente || "GLOBAL";
+      const cargaHoraria = toNumber(item?.carga_horaria);
+      const participantesBase = uniqueParticipantCountFromPresencas(presencas, item?.id);
+      const participantesPrevistos = Math.max(participantesBase, toNumber(item?.participantes));
+      const concluintes = Math.max(presentParticipantCountFromPresencas(presencas, item?.id), participantesPrevistos);
+      const horasPlanejadas = round1(participantesPrevistos * cargaHoraria);
+      const horasRealizadas = round1(concluintes * cargaHoraria);
+
+      return {
+        id: item?.id,
+        cliente,
+        jornada: getJourneyName(cliente),
+        tema: item?.tema || "Tema não informado",
+        tipo: isCoachingRecord(item) ? "Coaching" : "Treinamento",
+        publico: item?.publico || "Público não informado",
+        responsavel: item?.instrutor || "Responsável não informado",
+        status: getTrainingStatus(item),
+        data: item?.data || "",
+        cargaHoraria,
+        participantesPrevistos,
+        concluintes,
+        turmasOuSessoes: 1,
+        horasPlanejadas,
+        horasRealizadas,
+        descricao: item?.descricao || "",
+      };
     });
+  }, [treinamentos, presencas]);
 
-    return baseUsuarios
-      .map((u) => {
-        const nome = String(u.nome || "").trim();
-        const cliente = u.cliente || "Sem cliente";
+  const clients = useMemo(() => {
+    return [...new Set(normalizedActions.map((item) => item.cliente))].sort();
+  }, [normalizedActions]);
 
-        const presencasColaborador = presencas.filter(
-          (p) => String(p.treinando_nome || "").trim().toLowerCase() === nome.toLowerCase()
-        );
+  const journeys = useMemo(() => {
+    return [...new Set(normalizedActions.map((item) => item.jornada))].sort();
+  }, [normalizedActions]);
 
-        const idsTreinamentos = [
-          ...new Set(
-            presencasColaborador
-              .map((p) => p.treinamento_id)
-              .filter((id) => id !== null && id !== undefined && id !== "")
-              .map(String)
-          ),
-        ];
+  const filteredActions = useMemo(() => {
+    const term = normalize(search);
+    return normalizedActions.filter((item) => {
+      const matchesTab =
+        activeTab === "geral"
+          ? true
+          : activeTab === "treinamentos"
+          ? item.tipo === "Treinamento"
+          : item.tipo === "Coaching";
 
-        const treinamentosRelacionados = treinamentos.filter((t) =>
-          idsTreinamentos.includes(String(t.id))
-        );
+      const matchesClient = selectedClient === "todos" || item.cliente === selectedClient;
+      const matchesJourney = selectedJourney === "todos" || item.jornada === selectedJourney;
+      const matchesStatus = selectedStatus === "todos" || item.status === selectedStatus;
+      const matchesSearch =
+        !term ||
+        [item.tema, item.publico, item.responsavel, item.jornada, item.cliente, item.descricao]
+          .join(" ")
+          .toLowerCase()
+          .includes(term);
 
-        const avaliacoesRelacionadas = avaliacoes.filter((a) =>
-          idsTreinamentos.includes(String(a.treinamento_id))
-        );
-
-        const presentes = presencasColaborador.filter(
-          (p) => String(p.status || "").toLowerCase() === "presente"
-        ).length;
-
-        const totalPresencas = presencasColaborador.length;
-        const assiduidade = totalPresencas
-          ? Math.round((presentes / totalPresencas) * 100)
-          : 0;
-
-        const mediaQualidade = avaliacoesRelacionadas.length
-          ? avg(avaliacoesRelacionadas, "nota_qualidade")
-          : 0;
-
-        const mediaNps = avaliacoesRelacionadas.length
-          ? avg(avaliacoesRelacionadas, "nota_nps")
-          : 0;
-
-        const trilhasDoCliente = trilhas.filter(
-          (t) => String(t.cliente || "GLOBAL").toLowerCase() === String(cliente).toLowerCase()
-        );
-
-        const trilhasAtribuidas = trilhasDoCliente.length;
-        const trilhasConcluidas =
-          trilhasDoCliente.length && treinamentosRelacionados.length >= 4
-            ? Math.min(trilhasDoCliente.length, 1)
-            : 0;
-
-        const progresso =
-          trilhasAtribuidas > 0
-            ? Math.round((trilhasConcluidas / trilhasAtribuidas) * 100)
-            : 0;
-
-        const maturidade = maturityLabel(
-          treinamentosRelacionados.length,
-          assiduidade,
-          mediaQualidade
-        );
-
-        const gaps = [];
-        if (trilhasAtribuidas === 0) gaps.push("Sem trilha atribuída");
-        if (treinamentosRelacionados.length < 2) gaps.push("Baixa exposição a treinamento");
-        if (assiduidade < 70) gaps.push("Assiduidade abaixo do esperado");
-        if (avaliacoesRelacionadas.length > 0 && mediaQualidade < 7)
-          gaps.push("Baixo aproveitamento");
-        if (!gaps.length) gaps.push("Sem gaps críticos");
-
-        return {
-          id: u.id,
-          nome,
-          cliente,
-          perfil: u.perfil || "Colaborador",
-          treinamentos: treinamentosRelacionados.length,
-          assiduidade,
-          mediaQualidade: mediaQualidade.toFixed(1),
-          mediaNps: mediaNps.toFixed(1),
-          trilhasAtribuidas,
-          trilhasConcluidas,
-          progresso,
-          maturidade,
-          gaps,
-        };
-      })
-      .sort((a, b) => {
-        const order = {
-          Especialista: 4,
-          Avançado: 3,
-          "Em desenvolvimento": 2,
-          Inicial: 1,
-        };
-        return (order[b.maturidade] || 0) - (order[a.maturidade] || 0);
-      });
-  }, [usuarios, treinamentos, presencas, avaliacoes, trilhas]);
+      return matchesTab && matchesClient && matchesJourney && matchesStatus && matchesSearch;
+    });
+  }, [normalizedActions, activeTab, selectedClient, selectedJourney, selectedStatus, search]);
 
   const kpis = useMemo(() => {
-    const total = colaboradores.length;
-    const especialistas = colaboradores.filter((c) => c.maturidade === "Especialista").length;
-    const avancados = colaboradores.filter((c) => c.maturidade === "Avançado").length;
-    const emDesenvolvimento = colaboradores.filter(
-      (c) => c.maturidade === "Em desenvolvimento"
-    ).length;
-    const iniciais = colaboradores.filter((c) => c.maturidade === "Inicial").length;
-
-    const comTrilha = colaboradores.filter((c) => c.trilhasAtribuidas > 0).length;
-    const semTrilha = colaboradores.filter((c) => c.trilhasAtribuidas === 0).length;
-
-    const porClienteMap = {};
-    colaboradores.forEach((c) => {
-      if (!porClienteMap[c.cliente]) {
-        porClienteMap[c.cliente] = {
-          cliente: c.cliente,
-          colaboradores: 0,
-          especialistas: 0,
-          avancados: 0,
-          emDesenvolvimento: 0,
-          iniciais: 0,
-          progresso: 0,
-        };
-      }
-
-      porClienteMap[c.cliente].colaboradores += 1;
-      porClienteMap[c.cliente].progresso += c.progresso;
-
-      if (c.maturidade === "Especialista") porClienteMap[c.cliente].especialistas += 1;
-      else if (c.maturidade === "Avançado") porClienteMap[c.cliente].avancados += 1;
-      else if (c.maturidade === "Em desenvolvimento")
-        porClienteMap[c.cliente].emDesenvolvimento += 1;
-      else porClienteMap[c.cliente].iniciais += 1;
-    });
-
-    const porCliente = Object.values(porClienteMap)
-      .map((item) => ({
-        ...item,
-        progressoMedio: item.colaboradores
-          ? Math.round(item.progresso / item.colaboradores)
-          : 0,
-      }))
-      .sort((a, b) => b.colaboradores - a.colaboradores);
-
-    const alertas = [];
-    if (semTrilha > 0) {
-      alertas.push(`${semTrilha} colaborador(es) ainda sem trilha atribuída.`);
-    }
-
-    const baixaAssiduidade = colaboradores.filter((c) => c.assiduidade < 70).length;
-    if (baixaAssiduidade > 0) {
-      alertas.push(`${baixaAssiduidade} colaborador(es) com assiduidade abaixo de 70%.`);
-    }
-
-    const baixoAproveitamento = colaboradores.filter(
-      (c) => Number(c.mediaQualidade) > 0 && Number(c.mediaQualidade) < 7
-    ).length;
-    if (baixoAproveitamento > 0) {
-      alertas.push(`${baixoAproveitamento} colaborador(es) com aproveitamento abaixo da meta.`);
-    }
-
-    if (!alertas.length) {
-      alertas.push("Mapa saudável, sem alertas críticos no momento.");
-    }
+    const jornadasAtivas = new Set(normalizedActions.map((item) => item.jornada)).size;
+    const clientesContemplados = new Set(normalizedActions.map((item) => item.cliente)).size;
+    const participantesImpactados = normalizedActions.reduce((acc, item) => acc + item.concluintes, 0);
+    const horasTotais = normalizedActions.reduce((acc, item) => acc + item.horasRealizadas, 0);
+    const treinamentosCount = normalizedActions.filter((item) => item.tipo === "Treinamento").length;
+    const coachingsCount = normalizedActions.filter((item) => item.tipo === "Coaching").length;
 
     return {
-      total,
-      especialistas,
-      avancados,
-      emDesenvolvimento,
-      iniciais,
-      comTrilha,
-      semTrilha,
-      porCliente,
-      alertas,
+      jornadasAtivas,
+      clientesContemplados,
+      participantesImpactados,
+      horasTotais,
+      treinamentosCount,
+      coachingsCount,
     };
-  }, [colaboradores]);
+  }, [normalizedActions]);
+
+  const journeySummary = useMemo(() => {
+    const map = {};
+    normalizedActions.forEach((item) => {
+      const key = `${item.cliente}__${item.jornada}`;
+      if (!map[key]) {
+        map[key] = {
+          cliente: item.cliente,
+          jornada: item.jornada,
+          acoes: 0,
+          participantes: 0,
+          horas: 0,
+          coachings: 0,
+          treinamentos: 0,
+        };
+      }
+      map[key].acoes += 1;
+      map[key].participantes += item.concluintes;
+      map[key].horas += item.horasRealizadas;
+      if (item.tipo === "Coaching") map[key].coachings += 1;
+      else map[key].treinamentos += 1;
+    });
+
+    return Object.values(map).sort((a, b) => b.horas - a.horas);
+  }, [normalizedActions]);
+
+  const coachingSummary = useMemo(() => {
+    const actions = normalizedActions.filter((item) => item.tipo === "Coaching");
+    const planned = actions.length;
+    const hours = actions.reduce((acc, item) => acc + item.horasRealizadas, 0);
+    const responsaveis = new Set(actions.map((item) => item.responsavel).filter(Boolean)).size;
+    const clientes = new Set(actions.map((item) => item.cliente)).size;
+
+    return {
+      planned,
+      hours,
+      responsaveis,
+      clientes,
+    };
+  }, [normalizedActions]);
+
+  const personas = useMemo(() => {
+    const coordCount = usuarios.filter((item) => normalize(item?.perfil) === "coordenador").length;
+    const supCount = usuarios.filter((item) => normalize(item?.perfil) === "supervisor").length;
+    const instrCount = usuarios.filter((item) => normalize(item?.perfil) === "instrutor").length;
+    return { coordCount, supCount, instrCount };
+  }, [usuarios]);
+
+  const statusOptions = [
+    ...new Set(normalizedActions.map((item) => item.status).filter(Boolean)),
+  ].sort();
+
+  const coachingAlert = useMemo(() => {
+    if (coachingSummary.planned === 0) {
+      return "Nenhum coaching registrado na base atual. A aba já está pronta para separar essas ações quando começarem a ser lançadas no portal.";
+    }
+    return "Aba de coaching separada para leitura da coordenadora responsável, com foco em horas aplicadas, público e cliente.";
+  }, [coachingSummary]);
 
   return (
     <PortalShell
-      title="Mapa de desenvolvimento"
-      subtitle="Leitura estratégica da maturidade, cobertura de trilhas e evolução dos colaboradores."
+      title="Mapa de Desenvolvimento"
+      subtitle="Visão executiva por jornadas, treinamentos e coaching, pronta para leitura gerencial, auditorias e respostas institucionais."
+      topRight={<div style={heroBadge}>Visão gerencial institucional</div>}
     >
-      {erro ? <div style={errorBox}>{erro}</div> : null}
+      <div style={pageGrid}>
+        {error ? <div style={errorBox}>{error}</div> : null}
 
-      <div style={heroGrid}>
-        <StatCard
-          title="Colaboradores"
-          value={fmt(kpis.total)}
-          subtitle="Base mapeada"
-          accent="#2563eb"
-        />
-        <StatCard
-          title="Especialistas"
-          value={fmt(kpis.especialistas)}
-          subtitle="Maior maturidade"
-          accent="#16a34a"
-        />
-        <StatCard
-          title="Avançados"
-          value={fmt(kpis.avancados)}
-          subtitle="Boa evolução"
-          accent="#1d4ed8"
-        />
-        <StatCard
-          title="Em desenvolvimento"
-          value={fmt(kpis.emDesenvolvimento)}
-          subtitle="Em evolução"
-          accent="#ea580c"
-        />
-        <StatCard
-          title="Iniciais"
-          value={fmt(kpis.iniciais)}
-          subtitle="Prioridade de desenvolvimento"
-          accent="#dc2626"
-        />
-        <StatCard
-          title="Sem trilha"
-          value={fmt(kpis.semTrilha)}
-          subtitle="Cobertura pendente"
-          accent="#7c3aed"
-        />
-      </div>
+        <section style={heroPanel}>
+          <div style={heroTop}>
+            <div>
+              <div style={eyebrow}>Mapa de desenvolvimento</div>
+              <h2 style={heroTitle}>Jornadas por cliente com leitura separada para treinamentos e coaching</h2>
+              <p style={heroText}>
+                A página agora conversa melhor com o uso gerencial que você descreveu: jornadas por cliente,
+                controle de horas e uma visão apartada para coaching, sem fugir do padrão já validado no portal.
+              </p>
+            </div>
 
-      <div style={twoCol}>
+            <div style={executiveCard}>
+              <div style={executiveLabel}>Leitura estratégica</div>
+              <div style={executiveValue}>Cliente • Jornada • Tema • Horas • Evidência</div>
+              <div style={executiveSub}>Base útil para superintendência, metodologia e demandas do MPT</div>
+            </div>
+          </div>
+
+          <div style={statsGrid}>
+            <StatCard title="Jornadas ativas" value={fmt(kpis.jornadasAtivas)} subtitle="Clientes mapeados" accent="#2563eb" />
+            <StatCard title="Ações realizadas" value={fmt(normalizedActions.length)} subtitle="Treinamentos e coaching" accent="#16a34a" />
+            <StatCard title="Clientes contemplados" value={fmt(kpis.clientesContemplados)} subtitle="Com desenvolvimento" accent="#0f766e" />
+            <StatCard title="Participantes impactados" value={fmt(kpis.participantesImpactados)} subtitle="Base consolidada" accent="#7c3aed" />
+            <StatCard title="Horas aplicadas" value={formatHours(kpis.horasTotais)} subtitle="Leitura institucional" accent="#0891b2" />
+            <StatCard title="Coachings" value={fmt(kpis.coachingsCount)} subtitle="Visão apartada" accent="#ea580c" />
+          </div>
+        </section>
+
+        <div style={tabRow}>
+          {[
+            ["geral", "Visão geral"],
+            ["treinamentos", "Treinamentos"],
+            ["coaching", "Coaching"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveTab(id)}
+              style={{ ...tabButton, ...(activeTab === id ? tabButtonActive : {}) }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <SectionCard
-          title="Maturidade por cliente"
-          subtitle="Distribuição do desenvolvimento por operação."
+          title="Filtros executivos"
+          subtitle="Ajuste a leitura do mapa por cliente, jornada, status e tema."
         >
-          <div style={listGrid}>
-            {kpis.porCliente.length ? (
-              kpis.porCliente.map((item) => (
-                <div key={item.cliente} style={clientCard}>
-                  <div style={clientTop}>
-                    <div>
-                      <div style={itemTitle}>{item.cliente}</div>
-                      <div style={itemMeta}>
-                        {item.colaboradores} colaborador(es) • {item.progressoMedio}% progresso médio
+          <div style={filterGrid}>
+            <div style={fieldWrap}>
+              <label style={label}>Busca</label>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar tema, cliente, público ou responsável" style={input} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={label}>Cliente</label>
+              <select value={selectedClient} onChange={(e) => setSelectedClient(e.target.value)} style={input}>
+                <option value="todos">Todos</option>
+                {clients.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={label}>Jornada</label>
+              <select value={selectedJourney} onChange={(e) => setSelectedJourney(e.target.value)} style={input}>
+                <option value="todos">Todas</option>
+                {journeys.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={label}>Status</label>
+              <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} style={input}>
+                <option value="todos">Todos</option>
+                {statusOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </SectionCard>
+
+        {activeTab === "geral" ? (
+          <>
+            <div style={twoCol}>
+              <SectionCard title="Resumo das jornadas" subtitle="Consolidação por cliente e jornada para leitura da superintendência.">
+                <div style={summaryList}>
+                  {journeySummary.length ? journeySummary.slice(0, 8).map((item) => (
+                    <div key={`${item.cliente}-${item.jornada}`} style={summaryItem}>
+                      <div style={summaryTop}>
+                        <strong>{item.jornada}</strong>
+                        <span>{item.cliente}</span>
+                      </div>
+                      <div style={summaryMeta}>
+                        {fmt(item.acoes)} ação(ões) • {fmt(item.participantes)} participantes • {formatHours(item.horas)}h aplicadas
+                      </div>
+                      <div style={summaryMetaMuted}>
+                        {fmt(item.treinamentos)} treinamento(s) • {fmt(item.coachings)} coaching(s)
                       </div>
                     </div>
-                    <div style={progressBadge}>{item.progressoMedio}%</div>
-                  </div>
-
-                  <div style={maturityRow}>
-                    <span style={miniTagGreen}>{item.especialistas} esp.</span>
-                    <span style={miniTagBlue}>{item.avancados} av.</span>
-                    <span style={miniTagOrange}>{item.emDesenvolvimento} des.</span>
-                    <span style={miniTagRed}>{item.iniciais} inic.</span>
-                  </div>
+                  )) : <div style={emptyState}>Nenhuma jornada encontrada na base atual.</div>}
                 </div>
-              ))
-            ) : (
-              <div style={emptyText}>Nenhum cliente disponível.</div>
-            )}
-          </div>
-        </SectionCard>
+              </SectionCard>
 
-        <SectionCard
-          title="Alertas e lacunas"
-          subtitle="Pontos prioritários para atuação do T&D."
-        >
-          <div style={alertGrid}>
-            {kpis.alertas.map((item, index) => (
-              <div key={index} style={alertItem}>
-                {item}
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-      </div>
+              <SectionCard title="Leitura gerencial" subtitle="Recortes rápidos para governança da área.">
+                <div style={governanceGrid}>
+                  <div style={governanceItem}>Coordenação cadastrada: <strong>{fmt(personas.coordCount)}</strong></div>
+                  <div style={governanceItem}>Supervisão cadastrada: <strong>{fmt(personas.supCount)}</strong></div>
+                  <div style={governanceItem}>Instrutores cadastrados: <strong>{fmt(personas.instrCount)}</strong></div>
+                  <div style={governanceItem}>Treinamentos mapeados: <strong>{fmt(kpis.treinamentosCount)}</strong></div>
+                  <div style={governanceItem}>Coachings mapeados: <strong>{fmt(kpis.coachingsCount)}</strong></div>
+                  <div style={governanceItem}>Base pronta para exportação futura de evidências.</div>
+                </div>
+              </SectionCard>
+            </div>
 
-      <SectionCard
-        title="Radar de desenvolvimento por colaborador"
-        subtitle="Leitura individual com maturidade, trilhas, assiduidade e aproveitamento."
-      >
-        {colaboradores.length ? (
-          <div style={cardsGrid}>
-            {colaboradores.map((item) => (
-              <div key={item.id || item.nome} style={card}>
-                <div style={cardTop}>
-                  <div>
-                    <div style={cardTitle}>{item.nome}</div>
-                    <div style={cardMeta}>
-                      {item.perfil} • {item.cliente}
+            <SectionCard title="Base consolidada" subtitle={loading ? "Carregando base..." : `${fmt(filteredActions.length)} registro(s) encontrados para a visão atual.`}>
+              {loading ? (
+                <div style={emptyState}>Carregando ações de desenvolvimento...</div>
+              ) : filteredActions.length ? (
+                <div style={tableWrap}>
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Cliente</th>
+                        <th style={th}>Jornada</th>
+                        <th style={th}>Tema/Ação</th>
+                        <th style={th}>Tipo</th>
+                        <th style={th}>Público</th>
+                        <th style={th}>Participantes</th>
+                        <th style={th}>Carga horária</th>
+                        <th style={th}>Horas realizadas</th>
+                        <th style={th}>Responsável</th>
+                        <th style={th}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredActions.map((item) => (
+                        <tr key={item.id}>
+                          <td style={td}>{item.cliente}</td>
+                          <td style={td}>{item.jornada}</td>
+                          <td style={tdStrong}>{item.tema}</td>
+                          <td style={td}><span style={typeBadge(item.tipo)}>{item.tipo}</span></td>
+                          <td style={td}>{item.publico}</td>
+                          <td style={td}>{fmt(item.concluintes)}</td>
+                          <td style={td}>{formatHours(item.cargaHoraria)}h</td>
+                          <td style={td}>{formatHours(item.horasRealizadas)}h</td>
+                          <td style={td}>{item.responsavel}</td>
+                          <td style={td}><span style={statusBadge(item.status)}>{item.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={emptyState}>Nenhum registro encontrado para os filtros selecionados.</div>
+              )}
+            </SectionCard>
+          </>
+        ) : null}
+
+        {activeTab === "treinamentos" ? (
+          <SectionCard title="Treinamentos por jornada" subtitle="Camada formal de capacitação, útil para horas aplicadas, cliente e tema.">
+            {filteredActions.length ? (
+              <div style={cardsGrid}>
+                {filteredActions.map((item) => (
+                  <article key={item.id} style={actionCard}>
+                    <div style={cardTopRow}>
+                      <span style={typeBadge(item.tipo)}>{item.tipo}</span>
+                      <span style={hoursBadge}>{formatHours(item.horasRealizadas)}h realizadas</span>
                     </div>
-                  </div>
-                  <span style={maturityStyle(item.maturidade)}>{item.maturidade}</span>
-                </div>
+                    <div style={cardTitle}>{item.tema}</div>
+                    <div style={cardMeta}>{item.cliente} • {item.jornada}</div>
+                    <div style={metricGrid}>
+                      <div style={metricItem}><strong>{fmt(item.concluintes)}</strong><span>Participantes</span></div>
+                      <div style={metricItem}><strong>{formatHours(item.cargaHoraria)}h</strong><span>Carga</span></div>
+                      <div style={metricItem}><strong>{item.status}</strong><span>Status</span></div>
+                    </div>
+                    <div style={cardText}>{item.publico}</div>
+                    <div style={mutedInfo}>Responsável: {item.responsavel}</div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyState}>Nenhum treinamento encontrado na visão filtrada.</div>
+            )}
+          </SectionCard>
+        ) : null}
 
-                <div style={metricsGrid}>
-                  <div style={metricBox}>
-                    <strong>{fmt(item.treinamentos)}</strong>
-                    <span>treinamentos</span>
-                  </div>
-                  <div style={metricBox}>
-                    <strong>{item.assiduidade}%</strong>
-                    <span>assiduidade</span>
-                  </div>
-                  <div style={metricBox}>
-                    <strong>{item.mediaQualidade}</strong>
-                    <span>qualidade</span>
-                  </div>
-                  <div style={metricBox}>
-                    <strong>{item.mediaNps}</strong>
-                    <span>NPS</span>
-                  </div>
-                </div>
+        {activeTab === "coaching" ? (
+          <>
+            <div style={coachStatsGrid}>
+              <StatCard title="Coachings" value={fmt(coachingSummary.planned)} subtitle="Registros na base" accent="#ea580c" />
+              <StatCard title="Horas de coaching" value={formatHours(coachingSummary.hours)} subtitle="Total aplicado" accent="#f97316" />
+              <StatCard title="Responsáveis" value={fmt(coachingSummary.responsaveis)} subtitle="Com ações lançadas" accent="#c2410c" />
+              <StatCard title="Clientes" value={fmt(coachingSummary.clientes)} subtitle="Contemplados" accent="#9a3412" />
+            </div>
 
-                <div style={progressWrap}>
-                  <div style={progressHeader}>
-                    <span style={progressLabel}>Progresso da jornada</span>
-                    <strong style={{ color: progressColor(item.progresso) }}>
-                      {item.progresso}%
-                    </strong>
-                  </div>
-                  <div style={progressTrack}>
-                    <div
-                      style={{
-                        ...progressFill,
-                        width: `${item.progresso}%`,
-                        background: progressColor(item.progresso),
-                      }}
-                    />
-                  </div>
-                </div>
+            <SectionCard title="Visão apartada de coaching" subtitle="Estrutura separada para a coordenadora responsável pelos coachings.">
+              <div style={coachBanner}>{coachingAlert}</div>
 
-                <div style={journeyGrid}>
-                  <div style={journeyBox}>
-                    <strong>{fmt(item.trilhasAtribuidas)}</strong>
-                    <span>trilhas atribuídas</span>
-                  </div>
-                  <div style={journeyBox}>
-                    <strong>{fmt(item.trilhasConcluidas)}</strong>
-                    <span>trilhas concluídas</span>
-                  </div>
-                </div>
-
-                <div style={gapWrap}>
-                  {item.gaps.map((gap, index) => (
-                    <span
-                      key={index}
-                      style={gap === "Sem gaps críticos" ? gapNeutral : gapTag}
-                    >
-                      {gap}
-                    </span>
+              {filteredActions.length ? (
+                <div style={cardsGrid}>
+                  {filteredActions.map((item) => (
+                    <article key={item.id} style={coachCard}>
+                      <div style={cardTopRow}>
+                        <span style={coachBadge}>Coaching</span>
+                        <span style={hoursBadge}>{formatHours(item.horasRealizadas)}h</span>
+                      </div>
+                      <div style={cardTitle}>{item.tema}</div>
+                      <div style={cardMeta}>{item.cliente} • {item.jornada}</div>
+                      <div style={coachList}>
+                        <div style={coachListItem}><strong>Público:</strong> {item.publico}</div>
+                        <div style={coachListItem}><strong>Responsável:</strong> {item.responsavel}</div>
+                        <div style={coachListItem}><strong>Participantes:</strong> {fmt(item.concluintes)}</div>
+                        <div style={coachListItem}><strong>Carga por ação:</strong> {formatHours(item.cargaHoraria)}h</div>
+                      </div>
+                    </article>
                   ))}
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={emptyText}>Nenhum colaborador disponível para leitura.</div>
-        )}
-      </SectionCard>
+              ) : (
+                <div style={emptyState}>Nenhum coaching encontrado. Quando os registros entrarem com “coaching” no tema, descrição ou público, esta aba já fará a separação automaticamente.</div>
+              )}
+            </SectionCard>
+          </>
+        ) : null}
+      </div>
     </PortalShell>
   );
 }
 
-const heroGrid = {
+function typeBadge(type) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 11,
+    background: type === "Coaching" ? "#fff7ed" : "#eff6ff",
+    color: type === "Coaching" ? "#c2410c" : "#1d4ed8",
+  };
+}
+
+function statusBadge(status) {
+  const key = normalize(status);
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 11,
+  };
+  if (key.includes("concl")) return { ...base, background: "#dcfce7", color: "#166534" };
+  if (key.includes("planej") || key.includes("agend")) return { ...base, background: "#fef3c7", color: "#92400e" };
+  return { ...base, background: "#dbeafe", color: "#1d4ed8" };
+}
+
+const pageGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+  gap: 14,
+};
+
+const heroPanel = {
+  background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 52%, #38bdf8 100%)",
+  borderRadius: 24,
+  padding: 22,
+  color: "#ffffff",
+  boxShadow: "0 16px 32px rgba(30,58,138,0.18)",
+};
+
+const heroTop = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(240px, 320px)",
+  gap: 16,
+  alignItems: "start",
+};
+
+const eyebrow = {
+  display: "inline-flex",
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.14)",
+  fontWeight: 800,
+  fontSize: 11,
+  letterSpacing: ".04em",
+  textTransform: "uppercase",
+};
+
+const heroTitle = {
+  margin: "12px 0 8px",
+  fontSize: 28,
+  lineHeight: 1.1,
+};
+
+const heroText = {
+  margin: 0,
+  color: "rgba(255,255,255,0.9)",
+  lineHeight: 1.55,
+  maxWidth: 760,
+};
+
+const executiveCard = {
+  background: "rgba(255,255,255,0.12)",
+  border: "1px solid rgba(255,255,255,0.18)",
+  borderRadius: 20,
+  padding: 16,
+  backdropFilter: "blur(8px)",
+};
+
+const executiveLabel = {
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: ".05em",
+  opacity: 0.88,
+  fontWeight: 800,
+};
+
+const executiveValue = {
+  marginTop: 8,
+  fontSize: 18,
+  fontWeight: 900,
+  lineHeight: 1.25,
+};
+
+const executiveSub = {
+  marginTop: 8,
+  fontSize: 13,
+  lineHeight: 1.45,
+  color: "rgba(255,255,255,0.82)",
+};
+
+const heroBadge = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 14px",
+  borderRadius: 999,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  fontSize: 12,
+};
+
+const statsGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
   gap: 10,
-  marginBottom: 14,
+  marginTop: 18,
+};
+
+const tabRow = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+};
+
+const tabButton = {
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  color: "#334155",
+  borderRadius: 999,
+  padding: "10px 14px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const tabButtonActive = {
+  background: "#1d4ed8",
+  color: "#ffffff",
+  borderColor: "#1d4ed8",
+  boxShadow: "0 10px 20px rgba(37,99,235,0.18)",
+};
+
+const filterGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+  gap: 12,
+};
+
+const fieldWrap = {
+  display: "grid",
+  gap: 6,
+};
+
+const label = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#334155",
+};
+
+const input = {
+  width: "100%",
+  borderRadius: 12,
+  border: "1px solid #cbd5e1",
+  padding: "12px 14px",
+  fontSize: 14,
+  outline: "none",
+  background: "#ffffff",
 };
 
 const twoCol = {
   display: "grid",
-  gridTemplateColumns: "1.1fr .9fr",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   gap: 14,
-  marginBottom: 14,
 };
 
-const listGrid = {
+const summaryList = {
   display: "grid",
   gap: 10,
 };
 
-const clientCard = {
-  background: "#f8fafc",
+const summaryItem = {
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  border: "1px solid #dbe4f0",
+  borderRadius: 16,
   padding: 12,
-  borderRadius: 14,
-  border: "1px solid #e2e8f0",
 };
 
-const clientTop = {
+const summaryTop = {
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "flex-start",
   gap: 10,
-};
-
-const itemTitle = {
-  fontWeight: 800,
   color: "#0f172a",
+  fontSize: 14,
 };
 
-const itemMeta = {
+const summaryMeta = {
   marginTop: 5,
-  color: "#475569",
+  color: "#334155",
   fontSize: 13,
   lineHeight: 1.45,
 };
 
-const progressBadge = {
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  borderRadius: 999,
-  padding: "5px 9px",
-  fontSize: 11,
+const summaryMetaMuted = {
+  marginTop: 3,
+  color: "#64748b",
+  fontSize: 12,
 };
 
-const maturityRow = {
-  display: "flex",
-  gap: 6,
-  flexWrap: "wrap",
-  marginTop: 10,
-};
-
-const miniTagGreen = {
-  background: "#dcfce7",
-  color: "#166534",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-};
-
-const miniTagBlue = {
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-};
-
-const miniTagOrange = {
-  background: "#ffedd5",
-  color: "#9a3412",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-};
-
-const miniTagRed = {
-  background: "#fee2e2",
-  color: "#b91c1c",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-};
-
-const alertGrid = {
+const governanceGrid = {
   display: "grid",
   gap: 10,
 };
 
-const alertItem = {
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  color: "#1d4ed8",
-  borderRadius: 12,
+const governanceItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
   padding: 12,
-  fontWeight: 600,
+  color: "#334155",
+  lineHeight: 1.45,
+};
+
+const tableWrap = {
+  overflowX: "auto",
+  borderRadius: 16,
+  border: "1px solid #e2e8f0",
+};
+
+const table = {
+  width: "100%",
+  borderCollapse: "collapse",
+  background: "#ffffff",
+};
+
+const th = {
+  textAlign: "left",
+  padding: "12px 14px",
+  background: "#f8fafc",
+  color: "#475569",
+  fontSize: 12,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  borderBottom: "1px solid #e2e8f0",
+};
+
+const td = {
+  padding: "12px 14px",
+  borderBottom: "1px solid #edf2f7",
+  color: "#334155",
+  fontSize: 13,
+  verticalAlign: "top",
+};
+
+const tdStrong = {
+  ...td,
+  fontWeight: 800,
+  color: "#0f172a",
 };
 
 const cardsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   gap: 12,
 };
 
-const card = {
-  background: "#ffffff",
-  borderRadius: 16,
-  border: "1px solid #e2e8f0",
-  padding: 14,
-  boxShadow: "0 8px 18px rgba(15,23,42,.04)",
+const actionCard = {
+  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
+  border: "1px solid #dbe4f0",
+  borderRadius: 20,
+  padding: 16,
   display: "grid",
   gap: 12,
 };
 
-const cardTop = {
+const coachCard = {
+  ...actionCard,
+  borderColor: "#fed7aa",
+  boxShadow: "0 10px 24px rgba(249,115,22,0.08)",
+};
+
+const cardTopRow = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 10,
-  alignItems: "flex-start",
-};
-
-const cardTitle = {
-  fontSize: 16,
-  fontWeight: 800,
-  color: "#0f172a",
-  lineHeight: 1.2,
-};
-
-const cardMeta = {
-  marginTop: 4,
-  fontSize: 12,
-  color: "#64748b",
-};
-
-const metricsGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 8,
-};
-
-const metricBox = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: 10,
-  textAlign: "center",
-  display: "grid",
-  gap: 4,
-};
-
-const progressWrap = {
-  display: "grid",
-  gap: 6,
-};
-
-const progressHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-};
-
-const progressLabel = {
-  fontSize: 12,
-  color: "#64748b",
-  fontWeight: 700,
-};
-
-const progressTrack = {
-  height: 10,
-  borderRadius: 999,
-  background: "#e2e8f0",
-  overflow: "hidden",
-};
-
-const progressFill = {
-  height: "100%",
-  borderRadius: 999,
-};
-
-const journeyGrid = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 8,
-};
-
-const journeyBox = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: 10,
-  display: "grid",
-  gap: 4,
-  textAlign: "center",
-};
-
-const gapWrap = {
-  display: "flex",
-  gap: 6,
   flexWrap: "wrap",
 };
 
-const gapTag = {
-  display: "inline-block",
-  padding: "5px 8px",
+const hoursBadge = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 999,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  padding: "6px 10px",
+  fontWeight: 800,
+  fontSize: 11,
+};
+
+const coachBadge = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   borderRadius: 999,
   background: "#fff7ed",
-  color: "#9a3412",
-  fontSize: 11,
+  color: "#c2410c",
+  padding: "6px 10px",
   fontWeight: 800,
+  fontSize: 11,
 };
 
-const gapNeutral = {
-  display: "inline-block",
-  padding: "5px 8px",
-  borderRadius: 999,
-  background: "#f1f5f9",
-  color: "#475569",
-  fontSize: 11,
-  fontWeight: 800,
+const cardTitle = {
+  fontSize: 18,
+  lineHeight: 1.2,
+  fontWeight: 900,
+  color: "#0f172a",
 };
 
-const emptyText = {
+const cardMeta = {
+  fontSize: 13,
   color: "#64748b",
+  fontWeight: 700,
+};
+
+const metricGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 10,
+};
+
+const metricItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 12,
+  display: "grid",
+  gap: 4,
+};
+
+const cardText = {
+  color: "#475569",
+  lineHeight: 1.45,
+  fontSize: 14,
+};
+
+const mutedInfo = {
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const coachStatsGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+  gap: 10,
+};
+
+const coachBanner = {
+  background: "#fff7ed",
+  border: "1px solid #fed7aa",
+  color: "#9a3412",
+  padding: 14,
+  borderRadius: 14,
+  fontWeight: 700,
+  marginBottom: 14,
+  lineHeight: 1.45,
+};
+
+const coachList = {
+  display: "grid",
+  gap: 8,
+};
+
+const coachListItem = {
+  background: "#fffaf5",
+  border: "1px solid #fed7aa",
+  borderRadius: 12,
+  padding: 10,
+  fontSize: 13,
+  color: "#9a3412",
 };
 
 const errorBox = {
-  marginBottom: 12,
   background: "#fef2f2",
-  color: "#b91c1c",
   border: "1px solid #fecaca",
+  color: "#b91c1c",
+  padding: 14,
   borderRadius: 14,
-  padding: 12,
   fontWeight: 700,
+};
+
+const emptyState = {
+  padding: 22,
+  borderRadius: 16,
+  background: "#f8fafc",
+  border: "1px dashed #cbd5e1",
+  color: "#64748b",
+  textAlign: "center",
 };
