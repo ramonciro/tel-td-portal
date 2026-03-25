@@ -176,8 +176,6 @@ export default function ChamadaTurmaPage() {
     try {
       if (!id) return;
 
-      setErro("");
-
       const dadosParticipantes = await apiFetch(
         `/treinamentos/${id}/participantes?data=${encodeURIComponent(data)}`
       ).catch((err) => {
@@ -185,13 +183,13 @@ export default function ChamadaTurmaPage() {
       });
 
       const lista = Array.isArray(dadosParticipantes) ? dadosParticipantes : [];
-      const normalizada = lista.map((item, indexReal) => ({
+      const base = lista.map((item, indexReal) => ({
         ...item,
         _indexReal: indexReal,
         _rowKey: item.id || `idx-${indexReal}`,
       }));
 
-      setParticipantes(normalizada);
+      setParticipantes(base);
       setSelecionados({});
       setBusca("");
     } catch (err) {
@@ -524,217 +522,327 @@ export default function ChamadaTurmaPage() {
         {erro ? <div style={errorBox}>{erro}</div> : null}
         {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
-        <section style={section}>
-          <div style={sectionHeader}>
-            <div>
-              <h2 style={sectionTitle}>
-                {modoAula ? "Data da aula" : "Data da chamada"}
-              </h2>
-              <p style={sectionSubtitle}>
-                {modoAula
-                  ? "Dia da aula que será controlado neste lançamento."
-                  : "Selecione o dia da formação que será controlado nesta chamada."}
-              </p>
-            </div>
+        <div style={uploadCard}>
+          <div>
+            <h2 style={sectionTitle}>
+              {modoAula ? "Data da aula" : "Data da chamada"}
+            </h2>
+            <p style={sectionSubtitle}>
+              {modoAula
+                ? "Dia da aula que será controlado neste lançamento."
+                : "Selecione o dia da formação que será controlado nesta chamada."}
+            </p>
+          </div>
 
+          <div style={uploadActions}>
             <input
               type="date"
               value={dataChamada}
+              min={toInputDate(treinamento?.data_inicio || treinamento?.data)}
+              max={toInputDate(
+                treinamento?.data_fim ||
+                  treinamento?.data_inicio ||
+                  treinamento?.data
+              )}
               onChange={(e) => !modoAula && setDataChamada(e.target.value)}
-              style={dateInput}
+              style={inputDate}
               disabled={modoAula}
             />
           </div>
-        </section>
-
-        {!modoAula ? (
-          <section style={section}>
-            <div style={sectionHeader}>
-              <div>
-                <h2 style={sectionTitle}>Importar participantes</h2>
-                <p style={sectionSubtitle}>
-                  Use a planilha padrão com as colunas: nome, matricula, cliente,
-                  turma, supervisor, operacao e data_admissao.
-                </p>
-              </div>
-
-              <div style={uploadWrap}>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={(e) => setArquivo(e.target.files?.[0] || null)}
-                />
-                <button
-                  type="button"
-                  style={btnAction}
-                  onClick={importarExcel}
-                  disabled={importando}
-                >
-                  {importando ? "Importando..." : "Importar Excel"}
-                </button>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        <div style={statsGrid}>
-          <div style={{ ...statCard, borderTop: "4px solid #3b82f6" }}>
-            <span style={statLabel}>Total</span>
-            <strong style={statValue}>{fmt(resumo.total)}</strong>
-          </div>
-          <div style={{ ...statCard, borderTop: "4px solid #06b6d4" }}>
-            <span style={statLabel}>Exibidos</span>
-            <strong style={statValue}>{fmt(resumo.exibidos)}</strong>
-          </div>
-          <div style={{ ...statCard, borderTop: "4px solid #16a34a" }}>
-            <span style={statLabel}>Presentes</span>
-            <strong style={statValue}>{fmt(resumo.presentes)}</strong>
-          </div>
-          <div style={{ ...statCard, borderTop: "4px solid #dc2626" }}>
-            <span style={statLabel}>Ausentes</span>
-            <strong style={statValue}>{fmt(resumo.ausentes)}</strong>
-          </div>
-          <div style={{ ...statCard, borderTop: "4px solid #f59e0b" }}>
-            <span style={statLabel}>Justificados</span>
-            <strong style={statValue}>{fmt(resumo.justificados)}</strong>
-          </div>
-          <div style={{ ...statCard, borderTop: "4px solid #64748b" }}>
-            <span style={statLabel}>Pendentes</span>
-            <strong style={statValue}>{fmt(resumo.pendentes)}</strong>
-          </div>
         </div>
 
-        <section style={section}>
-          <div style={sectionHeader}>
+        {!modoAula ? (
+          <div style={uploadCard}>
             <div>
-              <h2 style={sectionTitle}>Participantes</h2>
+              <h2 style={sectionTitle}>Importar participantes</h2>
               <p style={sectionSubtitle}>
-                Atualize o status individual ou aplique ações em massa.
+                Use a planilha padrão com as colunas: nome, matricula, cliente, turma,
+                supervisor, operacao e data_admissao.
               </p>
             </div>
 
-            <div style={searchWrap}>
+            <div style={uploadActions}>
               <input
-                type="text"
-                placeholder="Buscar por nome, matrícula, operação ou supervisor"
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                style={searchInput}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => setArquivo(e.target.files?.[0] || null)}
               />
+              <button style={btnImportar} onClick={importarExcel} disabled={importando}>
+                {importando ? "Importando..." : "Importar Excel"}
+              </button>
             </div>
           </div>
+        ) : null}
 
-          <div style={massActions}>
-            <button type="button" style={miniBtn} onClick={selecionarTodosFiltrados}>
-              Selecionar exibidos
-            </button>
-            <button type="button" style={miniBtn} onClick={limparSelecao}>
-              Limpar seleção
-            </button>
-            <button type="button" style={miniBtnSuccess} onClick={() => aplicarStatusEmMassa("presente")}>
-              Marcar presentes
-            </button>
-            <button type="button" style={miniBtnDanger} onClick={() => aplicarStatusEmMassa("ausente")}>
-              Marcar ausentes
-            </button>
-            <button type="button" style={miniBtnWarn} onClick={() => aplicarStatusEmMassa("justificado")}>
-              Marcar justificados
-            </button>
+        <div style={statsGrid}>
+          <Stat label="Total" value={resumo.total} color="#2563eb" />
+          <Stat label="Exibidos" value={resumo.exibidos} color="#0f766e" />
+          <Stat label="Presentes" value={resumo.presentes} color="#16a34a" />
+          <Stat label="Ausentes" value={resumo.ausentes} color="#dc2626" />
+          <Stat label="Justificados" value={resumo.justificados} color="#f59e0b" />
+          <Stat label="Pendentes" value={resumo.pendentes} color="#64748b" />
+        </div>
 
-            {!modoAula ? (
-              <button type="button" style={miniBtnDangerGhost} onClick={excluirSelecionados}>
-                Excluir selecionados
-              </button>
-            ) : null}
+        {participantes.length > 0 ? (
+          <>
+            <div style={searchCard}>
+              <div style={searchInfo}>
+                <div style={bulkTitle}>Buscar participante</div>
+                <div style={bulkSub}>
+                  Filtre por nome, matrícula, operação ou supervisor.
+                </div>
+              </div>
+
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar por nome, matrícula, operação ou supervisor"
+                style={inputBusca}
+              />
+            </div>
+
+            <div style={bulkCard}>
+              <div style={bulkHeader}>
+                <div>
+                  <div style={bulkTitle}>Ação em massa</div>
+                  <div style={bulkSub}>
+                    {resumo.totalSelecionados} participante(s) selecionado(s) •{" "}
+                    {resumo.exibidos} exibido(s)
+                  </div>
+                </div>
+
+                <div style={bulkActions}>
+                  <button style={bulkSecondary} onClick={selecionarTodosFiltrados}>
+                    Selecionar exibidos
+                  </button>
+                  <button style={bulkSecondary} onClick={limparSelecao}>
+                    Limpar seleção
+                  </button>
+
+                  {!modoAula ? (
+                    <button style={bulkDelete} onClick={excluirSelecionados}>
+                      Excluir selecionados
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div style={bulkStatusActions}>
+                <button
+                  style={{ ...btnStatusBase, ...btnPresenteActive }}
+                  onClick={() => aplicarStatusEmMassa("presente")}
+                >
+                  Marcar selecionados como presentes
+                </button>
+
+                <button
+                  style={{ ...btnStatusBase, ...btnAusenteActive }}
+                  onClick={() => aplicarStatusEmMassa("ausente")}
+                >
+                  Marcar selecionados como ausentes
+                </button>
+
+                <button
+                  style={{ ...btnStatusBase, ...btnJustificadoActive }}
+                  onClick={() => aplicarStatusEmMassa("justificado")}
+                >
+                  Marcar selecionados como justificados
+                </button>
+
+                <button
+                  style={{ ...btnStatusBase, ...btnPendenteActive }}
+                  onClick={() => aplicarStatusEmMassa("pendente")}
+                >
+                  Marcar selecionados como pendentes
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        <div style={contentCard}>
+          <div style={tableHeader}>
+            <div>
+              <h2 style={sectionTitle}>Participantes da turma</h2>
+              <p style={sectionSubtitle}>
+                {modoAula
+                  ? `Atualize a presença da aula do dia ${formatDate(dataChamada)} e salve ao final.`
+                  : `Atualize a presença do dia ${formatDate(dataChamada)} e salve ao final.`}
+              </p>
+            </div>
+
+            <button style={btnSalvar} onClick={salvarChamada} disabled={salvando}>
+              {salvando
+                ? "Salvando..."
+                : modoAula
+                ? "Salvar presença da aula"
+                : "Salvar chamada do dia"}
+            </button>
           </div>
 
-          <div style={tableWrap}>
-            <table style={table}>
-              <thead>
-                <tr>
-                  <th style={th}>Sel.</th>
-                  <th style={th}>Nome</th>
-                  <th style={th}>Matrícula</th>
-                  <th style={th}>Operação</th>
-                  <th style={th}>Supervisor</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Justificativa</th>
-                  <th style={th}>Ação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {participantesFiltrados.map((p) => (
-                  <tr key={p._rowKey}>
-                    <td style={td}>
-                      <input
-                        type="checkbox"
-                        checked={!!selecionados[p._rowKey]}
-                        onChange={() => toggleSelecionado(p._rowKey)}
-                      />
-                    </td>
-                    <td style={tdStrong}>{p.nome}</td>
-                    <td style={td}>{p.matricula || "-"}</td>
-                    <td style={td}>{p.operacao || "-"}</td>
-                    <td style={td}>{p.supervisor || "-"}</td>
-                    <td style={td}>
-                      <select
-                        value={p.status_presenca || "pendente"}
-                        onChange={(e) => alterarStatus(p._indexReal, e.target.value)}
-                        style={select}
-                      >
-                        <option value="pendente">Pendente</option>
-                        <option value="presente">Presente</option>
-                        <option value="ausente">Ausente</option>
-                        <option value="justificado">Justificado</option>
-                      </select>
-                    </td>
-                    <td style={td}>
-                      <input
-                        type="text"
-                        value={p.justificativa || ""}
-                        onChange={(e) => alterarJustificativa(p._indexReal, e.target.value)}
-                        placeholder="Motivo / observação"
-                        style={inlineInput}
-                      />
-                    </td>
-                    <td style={td}>
-                      {!modoAula ? (
-                        <button
-                          type="button"
-                          style={btnDeleteInline}
-                          onClick={() => excluirParticipante(p.id)}
-                        >
-                          Excluir
-                        </button>
-                      ) : (
-                        <span style={mutedText}>-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {!participantesFiltrados.length ? (
+          {participantes.length === 0 ? (
+            <div style={emptyState}>
+              <strong>
+                {modoAula
+                  ? "Nenhum participante encontrado para esta aula."
+                  : "Nenhum participante importado para esta turma."}
+              </strong>
+              <span>
+                {modoAula
+                  ? "Verifique se a turma possui participantes vinculados."
+                  : "Faça a importação do Excel para preencher automaticamente a lista."}
+              </span>
+            </div>
+          ) : (
+            <div style={tableWrap}>
+              <table style={table}>
+                <thead>
                   <tr>
-                    <td style={emptyTd} colSpan={8}>
-                      Nenhum participante encontrado.
-                    </td>
+                    <th style={thCheck}></th>
+                    <th style={th}>Participante</th>
+                    <th style={th}>Matrícula</th>
+                    <th style={th}>Operação</th>
+                    <th style={th}>Status do dia</th>
+                    <th style={th}>Justificativa</th>
+                    <th style={th}>Ações</th>
                   </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                </thead>
 
-        <div style={footerActions}>
-          <button type="button" style={btnSave} onClick={salvarChamada} disabled={salvando}>
-            {salvando
-              ? "Salvando..."
-              : modoAula
-              ? "Salvar presença da aula"
-              : "Salvar chamada do dia"}
-          </button>
+                <tbody>
+                  {participantesFiltrados.map((p) => {
+                    const marcado = !!selecionados[p._rowKey];
+
+                    return (
+                      <tr key={p._rowKey} style={tr}>
+                        <td style={tdCheck}>
+                          <input
+                            type="checkbox"
+                            checked={marcado}
+                            onChange={() => toggleSelecionado(p._rowKey)}
+                          />
+                        </td>
+
+                        <td style={td}>
+                          <div style={participantName}>{p.nome}</div>
+                          <div style={participantMeta}>
+                            {p.cliente || "-"} • {p.supervisor || "-"}
+                          </div>
+                        </td>
+
+                        <td style={td}>{p.matricula || "-"}</td>
+                        <td style={td}>{p.operacao || "-"}</td>
+
+                        <td style={td}>
+                          <div style={statusActions}>
+                            <button
+                              onClick={() => alterarStatus(p._indexReal, "presente")}
+                              style={{
+                                ...btnStatusBase,
+                                ...(String(p.status_presenca || "").toLowerCase() ===
+                                "presente"
+                                  ? btnPresenteActive
+                                  : btnPresente),
+                              }}
+                            >
+                              Presente
+                            </button>
+
+                            <button
+                              onClick={() => alterarStatus(p._indexReal, "ausente")}
+                              style={{
+                                ...btnStatusBase,
+                                ...(String(p.status_presenca || "").toLowerCase() ===
+                                "ausente"
+                                  ? btnAusenteActive
+                                  : btnAusente),
+                              }}
+                            >
+                              Ausente
+                            </button>
+
+                            <button
+                              onClick={() => alterarStatus(p._indexReal, "justificado")}
+                              style={{
+                                ...btnStatusBase,
+                                ...(String(p.status_presenca || "").toLowerCase() ===
+                                "justificado"
+                                  ? btnJustificadoActive
+                                  : btnJustificado),
+                              }}
+                            >
+                              Justificado
+                            </button>
+
+                            <button
+                              onClick={() => alterarStatus(p._indexReal, "pendente")}
+                              style={{
+                                ...btnStatusBase,
+                                ...(String(p.status_presenca || "").toLowerCase() ===
+                                "pendente"
+                                  ? btnPendenteActive
+                                  : btnPendente),
+                              }}
+                            >
+                              Pendente
+                            </button>
+                          </div>
+                        </td>
+
+                        <td style={td}>
+                          <input
+                            value={p.justificativa || ""}
+                            onChange={(e) => alterarJustificativa(p._indexReal, e.target.value)}
+                            placeholder="Informar justificativa"
+                            style={input}
+                          />
+                        </td>
+
+                        <td style={td}>
+                          {!modoAula ? (
+                            p.id ? (
+                              <button
+                                style={deleteLineBtn}
+                                onClick={() => excluirParticipante(p.id)}
+                              >
+                                Excluir
+                              </button>
+                            ) : (
+                              <span style={smallMuted}>Sem ID</span>
+                            )
+                          ) : (
+                            <span style={smallMuted}>-</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {participantes.length > 0 ? (
+            <div style={footerActions}>
+              <button style={btnSalvar} onClick={salvarChamada} disabled={salvando}>
+                {salvando
+                  ? "Salvando..."
+                  : modoAula
+                  ? "Salvar presença da aula"
+                  : "Salvar chamada do dia"}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, color }) {
+  return (
+    <div style={{ ...statCard, borderTop: `4px solid ${color}` }}>
+      <div style={statLabel}>{label}</div>
+      <div style={statValue}>{value}</div>
     </div>
   );
 }
@@ -745,23 +853,14 @@ const page = {
   padding: 24,
 };
 
-const loadingWrap = {
-  minHeight: "100vh",
-  display: "grid",
-  placeItems: "center",
-  fontWeight: 700,
-  color: "#334155",
-  background: "#f8fafc",
-};
-
 const topBar = {
-  marginBottom: 16,
+  marginBottom: 14,
 };
 
 const btnVoltar = {
   background: "#ffffff",
   border: "1px solid #cbd5e1",
-  color: "#334155",
+  color: "#0f172a",
   borderRadius: 10,
   padding: "10px 14px",
   cursor: "pointer",
@@ -770,48 +869,52 @@ const btnVoltar = {
 
 const hero = {
   background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
-  color: "#ffffff",
   borderRadius: 22,
   padding: 24,
-  boxShadow: "0 16px 32px rgba(29,78,216,.18)",
+  color: "#fff",
+  boxShadow: "0 18px 36px rgba(29,78,216,.18)",
 };
 
 const heroInfo = {
   display: "grid",
-  gap: 12,
+  gap: 10,
 };
 
 const eyebrow = {
-  textTransform: "uppercase",
+  display: "inline-block",
+  width: "fit-content",
+  background: "rgba(255,255,255,.14)",
+  padding: "6px 10px",
+  borderRadius: 999,
   fontSize: 12,
   fontWeight: 800,
-  letterSpacing: ".05em",
-  color: "rgba(255,255,255,.82)",
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
 };
 
 const title = {
   margin: 0,
-  fontSize: 28,
-  lineHeight: 1.1,
+  fontSize: 34,
+  lineHeight: 1.05,
 };
 
 const subtitle = {
   margin: 0,
-  color: "rgba(255,255,255,.88)",
+  color: "rgba(255,255,255,.84)",
   lineHeight: 1.6,
 };
 
 const metaGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
   marginTop: 8,
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
 };
 
 const metaCard = {
-  background: "rgba(255,255,255,.08)",
+  background: "rgba(255,255,255,.10)",
   border: "1px solid rgba(255,255,255,.14)",
-  borderRadius: 16,
+  borderRadius: 14,
   padding: 14,
   display: "grid",
   gap: 6,
@@ -819,36 +922,101 @@ const metaCard = {
 
 const metaLabel = {
   fontSize: 12,
-  fontWeight: 800,
   textTransform: "uppercase",
-  color: "rgba(255,255,255,.78)",
   letterSpacing: ".04em",
+  color: "rgba(255,255,255,.68)",
+};
+
+const uploadCard = {
+  marginTop: 16,
+  background: "#fff",
+  borderRadius: 18,
+  padding: 18,
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 16,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const uploadActions = {
+  display: "flex",
+  gap: 10,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const inputDate = {
+  width: 180,
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  outline: "none",
+};
+
+const btnImportar = {
+  background: "#2563eb",
+  color: "#fff",
+  border: 0,
+  borderRadius: 10,
+  padding: "11px 16px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const statsGrid = {
+  marginTop: 16,
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+  gap: 12,
+};
+
+const statCard = {
+  background: "#fff",
+  borderRadius: 16,
+  padding: 16,
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+};
+
+const statLabel = {
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const statValue = {
+  marginTop: 6,
+  fontSize: 32,
+  fontWeight: 800,
+  color: "#0f172a",
 };
 
 const content = {
-  display: "grid",
-  gap: 16,
   marginTop: 16,
 };
 
-const section = {
-  background: "#ffffff",
+const contentCard = {
+  marginTop: 16,
+  background: "#fff",
+  borderRadius: 20,
+  padding: 20,
   border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 18,
+  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
 };
 
-const sectionHeader = {
+const tableHeader = {
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "flex-start",
+  alignItems: "center",
   gap: 12,
-  flexWrap: "wrap",
+  marginBottom: 16,
 };
 
 const sectionTitle = {
   margin: 0,
-  fontSize: 18,
+  fontSize: 24,
   color: "#0f172a",
 };
 
@@ -858,235 +1026,257 @@ const sectionSubtitle = {
   lineHeight: 1.5,
 };
 
-const dateInput = {
-  height: 44,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  fontSize: 14,
-  background: "#ffffff",
-  color: "#0f172a",
+const searchCard = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 14,
+  marginTop: 16,
+  marginBottom: 14,
+  display: "grid",
+  gap: 10,
 };
 
-const uploadWrap = {
+const searchInfo = {
+  display: "grid",
+  gap: 4,
+};
+
+const inputBusca = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  outline: "none",
+};
+
+const bulkCard = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 14,
+  marginBottom: 16,
+  display: "grid",
+  gap: 12,
+};
+
+const bulkHeader = {
   display: "flex",
-  gap: 10,
+  justifyContent: "space-between",
+  gap: 12,
   alignItems: "center",
   flexWrap: "wrap",
 };
 
-const btnAction = {
-  background: "#2563eb",
-  border: "none",
-  color: "#ffffff",
-  borderRadius: 10,
-  padding: "10px 14px",
-  cursor: "pointer",
-  fontWeight: 700,
+const bulkTitle = {
+  fontWeight: 800,
+  color: "#0f172a",
 };
 
-const statsGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-};
-
-const statCard = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 16,
-  display: "grid",
-  gap: 8,
-};
-
-const statLabel = {
+const bulkSub = {
+  marginTop: 4,
   color: "#64748b",
   fontSize: 13,
-  fontWeight: 700,
 };
 
-const statValue = {
-  color: "#0f172a",
-  fontSize: 18,
-  fontWeight: 800,
-};
-
-const searchWrap = {
-  minWidth: 280,
-};
-
-const searchInput = {
-  width: "100%",
-  height: 42,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  fontSize: 14,
-  background: "#ffffff",
-  color: "#0f172a",
-};
-
-const massActions = {
+const bulkActions = {
   display: "flex",
   gap: 8,
   flexWrap: "wrap",
-  marginTop: 16,
-  marginBottom: 16,
 };
 
-const miniBtn = {
-  background: "#e2e8f0",
-  border: "none",
-  color: "#0f172a",
-  borderRadius: 9,
-  padding: "8px 12px",
+const bulkSecondary = {
+  border: "1px solid #cbd5e1",
+  background: "#fff",
+  color: "#334155",
+  borderRadius: 10,
+  padding: "9px 12px",
   cursor: "pointer",
   fontWeight: 700,
-  fontSize: 13,
 };
 
-const miniBtnSuccess = {
-  background: "#dcfce7",
-  border: "none",
-  color: "#166534",
-  borderRadius: 9,
-  padding: "8px 12px",
-  cursor: "pointer",
-  fontWeight: 700,
-  fontSize: 13,
-};
-
-const miniBtnDanger = {
-  background: "#fee2e2",
-  border: "none",
-  color: "#b91c1c",
-  borderRadius: 9,
-  padding: "8px 12px",
-  cursor: "pointer",
-  fontWeight: 700,
-  fontSize: 13,
-};
-
-const miniBtnWarn = {
-  background: "#fef3c7",
-  border: "none",
-  color: "#92400e",
-  borderRadius: 9,
-  padding: "8px 12px",
-  cursor: "pointer",
-  fontWeight: 700,
-  fontSize: 13,
-};
-
-const miniBtnDangerGhost = {
+const bulkDelete = {
+  border: "1px solid #fecaca",
   background: "#fff1f2",
-  border: "1px solid #fecdd3",
   color: "#be123c",
-  borderRadius: 9,
+  borderRadius: 10,
+  padding: "9px 12px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const bulkStatusActions = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const btnStatusBase = {
+  border: "1px solid transparent",
+  borderRadius: 999,
   padding: "8px 12px",
   cursor: "pointer",
   fontWeight: 700,
   fontSize: 13,
+};
+
+const btnPresente = {
+  background: "#f0fdf4",
+  color: "#166534",
+  borderColor: "#bbf7d0",
+};
+
+const btnPresenteActive = {
+  background: "#16a34a",
+  color: "#fff",
+  borderColor: "#16a34a",
+};
+
+const btnAusente = {
+  background: "#fef2f2",
+  color: "#b91c1c",
+  borderColor: "#fecaca",
+};
+
+const btnAusenteActive = {
+  background: "#dc2626",
+  color: "#fff",
+  borderColor: "#dc2626",
+};
+
+const btnJustificado = {
+  background: "#fff7ed",
+  color: "#c2410c",
+  borderColor: "#fdba74",
+};
+
+const btnJustificadoActive = {
+  background: "#f59e0b",
+  color: "#fff",
+  borderColor: "#f59e0b",
+};
+
+const btnPendente = {
+  background: "#f8fafc",
+  color: "#475569",
+  borderColor: "#cbd5e1",
+};
+
+const btnPendenteActive = {
+  background: "#64748b",
+  color: "#fff",
+  borderColor: "#64748b",
 };
 
 const tableWrap = {
-  width: "100%",
   overflowX: "auto",
   border: "1px solid #e2e8f0",
-  borderRadius: 14,
+  borderRadius: 16,
 };
 
 const table = {
   width: "100%",
   borderCollapse: "collapse",
-  minWidth: 980,
-  background: "#ffffff",
+  minWidth: 1100,
 };
 
 const th = {
   textAlign: "left",
-  padding: "12px 14px",
-  background: "#f8fafc",
-  color: "#475569",
+  padding: "14px 12px",
   fontSize: 13,
-  fontWeight: 800,
+  color: "#64748b",
   borderBottom: "1px solid #e2e8f0",
+  background: "#f8fafc",
+};
+
+const thCheck = {
+  ...th,
+  width: 44,
+};
+
+const tr = {
+  borderBottom: "1px solid #f1f5f9",
 };
 
 const td = {
-  padding: "12px 14px",
-  borderBottom: "1px solid #f1f5f9",
-  color: "#334155",
-  fontSize: 14,
+  padding: "14px 12px",
   verticalAlign: "top",
+  color: "#0f172a",
 };
 
-const tdStrong = {
+const tdCheck = {
   ...td,
-  fontWeight: 700,
+  width: 44,
+};
+
+const participantName = {
+  fontWeight: 800,
   color: "#0f172a",
 };
 
-const select = {
-  width: 140,
-  height: 38,
-  borderRadius: 8,
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#0f172a",
-  padding: "0 10px",
+const participantMeta = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 13,
 };
 
-const inlineInput = {
+const statusActions = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const input = {
   width: "100%",
-  minWidth: 180,
-  height: 38,
-  borderRadius: 8,
+  boxSizing: "border-box",
+  padding: "10px 12px",
+  borderRadius: 10,
   border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#0f172a",
-  padding: "0 10px",
+  outline: "none",
 };
 
-const btnDeleteInline = {
+const deleteLineBtn = {
+  border: "1px solid #fecaca",
   background: "#fff1f2",
-  border: "1px solid #fecdd3",
   color: "#be123c",
-  borderRadius: 8,
-  padding: "8px 10px",
+  borderRadius: 10,
+  padding: "8px 12px",
   cursor: "pointer",
   fontWeight: 700,
 };
 
-const mutedText = {
+const smallMuted = {
   color: "#94a3b8",
-  fontWeight: 700,
-};
-
-const emptyTd = {
-  padding: 20,
-  textAlign: "center",
-  color: "#64748b",
+  fontSize: 13,
 };
 
 const footerActions = {
+  marginTop: 18,
   display: "flex",
   justifyContent: "flex-end",
 };
 
-const btnSave = {
+const btnSalvar = {
   background: "#2563eb",
-  border: "none",
-  color: "#ffffff",
+  color: "#fff",
+  border: 0,
   borderRadius: 12,
   padding: "12px 18px",
   cursor: "pointer",
   fontWeight: 800,
-  fontSize: 14,
+};
+
+const emptyState = {
+  display: "grid",
+  gap: 8,
+  padding: 24,
+  textAlign: "center",
+  color: "#64748b",
 };
 
 const errorBox = {
+  marginTop: 16,
   background: "#fef2f2",
   border: "1px solid #fecaca",
   color: "#b91c1c",
@@ -1096,6 +1286,7 @@ const errorBox = {
 };
 
 const successBox = {
+  marginTop: 16,
   background: "#f0fdf4",
   border: "1px solid #bbf7d0",
   color: "#166534",
