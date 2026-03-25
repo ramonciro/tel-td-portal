@@ -54,9 +54,17 @@ function getStatusStyle(status) {
   };
 }
 
-function calcPercentual(presentes, total) {
+function calcPercentual(parte, total) {
   if (!total) return 0;
-  return Math.round((Number(presentes || 0) / Number(total || 0)) * 100);
+  return Math.round((Number(parte || 0) / Number(total || 0)) * 100);
+}
+
+function sortByDateAsc(items, field = "data_aula") {
+  return [...items].sort((a, b) => {
+    const da = new Date(a?.[field] || 0).getTime();
+    const db = new Date(b?.[field] || 0).getTime();
+    return da - db;
+  });
 }
 
 export default function ChamadaTurmaPage() {
@@ -71,6 +79,7 @@ export default function ChamadaTurmaPage() {
   const [treinamento, setTreinamento] = useState(null);
   const [registrosAula, setRegistrosAula] = useState([]);
   const [aulasTurma, setAulasTurma] = useState([]);
+  const [resumosAulas, setResumosAulas] = useState([]);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [loading, setLoading] = useState(true);
@@ -81,14 +90,10 @@ export default function ChamadaTurmaPage() {
     if (typeof window === "undefined") return;
 
     const search = new URLSearchParams(window.location.search);
-    const aulaId = search.get("turma_aula_id") || "";
-    const data = search.get("data_aula") || "";
-    const origemParam = search.get("origem") || "";
-
-    setTurmaAulaId(aulaId);
-    setModoAula(Boolean(aulaId));
-    setDataAula(data);
-    setOrigem(origemParam);
+    setTurmaAulaId(search.get("turma_aula_id") || "");
+    setModoAula(Boolean(search.get("turma_aula_id")));
+    setDataAula(search.get("data_aula") || "");
+    setOrigem(search.get("origem") || "");
   }, []);
 
   useEffect(() => {
@@ -105,8 +110,42 @@ export default function ChamadaTurmaPage() {
           apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
         ]);
 
+        const listaAulas = Array.isArray(aulas) ? aulas : [];
+
         setTreinamento(dadosTreinamento || null);
-        setAulasTurma(Array.isArray(aulas) ? aulas : []);
+        setAulasTurma(listaAulas);
+
+        if (listaAulas.length) {
+          const resumos = await Promise.all(
+            listaAulas.map(async (aula) => {
+              try {
+                const resumo = await apiFetch(`/presenca-aulas/resumo/${aula.id}`);
+                return {
+                  turma_aula_id: aula.id,
+                  data_aula: aula.data_aula,
+                  titulo: aula.titulo || aula.nome || aula.tema || null,
+                  ...resumo,
+                };
+              } catch {
+                return {
+                  turma_aula_id: aula.id,
+                  data_aula: aula.data_aula,
+                  titulo: aula.titulo || aula.nome || aula.tema || null,
+                  total: 0,
+                  presentes: 0,
+                  ausentes: 0,
+                  justificados: 0,
+                  pendentes: 0,
+                  percentual: 0,
+                };
+              }
+            })
+          );
+
+          setResumosAulas(resumos);
+        } else {
+          setResumosAulas([]);
+        }
 
         if (turmaAulaId) {
           await apiFetch("/presenca-aulas/inicializar", {
@@ -121,6 +160,8 @@ export default function ChamadaTurmaPage() {
           );
 
           setRegistrosAula(Array.isArray(registros) ? registros : []);
+        } else {
+          setRegistrosAula([]);
         }
       } catch (err) {
         setErro(err.message || "Erro ao carregar dados");
@@ -168,6 +209,23 @@ export default function ChamadaTurmaPage() {
         }),
       });
 
+      const [registrosAtualizados, resumoAtualizado] = await Promise.all([
+        apiFetch(`/presenca-aulas?turma_aula_id=${encodeURIComponent(turmaAulaId)}`).catch(() => []),
+        apiFetch(`/presenca-aulas/resumo/${turmaAulaId}`).catch(() => null),
+      ]);
+
+      setRegistrosAula(Array.isArray(registrosAtualizados) ? registrosAtualizados : []);
+
+      if (resumoAtualizado) {
+        setResumosAulas((prev) =>
+          prev.map((item) =>
+            String(item.turma_aula_id) === String(turmaAulaId)
+              ? { ...item, ...resumoAtualizado }
+              : item
+          )
+        );
+      }
+
       setSucesso("Presença da aula salva com sucesso.");
     } catch (err) {
       setErro(err.message || "Erro ao salvar presença");
@@ -176,7 +234,7 @@ export default function ChamadaTurmaPage() {
     }
   }
 
-  const resumo = useMemo(() => {
+  const resumoAulaAtual = useMemo(() => {
     const presentes = registrosAula.filter((i) => i.status === "presente").length;
     const ausentes = registrosAula.filter((i) => i.status === "ausente").length;
     const justificados = registrosAula.filter((i) => i.status === "justificado").length;
@@ -196,17 +254,64 @@ export default function ChamadaTurmaPage() {
 
   const resumoTurma = useMemo(() => {
     const totalAulas = aulasTurma.length;
-    const aulasComRegistro = aulasTurma.filter((aula) => Number(aula.id) > 0).length;
+    const aulasOrdenadas = sortByDateAsc(aulasTurma);
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const resumosValidos = resumosAulas.filter(
+      (item) => Number(item.total || 0) > 0 || Number(item.presentes || 0) > 0 || Number(item.ausentes || 0) > 0 || Number(item.justificados || 0) > 0 || Number(item.pendentes || 0) > 0
+    );
+
+    const aulasComPresenca = resumosAulas.filter(
+      (item) => Number(item.total || 0) > 0
+    ).length;
+
+    const totalEsperado = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.total || 0),
+      0
+    );
+
+    const totalPresentes = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.presentes || 0),
+      0
+    );
+
+    const totalAusentes = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.ausentes || 0),
+      0
+    );
+
+    const totalJustificados = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.justificados || 0),
+      0
+    );
+
+    const totalPendentes = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.pendentes || 0),
+      0
+    );
+
+    const aderenciaMedia = calcPercentual(totalPresentes, totalEsperado);
+
+    let ultimaAulaLancada = null;
+    if (resumosValidos.length) {
+      ultimaAulaLancada = sortByDateAsc(resumosValidos, "data_aula")
+        .filter((item) => Number(item.total || 0) > 0)
+        .slice(-1)[0] || null;
+    }
+
+    const proximaAulaPrevista =
+      aulasOrdenadas.find((aula) => {
+        const d = new Date(aula?.data_aula || 0);
+        d.setHours(0, 0, 0, 0);
+        return d >= hoje;
+      }) || aulasOrdenadas[0] || null;
 
     const previstos = Number(
       treinamento?.participantes_previstos ||
         treinamento?.participantes ||
-        registrosAula.length ||
         0
     );
-
-    const percentualMedio = modoAula ? resumo.percentual : 0;
-    const pendencias = modoAula ? resumo.pendentes : 0;
 
     let statusGeral = {
       label: "Não iniciada",
@@ -215,7 +320,7 @@ export default function ChamadaTurmaPage() {
       border: "1px solid #fde68a",
     };
 
-    if (totalAulas > 0 && aulasComRegistro > 0 && aulasComRegistro < totalAulas) {
+    if (totalAulas > 0 && aulasComPresenca > 0 && aulasComPresenca < totalAulas) {
       statusGeral = {
         label: "Em andamento",
         bg: "#dbeafe",
@@ -224,7 +329,7 @@ export default function ChamadaTurmaPage() {
       };
     }
 
-    if (modoAula && pendencias > 0) {
+    if (totalPendentes > 0) {
       statusGeral = {
         label: "Com pendências",
         bg: "#fee2e2",
@@ -233,7 +338,7 @@ export default function ChamadaTurmaPage() {
       };
     }
 
-    if (totalAulas > 0 && aulasComRegistro >= totalAulas && pendencias === 0) {
+    if (totalAulas > 0 && aulasComPresenca >= totalAulas && totalPendentes === 0) {
       statusGeral = {
         label: "Concluída",
         bg: "#dcfce7",
@@ -244,16 +349,21 @@ export default function ChamadaTurmaPage() {
 
     return {
       nomeTurma: treinamento?.tema || `Turma #${id || "-"}`,
-      idTurma: id || "-",
       previstos,
       totalAulas,
-      aulasComRegistro,
-      percentualMedio,
-      pendencias,
+      aulasComPresenca,
+      totalEsperado,
+      totalPresentes,
+      totalAusentes,
+      totalJustificados,
+      totalPendentes,
+      aderenciaMedia,
+      ultimaAulaLancada,
+      proximaAulaPrevista,
       instrutorMinistrando: treinamento?.instrutor || "-",
       statusGeral,
     };
-  }, [aulasTurma, treinamento, registrosAula, resumo, modoAula, id]);
+  }, [aulasTurma, resumosAulas, treinamento, id]);
 
   const registrosFiltrados = useMemo(() => {
     const termo = String(busca || "").trim().toLowerCase();
@@ -281,6 +391,11 @@ export default function ChamadaTurmaPage() {
     window.location.reload();
   }
 
+  function abrirPresencaAtual() {
+    if (!turmaAulaId) return;
+    window.location.href = `/turma/${id}?turma_aula_id=${turmaAulaId}&data_aula=${dataAula}&origem=cronograma`;
+  }
+
   if (loading) {
     return <div style={loadingWrap}>Carregando gestão da turma...</div>;
   }
@@ -298,12 +413,12 @@ export default function ChamadaTurmaPage() {
           {modoAula ? "Presença por aula" : "Gestão da turma"}
         </div>
 
-        <h1 style={heroTitle}>{treinamento?.tema || "Turma"}</h1>
+        <h1 style={heroTitle}>{resumoTurma.nomeTurma}</h1>
 
         <p style={heroSubtitle}>
           {modoAula
-            ? "Controle operacional da presença da aula selecionada, com visão gerencial da turma."
-            : "Visão consolidada da turma, seus dados principais e atalhos de acompanhamento."}
+            ? "Controle operacional da presença da aula selecionada, com visão gerencial consolidada da turma."
+            : "Visão consolidada da turma, seus dados principais e leitura executiva do andamento."}
         </p>
 
         <div style={heroGrid}>
@@ -325,9 +440,9 @@ export default function ChamadaTurmaPage() {
       <div style={statsGrid}>
         <StatCard title="Treinandos previstos" value={resumoTurma.previstos} />
         <StatCard title="Aulas planejadas" value={resumoTurma.totalAulas} />
-        <StatCard title="Aulas mapeadas" value={resumoTurma.aulasComRegistro} />
-        <StatCard title="Pendências" value={resumoTurma.pendencias} />
-        <StatCard title="Percentual médio" value={`${resumoTurma.percentualMedio}%`} />
+        <StatCard title="Aulas com presença" value={resumoTurma.aulasComPresenca} />
+        <StatCard title="Pendências" value={resumoTurma.totalPendentes} />
+        <StatCard title="Aderência média" value={`${resumoTurma.aderenciaMedia}%`} />
       </div>
 
       <div style={statusCard}>
@@ -362,10 +477,69 @@ export default function ChamadaTurmaPage() {
             Atualizar dados
           </button>
           {modoAula ? (
-            <button style={btnPrimary} onClick={salvarPresencaAula} disabled={salvando}>
-              {salvando ? "Salvando..." : "Salvar presença da aula"}
-            </button>
+            <>
+              <button style={btnSecondary} onClick={abrirPresencaAtual}>
+                Reabrir presença da aula
+              </button>
+              <button style={btnPrimary} onClick={salvarPresencaAula} disabled={salvando}>
+                {salvando ? "Salvando..." : "Salvar presença da aula"}
+              </button>
+            </>
           ) : null}
+        </div>
+      </div>
+
+      <div style={sectionCard}>
+        <div style={sectionHeader}>
+          <div>
+            <h2 style={sectionTitle}>Resumo gerencial</h2>
+            <p style={sectionSubtitle}>
+              Leitura consolidada da turma a partir das aulas planejadas e presenças lançadas.
+            </p>
+          </div>
+        </div>
+
+        <div style={managerGrid}>
+          <OperationalItem
+            label="Turma"
+            value={resumoTurma.nomeTurma}
+          />
+          <OperationalItem
+            label="Instrutor ministrando"
+            value={resumoTurma.instrutorMinistrando}
+          />
+          <OperationalItem
+            label="Presenças acumuladas"
+            value={`${resumoTurma.totalPresentes} de ${resumoTurma.totalEsperado}`}
+          />
+          <OperationalItem
+            label="Ausências acumuladas"
+            value={resumoTurma.totalAusentes}
+          />
+          <OperationalItem
+            label="Justificados"
+            value={resumoTurma.totalJustificados}
+          />
+          <OperationalItem
+            label="Próxima aula prevista"
+            value={
+              resumoTurma.proximaAulaPrevista
+                ? formatDate(resumoTurma.proximaAulaPrevista.data_aula)
+                : "-"
+            }
+          />
+          <OperationalItem
+            label="Última aula lançada"
+            value={
+              resumoTurma.ultimaAulaLancada
+                ? formatDate(resumoTurma.ultimaAulaLancada.data_aula)
+                : "-"
+            }
+          />
+          <OperationalItem
+            label="Origem do fluxo"
+            value={origem || (modoAula ? "cronograma" : "gestão")}
+          />
         </div>
       </div>
 
@@ -381,22 +555,10 @@ export default function ChamadaTurmaPage() {
 
         <div style={operationalGrid}>
           <OperationalItem label="Turma" value={resumoTurma.nomeTurma} />
-          <OperationalItem
-            label="Público"
-            value={treinamento?.publico || "-"}
-          />
-          <OperationalItem
-            label="Carga horária"
-            value={treinamento?.carga_horaria || "-"}
-          />
-          <OperationalItem
-            label="Instrutor"
-            value={resumoTurma.instrutorMinistrando}
-          />
-          <OperationalItem
-            label="Origem do fluxo"
-            value={origem || (modoAula ? "cronograma" : "gestão")}
-          />
+          <OperationalItem label="Público" value={treinamento?.publico || "-"} />
+          <OperationalItem label="Carga horária" value={treinamento?.carga_horaria || "-"} />
+          <OperationalItem label="Cliente" value={treinamento?.cliente || "-"} />
+          <OperationalItem label="Instrutor" value={resumoTurma.instrutorMinistrando} />
           <OperationalItem
             label="Data da aula"
             value={modoAula ? formatDate(dataAula) : "-"}
@@ -424,11 +586,11 @@ export default function ChamadaTurmaPage() {
             </div>
 
             <div style={statsGridSmall}>
-              <StatCard title="Total" value={resumo.total} />
-              <StatCard title="Presentes" value={resumo.presentes} />
-              <StatCard title="Ausentes" value={resumo.ausentes} />
-              <StatCard title="Justificados" value={resumo.justificados} />
-              <StatCard title="Pendentes" value={resumo.pendentes} />
+              <StatCard title="Total" value={resumoAulaAtual.total} />
+              <StatCard title="Presentes" value={resumoAulaAtual.presentes} />
+              <StatCard title="Ausentes" value={resumoAulaAtual.ausentes} />
+              <StatCard title="Justificados" value={resumoAulaAtual.justificados} />
+              <StatCard title="Pendentes" value={resumoAulaAtual.pendentes} />
             </div>
           </div>
 
@@ -437,8 +599,7 @@ export default function ChamadaTurmaPage() {
               <div>
                 <h2 style={sectionTitle}>Presença por aula</h2>
                 <p style={sectionSubtitle}>
-                  Aula vinculada ao dia {formatDate(dataAula)} • Turma aula ID{" "}
-                  {turmaAulaId || "-"}
+                  Aula vinculada ao dia {formatDate(dataAula)} • Turma aula ID {turmaAulaId || "-"}
                 </p>
               </div>
             </div>
@@ -505,8 +666,7 @@ export default function ChamadaTurmaPage() {
         <div style={sectionCard}>
           <h2 style={sectionTitle}>Resumo da turma</h2>
           <p style={sectionSubtitle}>
-            A turma foi carregada com sucesso. Use os atalhos rápidos para navegar
-            entre cronograma, acompanhamento e atualização operacional.
+            A gestão da turma agora considera planejamento, presença lançada, aderência média e marcos principais do cronograma.
           </p>
         </div>
       )}
@@ -745,6 +905,12 @@ const btnSecondary = {
   padding: "12px 18px",
   cursor: "pointer",
   fontWeight: 700,
+};
+
+const managerGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
 };
 
 const operationalGrid = {
