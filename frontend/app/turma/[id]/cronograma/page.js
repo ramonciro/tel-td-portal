@@ -423,47 +423,70 @@ export default function CronogramaTurmaPage() {
     );
   }
 
-  async function salvarAula() {
+async function salvarAula() {
+  try {
+    setSalvandoAula(true);
+    setErro("");
+    setSucesso("");
+
+const payloadBase = {
+  treinamento_id: Number(id),
+  tema: aulaForm.titulo,
+  titulo: aulaForm.titulo,
+  data: aulaForm.data_aula,
+  data_aula: aulaForm.data_aula,
+  instrutor: aulaForm.instrutor,
+  carga_horaria: Number(aulaForm.carga_planejada || 0),
+  carga_planejada: Number(aulaForm.carga_planejada || 0),
+  objetivo: aulaForm.objetivo,
+};
+
+    const payloadCompleto = {
+      ...payloadBase,
+      tipo_aula: aulaForm.tipo_aula,
+      status_aula: aulaForm.status_aula,
+      conteudo_programatico: aulaForm.conteudo_programatico,
+      observacoes: aulaForm.observacoes,
+    };
+
     try {
-      setSalvandoAula(true);
-      setErro("");
-      setSucesso("");
-
-      const payload = {
-        treinamento_id: Number(id),
-        titulo: aulaForm.titulo,
-        data_aula: aulaForm.data_aula,
-        instrutor: aulaForm.instrutor,
-        tipo_aula: aulaForm.tipo_aula,
-        status_aula: aulaForm.status_aula,
-        carga_planejada: Number(aulaForm.carga_planejada || 0),
-        objetivo: aulaForm.objetivo,
-        conteudo_programatico: aulaForm.conteudo_programatico,
-        observacoes: aulaForm.observacoes,
-      };
-
       if (aulaForm.id) {
         await apiFetch(`/turma-aulas/${aulaForm.id}`, {
           method: "PUT",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(payloadCompleto),
         });
         setSucesso("Aula atualizada com sucesso.");
       } else {
         await apiFetch("/turma-aulas", {
           method: "POST",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(payloadCompleto),
         });
         setSucesso("Plano de aula cadastrado com sucesso.");
       }
-
-      limparFormularioAula();
-      await carregarTudo();
-    } catch (err) {
-      setErro(err.message || "Erro ao salvar aula");
-    } finally {
-      setSalvandoAula(false);
+    } catch (erroCamposNovos) {
+      if (aulaForm.id) {
+        await apiFetch(`/turma-aulas/${aulaForm.id}`, {
+          method: "PUT",
+          body: JSON.stringify(payloadBase),
+        });
+        setSucesso("Aula atualizada com sucesso.");
+      } else {
+        await apiFetch("/turma-aulas", {
+          method: "POST",
+          body: JSON.stringify(payloadBase),
+        });
+        setSucesso("Plano de aula cadastrado com sucesso.");
+      }
     }
+
+    limparFormularioAula();
+    await carregarTudo();
+  } catch (err) {
+    setErro(err.message || "Erro ao salvar aula");
+  } finally {
+    setSalvandoAula(false);
   }
+}
 
   async function excluirAula(aulaId) {
     const confirmar = window.confirm("Deseja realmente excluir esta aula?");
