@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../../../services/api";
 
 const API_URL =
@@ -50,7 +49,7 @@ function toInputDate(value) {
   return date.toISOString().slice(0, 10);
 }
 
-function buildEmptyRowFromAula(item, indexReal) {
+function buildRowFromAula(item, indexReal) {
   return {
     id: item.id,
     nome: item.treinando_nome || "",
@@ -69,13 +68,6 @@ function buildEmptyRowFromAula(item, indexReal) {
 
 export default function ChamadaTurma({ params }) {
   const { id } = params;
-  const searchParams = useSearchParams();
-
-  const turmaAulaId = searchParams.get("turma_aula_id");
-  const dataAulaParam = searchParams.get("data_aula");
-  const origem = searchParams.get("origem");
-
-  const modoAula = Boolean(turmaAulaId);
 
   const [participantes, setParticipantes] = useState([]);
   const [treinamento, setTreinamento] = useState(null);
@@ -89,9 +81,30 @@ export default function ChamadaTurma({ params }) {
   const [selecionados, setSelecionados] = useState({});
   const [busca, setBusca] = useState("");
 
+  const [modoAula, setModoAula] = useState(false);
+  const [turmaAulaId, setTurmaAulaId] = useState("");
+  const [origem, setOrigem] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const search = new URLSearchParams(window.location.search);
+      const aulaId = search.get("turma_aula_id") || "";
+      const dataAula = search.get("data_aula") || "";
+      const origemParam = search.get("origem") || "";
+
+      setTurmaAulaId(aulaId);
+      setModoAula(Boolean(aulaId));
+      setOrigem(origemParam);
+
+      if (dataAula) {
+        setDataChamada(dataAula);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     carregarBase();
-  }, [id, turmaAulaId, dataAulaParam]);
+  }, [id, turmaAulaId]);
 
   useEffect(() => {
     if (!modoAula && dataChamada) {
@@ -111,15 +124,18 @@ export default function ChamadaTurma({ params }) {
 
       setTreinamento(dadosTreinamento || null);
 
-      if (modoAula) {
-        const dataAula = toInputDate(
-          dataAulaParam ||
+      if (turmaAulaId) {
+        const dataAulaFinal =
+          dataChamada ||
+          toInputDate(
             dadosTreinamento?.data_inicio ||
-            dadosTreinamento?.data ||
-            new Date().toISOString().slice(0, 10)
-        );
+              dadosTreinamento?.data ||
+              new Date().toISOString().slice(0, 10)
+          );
 
-        setDataChamada(dataAula);
+        if (dataAulaFinal) {
+          setDataChamada(dataAulaFinal);
+        }
 
         await apiFetch("/presenca-aulas/inicializar", {
           method: "POST",
@@ -135,7 +151,7 @@ export default function ChamadaTurma({ params }) {
         });
 
         const lista = Array.isArray(registros) ? registros : [];
-        setParticipantes(lista.map((item, indexReal) => buildEmptyRowFromAula(item, indexReal)));
+        setParticipantes(lista.map((item, indexReal) => buildRowFromAula(item, indexReal)));
         setSelecionados({});
         setBusca("");
         setLoading(false);
@@ -362,7 +378,7 @@ export default function ChamadaTurma({ params }) {
         ).catch(() => []);
 
         const lista = Array.isArray(registros) ? registros : [];
-        setParticipantes(lista.map((item, indexReal) => buildEmptyRowFromAula(item, indexReal)));
+        setParticipantes(lista.map((item, indexReal) => buildRowFromAula(item, indexReal)));
         return;
       }
 
