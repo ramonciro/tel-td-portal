@@ -253,15 +253,18 @@ async function importarExcel() {
     const token =
       typeof window !== "undefined" ? localStorage.getItem("token") : "";
 
-    const response = await fetch(`${apiBase}/api/turmas-participantes/importar-excel`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    });
+    const response = await fetch(
+      `${apiBase}/api/turmas-participantes/importar-excel`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      }
+    );
 
     const rawText = await response.text();
-    let data = {};
 
+    let data = {};
     try {
       data = rawText ? JSON.parse(rawText) : {};
     } catch {
@@ -281,22 +284,6 @@ async function importarExcel() {
     setImportando(false);
   }
 }
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data?.message || "Erro ao importar Excel");
-      }
-
-      setSucesso("Participantes importados com sucesso.");
-      setArquivo(null);
-      await carregarTudo();
-    } catch (err) {
-      setErro(err.message || "Erro ao importar Excel");
-    } finally {
-      setImportando(false);
-    }
-  }
 
   async function inativarParticipante(item) {
     const confirmar = window.confirm(
