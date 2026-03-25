@@ -14,6 +14,7 @@ export default function ChamadaTurmaPage() {
   const [origem, setOrigem] = useState("");
 
   const [treinamento, setTreinamento] = useState(null);
+  const [registrosAula, setRegistrosAula] = useState([]);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -32,23 +33,39 @@ export default function ChamadaTurmaPage() {
   }, []);
 
   useEffect(() => {
-    async function carregarTreinamento() {
+    async function carregar() {
       try {
         if (!id) return;
+
         setLoading(true);
         setErro("");
 
-        const dados = await apiFetch(`/treinamentos/${id}`);
-        setTreinamento(dados || null);
+        const dadosTreinamento = await apiFetch(`/treinamentos/${id}`);
+        setTreinamento(dadosTreinamento || null);
+
+        if (turmaAulaId) {
+          await apiFetch("/presenca-aulas/inicializar", {
+            method: "POST",
+            body: JSON.stringify({
+              turma_aula_id: Number(turmaAulaId),
+            }),
+          });
+
+          const registros = await apiFetch(
+            `/presenca-aulas?turma_aula_id=${encodeURIComponent(turmaAulaId)}`
+          );
+
+          setRegistrosAula(Array.isArray(registros) ? registros : []);
+        }
       } catch (err) {
-        setErro(err.message || "Erro ao carregar treinamento");
+        setErro(err.message || "Erro ao carregar dados");
       } finally {
         setLoading(false);
       }
     }
 
-    carregarTreinamento();
-  }, [id]);
+    carregar();
+  }, [id, turmaAulaId]);
 
   if (loading) {
     return <div style={{ padding: 40 }}>Carregando...</div>;
@@ -75,8 +92,23 @@ export default function ChamadaTurmaPage() {
           <div>Instrutor: {treinamento?.instrutor || "-"}</div>
           <div>Data início: {treinamento?.data_inicio || treinamento?.data || "-"}</div>
           <div>Data fim: {treinamento?.data_fim || "-"}</div>
+
+          {modoAula ? (
+            <>
+              <hr style={{ margin: "24px 0" }} />
+              <div>Quantidade de registros da aula: {registrosAula.length}</div>
+
+              <div style={{ marginTop: 16 }}>
+                {registrosAula.slice(0, 10).map((item, index) => (
+                  <div key={item.id || index} style={{ marginBottom: 8 }}>
+                    {item.treinando_nome || "-"} — {item.status || "pendente"}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
         </>
       )}
     </div>
   );
-}
+                         }
