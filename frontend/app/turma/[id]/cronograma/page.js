@@ -145,6 +145,7 @@ export default function CronogramaTurmaPage() {
   const [aulasTurma, setAulasTurma] = useState([]);
   const [resumosAulas, setResumosAulas] = useState([]);
   const [turmasDisponiveis, setTurmasDisponiveis] = useState([]);
+  const [participantesResumo, setParticipantesResumo] = useState([]);
 
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
@@ -179,17 +180,20 @@ export default function CronogramaTurmaPage() {
       setErro("");
       setSucesso("");
 
-      const [dadosTreinamento, aulas, turmas] = await Promise.all([
+      const [dadosTreinamento, aulas, turmas, participantes] = await Promise.all([
         apiFetch(`/treinamentos/${id}`),
         apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
         apiFetch("/treinamentos").catch(() => []),
+        apiFetch(`/turmas-participantes?treinamento_id=${id}`).catch(() => []),
       ]);
 
       const listaAulas = sortByDateAsc(Array.isArray(aulas) ? aulas : []);
       const listaTurmas = Array.isArray(turmas) ? turmas : [];
+      const listaParticipantes = Array.isArray(participantes) ? participantes : [];
 
       setTreinamento(dadosTreinamento || null);
       setAulasTurma(listaAulas);
+      setParticipantesResumo(listaParticipantes);
       setTurmasDisponiveis(
         listaTurmas.filter((item) => String(item.id) !== String(id))
       );
@@ -320,6 +324,10 @@ export default function CronogramaTurmaPage() {
     );
     const aderenciaMedia = calcPercentual(totalPresentes, totalEsperado);
 
+    const ativos = participantesResumo.filter(
+      (item) => String(item.status || "Ativo").toLowerCase() === "ativo"
+    ).length;
+
     return {
       totalAulas,
       aulasComPresenca,
@@ -328,8 +336,9 @@ export default function CronogramaTurmaPage() {
       totalPendentes,
       totalAusentes,
       aderenciaMedia,
+      ativos,
     };
-  }, [resumosAulas]);
+  }, [resumosAulas, participantesResumo]);
 
   function abrirPresencaAula(aula) {
     window.location.href = `/turma/${id}?turma_aula_id=${aula.turma_aula_id}&data_aula=${aula.data_aula}&origem=cronograma`;
@@ -337,6 +346,10 @@ export default function CronogramaTurmaPage() {
 
   function voltar() {
     window.location.href = `/turma/${id}`;
+  }
+
+  function abrirParticipantes() {
+    window.location.href = `/turma/${id}/participantes`;
   }
 
   async function gerarCronogramaAutomatico() {
@@ -423,70 +436,70 @@ export default function CronogramaTurmaPage() {
     );
   }
 
-async function salvarAula() {
-  try {
-    setSalvandoAula(true);
-    setErro("");
-    setSucesso("");
-
-const payloadBase = {
-  treinamento_id: Number(id),
-  tema: aulaForm.titulo,
-  titulo: aulaForm.titulo,
-  data: aulaForm.data_aula,
-  data_aula: aulaForm.data_aula,
-  instrutor: aulaForm.instrutor,
-  carga_horaria: Number(aulaForm.carga_planejada || 0),
-  carga_planejada: Number(aulaForm.carga_planejada || 0),
-  objetivo: aulaForm.objetivo,
-};
-
-    const payloadCompleto = {
-      ...payloadBase,
-      tipo_aula: aulaForm.tipo_aula,
-      status_aula: aulaForm.status_aula,
-      conteudo_programatico: aulaForm.conteudo_programatico,
-      observacoes: aulaForm.observacoes,
-    };
-
+  async function salvarAula() {
     try {
-      if (aulaForm.id) {
-        await apiFetch(`/turma-aulas/${aulaForm.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payloadCompleto),
-        });
-        setSucesso("Aula atualizada com sucesso.");
-      } else {
-        await apiFetch("/turma-aulas", {
-          method: "POST",
-          body: JSON.stringify(payloadCompleto),
-        });
-        setSucesso("Plano de aula cadastrado com sucesso.");
-      }
-    } catch (erroCamposNovos) {
-      if (aulaForm.id) {
-        await apiFetch(`/turma-aulas/${aulaForm.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payloadBase),
-        });
-        setSucesso("Aula atualizada com sucesso.");
-      } else {
-        await apiFetch("/turma-aulas", {
-          method: "POST",
-          body: JSON.stringify(payloadBase),
-        });
-        setSucesso("Plano de aula cadastrado com sucesso.");
-      }
-    }
+      setSalvandoAula(true);
+      setErro("");
+      setSucesso("");
 
-    limparFormularioAula();
-    await carregarTudo();
-  } catch (err) {
-    setErro(err.message || "Erro ao salvar aula");
-  } finally {
-    setSalvandoAula(false);
+      const payloadBase = {
+        treinamento_id: Number(id),
+        tema: aulaForm.titulo,
+        titulo: aulaForm.titulo,
+        data: aulaForm.data_aula,
+        data_aula: aulaForm.data_aula,
+        instrutor: aulaForm.instrutor,
+        carga_horaria: Number(aulaForm.carga_planejada || 0),
+        carga_planejada: Number(aulaForm.carga_planejada || 0),
+        objetivo: aulaForm.objetivo,
+      };
+
+      const payloadCompleto = {
+        ...payloadBase,
+        tipo_aula: aulaForm.tipo_aula,
+        status_aula: aulaForm.status_aula,
+        conteudo_programatico: aulaForm.conteudo_programatico,
+        observacoes: aulaForm.observacoes,
+      };
+
+      try {
+        if (aulaForm.id) {
+          await apiFetch(`/turma-aulas/${aulaForm.id}`, {
+            method: "PUT",
+            body: JSON.stringify(payloadCompleto),
+          });
+          setSucesso("Aula atualizada com sucesso.");
+        } else {
+          await apiFetch("/turma-aulas", {
+            method: "POST",
+            body: JSON.stringify(payloadCompleto),
+          });
+          setSucesso("Plano de aula cadastrado com sucesso.");
+        }
+      } catch {
+        if (aulaForm.id) {
+          await apiFetch(`/turma-aulas/${aulaForm.id}`, {
+            method: "PUT",
+            body: JSON.stringify(payloadBase),
+          });
+          setSucesso("Aula atualizada com sucesso.");
+        } else {
+          await apiFetch("/turma-aulas", {
+            method: "POST",
+            body: JSON.stringify(payloadBase),
+          });
+          setSucesso("Plano de aula cadastrado com sucesso.");
+        }
+      }
+
+      limparFormularioAula();
+      await carregarTudo();
+    } catch (err) {
+      setErro(err.message || "Erro ao salvar aula");
+    } finally {
+      setSalvandoAula(false);
+    }
   }
-}
 
   async function excluirAula(aulaId) {
     const confirmar = window.confirm("Deseja realmente excluir esta aula?");
@@ -524,8 +537,7 @@ const payloadBase = {
         <div style={heroBadge}>Cronograma da turma</div>
         <h1 style={heroTitle}>{treinamento?.tema || "Cronograma"}</h1>
         <p style={heroSubtitle}>
-          Planejamento em formato de plano de aula, com indicadores operacionais
-          preservados no painel por dia.
+          Planejamento em formato de plano de aula, com indicadores operacionais preservados no painel por dia.
         </p>
 
         <div style={heroGrid}>
@@ -537,7 +549,7 @@ const payloadBase = {
               treinamento?.data_inicio || treinamento?.data
             )} até ${formatDate(treinamento?.data_fim)}`}
           />
-          <InfoCard label="Turma" value={treinamento?.tema || "-"} />
+          <InfoCard label="Ativos na turma" value={resumoGeral.ativos} />
         </div>
       </div>
 
@@ -551,6 +563,23 @@ const payloadBase = {
         <StatCard title="Ausências" value={resumoGeral.totalAusentes} />
         <StatCard title="Pendências" value={resumoGeral.totalPendentes} />
         <StatCard title="Aderência média" value={`${resumoGeral.aderenciaMedia}%`} />
+      </div>
+
+      <div style={sectionCard}>
+        <div style={sectionHeader}>
+          <div>
+            <h2 style={sectionTitle}>Ações rápidas da turma</h2>
+            <p style={sectionSubtitle}>
+              Ajuste o plano de aula e gerencie a base de treinandos sem sair da turma.
+            </p>
+          </div>
+        </div>
+
+        <div style={actionsRowLeft}>
+          <button style={btnSecondary} onClick={abrirParticipantes}>
+            Base da turma
+          </button>
+        </div>
       </div>
 
       <div style={sectionCard}>
