@@ -1,57 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../../services/api";
 
 function formatDate(value) {
   if (!value) return "-";
-
-  const text = String(value).slice(0, 10);
-  const parts = text.split("-");
-
-  if (parts.length === 3) {
-    const [y, m, d] = parts.map(Number);
-    if (y && m && d) {
-      return new Date(y, m - 1, d, 12, 0, 0).toLocaleDateString("pt-BR");
-    }
-  }
-
-  return String(value);
-}
-
-function getStatusStyle(status) {
-  const key = String(status || "pendente").toLowerCase();
-
-  if (key === "presente") {
-    return {
-      background: "#dcfce7",
-      color: "#166534",
-      border: "1px solid #bbf7d0",
-    };
-  }
-
-  if (key === "ausente") {
-    return {
-      background: "#fee2e2",
-      color: "#b91c1c",
-      border: "1px solid #fecaca",
-    };
-  }
-
-  if (key === "justificado") {
-    return {
-      background: "#fef3c7",
-      color: "#92400e",
-      border: "1px solid #fde68a",
-    };
-  }
-
-  return {
-    background: "#eef2ff",
-    color: "#4338ca",
-    border: "1px solid #c7d2fe",
-  };
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toLocaleDateString("pt-BR");
 }
 
 function calcPercentual(parte, total) {
@@ -59,349 +16,185 @@ function calcPercentual(parte, total) {
   return Math.round((Number(parte || 0) / Number(total || 0)) * 100);
 }
 
-function sortByDateAsc(items, field = "data_aula") {
-  return [...items].sort((a, b) => {
-    const da = new Date(a?.[field] || 0).getTime();
-    const db = new Date(b?.[field] || 0).getTime();
-    return da - db;
-  });
+function getStatusTurma({ totalAulas, aulasComPresenca, aderenciaMedia }) {
+  if (!totalAulas) return { label: "Sem cronograma", tone: "neutral" };
+  if (!aulasComPresenca) return { label: "Não iniciada", tone: "warning" };
+  if (aulasComPresenca < totalAulas) return { label: "Em andamento", tone: "info" };
+  if (aderenciaMedia >= 80) return { label: "Concluída", tone: "success" };
+  return { label: "Concluída com atenção", tone: "danger" };
 }
 
-export default function ChamadaTurmaPage() {
-  const routeParams = useParams();
-  const id = routeParams?.id;
+function getToneStyle(tone) {
+  const map = {
+    success: {
+      background: "#dcfce7",
+      color: "#166534",
+      border: "1px solid #bbf7d0",
+    },
+    info: {
+      background: "#dbeafe",
+      color: "#1d4ed8",
+      border: "1px solid #bfdbfe",
+    },
+    warning: {
+      background: "#fef3c7",
+      color: "#92400e",
+      border: "1px solid #fde68a",
+    },
+    danger: {
+      background: "#fee2e2",
+      color: "#b91c1c",
+      border: "1px solid #fecaca",
+    },
+    neutral: {
+      background: "#f1f5f9",
+      color: "#334155",
+      border: "1px solid #cbd5e1",
+    },
+  };
 
-  const [modoAula, setModoAula] = useState(false);
-  const [turmaAulaId, setTurmaAulaId] = useState("");
-  const [dataAula, setDataAula] = useState("");
-  const [origem, setOrigem] = useState("");
+  return map[tone] || map.neutral;
+}
+
+function statusExecucaoLabel(value) {
+  const mapa = {
+    planejada: "Planejada",
+    em_andamento: "Em andamento",
+    concluida: "Concluída",
+    reprogramada: "Reprogramada",
+    cancelada: "Cancelada",
+  };
+  return mapa[String(value || "").toLowerCase()] || "Planejada";
+}
+
+export default function GestaoTurmaPage() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+
+  const id = params?.id;
+  const turmaAulaId = searchParams.get("turma_aula_id");
+  const dataAula = searchParams.get("data_aula");
+  const origem = searchParams.get("origem");
 
   const [treinamento, setTreinamento] = useState(null);
-  const [registrosAula, setRegistrosAula] = useState([]);
-  const [aulasTurma, setAulasTurma] = useState([]);
-  const [resumosAulas, setResumosAulas] = useState([]);
-  const [participantesTurma, setParticipantesTurma] = useState([]);
+  const [participantes, setParticipantes] = useState([]);
+  const [aulas, setAulas] = useState([]);
+  const [resumoAulaSelecionada, setResumoAulaSelecionada] = useState(null);
 
+  const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [salvando, setSalvando] = useState(false);
-  const [busca, setBusca] = useState("");
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    carregarTudo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, turmaAulaId, dataAula]);
 
-    const search = new URLSearchParams(window.location.search);
-    const aulaId = search.get("turma_aula_id") || "";
-    const data = search.get("data_aula") || "";
-    const origemParam = search.get("origem") || "";
-
-    setTurmaAulaId(aulaId);
-    setModoAula(Boolean(aulaId));
-    setDataAula(data);
-    setOrigem(origemParam);
-  }, []);
-
-  useEffect(() => {
-    async function carregar() {
-      try {
-        if (!id) return;
-
-        setLoading(true);
-        setErro("");
-        setSucesso("");
-
-        const [dadosTreinamento, aulas, participantes] = await Promise.all([
-          apiFetch(`/treinamentos/${id}`),
-          apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
-          apiFetch(`/turmas-participantes?treinamento_id=${id}`).catch(() => []),
-        ]);
-
-        const listaAulas = Array.isArray(aulas) ? aulas : [];
-
-        setTreinamento(dadosTreinamento || null);
-        setAulasTurma(listaAulas);
-        setParticipantesTurma(Array.isArray(participantes) ? participantes : []);
-
-        if (listaAulas.length) {
-          const resumos = await Promise.all(
-            listaAulas.map(async (aula) => {
-              try {
-                const resumo = await apiFetch(`/presenca-aulas/resumo/${aula.id}`);
-                return {
-                  turma_aula_id: aula.id,
-                  data_aula: aula.data_aula,
-                  titulo: aula.titulo || aula.nome || aula.tema || null,
-                  ...resumo,
-                };
-              } catch {
-                return {
-                  turma_aula_id: aula.id,
-                  data_aula: aula.data_aula,
-                  titulo: aula.titulo || aula.nome || aula.tema || null,
-                  total: 0,
-                  presentes: 0,
-                  ausentes: 0,
-                  justificados: 0,
-                  pendentes: 0,
-                  percentual: 0,
-                };
-              }
-            })
-          );
-
-          setResumosAulas(resumos);
-        } else {
-          setResumosAulas([]);
-        }
-
-        if (turmaAulaId) {
-          await apiFetch("/presenca-aulas/inicializar", {
-            method: "POST",
-            body: JSON.stringify({
-              turma_aula_id: Number(turmaAulaId),
-            }),
-          });
-
-          const registros = await apiFetch(
-            `/presenca-aulas?turma_aula_id=${encodeURIComponent(turmaAulaId)}`
-          );
-
-          setRegistrosAula(Array.isArray(registros) ? registros : []);
-        } else {
-          setRegistrosAula([]);
-        }
-      } catch (err) {
-        setErro(err.message || "Erro ao carregar dados");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    carregar();
-  }, [id, turmaAulaId]);
-
-  function atualizarStatus(index, status) {
-    const copia = [...registrosAula];
-    copia[index] = {
-      ...copia[index],
-      status,
-    };
-    setRegistrosAula(copia);
-  }
-
-  function atualizarJustificativa(index, justificativa) {
-    const copia = [...registrosAula];
-    copia[index] = {
-      ...copia[index],
-      justificativa,
-    };
-    setRegistrosAula(copia);
-  }
-
-  async function salvarPresencaAula() {
+  async function carregarTudo() {
     try {
-      setSalvando(true);
+      if (!id) return;
+
+      setLoading(true);
       setErro("");
       setSucesso("");
 
-      await apiFetch("/presenca-aulas/salvar", {
-        method: "POST",
-        body: JSON.stringify({
-          turma_aula_id: Number(turmaAulaId),
-          registros: registrosAula.map((item) => ({
-            treinando_nome: item.treinando_nome,
-            status: item.status || "pendente",
-            justificativa: item.justificativa || "",
-          })),
-        }),
-      });
-
-      const [registrosAtualizados, resumoAtualizado] = await Promise.all([
-        apiFetch(`/presenca-aulas?turma_aula_id=${encodeURIComponent(turmaAulaId)}`).catch(() => []),
-        apiFetch(`/presenca-aulas/resumo/${turmaAulaId}`).catch(() => null),
+      const [dadosTreinamento, listaParticipantes, listaAulas] = await Promise.all([
+        apiFetch(`/treinamentos/${id}`),
+        apiFetch(`/treinamentos/${id}/participantes`).catch(() => []),
+        apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
       ]);
 
-      setRegistrosAula(Array.isArray(registrosAtualizados) ? registrosAtualizados : []);
+      const treinamentoSafe = dadosTreinamento || null;
+      const participantesSafe = Array.isArray(listaParticipantes) ? listaParticipantes : [];
+      const aulasSafe = Array.isArray(listaAulas) ? listaAulas : [];
 
-      if (resumoAtualizado) {
-        setResumosAulas((prev) =>
-          prev.map((item) =>
-            String(item.turma_aula_id) === String(turmaAulaId)
-              ? { ...item, ...resumoAtualizado }
-              : item
-          )
+      setTreinamento(treinamentoSafe);
+      setParticipantes(participantesSafe);
+      setAulas(aulasSafe);
+
+      if (turmaAulaId) {
+        const resumo = await apiFetch(`/presenca-aulas/resumo/${turmaAulaId}`).catch(
+          () => null
         );
+        if (resumo) {
+          setResumoAulaSelecionada({
+            total: Number(resumo.total || 0),
+            presentes: Number(resumo.presentes || 0),
+            ausentes: Number(resumo.ausentes || 0),
+            justificados: Number(resumo.justificados || 0),
+            pendentes: Number(resumo.pendentes || 0),
+            percentual: Number(resumo.percentual || 0),
+          });
+        } else {
+          setResumoAulaSelecionada(null);
+        }
+      } else {
+        setResumoAulaSelecionada(null);
       }
-
-      setSucesso("Presença da aula salva com sucesso.");
     } catch (err) {
-      setErro(err.message || "Erro ao salvar presença");
+      setErro(err.message || "Erro ao carregar a gestão da turma.");
     } finally {
-      setSalvando(false);
+      setLoading(false);
     }
   }
 
-  const resumoAulaAtual = useMemo(() => {
-    const presentes = registrosAula.filter((i) => i.status === "presente").length;
-    const ausentes = registrosAula.filter((i) => i.status === "ausente").length;
-    const justificados = registrosAula.filter((i) => i.status === "justificado").length;
-    const pendentes = registrosAula.filter(
-      (i) => !i.status || i.status === "pendente"
+  const resumoGeral = useMemo(() => {
+    const totalAulas = aulas.length;
+    const treinandosPrevistos = participantes.length;
+
+    const aulasMapeadas = aulas.length;
+
+    const aulasComPresenca = aulas.filter((aula) =>
+      ["concluida", "em_andamento"].includes(
+        String(aula.status_execucao || "").toLowerCase()
+      )
     ).length;
 
-    return {
-      total: registrosAula.length,
-      presentes,
-      ausentes,
-      justificados,
-      pendentes,
-      percentual: calcPercentual(presentes, registrosAula.length),
-    };
-  }, [registrosAula]);
-
-  const resumoTurma = useMemo(() => {
-    const totalAulas = aulasTurma.length;
-    const aulasOrdenadas = sortByDateAsc(aulasTurma);
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-
-    const aulasLancadas = resumosAulas.filter((item) => {
-      return (
-        Number(item.total || 0) > 0 ||
-        Number(item.presentes || 0) > 0 ||
-        Number(item.ausentes || 0) > 0 ||
-        Number(item.justificados || 0) > 0 ||
-        Number(item.pendentes || 0) > 0
-      );
-    });
-
-    const aulasComPresenca = aulasLancadas.length;
-
-    const totalEsperado = aulasLancadas.reduce(
-      (acc, item) => acc + Number(item.total || 0),
-      0
-    );
-
-    const totalPresentes = aulasLancadas.reduce(
-      (acc, item) => acc + Number(item.presentes || 0),
-      0
-    );
-
-    const totalAusentes = aulasLancadas.reduce(
-      (acc, item) => acc + Number(item.ausentes || 0),
-      0
-    );
-
-    const totalJustificados = aulasLancadas.reduce(
-      (acc, item) => acc + Number(item.justificados || 0),
-      0
-    );
-
-    const totalPendentes = aulasLancadas.reduce(
-      (acc, item) => acc + Number(item.pendentes || 0),
-      0
-    );
-
-    const aderenciaMedia = calcPercentual(totalPresentes, totalEsperado);
-
-    let ultimaAulaLancada = null;
-    if (aulasLancadas.length) {
-      ultimaAulaLancada =
-        sortByDateAsc(aulasLancadas, "data_aula").slice(-1)[0] || null;
-    }
-
-    const proximaAulaPrevista =
-      aulasOrdenadas.find((aula) => {
-        const d = new Date(aula?.data_aula || 0);
-        d.setHours(0, 0, 0, 0);
-        return d >= hoje;
-      }) || aulasOrdenadas[0] || null;
-
-    const previstos = Number(
-      treinamento?.participantes_previstos ||
-        treinamento?.participantes ||
-        0
-    );
-
-    const ativos = participantesTurma.filter(
-      (item) => String(item.status || "ativo").toLowerCase() === "ativo"
+    const pendencias = aulas.filter(
+      (aula) => String(aula.status_execucao || "planejada").toLowerCase() === "planejada"
     ).length;
 
-    const inativos = participantesTurma.filter(
-      (item) => String(item.status || "").toLowerCase() !== "ativo"
-    ).length;
+    const percentualMedio =
+      totalAulas > 0 ? calcPercentual(aulasComPresenca, totalAulas) : 0;
 
-    let statusGeral = {
-      label: "Não iniciada",
-      bg: "#fef3c7",
-      color: "#92400e",
-      border: "1px solid #fde68a",
-    };
-
-    if (aulasComPresenca > 0) {
-      statusGeral = {
-        label: "Em andamento",
-        bg: "#dbeafe",
-        color: "#1d4ed8",
-        border: "1px solid #bfdbfe",
-      };
-    }
-
-    if (aulasComPresenca > 0 && totalPendentes > 0) {
-      statusGeral = {
-        label: "Com pendências",
-        bg: "#fee2e2",
-        color: "#b91c1c",
-        border: "1px solid #fecaca",
-      };
-    }
-
-    if (totalAulas > 0 && aulasComPresenca >= totalAulas && totalPendentes === 0) {
-      statusGeral = {
-        label: "Concluída",
-        bg: "#dcfce7",
-        color: "#166534",
-        border: "1px solid #bbf7d0",
-      };
-    }
-
-    return {
-      nomeTurma: treinamento?.tema || `Turma #${id || "-"}`,
-      previstos,
-      ativos,
-      inativos,
+    const status = getStatusTurma({
       totalAulas,
       aulasComPresenca,
-      totalEsperado,
-      totalPresentes,
-      totalAusentes,
-      totalJustificados,
-      totalPendentes,
-      aderenciaMedia,
-      ultimaAulaLancada,
-      proximaAulaPrevista,
-      instrutorMinistrando: treinamento?.instrutor || "-",
-      statusGeral,
+      aderenciaMedia: percentualMedio,
+    });
+
+    const proximaAula =
+      aulas
+        .filter(
+          (aula) =>
+            String(aula.status_execucao || "planejada").toLowerCase() === "planejada"
+        )
+        .sort(
+          (a, b) =>
+            new Date(a.data_aula || 0).getTime() - new Date(b.data_aula || 0).getTime()
+        )[0] || null;
+
+    return {
+      treinandosPrevistos,
+      totalAulas,
+      aulasMapeadas,
+      aulasComPresenca,
+      pendencias,
+      percentualMedio,
+      status,
+      proximaAula,
     };
-  }, [aulasTurma, resumosAulas, treinamento, id, participantesTurma]);
+  }, [aulas, participantes]);
 
-  const registrosFiltrados = useMemo(() => {
-    const termo = String(busca || "").trim().toLowerCase();
-    if (!termo) return registrosAula;
-
-    return registrosAula.filter((item) =>
-      String(item.treinando_nome || "").toLowerCase().includes(termo)
+  const aulaSelecionada = useMemo(() => {
+    if (!turmaAulaId) return null;
+    return (
+      aulas.find((item) => String(item.id) === String(turmaAulaId)) || null
     );
-  }, [registrosAula, busca]);
+  }, [aulas, turmaAulaId]);
 
   function voltar() {
-    if (modoAula || origem === "cronograma") {
-      window.location.href = `/turma/${id}/cronograma`;
-      return;
-    }
-
-    window.location.href = "/presencas";
+    window.location.href = "/treinamentos";
   }
 
   function abrirCronograma() {
@@ -412,18 +205,20 @@ export default function ChamadaTurmaPage() {
     window.location.href = `/turma/${id}/participantes`;
   }
 
-  function atualizarPagina() {
-    window.location.reload();
-  }
+  function abrirPresencaAula() {
+    if (!turmaAulaId || !dataAula) {
+      setErro("Selecione uma aula pelo cronograma para abrir a presença.");
+      return;
+    }
 
-  function abrirPresencaAtual() {
-    if (!turmaAulaId) return;
-    window.location.href = `/turma/${id}?turma_aula_id=${turmaAulaId}&data_aula=${dataAula}&origem=cronograma`;
+    window.location.href = `/turma/${id}?turma_aula_id=${turmaAulaId}&data_aula=${dataAula}&origem=${origem || "cronograma"}`;
   }
 
   if (loading) {
     return <div style={loadingWrap}>Carregando gestão da turma...</div>;
   }
+
+  const toneStyle = getToneStyle(resumoGeral.status.tone);
 
   return (
     <div style={page}>
@@ -434,27 +229,23 @@ export default function ChamadaTurmaPage() {
       </div>
 
       <div style={hero}>
-        <div style={heroBadge}>
-          {modoAula ? "Presença por aula" : "Gestão da turma"}
-        </div>
-
-        <h1 style={heroTitle}>{resumoTurma.nomeTurma}</h1>
-
+        <div style={heroBadge}>Gestão da turma</div>
+        <h1 style={heroTitle}>{treinamento?.tema || "Turma"}</h1>
         <p style={heroSubtitle}>
-          {modoAula
-            ? "Controle operacional da presença da aula selecionada, com visão gerencial consolidada da turma."
-            : "Visão consolidada da turma, seus dados principais e leitura executiva do andamento."}
+          Visão consolidada da turma, seus dados principais e atalhos de acompanhamento.
         </p>
 
         <div style={heroGrid}>
-          <InfoCard label="Turma" value={resumoTurma.nomeTurma} />
+          <InfoCard label="Turma" value={treinamento?.tema || "-"} />
           <InfoCard label="Cliente" value={treinamento?.cliente || "-"} />
           <InfoCard label="Instrutor" value={treinamento?.instrutor || "-"} />
           <InfoCard
             label="Período"
             value={`${formatDate(
               treinamento?.data_inicio || treinamento?.data
-            )} até ${formatDate(treinamento?.data_fim)}`}
+            )} até ${formatDate(
+              treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data
+            )}`}
           />
         </div>
       </div>
@@ -463,250 +254,108 @@ export default function ChamadaTurmaPage() {
       {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
       <div style={statsGrid}>
-        <StatCard title="Treinandos previstos" value={resumoTurma.previstos} />
-        <StatCard title="Ativos na turma" value={resumoTurma.ativos} />
-        <StatCard title="Aulas planejadas" value={resumoTurma.totalAulas} />
-        <StatCard title="Aulas iniciadas" value={resumoTurma.aulasComPresenca} />
-        <StatCard title="Pendências" value={resumoTurma.totalPendentes} />
-        <StatCard title="Aderência média" value={`${resumoTurma.aderenciaMedia}%`} />
+        <StatCard title="Treinandos previstos" value={resumoGeral.treinandosPrevistos} />
+        <StatCard title="Aulas planejadas" value={resumoGeral.totalAulas} />
+        <StatCard title="Aulas mapeadas" value={resumoGeral.aulasMapeadas} />
+        <StatCard title="Pendências" value={resumoGeral.pendencias} />
+        <StatCard title="Percentual médio" value={`${resumoGeral.percentualMedio}%`} />
       </div>
 
       <div style={statusCard}>
         <div style={statusLabel}>Status geral da turma</div>
-        <div
-          style={{
-            ...statusBadge,
-            background: resumoTurma.statusGeral.bg,
-            color: resumoTurma.statusGeral.color,
-            border: resumoTurma.statusGeral.border,
-          }}
-        >
-          {resumoTurma.statusGeral.label}
+        <div style={{ ...statusBadge, ...toneStyle }}>
+          {resumoGeral.status.label}
         </div>
       </div>
 
       <div style={sectionCard}>
-        <div style={sectionHeader}>
-          <div>
-            <h2 style={sectionTitle}>Ações rápidas</h2>
-            <p style={sectionSubtitle}>
-              Navegação rápida para acompanhamento da turma e atualização operacional.
-            </p>
-          </div>
-        </div>
+        <h2 style={sectionTitle}>Ações rápidas</h2>
+        <p style={sectionSubtitle}>
+          Navegação rápida para acompanhamento da turma e atualização operacional.
+        </p>
 
-        <div style={quickActions}>
+        <div style={actionsRow}>
           <button style={btnSecondary} onClick={abrirCronograma}>
             Abrir cronograma
           </button>
+
           <button style={btnSecondary} onClick={abrirParticipantes}>
             Base da turma
           </button>
-          <button style={btnSecondary} onClick={atualizarPagina}>
+
+          <button style={btnSecondary} onClick={carregarTudo}>
             Atualizar dados
           </button>
-          {modoAula ? (
-            <>
-              <button style={btnSecondary} onClick={abrirPresencaAtual}>
-                Reabrir presença da aula
-              </button>
-              <button style={btnPrimary} onClick={salvarPresencaAula} disabled={salvando}>
-                {salvando ? "Salvando..." : "Salvar presença da aula"}
-              </button>
-            </>
-          ) : null}
-        </div>
-      </div>
 
-      <div style={sectionCard}>
-        <div style={sectionHeader}>
-          <div>
-            <h2 style={sectionTitle}>Resumo gerencial</h2>
-            <p style={sectionSubtitle}>
-              Leitura consolidada da turma a partir das aulas planejadas, participantes ativos e presenças lançadas.
-            </p>
-          </div>
-        </div>
-
-        <div style={managerGrid}>
-          <OperationalItem label="Turma" value={resumoTurma.nomeTurma} />
-          <OperationalItem label="Instrutor ministrando" value={resumoTurma.instrutorMinistrando} />
-          <OperationalItem label="Participantes ativos" value={resumoTurma.ativos} />
-          <OperationalItem label="Participantes inativos" value={resumoTurma.inativos} />
-          <OperationalItem label="Presenças acumuladas" value={`${resumoTurma.totalPresentes} de ${resumoTurma.totalEsperado}`} />
-          <OperationalItem label="Ausências acumuladas" value={resumoTurma.totalAusentes} />
-          <OperationalItem label="Justificados" value={resumoTurma.totalJustificados} />
-          <OperationalItem
-            label="Próxima aula prevista"
-            value={
-              resumoTurma.proximaAulaPrevista
-                ? formatDate(resumoTurma.proximaAulaPrevista.data_aula)
-                : "-"
-            }
-          />
-          <OperationalItem
-            label="Última aula lançada"
-            value={
-              resumoTurma.ultimaAulaLancada
-                ? formatDate(resumoTurma.ultimaAulaLancada.data_aula)
-                : "-"
-            }
-          />
-          <OperationalItem
-            label="Origem do fluxo"
-            value={origem || (modoAula ? "cronograma" : "gestão")}
-          />
-        </div>
-      </div>
-
-      <div style={sectionCard}>
-        <div style={sectionHeader}>
-          <div>
-            <h2 style={sectionTitle}>Base da turma</h2>
-            <p style={sectionSubtitle}>
-              Gestão da base de treinandos da turma, com importação única, substituição e inativação.
-            </p>
-          </div>
-          <button style={btnPrimary} onClick={abrirParticipantes}>
-            Abrir gestão de participantes
+          <button style={btnPrimary} onClick={abrirPresencaAula}>
+            {turmaAulaId ? "Reabrir presença da aula" : "Salvar presença da aula"}
           </button>
         </div>
-
-        <div style={operationalGrid}>
-          <OperationalItem label="Ativos" value={resumoTurma.ativos} />
-          <OperationalItem label="Inativos" value={resumoTurma.inativos} />
-          <OperationalItem label="Previstos" value={resumoTurma.previstos} />
-          <OperationalItem label="Uso recomendado" value="Importar uma vez por turma" />
-        </div>
       </div>
 
       <div style={sectionCard}>
-        <div style={sectionHeader}>
-          <div>
-            <h2 style={sectionTitle}>Resumo operacional</h2>
-            <p style={sectionSubtitle}>
-              Informações operacionais e contexto atual da turma.
-            </p>
-          </div>
-        </div>
+        <h2 style={sectionTitle}>Resumo gerencial</h2>
+        <p style={sectionSubtitle}>
+          Leitura consolidada da turma a partir das aulas planejadas e presenças lançadas.
+        </p>
 
-        <div style={operationalGrid}>
-          <OperationalItem label="Turma" value={resumoTurma.nomeTurma} />
-          <OperationalItem label="Público" value={treinamento?.publico || "-"} />
-          <OperationalItem label="Carga horária" value={treinamento?.carga_horaria || "-"} />
-          <OperationalItem label="Cliente" value={treinamento?.cliente || "-"} />
-          <OperationalItem label="Instrutor" value={resumoTurma.instrutorMinistrando} />
-          <OperationalItem
-            label="Data da aula"
-            value={modoAula ? formatDate(dataAula) : "-"}
+        <div style={summaryGrid}>
+          <SummaryItem label="Turma" value={treinamento?.tema || "-"} />
+          <SummaryItem label="Instrutor" value={treinamento?.instrutor || "-"} />
+          <SummaryItem
+            label="Presenças acumuladas"
+            value={`${resumoAulaSelecionada?.presentes ?? 0} de ${resumoAulaSelecionada?.total ?? 0}`}
+          />
+          <SummaryItem
+            label="Ausências acumuladas"
+            value={String(resumoAulaSelecionada?.ausentes ?? 0)}
+          />
+          <SummaryItem
+            label="Justificados"
+            value={String(resumoAulaSelecionada?.justificados ?? 0)}
+          />
+          <SummaryItem
+            label="Próxima aula prevista"
+            value={
+              resumoGeral.proximaAula
+                ? formatDate(resumoGeral.proximaAula.data_aula)
+                : "-"
+            }
           />
         </div>
       </div>
 
-      {modoAula ? (
-        <>
-          <div style={sectionCard}>
-            <div style={sectionHeader}>
-              <div>
-                <h2 style={sectionTitle}>Resumo da aula</h2>
-                <p style={sectionSubtitle}>
-                  Indicadores consolidados do lançamento da aula selecionada.
-                </p>
-              </div>
-
-              <input
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder="Buscar treinando"
-                style={searchInput}
-              />
-            </div>
-
-            <div style={statsGridSmall}>
-              <StatCard title="Total" value={resumoAulaAtual.total} />
-              <StatCard title="Presentes" value={resumoAulaAtual.presentes} />
-              <StatCard title="Ausentes" value={resumoAulaAtual.ausentes} />
-              <StatCard title="Justificados" value={resumoAulaAtual.justificados} />
-              <StatCard title="Pendentes" value={resumoAulaAtual.pendentes} />
-            </div>
-          </div>
-
-          <div style={sectionCard}>
-            <div style={sectionHeader}>
-              <div>
-                <h2 style={sectionTitle}>Presença por aula</h2>
-                <p style={sectionSubtitle}>
-                  Aula vinculada ao dia {formatDate(dataAula)} • Turma aula ID {turmaAulaId || "-"}
-                </p>
-              </div>
-            </div>
-
-            <div style={listaRegistros}>
-              {registrosFiltrados.map((item, index) => (
-                <div key={item.id || index} style={registroCard}>
-                  <div style={registroTop}>
-                    <div>
-                      <div style={registroNome}>{item.treinando_nome || "-"}</div>
-                      <div style={{ ...statusPill, ...getStatusStyle(item.status) }}>
-                        {String(item.status || "pendente").toUpperCase()}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={registroGrid}>
-                    <select
-                      value={item.status || "pendente"}
-                      onChange={(e) => {
-                        const indexReal = registrosAula.findIndex(
-                          (r) => (r.id || r.treinando_nome) === (item.id || item.treinando_nome)
-                        );
-                        if (indexReal >= 0) atualizarStatus(indexReal, e.target.value);
-                      }}
-                      style={field}
-                    >
-                      <option value="pendente">Pendente</option>
-                      <option value="presente">Presente</option>
-                      <option value="ausente">Ausente</option>
-                      <option value="justificado">Justificado</option>
-                    </select>
-
-                    <input
-                      value={item.justificativa || ""}
-                      onChange={(e) => {
-                        const indexReal = registrosAula.findIndex(
-                          (r) => (r.id || r.treinando_nome) === (item.id || item.treinando_nome)
-                        );
-                        if (indexReal >= 0) {
-                          atualizarJustificativa(indexReal, e.target.value);
-                        }
-                      }}
-                      placeholder="Justificativa"
-                      style={field}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div style={actionsRow}>
-              <button
-                onClick={salvarPresencaAula}
-                disabled={salvando}
-                style={btnPrimary}
-              >
-                {salvando ? "Salvando..." : "Salvar presença da aula"}
-              </button>
-            </div>
-          </div>
-        </>
-      ) : (
+      {aulaSelecionada ? (
         <div style={sectionCard}>
-          <h2 style={sectionTitle}>Resumo da turma</h2>
+          <h2 style={sectionTitle}>Resumo da aula</h2>
           <p style={sectionSubtitle}>
-            A gestão da turma agora considera planejamento, base ativa de participantes, presença lançada, aderência média e marcos principais do cronograma.
+            Indicadores consolidados do lançamento da aula selecionada.
           </p>
+
+          <div style={statsGrid}>
+            <StatCard title="Total" value={resumoAulaSelecionada?.total ?? 0} />
+            <StatCard title="Presentes" value={resumoAulaSelecionada?.presentes ?? 0} />
+            <StatCard title="Ausentes" value={resumoAulaSelecionada?.ausentes ?? 0} />
+            <StatCard
+              title="Justificados"
+              value={resumoAulaSelecionada?.justificados ?? 0}
+            />
+            <StatCard title="Pendentes" value={resumoAulaSelecionada?.pendentes ?? 0} />
+          </div>
+
+          <div style={aulaInfoBox}>
+            <div><strong>Aula:</strong> {aulaSelecionada.titulo || "-"}</div>
+            <div><strong>Dia:</strong> {aulaSelecionada.dia_numero || "-"}</div>
+            <div><strong>Data:</strong> {formatDate(aulaSelecionada.data_aula)}</div>
+            <div>
+              <strong>Status:</strong> {statusExecucaoLabel(aulaSelecionada.status_execucao)}
+            </div>
+            <div>
+              <strong>Instrutor:</strong> {aulaSelecionada.instrutor_responsavel || treinamento?.instrutor || "-"}
+            </div>
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -729,11 +378,11 @@ function StatCard({ title, value }) {
   );
 }
 
-function OperationalItem({ label, value }) {
+function SummaryItem({ label, value }) {
   return (
-    <div style={operationalItem}>
-      <div style={operationalLabel}>{label}</div>
-      <div style={operationalValue}>{value}</div>
+    <div style={summaryItem}>
+      <div style={summaryLabel}>{label}</div>
+      <div style={summaryValue}>{value}</div>
     </div>
   );
 }
@@ -817,7 +466,6 @@ const infoCard = {
 const infoLabel = {
   fontSize: 12,
   textTransform: "uppercase",
-  letterSpacing: ".04em",
   color: "rgba(255,255,255,.68)",
 };
 
@@ -830,14 +478,7 @@ const infoValue = {
 const statsGrid = {
   marginTop: 16,
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-  gap: 12,
-};
-
-const statsGridSmall = {
-  marginTop: 6,
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
   gap: 12,
 };
 
@@ -846,7 +487,6 @@ const statCard = {
   borderRadius: 16,
   padding: 16,
   border: "1px solid #e2e8f0",
-  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
 };
 
 const statTitle = {
@@ -867,10 +507,9 @@ const statusCard = {
   borderRadius: 20,
   padding: 20,
   border: "1px solid #e2e8f0",
-  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
   display: "flex",
-  justifyContent: "space-between",
   alignItems: "center",
+  justifyContent: "space-between",
   gap: 12,
   flexWrap: "wrap",
 };
@@ -883,8 +522,8 @@ const statusLabel = {
 
 const statusBadge = {
   borderRadius: 999,
-  padding: "8px 14px",
-  fontSize: 13,
+  padding: "10px 14px",
+  fontSize: 14,
   fontWeight: 800,
 };
 
@@ -894,16 +533,6 @@ const sectionCard = {
   borderRadius: 20,
   padding: 20,
   border: "1px solid #e2e8f0",
-  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
-};
-
-const sectionHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12,
-  marginBottom: 16,
-  flexWrap: "wrap",
 };
 
 const sectionTitle = {
@@ -918,7 +547,8 @@ const sectionSubtitle = {
   lineHeight: 1.5,
 };
 
-const quickActions = {
+const actionsRow = {
+  marginTop: 16,
   display: "flex",
   gap: 10,
   flexWrap: "wrap",
@@ -944,106 +574,44 @@ const btnSecondary = {
   fontWeight: 700,
 };
 
-const managerGrid = {
+const summaryGrid = {
+  marginTop: 16,
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 12,
 };
 
-const operationalGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-};
-
-const operationalItem = {
-  background: "#f8fafc",
+const summaryItem = {
   border: "1px solid #e2e8f0",
   borderRadius: 14,
   padding: 14,
+  background: "#fff",
 };
 
-const operationalLabel = {
+const summaryLabel = {
   fontSize: 12,
   fontWeight: 800,
   textTransform: "uppercase",
   color: "#64748b",
-  letterSpacing: ".04em",
 };
 
-const operationalValue = {
+const summaryValue = {
   marginTop: 6,
-  fontSize: 16,
-  fontWeight: 700,
+  fontSize: 18,
+  fontWeight: 800,
   color: "#0f172a",
+  lineHeight: 1.3,
 };
 
-const searchInput = {
-  width: 240,
-  maxWidth: "100%",
-  boxSizing: "border-box",
-  padding: "12px 14px",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  outline: "none",
-};
-
-const listaRegistros = {
+const aulaInfoBox = {
+  marginTop: 16,
   display: "grid",
-  gap: 12,
-};
-
-const registroCard = {
+  gap: 8,
   border: "1px solid #e2e8f0",
-  borderRadius: 16,
-  padding: 14,
+  borderRadius: 14,
+  padding: 16,
   background: "#f8fafc",
-};
-
-const registroTop = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: 12,
-  marginBottom: 12,
-};
-
-const registroNome = {
-  fontWeight: 800,
-  color: "#0f172a",
-  fontSize: 16,
-};
-
-const statusPill = {
-  display: "inline-block",
-  marginTop: 8,
-  borderRadius: 999,
-  padding: "5px 10px",
-  fontSize: 12,
-  fontWeight: 800,
-};
-
-const registroGrid = {
-  display: "grid",
-  gridTemplateColumns: "220px 1fr",
-  gap: 10,
-};
-
-const field = {
-  width: "100%",
-  boxSizing: "border-box",
-  height: 42,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  background: "#fff",
-  outline: "none",
-};
-
-const actionsRow = {
-  marginTop: 18,
-  display: "flex",
-  justifyContent: "flex-end",
+  color: "#334155",
 };
 
 const errorBox = {
