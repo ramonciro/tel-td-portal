@@ -125,6 +125,7 @@ const STATUS_AULA_OPTIONS = [
 function emptyAulaForm(instrutor = "", carga = 1) {
   return {
     id: "",
+    dia: "",
     titulo: "",
     data_aula: "",
     instrutor: instrutor || "",
@@ -223,6 +224,7 @@ export default function CronogramaTurmaPage() {
               return {
                 turma_aula_id: aula.id,
                 data_aula: aula.data_aula,
+                dia: aula.dia || index + 1,
                 titulo:
                   aula.titulo ||
                   aula.nome ||
@@ -251,6 +253,7 @@ export default function CronogramaTurmaPage() {
               return {
                 turma_aula_id: aula.id,
                 data_aula: aula.data_aula,
+                dia: aula.dia || index + 1,
                 titulo:
                   aula.titulo ||
                   aula.nome ||
@@ -362,6 +365,7 @@ export default function CronogramaTurmaPage() {
         method: "POST",
         body: JSON.stringify({
           treinamento_id: Number(id),
+          treinamento: Number(id),
           data_inicio: autoForm.data_inicio,
           data_fim: autoForm.data_fim,
           carga_horaria: Number(autoForm.carga_horaria || 0),
@@ -393,7 +397,9 @@ export default function CronogramaTurmaPage() {
         method: "POST",
         body: JSON.stringify({
           treinamento_destino_id: Number(id),
+          treinamento_destino: Number(id),
           treinamento_origem_id: Number(duplicarModal.origemId),
+          treinamento_origem: Number(duplicarModal.origemId),
         }),
       });
 
@@ -413,6 +419,7 @@ export default function CronogramaTurmaPage() {
   function editarAula(aula) {
     setAulaForm({
       id: aula.turma_aula_id || aula.id || "",
+      dia: aula.dia || "",
       titulo: aula.titulo || "",
       data_aula: toInputDate(aula.data_aula),
       instrutor: aula.instrutor || treinamento?.instrutor || "",
@@ -443,7 +450,9 @@ export default function CronogramaTurmaPage() {
       setSucesso("");
 
       const payloadBase = {
+        treinamento: Number(id),
         treinamento_id: Number(id),
+        dia: Number(aulaForm.dia || 0),
         tema: aulaForm.titulo,
         titulo: aulaForm.titulo,
         data: aulaForm.data_aula,
@@ -461,6 +470,15 @@ export default function CronogramaTurmaPage() {
         conteudo_programatico: aulaForm.conteudo_programatico,
         observacoes: aulaForm.observacoes,
       };
+
+      if (
+        !payloadBase.treinamento ||
+        !payloadBase.dia ||
+        !payloadBase.data ||
+        !payloadBase.titulo
+      ) {
+        throw new Error("Preencha treinamento, dia, data e título da aula.");
+      }
 
       try {
         if (aulaForm.id) {
@@ -729,6 +747,22 @@ export default function CronogramaTurmaPage() {
         </div>
 
         <div style={formGrid}>
+          <Field label="Dia">
+            <input
+              type="number"
+              min="1"
+              value={aulaForm.dia}
+              onChange={(e) =>
+                setAulaForm((prev) => ({
+                  ...prev,
+                  dia: e.target.value,
+                }))
+              }
+              style={field}
+              placeholder="Ex.: 1"
+            />
+          </Field>
+
           <Field label="Título da aula">
             <input
               value={aulaForm.titulo}
@@ -943,6 +977,7 @@ export default function CronogramaTurmaPage() {
                   <div style={pillRow}>
                     <span style={pillNeutral}>{aula.tipo_aula || "Aula regular"}</span>
                     <span style={pillNeutral}>{aula.status_aula || "Planejada"}</span>
+                    <span style={pillNeutral}>Dia {aula.dia || index + 1}</span>
                   </div>
 
                   <div style={metaBloco}>
