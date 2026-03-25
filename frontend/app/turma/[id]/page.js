@@ -54,6 +54,11 @@ function getStatusStyle(status) {
   };
 }
 
+function calcPercentual(presentes, total) {
+  if (!total) return 0;
+  return Math.round((Number(presentes || 0) / Number(total || 0)) * 100);
+}
+
 export default function ChamadaTurmaPage() {
   const routeParams = useParams();
   const id = routeParams?.id;
@@ -65,6 +70,7 @@ export default function ChamadaTurmaPage() {
 
   const [treinamento, setTreinamento] = useState(null);
   const [registrosAula, setRegistrosAula] = useState([]);
+  const [aulasTurma, setAulasTurma] = useState([]);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [loading, setLoading] = useState(true);
@@ -94,8 +100,13 @@ export default function ChamadaTurmaPage() {
         setErro("");
         setSucesso("");
 
-        const dadosTreinamento = await apiFetch(`/treinamentos/${id}`);
+        const [dadosTreinamento, aulas] = await Promise.all([
+          apiFetch(`/treinamentos/${id}`),
+          apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
+        ]);
+
         setTreinamento(dadosTreinamento || null);
+        setAulasTurma(Array.isArray(aulas) ? aulas : []);
 
         if (turmaAulaId) {
           await apiFetch("/presenca-aulas/inicializar", {
@@ -179,8 +190,31 @@ export default function ChamadaTurmaPage() {
       ausentes,
       justificados,
       pendentes,
+      percentual: calcPercentual(presentes, registrosAula.length),
     };
   }, [registrosAula]);
+
+  const resumoTurma = useMemo(() => {
+    const totalAulas = aulasTurma.length;
+    const aulasComRegistro = aulasTurma.filter((aula) => Number(aula.id) > 0).length;
+
+    const previstos = Number(
+      treinamento?.participantes_previstos ||
+        treinamento?.participantes ||
+        registrosAula.length ||
+        0
+    );
+
+    return {
+      idTurma: id || "-",
+      previstos,
+      totalAulas,
+      aulasComRegistro,
+      percentualMedio: modoAula ? resumo.percentual : 0,
+      pendencias: modoAula ? resumo.pendentes : 0,
+      instrutorMinistrando: treinamento?.instrutor || "-",
+    };
+  }, [aulasTurma, treinamento, registrosAula, resumo, modoAula, id]);
 
   const registrosFiltrados = useMemo(() => {
     const termo = String(busca || "").trim().toLowerCase();
@@ -200,15 +234,23 @@ export default function ChamadaTurmaPage() {
     window.location.href = "/presencas";
   }
 
+  function abrirCronograma() {
+    window.location.href = `/turma/${id}/cronograma`;
+  }
+
+  function atualizarPagina() {
+    window.location.reload();
+  }
+
   if (loading) {
-    return <div style={loadingWrap}>Carregando página da turma...</div>;
+    return <div style={loadingWrap}>Carregando gestão da turma...</div>;
   }
 
   return (
     <div style={page}>
       <div style={topBar}>
         <button style={btnVoltar} onClick={voltar}>
-          {modoAula ? "← Voltar para cronograma" : "← Voltar"}
+          ← Voltar
         </button>
       </div>
 
@@ -217,24 +259,23 @@ export default function ChamadaTurmaPage() {
           {modoAula ? "Presença por aula" : "Gestão da turma"}
         </div>
 
-        <h1 style={heroTitle}>{treinamento?.tema || "Página da Turma"}</h1>
+        <h1 style={heroTitle}>{treinamento?.tema || "Turma"}</h1>
 
         <p style={heroSubtitle}>
           {modoAula
-            ? "Controle de presença individual da aula selecionada."
-            : "Visão consolidada da turma e seus dados principais."}
+            ? "Controle operacional da presença da aula selecionada, com visão gerencial da turma."
+            : "Visão consolidada da turma, seus dados principais e atalhos de acompanhamento."}
         </p>
 
         <div style={heroGrid}>
+          <InfoCard label="Turma ID" value={`#${id || "-"}`} />
           <InfoCard label="Cliente" value={treinamento?.cliente || "-"} />
           <InfoCard label="Instrutor" value={treinamento?.instrutor || "-"} />
           <InfoCard
-            label="Data início"
-            value={formatDate(treinamento?.data_inicio || treinamento?.data)}
-          />
-          <InfoCard
-            label="Data fim"
-            value={formatDate(treinamento?.data_fim)}
+            label="Período"
+            value={`${formatDate(
+              treinamento?.data_inicio || treinamento?.data
+            )} até ${formatDate(treinamento?.data_fim)}`}
           />
         </div>
       </div>
@@ -242,14 +283,100 @@ export default function ChamadaTurmaPage() {
       {erro ? <div style={errorBox}>{erro}</div> : null}
       {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
+      <div style={statsGrid}>
+        <StatCard title="Treinandos previstos" value={resumoTurma.previstos} />
+        <StatCard title="Aulas planejadas" value={resumoTurma.totalAulas} />
+        <StatCard title="Aulas mapeadas" value={resumoTurma.aulasComRegistro} />
+        <StatCard title="Pendências" value={resumoTurma.pendencias} />
+        <StatCard title="Percentual médio" value={`${resumoTurma.percentualMedio}%`} />
+      </div>
+
+      <div style={sectionCard}>
+        <div style={sectionHeader}>
+          <div>
+            <h2 style={sectionTitle}>Ações rápidas</h2>
+            <p style={sectionSubtitle}>
+              Navegação rápida para acompanhamento da turma e atualização operacional.
+            </p>
+          </div>
+        </div>
+
+        <div style={quickActions}>
+          <button style={btnSecondary} onClick={abrirCronograma}>
+            Abrir cronograma
+          </button>
+          <button style={btnSecondary} onClick={atualizarPagina}>
+            Atualizar dados
+          </button>
+          {modoAula ? (
+            <button style={btnPrimary} onClick={salvarPresencaAula} disabled={salvando}>
+              {salvando ? "Salvando..." : "Salvar presença da aula"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div style={sectionCard}>
+        <div style={sectionHeader}>
+          <div>
+            <h2 style={sectionTitle}>Resumo operacional</h2>
+            <p style={sectionSubtitle}>
+              Informações operacionais e contexto atual da turma.
+            </p>
+          </div>
+        </div>
+
+        <div style={operationalGrid}>
+          <OperationalItem label="Turma ID" value={`#${resumoTurma.idTurma}`} />
+          <OperationalItem
+            label="Público"
+            value={treinamento?.publico || "-"}
+          />
+          <OperationalItem
+            label="Carga horária"
+            value={treinamento?.carga_horaria || "-"}
+          />
+          <OperationalItem
+            label="Instrutor ministrando"
+            value={resumoTurma.instrutorMinistrando}
+          />
+          <OperationalItem
+            label="Origem do fluxo"
+            value={origem || (modoAula ? "cronograma" : "gestão")}
+          />
+          <OperationalItem
+            label="Data da aula"
+            value={modoAula ? formatDate(dataAula) : "-"}
+          />
+        </div>
+      </div>
+
       {modoAula ? (
         <>
-          <div style={statsGrid}>
-            <StatCard title="Total" value={resumo.total} />
-            <StatCard title="Presentes" value={resumo.presentes} />
-            <StatCard title="Ausentes" value={resumo.ausentes} />
-            <StatCard title="Justificados" value={resumo.justificados} />
-            <StatCard title="Pendentes" value={resumo.pendentes} />
+          <div style={sectionCard}>
+            <div style={sectionHeader}>
+              <div>
+                <h2 style={sectionTitle}>Resumo da aula</h2>
+                <p style={sectionSubtitle}>
+                  Indicadores consolidados do lançamento da aula selecionada.
+                </p>
+              </div>
+
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar treinando"
+                style={searchInput}
+              />
+            </div>
+
+            <div style={statsGridSmall}>
+              <StatCard title="Total" value={resumo.total} />
+              <StatCard title="Presentes" value={resumo.presentes} />
+              <StatCard title="Ausentes" value={resumo.ausentes} />
+              <StatCard title="Justificados" value={resumo.justificados} />
+              <StatCard title="Pendentes" value={resumo.pendentes} />
+            </div>
           </div>
 
           <div style={sectionCard}>
@@ -261,13 +388,6 @@ export default function ChamadaTurmaPage() {
                   {turmaAulaId || "-"}
                 </p>
               </div>
-
-              <input
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder="Buscar treinando"
-                style={searchInput}
-              />
             </div>
 
             <div style={listaRegistros}>
@@ -321,7 +441,7 @@ export default function ChamadaTurmaPage() {
               <button
                 onClick={salvarPresencaAula}
                 disabled={salvando}
-                style={btnSalvar}
+                style={btnPrimary}
               >
                 {salvando ? "Salvando..." : "Salvar presença da aula"}
               </button>
@@ -332,8 +452,8 @@ export default function ChamadaTurmaPage() {
         <div style={sectionCard}>
           <h2 style={sectionTitle}>Resumo da turma</h2>
           <p style={sectionSubtitle}>
-            A turma foi carregada com sucesso. Essa visualização permanece estável
-            para uso geral e navegação interna.
+            A turma foi carregada com sucesso. Use os atalhos rápidos para navegar
+            entre cronograma, acompanhamento e atualização operacional.
           </p>
         </div>
       )}
@@ -355,6 +475,15 @@ function StatCard({ title, value }) {
     <div style={statCard}>
       <div style={statTitle}>{title}</div>
       <div style={statValue}>{value}</div>
+    </div>
+  );
+}
+
+function OperationalItem({ label, value }) {
+  return (
+    <div style={operationalItem}>
+      <div style={operationalLabel}>{label}</div>
+      <div style={operationalValue}>{value}</div>
     </div>
   );
 }
@@ -451,6 +580,13 @@ const infoValue = {
 const statsGrid = {
   marginTop: 16,
   display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+  gap: 12,
+};
+
+const statsGridSmall = {
+  marginTop: 6,
+  display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
   gap: 12,
 };
@@ -503,6 +639,60 @@ const sectionSubtitle = {
   margin: "6px 0 0",
   color: "#64748b",
   lineHeight: 1.5,
+};
+
+const quickActions = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const btnPrimary = {
+  background: "#2563eb",
+  color: "#fff",
+  border: 0,
+  borderRadius: 12,
+  padding: "12px 18px",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const btnSecondary = {
+  background: "#ffffff",
+  color: "#0f172a",
+  border: "1px solid #cbd5e1",
+  borderRadius: 12,
+  padding: "12px 18px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const operationalGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
+
+const operationalItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 14,
+};
+
+const operationalLabel = {
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  color: "#64748b",
+  letterSpacing: ".04em",
+};
+
+const operationalValue = {
+  marginTop: 6,
+  fontSize: 16,
+  fontWeight: 700,
+  color: "#0f172a",
 };
 
 const searchInput = {
@@ -571,16 +761,6 @@ const actionsRow = {
   marginTop: 18,
   display: "flex",
   justifyContent: "flex-end",
-};
-
-const btnSalvar = {
-  background: "#2563eb",
-  color: "#fff",
-  border: 0,
-  borderRadius: 12,
-  padding: "12px 18px",
-  cursor: "pointer",
-  fontWeight: 800,
 };
 
 const errorBox = {
