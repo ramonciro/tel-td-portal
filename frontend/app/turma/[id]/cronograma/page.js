@@ -223,7 +223,7 @@ export default function CronogramaTurmaPage() {
 
             if (resposta && typeof resposta === "object") {
               resumoPresenca = {
-                total: Number(resposta.total || 0),
+                total: Number(resposta.total || listaParticipantesSafe.length || 0),
                 presentes: Number(resposta.presentes || 0),
                 ausentes: Number(resposta.ausentes || 0),
                 justificados: Number(resposta.justificados || 0),
@@ -485,7 +485,7 @@ export default function CronogramaTurmaPage() {
   }
 
   function abrirPresencaAula(aula) {
-    window.location.href = `/turma/${id}?turma_aula_id=${aula.turma_aula_id}&data_aula=${aula.data_aula}&origem=cronograma`;
+    window.location.href = `/turma/${id}/chamada?turma_aula_id=${aula.turma_aula_id}&data_aula=${aula.data_aula}&origem=cronograma`;
   }
 
   function abrirParticipantes() {
