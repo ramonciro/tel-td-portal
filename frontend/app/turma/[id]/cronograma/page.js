@@ -6,17 +6,14 @@ import { apiFetch } from "../../../../services/api";
 
 function formatDate(value) {
   if (!value) return "-";
-
   const text = String(value).slice(0, 10);
   const parts = text.split("-");
-
   if (parts.length === 3) {
     const [y, m, d] = parts.map(Number);
     if (y && m && d) {
       return new Date(y, m - 1, d, 12, 0, 0).toLocaleDateString("pt-BR");
     }
   }
-
   return String(value);
 }
 
@@ -27,7 +24,14 @@ function toInputDate(value) {
 
 function formatHours(value) {
   const num = Number(value || 0);
-  return `${num}h`;
+  if (!Number.isFinite(num)) return "0h";
+
+  const horas = Math.floor(num);
+  const minutos = Math.round((num - horas) * 60);
+
+  if (minutos === 0) return `${horas}h`;
+  if (horas === 0) return `${minutos}min`;
+  return `${horas}h${String(minutos).padStart(2, "0")}`;
 }
 
 function calcPercentual(parte, total) {
@@ -81,20 +85,55 @@ function sortByDateAsc(items, field = "data_aula") {
   });
 }
 
-function emptyAulaForm() {
+const CARGA_OPTIONS = [
+  { value: 0.5, label: "0h30" },
+  { value: 1, label: "1h00" },
+  { value: 1.5, label: "1h30" },
+  { value: 2, label: "2h00" },
+  { value: 2.5, label: "2h30" },
+  { value: 3, label: "3h00" },
+  { value: 3.5, label: "3h30" },
+  { value: 4, label: "4h00" },
+  { value: 4.5, label: "4h30" },
+  { value: 5, label: "5h00" },
+  { value: 5.5, label: "5h30" },
+  { value: 6, label: "6h00" },
+  { value: 6.5, label: "6h30" },
+  { value: 7, label: "7h00" },
+  { value: 7.5, label: "7h30" },
+  { value: 8, label: "8h00" },
+];
+
+const TIPO_AULA_OPTIONS = [
+  "Aula regular",
+  "Reciclagem",
+  "Reforço",
+  "Repescagem",
+  "Reposição",
+  "Atualização",
+  "Simulado",
+];
+
+const STATUS_AULA_OPTIONS = [
+  "Planejada",
+  "Em andamento",
+  "Concluída",
+  "Reprogramada",
+  "Cancelada",
+];
+
+function emptyAulaForm(instrutor = "", carga = 1) {
   return {
     id: "",
     titulo: "",
-    objetivo: "",
     data_aula: "",
-    carga_planejada: 0,
-    carga_real: 0,
-    planejadas: 1,
-    ministradas: 0,
-    parciais: 0,
-    reprogramadas: 0,
-    canceladas: 0,
-    instrutor: "",
+    instrutor: instrutor || "",
+    tipo_aula: "Aula regular",
+    status_aula: "Planejada",
+    carga_planejada: Number(carga || 1),
+    objetivo: "",
+    conteudo_programatico: "",
+    observacoes: "",
   };
 }
 
@@ -117,7 +156,7 @@ export default function CronogramaTurmaPage() {
   const [autoForm, setAutoForm] = useState({
     data_inicio: "",
     data_fim: "",
-    carga_horaria: 0,
+    carga_horaria: 1,
     ignorar_domingo: true,
   });
   const [gerando, setGerando] = useState(false);
@@ -155,20 +194,22 @@ export default function CronogramaTurmaPage() {
         listaTurmas.filter((item) => String(item.id) !== String(id))
       );
 
+      const cargaPadrao = Number(dadosTreinamento?.carga_horaria || 1);
+
       setAutoForm((prev) => ({
         ...prev,
         data_inicio: toInputDate(
           dadosTreinamento?.data_inicio || dadosTreinamento?.data || ""
         ),
         data_fim: toInputDate(dadosTreinamento?.data_fim || ""),
-        carga_horaria: Number(dadosTreinamento?.carga_horaria || 0),
+        carga_horaria: cargaPadrao,
       }));
 
-      setAulaForm((prev) => ({
-        ...prev,
-        instrutor: dadosTreinamento?.instrutor || "",
-        carga_planejada: Number(dadosTreinamento?.carga_horaria || 0),
-      }));
+      setAulaForm((prev) =>
+        prev.id
+          ? prev
+          : emptyAulaForm(dadosTreinamento?.instrutor || "", cargaPadrao)
+      );
 
       if (listaAulas.length) {
         const resumos = await Promise.all(
@@ -183,9 +224,18 @@ export default function CronogramaTurmaPage() {
                   aula.nome ||
                   aula.tema ||
                   `Aula do Dia ${index + 1}`,
+                tipo_aula: aula.tipo_aula || "Aula regular",
+                status_aula: aula.status_aula || "Planejada",
                 objetivo: aula.objetivo || "",
-                carga_planejada: Number(aula.carga_planejada || aula.carga_horaria || 0),
-                carga_real: Number(aula.carga_real || aula.carga_ministrada || 0),
+                conteudo_programatico: aula.conteudo_programatico || "",
+                observacoes: aula.observacoes || "",
+                instrutor: aula.instrutor || dadosTreinamento?.instrutor || "",
+                carga_planejada: Number(
+                  aula.carga_planejada || aula.carga_horaria || 0
+                ),
+                carga_real: Number(
+                  aula.carga_real || aula.carga_ministrada || 0
+                ),
                 ministradas: Number(aula.ministradas || 0),
                 parciais: Number(aula.parciais || 0),
                 planejadas: Number(aula.planejadas || 1),
@@ -202,9 +252,18 @@ export default function CronogramaTurmaPage() {
                   aula.nome ||
                   aula.tema ||
                   `Aula do Dia ${index + 1}`,
+                tipo_aula: aula.tipo_aula || "Aula regular",
+                status_aula: aula.status_aula || "Planejada",
                 objetivo: aula.objetivo || "",
-                carga_planejada: Number(aula.carga_planejada || aula.carga_horaria || 0),
-                carga_real: Number(aula.carga_real || aula.carga_ministrada || 0),
+                conteudo_programatico: aula.conteudo_programatico || "",
+                observacoes: aula.observacoes || "",
+                instrutor: aula.instrutor || dadosTreinamento?.instrutor || "",
+                carga_planejada: Number(
+                  aula.carga_planejada || aula.carga_horaria || 0
+                ),
+                carga_real: Number(
+                  aula.carga_real || aula.carga_ministrada || 0
+                ),
                 ministradas: Number(aula.ministradas || 0),
                 parciais: Number(aula.parciais || 0),
                 planejadas: Number(aula.planejadas || 1),
@@ -234,11 +293,31 @@ export default function CronogramaTurmaPage() {
 
   const resumoGeral = useMemo(() => {
     const totalAulas = resumosAulas.length;
-    const aulasComPresenca = resumosAulas.filter((item) => Number(item.total || 0) > 0).length;
-    const totalPresentes = resumosAulas.reduce((acc, item) => acc + Number(item.presentes || 0), 0);
-    const totalEsperado = resumosAulas.reduce((acc, item) => acc + Number(item.total || 0), 0);
-    const totalPendentes = resumosAulas.reduce((acc, item) => acc + Number(item.pendentes || 0), 0);
-    const totalAusentes = resumosAulas.reduce((acc, item) => acc + Number(item.ausentes || 0), 0);
+    const aulasComPresenca = resumosAulas.filter(
+      (item) =>
+        Number(item.total || 0) > 0 ||
+        Number(item.presentes || 0) > 0 ||
+        Number(item.ausentes || 0) > 0 ||
+        Number(item.justificados || 0) > 0 ||
+        Number(item.pendentes || 0) > 0
+    ).length;
+
+    const totalPresentes = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.presentes || 0),
+      0
+    );
+    const totalEsperado = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.total || 0),
+      0
+    );
+    const totalPendentes = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.pendentes || 0),
+      0
+    );
+    const totalAusentes = resumosAulas.reduce(
+      (acc, item) => acc + Number(item.ausentes || 0),
+      0
+    );
     const aderenciaMedia = calcPercentual(totalPresentes, totalEsperado);
 
     return {
@@ -322,27 +401,26 @@ export default function CronogramaTurmaPage() {
     setAulaForm({
       id: aula.turma_aula_id || aula.id || "",
       titulo: aula.titulo || "",
-      objetivo: aula.objetivo || "",
       data_aula: toInputDate(aula.data_aula),
-      carga_planejada: Number(aula.carga_planejada || 0),
-      carga_real: Number(aula.carga_real || 0),
-      planejadas: Number(aula.planejadas || 1),
-      ministradas: Number(aula.ministradas || 0),
-      parciais: Number(aula.parciais || 0),
-      reprogramadas: Number(aula.reprogramadas || 0),
-      canceladas: Number(aula.canceladas || 0),
       instrutor: aula.instrutor || treinamento?.instrutor || "",
+      tipo_aula: aula.tipo_aula || "Aula regular",
+      status_aula: aula.status_aula || "Planejada",
+      carga_planejada: Number(aula.carga_planejada || 1),
+      objetivo: aula.objetivo || "",
+      conteudo_programatico: aula.conteudo_programatico || "",
+      observacoes: aula.observacoes || "",
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function limparFormularioAula() {
-    setAulaForm({
-      ...emptyAulaForm(),
-      instrutor: treinamento?.instrutor || "",
-      carga_planejada: Number(treinamento?.carga_horaria || 0),
-    });
+    setAulaForm(
+      emptyAulaForm(
+        treinamento?.instrutor || "",
+        Number(treinamento?.carga_horaria || 1)
+      )
+    );
   }
 
   async function salvarAula() {
@@ -354,16 +432,14 @@ export default function CronogramaTurmaPage() {
       const payload = {
         treinamento_id: Number(id),
         titulo: aulaForm.titulo,
-        objetivo: aulaForm.objetivo,
         data_aula: aulaForm.data_aula,
-        carga_planejada: Number(aulaForm.carga_planejada || 0),
-        carga_real: Number(aulaForm.carga_real || 0),
-        planejadas: Number(aulaForm.planejadas || 1),
-        ministradas: Number(aulaForm.ministradas || 0),
-        parciais: Number(aulaForm.parciais || 0),
-        reprogramadas: Number(aulaForm.reprogramadas || 0),
-        canceladas: Number(aulaForm.canceladas || 0),
         instrutor: aulaForm.instrutor,
+        tipo_aula: aulaForm.tipo_aula,
+        status_aula: aulaForm.status_aula,
+        carga_planejada: Number(aulaForm.carga_planejada || 0),
+        objetivo: aulaForm.objetivo,
+        conteudo_programatico: aulaForm.conteudo_programatico,
+        observacoes: aulaForm.observacoes,
       };
 
       if (aulaForm.id) {
@@ -377,7 +453,7 @@ export default function CronogramaTurmaPage() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setSucesso("Aula cadastrada com sucesso.");
+        setSucesso("Plano de aula cadastrado com sucesso.");
       }
 
       limparFormularioAula();
@@ -402,9 +478,7 @@ export default function CronogramaTurmaPage() {
       });
 
       setSucesso("Aula excluída com sucesso.");
-      if (String(aulaForm.id) === String(aulaId)) {
-        limparFormularioAula();
-      }
+      if (String(aulaForm.id) === String(aulaId)) limparFormularioAula();
       await carregarTudo();
     } catch (err) {
       setErro(err.message || "Erro ao excluir aula");
@@ -427,7 +501,8 @@ export default function CronogramaTurmaPage() {
         <div style={heroBadge}>Cronograma da turma</div>
         <h1 style={heroTitle}>{treinamento?.tema || "Cronograma"}</h1>
         <p style={heroSubtitle}>
-          Planejamento diário, aderência e acesso rápido à presença por aula.
+          Planejamento em formato de plano de aula, com indicadores operacionais
+          preservados no painel por dia.
         </p>
 
         <div style={heroGrid}>
@@ -460,7 +535,7 @@ export default function CronogramaTurmaPage() {
           <div>
             <h2 style={sectionTitle}>Gerar cronograma automaticamente</h2>
             <p style={sectionSubtitle}>
-              Monte o cronograma com base no período da turma e na carga horária planejada.
+              Gere as aulas com base no período da turma e na carga horária padrão.
             </p>
           </div>
         </div>
@@ -495,18 +570,22 @@ export default function CronogramaTurmaPage() {
           </Field>
 
           <Field label="Carga horária padrão">
-            <input
-              type="number"
-              min="0"
-              value={autoForm.carga_horaria}
+            <select
+              value={String(autoForm.carga_horaria)}
               onChange={(e) =>
                 setAutoForm((prev) => ({
                   ...prev,
-                  carga_horaria: e.target.value,
+                  carga_horaria: Number(e.target.value),
                 }))
               }
               style={field}
-            />
+            >
+              {CARGA_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field label="Ignorar domingo">
@@ -527,7 +606,11 @@ export default function CronogramaTurmaPage() {
         </div>
 
         <div style={actionsRowLeft}>
-          <button style={btnPrimary} onClick={gerarCronogramaAutomatico} disabled={gerando}>
+          <button
+            style={btnPrimary}
+            onClick={gerarCronogramaAutomatico}
+            disabled={gerando}
+          >
             {gerando ? "Gerando..." : "Gerar cronograma automático"}
           </button>
 
@@ -569,7 +652,11 @@ export default function CronogramaTurmaPage() {
             </div>
 
             <div style={actionsRowLeft}>
-              <button style={btnPrimary} onClick={copiarCronograma} disabled={duplicando}>
+              <button
+                style={btnPrimary}
+                onClick={copiarCronograma}
+                disabled={duplicando}
+              >
                 {duplicando ? "Copiando..." : "Confirmar cópia"}
               </button>
             </div>
@@ -581,10 +668,10 @@ export default function CronogramaTurmaPage() {
         <div style={sectionHeader}>
           <div>
             <h2 style={sectionTitle}>
-              {aulaForm.id ? "Editar aula" : "Cadastrar aula manualmente"}
+              {aulaForm.id ? "Editar plano de aula" : "Cadastrar plano de aula"}
             </h2>
             <p style={sectionSubtitle}>
-              Inclua, ajuste ou reprograme aulas do cronograma da turma.
+              Estruture a aula com foco em planejamento, objetivo e tempo previsto.
             </p>
           </div>
         </div>
@@ -631,109 +718,61 @@ export default function CronogramaTurmaPage() {
             />
           </Field>
 
+          <Field label="Tipo da aula">
+            <select
+              value={aulaForm.tipo_aula}
+              onChange={(e) =>
+                setAulaForm((prev) => ({
+                  ...prev,
+                  tipo_aula: e.target.value,
+                }))
+              }
+              style={field}
+            >
+              {TIPO_AULA_OPTIONS.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Status da aula">
+            <select
+              value={aulaForm.status_aula}
+              onChange={(e) =>
+                setAulaForm((prev) => ({
+                  ...prev,
+                  status_aula: e.target.value,
+                }))
+              }
+              style={field}
+            >
+              {STATUS_AULA_OPTIONS.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </Field>
+
           <Field label="Carga planejada">
-            <input
-              type="number"
-              min="0"
-              value={aulaForm.carga_planejada}
+            <select
+              value={String(aulaForm.carga_planejada)}
               onChange={(e) =>
                 setAulaForm((prev) => ({
                   ...prev,
-                  carga_planejada: e.target.value,
+                  carga_planejada: Number(e.target.value),
                 }))
               }
               style={field}
-            />
-          </Field>
-
-          <Field label="Carga real">
-            <input
-              type="number"
-              min="0"
-              value={aulaForm.carga_real}
-              onChange={(e) =>
-                setAulaForm((prev) => ({
-                  ...prev,
-                  carga_real: e.target.value,
-                }))
-              }
-              style={field}
-            />
-          </Field>
-
-          <Field label="Planejadas">
-            <input
-              type="number"
-              min="0"
-              value={aulaForm.planejadas}
-              onChange={(e) =>
-                setAulaForm((prev) => ({
-                  ...prev,
-                  planejadas: e.target.value,
-                }))
-              }
-              style={field}
-            />
-          </Field>
-
-          <Field label="Ministradas">
-            <input
-              type="number"
-              min="0"
-              value={aulaForm.ministradas}
-              onChange={(e) =>
-                setAulaForm((prev) => ({
-                  ...prev,
-                  ministradas: e.target.value,
-                }))
-              }
-              style={field}
-            />
-          </Field>
-
-          <Field label="Parciais">
-            <input
-              type="number"
-              min="0"
-              value={aulaForm.parciais}
-              onChange={(e) =>
-                setAulaForm((prev) => ({
-                  ...prev,
-                  parciais: e.target.value,
-                }))
-              }
-              style={field}
-            />
-          </Field>
-
-          <Field label="Reprogramadas">
-            <input
-              type="number"
-              min="0"
-              value={aulaForm.reprogramadas}
-              onChange={(e) =>
-                setAulaForm((prev) => ({
-                  ...prev,
-                  reprogramadas: e.target.value,
-                }))
-              }
-              style={field}
-            />
-          </Field>
-
-          <Field label="Canceladas">
-            <input
-              type="number"
-              min="0"
-              value={aulaForm.canceladas}
-              onChange={(e) =>
-                setAulaForm((prev) => ({
-                  ...prev,
-                  canceladas: e.target.value,
-                }))
-              }
-              style={field}
-            />
+            >
+              {CARGA_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field label="Objetivo" full>
@@ -749,15 +788,47 @@ export default function CronogramaTurmaPage() {
               placeholder="Objetivo da aula"
             />
           </Field>
+
+          <Field label="Conteúdo programático" full>
+            <textarea
+              value={aulaForm.conteudo_programatico}
+              onChange={(e) =>
+                setAulaForm((prev) => ({
+                  ...prev,
+                  conteudo_programatico: e.target.value,
+                }))
+              }
+              style={textarea}
+              placeholder="Conteúdo principal a ser abordado"
+            />
+          </Field>
+
+          <Field label="Observações" full>
+            <textarea
+              value={aulaForm.observacoes}
+              onChange={(e) =>
+                setAulaForm((prev) => ({
+                  ...prev,
+                  observacoes: e.target.value,
+                }))
+              }
+              style={textarea}
+              placeholder="Observações adicionais"
+            />
+          </Field>
         </div>
 
         <div style={actionsRowLeft}>
-          <button style={btnPrimary} onClick={salvarAula} disabled={salvandoAula}>
+          <button
+            style={btnPrimary}
+            onClick={salvarAula}
+            disabled={salvandoAula}
+          >
             {salvandoAula
               ? "Salvando..."
               : aulaForm.id
               ? "Salvar alterações"
-              : "Cadastrar aula"}
+              : "Cadastrar plano de aula"}
           </button>
 
           <button style={btnSecondary} onClick={limparFormularioAula}>
@@ -774,7 +845,8 @@ export default function CronogramaTurmaPage() {
           {resumosAulas.map((aula, index) => {
             const percentual = Number(aula.percentual || 0);
             const estilo = getPercentStyle(percentual);
-            const desvio = Number(aula.carga_real || 0) - Number(aula.carga_planejada || 0);
+            const desvio =
+              Number(aula.carga_real || 0) - Number(aula.carga_planejada || 0);
 
             return (
               <div key={aula.turma_aula_id || index} style={cardDiaWrap}>
@@ -816,28 +888,44 @@ export default function CronogramaTurmaPage() {
                     </span>
                   </div>
 
+                  <div style={pillRow}>
+                    <span style={pillNeutral}>{aula.tipo_aula || "Aula regular"}</span>
+                    <span style={pillNeutral}>{aula.status_aula || "Planejada"}</span>
+                  </div>
+
                   <div style={metaBloco}>
                     <span>
-                      {Number(aula.planejadas || 1)} aula(s) • {Number(aula.ministradas || 0)} ministrada(s) •{" "}
+                      {Number(aula.planejadas || 1)} aula(s) •{" "}
+                      {Number(aula.ministradas || 0)} ministrada(s) •{" "}
                       {Number(aula.parciais || 0)} parcial(is)
                     </span>
                   </div>
 
                   <div style={metaBloco}>
                     <span>
-                      {Number(aula.planejadas || 1)} planejada(s) • {Number(aula.reprogramadas || 0)} reprogramada(s) •{" "}
+                      {Number(aula.planejadas || 1)} planejada(s) •{" "}
+                      {Number(aula.reprogramadas || 0)} reprogramada(s) •{" "}
                       {Number(aula.canceladas || 0)} cancelada(s)
                     </span>
                   </div>
 
                   <div style={linhaInfo}>
-                    <strong>Carga:</strong> {formatHours(aula.carga_real || 0)} /{" "}
-                    {formatHours(aula.carga_planejada || 0)}
+                    <strong>Carga planejada:</strong> {formatHours(aula.carga_planejada || 0)}
+                  </div>
+
+                  <div style={linhaInfo}>
+                    <strong>Carga real:</strong> {formatHours(aula.carga_real || 0)}
                   </div>
 
                   <div style={linhaInfo}>
                     <strong>Desvio:</strong> {formatHours(desvio)}
                   </div>
+
+                  {aula.objetivo ? (
+                    <div style={blocoTexto}>
+                      <strong>Objetivo:</strong> {aula.objetivo}
+                    </div>
+                  ) : null}
 
                   <div style={divider} />
 
@@ -1133,7 +1221,7 @@ const copyBox = {
 const cardsGrid = {
   marginTop: 18,
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
   gap: 14,
 };
 
@@ -1217,6 +1305,23 @@ const statusTag = {
   fontWeight: 800,
 };
 
+const pillRow = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  marginTop: 12,
+};
+
+const pillNeutral = {
+  borderRadius: 999,
+  padding: "5px 10px",
+  fontSize: 12,
+  fontWeight: 700,
+  background: "#eef2ff",
+  color: "#334155",
+  border: "1px solid #c7d2fe",
+};
+
 const metaBloco = {
   marginTop: 14,
   color: "#475569",
@@ -1228,6 +1333,13 @@ const linhaInfo = {
   marginTop: 12,
   color: "#475569",
   fontSize: 14,
+};
+
+const blocoTexto = {
+  marginTop: 12,
+  color: "#334155",
+  fontSize: 14,
+  lineHeight: 1.5,
 };
 
 const divider = {
