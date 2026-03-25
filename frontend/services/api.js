@@ -3,9 +3,50 @@ const API_URL = (
   "https://tel-td-portal-production.up.railway.app/api"
 ).replace(/\/$/, "");
 
-function getToken() {
+export function getToken() {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("token") || "";
+}
+
+export function getStoredUser() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem("user");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearSession() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+}
+
+function normalizeRole(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+export function hasSomeRole(user, allowedRoles = []) {
+  if (!Array.isArray(allowedRoles) || !allowedRoles.length) return true;
+
+  const userRoles = [
+    user?.perfil,
+    user?.role,
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+  ]
+    .map(normalizeRole)
+    .filter(Boolean);
+
+  const allowed = allowedRoles.map(normalizeRole).filter(Boolean);
+
+  return allowed.some((role) => userRoles.includes(role));
 }
 
 export async function apiFetch(path, options = {}) {
@@ -53,10 +94,15 @@ export async function apiFetch(path, options = {}) {
       (isJson && (data?.message || data?.error)) ||
       (typeof data === "string" && data) ||
       `Erro ${response.status}`;
+
+    if (response.status === 401) {
+      clearSession();
+    }
+
     throw new Error(message);
   }
 
   return data;
 }
 
-export default apiFetch;
+export default API_URL;
