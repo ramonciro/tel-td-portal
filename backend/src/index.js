@@ -280,7 +280,6 @@ app.post(
   deleteParticipantesTreinamentoBulk
 );
 
-// TURMA AULAS
 app.get(
   "/api/turma-aulas",
   authRequired,
@@ -337,7 +336,6 @@ app.post(
   duplicarPlanoAulas
 );
 
-// PRESENÇA POR AULA
 app.get(
   "/api/presenca-aulas",
   authRequired,
