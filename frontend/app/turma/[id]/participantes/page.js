@@ -240,10 +240,12 @@ async function importarExcel() {
     setErro("");
     setSucesso("");
 
-    const apiBase = String(process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
-    if (!apiBase) {
+    const apiBaseRaw = String(process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+    if (!apiBaseRaw) {
       throw new Error("A variável NEXT_PUBLIC_API_URL não está configurada.");
     }
+
+    const apiBase = apiBaseRaw.endsWith("/api") ? apiBaseRaw : `${apiBaseRaw}/api`;
 
     const formData = new FormData();
     formData.append("arquivo", arquivo);
@@ -254,7 +256,7 @@ async function importarExcel() {
       typeof window !== "undefined" ? localStorage.getItem("token") : "";
 
     const response = await fetch(
-      `${apiBase}/api/turmas-participantes/importar-excel`,
+      `${apiBase}/turmas-participantes/importar-excel`,
       {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -284,7 +286,6 @@ async function importarExcel() {
     setImportando(false);
   }
 }
-
   async function inativarParticipante(item) {
     const confirmar = window.confirm(
       `Deseja inativar ${item.nome || item.treinando_nome}?`
