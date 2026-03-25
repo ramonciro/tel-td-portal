@@ -221,14 +221,25 @@ export default function CronogramaTurmaPage() {
               `/presenca-aulas/resumo/${aula.id}`
             ).catch(() => null);
 
-            if (resposta && typeof resposta === "object") {
+            const baseResumo = resposta?.resumo || resposta || null;
+
+            if (baseResumo && typeof baseResumo === "object") {
               resumoPresenca = {
-                total: Number(resposta.total || listaParticipantesSafe.length || 0),
-                presentes: Number(resposta.presentes || 0),
-                ausentes: Number(resposta.ausentes || 0),
-                justificados: Number(resposta.justificados || 0),
-                pendentes: Number(resposta.pendentes || 0),
-                percentual: Number(resposta.percentual || 0),
+                total: Number(baseResumo.total || listaParticipantesSafe.length || 0),
+                presentes: Number(baseResumo.presentes || 0),
+                ausentes: Number(baseResumo.ausentes || 0),
+                justificados: Number(baseResumo.justificados || 0),
+                pendentes: Number(baseResumo.pendentes || 0),
+                percentual: Number(baseResumo.percentual || baseResumo.taxa_presenca || 0),
+              };
+            } else if (listaParticipantesSafe.length > 0) {
+              resumoPresenca = {
+                total: listaParticipantesSafe.length,
+                presentes: 0,
+                ausentes: 0,
+                justificados: 0,
+                pendentes: listaParticipantesSafe.length,
+                percentual: 0,
               };
             }
           } catch {
