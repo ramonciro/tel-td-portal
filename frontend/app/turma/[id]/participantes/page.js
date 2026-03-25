@@ -229,32 +229,58 @@ export default function ParticipantesTurmaPage() {
     }
   }
 
-  async function importarExcel() {
+async function importarExcel() {
+  try {
+    if (!arquivo) {
+      setErro("Selecione um arquivo Excel para importar.");
+      return;
+    }
+
+    setImportando(true);
+    setErro("");
+    setSucesso("");
+
+    const apiBase = String(process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+    if (!apiBase) {
+      throw new Error("A variável NEXT_PUBLIC_API_URL não está configurada.");
+    }
+
+    const formData = new FormData();
+    formData.append("arquivo", arquivo);
+    formData.append("treinamento_id", String(id));
+    formData.append("treinamento", String(id));
+
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("token") : "";
+
+    const response = await fetch(`${apiBase}/api/turmas-participantes/importar-excel`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    const rawText = await response.text();
+    let data = {};
+
     try {
-      if (!arquivo) {
-        setErro("Selecione um arquivo Excel para importar.");
-        return;
-      }
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = { message: rawText || "Erro ao importar Excel" };
+    }
 
-      setImportando(true);
-      setErro("");
-      setSucesso("");
+    if (!response.ok) {
+      throw new Error(data?.message || "Erro ao importar Excel");
+    }
 
-      const formData = new FormData();
-      formData.append("arquivo", arquivo);
-      formData.append("treinamento_id", String(id));
-
-      const token =
-        typeof window !== "undefined" ? localStorage.getItem("token") : "";
-
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ""}/turmas-participantes/importar-excel`,
-        {
-          method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          body: formData,
-        }
-      );
+    setSucesso(data?.message || "Participantes importados com sucesso.");
+    setArquivo(null);
+    await carregarTudo();
+  } catch (err) {
+    setErro(err.message || "Erro ao importar Excel");
+  } finally {
+    setImportando(false);
+  }
+}
 
       const data = await response.json().catch(() => ({}));
 
