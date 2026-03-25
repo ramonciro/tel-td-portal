@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { apiFetch } from "../../../services/api";
 
 const API_URL =
@@ -35,11 +36,7 @@ function toInputDate(value) {
   if (parts.length === 3) {
     const [year, month, day] = parts.map(Number);
     if (year && month && day) {
-      const date = new Date(year, month - 1, day, 12, 0, 0);
-      const yyyy = date.getFullYear();
-      const mm = String(date.getMonth() + 1).padStart(2, "0");
-      const dd = String(date.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     }
   }
 
@@ -66,8 +63,9 @@ function buildRowFromAula(item, indexReal) {
   };
 }
 
-export default function ChamadaTurma({ params }) {
-  const { id } = params;
+export default function ChamadaTurmaPage() {
+  const routeParams = useParams();
+  const id = routeParams?.id;
 
   const [participantes, setParticipantes] = useState([]);
   const [treinamento, setTreinamento] = useState(null);
@@ -86,34 +84,38 @@ export default function ChamadaTurma({ params }) {
   const [origem, setOrigem] = useState("");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const search = new URLSearchParams(window.location.search);
-      const aulaId = search.get("turma_aula_id") || "";
-      const dataAula = search.get("data_aula") || "";
-      const origemParam = search.get("origem") || "";
+    if (typeof window === "undefined") return;
 
-      setTurmaAulaId(aulaId);
-      setModoAula(Boolean(aulaId));
-      setOrigem(origemParam);
+    const search = new URLSearchParams(window.location.search);
+    const aulaId = search.get("turma_aula_id") || "";
+    const dataAula = search.get("data_aula") || "";
+    const origemParam = search.get("origem") || "";
 
-      if (dataAula) {
-        setDataChamada(dataAula);
-      }
+    setTurmaAulaId(aulaId);
+    setModoAula(Boolean(aulaId));
+    setOrigem(origemParam);
+
+    if (dataAula) {
+      setDataChamada(dataAula);
     }
   }, []);
 
   useEffect(() => {
+    if (!id) return;
     carregarBase();
   }, [id, turmaAulaId]);
 
   useEffect(() => {
+    if (!id) return;
     if (!modoAula && dataChamada) {
       carregarParticipantesPorData(dataChamada);
     }
-  }, [dataChamada, modoAula]);
+  }, [id, dataChamada, modoAula]);
 
   async function carregarBase() {
     try {
+      if (!id) return;
+
       setErro("");
       setSucesso("");
       setLoading(true);
@@ -172,6 +174,8 @@ export default function ChamadaTurma({ params }) {
 
   async function carregarParticipantesPorData(data) {
     try {
+      if (!id) return;
+
       setErro("");
 
       const dadosParticipantes = await apiFetch(
