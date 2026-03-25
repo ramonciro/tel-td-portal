@@ -390,7 +390,7 @@ export default function ChamadaTurmaPage() {
             value={treinamento?.carga_horaria || "-"}
           />
           <OperationalItem
-            label="Instrutor ministrando"
+            label="Instrutor"
             value={resumoTurma.instrutorMinistrando}
           />
           <OperationalItem
