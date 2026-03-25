@@ -45,6 +45,11 @@ export default function ParticipantesTurmaPage() {
   const [sucesso, setSucesso] = useState("");
   const [busca, setBusca] = useState("");
 
+  async function getXLSX() {
+    const mod = await import("xlsx");
+    return mod?.default || mod;
+  }
+
   useEffect(() => {
     carregarTudo();
   }, [id]);
@@ -144,15 +149,10 @@ async function importarExcel() {
 
       await apiFetch("/treinamentos/importar-participantes", {
         method: "POST",
-        body: (() => {
+        body: await (async () => {
           const formData = new FormData();
 
-          const XLSX = window.XLSX;
-          if (!XLSX) {
-            throw new Error(
-              "Biblioteca XLSX não encontrada no navegador. Use a importação por Excel."
-            );
-          }
+          const XLSX = await getXLSX();
 
           const worksheet = XLSX.utils.json_to_sheet(participantesAtualizados);
           const workbook = XLSX.utils.book_new();
@@ -227,12 +227,7 @@ async function importarExcel() {
           data_admissao: toInputDate(p.data_admissao),
         }));
 
-      const XLSX = window.XLSX;
-      if (!XLSX) {
-        setSucesso("Presenças removidas, mas recarregue a base via Excel para atualizar a turma.");
-        await carregarTudo();
-        return;
-      }
+      const XLSX = await getXLSX();
 
       const worksheet = XLSX.utils.json_to_sheet(participantesRestantes);
       const workbook = XLSX.utils.book_new();
@@ -314,11 +309,6 @@ async function importarExcel() {
 
   return (
     <div style={page}>
-      <script
-        src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
-        async
-      />
-
       <div style={topBar}>
         <button style={btnVoltar} onClick={voltar}>
           ← Voltar para gestão da turma
