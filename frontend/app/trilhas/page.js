@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import CrudPageV2 from "../../components/CrudPageV2";
+import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
@@ -10,669 +10,1020 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function normalizeText(value) {
+function normalize(value) {
   return String(value || "").trim().toLowerCase();
 }
 
 function parseEtapas(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
   if (!value) return [];
+
   return String(value)
     .split(/\n|,|;|\|/g)
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
-function statusLabel(status) {
-  const key = normalizeText(status);
+function inferAudience(item) {
+  const haystack = [item?.titulo, item?.descricao, ...(Array.isArray(item?.etapas) ? item.etapas : [])]
+    .join(" ")
+    .toLowerCase();
 
-  if (key === "ativa" || key === "ativo") return "Ativa";
-  if (key === "em construção" || key === "em construcao") return "Em construção";
-  if (key === "concluída" || key === "concluida") return "Concluída";
+  const audiences = [];
+  if (haystack.includes("instrutor")) audiences.push("Instrutores");
+  if (haystack.includes("supervisor")) audiences.push("Supervisores");
+  if (haystack.includes("coordena") || haystack.includes("lideran")) audiences.push("Coordenação");
 
+  if (!audiences.length) return ["Instrutores", "Supervisores"];
+  return [...new Set(audiences)];
+}
+
+function getStatus(item) {
+  const etapas = parseEtapas(item?.etapas);
+  if (!etapas.length) return "Em estruturação";
+  if (etapas.length >= 5) return "Estruturada";
   return "Ativa";
 }
 
-function statusStyle(status) {
-  const label = statusLabel(status);
-
+function statusTone(status) {
   const base = {
-    display: "inline-block",
-    padding: "5px 9px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 10px",
     borderRadius: 999,
     fontWeight: 800,
     fontSize: 11,
+    whiteSpace: "nowrap",
   };
 
-  if (label === "Ativa") {
+  if (status === "Estruturada") {
     return { ...base, background: "#dcfce7", color: "#166534" };
   }
-
-  if (label === "Em construção") {
-    return { ...base, background: "#ffedd5", color: "#9a3412" };
+  if (status === "Ativa") {
+    return { ...base, background: "#dbeafe", color: "#1d4ed8" };
   }
-
-  return { ...base, background: "#dbeafe", color: "#1d4ed8" };
+  return { ...base, background: "#ffedd5", color: "#9a3412" };
 }
 
-function coverageBadge(total) {
-  return {
-    display: "inline-block",
-    padding: "5px 8px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 11,
-    background: total > 0 ? "#eff6ff" : "#f1f5f9",
-    color: total > 0 ? "#1d4ed8" : "#64748b",
-  };
+function estimateHours(etapas) {
+  return etapas.length * 2;
 }
 
-function TrilhaCard({ item, onEdit, onDelete }) {
-  const percentual =
-    item.etapasCount > 0
-      ? Math.min(
-          100,
-          Math.round(
-            ((item.materiaisRelacionados > 0 ? 1 : 0) +
-              (item.treinamentosRelacionados > 0 ? 1 : 0) +
-              (item.avaliacoesRelacionadas > 0 ? 1 : 0)) /
-              3 *
-              100
-          )
-        )
-      : 0;
-
-  return (
-    <div style={card}>
-      <div style={cardTop}>
-        <div style={cardTopRow}>
-          <span style={statusStyle(item.status)}>{statusLabel(item.status)}</span>
-          <span style={coverageBadge(percentual)}>{percentual}% cobertura</span>
-        </div>
-
-        <div style={cardTitle}>{item.titulo || "Sem título"}</div>
-        <div style={cardMeta}>
-          {(item.cliente || "GLOBAL") +
-            " • " +
-            (item.publico || "Público não informado")}
-        </div>
-      </div>
-
-      <div style={cardBody}>
-        <p style={descricao}>
-          {item.descricao || "Trilha sem descrição cadastrada."}
-        </p>
-
-        <div style={metricsGrid}>
-          <div style={metricBox}>
-            <strong>{fmt(item.etapasCount)}</strong>
-            <span>etapas</span>
-          </div>
-          <div style={metricBox}>
-            <strong>{fmt(item.materiaisRelacionados)}</strong>
-            <span>materiais</span>
-          </div>
-          <div style={metricBox}>
-            <strong>{fmt(item.treinamentosRelacionados)}</strong>
-            <span>treinamentos</span>
-          </div>
-          <div style={metricBox}>
-            <strong>{fmt(item.avaliacoesRelacionadas)}</strong>
-            <span>avaliações</span>
-          </div>
-        </div>
-
-        {item.etapasPreview.length ? (
-          <div style={etapasWrap}>
-            {item.etapasPreview.map((etapa, index) => (
-              <div key={index} style={etapaItem}>
-                {index + 1}. {etapa}
-              </div>
-            ))}
-            {item.etapasCount > 4 ? (
-              <div style={etapaMore}>+ {item.etapasCount - 4} etapa(s)</div>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div style={cardActions}>
-          <button onClick={onEdit} style={editBtn}>
-            Editar
-          </button>
-          <button onClick={onDelete} style={deleteBtn}>
-            Excluir
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+const initialForm = {
+  cliente: "",
+  titulo: "",
+  descricao: "",
+  etapasText: "",
+};
 
 export default function TrilhasPage() {
   const [trilhas, setTrilhas] = useState([]);
-  const [biblioteca, setBiblioteca] = useState([]);
-  const [treinamentos, setTreinamentos] = useState([]);
-  const [avaliacoes, setAvaliacoes] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [activeTab, setActiveTab] = useState("catalogo");
+  const [search, setSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("todos");
+  const [audienceFilter, setAudienceFilter] = useState("todos");
+  const [form, setForm] = useState(initialForm);
+  const [editingId, setEditingId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    async function carregar() {
-      try {
-        const [trilhasData, bibliotecaData, treinamentosData, avaliacoesData] =
-          await Promise.all([
-            apiFetch("/trilhas").catch(() => []),
-            apiFetch("/biblioteca").catch(() => []),
-            apiFetch("/treinamentos").catch(() => []),
-            apiFetch("/avaliacoes").catch(() => []),
-          ]);
-
-        setTrilhas(Array.isArray(trilhasData) ? trilhasData : []);
-        setBiblioteca(Array.isArray(bibliotecaData) ? bibliotecaData : []);
-        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
-        setAvaliacoes(Array.isArray(avaliacoesData) ? avaliacoesData : []);
-      } catch {
-        setTrilhas([]);
-        setBiblioteca([]);
-        setTreinamentos([]);
-        setAvaliacoes([]);
-      }
-    }
-
-    carregar();
+    loadData();
   }, []);
 
-  const fields = [
-    {
-      name: "titulo",
-      label: "Título da trilha",
-      placeholder: "Nome da trilha",
-    },
-    {
-      name: "cliente",
-      label: "Cliente",
-      placeholder: "Cliente ou GLOBAL",
-    },
-    {
-      name: "publico",
-      label: "Público",
-      placeholder: "Ex.: onboarding, operação, liderança",
-    },
-    {
-      name: "objetivo",
-      label: "Objetivo",
-      placeholder: "Objetivo principal da trilha",
-    },
-    {
-      name: "responsavel",
-      label: "Responsável",
-      placeholder: "Responsável pela trilha",
-    },
-    {
-      name: "status",
-      label: "Status",
-      type: "select",
-      options: [
-        { value: "Ativa", label: "Ativa" },
-        { value: "Em construção", label: "Em construção" },
-        { value: "Concluída", label: "Concluída" },
-      ],
-      placeholder: "Selecione o status",
-    },
-    {
-      name: "etapas",
-      label: "Etapas",
-      type: "textarea",
-      placeholder: "Liste as etapas da trilha, uma por linha",
-    },
-    {
-      name: "descricao",
-      label: "Descrição",
-      type: "textarea",
-      placeholder: "Contexto e aplicação da trilha",
-    },
-  ];
+  async function loadData() {
+    try {
+      setLoading(true);
+      setError("");
+      const [trilhasData, usuariosData] = await Promise.all([
+        apiFetch("/trilhas").catch(() => []),
+        apiFetch("/usuarios").catch(() => []),
+      ]);
+      setTrilhas(Array.isArray(trilhasData) ? trilhasData : []);
+      setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+    } catch (err) {
+      setError(err.message || "Erro ao carregar trilhas.");
+      setTrilhas([]);
+      setUsuarios([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const trilhasEnriquecidas = useMemo(() => {
     return trilhas.map((item) => {
       const etapas = parseEtapas(item.etapas);
-      const cliente = item.cliente || "GLOBAL";
-
-      const materiaisRelacionados = biblioteca.filter(
-        (b) => (b.cliente || "GLOBAL") === cliente
-      ).length;
-
-      const treinamentosRelacionados = treinamentos.filter(
-        (t) => (t.cliente || "GLOBAL") === cliente
-      ).length;
-
-      const idsTreinamentosCliente = treinamentos
-        .filter((t) => (t.cliente || "GLOBAL") === cliente)
-        .map((t) => String(t.id));
-
-      const avaliacoesRelacionadas = avaliacoes.filter((a) =>
-        idsTreinamentosCliente.includes(String(a.treinamento_id))
-      ).length;
-
+      const audiences = inferAudience({ ...item, etapas });
       return {
         ...item,
-        etapasCount: etapas.length,
-        etapasPreview: etapas.slice(0, 4),
-        materiaisRelacionados,
-        treinamentosRelacionados,
-        avaliacoesRelacionadas,
+        etapas,
+        audiences,
+        status: getStatus({ ...item, etapas }),
+        horasEstimadas: estimateHours(etapas),
       };
     });
-  }, [trilhas, biblioteca, treinamentos, avaliacoes]);
+  }, [trilhas]);
 
-  const columns = [
-    {
-      key: "titulo",
-      label: "Trilha",
-      render: (item) => (
-        <div>
-          <div style={titleCell}>{item.titulo || "-"}</div>
-          <div style={subCell}>
-            {(item.cliente || "GLOBAL") + " • " + (item.publico || "Sem público")}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "status",
-      label: "Status",
-      render: (item) => (
-        <span style={statusStyle(item.status)}>{statusLabel(item.status)}</span>
-      ),
-    },
-    {
-      key: "objetivo",
-      label: "Objetivo",
-      render: (item) => <span style={plainCell}>{item.objetivo || "-"}</span>,
-    },
-    {
-      key: "responsavel",
-      label: "Responsável",
-      render: (item) => <span style={plainCell}>{item.responsavel || "-"}</span>,
-    },
-  ];
+  const colaboradores = useMemo(() => {
+    const base = usuarios.filter((item) => {
+      const perfil = normalize(item?.perfil);
+      return ["instrutor", "supervisor", "coordenador"].includes(perfil);
+    });
+
+    return {
+      instrutores: base.filter((item) => normalize(item.perfil) === "instrutor"),
+      supervisores: base.filter((item) => normalize(item.perfil) === "supervisor"),
+      coordenadores: base.filter((item) => normalize(item.perfil) === "coordenador"),
+      total: base,
+    };
+  }, [usuarios]);
+
+  const clients = useMemo(() => {
+    const values = [...new Set(trilhasEnriquecidas.map((item) => item.cliente || "GLOBAL"))].sort();
+    return values;
+  }, [trilhasEnriquecidas]);
+
+  const audienceOptions = ["Instrutores", "Supervisores", "Coordenação"];
+
+  const filteredTrilhas = useMemo(() => {
+    const term = normalize(search);
+
+    return trilhasEnriquecidas.filter((item) => {
+      const matchesClient = clientFilter === "todos" || (item.cliente || "GLOBAL") === clientFilter;
+      const matchesAudience =
+        audienceFilter === "todos" || item.audiences.includes(audienceFilter);
+      const matchesSearch =
+        !term ||
+        [item.titulo, item.descricao, item.cliente, ...item.etapas, ...item.audiences]
+          .join(" ")
+          .toLowerCase()
+          .includes(term);
+
+      return matchesClient && matchesAudience && matchesSearch;
+    });
+  }, [trilhasEnriquecidas, clientFilter, audienceFilter, search]);
 
   const kpis = useMemo(() => {
     const total = trilhasEnriquecidas.length;
-    const ativas = trilhasEnriquecidas.filter(
-      (item) => statusLabel(item.status) === "Ativa"
-    ).length;
-    const construcao = trilhasEnriquecidas.filter(
-      (item) => statusLabel(item.status) === "Em construção"
-    ).length;
-    const concluidas = trilhasEnriquecidas.filter(
-      (item) => statusLabel(item.status) === "Concluída"
-    ).length;
-
-    const comMaterial = trilhasEnriquecidas.filter(
-      (item) => item.materiaisRelacionados > 0
-    ).length;
-
-    const comTreinamento = trilhasEnriquecidas.filter(
-      (item) => item.treinamentosRelacionados > 0
-    ).length;
-
-    const porClienteMap = {};
-    trilhasEnriquecidas.forEach((item) => {
-      const cliente = item.cliente || "GLOBAL";
-      if (!porClienteMap[cliente]) {
-        porClienteMap[cliente] = {
-          cliente,
-          total: 0,
-          etapas: 0,
-          materiais: 0,
-          treinamentos: 0,
-        };
-      }
-
-      porClienteMap[cliente].total += 1;
-      porClienteMap[cliente].etapas += item.etapasCount;
-      porClienteMap[cliente].materiais += item.materiaisRelacionados;
-      porClienteMap[cliente].treinamentos += item.treinamentosRelacionados;
-    });
-
-    const porCliente = Object.values(porClienteMap).sort(
-      (a, b) => b.total - a.total
-    );
-
-    const alertas = [];
-
-    const incompletas = trilhasEnriquecidas.filter(
-      (item) =>
-        item.materiaisRelacionados === 0 ||
-        item.treinamentosRelacionados === 0 ||
-        item.etapasCount === 0
-    ).length;
-
-    if (incompletas > 0) {
-      alertas.push(`${incompletas} trilha(s) ainda com cobertura incompleta.`);
-    }
-
-    if (construcao > 0) {
-      alertas.push(`${construcao} trilha(s) estão em construção.`);
-    }
-
-    const semResponsavel = trilhasEnriquecidas.filter(
-      (item) => !item.responsavel
-    ).length;
-
-    if (semResponsavel > 0) {
-      alertas.push(`${semResponsavel} trilha(s) sem responsável definido.`);
-    }
-
-    if (!alertas.length) {
-      alertas.push("Trilhas organizadas, sem pendências críticas no momento.");
-    }
+    const estruturadas = trilhasEnriquecidas.filter((item) => item.status === "Estruturada").length;
+    const ativas = trilhasEnriquecidas.filter((item) => item.status === "Ativa").length;
+    const emEstruturacao = trilhasEnriquecidas.filter((item) => item.status === "Em estruturação").length;
+    const horasEstimadas = trilhasEnriquecidas.reduce((acc, item) => acc + item.horasEstimadas, 0);
+    const publicosCobertos = new Set(trilhasEnriquecidas.flatMap((item) => item.audiences)).size;
 
     return {
       total,
+      estruturadas,
       ativas,
-      construcao,
-      concluidas,
-      comMaterial,
-      comTreinamento,
-      porCliente,
-      alertas,
+      emEstruturacao,
+      horasEstimadas,
+      publicosCobertos,
     };
   }, [trilhasEnriquecidas]);
 
-  return (
-    <CrudPageV2
-      title="Trilhas"
-      subtitle="Jornadas de aprendizagem com leitura executiva, operacional e de cobertura."
-      endpoint="/trilhas"
-      fields={fields}
-      columns={columns}
-      recordsTitle="Trilhas cadastradas"
-      recordsSubtitle="Visão consolidada das jornadas estruturadas no portal."
-      recordsGridStyle={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-        gap: 12,
-      }}
-      renderRecordCard={({ item, onEdit, onDelete }) => {
-        const enriched = trilhasEnriquecidas.find(
-          (registro) => String(registro.id) === String(item.id)
-        );
+  const publicoRows = useMemo(() => {
+    const config = [
+      {
+        label: "Instrutores",
+        usuarios: colaboradores.instrutores,
+        hint: "Trilhas voltadas à condução de sala, didática, materiais e gestão de turma.",
+      },
+      {
+        label: "Supervisores",
+        usuarios: colaboradores.supervisores,
+        hint: "Trilhas voltadas à gestão de instrutores, indicadores e acompanhamento operacional.",
+      },
+      {
+        label: "Coordenação",
+        usuarios: colaboradores.coordenadores,
+        hint: "Acompanhamento gerencial, coaching e leitura executiva da operação.",
+      },
+    ];
 
-        return (
-          <TrilhaCard
-            key={item.id}
-            item={enriched || item}
-            onEdit={onEdit}
-            onDelete={onDelete}
-          />
-        );
-      }}
-      hero={
-        <div style={{ display: "grid", gap: 14 }}>
-          <div style={heroGrid}>
-            <StatCard
-              title="Trilhas"
-              value={fmt(kpis.total)}
-              subtitle="Base total"
-              accent="#2563eb"
-            />
-            <StatCard
-              title="Ativas"
-              value={fmt(kpis.ativas)}
-              subtitle="Em uso no portal"
-              accent="#16a34a"
-            />
-            <StatCard
-              title="Em construção"
-              value={fmt(kpis.construcao)}
-              subtitle="Em estruturação"
-              accent="#ea580c"
-            />
-            <StatCard
-              title="Concluídas"
-              value={fmt(kpis.concluidas)}
-              subtitle="Estruturadas"
-              accent="#7c3aed"
-            />
-          </div>
+    return config.map((item) => {
+      const trilhasRelacionadas = trilhasEnriquecidas.filter((trilha) => trilha.audiences.includes(item.label));
+      return {
+        ...item,
+        trilhasRelacionadas,
+        horas: trilhasRelacionadas.reduce((acc, trilha) => acc + trilha.horasEstimadas, 0),
+      };
+    });
+  }, [colaboradores, trilhasEnriquecidas]);
 
-          <div style={heroGrid}>
-            <StatCard
-              title="Com materiais"
-              value={fmt(kpis.comMaterial)}
-              subtitle="Cobertura da biblioteca"
-              accent="#0891b2"
-            />
-            <StatCard
-              title="Com treinamentos"
-              value={fmt(kpis.comTreinamento)}
-              subtitle="Cobertura operacional"
-              accent="#0f766e"
-            />
-          </div>
+  const topAlerts = useMemo(() => {
+    const messages = [];
+    if (!colaboradores.instrutores.length) {
+      messages.push("Nenhum instrutor cadastrado no portal para vinculação de trilhas.");
+    }
+    if (!colaboradores.supervisores.length) {
+      messages.push("Nenhum supervisor cadastrado no portal para acompanhar trilhas.");
+    }
+    if (kpis.emEstruturacao > 0) {
+      messages.push(`${kpis.emEstruturacao} trilha(s) ainda estão em estruturação e pedem complemento de etapas.`);
+    }
+    if (!messages.length) {
+      messages.push("Base pronta para estruturar trilhas por público e evoluir a governança interna.");
+    }
+    return messages;
+  }, [colaboradores, kpis]);
 
-          <div style={twoCol}>
-            <SectionCard
-              title="Cobertura por cliente"
-              subtitle="Clientes com maior estrutura de trilhas e jornada."
-            >
-              <div style={listGrid}>
-                {kpis.porCliente.length ? (
-                  kpis.porCliente.slice(0, 6).map((item) => (
-                    <div key={item.cliente} style={listItem}>
-                      <div style={itemTitle}>{item.cliente}</div>
-                      <div style={itemMeta}>
-                        {item.total} trilha(s) • {fmt(item.etapas)} etapa(s) •{" "}
-                        {fmt(item.materiais)} material(is) •{" "}
-                        {fmt(item.treinamentos)} treinamento(s)
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={emptyText}>Nenhum cliente disponível.</div>
-                )}
-              </div>
-            </SectionCard>
+  function resetForm() {
+    setForm(initialForm);
+    setEditingId(null);
+  }
 
-            <SectionCard
-              title="Leitura gerencial"
-              subtitle="Pontos rápidos para acompanhamento do portfólio de trilhas."
-            >
-              <div style={alertGrid}>
-                {kpis.alertas.map((item, index) => (
-                  <div key={index} style={alertItem}>
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          </div>
-        </div>
+  function startEdit(item) {
+    setEditingId(item.id);
+    setForm({
+      cliente: item.cliente || "",
+      titulo: item.titulo || "",
+      descricao: item.descricao || "",
+      etapasText: item.etapas.join("\n"),
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    try {
+      setSaving(true);
+      setError("");
+      setSuccess("");
+
+      const payload = {
+        cliente: form.cliente.trim(),
+        titulo: form.titulo.trim(),
+        descricao: form.descricao.trim(),
+        etapas: parseEtapas(form.etapasText),
+      };
+
+      if (!payload.cliente || !payload.titulo) {
+        throw new Error("Preencha cliente e título da trilha.");
       }
-    />
+
+      if (editingId) {
+        await apiFetch(`/trilhas/${editingId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        setSuccess("Trilha atualizada com sucesso.");
+      } else {
+        await apiFetch("/trilhas", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setSuccess("Trilha cadastrada com sucesso.");
+      }
+
+      resetForm();
+      await loadData();
+    } catch (err) {
+      setError(err.message || "Erro ao salvar trilha.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id) {
+    const confirmed = window.confirm("Deseja excluir esta trilha?");
+    if (!confirmed) return;
+
+    try {
+      setError("");
+      setSuccess("");
+      await apiFetch(`/trilhas/${id}`, { method: "DELETE" });
+      setSuccess("Trilha excluída com sucesso.");
+      await loadData();
+    } catch (err) {
+      setError(err.message || "Erro ao excluir trilha.");
+    }
+  }
+
+  return (
+    <PortalShell
+      title="Trilhas"
+      subtitle="Ambiente para organizar cursos e atividades por público interno, com visual mais executivo e foco em desenvolvimento de instrutores e supervisores."
+      topRight={
+        <div style={heroBadge}>Estrutura interna de capacitação</div>
+      }
+    >
+      <div style={pageGrid}>
+        {error ? <div style={errorBox}>{error}</div> : null}
+        {success ? <div style={successBox}>{success}</div> : null}
+
+        <section style={exclusiveHero}>
+          <div style={heroHeaderRow}>
+            <div>
+              <div style={eyebrow}>Trilhas de desenvolvimento</div>
+              <h2 style={heroTitle}>Catálogo com visão por público, cobertura e prontidão de uso</h2>
+              <p style={heroText}>
+                Estruture as jornadas internas do portal para instrutores, supervisores e coordenação,
+                mantendo uma leitura próxima ao padrão atual, mas com um visual mais nobre e gerencial.
+              </p>
+            </div>
+
+            <div style={miniPanel}>
+              <div style={miniPanelLabel}>Públicos priorizados</div>
+              <div style={miniPanelValue}>Instrutores • Supervisores • Coordenação</div>
+              <div style={miniPanelSub}>Com base nos usuários já cadastrados no portal</div>
+            </div>
+          </div>
+
+          <div style={statsGrid}>
+            <StatCard title="Trilhas" value={fmt(kpis.total)} subtitle="Base cadastrada" accent="#2563eb" />
+            <StatCard title="Estruturadas" value={fmt(kpis.estruturadas)} subtitle="Com maior maturidade" accent="#16a34a" />
+            <StatCard title="Ativas" value={fmt(kpis.ativas)} subtitle="Em uso e evolução" accent="#0f766e" />
+            <StatCard title="Em estruturação" value={fmt(kpis.emEstruturacao)} subtitle="Pedem complemento" accent="#ea580c" />
+            <StatCard title="Públicos cobertos" value={fmt(kpis.publicosCobertos)} subtitle="Perfis atendidos" accent="#7c3aed" />
+            <StatCard title="Horas estimadas" value={fmt(kpis.horasEstimadas)} subtitle="Carga sugerida do catálogo" accent="#0891b2" />
+          </div>
+        </section>
+
+        <div style={tabRow}>
+          {[
+            ["catalogo", "Catálogo de trilhas"],
+            ["publicos", "Acompanhamento por público"],
+            ["cadastro", editingId ? "Editar trilha" : "Nova trilha"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveTab(id)}
+              style={{ ...tabButton, ...(activeTab === id ? tabButtonActive : {}) }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "catalogo" ? (
+          <>
+            <SectionCard
+              title="Filtros e leitura rápida"
+              subtitle="Use os filtros para ajustar o catálogo por cliente, público e busca textual."
+            >
+              <div style={filterGrid}>
+                <div style={fieldWrap}>
+                  <label style={label}>Busca</label>
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar trilha, cliente ou etapa"
+                    style={input}
+                  />
+                </div>
+                <div style={fieldWrap}>
+                  <label style={label}>Cliente</label>
+                  <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={input}>
+                    <option value="todos">Todos</option>
+                    {clients.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={fieldWrap}>
+                  <label style={label}>Público</label>
+                  <select value={audienceFilter} onChange={(e) => setAudienceFilter(e.target.value)} style={input}>
+                    <option value="todos">Todos</option>
+                    {audienceOptions.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </SectionCard>
+
+            <div style={twoCol}>
+              <SectionCard title="Leitura gerencial" subtitle="Pontos rápidos para alinhar evolução e cobertura do catálogo.">
+                <div style={alertList}>
+                  {topAlerts.map((item, index) => (
+                    <div key={index} style={alertItem}>{item}</div>
+                  ))}
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Cobertura por público" subtitle="Leitura resumida do volume de trilhas aplicáveis por perfil.">
+                <div style={miniList}>
+                  {publicoRows.map((item) => (
+                    <div key={item.label} style={miniListItem}>
+                      <div style={miniListTop}>
+                        <strong>{item.label}</strong>
+                        <span>{fmt(item.trilhasRelacionadas.length)} trilha(s)</span>
+                      </div>
+                      <div style={miniMuted}>{fmt(item.usuarios.length)} usuário(s) no portal • {fmt(item.horas)}h estimadas</div>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            </div>
+
+            <SectionCard
+              title="Catálogo de trilhas"
+              subtitle={loading ? "Carregando base..." : `${fmt(filteredTrilhas.length)} registro(s) encontrado(s)`}
+            >
+              {loading ? (
+                <div style={emptyState}>Carregando trilhas...</div>
+              ) : filteredTrilhas.length ? (
+                <div style={catalogGrid}>
+                  {filteredTrilhas.map((item) => (
+                    <article key={item.id} style={catalogCard}>
+                      <div style={cardTopRow}>
+                        <span style={statusTone(item.status)}>{item.status}</span>
+                        <span style={hoursBadge}>{fmt(item.horasEstimadas)}h estimadas</span>
+                      </div>
+
+                      <div style={cardTitle}>{item.titulo || "Sem título"}</div>
+                      <div style={cardMeta}>{item.cliente || "GLOBAL"}</div>
+                      <p style={cardText}>{item.descricao || "Sem descrição cadastrada."}</p>
+
+                      <div style={chipWrap}>
+                        {item.audiences.map((audience) => (
+                          <span key={audience} style={audienceChip}>{audience}</span>
+                        ))}
+                      </div>
+
+                      <div style={stepsTitle}>Etapas da trilha</div>
+                      <div style={stepsWrap}>
+                        {item.etapas.length ? item.etapas.slice(0, 6).map((step, index) => (
+                          <div key={`${item.id}-${index}`} style={stepItem}>{index + 1}. {step}</div>
+                        )) : <div style={emptySteps}>Cadastre as etapas para estruturar a jornada.</div>}
+                        {item.etapas.length > 6 ? <div style={moreSteps}>+ {item.etapas.length - 6} etapa(s)</div> : null}
+                      </div>
+
+                      <div style={actionsRow}>
+                        <button type="button" onClick={() => { startEdit(item); setActiveTab("cadastro"); }} style={secondaryButton}>Editar</button>
+                        <button type="button" onClick={() => handleDelete(item.id)} style={dangerButton}>Excluir</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div style={emptyState}>Nenhuma trilha encontrada para os filtros selecionados.</div>
+              )}
+            </SectionCard>
+          </>
+        ) : null}
+
+        {activeTab === "publicos" ? (
+          <SectionCard
+            title="Acompanhamento por público"
+            subtitle="Leitura separada para instrutores, supervisores e coordenação, já alinhada ao uso real do portal."
+          >
+            <div style={publicGrid}>
+              {publicoRows.map((item) => (
+                <div key={item.label} style={publicCard}>
+                  <div style={publicHeader}>
+                    <div>
+                      <div style={publicTitle}>{item.label}</div>
+                      <div style={publicSub}>{item.hint}</div>
+                    </div>
+                    <span style={publicBadge}>{fmt(item.usuarios.length)} usuário(s)</span>
+                  </div>
+
+                  <div style={publicStatsRow}>
+                    <div style={publicStatBox}>
+                      <strong>{fmt(item.trilhasRelacionadas.length)}</strong>
+                      <span>Trilhas relacionadas</span>
+                    </div>
+                    <div style={publicStatBox}>
+                      <strong>{fmt(item.horas)}</strong>
+                      <span>Horas estimadas</span>
+                    </div>
+                  </div>
+
+                  <div style={subsectionTitle}>Trilhas sugeridas</div>
+                  <div style={stackList}>
+                    {item.trilhasRelacionadas.length ? item.trilhasRelacionadas.map((trilha) => (
+                      <div key={trilha.id} style={stackItem}>
+                        <div style={stackMain}>{trilha.titulo}</div>
+                        <div style={stackSub}>{trilha.cliente || "GLOBAL"} • {trilha.etapas.length} etapa(s)</div>
+                      </div>
+                    )) : <div style={emptySteps}>Nenhuma trilha vinculada por leitura textual até o momento.</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        ) : null}
+
+        {activeTab === "cadastro" ? (
+          <SectionCard
+            title={editingId ? "Editar trilha" : "Cadastrar nova trilha"}
+            subtitle="Cadastro simples, mantendo a base atual e já preparando o catálogo para a expansão das páginas."
+          >
+            <form onSubmit={handleSubmit} style={formGrid}>
+              <div style={fieldWrap}>
+                <label style={label}>Cliente</label>
+                <input value={form.cliente} onChange={(e) => setForm((prev) => ({ ...prev, cliente: e.target.value }))} style={input} placeholder="Ex.: SAFRA, CREA, DASA ou GLOBAL" />
+              </div>
+              <div style={fieldWrap}>
+                <label style={label}>Título da trilha</label>
+                <input value={form.titulo} onChange={(e) => setForm((prev) => ({ ...prev, titulo: e.target.value }))} style={input} placeholder="Ex.: Trilha de Formação de Instrutores" />
+              </div>
+              <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
+                <label style={label}>Descrição</label>
+                <textarea value={form.descricao} onChange={(e) => setForm((prev) => ({ ...prev, descricao: e.target.value }))} style={textarea} placeholder="Objetivo, aplicação e público esperado da trilha" />
+              </div>
+              <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
+                <label style={label}>Etapas da trilha</label>
+                <textarea value={form.etapasText} onChange={(e) => setForm((prev) => ({ ...prev, etapasText: e.target.value }))} style={textareaLarge} placeholder={"Liste uma etapa por linha\nEx.: Didática para adultos\nGestão de turma\nFeedback estruturado"} />
+              </div>
+
+              <div style={formActions}>
+                <button type="submit" style={primaryButton} disabled={saving}>
+                  {saving ? "Salvando..." : editingId ? "Atualizar trilha" : "Salvar trilha"}
+                </button>
+                <button type="button" style={secondaryButton} onClick={resetForm}>
+                  Limpar
+                </button>
+              </div>
+            </form>
+          </SectionCard>
+        ) : null}
+      </div>
+    </PortalShell>
   );
 }
 
-const heroGrid = {
+const pageGrid = {
+  display: "grid",
+  gap: 14,
+};
+
+const exclusiveHero = {
+  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 55%, #38bdf8 100%)",
+  borderRadius: 24,
+  padding: 22,
+  color: "#ffffff",
+  boxShadow: "0 16px 32px rgba(37,99,235,0.18)",
+};
+
+const heroHeaderRow = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(240px, 320px)",
+  gap: 16,
+  alignItems: "start",
+};
+
+const eyebrow = {
+  display: "inline-flex",
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.16)",
+  fontWeight: 800,
+  fontSize: 11,
+  letterSpacing: ".04em",
+  textTransform: "uppercase",
+};
+
+const heroTitle = {
+  margin: "12px 0 8px",
+  fontSize: 28,
+  lineHeight: 1.1,
+};
+
+const heroText = {
+  margin: 0,
+  color: "rgba(255,255,255,0.9)",
+  lineHeight: 1.55,
+  maxWidth: 760,
+};
+
+const miniPanel = {
+  background: "rgba(255,255,255,0.12)",
+  border: "1px solid rgba(255,255,255,0.18)",
+  borderRadius: 20,
+  padding: 16,
+  backdropFilter: "blur(10px)",
+};
+
+const miniPanelLabel = {
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: ".05em",
+  opacity: 0.85,
+  fontWeight: 800,
+};
+
+const miniPanelValue = {
+  marginTop: 8,
+  fontSize: 18,
+  lineHeight: 1.25,
+  fontWeight: 900,
+};
+
+const miniPanelSub = {
+  marginTop: 8,
+  fontSize: 13,
+  color: "rgba(255,255,255,0.82)",
+  lineHeight: 1.45,
+};
+
+const heroBadge = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 14px",
+  borderRadius: 999,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  fontSize: 12,
+};
+
+const statsGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
   gap: 10,
+  marginTop: 18,
+};
+
+const tabRow = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+};
+
+const tabButton = {
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  color: "#334155",
+  borderRadius: 999,
+  padding: "10px 14px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const tabButtonActive = {
+  background: "#1d4ed8",
+  color: "#ffffff",
+  borderColor: "#1d4ed8",
+  boxShadow: "0 10px 20px rgba(37,99,235,0.18)",
+};
+
+const filterGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+  gap: 12,
+};
+
+const fieldWrap = {
+  display: "grid",
+  gap: 6,
+};
+
+const label = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#334155",
+};
+
+const input = {
+  width: "100%",
+  borderRadius: 12,
+  border: "1px solid #cbd5e1",
+  padding: "12px 14px",
+  fontSize: 14,
+  outline: "none",
+  background: "#ffffff",
+};
+
+const textarea = {
+  ...input,
+  minHeight: 96,
+  resize: "vertical",
+};
+
+const textareaLarge = {
+  ...textarea,
+  minHeight: 160,
 };
 
 const twoCol = {
   display: "grid",
-  gridTemplateColumns: "1fr 1fr",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   gap: 14,
 };
 
-const listGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const listItem = {
-  background: "#f8fafc",
-  padding: 12,
-  borderRadius: 14,
-  border: "1px solid #e2e8f0",
-};
-
-const itemTitle = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const itemMeta = {
-  marginTop: 5,
-  color: "#475569",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
-
-const alertGrid = {
+const alertList = {
   display: "grid",
   gap: 10,
 };
 
 const alertItem = {
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  color: "#1d4ed8",
-  borderRadius: 12,
-  padding: 12,
-  fontWeight: 600,
-};
-
-const emptyText = {
-  color: "#64748b",
-};
-
-const card = {
-  background: "#ffffff",
-  borderRadius: 16,
+  background: "#f8fafc",
   border: "1px solid #e2e8f0",
-  overflow: "hidden",
-  boxShadow: "0 8px 18px rgba(15,23,42,.04)",
+  borderRadius: 14,
+  padding: 12,
+  color: "#334155",
+  lineHeight: 1.45,
 };
 
-const cardTop = {
-  padding: 14,
-  background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
-  borderBottom: "1px solid #e2e8f0",
+const miniList = {
+  display: "grid",
+  gap: 10,
+};
+
+const miniListItem = {
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 12,
+};
+
+const miniListTop = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  fontSize: 14,
+  color: "#0f172a",
+};
+
+const miniMuted = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const catalogGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))",
+  gap: 12,
+};
+
+const catalogCard = {
+  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
+  border: "1px solid #dbe4f0",
+  borderRadius: 20,
+  padding: 16,
+  display: "grid",
+  gap: 12,
+  boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
 };
 
 const cardTopRow = {
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "center",
   gap: 8,
   flexWrap: "wrap",
 };
 
-const cardTitle = {
-  marginTop: 10,
-  fontSize: 16,
+const hoursBadge = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 999,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  padding: "6px 10px",
   fontWeight: 800,
-  color: "#0f172a",
+  fontSize: 11,
+};
+
+const cardTitle = {
+  fontSize: 18,
   lineHeight: 1.2,
+  fontWeight: 900,
+  color: "#0f172a",
 };
 
 const cardMeta = {
-  marginTop: 6,
-  color: "#475569",
-  fontSize: 12,
-  lineHeight: 1.4,
-};
-
-const cardBody = {
-  padding: 14,
-};
-
-const descricao = {
-  margin: "0 0 12px",
-  color: "#64748b",
   fontSize: 13,
-  lineHeight: 1.5,
-};
-
-const metricsGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 8,
-  marginBottom: 12,
-};
-
-const metricBox = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: 10,
-  display: "grid",
-  gap: 4,
-  textAlign: "center",
-};
-
-const etapasWrap = {
-  display: "grid",
-  gap: 6,
-  marginBottom: 12,
-};
-
-const etapaItem = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 10,
-  padding: "8px 10px",
-  fontSize: 12,
-  color: "#334155",
-};
-
-const etapaMore = {
-  fontSize: 12,
   color: "#64748b",
   fontWeight: 700,
 };
 
-const cardActions = {
+const cardText = {
+  margin: 0,
+  color: "#475569",
+  lineHeight: 1.5,
+  fontSize: 14,
+};
+
+const chipWrap = {
   display: "flex",
-  gap: 8,
   flexWrap: "wrap",
+  gap: 8,
 };
 
-const editBtn = {
-  border: 0,
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  padding: "9px 12px",
-  borderRadius: 10,
+const audienceChip = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "#f1f5f9",
+  color: "#334155",
   fontWeight: 800,
-  cursor: "pointer",
+  fontSize: 12,
+};
+
+const stepsTitle = {
   fontSize: 13,
-};
-
-const deleteBtn = {
-  border: 0,
-  background: "#fee2e2",
-  color: "#b91c1c",
-  padding: "9px 12px",
-  borderRadius: 10,
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 13,
-};
-
-const titleCell = {
-  fontWeight: 800,
+  fontWeight: 900,
   color: "#0f172a",
 };
 
-const subCell = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 12,
-  lineHeight: 1.35,
+const stepsWrap = {
+  display: "grid",
+  gap: 8,
 };
 
-const plainCell = {
+const stepItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 12,
+  padding: "10px 12px",
+  fontSize: 13,
   color: "#334155",
-  fontWeight: 600,
+};
+
+const moreSteps = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#1d4ed8",
+};
+
+const emptySteps = {
+  color: "#64748b",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const actionsRow = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const primaryButton = {
+  border: 0,
+  background: "#1d4ed8",
+  color: "#ffffff",
+  borderRadius: 12,
+  padding: "12px 16px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const secondaryButton = {
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  color: "#334155",
+  borderRadius: 12,
+  padding: "12px 16px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const dangerButton = {
+  border: "1px solid #fecaca",
+  background: "#fff1f2",
+  color: "#be123c",
+  borderRadius: 12,
+  padding: "12px 16px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const publicGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+  gap: 12,
+};
+
+const publicCard = {
+  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
+  border: "1px solid #dbe4f0",
+  borderRadius: 20,
+  padding: 16,
+  display: "grid",
+  gap: 14,
+};
+
+const publicHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "start",
+};
+
+const publicTitle = {
+  fontSize: 18,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const publicSub = {
+  marginTop: 4,
+  fontSize: 13,
+  color: "#64748b",
+  lineHeight: 1.45,
+};
+
+const publicBadge = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 999,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  padding: "6px 10px",
+  fontWeight: 800,
+  fontSize: 12,
+};
+
+const publicStatsRow = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 10,
+};
+
+const publicStatBox = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 12,
+  display: "grid",
+  gap: 4,
+};
+
+const subsectionTitle = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const stackList = {
+  display: "grid",
+  gap: 8,
+};
+
+const stackItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 12,
+  padding: 10,
+};
+
+const stackMain = {
+  fontWeight: 800,
+  color: "#0f172a",
+  fontSize: 13,
+};
+
+const stackSub = {
+  marginTop: 3,
+  color: "#64748b",
+  fontSize: 12,
+};
+
+const formGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+};
+
+const formActions = {
+  gridColumn: "1 / -1",
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const errorBox = {
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  padding: 14,
+  borderRadius: 14,
+  fontWeight: 700,
+};
+
+const successBox = {
+  background: "#ecfdf5",
+  border: "1px solid #bbf7d0",
+  color: "#166534",
+  padding: 14,
+  borderRadius: 14,
+  fontWeight: 700,
+};
+
+const emptyState = {
+  padding: 22,
+  borderRadius: 16,
+  background: "#f8fafc",
+  border: "1px dashed #cbd5e1",
+  color: "#64748b",
+  textAlign: "center",
 };
