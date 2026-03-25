@@ -6,20 +6,16 @@ import { apiFetch } from "../../../../services/api";
 
 function formatDate(value) {
   if (!value) return "-";
-  const text = String(value).slice(0, 10);
-  const parts = text.split("-");
-  if (parts.length === 3) {
-    const [y, m, d] = parts.map(Number);
-    if (y && m && d) {
-      return new Date(y, m - 1, d, 12, 0, 0).toLocaleDateString("pt-BR");
-    }
-  }
-  return String(value);
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toLocaleDateString("pt-BR");
 }
 
 function toInputDate(value) {
   if (!value) return "";
-  return String(value).slice(0, 10);
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toISOString().slice(0, 10);
 }
 
 function formatHours(value) {
@@ -115,11 +111,11 @@ const TIPO_AULA_OPTIONS = [
 ];
 
 const STATUS_AULA_OPTIONS = [
-  "Planejada",
-  "Em andamento",
-  "Concluída",
-  "Reprogramada",
-  "Cancelada",
+  { label: "Planejada", value: "planejada" },
+  { label: "Em andamento", value: "em_andamento" },
+  { label: "Concluída", value: "concluida" },
+  { label: "Reprogramada", value: "reprogramada" },
+  { label: "Cancelada", value: "cancelada" },
 ];
 
 function emptyAulaForm(instrutor = "", carga = 1) {
@@ -130,7 +126,7 @@ function emptyAulaForm(instrutor = "", carga = 1) {
     data_aula: "",
     instrutor: instrutor || "",
     tipo_aula: "Aula regular",
-    status_aula: "Planejada",
+    status_aula: "planejada",
     carga_planejada: Number(carga || 1),
     objetivo: "",
     conteudo_programatico: "",
@@ -139,11 +135,10 @@ function emptyAulaForm(instrutor = "", carga = 1) {
 }
 
 export default function CronogramaTurmaPage() {
-  const routeParams = useParams();
-  const id = routeParams?.id;
+  const params = useParams();
+  const id = params?.id;
 
   const [treinamento, setTreinamento] = useState(null);
-  const [aulasTurma, setAulasTurma] = useState([]);
   const [resumosAulas, setResumosAulas] = useState([]);
   const [turmasDisponiveis, setTurmasDisponiveis] = useState([]);
   const [participantesResumo, setParticipantesResumo] = useState([]);
@@ -155,22 +150,16 @@ export default function CronogramaTurmaPage() {
   const [aulaForm, setAulaForm] = useState(emptyAulaForm());
   const [salvandoAula, setSalvandoAula] = useState(false);
 
-  const [autoForm, setAutoForm] = useState({
-    data_inicio: "",
-    data_fim: "",
-    carga_horaria: 1,
-    ignorar_domingo: true,
-  });
   const [gerando, setGerando] = useState(false);
-
+  const [duplicando, setDuplicando] = useState(false);
   const [duplicarModal, setDuplicarModal] = useState({
     open: false,
     origemId: "",
   });
-  const [duplicando, setDuplicando] = useState(false);
 
   useEffect(() => {
     carregarTudo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function carregarTudo() {
@@ -181,116 +170,103 @@ export default function CronogramaTurmaPage() {
       setErro("");
       setSucesso("");
 
-      const [dadosTreinamento, aulas, turmas, participantes] = await Promise.all([
-        apiFetch(`/treinamentos/${id}`),
-        apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
-        apiFetch("/treinamentos").catch(() => []),
-        apiFetch(`/turmas-participantes?treinamento_id=${id}`).catch(() => []),
-      ]);
+      const [dadosTreinamento, listaTreinamentos, listaParticipantes] =
+        await Promise.all([
+          apiFetch(`/treinamentos/${id}`),
+          apiFetch("/treinamentos").catch(() => []),
+          apiFetch(`/treinamentos/${id}/participantes`).catch(() => []),
+        ]);
 
-      const listaAulas = sortByDateAsc(Array.isArray(aulas) ? aulas : []);
-      const listaTurmas = Array.isArray(turmas) ? turmas : [];
-      const listaParticipantes = Array.isArray(participantes) ? participantes : [];
+      const turmaAtual = dadosTreinamento || null;
+      const listaTurmas = Array.isArray(listaTreinamentos)
+        ? listaTreinamentos
+        : [];
+      const listaParticipantesSafe = Array.isArray(listaParticipantes)
+        ? listaParticipantes
+        : [];
 
-      setTreinamento(dadosTreinamento || null);
-      setAulasTurma(listaAulas);
-      setParticipantesResumo(listaParticipantes);
+      setTreinamento(turmaAtual);
+      setParticipantesResumo(listaParticipantesSafe);
       setTurmasDisponiveis(
         listaTurmas.filter((item) => String(item.id) !== String(id))
       );
 
-      const cargaPadrao = Number(dadosTreinamento?.carga_horaria || 1);
+      let listaAulas = [];
 
-      setAutoForm((prev) => ({
-        ...prev,
-        data_inicio: toInputDate(
-          dadosTreinamento?.data_inicio || dadosTreinamento?.data || ""
-        ),
-        data_fim: toInputDate(dadosTreinamento?.data_fim || ""),
-        carga_horaria: cargaPadrao,
-      }));
+      if (Array.isArray(turmaAtual?.cronograma)) {
+        listaAulas = turmaAtual.cronograma;
+      } else {
+        listaAulas = await apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(
+          () => []
+        );
+      }
 
-      setAulaForm((prev) =>
-        prev.id
-          ? prev
-          : emptyAulaForm(dadosTreinamento?.instrutor || "", cargaPadrao)
+      const listaAulasOrdenada = sortByDateAsc(
+        Array.isArray(listaAulas) ? listaAulas : []
       );
 
-      if (listaAulas.length) {
-        const resumos = await Promise.all(
-          listaAulas.map(async (aula, index) => {
-            try {
-              const resumo = await apiFetch(`/presenca-aulas/resumo/${aula.id}`);
-              return {
-                turma_aula_id: aula.id,
-                data_aula: aula.data_aula,
-                dia: aula.dia || index + 1,
-                titulo:
-                  aula.titulo ||
-                  aula.nome ||
-                  aula.tema ||
-                  `Aula do Dia ${index + 1}`,
-                tipo_aula: aula.tipo_aula || "Aula regular",
-                status_aula: aula.status_aula || "Planejada",
-                objetivo: aula.objetivo || "",
-                conteudo_programatico: aula.conteudo_programatico || "",
-                observacoes: aula.observacoes || "",
-                instrutor: aula.instrutor || dadosTreinamento?.instrutor || "",
-                carga_planejada: Number(
-                  aula.carga_planejada || aula.carga_horaria || 0
-                ),
-                carga_real: Number(
-                  aula.carga_real || aula.carga_ministrada || 0
-                ),
-                ministradas: Number(aula.ministradas || 0),
-                parciais: Number(aula.parciais || 0),
-                planejadas: Number(aula.planejadas || 1),
-                reprogramadas: Number(aula.reprogramadas || 0),
-                canceladas: Number(aula.canceladas || 0),
-                ...resumo,
-              };
-            } catch {
-              return {
-                turma_aula_id: aula.id,
-                data_aula: aula.data_aula,
-                dia: aula.dia || index + 1,
-                titulo:
-                  aula.titulo ||
-                  aula.nome ||
-                  aula.tema ||
-                  `Aula do Dia ${index + 1}`,
-                tipo_aula: aula.tipo_aula || "Aula regular",
-                status_aula: aula.status_aula || "Planejada",
-                objetivo: aula.objetivo || "",
-                conteudo_programatico: aula.conteudo_programatico || "",
-                observacoes: aula.observacoes || "",
-                instrutor: aula.instrutor || dadosTreinamento?.instrutor || "",
-                carga_planejada: Number(
-                  aula.carga_planejada || aula.carga_horaria || 0
-                ),
-                carga_real: Number(
-                  aula.carga_real || aula.carga_ministrada || 0
-                ),
-                ministradas: Number(aula.ministradas || 0),
-                parciais: Number(aula.parciais || 0),
-                planejadas: Number(aula.planejadas || 1),
-                reprogramadas: Number(aula.reprogramadas || 0),
-                canceladas: Number(aula.canceladas || 0),
-                total: 0,
-                presentes: 0,
-                ausentes: 0,
-                justificados: 0,
-                pendentes: 0,
-                percentual: 0,
+      const resumos = await Promise.all(
+        listaAulasOrdenada.map(async (aula, index) => {
+          let resumoPresenca = {
+            total: 0,
+            presentes: 0,
+            ausentes: 0,
+            justificados: 0,
+            pendentes: 0,
+            percentual: 0,
+          };
+
+          try {
+            const resposta = await apiFetch(
+              `/presenca-aulas/resumo/${aula.id}`
+            ).catch(() => null);
+
+            if (resposta && typeof resposta === "object") {
+              resumoPresenca = {
+                total: Number(resposta.total || 0),
+                presentes: Number(resposta.presentes || 0),
+                ausentes: Number(resposta.ausentes || 0),
+                justificados: Number(resposta.justificados || 0),
+                pendentes: Number(resposta.pendentes || 0),
+                percentual: Number(resposta.percentual || 0),
               };
             }
-          })
-        );
+          } catch {
+            // mantém padrão zerado
+          }
 
-        setResumosAulas(resumos);
-      } else {
-        setResumosAulas([]);
-      }
+          return {
+            turma_aula_id: aula.id,
+            data_aula: aula.data_aula,
+            dia: aula.dia_numero || index + 1,
+            titulo: aula.titulo || `Aula do Dia ${index + 1}`,
+            tipo_aula: aula.metodologia || "Aula regular",
+            status_aula: aula.status_execucao || "planejada",
+            objetivo: aula.objetivo || "",
+            conteudo_programatico: aula.conteudo_planejado || "",
+            observacoes: aula.observacoes_execucao || "",
+            instrutor:
+              aula.instrutor_responsavel || turmaAtual?.instrutor || "",
+            carga_planejada: Number(aula.carga_horaria_planejada || 0),
+            carga_real: Number(aula.carga_horaria_real || 0),
+            ministradas: aula.status_execucao === "concluida" ? 1 : 0,
+            parciais: aula.status_execucao === "em_andamento" ? 1 : 0,
+            planejadas: 1,
+            reprogramadas: aula.status_execucao === "reprogramada" ? 1 : 0,
+            canceladas: aula.status_execucao === "cancelada" ? 1 : 0,
+            ...resumoPresenca,
+          };
+        })
+      );
+
+      setResumosAulas(resumos);
+
+      setAulaForm(
+        emptyAulaForm(
+          turmaAtual?.instrutor || "",
+          Number(turmaAtual?.carga_horaria || 1)
+        )
+      );
     } catch (err) {
       setErro(err.message || "Erro ao carregar cronograma");
     } finally {
@@ -300,36 +276,38 @@ export default function CronogramaTurmaPage() {
 
   const resumoGeral = useMemo(() => {
     const totalAulas = resumosAulas.length;
+
     const aulasComPresenca = resumosAulas.filter(
       (item) =>
         Number(item.total || 0) > 0 ||
         Number(item.presentes || 0) > 0 ||
         Number(item.ausentes || 0) > 0 ||
-        Number(item.justificados || 0) > 0 ||
-        Number(item.pendentes || 0) > 0
+        Number(item.justificados || 0) > 0
     ).length;
 
     const totalPresentes = resumosAulas.reduce(
       (acc, item) => acc + Number(item.presentes || 0),
       0
     );
+
     const totalEsperado = resumosAulas.reduce(
       (acc, item) => acc + Number(item.total || 0),
       0
     );
+
     const totalPendentes = resumosAulas.reduce(
       (acc, item) => acc + Number(item.pendentes || 0),
       0
     );
+
     const totalAusentes = resumosAulas.reduce(
       (acc, item) => acc + Number(item.ausentes || 0),
       0
     );
+
     const aderenciaMedia = calcPercentual(totalPresentes, totalEsperado);
 
-    const ativos = participantesResumo.filter(
-      (item) => String(item.status || "Ativo").toLowerCase() === "ativo"
-    ).length;
+    const ativos = participantesResumo.length;
 
     return {
       totalAulas,
@@ -343,18 +321,6 @@ export default function CronogramaTurmaPage() {
     };
   }, [resumosAulas, participantesResumo]);
 
-  function abrirPresencaAula(aula) {
-    window.location.href = `/turma/${id}?turma_aula_id=${aula.turma_aula_id}&data_aula=${aula.data_aula}&origem=cronograma`;
-  }
-
-  function voltar() {
-    window.location.href = `/turma/${id}`;
-  }
-
-  function abrirParticipantes() {
-    window.location.href = `/turma/${id}/participantes`;
-  }
-
   async function gerarCronogramaAutomatico() {
     try {
       setGerando(true);
@@ -365,11 +331,6 @@ export default function CronogramaTurmaPage() {
         method: "POST",
         body: JSON.stringify({
           treinamento_id: Number(id),
-          treinamento: Number(id),
-          data_inicio: autoForm.data_inicio,
-          data_fim: autoForm.data_fim,
-          carga_horaria: Number(autoForm.carga_horaria || 0),
-          ignorar_domingo: Boolean(autoForm.ignorar_domingo),
         }),
       });
 
@@ -396,10 +357,8 @@ export default function CronogramaTurmaPage() {
       await apiFetch("/turma-aulas/duplicar", {
         method: "POST",
         body: JSON.stringify({
-          treinamento_destino_id: Number(id),
-          treinamento_destino: Number(id),
           treinamento_origem_id: Number(duplicarModal.origemId),
-          treinamento_origem: Number(duplicarModal.origemId),
+          treinamento_destino_id: Number(id),
         }),
       });
 
@@ -408,6 +367,7 @@ export default function CronogramaTurmaPage() {
         open: false,
         origemId: "",
       });
+
       await carregarTudo();
     } catch (err) {
       setErro(err.message || "Erro ao copiar cronograma");
@@ -418,13 +378,13 @@ export default function CronogramaTurmaPage() {
 
   function editarAula(aula) {
     setAulaForm({
-      id: aula.turma_aula_id || aula.id || "",
+      id: aula.turma_aula_id || "",
       dia: aula.dia || "",
       titulo: aula.titulo || "",
       data_aula: toInputDate(aula.data_aula),
       instrutor: aula.instrutor || treinamento?.instrutor || "",
       tipo_aula: aula.tipo_aula || "Aula regular",
-      status_aula: aula.status_aula || "Planejada",
+      status_aula: aula.status_aula || "planejada",
       carga_planejada: Number(aula.carga_planejada || 1),
       objetivo: aula.objetivo || "",
       conteudo_programatico: aula.conteudo_programatico || "",
@@ -443,112 +403,64 @@ export default function CronogramaTurmaPage() {
     );
   }
 
-async function salvarAula() {
-  try {
-    setSalvandoAula(true);
-    setErro("");
-    setSucesso("");
-
-    const diaNumerico = Number(aulaForm.dia || 0);
-
-    const payloadBase = {
-      treinamento: Number(id),
-      treinamento_id: Number(id),
-      id_treinamento: Number(id),
-
-      dia: diaNumerico,
-      ordem: diaNumerico,
-      sequencia: diaNumerico,
-
-      tema: aulaForm.titulo,
-      titulo: aulaForm.titulo,
-      titulo_aula: aulaForm.titulo,
-      nome: aulaForm.titulo,
-
-      data: aulaForm.data_aula,
-      data_aula: aulaForm.data_aula,
-
-      instrutor: aulaForm.instrutor,
-
-      carga_horaria: Number(aulaForm.carga_planejada || 0),
-      carga_planejada: Number(aulaForm.carga_planejada || 0),
-
-      objetivo: aulaForm.objetivo,
-    };
-
-    const payloadCompleto = {
-      ...payloadBase,
-      tipo_aula: aulaForm.tipo_aula,
-      status_aula: aulaForm.status_aula,
-      conteudo_programatico: aulaForm.conteudo_programatico,
-      observacoes: aulaForm.observacoes,
-    };
-
-    if (
-      !payloadBase.treinamento ||
-      !payloadBase.dia ||
-      !payloadBase.data ||
-      !payloadBase.titulo
-    ) {
-      throw new Error("Preencha treinamento, dia, data e título da aula.");
-    }
-
-    const executarRequisicao = async (url, options) => {
-      try {
-        return await apiFetch(url, options);
-      } catch (err) {
-        const detalhe =
-          err?.message ||
-          err?.response?.data?.message ||
-          "Erro ao salvar aula";
-        throw new Error(detalhe);
-      }
-    };
-
+  async function salvarAula() {
     try {
+      setSalvandoAula(true);
+      setErro("");
+      setSucesso("");
+
+      const payload = {
+        treinamento_id: Number(id),
+        dia_numero: Number(aulaForm.dia || 0),
+        data_aula: aulaForm.data_aula,
+        ordem: 1,
+        titulo: aulaForm.titulo,
+        objetivo: aulaForm.objetivo || null,
+        conteudo_planejado: aulaForm.conteudo_programatico || null,
+        metodologia: aulaForm.tipo_aula || null,
+        carga_horaria_planejada: Number(aulaForm.carga_planejada || 0),
+        instrutor_responsavel: aulaForm.instrutor || null,
+        material_apoio: null,
+        status_execucao: aulaForm.status_aula || "planejada",
+        conteudo_ministrado: null,
+        carga_horaria_real: 0,
+        observacoes_execucao: aulaForm.observacoes || null,
+        reprogramada: false,
+        motivo_reprogramacao: null,
+        ministrada_em: null,
+      };
+
+      if (
+        !payload.treinamento_id ||
+        !payload.dia_numero ||
+        !payload.data_aula ||
+        !payload.titulo
+      ) {
+        throw new Error("Preencha treinamento, dia, data e título da aula.");
+      }
+
       if (aulaForm.id) {
-        await executarRequisicao(`/turma-aulas/${aulaForm.id}`, {
+        await apiFetch(`/turma-aulas/${aulaForm.id}`, {
           method: "PUT",
-          body: JSON.stringify(payloadCompleto),
+          body: JSON.stringify(payload),
         });
         setSucesso("Aula atualizada com sucesso.");
       } else {
-        await executarRequisicao("/turma-aulas", {
+        await apiFetch("/turma-aulas", {
           method: "POST",
-          body: JSON.stringify(payloadCompleto),
+          body: JSON.stringify(payload),
         });
         setSucesso("Plano de aula cadastrado com sucesso.");
       }
-    } catch (erroCompleto) {
-      try {
-        if (aulaForm.id) {
-          await executarRequisicao(`/turma-aulas/${aulaForm.id}`, {
-            method: "PUT",
-            body: JSON.stringify(payloadBase),
-          });
-          setSucesso("Aula atualizada com sucesso.");
-        } else {
-          await executarRequisicao("/turma-aulas", {
-            method: "POST",
-            body: JSON.stringify(payloadBase),
-          });
-          setSucesso("Plano de aula cadastrado com sucesso.");
-        }
-      } catch (erroBase) {
-        throw new Error(
-          erroBase.message || erroCompleto.message || "Erro ao salvar aula"
-        );
-      }
-    }
 
-    limparFormularioAula();
-    await carregarTudo();
-  } catch (err) {
-    setErro(err.message || "Erro ao salvar aula");
-  } finally {
-    setSalvandoAula(false);
+      limparFormularioAula();
+      await carregarTudo();
+    } catch (err) {
+      setErro(err.message || "Erro ao salvar aula");
+    } finally {
+      setSalvandoAula(false);
+    }
   }
-}
 
   async function excluirAula(aulaId) {
     const confirmar = window.confirm("Deseja realmente excluir esta aula?");
@@ -563,11 +475,25 @@ async function salvarAula() {
       });
 
       setSucesso("Aula excluída com sucesso.");
-      if (String(aulaForm.id) === String(aulaId)) limparFormularioAula();
+      if (String(aulaForm.id) === String(aulaId)) {
+        limparFormularioAula();
+      }
       await carregarTudo();
     } catch (err) {
       setErro(err.message || "Erro ao excluir aula");
     }
+  }
+
+  function abrirPresencaAula(aula) {
+    window.location.href = `/turma/${id}?turma_aula_id=${aula.turma_aula_id}&data_aula=${aula.data_aula}&origem=cronograma`;
+  }
+
+  function abrirParticipantes() {
+    window.location.href = `/turma/${id}/participantes`;
+  }
+
+  function voltar() {
+    window.location.href = `/turma/${id}`;
   }
 
   if (loading) {
@@ -586,7 +512,8 @@ async function salvarAula() {
         <div style={heroBadge}>Cronograma da turma</div>
         <h1 style={heroTitle}>{treinamento?.tema || "Cronograma"}</h1>
         <p style={heroSubtitle}>
-          Planejamento em formato de plano de aula, com indicadores operacionais preservados no painel por dia.
+          Planejamento em formato de plano de aula, com indicadores
+          operacionais preservados no painel por dia.
         </p>
 
         <div style={heroGrid}>
@@ -596,9 +523,13 @@ async function salvarAula() {
             label="Período"
             value={`${formatDate(
               treinamento?.data_inicio || treinamento?.data
-            )} até ${formatDate(treinamento?.data_fim)}`}
+            )} até ${formatDate(
+              treinamento?.data_fim ||
+                treinamento?.data_inicio ||
+                treinamento?.data
+            )}`}
           />
-          <InfoCard label="Ativos na turma" value={resumoGeral.ativos} />
+          <InfoCard label="Turma" value={treinamento?.tema || "-"} />
         </div>
       </div>
 
@@ -607,22 +538,25 @@ async function salvarAula() {
 
       <div style={statsGrid}>
         <StatCard title="Aulas planejadas" value={resumoGeral.totalAulas} />
-        <StatCard title="Aulas com presença" value={resumoGeral.aulasComPresenca} />
-        <StatCard title="Presenças acumuladas" value={resumoGeral.totalPresentes} />
+        <StatCard
+          title="Aulas com presença"
+          value={resumoGeral.aulasComPresenca}
+        />
+        <StatCard
+          title="Presenças acumuladas"
+          value={resumoGeral.totalPresentes}
+        />
         <StatCard title="Ausências" value={resumoGeral.totalAusentes} />
         <StatCard title="Pendências" value={resumoGeral.totalPendentes} />
-        <StatCard title="Aderência média" value={`${resumoGeral.aderenciaMedia}%`} />
+        <StatCard title="Ativos na turma" value={resumoGeral.ativos} />
       </div>
 
       <div style={sectionCard}>
-        <div style={sectionHeader}>
-          <div>
-            <h2 style={sectionTitle}>Ações rápidas da turma</h2>
-            <p style={sectionSubtitle}>
-              Ajuste o plano de aula e gerencie a base de treinandos sem sair da turma.
-            </p>
-          </div>
-        </div>
+        <h2 style={sectionTitle}>Ações rápidas da turma</h2>
+        <p style={sectionSubtitle}>
+          Ajuste o plano de aula e gerencie a base de treinandos sem sair da
+          turma.
+        </p>
 
         <div style={actionsRowLeft}>
           <button style={btnSecondary} onClick={abrirParticipantes}>
@@ -632,79 +566,11 @@ async function salvarAula() {
       </div>
 
       <div style={sectionCard}>
-        <div style={sectionHeader}>
-          <div>
-            <h2 style={sectionTitle}>Gerar cronograma automaticamente</h2>
-            <p style={sectionSubtitle}>
-              Gere as aulas com base no período da turma e na carga horária padrão.
-            </p>
-          </div>
-        </div>
-
-        <div style={formGrid}>
-          <Field label="Data de início">
-            <input
-              type="date"
-              value={autoForm.data_inicio}
-              onChange={(e) =>
-                setAutoForm((prev) => ({
-                  ...prev,
-                  data_inicio: e.target.value,
-                }))
-              }
-              style={field}
-            />
-          </Field>
-
-          <Field label="Data de fim">
-            <input
-              type="date"
-              value={autoForm.data_fim}
-              onChange={(e) =>
-                setAutoForm((prev) => ({
-                  ...prev,
-                  data_fim: e.target.value,
-                }))
-              }
-              style={field}
-            />
-          </Field>
-
-          <Field label="Carga horária padrão">
-            <select
-              value={String(autoForm.carga_horaria)}
-              onChange={(e) =>
-                setAutoForm((prev) => ({
-                  ...prev,
-                  carga_horaria: Number(e.target.value),
-                }))
-              }
-              style={field}
-            >
-              {CARGA_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Ignorar domingo">
-            <select
-              value={autoForm.ignorar_domingo ? "sim" : "nao"}
-              onChange={(e) =>
-                setAutoForm((prev) => ({
-                  ...prev,
-                  ignorar_domingo: e.target.value === "sim",
-                }))
-              }
-              style={field}
-            >
-              <option value="sim">Sim</option>
-              <option value="nao">Não</option>
-            </select>
-          </Field>
-        </div>
+        <h2 style={sectionTitle}>Gerar cronograma automaticamente</h2>
+        <p style={sectionSubtitle}>
+          O backend gera automaticamente a sequência do cronograma para esta
+          turma.
+        </p>
 
         <div style={actionsRowLeft}>
           <button
@@ -731,7 +597,7 @@ async function salvarAula() {
         {duplicarModal.open ? (
           <div style={copyBox}>
             <div style={fieldWrap}>
-              <label style={label}>Turma de origem</label>
+              <label style={labelStyle}>Turma de origem</label>
               <select
                 style={field}
                 value={duplicarModal.origemId}
@@ -745,7 +611,8 @@ async function salvarAula() {
                 <option value="">Selecione</option>
                 {turmasDisponiveis.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {(item.tema || "Sem nome")} • {item.cliente || "Sem cliente"} •{" "}
+                    {(item.tema || "Sem nome")} •{" "}
+                    {item.cliente || "Sem cliente"} •{" "}
                     {formatDate(item.data_inicio || item.data)}
                   </option>
                 ))}
@@ -766,16 +633,12 @@ async function salvarAula() {
       </div>
 
       <div style={sectionCard}>
-        <div style={sectionHeader}>
-          <div>
-            <h2 style={sectionTitle}>
-              {aulaForm.id ? "Editar plano de aula" : "Cadastrar plano de aula"}
-            </h2>
-            <p style={sectionSubtitle}>
-              Estruture a aula com foco em planejamento, objetivo e tempo previsto.
-            </p>
-          </div>
-        </div>
+        <h2 style={sectionTitle}>
+          {aulaForm.id ? "Editar plano de aula" : "Cadastrar plano de aula"}
+        </h2>
+        <p style={sectionSubtitle}>
+          Estruture a aula com foco em planejamento, objetivo e tempo previsto.
+        </p>
 
         <div style={formGrid}>
           <Field label="Dia">
@@ -790,7 +653,6 @@ async function salvarAula() {
                 }))
               }
               style={field}
-              placeholder="Ex.: 1"
             />
           </Field>
 
@@ -804,7 +666,6 @@ async function salvarAula() {
                 }))
               }
               style={field}
-              placeholder="Ex.: Aula do Dia 1"
             />
           </Field>
 
@@ -866,8 +727,8 @@ async function salvarAula() {
               style={field}
             >
               {STATUS_AULA_OPTIONS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
+                <option key={item.value} value={item.value}>
+                  {item.label}
                 </option>
               ))}
             </select>
@@ -902,7 +763,6 @@ async function salvarAula() {
                 }))
               }
               style={textarea}
-              placeholder="Objetivo da aula"
             />
           </Field>
 
@@ -916,7 +776,6 @@ async function salvarAula() {
                 }))
               }
               style={textarea}
-              placeholder="Conteúdo principal a ser abordado"
             />
           </Field>
 
@@ -930,7 +789,6 @@ async function salvarAula() {
                 }))
               }
               style={textarea}
-              placeholder="Observações adicionais"
             />
           </Field>
         </div>
@@ -977,7 +835,9 @@ async function salvarAula() {
                       <div style={tituloDia}>
                         {aula.titulo || `Aula do Dia ${index + 1}`}
                       </div>
-                      <div style={subtituloDia}>{formatDate(aula.data_aula)}</div>
+                      <div style={subtituloDia}>
+                        {formatDate(aula.data_aula)}
+                      </div>
                     </div>
 
                     <div
@@ -992,23 +852,16 @@ async function salvarAula() {
                     </div>
                   </div>
 
-                  <div style={statusLinha}>
-                    <span
-                      style={{
-                        ...statusTag,
-                        background: estilo.background,
-                        color: estilo.color,
-                        border: estilo.border,
-                      }}
-                    >
-                      {estilo.label}
-                    </span>
-                  </div>
-
                   <div style={pillRow}>
-                    <span style={pillNeutral}>{aula.tipo_aula || "Aula regular"}</span>
-                    <span style={pillNeutral}>{aula.status_aula || "Planejada"}</span>
-                    <span style={pillNeutral}>Dia {aula.dia || index + 1}</span>
+                    <span style={pillNeutral}>
+                      {aula.tipo_aula || "Aula regular"}
+                    </span>
+                    <span style={pillNeutral}>
+                      {aula.status_aula || "planejada"}
+                    </span>
+                    <span style={pillNeutral}>
+                      Dia {aula.dia || index + 1}
+                    </span>
                   </div>
 
                   <div style={metaBloco}>
@@ -1019,20 +872,14 @@ async function salvarAula() {
                     </span>
                   </div>
 
-                  <div style={metaBloco}>
-                    <span>
-                      {Number(aula.planejadas || 1)} planejada(s) •{" "}
-                      {Number(aula.reprogramadas || 0)} reprogramada(s) •{" "}
-                      {Number(aula.canceladas || 0)} cancelada(s)
-                    </span>
+                  <div style={linhaInfo}>
+                    <strong>Carga planejada:</strong>{" "}
+                    {formatHours(aula.carga_planejada || 0)}
                   </div>
 
                   <div style={linhaInfo}>
-                    <strong>Carga planejada:</strong> {formatHours(aula.carga_planejada || 0)}
-                  </div>
-
-                  <div style={linhaInfo}>
-                    <strong>Carga real:</strong> {formatHours(aula.carga_real || 0)}
+                    <strong>Carga real:</strong>{" "}
+                    {formatHours(aula.carga_real || 0)}
                   </div>
 
                   <div style={linhaInfo}>
@@ -1045,12 +892,13 @@ async function salvarAula() {
                     </div>
                   ) : null}
 
-                  <div style={divider} />
-
                   <div style={miniGrid}>
                     <MiniInfo label="Presentes" value={aula.presentes || 0} />
                     <MiniInfo label="Ausentes" value={aula.ausentes || 0} />
-                    <MiniInfo label="Justificados" value={aula.justificados || 0} />
+                    <MiniInfo
+                      label="Justificados"
+                      value={aula.justificados || 0}
+                    />
                     <MiniInfo label="Pendentes" value={aula.pendentes || 0} />
                   </div>
 
@@ -1077,10 +925,10 @@ async function salvarAula() {
   );
 }
 
-function Field({ label: title, children, full = false }) {
+function Field({ label, children, full = false }) {
   return (
     <div style={{ ...fieldWrap, gridColumn: full ? "1 / -1" : "auto" }}>
-      <label style={label}>{title}</label>
+      <label style={labelStyle}>{label}</label>
       {children}
     </div>
   );
@@ -1192,7 +1040,6 @@ const infoCard = {
 const infoLabel = {
   fontSize: 12,
   textTransform: "uppercase",
-  letterSpacing: ".04em",
   color: "rgba(255,255,255,.68)",
 };
 
@@ -1214,7 +1061,6 @@ const statCard = {
   borderRadius: 16,
   padding: 16,
   border: "1px solid #e2e8f0",
-  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
 };
 
 const statTitle = {
@@ -1235,16 +1081,6 @@ const sectionCard = {
   borderRadius: 20,
   padding: 20,
   border: "1px solid #e2e8f0",
-  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
-};
-
-const sectionHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12,
-  marginBottom: 16,
-  flexWrap: "wrap",
 };
 
 const sectionTitle = {
@@ -1256,49 +1092,6 @@ const sectionTitle = {
 const sectionSubtitle = {
   margin: "6px 0 0",
   color: "#64748b",
-  lineHeight: 1.5,
-};
-
-const formGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
-};
-
-const fieldWrap = {
-  display: "grid",
-  gap: 6,
-};
-
-const label = {
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  color: "#64748b",
-  letterSpacing: ".04em",
-};
-
-const field = {
-  width: "100%",
-  boxSizing: "border-box",
-  height: 42,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  background: "#fff",
-  outline: "none",
-};
-
-const textarea = {
-  width: "100%",
-  boxSizing: "border-box",
-  minHeight: 92,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "12px",
-  background: "#fff",
-  outline: "none",
-  resize: "vertical",
 };
 
 const actionsRowLeft = {
@@ -1328,6 +1121,44 @@ const btnSecondary = {
   fontWeight: 700,
 };
 
+const formGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+  marginTop: 16,
+};
+
+const fieldWrap = {
+  display: "grid",
+  gap: 6,
+};
+
+const labelStyle = {
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  color: "#64748b",
+};
+
+const field = {
+  width: "100%",
+  boxSizing: "border-box",
+  height: 42,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "0 12px",
+};
+
+const textarea = {
+  width: "100%",
+  boxSizing: "border-box",
+  minHeight: 92,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "12px",
+  resize: "vertical",
+};
+
 const copyBox = {
   marginTop: 16,
   padding: 16,
@@ -1355,7 +1186,6 @@ const cardDia = {
   background: "#ffffff",
   cursor: "pointer",
   textAlign: "left",
-  boxShadow: "0 8px 20px rgba(15,23,42,.04)",
 };
 
 const cardActions = {
@@ -1412,17 +1242,6 @@ const badgePercentual = {
   whiteSpace: "nowrap",
 };
 
-const statusLinha = {
-  marginTop: 14,
-};
-
-const statusTag = {
-  borderRadius: 999,
-  padding: "6px 10px",
-  fontSize: 12,
-  fontWeight: 800,
-};
-
 const pillRow = {
   display: "flex",
   gap: 8,
@@ -1460,13 +1279,8 @@ const blocoTexto = {
   lineHeight: 1.5,
 };
 
-const divider = {
-  marginTop: 16,
-  marginBottom: 14,
-  borderTop: "1px solid #e2e8f0",
-};
-
 const miniGrid = {
+  marginTop: 16,
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 8,
