@@ -604,12 +604,12 @@ app.get(
   }
 );
 
+app.use("/api/jornadas-desenvolvimento", jornadasDesenvolvimentoRoutes);
+app.use("/api/acoes-desenvolvimento", acoesDesenvolvimentoRoutes);
+app.use("/api/coaching-planos", coachingPlanosRoutes);
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
-
-app.use("/api/jornadas-desenvolvimento", jornadasDesenvolvimentoRoutes);
-app.use("/api/acoes-desenvolvimento", acoesDesenvolvimentoRoutes);
-app.use("/api/coaching-planos", coachingPlanosRoutes);
