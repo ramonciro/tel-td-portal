@@ -1,4 +1,4 @@
-const db = require("../config/db");
+const db = require("../lib/db");
 
 exports.listar = async (_req, res) => {
   try {
