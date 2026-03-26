@@ -9,6 +9,10 @@ const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { authRequired, authorizeRoles } = require("./middlewares/auth");
 
+const jornadasDesenvolvimentoRoutes = require("./routes/jornadasDesenvolvimentoRoutes");
+const acoesDesenvolvimentoRoutes = require("./routes/acoesDesenvolvimentoRoutes");
+const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
+
 const {
   getDashboardTreinamentos,
 } = require("./controllers/dashboardTreinamentosController");
@@ -605,3 +609,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
+app.use("/api/jornadas-desenvolvimento", jornadasDesenvolvimentoRoutes);
+app.use("/api/acoes-desenvolvimento", acoesDesenvolvimentoRoutes);
+app.use("/api/coaching-planos", coachingPlanosRoutes);
