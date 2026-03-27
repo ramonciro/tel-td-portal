@@ -48,26 +48,56 @@ function normalizeStatus(value) {
 }
 
 function getStatusTurma({
+  statusOficial,
   treinandos,
   diasPlanejados,
   presencasLancadas,
   pendentes,
   usaCronograma,
+  dataInicio,
+  dataFim,
 }) {
+  const status = String(statusOficial || "").trim().toLowerCase();
+
+  if (["cancelada", "cancelado"].includes(status)) return "Cancelada";
+  if (["concluida", "concluído", "concluido"].includes(status)) return "Concluída";
+  if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
+  if (["planejada", "planejado"].includes(status)) return "Planejada";
+
+  const hoje = new Date();
+  const inicio = dataInicio ? new Date(dataInicio) : null;
+  const fim = dataFim ? new Date(dataFim) : null;
+
   if (treinandos === 0) return "Sem treinandos";
   if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
   if (presencasLancadas === 0) return "Chamada pendente";
+
+  if (fim && !Number.isNaN(fim.getTime()) && hoje > fim) {
+    return "Concluída";
+  }
+
+  if (inicio && !Number.isNaN(inicio.getTime()) && hoje < inicio) {
+    return "Planejada";
+  }
+
   if (pendentes > 0) return "Em andamento";
   return "Concluída";
 }
 
 function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
-  if (statusTurma === "Sem treinandos" || statusTurma === "Sem cronograma") {
+  if (
+    statusTurma === "Sem treinandos" ||
+    statusTurma === "Sem cronograma" ||
+    statusTurma === "Cancelada"
+  ) {
     return "Crítico";
   }
+
+  if (statusTurma === "Planejada") return "Atenção";
   if (statusTurma === "Chamada pendente") return "Atenção";
-  if (pendentes > 0) return "Atenção";
-  if (treinandos > 0 && taxa < 85) return "Crítico";
+  if (statusTurma === "Em andamento" && pendentes > 0) return "Atenção";
+  if (treinandos > 0 && taxa < 85 && statusTurma !== "Concluída") return "Crítico";
+
   return "Estável";
 }
 
@@ -84,12 +114,20 @@ function getStatusBadgeStyle(status) {
     return { ...base, background: "#fef2f2", color: "#b91c1c" };
   }
 
+  if (status === "Planejada") {
+    return { ...base, background: "#fef3c7", color: "#92400e" };
+  }
+
   if (status === "Chamada pendente") {
     return { ...base, background: "#fff7ed", color: "#c2410c" };
   }
 
   if (status === "Em andamento") {
     return { ...base, background: "#eff6ff", color: "#1d4ed8" };
+  }
+
+  if (status === "Cancelada") {
+    return { ...base, background: "#fee2e2", color: "#b91c1c" };
   }
 
   return { ...base, background: "#ecfdf5", color: "#047857" };
@@ -108,6 +146,22 @@ function getActionConfig(statusTurma, usaCronograma) {
     return {
       label: "Gerir turma",
       style: btnAlerta,
+      hrefType: "turma",
+    };
+  }
+
+  if (statusTurma === "Planejada") {
+    return {
+      label: "Gerir turma",
+      style: btnAlerta,
+      hrefType: "turma",
+    };
+  }
+
+  if (statusTurma === "Cancelada") {
+    return {
+      label: "Ver gestão da turma",
+      style: btnSecundarioAzul,
       hrefType: "turma",
     };
   }
@@ -234,11 +288,14 @@ export default function GestaoTurmasPage() {
                 : 0;
 
             const statusTurma = getStatusTurma({
+              statusOficial: t.status,
               treinandos,
               diasPlanejados,
               presencasLancadas,
               pendentes,
               usaCronograma,
+              dataInicio: t.data_inicio || t.data,
+              dataFim: t.data_fim || t.data_inicio || t.data,
             });
 
             const classificacao = getClassificacao({
@@ -283,9 +340,11 @@ export default function GestaoTurmasPage() {
       const ordemStatus = {
         "Sem treinandos": 1,
         "Sem cronograma": 2,
-        "Chamada pendente": 3,
-        "Em andamento": 4,
-        Concluída: 5,
+        Planejada: 3,
+        "Chamada pendente": 4,
+        "Em andamento": 5,
+        Concluída: 6,
+        Cancelada: 7,
       };
 
       const aOrdem = ordemStatus[a.statusTurma] || 99;
@@ -349,6 +408,9 @@ export default function GestaoTurmasPage() {
     const semCronograma = turmasFiltradas.filter(
       (item) => item.statusTurma === "Sem cronograma"
     ).length;
+    const planejadas = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Planejada"
+    ).length;
     const pendentes = turmasFiltradas.filter(
       (item) => item.statusTurma === "Chamada pendente"
     ).length;
@@ -358,6 +420,9 @@ export default function GestaoTurmasPage() {
     const concluidas = turmasFiltradas.filter(
       (item) => item.statusTurma === "Concluída"
     ).length;
+    const canceladas = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Cancelada"
+    ).length;
 
     return {
       turmasTotal,
@@ -366,9 +431,11 @@ export default function GestaoTurmasPage() {
       horas,
       semTreinandos,
       semCronograma,
+      planejadas,
       pendentes,
       andamento,
       concluidas,
+      canceladas,
     };
   }, [turmasFiltradas]);
 
@@ -402,9 +469,11 @@ export default function GestaoTurmasPage() {
                   <option value="todos">Todos</option>
                   <option value="Sem treinandos">Sem treinandos</option>
                   <option value="Sem cronograma">Sem cronograma</option>
+                  <option value="Planejada">Planejada</option>
                   <option value="Chamada pendente">Chamada pendente</option>
                   <option value="Em andamento">Em andamento</option>
                   <option value="Concluída">Concluída</option>
+                  <option value="Cancelada">Cancelada</option>
                 </select>
               </div>
 
@@ -491,6 +560,12 @@ export default function GestaoTurmasPage() {
               accent="#b91c1c"
             />
             <StatCard
+              title="Planejadas"
+              value={fmt(resumo.planejadas)}
+              subtitle="Ainda não iniciadas"
+              accent="#d97706"
+            />
+            <StatCard
               title="Chamada pendente"
               value={fmt(resumo.pendentes)}
               subtitle="Sem lançamento iniciado"
@@ -501,6 +576,18 @@ export default function GestaoTurmasPage() {
               value={fmt(resumo.andamento)}
               subtitle="Com pendências operacionais"
               accent="#2563eb"
+            />
+            <StatCard
+              title="Concluídas"
+              value={fmt(resumo.concluidas)}
+              subtitle="Turmas finalizadas"
+              accent="#16a34a"
+            />
+            <StatCard
+              title="Canceladas"
+              value={fmt(resumo.canceladas)}
+              subtitle="Encerradas sem execução"
+              accent="#dc2626"
             />
           </div>
 
@@ -779,65 +866,67 @@ const miniLinha = {
 
 const infoBloco = {
   display: "grid",
-  gap: 6,
-  color: "#475569",
+  gap: 4,
   fontSize: 14,
+  color: "#334155",
 };
 
 const acoesWrapCard = {
-  marginTop: 4,
   display: "flex",
   justifyContent: "flex-end",
+  marginTop: 2,
 };
 
 const btnPrimario = {
   background: "#2563eb",
   color: "#fff",
   border: 0,
-  borderRadius: 10,
-  padding: "10px 14px",
+  borderRadius: 12,
+  padding: "11px 16px",
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: 800,
+  boxShadow: "0 8px 18px rgba(37,99,235,.25)",
 };
 
 const btnSecundarioAzul = {
-  background: "#dbeafe",
+  background: "#eff6ff",
   color: "#1d4ed8",
-  border: 0,
-  borderRadius: 10,
-  padding: "10px 14px",
+  border: "1px solid #bfdbfe",
+  borderRadius: 12,
+  padding: "11px 16px",
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: 800,
 };
 
 const btnAlerta = {
   background: "#fff7ed",
   color: "#c2410c",
-  border: "1px solid #fdba74",
-  borderRadius: 10,
-  padding: "10px 14px",
+  border: "1px solid #fed7aa",
+  borderRadius: 12,
+  padding: "11px 16px",
   cursor: "pointer",
-  fontWeight: 700,
-};
-
-const emptyText = {
-  color: "#64748b",
+  fontWeight: 800,
 };
 
 const loadingBox = {
   background: "#fff",
   border: "1px solid #e2e8f0",
-  borderRadius: 16,
+  borderRadius: 18,
   padding: 18,
-  color: "#475569",
-  fontWeight: 700,
+  color: "#334155",
 };
 
 const errorBox = {
   background: "#fef2f2",
   border: "1px solid #fecaca",
+  borderRadius: 18,
+  padding: 18,
   color: "#b91c1c",
-  borderRadius: 16,
-  padding: 16,
   fontWeight: 700,
+};
+
+const emptyText = {
+  color: "#64748b",
+  fontSize: 14,
+  padding: "8px 2px",
 };
