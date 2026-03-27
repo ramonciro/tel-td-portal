@@ -26,9 +26,20 @@ function formatDateSafe(value) {
 }
 
 function statusLabel(status) {
-  const key = String(status || "").toLowerCase();
-  if (key === "concluido" || key === "concluído") return "Concluída";
-  if (key === "em_andamento" || key === "em andamento") return "Em andamento";
+  const key = String(status || "").trim().toLowerCase();
+
+  if (key === "concluido" || key === "concluído" || key === "concluida") {
+    return "Concluída";
+  }
+
+  if (key === "em_andamento" || key === "em andamento") {
+    return "Em andamento";
+  }
+
+  if (key === "cancelada" || key === "cancelado") {
+    return "Cancelada";
+  }
+
   return "Planejada";
 }
 
@@ -51,8 +62,11 @@ function statusStyle(status) {
     return { ...base, background: "#ffedd5", color: "#9a3412" };
   }
 
+  if (label === "Cancelada") {
+    return { ...base, background: "#fee2e2", color: "#b91c1c" };
+  }
+
   return { ...base, background: "#dbeafe", color: "#1d4ed8" };
-}
 
 function parseClientes(value) {
   if (!value) return [];
