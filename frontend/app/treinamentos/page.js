@@ -67,6 +67,7 @@ function statusStyle(status) {
   }
 
   return { ...base, background: "#dbeafe", color: "#1d4ed8" };
+}
 
 function parseClientes(value) {
   if (!value) return [];
