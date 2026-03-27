@@ -16,7 +16,44 @@ function calcPercentual(parte, total) {
   return Math.round((Number(parte || 0) / Number(total || 0)) * 100);
 }
 
-function getStatusTurma({ totalAulas, aulasComPresenca, aderenciaMedia }) {
+function normalizarStatusTurma(status) {
+  const key = String(status || "").trim().toLowerCase();
+
+  if (["cancelada", "cancelado"].includes(key)) {
+    return { label: "Cancelada", tone: "danger" };
+  }
+
+  if (["concluida", "concluído", "concluido"].includes(key)) {
+    return { label: "Concluída", tone: "success" };
+  }
+
+  if (["em_andamento", "em andamento"].includes(key)) {
+    return { label: "Em andamento", tone: "info" };
+  }
+
+  if (["planejada", "planejado"].includes(key)) {
+    return { label: "Planejada", tone: "warning" };
+  }
+
+  return null;
+}
+
+function calcularStatusTurma({ totalAulas, aulasComPresenca, aderenciaMedia, dataInicio, dataFim }) {
+  const hoje = new Date();
+  const inicio = dataInicio ? new Date(dataInicio) : null;
+  const fim = dataFim ? new Date(dataFim) : null;
+
+  if (fim && !Number.isNaN(fim.getTime()) && hoje > fim) {
+    if (aderenciaMedia >= 80 || totalAulas === 0) {
+      return { label: "Concluída", tone: "success" };
+    }
+    return { label: "Concluída com atenção", tone: "danger" };
+  }
+
+  if (inicio && !Number.isNaN(inicio.getTime()) && hoje < inicio) {
+    return { label: "Planejada", tone: "warning" };
+  }
+
   if (!totalAulas) return { label: "Sem cronograma", tone: "neutral" };
   if (!aulasComPresenca) return { label: "Não iniciada", tone: "warning" };
   if (aulasComPresenca < totalAulas) return { label: "Em andamento", tone: "info" };
@@ -157,11 +194,17 @@ export default function GestaoTurmaPage() {
     const percentualMedio =
       totalAulas > 0 ? calcPercentual(aulasComPresenca, totalAulas) : 0;
 
-    const status = getStatusTurma({
-      totalAulas,
-      aulasComPresenca,
-      aderenciaMedia: percentualMedio,
-    });
+const statusOficial = normalizarStatusTurma(treinamento?.status);
+
+const status =
+  statusOficial ||
+  calcularStatusTurma({
+    totalAulas,
+    aulasComPresenca,
+    aderenciaMedia: percentualMedio,
+    dataInicio: treinamento?.data_inicio || treinamento?.data,
+    dataFim: treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data,
+  });
 
     const proximaAula =
       aulas
@@ -184,7 +227,7 @@ export default function GestaoTurmaPage() {
       status,
       proximaAula,
     };
-  }, [aulas, participantes]);
+  }, [aulas, participantes, treinamento]);
 
   const aulaSelecionada = useMemo(() => {
     if (!turmaAulaId) return null;
