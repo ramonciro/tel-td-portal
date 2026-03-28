@@ -42,10 +42,10 @@ function badgeStyle(type) {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "4px 8px",
+    padding: "4px 9px",
     borderRadius: 999,
     fontSize: 10,
-    fontWeight: 700,
+    fontWeight: 800,
     whiteSpace: "nowrap",
     lineHeight: 1.1,
     border: "1px solid transparent",
@@ -63,6 +63,7 @@ function badgeStyle(type) {
     cancelada: { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" },
     cancelado: { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" },
     finalizada: { background: "#ecfeff", color: "#155e75", borderColor: "#a5f3fc" },
+    coaching: { background: "#eef2ff", color: "#4338ca", borderColor: "#c7d2fe" },
   };
 
   return {
@@ -84,6 +85,7 @@ function buttonPrimaryStyle(disabled = false) {
     padding: "10px 14px",
     fontWeight: 800,
     cursor: disabled ? "not-allowed" : "pointer",
+    boxShadow: disabled ? "none" : "0 8px 18px rgba(37,99,235,.22)",
   };
 }
 
@@ -139,7 +141,7 @@ function emptyCard(message) {
       style={{
         border: "1px dashed #cbd5e1",
         borderRadius: 16,
-        padding: 20,
+        padding: 22,
         textAlign: "center",
         color: "#64748b",
         background: "#f8fafc",
@@ -172,58 +174,36 @@ function isValidDateRange(dataInicio, dataFim) {
 }
 
 function validarJornada(form) {
-  if (!String(form.nome || "").trim()) {
-    return "Informe o nome da jornada.";
-  }
-
+  if (!String(form.nome || "").trim()) return "Informe o nome da jornada.";
   if (!isValidDateRange(form.data_inicio, form.data_fim)) {
     return "A data fim da jornada não pode ser menor que a data início.";
   }
-
   return "";
 }
 
 function validarEtapa(form, jornadas) {
-  if (!form.jornada_id) {
-    return "Selecione a jornada da etapa.";
-  }
-
-  if (!String(form.nome || "").trim()) {
-    return "Informe o nome da etapa.";
-  }
+  if (!form.jornada_id) return "Selecione a jornada da etapa.";
+  if (!String(form.nome || "").trim()) return "Informe o nome da etapa.";
 
   const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
-  if (!jornadaExiste) {
-    return "A jornada selecionada para a etapa não é válida.";
-  }
+  if (!jornadaExiste) return "A jornada selecionada para a etapa não é válida.";
 
   if (!isValidDateRange(form.data_inicio, form.data_fim)) {
     return "A data fim da etapa não pode ser menor que a data início.";
   }
-
   return "";
 }
 
 function validarAcao(form, jornadas, etapas) {
-  if (!form.jornada_id) {
-    return "Selecione a jornada da ação.";
-  }
-
-  if (!String(form.tema || "").trim()) {
-    return "Informe o título/tema da ação.";
-  }
+  if (!form.jornada_id) return "Selecione a jornada da ação.";
+  if (!String(form.tema || "").trim()) return "Informe o título/tema da ação.";
 
   const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
-  if (!jornadaExiste) {
-    return "A jornada selecionada para a ação não é válida.";
-  }
+  if (!jornadaExiste) return "A jornada selecionada para a ação não é válida.";
 
   if (form.etapa_id) {
     const etapa = etapas.find((e) => String(e.id) === String(form.etapa_id));
-    if (!etapa) {
-      return "A etapa selecionada para a ação não é válida.";
-    }
-
+    if (!etapa) return "A etapa selecionada para a ação não é válida.";
     if (String(etapa.jornada_id) !== String(form.jornada_id)) {
       return "A etapa selecionada não pertence à jornada escolhida.";
     }
@@ -232,28 +212,20 @@ function validarAcao(form, jornadas, etapas) {
   if (!isValidDateRange(form.data_inicio, form.data_fim)) {
     return "A data fim da ação não pode ser menor que a data início.";
   }
-
   return "";
 }
 
 function validarCoaching(form, jornadas, etapas, acoes) {
-  if (!String(form.titulo || "").trim()) {
-    return "Informe o título do coaching.";
-  }
+  if (!String(form.titulo || "").trim()) return "Informe o título do coaching.";
 
   if (form.jornada_id) {
     const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
-    if (!jornadaExiste) {
-      return "A jornada selecionada para o coaching não é válida.";
-    }
+    if (!jornadaExiste) return "A jornada selecionada para o coaching não é válida.";
   }
 
   if (form.etapa_id) {
     const etapa = etapas.find((e) => String(e.id) === String(form.etapa_id));
-    if (!etapa) {
-      return "A etapa selecionada para o coaching não é válida.";
-    }
-
+    if (!etapa) return "A etapa selecionada para o coaching não é válida.";
     if (form.jornada_id && String(etapa.jornada_id) !== String(form.jornada_id)) {
       return "A etapa selecionada não pertence à jornada escolhida no coaching.";
     }
@@ -261,9 +233,7 @@ function validarCoaching(form, jornadas, etapas, acoes) {
 
   if (form.acao_id) {
     const acao = acoes.find((a) => String(a.id) === String(form.acao_id));
-    if (!acao) {
-      return "A ação vinculada ao coaching não é válida.";
-    }
+    if (!acao) return "A ação vinculada ao coaching não é válida.";
 
     if (form.jornada_id && String(acao.jornada_id) !== String(form.jornada_id)) {
       return "A ação vinculada não pertence à jornada escolhida no coaching.";
@@ -277,7 +247,6 @@ function validarCoaching(form, jornadas, etapas, acoes) {
   if (!isValidDateRange(form.data_inicio, form.data_fim)) {
     return "A data fim do coaching não pode ser menor que a data início.";
   }
-
   return "";
 }
 
@@ -553,7 +522,7 @@ export default function MapaDesenvolvimentoPage() {
       const matchStatus = !filters.status || normalize(item.status) === normalize(filters.status);
       const matchResponsavel =
         !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-      const text = `${item.nome} ${item.descricao || ""} ${item.objetivo || ""}`;
+      const text = `${item.nome} ${item.descricao || ""} ${item.objetivo || ""} ${item.publico_macro || ""}`;
       const matchBusca = !filters.busca || normalize(text).includes(normalize(filters.busca));
       return matchJornada && matchStatus && matchResponsavel && matchBusca;
     });
@@ -591,10 +560,14 @@ export default function MapaDesenvolvimentoPage() {
 
   const filteredCoachings = useMemo(() => {
     return coachingsEnriquecidos.filter((item) => {
-      const matchJornada = !filters.jornada_id || String(item.jornada_id || "") === String(filters.jornada_id);
-      const matchEtapa = !filters.etapa_id || String(item.etapa_id || "") === String(filters.etapa_id);
-      const matchTipo = !filters.tipo || normalize(item.tipo_coaching) === normalize(filters.tipo);
-      const matchStatus = !filters.status || normalize(item.status) === normalize(filters.status);
+      const matchJornada =
+        !filters.jornada_id || String(item.jornada_id || "") === String(filters.jornada_id);
+      const matchEtapa =
+        !filters.etapa_id || String(item.etapa_id || "") === String(filters.etapa_id);
+      const matchTipo =
+        !filters.tipo || normalize(item.tipo_coaching) === normalize(filters.tipo);
+      const matchStatus =
+        !filters.status || normalize(item.status) === normalize(filters.status);
       const matchResponsavel =
         !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
       const text = `${item.titulo} ${item.tipo_coaching || ""} ${item.publico_alvo || ""} ${item.objetivo || ""}`;
@@ -617,12 +590,9 @@ export default function MapaDesenvolvimentoPage() {
       0
     );
     const horasCoachings = filteredCoachings.reduce(
-      (acc, item) => acc + Number(item.horasTotais_calc || item.horas_totais_calc || 0),
+      (acc, item) => acc + Number(item.horas_totais_calc || 0),
       0
     );
-    const concluidas =
-      filteredAcoes.filter((i) => normalize(i.status) === "concluida").length +
-      filteredCoachings.filter((i) => normalize(i.status) === "concluido").length;
 
     return {
       jornadas: filteredJornadas.length,
@@ -631,7 +601,11 @@ export default function MapaDesenvolvimentoPage() {
       coachings: filteredCoachings.length,
       participantes: participantesAcoes + participantesCoachings,
       horasTotais: horasAcoes + horasCoachings,
-      concluidas,
+      concluidas:
+        filteredAcoes.filter((i) => normalize(i.status) === "concluida").length +
+        filteredCoachings.filter((i) => normalize(i.status) === "concluido").length,
+      coachingsIndependentes: filteredCoachings.filter((i) => !i.jornada_id).length,
+      fluxosAtivos: filteredJornadas.filter((i) => normalize(i.status) === "ativa").length,
     };
   }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
 
@@ -754,12 +728,14 @@ export default function MapaDesenvolvimentoPage() {
       const horasPlanejadas =
         acaoForm.horas_planejadas !== ""
           ? Number(acaoForm.horas_planejadas || 0)
-          : Number(acaoForm.participantes_previstos || 0) * Number(acaoForm.carga_horaria || 0);
+          : Number(acaoForm.participantes_previstos || 0) *
+            Number(acaoForm.carga_horaria || 0);
 
       const horasRealizadas =
         acaoForm.horas_realizadas !== ""
           ? Number(acaoForm.horas_realizadas || 0)
-          : Number(acaoForm.participantes_realizados || 0) * Number(acaoForm.carga_horaria || 0);
+          : Number(acaoForm.participantes_realizados || 0) *
+            Number(acaoForm.carga_horaria || 0);
 
       const payload = {
         jornada_id: Number(acaoForm.jornada_id),
@@ -981,60 +957,124 @@ export default function MapaDesenvolvimentoPage() {
     );
   }, [acoesEnriquecidas]);
 
+  const destaqueCards = [
+    {
+      title: "Fluxos ativos",
+      value: fmtNumber(kpis.fluxosAtivos),
+      subtitle: "Jornadas em execução",
+      accent: "#2563eb",
+    },
+    {
+      title: "Coachings independentes",
+      value: fmtNumber(kpis.coachingsIndependentes),
+      subtitle: "Sem vínculo obrigatório",
+      accent: "#6366f1",
+    },
+    {
+      title: "Entregas concluídas",
+      value: fmtNumber(kpis.concluidas),
+      subtitle: "Ações + coaching",
+      accent: "#16a34a",
+    },
+    {
+      title: "Horas totais",
+      value: fmtHours(kpis.horasTotais),
+      subtitle: "Aplicadas no mapa",
+      accent: "#ea580c",
+    },
+  ];
+
   return (
     <PortalShell
       title="Mapa de Desenvolvimento"
-      subtitle="Governança das jornadas, etapas, ações estratégicas e coaching."
+      subtitle="Centro de comando das jornadas, etapas, ações estratégicas e coaching."
     >
       <div style={{ display: "grid", gap: 18 }}>
+        <section style={heroWrap}>
+          <div style={heroLeft}>
+            <div style={heroEyebrow}>Command Center</div>
+            <h2 style={heroTitle}>Orquestração do desenvolvimento com visão macro, fluxo e intervenção.</h2>
+            <p style={heroText}>
+              O Mapa organiza a jornada como fluxo principal, as etapas como atracações, as ações como entregas e o coaching como intervenção independente ou vinculada.
+            </p>
+
+            <div style={tabBar}>
+              {[
+                ["geral", "Visão Geral"],
+                ["jornadas", "Jornadas"],
+                ["acoes", "Ações do Mapa"],
+                ["coaching", "Coaching"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  style={tabButton(activeTab === key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={heroRight}>
+            <div style={orbCard}>
+              <div style={orbHeader}>Pulso do Mapa</div>
+              <div style={orbValue}>{fmtNumber(kpis.jornadas)}</div>
+              <div style={orbSub}>jornadas monitoradas</div>
+            </div>
+
+            <div style={signalGrid}>
+              {destaqueCards.map((item) => (
+                <div key={item.title} style={signalCard}>
+                  <div style={{ fontSize: 11, color: "#cbd5e1", fontWeight: 800, textTransform: "uppercase" }}>
+                    {item.title}
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginTop: 4 }}>
+                    {item.value}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 2 }}>{item.subtitle}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <SectionCard
           title="Painel executivo"
-          subtitle="O Mapa é independente do módulo operacional de Treinamentos. Aqui a jornada funciona como um fluxo, com etapas e entregas vinculadas."
-          action={
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button style={buttonSecondaryStyle()} onClick={() => setActiveTab("geral")}>
-                Visão Geral
-              </button>
-              <button style={buttonSecondaryStyle()} onClick={() => setActiveTab("jornadas")}>
-                Jornadas
-              </button>
-              <button style={buttonSecondaryStyle()} onClick={() => setActiveTab("acoes")}>
-                Ações do Mapa
-              </button>
-              <button style={buttonSecondaryStyle()} onClick={() => setActiveTab("coaching")}>
-                Coaching
-              </button>
-            </div>
-          }
+          subtitle="Leitura consolidada do mapa para acompanhamento gerencial."
         >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 14,
-            }}
-          >
-            <StatCard title="Jornadas ativas" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
+          <div style={kpiGrid}>
+            <StatCard title="Jornadas" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
             <StatCard title="Etapas" value={fmtNumber(kpis.etapas)} accent="#0f766e" />
             <StatCard title="Ações" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
             <StatCard title="Coachings" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
             <StatCard title="Participantes impactados" value={fmtNumber(kpis.participantes)} accent="#16a34a" />
             <StatCard title="Horas aplicadas" value={fmtHours(kpis.horasTotais)} accent="#b45309" />
-            <StatCard title="Concluídas" value={fmtNumber(kpis.concluidas)} accent="#0f766e" />
           </div>
         </SectionCard>
 
         <SectionCard
           title="Filtros globais"
-          subtitle="Aplique os filtros e acompanhe jornadas, etapas, ações e coaching na mesma lógica."
+          subtitle="Aplique filtros para reorganizar toda a leitura da página."
+          action={
+            <button
+              style={buttonSecondaryStyle()}
+              onClick={() =>
+                setFilters({
+                  jornada_id: "",
+                  etapa_id: "",
+                  tipo: "",
+                  status: "",
+                  responsavel_id: "",
+                  busca: "",
+                })
+              }
+            >
+              Limpar filtros
+            </button>
+          }
         >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 12,
-            }}
-          >
+          <div style={filtersPanel}>
             <label style={labelStyle()}>
               Jornada
               <select
@@ -1106,11 +1146,11 @@ export default function MapaDesenvolvimentoPage() {
             </label>
 
             <label style={{ ...labelStyle(), gridColumn: "span 2" }}>
-              Busca
+              Busca inteligente
               <input
                 value={filters.busca}
                 onChange={(e) => setFilters((prev) => ({ ...prev, busca: e.target.value }))}
-                placeholder="Busque por jornada, etapa, tema, público..."
+                placeholder="Busque por jornada, etapa, tema, público, objetivo..."
                 style={inputStyle()}
               />
             </label>
@@ -1118,51 +1158,30 @@ export default function MapaDesenvolvimentoPage() {
 
           {(erro || notice) && (
             <div style={{ marginTop: 14 }}>
-              {erro ? (
-                <div
-                  style={{
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    background: "#fff1f2",
-                    color: "#b91c1c",
-                    border: "1px solid #fecdd3",
-                    fontWeight: 700,
-                  }}
-                >
-                  {erro}
-                </div>
-              ) : null}
-
-              {notice ? (
-                <div
-                  style={{
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    background: "#ecfeff",
-                    color: "#155e75",
-                    border: "1px solid #a5f3fc",
-                    fontWeight: 700,
-                    marginTop: erro ? 10 : 0,
-                  }}
-                >
-                  {notice}
-                </div>
-              ) : null}
+              {erro ? <div style={errorAlert}>{erro}</div> : null}
+              {notice ? <div style={{ ...successAlert, marginTop: erro ? 10 : 0 }}>{notice}</div> : null}
             </div>
           )}
         </SectionCard>
 
         {activeTab === "geral" && (
           <SectionCard
-            title="Visão consolidada"
-            subtitle="Leitura executiva do fluxo: jornadas, etapas, ações e coaching."
+            title="Visão Geral"
+            subtitle="Leitura consolidada do que está em execução e do que já foi entregue."
           >
             {loading ? (
               emptyCard("Carregando visão geral...")
-            ) : filteredJornadas.length === 0 && filteredAcoes.length === 0 && filteredCoachings.length === 0 ? (
+            ) : filteredAcoes.length === 0 && filteredCoachings.length === 0 ? (
               emptyCard("Nenhum registro encontrado.")
             ) : (
               <div style={{ display: "grid", gap: 16 }}>
+                <div style={overviewStripe}>
+                  <OverviewBox label="Jornadas filtradas" value={fmtNumber(filteredJornadas.length)} />
+                  <OverviewBox label="Etapas filtradas" value={fmtNumber(filteredEtapas.length)} />
+                  <OverviewBox label="Horas das ações" value={fmtHours(filteredAcoes.reduce((acc, i) => acc + Number(i.horas_realizadas_calc || 0), 0))} />
+                  <OverviewBox label="Horas do coaching" value={fmtHours(filteredCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0))} tone="coaching" />
+                </div>
+
                 <div style={{ overflowX: "auto" }}>
                   <table style={tableStyle}>
                     <thead>
@@ -1189,25 +1208,23 @@ export default function MapaDesenvolvimentoPage() {
                           <td style={tdStyle}>{item.responsavel_nome}</td>
                           <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
                           <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
-                          <td style={tdStyle}>
-                            {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
-                          </td>
+                          <td style={tdStyle}>{formatDate(item.data_inicio)} até {formatDate(item.data_fim)}</td>
                         </tr>
                       ))}
 
                       {filteredCoachings.map((item) => (
-                        <tr key={`coaching-${item.id}`}>
+                        <tr key={`coaching-${item.id}`} style={!item.jornada_id ? independentRow : undefined}>
                           <td style={tdStyle}>{item.jornada_nome}</td>
                           <td style={tdStyle}>{item.etapa_nome}</td>
                           <td style={tdStyle}><strong>{item.titulo}</strong></td>
-                          <td style={tdStyle}>coaching • {item.tipo_coaching}</td>
+                          <td style={tdStyle}>
+                            <span style={badgeStyle("coaching")}>coaching</span> {item.tipo_coaching}
+                          </td>
                           <td style={tdStyle}>{item.publico_alvo || "—"}</td>
                           <td style={tdStyle}>{item.responsavel_nome}</td>
                           <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
                           <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
-                          <td style={tdStyle}>
-                            {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
-                          </td>
+                          <td style={tdStyle}>{formatDate(item.data_inicio)} até {formatDate(item.data_fim)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1220,336 +1237,306 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "jornadas" && (
           <>
-            <SectionCard
-              title="Cadastro de jornada"
-              subtitle="A jornada representa o rio principal do desenvolvimento. As etapas funcionam como atracações ao longo desse fluxo."
-              action={
-                jornadaForm.id ? (
-                  <button
-                    style={buttonSecondaryStyle()}
-                    onClick={() => {
-                      setJornadaForm(jornadaInicial);
-                      setErro("");
-                      setNotice("");
-                    }}
-                  >
-                    Nova jornada
-                  </button>
-                ) : null
-              }
-            >
-              <form onSubmit={saveJornada} style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+            <SectionCard title="Jornadas" subtitle="Fluxos estruturados com etapas livres e intervenções vinculadas.">
+              <details open style={detailsCard}>
+                <summary style={detailsSummary}>Cadastro de jornada</summary>
+                <form onSubmit={saveJornada} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                  <div style={formGrid}>
+                    <label style={labelStyle()}>
+                      Nome da jornada
+                      <input
+                        value={jornadaForm.nome}
+                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, nome: e.target.value }))}
+                        style={inputStyle()}
+                        required
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Status
+                      <select
+                        value={jornadaForm.status}
+                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, status: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="ativa">Ativa</option>
+                        <option value="inativa">Inativa</option>
+                        <option value="concluida">Concluída</option>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Responsável
+                      <select
+                        value={jornadaForm.responsavel_id}
+                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">Selecione</option>
+                        {usuarios.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Público macro
+                      <input
+                        value={jornadaForm.publico_macro}
+                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, publico_macro: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Data início
+                      <input
+                        type="date"
+                        value={jornadaForm.data_inicio}
+                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Data fim
+                      <input
+                        type="date"
+                        value={jornadaForm.data_fim}
+                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+                  </div>
+
                   <label style={labelStyle()}>
-                    Nome da jornada
-                    <input
-                      value={jornadaForm.nome}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, nome: e.target.value }))}
-                      style={inputStyle()}
-                      required
+                    Objetivo macro
+                    <textarea
+                      value={jornadaForm.objetivo}
+                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
+                      style={{ ...inputStyle(), minHeight: 72, resize: "vertical" }}
                     />
                   </label>
 
                   <label style={labelStyle()}>
-                    Status
-                    <select
-                      value={jornadaForm.status}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, status: e.target.value }))}
-                      style={inputStyle()}
+                    Descrição
+                    <textarea
+                      value={jornadaForm.descricao}
+                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, descricao: e.target.value }))}
+                      style={{ ...inputStyle(), minHeight: 84, resize: "vertical" }}
+                    />
+                  </label>
+
+                  <label style={labelStyle()}>
+                    Observações
+                    <textarea
+                      value={jornadaForm.observacoes}
+                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
+                      style={{ ...inputStyle(), minHeight: 84, resize: "vertical" }}
+                    />
+                  </label>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {jornadaForm.id ? "Atualizar jornada" : "Salvar jornada"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setJornadaForm(jornadaInicial);
+                        setErro("");
+                        setNotice("");
+                      }}
                     >
-                      <option value="ativa">Ativa</option>
-                      <option value="inativa">Inativa</option>
-                      <option value="concluida">Concluída</option>
-                    </select>
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
+
+              <details style={{ ...detailsCard, marginTop: 14 }} open>
+                <summary style={detailsSummary}>Cadastro de etapa</summary>
+                <form onSubmit={saveEtapa} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                  <div style={formGrid}>
+                    <label style={labelStyle()}>
+                      Jornada
+                      <select
+                        value={etapaForm.jornada_id}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, jornada_id: e.target.value }))}
+                        style={inputStyle()}
+                        required
+                      >
+                        <option value="">Selecione</option>
+                        {jornadas.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Nome da etapa
+                      <input
+                        value={etapaForm.nome}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, nome: e.target.value }))}
+                        style={inputStyle()}
+                        required
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Tipo
+                      <select
+                        value={etapaForm.tipo}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, tipo: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="treinamento">Treinamento</option>
+                        <option value="acao">Ação</option>
+                        <option value="coaching">Coaching</option>
+                        <option value="workshop">Workshop</option>
+                        <option value="campanha">Campanha</option>
+                        <option value="marco">Marco gerencial</option>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Ordem
+                      <input
+                        type="number"
+                        value={etapaForm.ordem}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, ordem: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Status
+                      <select
+                        value={etapaForm.status}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, status: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="planejada">Planejada</option>
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="concluida">Concluída</option>
+                        <option value="cancelada">Cancelada</option>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Responsável
+                      <select
+                        value={etapaForm.responsavel_id}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">Selecione</option>
+                        {usuarios.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Data início
+                      <input
+                        type="date"
+                        value={etapaForm.data_inicio}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Data fim
+                      <input
+                        type="date"
+                        value={etapaForm.data_fim}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Carga horária prevista
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={etapaForm.carga_horaria_prevista}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_prevista: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Carga horária realizada
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={etapaForm.carga_horaria_realizada}
+                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_realizada: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+                  </div>
+
+                  <label style={labelStyle()}>
+                    Objetivo da etapa
+                    <textarea
+                      value={etapaForm.objetivo}
+                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
+                      style={{ ...inputStyle(), minHeight: 72, resize: "vertical" }}
+                    />
                   </label>
 
                   <label style={labelStyle()}>
-                    Responsável
-                    <select
-                      value={jornadaForm.responsavel_id}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                      style={inputStyle()}
+                    Descrição
+                    <textarea
+                      value={etapaForm.descricao}
+                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, descricao: e.target.value }))}
+                      style={{ ...inputStyle(), minHeight: 84, resize: "vertical" }}
+                    />
+                  </label>
+
+                  <label style={labelStyle()}>
+                    Observações
+                    <textarea
+                      value={etapaForm.observacoes}
+                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
+                      style={{ ...inputStyle(), minHeight: 84, resize: "vertical" }}
+                    />
+                  </label>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {etapaForm.id ? "Atualizar etapa" : "Salvar etapa"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setEtapaForm(etapaInicial);
+                        setErro("");
+                        setNotice("");
+                      }}
                     >
-                      <option value="">Selecione</option>
-                      {usuarios.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Público macro
-                    <input
-                      value={jornadaForm.publico_macro}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, publico_macro: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Data início
-                    <input
-                      type="date"
-                      value={jornadaForm.data_inicio}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Data fim
-                    <input
-                      type="date"
-                      value={jornadaForm.data_fim}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-                </div>
-
-                <label style={labelStyle()}>
-                  Objetivo macro
-                  <textarea
-                    value={jornadaForm.objetivo}
-                    onChange={(e) => setJornadaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                    style={{ ...inputStyle(), minHeight: 70, resize: "vertical" }}
-                  />
-                </label>
-
-                <label style={labelStyle()}>
-                  Descrição
-                  <textarea
-                    value={jornadaForm.descricao}
-                    onChange={(e) => setJornadaForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                    style={{ ...inputStyle(), minHeight: 80, resize: "vertical" }}
-                  />
-                </label>
-
-                <label style={labelStyle()}>
-                  Observações
-                  <textarea
-                    value={jornadaForm.observacoes}
-                    onChange={(e) => setJornadaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
-                    style={{ ...inputStyle(), minHeight: 80, resize: "vertical" }}
-                  />
-                </label>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                    {jornadaForm.id ? "Atualizar jornada" : "Salvar jornada"}
-                  </button>
-                  <button
-                    type="button"
-                    style={buttonSecondaryStyle()}
-                    onClick={() => {
-                      setJornadaForm(jornadaInicial);
-                      setErro("");
-                      setNotice("");
-                    }}
-                  >
-                    Limpar
-                  </button>
-                </div>
-              </form>
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
             </SectionCard>
 
             <SectionCard
-              title="Cadastro de etapa da jornada"
-              subtitle="Cada etapa representa uma atracação do fluxo. Você pode criar quantas etapas quiser."
-              action={
-                etapaForm.id ? (
-                  <button
-                    style={buttonSecondaryStyle()}
-                    onClick={() => {
-                      setEtapaForm(etapaInicial);
-                      setErro("");
-                      setNotice("");
-                    }}
-                  >
-                    Nova etapa
-                  </button>
-                ) : null
-              }
-            >
-              <form onSubmit={saveEtapa} style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-                  <label style={labelStyle()}>
-                    Jornada
-                    <select
-                      value={etapaForm.jornada_id}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, jornada_id: e.target.value }))}
-                      style={inputStyle()}
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      {jornadas.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Nome da etapa
-                    <input
-                      value={etapaForm.nome}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, nome: e.target.value }))}
-                      style={inputStyle()}
-                      required
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Tipo
-                    <select
-                      value={etapaForm.tipo}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, tipo: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="treinamento">Treinamento</option>
-                      <option value="acao">Ação</option>
-                      <option value="coaching">Coaching</option>
-                      <option value="workshop">Workshop</option>
-                      <option value="campanha">Campanha</option>
-                      <option value="marco">Marco gerencial</option>
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Ordem
-                    <input
-                      type="number"
-                      value={etapaForm.ordem}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, ordem: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Status
-                    <select
-                      value={etapaForm.status}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, status: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="planejada">Planejada</option>
-                      <option value="em_andamento">Em andamento</option>
-                      <option value="concluida">Concluída</option>
-                      <option value="cancelada">Cancelada</option>
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Responsável
-                    <select
-                      value={etapaForm.responsavel_id}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="">Selecione</option>
-                      {usuarios.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Data início
-                    <input
-                      type="date"
-                      value={etapaForm.data_inicio}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Data fim
-                    <input
-                      type="date"
-                      value={etapaForm.data_fim}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Carga horária prevista
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={etapaForm.carga_horaria_prevista}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_prevista: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Carga horária realizada
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={etapaForm.carga_horaria_realizada}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_realizada: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-                </div>
-
-                <label style={labelStyle()}>
-                  Objetivo da etapa
-                  <textarea
-                    value={etapaForm.objetivo}
-                    onChange={(e) => setEtapaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                    style={{ ...inputStyle(), minHeight: 70, resize: "vertical" }}
-                  />
-                </label>
-
-                <label style={labelStyle()}>
-                  Descrição
-                  <textarea
-                    value={etapaForm.descricao}
-                    onChange={(e) => setEtapaForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                    style={{ ...inputStyle(), minHeight: 80, resize: "vertical" }}
-                  />
-                </label>
-
-                <label style={labelStyle()}>
-                  Observações
-                  <textarea
-                    value={etapaForm.observacoes}
-                    onChange={(e) => setEtapaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
-                    style={{ ...inputStyle(), minHeight: 80, resize: "vertical" }}
-                  />
-                </label>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                    {etapaForm.id ? "Atualizar etapa" : "Salvar etapa"}
-                  </button>
-                  <button
-                    type="button"
-                    style={buttonSecondaryStyle()}
-                    onClick={() => {
-                      setEtapaForm(etapaInicial);
-                      setErro("");
-                      setNotice("");
-                    }}
-                  >
-                    Limpar
-                  </button>
-                </div>
-              </form>
-            </SectionCard>
-
-            <SectionCard
-              title="Fluxo das jornadas"
-              subtitle="Leitura do rio principal com suas atracações. Cada etapa pode ter ações e coachings vinculados."
+              title="Fluxos das jornadas"
+              subtitle="Cada jornada aparece como um fluxo vivo, com atracações, horas e intervenções associadas."
             >
               {loading ? (
                 emptyCard("Carregando jornadas...")
@@ -1563,52 +1550,57 @@ export default function MapaDesenvolvimentoPage() {
                     );
 
                     return (
-                      <div key={jornada.id} style={rowCard}>
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                            <span style={badgeStyle(jornada.status)}>{jornada.status}</span>
-                            <span style={miniInfo}>{jornada.total_etapas} etapa(s)</span>
-                            <span style={miniInfo}>{jornada.total_acoes} ação(ões)</span>
-                            <span style={miniInfo}>{jornada.total_coachings} coaching(s)</span>
+                      <div key={jornada.id} style={flowCard}>
+                        <div style={flowHeader}>
+                          <div style={{ display: "grid", gap: 6 }}>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                              <span style={badgeStyle(jornada.status)}>{jornada.status}</span>
+                              <span style={miniInfo}>{jornada.total_etapas} etapa(s)</span>
+                              <span style={miniInfo}>{jornada.total_acoes} ação(ões)</span>
+                              <span style={miniInfo}>{jornada.total_coachings} coaching(s)</span>
+                            </div>
+                            <div style={flowTitle}>{jornada.nome}</div>
+                            <div style={flowMeta}>
+                              Responsável: {responsavelMap[String(jornada.responsavel_id)] || "Não definido"} • Início: {formatDate(jornada.data_inicio)} • Fim: {formatDate(jornada.data_fim)}
+                            </div>
                           </div>
 
-                          <div style={titleRow}>{jornada.nome}</div>
-                          <div style={subInfo}>
-                            Responsável: {responsavelMap[String(jornada.responsavel_id)] || "Não definido"} •
-                            Início: {formatDate(jornada.data_inicio)} •
-                            Fim: {formatDate(jornada.data_fim)}
+                          <div style={flowMetrics}>
+                            <MetricBox label="Etapas" value={fmtNumber(jornada.total_etapas)} />
+                            <MetricBox label="Ações" value={fmtNumber(jornada.total_acoes)} />
+                            <MetricBox label="Coachings" value={fmtNumber(jornada.total_coachings)} />
+                            <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                           </div>
-                          <div style={descText}>{jornada.objetivo || jornada.descricao || "Sem descrição cadastrada."}</div>
                         </div>
 
-                        <div style={metricsRow}>
-                          <MetricBox label="Etapas" value={fmtNumber(jornada.total_etapas)} />
-                          <MetricBox label="Ações" value={fmtNumber(jornada.total_acoes)} />
-                          <MetricBox label="Coachings" value={fmtNumber(jornada.total_coachings)} />
-                          <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
+                        <div style={flowDescription}>
+                          {jornada.objetivo || jornada.descricao || "Sem descrição cadastrada."}
                         </div>
 
-                        <div style={timelineRiver}>
+                        <div style={riverTrack}>
                           {etapasDaJornada.length === 0 ? (
                             <div style={emptyTimeline}>Sem etapas cadastradas para esta jornada.</div>
                           ) : (
                             etapasDaJornada.map((etapa, index) => (
-                              <div key={etapa.id} style={timelineNodeWrap}>
-                                <div style={timelineConnector(index < etapasDaJornada.length - 1)} />
-                                <div style={timelineNode}>
+                              <div key={etapa.id} style={stageWrap}>
+                                <div style={stageConnector(index < etapasDaJornada.length - 1)} />
+                                <div style={stageCard}>
                                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                                     <span style={timelineOrder}>{etapa.ordem || index + 1}</span>
                                     <span style={badgeStyle(etapa.status)}>{etapa.status}</span>
+                                    <span style={badgeStyle(etapa.tipo)}>{etapa.tipo}</span>
                                   </div>
-                                  <div style={timelineTitle}>{etapa.nome}</div>
-                                  <div style={smallMuted}>{etapa.tipo || "etapa"}</div>
-                                  <div style={smallMuted}>
+
+                                  <div style={stageTitle}>{etapa.nome}</div>
+                                  <div style={stageMeta}>
                                     {formatDate(etapa.data_inicio)} até {formatDate(etapa.data_fim)}
                                   </div>
-                                  <div style={smallMuted}>
-                                    {fmtNumber(etapa.total_acoes)} ação(ões) • {fmtNumber(etapa.total_coachings)} coaching(s)
+
+                                  <div style={stageStats}>
+                                    <span>{fmtNumber(etapa.total_acoes)} ação(ões)</span>
+                                    <span>{fmtNumber(etapa.total_coachings)} coaching(s)</span>
+                                    <span>{fmtHours(etapa.horas_totais)}h</span>
                                   </div>
-                                  <div style={smallMuted}>Horas: {fmtHours(etapa.horas_totais)}</div>
 
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                                     <button style={buttonSecondaryStyle()} onClick={() => editEtapa(etapa)}>
@@ -1624,7 +1616,7 @@ export default function MapaDesenvolvimentoPage() {
                           )}
                         </div>
 
-                        <div style={actionsRow}>
+                        <div style={buttonRow}>
                           <button style={buttonSecondaryStyle()} onClick={() => editJornada(jornada)}>
                             Editar jornada
                           </button>
@@ -1643,267 +1635,253 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "acoes" && (
           <>
-            <SectionCard
-              title="Cadastro de ações do Mapa"
-              subtitle="As ações podem ser vinculadas à jornada e, opcionalmente, a uma etapa específica."
-              action={
-                acaoForm.id ? (
-                  <button
-                    style={buttonSecondaryStyle()}
-                    onClick={() => {
-                      setAcaoForm(acaoInicial);
-                      setErro("");
-                      setNotice("");
-                    }}
-                  >
-                    Nova ação
-                  </button>
-                ) : null
-              }
-            >
-              <form onSubmit={saveAcao} style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-                  <label style={labelStyle()}>
-                    Jornada
-                    <select
-                      value={acaoForm.jornada_id}
-                      onChange={(e) =>
-                        setAcaoForm((prev) => ({
-                          ...prev,
-                          jornada_id: e.target.value,
-                          etapa_id: "",
-                        }))
-                      }
-                      style={inputStyle()}
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      {jornadas.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Etapa da jornada
-                    <select
-                      value={acaoForm.etapa_id}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="">Sem etapa</option>
-                      {etapasOrdenadas
-                        .filter((e) => !acaoForm.jornada_id || String(e.jornada_id) === String(acaoForm.jornada_id))
-                        .map((item) => (
+            <SectionCard title="Ações do Mapa" subtitle="Entregas formais vinculadas à jornada e opcionalmente à etapa.">
+              <details open style={detailsCard}>
+                <summary style={detailsSummary}>Cadastro de ação</summary>
+                <form onSubmit={saveAcao} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                  <div style={formGrid}>
+                    <label style={labelStyle()}>
+                      Jornada
+                      <select
+                        value={acaoForm.jornada_id}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            jornada_id: e.target.value,
+                            etapa_id: "",
+                          }))
+                        }
+                        style={inputStyle()}
+                        required
+                      >
+                        <option value="">Selecione</option>
+                        {jornadas.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
                           </option>
                         ))}
-                    </select>
-                  </label>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Etapa da jornada
+                      <select
+                        value={acaoForm.etapa_id}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">Sem etapa</option>
+                        {etapasOrdenadas
+                          .filter((e) => !acaoForm.jornada_id || String(e.jornada_id) === String(acaoForm.jornada_id))
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.nome}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Tipo de ação
+                      <select
+                        value={acaoForm.tipo_acao}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, tipo_acao: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="treinamento">Treinamento</option>
+                        <option value="campanha">Campanha</option>
+                        <option value="reciclagem">Reciclagem</option>
+                        <option value="integracao">Integração</option>
+                        <option value="workshop">Workshop</option>
+                        <option value="acao_estrategica">Ação estratégica</option>
+                        <option value="outro">Outro</option>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Título/Tema
+                      <input
+                        value={acaoForm.tema}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, tema: e.target.value }))}
+                        style={inputStyle()}
+                        required
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Subtipo
+                      <input
+                        value={acaoForm.subtipo}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, subtipo: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Público-alvo
+                      <input
+                        value={acaoForm.publico_alvo}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Obrigatória?
+                      <select
+                        value={acaoForm.obrigatoria}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, obrigatoria: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value={0}>Não</option>
+                        <option value={1}>Sim</option>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Carga horária
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={acaoForm.carga_horaria}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, carga_horaria: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Participantes previstos
+                      <input
+                        type="number"
+                        value={acaoForm.participantes_previstos}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Participantes realizados
+                      <input
+                        type="number"
+                        value={acaoForm.participantes_realizados}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Turmas / sessões
+                      <input
+                        type="number"
+                        value={acaoForm.quantidade_turmas_sessoes}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, quantidade_turmas_sessoes: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Horas planejadas
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={acaoForm.horas_planejadas}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, horas_planejadas: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Horas realizadas
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={acaoForm.horas_realizadas}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, horas_realizadas: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Status
+                      <select
+                        value={acaoForm.status}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, status: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="planejada">Planejada</option>
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="concluida">Concluída</option>
+                        <option value="cancelada">Cancelada</option>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Responsável
+                      <select
+                        value={acaoForm.responsavel_id}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">Selecione</option>
+                        {usuarios.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Data início
+                      <input
+                        type="date"
+                        value={acaoForm.data_inicio}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Data fim
+                      <input
+                        type="date"
+                        value={acaoForm.data_fim}
+                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, data_fim: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+                  </div>
 
                   <label style={labelStyle()}>
-                    Tipo de ação
-                    <select
-                      value={acaoForm.tipo_acao}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, tipo_acao: e.target.value }))}
-                      style={inputStyle()}
+                    Descrição
+                    <textarea
+                      value={acaoForm.descricao}
+                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, descricao: e.target.value }))}
+                      style={{ ...inputStyle(), minHeight: 90, resize: "vertical" }}
+                    />
+                  </label>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {acaoForm.id ? "Atualizar ação" : "Salvar ação"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setAcaoForm(acaoInicial);
+                        setErro("");
+                        setNotice("");
+                      }}
                     >
-                      <option value="treinamento">Treinamento</option>
-                      <option value="campanha">Campanha</option>
-                      <option value="reciclagem">Reciclagem</option>
-                      <option value="integracao">Integração</option>
-                      <option value="workshop">Workshop</option>
-                      <option value="acao_estrategica">Ação estratégica</option>
-                      <option value="outro">Outro</option>
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Título/Tema
-                    <input
-                      value={acaoForm.tema}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, tema: e.target.value }))}
-                      style={inputStyle()}
-                      required
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Subtipo
-                    <input
-                      value={acaoForm.subtipo}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, subtipo: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Público-alvo
-                    <input
-                      value={acaoForm.publico_alvo}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Obrigatória?
-                    <select
-                      value={acaoForm.obrigatoria}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, obrigatoria: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value={0}>Não</option>
-                      <option value={1}>Sim</option>
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Carga horária
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={acaoForm.carga_horaria}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, carga_horaria: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Participantes previstos
-                    <input
-                      type="number"
-                      value={acaoForm.participantes_previstos}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Participantes realizados
-                    <input
-                      type="number"
-                      value={acaoForm.participantes_realizados}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Turmas / sessões
-                    <input
-                      type="number"
-                      value={acaoForm.quantidade_turmas_sessoes}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, quantidade_turmas_sessoes: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Horas planejadas
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={acaoForm.horas_planejadas}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, horas_planejadas: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Horas realizadas
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={acaoForm.horas_realizadas}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, horas_realizadas: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Status
-                    <select
-                      value={acaoForm.status}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, status: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="planejada">Planejada</option>
-                      <option value="em_andamento">Em andamento</option>
-                      <option value="concluida">Concluída</option>
-                      <option value="cancelada">Cancelada</option>
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Responsável
-                    <select
-                      value={acaoForm.responsavel_id}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="">Selecione</option>
-                      {usuarios.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Data início
-                    <input
-                      type="date"
-                      value={acaoForm.data_inicio}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Data fim
-                    <input
-                      type="date"
-                      value={acaoForm.data_fim}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-                </div>
-
-                <label style={labelStyle()}>
-                  Descrição
-                  <textarea
-                    value={acaoForm.descricao}
-                    onChange={(e) => setAcaoForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                    style={{ ...inputStyle(), minHeight: 90, resize: "vertical" }}
-                  />
-                </label>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                    {acaoForm.id ? "Atualizar ação" : "Salvar ação"}
-                  </button>
-                  <button
-                    type="button"
-                    style={buttonSecondaryStyle()}
-                    onClick={() => {
-                      setAcaoForm(acaoInicial);
-                      setErro("");
-                      setNotice("");
-                    }}
-                  >
-                    Limpar
-                  </button>
-                </div>
-              </form>
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
             </SectionCard>
 
-            <SectionCard title="Ações do Mapa" subtitle="As ações podem estar dentro de uma etapa específica da jornada.">
+            <SectionCard title="Tabela de ações" subtitle="Leitura tática das entregas formais do mapa.">
               {loading ? (
                 emptyCard("Carregando ações...")
               ) : filteredAcoes.length === 0 ? (
@@ -1957,306 +1935,304 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "coaching" && (
           <>
-            <SectionCard
-              title="Cadastro de coaching"
-              subtitle="O coaching é independente. Pode existir sozinho ou ser vinculado, opcionalmente, a jornada, etapa e ação."
-              action={
-                coachingForm.id ? (
-                  <button
-                    style={buttonSecondaryStyle()}
-                    onClick={() => {
-                      setCoachingForm(coachingInicial);
-                      setErro("");
-                      setNotice("");
-                    }}
-                  >
-                    Novo coaching
-                  </button>
-                ) : null
-              }
-            >
-              <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-                  <label style={labelStyle()}>
-                    Jornada (opcional)
-                    <select
-                      value={coachingForm.jornada_id}
-                      onChange={(e) =>
-                        setCoachingForm((prev) => ({
-                          ...prev,
-                          jornada_id: e.target.value,
-                          etapa_id: "",
-                        }))
-                      }
-                      style={inputStyle()}
-                    >
-                      <option value="">Independente</option>
-                      {jornadas.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Etapa (opcional)
-                    <select
-                      value={coachingForm.etapa_id}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="">Sem etapa</option>
-                      {etapasOrdenadas
-                        .filter((e) => !coachingForm.jornada_id || String(e.jornada_id) === String(coachingForm.jornada_id))
-                        .map((item) => (
+            <SectionCard title="Coaching" subtitle="Intervenção independente ou vinculada ao fluxo da jornada.">
+              <details open style={{ ...detailsCard, borderColor: "#c7d2fe", background: "#f8faff" }}>
+                <summary style={{ ...detailsSummary, color: "#3730a3" }}>Cadastro de coaching</summary>
+                <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                  <div style={formGrid}>
+                    <label style={labelStyle()}>
+                      Jornada (opcional)
+                      <select
+                        value={coachingForm.jornada_id}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            jornada_id: e.target.value,
+                            etapa_id: "",
+                          }))
+                        }
+                        style={inputStyle()}
+                      >
+                        <option value="">Independente</option>
+                        {jornadas.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
                           </option>
                         ))}
-                    </select>
-                  </label>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Etapa (opcional)
+                      <select
+                        value={coachingForm.etapa_id}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">Sem etapa</option>
+                        {etapasOrdenadas
+                          .filter((e) => !coachingForm.jornada_id || String(e.jornada_id) === String(coachingForm.jornada_id))
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.nome}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Ação vinculada (opcional)
+                      <select
+                        value={coachingForm.acao_id}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, acao_id: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">Sem ação</option>
+                        {acoesOptions.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.tema}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Tipo de coaching
+                      <select
+                        value={coachingForm.tipo_coaching}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, tipo_coaching: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="coordenacao">Coordenação</option>
+                        <option value="gerencia">Gerência</option>
+                        <option value="performance">Performance</option>
+                        <option value="desenvolvimento">Desenvolvimento</option>
+                        <option value="individual">Individual</option>
+                        <option value="grupo">Grupo</option>
+                        <option value="outro">Outro</option>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Título
+                      <input
+                        value={coachingForm.titulo}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, titulo: e.target.value }))}
+                        style={inputStyle()}
+                        required
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Público-alvo
+                      <input
+                        value={coachingForm.publico_alvo}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Responsável
+                      <select
+                        value={coachingForm.responsavel_id}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">Selecione</option>
+                        {usuarios.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Participantes previstos
+                      <input
+                        type="number"
+                        value={coachingForm.participantes_previstos}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Participantes realizados
+                      <input
+                        type="number"
+                        value={coachingForm.participantes_realizados}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Sessões previstas
+                      <input
+                        type="number"
+                        value={coachingForm.sessoes_previstas}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_previstas: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Sessões realizadas
+                      <input
+                        type="number"
+                        value={coachingForm.sessoes_realizadas}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_realizadas: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Carga horária por sessão
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={coachingForm.carga_horaria_sessao}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, carga_horaria_sessao: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Horas totais
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={coachingForm.horas_totais}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, horas_totais: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Status
+                      <select
+                        value={coachingForm.status}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, status: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="planejado">Planejado</option>
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="concluido">Concluído</option>
+                        <option value="cancelado">Cancelado</option>
+                      </select>
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Data início
+                      <input
+                        type="date"
+                        value={coachingForm.data_inicio}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+
+                    <label style={labelStyle()}>
+                      Data fim
+                      <input
+                        type="date"
+                        value={coachingForm.data_fim}
+                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_fim: e.target.value }))}
+                        style={inputStyle()}
+                      />
+                    </label>
+                  </div>
 
                   <label style={labelStyle()}>
-                    Ação vinculada (opcional)
-                    <select
-                      value={coachingForm.acao_id}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, acao_id: e.target.value }))}
-                      style={inputStyle()}
+                    Objetivo
+                    <textarea
+                      value={coachingForm.objetivo}
+                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, objetivo: e.target.value }))}
+                      style={{ ...inputStyle(), minHeight: 90, resize: "vertical" }}
+                    />
+                  </label>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {coachingForm.id ? "Atualizar coaching" : "Salvar coaching"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setCoachingForm(coachingInicial);
+                        setErro("");
+                        setNotice("");
+                      }}
                     >
-                      <option value="">Sem ação</option>
-                      {acoesOptions.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.tema}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Tipo de coaching
-                    <select
-                      value={coachingForm.tipo_coaching}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, tipo_coaching: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="coordenacao">Coordenação</option>
-                      <option value="gerencia">Gerência</option>
-                      <option value="performance">Performance</option>
-                      <option value="desenvolvimento">Desenvolvimento</option>
-                      <option value="individual">Individual</option>
-                      <option value="grupo">Grupo</option>
-                      <option value="outro">Outro</option>
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Título
-                    <input
-                      value={coachingForm.titulo}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, titulo: e.target.value }))}
-                      style={inputStyle()}
-                      required
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Público-alvo
-                    <input
-                      value={coachingForm.publico_alvo}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Responsável
-                    <select
-                      value={coachingForm.responsavel_id}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="">Selecione</option>
-                      {usuarios.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Participantes previstos
-                    <input
-                      type="number"
-                      value={coachingForm.participantes_previstos}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Participantes realizados
-                    <input
-                      type="number"
-                      value={coachingForm.participantes_realizados}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Sessões previstas
-                    <input
-                      type="number"
-                      value={coachingForm.sessoesPrevistas || coachingForm.sessoes_previstas}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_previstas: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Sessões realizadas
-                    <input
-                      type="number"
-                      value={coachingForm.sessoes_realizadas}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_realizadas: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Carga horária por sessão
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={coachingForm.carga_horaria_sessao}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, carga_horaria_sessao: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Horas totais
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={coachingForm.horas_totais}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, horas_totais: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Status
-                    <select
-                      value={coachingForm.status}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, status: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="planejado">Planejado</option>
-                      <option value="em_andamento">Em andamento</option>
-                      <option value="concluido">Concluído</option>
-                      <option value="cancelado">Cancelado</option>
-                    </select>
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Data início
-                    <input
-                      type="date"
-                      value={coachingForm.data_inicio}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-
-                  <label style={labelStyle()}>
-                    Data fim
-                    <input
-                      type="date"
-                      value={coachingForm.data_fim}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                      style={inputStyle()}
-                    />
-                  </label>
-                </div>
-
-                <label style={labelStyle()}>
-                  Objetivo
-                  <textarea
-                    value={coachingForm.objetivo}
-                    onChange={(e) => setCoachingForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                    style={{ ...inputStyle(), minHeight: 90, resize: "vertical" }}
-                  />
-                </label>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                    {coachingForm.id ? "Atualizar coaching" : "Salvar coaching"}
-                  </button>
-                  <button
-                    type="button"
-                    style={buttonSecondaryStyle()}
-                    onClick={() => {
-                      setCoachingForm(coachingInicial);
-                      setErro("");
-                      setNotice("");
-                    }}
-                  >
-                    Limpar
-                  </button>
-                </div>
-              </form>
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
             </SectionCard>
 
-            <SectionCard title="Visão apartada de coaching" subtitle="Coaching pode existir independentemente ou ser vinculado ao fluxo da jornada.">
+            <SectionCard
+              title="Radar de coaching"
+              subtitle="Leitura apartada das intervenções, com destaque para independência e vínculos opcionais."
+            >
               {loading ? (
                 emptyCard("Carregando coachings...")
               ) : filteredCoachings.length === 0 ? (
                 emptyCard("Nenhum coaching encontrado.")
               ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Jornada</th>
-                        <th style={thStyle}>Etapa</th>
-                        <th style={thStyle}>Ação</th>
-                        <th style={thStyle}>Título</th>
-                        <th style={thStyle}>Tipo</th>
-                        <th style={thStyle}>Horas</th>
-                        <th style={thStyle}>Status</th>
-                        <th style={thStyle}>Responsável</th>
-                        <th style={thStyle}>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCoachings.map((item) => (
-                        <tr key={item.id}>
-                          <td style={tdStyle}>{item.jornada_nome}</td>
-                          <td style={tdStyle}>{item.etapa_nome}</td>
-                          <td style={tdStyle}>{item.acao_nome}</td>
-                          <td style={tdStyle}><strong>{item.titulo}</strong></td>
-                          <td style={tdStyle}>{item.tipo_coaching}</td>
-                          <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
-                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
-                          <td style={tdStyle}>{item.responsavel_nome}</td>
-                          <td style={tdStyle}>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button style={buttonSecondaryStyle()} onClick={() => editCoaching(item)}>
-                                Editar
-                              </button>
-                              <button style={buttonDangerStyle()} onClick={() => removeRegistro("coaching", item.id)}>
-                                Excluir
-                              </button>
-                            </div>
-                          </td>
+                <>
+                  <div style={coachingBand}>
+                    <OverviewBox label="Coachings filtrados" value={fmtNumber(filteredCoachings.length)} tone="coaching" />
+                    <OverviewBox label="Independentes" value={fmtNumber(filteredCoachings.filter((i) => !i.jornada_id).length)} tone="coaching" />
+                    <OverviewBox label="Em andamento" value={fmtNumber(filteredCoachings.filter((i) => normalize(i.status) === "em_andamento").length)} tone="coaching" />
+                    <OverviewBox label="Horas" value={fmtHours(filteredCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0))} tone="coaching" />
+                  </div>
+
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Jornada</th>
+                          <th style={thStyle}>Etapa</th>
+                          <th style={thStyle}>Ação</th>
+                          <th style={thStyle}>Título</th>
+                          <th style={thStyle}>Tipo</th>
+                          <th style={thStyle}>Horas</th>
+                          <th style={thStyle}>Status</th>
+                          <th style={thStyle}>Responsável</th>
+                          <th style={thStyle}>Ações</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {filteredCoachings.map((item) => (
+                          <tr key={item.id} style={!item.jornada_id ? independentRow : undefined}>
+                            <td style={tdStyle}>{item.jornada_nome}</td>
+                            <td style={tdStyle}>{item.etapa_nome}</td>
+                            <td style={tdStyle}>{item.acao_nome}</td>
+                            <td style={tdStyle}><strong>{item.titulo}</strong></td>
+                            <td style={tdStyle}>{item.tipo_coaching}</td>
+                            <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
+                            <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
+                            <td style={tdStyle}>{item.responsavel_nome}</td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <button style={buttonSecondaryStyle()} onClick={() => editCoaching(item)}>
+                                  Editar
+                                </button>
+                                <button style={buttonDangerStyle()} onClick={() => removeRegistro("coaching", item.id)}>
+                                  Excluir
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </SectionCard>
           </>
@@ -2268,68 +2244,336 @@ export default function MapaDesenvolvimentoPage() {
 
 function MetricBox({ label, value }) {
   return (
-    <div
-      style={{
-        minWidth: 96,
-        padding: "8px 10px",
-        borderRadius: 12,
-        background: "#ffffff",
-        border: "1px solid #e2e8f0",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          color: "#64748b",
-          fontWeight: 700,
-          textTransform: "uppercase",
-          letterSpacing: ".03em",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 18,
-          fontWeight: 800,
-          color: "#0f172a",
-          marginTop: 3,
-          lineHeight: 1.2,
-        }}
-      >
-        {value}
-      </div>
+    <div style={metricBox}>
+      <div style={metricLabel}>{label}</div>
+      <div style={metricValue}>{value}</div>
     </div>
   );
 }
 
-const rowCard = {
-  border: "1px solid #e2e8f0",
-  borderRadius: 16,
-  padding: 14,
-  background: "#ffffff",
-  boxShadow: "0 4px 12px rgba(15, 23, 42, 0.03)",
+function OverviewBox({ label, value, tone = "default" }) {
+  return (
+    <div style={overviewBox(tone)}>
+      <div style={overviewLabel}>{label}</div>
+      <div style={overviewValue}>{value}</div>
+    </div>
+  );
+}
+
+const heroWrap = {
+  display: "grid",
+  gridTemplateColumns: "1.4fr .9fr",
+  gap: 16,
+  padding: 20,
+  borderRadius: 24,
+  background:
+    "radial-gradient(circle at top left, rgba(37,99,235,.18), transparent 32%), linear-gradient(135deg, #0f172a 0%, #111827 45%, #1e293b 100%)",
+  color: "#fff",
+  border: "1px solid rgba(148,163,184,.18)",
+  boxShadow: "0 18px 40px rgba(15,23,42,.16)",
+};
+
+const heroLeft = {
+  display: "grid",
+  gap: 10,
+  alignContent: "start",
+};
+
+const heroEyebrow = {
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".12em",
+  color: "#93c5fd",
+};
+
+const heroTitle = {
+  fontSize: 30,
+  lineHeight: 1.1,
+  fontWeight: 900,
+  margin: 0,
+};
+
+const heroText = {
+  margin: 0,
+  color: "#cbd5e1",
+  lineHeight: 1.55,
+  maxWidth: 720,
+};
+
+const tabBar = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  marginTop: 8,
+};
+
+const tabButton = (active) => ({
+  border: active ? "1px solid rgba(147,197,253,.45)" : "1px solid rgba(148,163,184,.22)",
+  background: active ? "rgba(59,130,246,.16)" : "rgba(255,255,255,.04)",
+  color: active ? "#fff" : "#cbd5e1",
+  borderRadius: 999,
+  padding: "10px 14px",
+  fontWeight: 800,
+  cursor: "pointer",
+  backdropFilter: "blur(6px)",
+});
+
+const heroRight = {
   display: "grid",
   gap: 12,
 };
 
-const titleRow = {
-  fontSize: 17,
+const orbCard = {
+  borderRadius: 22,
+  padding: 18,
+  background: "linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.04) 100%)",
+  border: "1px solid rgba(148,163,184,.24)",
+};
+
+const orbHeader = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#cbd5e1",
+  textTransform: "uppercase",
+};
+
+const orbValue = {
+  fontSize: 54,
+  lineHeight: 1,
+  fontWeight: 900,
+  marginTop: 8,
+};
+
+const orbSub = {
+  fontSize: 13,
+  color: "#cbd5e1",
+  marginTop: 6,
+};
+
+const signalGrid = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 10,
+};
+
+const signalCard = {
+  borderRadius: 18,
+  padding: 14,
+  background: "rgba(255,255,255,.05)",
+  border: "1px solid rgba(148,163,184,.18)",
+};
+
+const kpiGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 14,
+};
+
+const filtersPanel = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
+
+const errorAlert = {
+  borderRadius: 12,
+  padding: "12px 14px",
+  background: "#fff1f2",
+  color: "#b91c1c",
+  border: "1px solid #fecdd3",
+  fontWeight: 700,
+};
+
+const successAlert = {
+  borderRadius: 12,
+  padding: "12px 14px",
+  background: "#ecfeff",
+  color: "#155e75",
+  border: "1px solid #a5f3fc",
+  fontWeight: 700,
+};
+
+const overviewStripe = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
+
+const overviewBox = (tone) => ({
+  borderRadius: 16,
+  padding: 14,
+  background: tone === "coaching" ? "#eef2ff" : "#f8fafc",
+  border: tone === "coaching" ? "1px solid #c7d2fe" : "1px solid #e2e8f0",
+});
+
+const overviewLabel = {
+  fontSize: 11,
+  color: "#64748b",
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+};
+
+const overviewValue = {
+  fontSize: 24,
+  color: "#0f172a",
+  fontWeight: 900,
+  marginTop: 4,
+};
+
+const detailsCard = {
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  background: "#ffffff",
+  padding: 14,
+};
+
+const detailsSummary = {
+  cursor: "pointer",
   fontWeight: 800,
   color: "#0f172a",
-  lineHeight: 1.25,
+  fontSize: 15,
 };
 
-const descText = {
-  fontSize: 14,
-  lineHeight: 1.5,
-  color: "#475569",
+const formGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
 };
 
-const subInfo = {
+const buttonRow = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const flowCard = {
+  borderRadius: 22,
+  border: "1px solid #dbeafe",
+  background:
+    "radial-gradient(circle at top right, rgba(59,130,246,.08), transparent 30%), linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
+  padding: 16,
+  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+  display: "grid",
+  gap: 14,
+};
+
+const flowHeader = {
+  display: "grid",
+  gridTemplateColumns: "1.2fr .8fr",
+  gap: 14,
+  alignItems: "start",
+};
+
+const flowTitle = {
+  fontSize: 20,
+  fontWeight: 900,
+  color: "#0f172a",
+  lineHeight: 1.15,
+};
+
+const flowMeta = {
   fontSize: 12,
   color: "#64748b",
-  lineHeight: 1.45,
+  lineHeight: 1.5,
+};
+
+const flowDescription = {
+  fontSize: 14,
+  color: "#475569",
+  lineHeight: 1.55,
+};
+
+const flowMetrics = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+};
+
+const riverTrack = {
+  display: "grid",
+  gap: 12,
+};
+
+const stageWrap = {
+  position: "relative",
+  paddingLeft: 22,
+};
+
+const stageConnector = (show) => ({
+  position: "absolute",
+  left: 6,
+  top: 22,
+  bottom: show ? -18 : "auto",
+  width: 2,
+  background: show ? "#cbd5e1" : "transparent",
+});
+
+const stageCard = {
+  border: "1px solid #dbeafe",
+  background: "#f8fbff",
+  borderRadius: 18,
+  padding: 14,
+};
+
+const stageTitle = {
+  fontSize: 16,
+  fontWeight: 900,
+  color: "#0f172a",
+  marginTop: 8,
+};
+
+const stageMeta = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 12,
+};
+
+const stageStats = {
+  display: "flex",
+  gap: 14,
+  flexWrap: "wrap",
+  marginTop: 8,
+  color: "#475569",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const coachingBand = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+  marginBottom: 16,
+};
+
+const independentRow = {
+  background: "#fafaff",
+};
+
+const metricBox = {
+  minWidth: 96,
+  padding: "8px 10px",
+  borderRadius: 12,
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+};
+
+const metricLabel = {
+  fontSize: 10,
+  color: "#64748b",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: ".03em",
+};
+
+const metricValue = {
+  fontSize: 18,
+  fontWeight: 800,
+  color: "#0f172a",
+  marginTop: 3,
+  lineHeight: 1.2,
 };
 
 const miniInfo = {
@@ -2343,21 +2587,6 @@ const miniInfo = {
   fontWeight: 700,
   fontSize: 10,
   lineHeight: 1.1,
-};
-
-const metricsRow = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  alignItems: "stretch",
-};
-
-const actionsRow = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  alignItems: "center",
-  paddingTop: 2,
 };
 
 const tableStyle = {
@@ -2385,46 +2614,12 @@ const tdStyle = {
   fontSize: 14,
 };
 
-const smallMuted = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 12,
-  lineHeight: 1.4,
-};
-
-const timelineRiver = {
-  display: "grid",
-  gap: 12,
-  marginTop: 4,
-};
-
 const emptyTimeline = {
   border: "1px dashed #cbd5e1",
   borderRadius: 14,
   padding: 14,
   color: "#64748b",
   background: "#f8fafc",
-};
-
-const timelineNodeWrap = {
-  position: "relative",
-  paddingLeft: 22,
-};
-
-const timelineConnector = (show) => ({
-  position: "absolute",
-  left: 6,
-  top: 22,
-  bottom: show ? -18 : "auto",
-  width: 2,
-  background: show ? "#cbd5e1" : "transparent",
-});
-
-const timelineNode = {
-  border: "1px solid #dbeafe",
-  background: "#f8fbff",
-  borderRadius: 16,
-  padding: 14,
 };
 
 const timelineOrder = {
@@ -2438,11 +2633,4 @@ const timelineOrder = {
   color: "#fff",
   fontSize: 12,
   fontWeight: 900,
-};
-
-const timelineTitle = {
-  fontSize: 16,
-  fontWeight: 900,
-  color: "#0f172a",
-  marginTop: 8,
 };
