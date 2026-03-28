@@ -160,6 +160,20 @@ function getActionIntensity(item) {
   return { label: "Baixa", tone: "default" };
 }
 
+function getCoachingIntensity(item) {
+  const horas = Number(item.horas_totais_calc || item.horas_totais || 0);
+  const sessoes = Number(item.sessoes_realizadas || 0);
+  const participantes = Number(item.participantes_realizados || 0);
+
+  if (horas >= 30 || sessoes >= 8 || participantes >= 25) {
+    return { label: "Alta", tone: "danger" };
+  }
+  if (horas >= 10 || sessoes >= 4 || participantes >= 8) {
+    return { label: "Média", tone: "alert" };
+  }
+  return { label: "Baixa", tone: "default" };
+}
+
 function getStageHealth(stage) {
   if (!stage) return { label: "Sem etapa", level: "media" };
   if (stage.prazo_info?.tone === "danger") return { label: "Crítica", level: "alta" };
@@ -848,6 +862,7 @@ export default function MapaDesenvolvimentoPage() {
         ...base,
         prazo_info: getPrazoInfo(base),
         attention_info: getAttention(base, "coaching"),
+        intensidade_info: getCoachingIntensity(base),
       };
     });
   }, [coachings, jornadasMap, etapasMap, acoes, responsavelMap]);
@@ -1055,6 +1070,38 @@ export default function MapaDesenvolvimentoPage() {
     });
   }, [filteredAcoes]);
 
+  const orderedCoachings = useMemo(() => {
+    return [...filteredCoachings].sort((a, b) => {
+      const p = statusPriority(a.status) - statusPriority(b.status);
+      if (p !== 0) return p;
+
+      const att =
+        (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
+        (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
+      if (att !== 0) return att;
+
+      const independentA = a.jornada_id ? 2 : 1;
+      const independentB = b.jornada_id ? 2 : 1;
+      if (independentA !== independentB) return independentA - independentB;
+
+      const pa = a.prazo_info?.tone === "danger" ? 1 : a.prazo_info?.tone === "neutral" ? 3 : 2;
+      const pb = b.prazo_info?.tone === "danger" ? 1 : b.prazo_info?.tone === "neutral" ? 3 : 2;
+      if (pa !== pb) return pa - pb;
+
+      const ia = a.intensidade_info?.tone === "danger" ? 1 : a.intensidade_info?.tone === "alert" ? 2 : 3;
+      const ib = b.intensidade_info?.tone === "danger" ? 1 : b.intensidade_info?.tone === "alert" ? 2 : 3;
+      if (ia !== ib) return ia - ib;
+
+      const da = parseDate(a.data_fim || a.data_inicio);
+      const db = parseDate(b.data_fim || b.data_inicio);
+      if (da && db) return db - da;
+      if (da) return -1;
+      if (db) return 1;
+
+      return String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR");
+    });
+  }, [filteredCoachings]);
+
   const actionExecutive = useMemo(() => {
     return {
       emAndamento: orderedAcoes.filter((i) => i.status_canonico === "em_andamento").length,
@@ -1065,6 +1112,18 @@ export default function MapaDesenvolvimentoPage() {
       criticas: orderedAcoes.filter((i) => i.attention_info?.level === "alta").length,
     };
   }, [orderedAcoes]);
+
+  const coachingExecutive = useMemo(() => {
+    return {
+      emAndamento: orderedCoachings.filter((i) => i.status_canonico === "em_andamento").length,
+      concluidos: orderedCoachings.filter((i) => i.status_canonico === "concluido").length,
+      independentes: orderedCoachings.filter((i) => !i.jornada_id).length,
+      semResponsavel: orderedCoachings.filter((i) => i.attention_info?.label === "Sem responsável").length,
+      vencidos: orderedCoachings.filter((i) => i.prazo_info?.tone === "danger").length,
+      horas: orderedCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0),
+      criticos: orderedCoachings.filter((i) => i.attention_info?.level === "alta").length,
+    };
+  }, [orderedCoachings]);
 
   const executiveAlerts = useMemo(() => {
     const rows = overviewRows;
@@ -1704,10 +1763,7 @@ export default function MapaDesenvolvimentoPage() {
                     </thead>
                     <tbody>
                       {overviewRows.map((item) => (
-                        <tr
-                          key={`${item.tipo_registro}-${item.id}`}
-                          style={rowTone(item)}
-                        >
+                        <tr key={`${item.tipo_registro}-${item.id}`} style={rowTone(item)}>
                           <td style={tdStyle}>{item.jornada_nome}</td>
                           <td style={tdStyle}>{item.etapa_nome}</td>
                           <td style={tdStyle}><strong>{item.titulo}</strong></td>
@@ -2749,19 +2805,22 @@ export default function MapaDesenvolvimentoPage() {
 
             <SectionCard
               title="Radar de Coaching"
-              subtitle="Leitura das intervenções por vínculo, status e intensidade."
+              subtitle="Prioridade, prazo, intensidade e leitura gerencial das intervenções."
             >
               {loading ? (
                 emptyCard("Carregando coachings...")
-              ) : filteredCoachings.length === 0 ? (
+              ) : orderedCoachings.length === 0 ? (
                 emptyCard("Nenhum coaching encontrado.")
               ) : (
                 <>
                   <div style={coachingBand}>
-                    <OverviewBox label="Coachings filtrados" value={fmtNumber(filteredCoachings.length)} tone="coaching" />
-                    <OverviewBox label="Independentes" value={fmtNumber(filteredCoachings.filter((i) => !i.jornada_id).length)} tone="coaching" />
-                    <OverviewBox label="Em andamento" value={fmtNumber(filteredCoachings.filter((i) => i.status_canonico === "em_andamento").length)} tone="coaching" />
-                    <OverviewBox label="Horas" value={fmtHours(filteredCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0))} tone="coaching" />
+                    <OverviewBox label="Em andamento" value={fmtNumber(coachingExecutive.emAndamento)} tone="coaching" />
+                    <OverviewBox label="Concluídos" value={fmtNumber(coachingExecutive.concluidos)} tone="coaching" />
+                    <OverviewBox label="Independentes" value={fmtNumber(coachingExecutive.independentes)} tone="coaching" />
+                    <OverviewBox label="Sem responsável" value={fmtNumber(coachingExecutive.semResponsavel)} tone="alert" />
+                    <OverviewBox label="Vencidos" value={fmtNumber(coachingExecutive.vencidos)} tone="danger" />
+                    <OverviewBox label="Críticos" value={fmtNumber(coachingExecutive.criticos)} tone="danger" />
+                    <OverviewBox label="Horas" value={fmtHours(coachingExecutive.horas)} tone="coaching" />
                   </div>
 
                   <div style={{ overflowX: "auto" }}>
@@ -2774,21 +2833,44 @@ export default function MapaDesenvolvimentoPage() {
                           <th style={thStyle}>Título</th>
                           <th style={thStyle}>Tipo</th>
                           <th style={thStyle}>Horas</th>
+                          <th style={thStyle}>Intensidade</th>
                           <th style={thStyle}>Status</th>
+                          <th style={thStyle}>Prazo</th>
+                          <th style={thStyle}>Atenção</th>
                           <th style={thStyle}>Responsável</th>
                           <th style={thStyle}>Ações</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredCoachings.map((item) => (
-                          <tr key={item.id} style={!item.jornada_id ? independentRow : undefined}>
+                        {orderedCoachings.map((item) => (
+                          <tr key={item.id} style={rowTone(item)}>
                             <td style={tdStyle}>{item.jornada_nome}</td>
                             <td style={tdStyle}>{item.etapa_nome}</td>
                             <td style={tdStyle}>{item.acao_nome}</td>
                             <td style={tdStyle}><strong>{item.titulo}</strong></td>
-                            <td style={tdStyle}>{item.tipo_coaching}</td>
+                            <td style={tdStyle}>
+                              <span style={badgeStyle("coaching")}>coaching</span> {item.tipo_coaching}
+                            </td>
                             <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
-                            <td style={tdStyle}><span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span></td>
+                            <td style={tdStyle}>
+                              <span style={prazoBadge(item.intensidade_info.tone)}>{item.intensidade_info.label}</span>
+                            </td>
+                            <td style={tdStyle}>
+                              <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                            </td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "grid", gap: 6 }}>
+                                <span style={prazoBadge(item.prazo_info.tone)}>{item.prazo_info.label}</span>
+                                <span style={{ fontSize: 12, color: "#64748b" }}>
+                                  {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={tdStyle}>
+                              <span style={attentionBadge(item.attention_info.level)}>
+                                {item.attention_info.label}
+                              </span>
+                            </td>
                             <td style={tdStyle}>{item.responsavel_nome}</td>
                             <td style={tdStyle}>
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -3181,23 +3263,10 @@ const metricValue = {
   lineHeight: 1.2,
 };
 
-const miniInfo = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "4px 8px",
-  borderRadius: 999,
-  background: "#f8fafc",
-  color: "#475569",
-  border: "1px solid #e2e8f0",
-  fontWeight: 700,
-  fontSize: 10,
-  lineHeight: 1.1,
-};
-
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse",
-  minWidth: 1400,
+  minWidth: 1500,
 };
 
 const thStyle = {
