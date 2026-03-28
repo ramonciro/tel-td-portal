@@ -42,30 +42,36 @@ function badgeStyle(type) {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "5px 10px",
+    padding: "4px 8px",
     borderRadius: 999,
-    fontSize: 11,
-    fontWeight: 800,
+    fontSize: 10,
+    fontWeight: 700,
     whiteSpace: "nowrap",
+    lineHeight: 1.1,
+    border: "1px solid transparent",
   };
 
   const map = {
-    ativa: { background: "#dcfce7", color: "#166534" },
-    inativa: { background: "#e5e7eb", color: "#374151" },
-    concluida: { background: "#dbeafe", color: "#1d4ed8" },
-    concluída: { background: "#dbeafe", color: "#1d4ed8" },
-    planejada: { background: "#ede9fe", color: "#6d28d9" },
-    planejado: { background: "#ede9fe", color: "#6d28d9" },
-    em_andamento: { background: "#ffedd5", color: "#9a3412" },
-    "em andamento": { background: "#ffedd5", color: "#9a3412" },
-    cancelada: { background: "#fee2e2", color: "#b91c1c" },
-    cancelado: { background: "#fee2e2", color: "#b91c1c" },
-    finalizada: { background: "#ecfeff", color: "#155e75" },
+    ativa: { background: "#ecfdf5", color: "#166534", borderColor: "#bbf7d0" },
+    inativa: { background: "#f8fafc", color: "#475569", borderColor: "#e2e8f0" },
+    concluida: { background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" },
+    concluída: { background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" },
+    planejada: { background: "#faf5ff", color: "#7c3aed", borderColor: "#ddd6fe" },
+    planejado: { background: "#faf5ff", color: "#7c3aed", borderColor: "#ddd6fe" },
+    em_andamento: { background: "#fff7ed", color: "#c2410c", borderColor: "#fed7aa" },
+    "em andamento": { background: "#fff7ed", color: "#c2410c", borderColor: "#fed7aa" },
+    cancelada: { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" },
+    cancelado: { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" },
+    finalizada: { background: "#ecfeff", color: "#155e75", borderColor: "#a5f3fc" },
   };
 
   return {
     ...base,
-    ...(map[normalize(type)] || { background: "#eff6ff", color: "#1d4ed8" }),
+    ...(map[normalize(type)] || {
+      background: "#f8fafc",
+      color: "#334155",
+      borderColor: "#e2e8f0",
+    }),
   };
 }
 
@@ -153,9 +159,11 @@ function calcHorasRealizadas(acao) {
 }
 
 function calcHorasCoaching(plano) {
-  return Number(plano.sessoes_realizadas || 0) *
+  return (
+    Number(plano.sessoes_realizadas || 0) *
     Number(plano.carga_horaria_sessao || 0) *
-    Number(plano.participantes_realizados || 0);
+    Number(plano.participantes_realizados || 0)
+  );
 }
 
 const jornadaInicial = {
@@ -489,7 +497,8 @@ export default function MapaDesenvolvimentoPage() {
       (acc, item) => acc + Number(item.horas_totais_calc || 0),
       0
     );
-    const concluidas = filteredAcoes.filter((i) => normalize(i.status) === "concluida").length +
+    const concluidas =
+      filteredAcoes.filter((i) => normalize(i.status) === "concluida").length +
       filteredCoachings.filter((i) => normalize(i.status) === "concluido").length;
 
     return {
@@ -811,13 +820,6 @@ export default function MapaDesenvolvimentoPage() {
     setActiveTab("coaching");
   }
 
-  const etapasOptionsPorJornada = useMemo(() => {
-    if (!filters.jornada_id && !acaoForm.jornada_id && !etapaForm.jornada_id && !coachingForm.jornada_id) {
-      return etapasOrdenadas;
-    }
-    return etapasOrdenadas;
-  }, [etapasOrdenadas, filters.jornada_id, acaoForm.jornada_id, etapaForm.jornada_id, coachingForm.jornada_id]);
-
   const acoesOptions = useMemo(() => {
     return [...acoesEnriquecidas].sort((a, b) =>
       String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR")
@@ -996,71 +998,69 @@ export default function MapaDesenvolvimentoPage() {
         </SectionCard>
 
         {activeTab === "geral" && (
-          <>
-            <SectionCard
-              title="Visão consolidada"
-              subtitle="Leitura executiva do fluxo: jornadas, etapas, ações e coaching."
-            >
-              {loading ? (
-                emptyCard("Carregando visão geral...")
-              ) : filteredJornadas.length === 0 && filteredAcoes.length === 0 && filteredCoachings.length === 0 ? (
-                emptyCard("Nenhum registro encontrado.")
-              ) : (
-                <div style={{ display: "grid", gap: 16 }}>
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Jornada</th>
-                          <th style={thStyle}>Etapa</th>
-                          <th style={thStyle}>Título</th>
-                          <th style={thStyle}>Tipo</th>
-                          <th style={thStyle}>Público</th>
-                          <th style={thStyle}>Responsável</th>
-                          <th style={thStyle}>Horas</th>
-                          <th style={thStyle}>Status</th>
-                          <th style={thStyle}>Período</th>
+          <SectionCard
+            title="Visão consolidada"
+            subtitle="Leitura executiva do fluxo: jornadas, etapas, ações e coaching."
+          >
+            {loading ? (
+              emptyCard("Carregando visão geral...")
+            ) : filteredJornadas.length === 0 && filteredAcoes.length === 0 && filteredCoachings.length === 0 ? (
+              emptyCard("Nenhum registro encontrado.")
+            ) : (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Jornada</th>
+                        <th style={thStyle}>Etapa</th>
+                        <th style={thStyle}>Título</th>
+                        <th style={thStyle}>Tipo</th>
+                        <th style={thStyle}>Público</th>
+                        <th style={thStyle}>Responsável</th>
+                        <th style={thStyle}>Horas</th>
+                        <th style={thStyle}>Status</th>
+                        <th style={thStyle}>Período</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAcoes.map((item) => (
+                        <tr key={`acao-${item.id}`}>
+                          <td style={tdStyle}>{item.jornada_nome}</td>
+                          <td style={tdStyle}>{item.etapa_nome}</td>
+                          <td style={tdStyle}><strong>{item.tema}</strong></td>
+                          <td style={tdStyle}>{item.tipo_acao}</td>
+                          <td style={tdStyle}>{item.publico_alvo || "—"}</td>
+                          <td style={tdStyle}>{item.responsavel_nome}</td>
+                          <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
+                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
+                          <td style={tdStyle}>
+                            {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {filteredAcoes.map((item) => (
-                          <tr key={`acao-${item.id}`}>
-                            <td style={tdStyle}>{item.jornada_nome}</td>
-                            <td style={tdStyle}>{item.etapa_nome}</td>
-                            <td style={tdStyle}><strong>{item.tema}</strong></td>
-                            <td style={tdStyle}>{item.tipo_acao}</td>
-                            <td style={tdStyle}>{item.publico_alvo || "—"}</td>
-                            <td style={tdStyle}>{item.responsavel_nome}</td>
-                            <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
-                            <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
-                            <td style={tdStyle}>
-                              {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
-                            </td>
-                          </tr>
-                        ))}
+                      ))}
 
-                        {filteredCoachings.map((item) => (
-                          <tr key={`coaching-${item.id}`}>
-                            <td style={tdStyle}>{item.jornada_nome}</td>
-                            <td style={tdStyle}>{item.etapa_nome}</td>
-                            <td style={tdStyle}><strong>{item.titulo}</strong></td>
-                            <td style={tdStyle}>coaching • {item.tipo_coaching}</td>
-                            <td style={tdStyle}>{item.publico_alvo || "—"}</td>
-                            <td style={tdStyle}>{item.responsavel_nome}</td>
-                            <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
-                            <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
-                            <td style={tdStyle}>
-                              {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      {filteredCoachings.map((item) => (
+                        <tr key={`coaching-${item.id}`}>
+                          <td style={tdStyle}>{item.jornada_nome}</td>
+                          <td style={tdStyle}>{item.etapa_nome}</td>
+                          <td style={tdStyle}><strong>{item.titulo}</strong></td>
+                          <td style={tdStyle}>coaching • {item.tipo_coaching}</td>
+                          <td style={tdStyle}>{item.publico_alvo || "—"}</td>
+                          <td style={tdStyle}>{item.responsavel_nome}</td>
+                          <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
+                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
+                          <td style={tdStyle}>
+                            {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </SectionCard>
-          </>
+              </div>
+            )}
+          </SectionCard>
         )}
 
         {activeTab === "jornadas" && (
@@ -2055,35 +2055,54 @@ function MetricBox({ label, value }) {
   return (
     <div
       style={{
-        minWidth: 110,
-        padding: "10px 12px",
-        borderRadius: 14,
-        background: "#f8fafc",
+        minWidth: 96,
+        padding: "8px 10px",
+        borderRadius: 12,
+        background: "#ffffff",
         border: "1px solid #e2e8f0",
       }}
     >
-      <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, textTransform: "uppercase" }}>
+      <div
+        style={{
+          fontSize: 10,
+          color: "#64748b",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: ".03em",
+        }}
+      >
         {label}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 900, color: "#0f172a", marginTop: 4 }}>{value}</div>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 800,
+          color: "#0f172a",
+          marginTop: 3,
+          lineHeight: 1.2,
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
 
 const rowCard = {
   border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 16,
-  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
-  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
+  borderRadius: 16,
+  padding: 14,
+  background: "#ffffff",
+  boxShadow: "0 4px 12px rgba(15, 23, 42, 0.03)",
   display: "grid",
-  gap: 14,
+  gap: 12,
 };
 
 const titleRow = {
-  fontSize: 18,
-  fontWeight: 900,
+  fontSize: 17,
+  fontWeight: 800,
   color: "#0f172a",
+  lineHeight: 1.25,
 };
 
 const descText = {
@@ -2093,32 +2112,37 @@ const descText = {
 };
 
 const subInfo = {
-  fontSize: 13,
+  fontSize: 12,
   color: "#64748b",
-  lineHeight: 1.5,
+  lineHeight: 1.45,
 };
 
 const miniInfo = {
   display: "inline-flex",
   alignItems: "center",
-  padding: "5px 10px",
+  padding: "4px 8px",
   borderRadius: 999,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  fontSize: 11,
+  background: "#f8fafc",
+  color: "#475569",
+  border: "1px solid #e2e8f0",
+  fontWeight: 700,
+  fontSize: 10,
+  lineHeight: 1.1,
 };
 
 const metricsRow = {
   display: "flex",
-  gap: 10,
+  gap: 8,
   flexWrap: "wrap",
+  alignItems: "stretch",
 };
 
 const actionsRow = {
   display: "flex",
   gap: 8,
   flexWrap: "wrap",
+  alignItems: "center",
+  paddingTop: 2,
 };
 
 const tableStyle = {
