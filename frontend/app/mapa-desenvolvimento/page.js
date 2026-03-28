@@ -147,6 +147,19 @@ function getAttention(item, tipoRegistro) {
   return { level: "ok", label: "Estável" };
 }
 
+function getActionIntensity(item) {
+  const horas = Number(item.horas_realizadas_calc || item.horas_realizadas || 0);
+  const participantes = Number(item.participantes_realizados || 0);
+
+  if (horas >= 40 || participantes >= 100) {
+    return { label: "Alta", tone: "danger" };
+  }
+  if (horas >= 12 || participantes >= 30) {
+    return { label: "Média", tone: "alert" };
+  }
+  return { label: "Baixa", tone: "default" };
+}
+
 function getStageHealth(stage) {
   if (!stage) return { label: "Sem etapa", level: "media" };
   if (stage.prazo_info?.tone === "danger") return { label: "Crítica", level: "alta" };
@@ -292,6 +305,11 @@ function prazoBadge(tone) {
       background: "#f8fafc",
       color: "#475569",
       border: "1px solid #e2e8f0",
+    },
+    alert: {
+      background: "#fff7ed",
+      color: "#c2410c",
+      border: "1px solid #fed7aa",
     },
   };
 
@@ -806,6 +824,7 @@ export default function MapaDesenvolvimentoPage() {
         ...base,
         prazo_info: getPrazoInfo(base),
         attention_info: getAttention(base, "acao"),
+        intensidade_info: getActionIntensity(base),
       };
     });
   }, [acoes, jornadasMap, etapasMap, responsavelMap]);
@@ -990,8 +1009,9 @@ export default function MapaDesenvolvimentoPage() {
       const p = statusPriority(a.status) - statusPriority(b.status);
       if (p !== 0) return p;
 
-      const att = (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
-                  (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
+      const att =
+        (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
+        (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
       if (att !== 0) return att;
 
       const da = parseDate(a.data_fim || a.data_inicio);
@@ -1006,6 +1026,45 @@ export default function MapaDesenvolvimentoPage() {
       return String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR");
     });
   }, [filteredAcoes, filteredCoachings]);
+
+  const orderedAcoes = useMemo(() => {
+    return [...filteredAcoes].sort((a, b) => {
+      const p = statusPriority(a.status) - statusPriority(b.status);
+      if (p !== 0) return p;
+
+      const att =
+        (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
+        (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
+      if (att !== 0) return att;
+
+      const pa = a.prazo_info?.tone === "danger" ? 1 : a.prazo_info?.tone === "neutral" ? 3 : 2;
+      const pb = b.prazo_info?.tone === "danger" ? 1 : b.prazo_info?.tone === "neutral" ? 3 : 2;
+      if (pa !== pb) return pa - pb;
+
+      const ia = a.intensidade_info?.tone === "danger" ? 1 : a.intensidade_info?.tone === "alert" ? 2 : 3;
+      const ib = b.intensidade_info?.tone === "danger" ? 1 : b.intensidade_info?.tone === "alert" ? 2 : 3;
+      if (ia !== ib) return ia - ib;
+
+      const da = parseDate(a.data_fim || a.data_inicio);
+      const db = parseDate(b.data_fim || b.data_inicio);
+      if (da && db) return db - da;
+      if (da) return -1;
+      if (db) return 1;
+
+      return String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR");
+    });
+  }, [filteredAcoes]);
+
+  const actionExecutive = useMemo(() => {
+    return {
+      emAndamento: orderedAcoes.filter((i) => i.status_canonico === "em_andamento").length,
+      concluidas: orderedAcoes.filter((i) => i.status_canonico === "concluido").length,
+      semResponsavel: orderedAcoes.filter((i) => i.attention_info?.label === "Sem responsável").length,
+      vencidas: orderedAcoes.filter((i) => i.prazo_info?.tone === "danger").length,
+      horas: orderedAcoes.reduce((acc, i) => acc + Number(i.horas_realizadas_calc || 0), 0),
+      criticas: orderedAcoes.filter((i) => i.attention_info?.level === "alta").length,
+    };
+  }, [orderedAcoes]);
 
   const executiveAlerts = useMemo(() => {
     const rows = overviewRows;
@@ -1357,7 +1416,6 @@ export default function MapaDesenvolvimentoPage() {
       participantes_realizados: String(item.participantes_realizados || ""),
       quantidade_turmas_sessoes: String(item.quantidade_turmas_sessoes || ""),
       horas_planejadas: String(item.horas_planejadas || ""),
-      horasRealizadas: undefined,
       horas_realizadas: String(item.horas_realizadas || ""),
       status: canonicalStatus(item.status) || "planejado",
       responsavel_id: item.responsavel_id || "",
@@ -2115,7 +2173,7 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "acoes" && (
           <>
-            <SectionCard title="Consolidação das Entregas" subtitle="Cadastro e leitura das ações formais do mapa.">
+            <SectionCard title="Consolidação das Entregas" subtitle="Cadastro e leitura tática das ações do mapa.">
               <details open style={detailsCard}>
                 <summary style={detailsSummary}>Registro de ação</summary>
                 <form onSubmit={saveAcao} style={{ display: "grid", gap: 12, marginTop: 14 }}>
@@ -2361,53 +2419,88 @@ export default function MapaDesenvolvimentoPage() {
               </details>
             </SectionCard>
 
-            <SectionCard title="Tabela de entregas" subtitle="Leitura tática das ações do mapa.">
+            <SectionCard
+              title="Painel Tático de Execução"
+              subtitle="Prioridade, prazo, intensidade e atenção das ações do mapa."
+            >
               {loading ? (
                 emptyCard("Carregando ações...")
-              ) : filteredAcoes.length === 0 ? (
+              ) : orderedAcoes.length === 0 ? (
                 emptyCard("Nenhuma ação encontrada.")
               ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Jornada</th>
-                        <th style={thStyle}>Etapa</th>
-                        <th style={thStyle}>Tema</th>
-                        <th style={thStyle}>Tipo</th>
-                        <th style={thStyle}>Público</th>
-                        <th style={thStyle}>Horas</th>
-                        <th style={thStyle}>Status</th>
-                        <th style={thStyle}>Responsável</th>
-                        <th style={thStyle}>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAcoes.map((item) => (
-                        <tr key={item.id}>
-                          <td style={tdStyle}>{item.jornada_nome}</td>
-                          <td style={tdStyle}>{item.etapa_nome}</td>
-                          <td style={tdStyle}><strong>{item.tema}</strong></td>
-                          <td style={tdStyle}>{item.tipo_acao}</td>
-                          <td style={tdStyle}>{item.publico_alvo || "—"}</td>
-                          <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
-                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span></td>
-                          <td style={tdStyle}>{item.responsavel_nome}</td>
-                          <td style={tdStyle}>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button style={buttonSecondaryStyle()} onClick={() => editAcao(item)}>
-                                Editar
-                              </button>
-                              <button style={buttonDangerStyle()} onClick={() => removeRegistro("acao", item.id)}>
-                                Excluir
-                              </button>
-                            </div>
-                          </td>
+                <>
+                  <div style={actionBand}>
+                    <OverviewBox label="Em andamento" value={fmtNumber(actionExecutive.emAndamento)} />
+                    <OverviewBox label="Concluídas" value={fmtNumber(actionExecutive.concluidas)} />
+                    <OverviewBox label="Sem responsável" value={fmtNumber(actionExecutive.semResponsavel)} tone="alert" />
+                    <OverviewBox label="Vencidas" value={fmtNumber(actionExecutive.vencidas)} tone="danger" />
+                    <OverviewBox label="Críticas" value={fmtNumber(actionExecutive.criticas)} tone="danger" />
+                    <OverviewBox label="Horas" value={fmtHours(actionExecutive.horas)} />
+                  </div>
+
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Jornada</th>
+                          <th style={thStyle}>Etapa</th>
+                          <th style={thStyle}>Tema</th>
+                          <th style={thStyle}>Tipo</th>
+                          <th style={thStyle}>Público</th>
+                          <th style={thStyle}>Horas</th>
+                          <th style={thStyle}>Intensidade</th>
+                          <th style={thStyle}>Status</th>
+                          <th style={thStyle}>Prazo</th>
+                          <th style={thStyle}>Atenção</th>
+                          <th style={thStyle}>Responsável</th>
+                          <th style={thStyle}>Ações</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {orderedAcoes.map((item) => (
+                          <tr key={item.id} style={rowTone(item)}>
+                            <td style={tdStyle}>{item.jornada_nome}</td>
+                            <td style={tdStyle}>{item.etapa_nome}</td>
+                            <td style={tdStyle}><strong>{item.tema}</strong></td>
+                            <td style={tdStyle}>{item.tipo_acao}</td>
+                            <td style={tdStyle}>{item.publico_alvo || "—"}</td>
+                            <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
+                            <td style={tdStyle}>
+                              <span style={prazoBadge(item.intensidade_info.tone)}>{item.intensidade_info.label}</span>
+                            </td>
+                            <td style={tdStyle}>
+                              <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                            </td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "grid", gap: 6 }}>
+                                <span style={prazoBadge(item.prazo_info.tone)}>{item.prazo_info.label}</span>
+                                <span style={{ fontSize: 12, color: "#64748b" }}>
+                                  {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={tdStyle}>
+                              <span style={attentionBadge(item.attention_info.level)}>
+                                {item.attention_info.label}
+                              </span>
+                            </td>
+                            <td style={tdStyle}>{item.responsavel_nome}</td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <button style={buttonSecondaryStyle()} onClick={() => editAcao(item)}>
+                                  Editar
+                                </button>
+                                <button style={buttonDangerStyle()} onClick={() => removeRegistro("acao", item.id)}>
+                                  Excluir
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </SectionCard>
           </>
@@ -3057,6 +3150,13 @@ const coachingBand = {
   marginBottom: 16,
 };
 
+const actionBand = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+  marginBottom: 16,
+};
+
 const metricBox = {
   minWidth: 96,
   padding: "8px 10px",
@@ -3097,7 +3197,7 @@ const miniInfo = {
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse",
-  minWidth: 1180,
+  minWidth: 1400,
 };
 
 const thStyle = {
