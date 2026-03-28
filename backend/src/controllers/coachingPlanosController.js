@@ -5,11 +5,12 @@ exports.listar = async (_req, res) => {
     const [rows] = await db.query(`
       SELECT cp.*,
              jd.nome AS jornada_nome,
-             jd.cliente AS jornada_cliente,
+             je.nome AS etapa_nome,
              ad.tema AS acao_tema,
              u.nome AS responsavel_nome
       FROM coaching_planos cp
       LEFT JOIN jornadas_desenvolvimento jd ON jd.id = cp.jornada_id
+      LEFT JOIN jornadas_etapas je ON je.id = cp.etapa_id
       LEFT JOIN acoes_desenvolvimento ad ON ad.id = cp.acao_id
       LEFT JOIN usuarios u ON u.id = cp.responsavel_id
       ORDER BY cp.id DESC
@@ -30,11 +31,12 @@ exports.buscarPorId = async (req, res) => {
       `
       SELECT cp.*,
              jd.nome AS jornada_nome,
-             jd.cliente AS jornada_cliente,
+             je.nome AS etapa_nome,
              ad.tema AS acao_tema,
              u.nome AS responsavel_nome
       FROM coaching_planos cp
       LEFT JOIN jornadas_desenvolvimento jd ON jd.id = cp.jornada_id
+      LEFT JOIN jornadas_etapas je ON je.id = cp.etapa_id
       LEFT JOIN acoes_desenvolvimento ad ON ad.id = cp.acao_id
       LEFT JOIN usuarios u ON u.id = cp.responsavel_id
       WHERE cp.id = ?
@@ -57,8 +59,8 @@ exports.criar = async (req, res) => {
   try {
     const {
       jornada_id,
+      etapa_id,
       acao_id,
-      cliente,
       tipo_coaching,
       titulo,
       publico_alvo,
@@ -75,19 +77,10 @@ exports.criar = async (req, res) => {
       data_fim,
     } = req.body;
 
-    if (!jornada_id || !titulo) {
+    if (!titulo) {
       return res.status(400).json({
-        error: "Jornada e título são obrigatórios.",
+        error: "Título do coaching é obrigatório.",
       });
-    }
-
-    const [jornada] = await db.query(
-      `SELECT id FROM jornadas_desenvolvimento WHERE id = ?`,
-      [jornada_id]
-    );
-
-    if (!jornada.length) {
-      return res.status(404).json({ error: "Jornada não encontrada." });
     }
 
     const [result] = await db.query(
@@ -95,8 +88,8 @@ exports.criar = async (req, res) => {
       INSERT INTO coaching_planos
       (
         jornada_id,
+        etapa_id,
         acao_id,
-        cliente,
         tipo_coaching,
         titulo,
         publico_alvo,
@@ -115,9 +108,9 @@ exports.criar = async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        jornada_id,
-        acao_id || null,
-        cliente || null,
+        jornada_id ? Number(jornada_id) : null,
+        etapa_id ? Number(etapa_id) : null,
+        acao_id ? Number(acao_id) : null,
         tipo_coaching || "desenvolvimento",
         titulo,
         publico_alvo || null,
@@ -152,8 +145,8 @@ exports.atualizar = async (req, res) => {
     const { id } = req.params;
     const {
       jornada_id,
+      etapa_id,
       acao_id,
-      cliente,
       tipo_coaching,
       titulo,
       publico_alvo,
@@ -183,8 +176,8 @@ exports.atualizar = async (req, res) => {
       `
       UPDATE coaching_planos
       SET jornada_id = ?,
+          etapa_id = ?,
           acao_id = ?,
-          cliente = ?,
           tipo_coaching = ?,
           titulo = ?,
           publico_alvo = ?,
@@ -202,9 +195,9 @@ exports.atualizar = async (req, res) => {
       WHERE id = ?
       `,
       [
-        jornada_id,
-        acao_id || null,
-        cliente || null,
+        jornada_id ? Number(jornada_id) : null,
+        etapa_id ? Number(etapa_id) : null,
+        acao_id ? Number(acao_id) : null,
         tipo_coaching || "desenvolvimento",
         titulo,
         publico_alvo || null,
