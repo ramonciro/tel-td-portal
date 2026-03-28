@@ -49,6 +49,19 @@ function displayStatus(value) {
   return labels[status] || value || "—";
 }
 
+function statusPriority(value) {
+  const status = canonicalStatus(value);
+  const map = {
+    em_andamento: 1,
+    planejado: 2,
+    ativo: 3,
+    concluido: 4,
+    inativo: 5,
+    cancelado: 6,
+  };
+  return map[status] || 99;
+}
+
 function toDateInput(value) {
   if (!value) return "";
   const raw = String(value).slice(0, 10);
@@ -58,11 +71,80 @@ function toDateInput(value) {
   return date.toISOString().slice(0, 10);
 }
 
+function parseDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
 function formatDate(value) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("pt-BR").format(date);
+}
+
+function getPrazoInfo(item) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const inicio = parseDate(item.data_inicio);
+  const fim = parseDate(item.data_fim);
+  const status = canonicalStatus(item.status);
+
+  if (status === "concluido") {
+    return { label: "Concluído", tone: "ok" };
+  }
+
+  if (!inicio && !fim) {
+    return { label: "Sem data", tone: "neutral" };
+  }
+
+  if (fim) {
+    const fim0 = new Date(fim);
+    fim0.setHours(0, 0, 0, 0);
+    if (fim0 < hoje && status !== "concluido" && status !== "cancelado") {
+      return { label: "Vencido", tone: "danger" };
+    }
+  }
+
+  return { label: "No prazo", tone: "ok" };
+}
+
+function getAttention(item, tipoRegistro) {
+  const status = canonicalStatus(item.status);
+  const prazo = getPrazoInfo(item);
+
+  if (prazo.tone === "danger") {
+    return { level: "alta", label: "Prazo vencido" };
+  }
+
+  if (!item.responsavel_nome || item.responsavel_nome === "Não definido") {
+    return { level: "media", label: "Sem responsável" };
+  }
+
+  if (status === "planejado" && !item.data_inicio) {
+    return { level: "media", label: "Sem início definido" };
+  }
+
+  if (
+    tipoRegistro === "acao" &&
+    status === "em_andamento" &&
+    Number(item.participantes_realizados || 0) === 0
+  ) {
+    return { level: "media", label: "Sem realização" };
+  }
+
+  if (
+    tipoRegistro === "coaching" &&
+    status === "em_andamento" &&
+    Number(item.sessoes_realizadas || 0) === 0
+  ) {
+    return { level: "media", label: "Sem sessões realizadas" };
+  }
+
+  return { level: "ok", label: "Estável" };
 }
 
 function badgeStyle(type) {
@@ -98,6 +180,70 @@ function badgeStyle(type) {
       color: "#334155",
       borderColor: "#e2e8f0",
     }),
+  };
+}
+
+function attentionBadge(level) {
+  const map = {
+    alta: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecaca",
+    },
+    media: {
+      background: "#fff7ed",
+      color: "#c2410c",
+      border: "1px solid #fed7aa",
+    },
+    ok: {
+      background: "#ecfeff",
+      color: "#155e75",
+      border: "1px solid #a5f3fc",
+    },
+  };
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.1,
+    ...(map[level] || map.ok),
+  };
+}
+
+function prazoBadge(tone) {
+  const map = {
+    ok: {
+      background: "#ecfdf5",
+      color: "#166534",
+      border: "1px solid #bbf7d0",
+    },
+    danger: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecaca",
+    },
+    neutral: {
+      background: "#f8fafc",
+      color: "#475569",
+      border: "1px solid #e2e8f0",
+    },
+  };
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.1,
+    ...(map[tone] || map.neutral),
   };
 }
 
@@ -514,13 +660,14 @@ export default function MapaDesenvolvimentoPage() {
       return {
         ...jornada,
         status_canonico: canonicalStatus(jornada.status),
+        responsavel_nome: responsavelMap[String(jornada.responsavel_id)] || "Não definido",
         total_etapas: etapasDaJornada.length,
         total_acoes: acoesDaJornada.length,
         total_coachings: coachingsDaJornada.length,
         horas_totais: horasAcoes + horasCoaching,
       };
     });
-  }, [jornadas, etapas, acoes, coachings]);
+  }, [jornadas, etapas, acoes, coachings, responsavelMap]);
 
   const etapasEnriquecidas = useMemo(() => {
     return etapasOrdenadas.map((etapa) => {
@@ -553,14 +700,20 @@ export default function MapaDesenvolvimentoPage() {
     return acoes.map((acao) => {
       const jornada = jornadasMap[String(acao.jornada_id)];
       const etapa = etapasMap[String(acao.etapa_id || "")];
-      return {
+      const base = {
         ...acao,
+        tipo_registro: "acao",
         status_canonico: canonicalStatus(acao.status),
         jornada_nome: jornada?.nome || "Sem jornada",
         etapa_nome: etapa?.nome || "Sem etapa",
         responsavel_nome: responsavelMap[String(acao.responsavel_id)] || "Não definido",
         horas_planejadas_calc: Number(acao.horas_planejadas || calcHorasPlanejadas(acao)),
         horas_realizadas_calc: Number(acao.horas_realizadas || calcHorasRealizadas(acao)),
+      };
+      return {
+        ...base,
+        prazo_info: getPrazoInfo(base),
+        attention_info: getAttention(base, "acao"),
       };
     });
   }, [acoes, jornadasMap, etapasMap, responsavelMap]);
@@ -570,14 +723,20 @@ export default function MapaDesenvolvimentoPage() {
       const jornada = jornadasMap[String(plano.jornada_id || "")];
       const etapa = etapasMap[String(plano.etapa_id || "")];
       const acao = acoes.find((a) => String(a.id) === String(plano.acao_id || ""));
-      return {
+      const base = {
         ...plano,
+        tipo_registro: "coaching",
         status_canonico: canonicalStatus(plano.status),
         jornada_nome: jornada?.nome || "Independente",
         etapa_nome: etapa?.nome || "Sem etapa",
         acao_nome: acao?.tema || "Sem ação vinculada",
         responsavel_nome: responsavelMap[String(plano.responsavel_id)] || "Não definido",
         horas_totais_calc: Number(plano.horas_totais || calcHorasCoaching(plano)),
+      };
+      return {
+        ...base,
+        prazo_info: getPrazoInfo(base),
+        attention_info: getAttention(base, "coaching"),
       };
     });
   }, [coachings, jornadasMap, etapasMap, acoes, responsavelMap]);
@@ -718,6 +877,53 @@ export default function MapaDesenvolvimentoPage() {
       );
     });
   }, [coachingsEnriquecidos, filters]);
+
+  const overviewRows = useMemo(() => {
+    const rows = [
+      ...filteredAcoes.map((item) => ({
+        ...item,
+        titulo: item.tema,
+        tipo_label: item.tipo_acao,
+        horas: item.horas_realizadas_calc,
+      })),
+      ...filteredCoachings.map((item) => ({
+        ...item,
+        titulo: item.titulo,
+        tipo_label: `coaching • ${item.tipo_coaching}`,
+        horas: item.horas_totais_calc,
+      })),
+    ];
+
+    return rows.sort((a, b) => {
+      const p = statusPriority(a.status) - statusPriority(b.status);
+      if (p !== 0) return p;
+
+      const att = (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
+                  (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
+      if (att !== 0) return att;
+
+      const da = parseDate(a.data_fim || a.data_inicio);
+      const db = parseDate(b.data_fim || b.data_inicio);
+      if (da && db) return db - da;
+      if (da) return -1;
+      if (db) return 1;
+
+      const horas = Number(b.horas || 0) - Number(a.horas || 0);
+      if (horas !== 0) return horas;
+
+      return String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR");
+    });
+  }, [filteredAcoes, filteredCoachings]);
+
+  const executiveAlerts = useMemo(() => {
+    const rows = overviewRows;
+    return {
+      emAndamento: rows.filter((i) => i.status_canonico === "em_andamento").length,
+      criticos: rows.filter((i) => i.attention_info?.level === "alta").length,
+      semResponsavel: rows.filter((i) => i.attention_info?.label === "Sem responsável").length,
+      vencidos: rows.filter((i) => i.prazo_info?.tone === "danger").length,
+    };
+  }, [overviewRows]);
 
   const kpis = useMemo(() => {
     const participantesAcoes = filteredAcoes.reduce(
@@ -1314,26 +1520,19 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "geral" && (
           <SectionCard
             title="Visão Geral"
-            subtitle="Consolidação das entregas e intervenções por recorte aplicado."
+            subtitle="Painel executivo das entregas e intervenções sob acompanhamento."
           >
             {loading ? (
               emptyCard("Carregando visão geral...")
-            ) : filteredAcoes.length === 0 && filteredCoachings.length === 0 ? (
+            ) : overviewRows.length === 0 ? (
               emptyCard("Nenhum registro encontrado.")
             ) : (
               <div style={{ display: "grid", gap: 16 }}>
                 <div style={overviewStripe}>
-                  <OverviewBox label="Jornadas filtradas" value={fmtNumber(filteredJornadas.length)} />
-                  <OverviewBox label="Etapas filtradas" value={fmtNumber(filteredEtapas.length)} />
-                  <OverviewBox
-                    label="Horas das ações"
-                    value={fmtHours(filteredAcoes.reduce((acc, i) => acc + Number(i.horas_realizadas_calc || 0), 0))}
-                  />
-                  <OverviewBox
-                    label="Horas do coaching"
-                    value={fmtHours(filteredCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0))}
-                    tone="coaching"
-                  />
+                  <OverviewBox label="Itens em andamento" value={fmtNumber(executiveAlerts.emAndamento)} />
+                  <OverviewBox label="Pendências críticas" value={fmtNumber(executiveAlerts.criticos)} tone="alert" />
+                  <OverviewBox label="Sem responsável" value={fmtNumber(executiveAlerts.semResponsavel)} tone="alert" />
+                  <OverviewBox label="Prazos vencidos" value={fmtNumber(executiveAlerts.vencidos)} tone="danger" />
                 </div>
 
                 <div style={{ overflowX: "auto" }}>
@@ -1348,37 +1547,47 @@ export default function MapaDesenvolvimentoPage() {
                         <th style={thStyle}>Responsável</th>
                         <th style={thStyle}>Horas</th>
                         <th style={thStyle}>Status</th>
-                        <th style={thStyle}>Período</th>
+                        <th style={thStyle}>Prazo</th>
+                        <th style={thStyle}>Atenção</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredAcoes.map((item) => (
-                        <tr key={`acao-${item.id}`}>
-                          <td style={tdStyle}>{item.jornada_nome}</td>
-                          <td style={tdStyle}>{item.etapa_nome}</td>
-                          <td style={tdStyle}><strong>{item.tema}</strong></td>
-                          <td style={tdStyle}>{item.tipo_acao}</td>
-                          <td style={tdStyle}>{item.publico_alvo || "—"}</td>
-                          <td style={tdStyle}>{item.responsavel_nome}</td>
-                          <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
-                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span></td>
-                          <td style={tdStyle}>{formatDate(item.data_inicio)} até {formatDate(item.data_fim)}</td>
-                        </tr>
-                      ))}
-
-                      {filteredCoachings.map((item) => (
-                        <tr key={`coaching-${item.id}`} style={!item.jornada_id ? independentRow : undefined}>
+                      {overviewRows.map((item) => (
+                        <tr
+                          key={`${item.tipo_registro}-${item.id}`}
+                          style={rowTone(item)}
+                        >
                           <td style={tdStyle}>{item.jornada_nome}</td>
                           <td style={tdStyle}>{item.etapa_nome}</td>
                           <td style={tdStyle}><strong>{item.titulo}</strong></td>
                           <td style={tdStyle}>
-                            <span style={badgeStyle("coaching")}>coaching</span> {item.tipo_coaching}
+                            {item.tipo_registro === "coaching" ? (
+                              <>
+                                <span style={badgeStyle("coaching")}>coaching</span> {item.tipo_coaching}
+                              </>
+                            ) : (
+                              item.tipo_acao
+                            )}
                           </td>
                           <td style={tdStyle}>{item.publico_alvo || "—"}</td>
                           <td style={tdStyle}>{item.responsavel_nome}</td>
-                          <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
-                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span></td>
-                          <td style={tdStyle}>{formatDate(item.data_inicio)} até {formatDate(item.data_fim)}</td>
+                          <td style={tdStyle}>{fmtHours(item.horas)}</td>
+                          <td style={tdStyle}>
+                            <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                          </td>
+                          <td style={tdStyle}>
+                            <div style={{ display: "grid", gap: 6 }}>
+                              <span style={prazoBadge(item.prazo_info.tone)}>{item.prazo_info.label}</span>
+                              <span style={{ fontSize: 12, color: "#64748b" }}>
+                                {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={tdStyle}>
+                            <span style={attentionBadge(item.attention_info.level)}>
+                              {item.attention_info.label}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1715,7 +1924,7 @@ export default function MapaDesenvolvimentoPage() {
                             </div>
                             <div style={flowTitle}>{jornada.nome}</div>
                             <div style={flowMeta}>
-                              Responsável: {responsavelMap[String(jornada.responsavel_id)] || "Não definido"} • Início: {formatDate(jornada.data_inicio)} • Fim: {formatDate(jornada.data_fim)}
+                              Responsável: {jornada.responsavel_nome} • Início: {formatDate(jornada.data_inicio)} • Fim: {formatDate(jornada.data_fim)}
                             </div>
                           </div>
 
@@ -2396,6 +2605,19 @@ export default function MapaDesenvolvimentoPage() {
   );
 }
 
+function rowTone(item) {
+  if (item.attention_info?.level === "alta") {
+    return { background: "#fff7f7" };
+  }
+  if (item.status_canonico === "em_andamento") {
+    return { background: "#fffdfa" };
+  }
+  if (item.tipo_registro === "coaching" && !item.jornada_id) {
+    return { background: "#fafaff" };
+  }
+  return undefined;
+}
+
 function MetricBox({ label, value }) {
   return (
     <div style={metricBox}>
@@ -2554,12 +2776,21 @@ const overviewStripe = {
   gap: 12,
 };
 
-const overviewBox = (tone) => ({
-  borderRadius: 16,
-  padding: 14,
-  background: tone === "coaching" ? "#eef2ff" : "#f8fafc",
-  border: tone === "coaching" ? "1px solid #c7d2fe" : "1px solid #e2e8f0",
-});
+const overviewBox = (tone) => {
+  const tones = {
+    default: { background: "#f8fafc", border: "#e2e8f0" },
+    coaching: { background: "#eef2ff", border: "#c7d2fe" },
+    alert: { background: "#fff7ed", border: "#fed7aa" },
+    danger: { background: "#fff1f2", border: "#fecaca" },
+  };
+  const current = tones[tone] || tones.default;
+  return {
+    borderRadius: 16,
+    padding: 14,
+    background: current.background,
+    border: `1px solid ${current.border}`,
+  };
+};
 
 const overviewLabel = {
   fontSize: 11,
@@ -2702,10 +2933,6 @@ const coachingBand = {
   marginBottom: 16,
 };
 
-const independentRow = {
-  background: "#fafaff",
-};
-
 const metricBox = {
   minWidth: 96,
   padding: "8px 10px",
@@ -2746,7 +2973,7 @@ const miniInfo = {
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse",
-  minWidth: 1080,
+  minWidth: 1180,
 };
 
 const thStyle = {
