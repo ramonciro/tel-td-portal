@@ -166,6 +166,129 @@ function calcHorasCoaching(plano) {
   );
 }
 
+function isValidDateRange(dataInicio, dataFim) {
+  if (!dataInicio || !dataFim) return true;
+  return new Date(dataFim) >= new Date(dataInicio);
+}
+
+function validarJornada(form) {
+  if (!String(form.nome || "").trim()) {
+    return "Informe o nome da jornada.";
+  }
+
+  if (!isValidDateRange(form.data_inicio, form.data_fim)) {
+    return "A data fim da jornada não pode ser menor que a data início.";
+  }
+
+  return "";
+}
+
+function validarEtapa(form, jornadas) {
+  if (!form.jornada_id) {
+    return "Selecione a jornada da etapa.";
+  }
+
+  if (!String(form.nome || "").trim()) {
+    return "Informe o nome da etapa.";
+  }
+
+  const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
+  if (!jornadaExiste) {
+    return "A jornada selecionada para a etapa não é válida.";
+  }
+
+  if (!isValidDateRange(form.data_inicio, form.data_fim)) {
+    return "A data fim da etapa não pode ser menor que a data início.";
+  }
+
+  return "";
+}
+
+function validarAcao(form, jornadas, etapas) {
+  if (!form.jornada_id) {
+    return "Selecione a jornada da ação.";
+  }
+
+  if (!String(form.tema || "").trim()) {
+    return "Informe o título/tema da ação.";
+  }
+
+  const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
+  if (!jornadaExiste) {
+    return "A jornada selecionada para a ação não é válida.";
+  }
+
+  if (form.etapa_id) {
+    const etapa = etapas.find((e) => String(e.id) === String(form.etapa_id));
+    if (!etapa) {
+      return "A etapa selecionada para a ação não é válida.";
+    }
+
+    if (String(etapa.jornada_id) !== String(form.jornada_id)) {
+      return "A etapa selecionada não pertence à jornada escolhida.";
+    }
+  }
+
+  if (!isValidDateRange(form.data_inicio, form.data_fim)) {
+    return "A data fim da ação não pode ser menor que a data início.";
+  }
+
+  return "";
+}
+
+function validarCoaching(form, jornadas, etapas, acoes) {
+  if (!String(form.titulo || "").trim()) {
+    return "Informe o título do coaching.";
+  }
+
+  if (form.jornada_id) {
+    const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
+    if (!jornadaExiste) {
+      return "A jornada selecionada para o coaching não é válida.";
+    }
+  }
+
+  if (form.etapa_id) {
+    const etapa = etapas.find((e) => String(e.id) === String(form.etapa_id));
+    if (!etapa) {
+      return "A etapa selecionada para o coaching não é válida.";
+    }
+
+    if (form.jornada_id && String(etapa.jornada_id) !== String(form.jornada_id)) {
+      return "A etapa selecionada não pertence à jornada escolhida no coaching.";
+    }
+  }
+
+  if (form.acao_id) {
+    const acao = acoes.find((a) => String(a.id) === String(form.acao_id));
+    if (!acao) {
+      return "A ação vinculada ao coaching não é válida.";
+    }
+
+    if (form.jornada_id && String(acao.jornada_id) !== String(form.jornada_id)) {
+      return "A ação vinculada não pertence à jornada escolhida no coaching.";
+    }
+
+    if (form.etapa_id && String(acao.etapa_id || "") !== String(form.etapa_id)) {
+      return "A ação vinculada não pertence à etapa escolhida no coaching.";
+    }
+  }
+
+  if (!isValidDateRange(form.data_inicio, form.data_fim)) {
+    return "A data fim do coaching não pode ser menor que a data início.";
+  }
+
+  return "";
+}
+
+function extrairMensagemErro(error, fallback) {
+  if (!error) return fallback;
+  if (typeof error === "string") return error;
+  if (error.message) return error.message;
+  if (error.error) return error.error;
+  return fallback;
+}
+
 const jornadaInicial = {
   id: null,
   nome: "",
@@ -298,7 +421,7 @@ export default function MapaDesenvolvimentoPage() {
       setAcoes(acoesData);
       setCoachings(coachingsData);
     } catch (error) {
-      setErro(error.message || "Erro ao carregar o Mapa de Desenvolvimento.");
+      setErro(extrairMensagemErro(error, "Erro ao carregar o Mapa de Desenvolvimento."));
     } finally {
       setLoading(false);
     }
@@ -494,7 +617,7 @@ export default function MapaDesenvolvimentoPage() {
       0
     );
     const horasCoachings = filteredCoachings.reduce(
-      (acc, item) => acc + Number(item.horas_totais_calc || 0),
+      (acc, item) => acc + Number(item.horasTotais_calc || item.horas_totais_calc || 0),
       0
     );
     const concluidas =
@@ -517,6 +640,14 @@ export default function MapaDesenvolvimentoPage() {
     setSaving(true);
     setErro("");
     setNotice("");
+
+    const erroValidacao = validarJornada(jornadaForm);
+    if (erroValidacao) {
+      setErro(erroValidacao);
+      setSaving(false);
+      return;
+    }
+
     try {
       const payload = {
         nome: jornadaForm.nome,
@@ -541,13 +672,13 @@ export default function MapaDesenvolvimentoPage() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Jornada criada com sucesso.");
+        setNotice("Jornada criada com sucesso no Mapa de Desenvolvimento.");
       }
 
       setJornadaForm(jornadaInicial);
       await loadAll();
     } catch (error) {
-      setErro(error.message || "Erro ao salvar jornada.");
+      setErro(extrairMensagemErro(error, "Erro ao salvar jornada."));
     } finally {
       setSaving(false);
     }
@@ -558,6 +689,14 @@ export default function MapaDesenvolvimentoPage() {
     setSaving(true);
     setErro("");
     setNotice("");
+
+    const erroValidacao = validarEtapa(etapaForm, jornadas);
+    if (erroValidacao) {
+      setErro(erroValidacao);
+      setSaving(false);
+      return;
+    }
+
     try {
       const payload = {
         jornada_id: Number(etapaForm.jornada_id),
@@ -580,19 +719,19 @@ export default function MapaDesenvolvimentoPage() {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setNotice("Etapa atualizada com sucesso.");
+        setNotice("Etapa da jornada atualizada com sucesso.");
       } else {
         await apiFetch("/jornadas-etapas", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Etapa criada com sucesso.");
+        setNotice("Etapa da jornada criada com sucesso.");
       }
 
       setEtapaForm(etapaInicial);
       await loadAll();
     } catch (error) {
-      setErro(error.message || "Erro ao salvar etapa.");
+      setErro(extrairMensagemErro(error, "Erro ao salvar etapa."));
     } finally {
       setSaving(false);
     }
@@ -603,6 +742,14 @@ export default function MapaDesenvolvimentoPage() {
     setSaving(true);
     setErro("");
     setNotice("");
+
+    const erroValidacao = validarAcao(acaoForm, jornadas, etapas);
+    if (erroValidacao) {
+      setErro(erroValidacao);
+      setSaving(false);
+      return;
+    }
+
     try {
       const horasPlanejadas =
         acaoForm.horas_planejadas !== ""
@@ -640,19 +787,19 @@ export default function MapaDesenvolvimentoPage() {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setNotice("Ação atualizada com sucesso.");
+        setNotice("Ação do Mapa atualizada com sucesso.");
       } else {
         await apiFetch("/acoes-desenvolvimento", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Ação criada com sucesso.");
+        setNotice("Ação do Mapa criada com sucesso.");
       }
 
       setAcaoForm(acaoInicial);
       await loadAll();
     } catch (error) {
-      setErro(error.message || "Erro ao salvar ação.");
+      setErro(extrairMensagemErro(error, "Erro ao salvar ação."));
     } finally {
       setSaving(false);
     }
@@ -663,6 +810,14 @@ export default function MapaDesenvolvimentoPage() {
     setSaving(true);
     setErro("");
     setNotice("");
+
+    const erroValidacao = validarCoaching(coachingForm, jornadas, etapas, acoes);
+    if (erroValidacao) {
+      setErro(erroValidacao);
+      setSaving(false);
+      return;
+    }
+
     try {
       const horasTotais =
         coachingForm.horas_totais !== ""
@@ -702,13 +857,13 @@ export default function MapaDesenvolvimentoPage() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Coaching criado com sucesso.");
+        setNotice("Coaching salvo com sucesso.");
       }
 
       setCoachingForm(coachingInicial);
       await loadAll();
     } catch (error) {
-      setErro(error.message || "Erro ao salvar coaching.");
+      setErro(extrairMensagemErro(error, "Erro ao salvar coaching."));
     } finally {
       setSaving(false);
     }
@@ -731,7 +886,7 @@ export default function MapaDesenvolvimentoPage() {
       setErro("");
       await loadAll();
     } catch (error) {
-      setErro(error.message || "Erro ao excluir registro.");
+      setErro(extrairMensagemErro(error, "Erro ao excluir registro."));
     }
   }
 
@@ -1070,7 +1225,14 @@ export default function MapaDesenvolvimentoPage() {
               subtitle="A jornada representa o rio principal do desenvolvimento. As etapas funcionam como atracações ao longo desse fluxo."
               action={
                 jornadaForm.id ? (
-                  <button style={buttonSecondaryStyle()} onClick={() => setJornadaForm(jornadaInicial)}>
+                  <button
+                    style={buttonSecondaryStyle()}
+                    onClick={() => {
+                      setJornadaForm(jornadaInicial);
+                      setErro("");
+                      setNotice("");
+                    }}
+                  >
                     Nova jornada
                   </button>
                 ) : null
@@ -1178,7 +1340,15 @@ export default function MapaDesenvolvimentoPage() {
                   <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
                     {jornadaForm.id ? "Atualizar jornada" : "Salvar jornada"}
                   </button>
-                  <button type="button" style={buttonSecondaryStyle()} onClick={() => setJornadaForm(jornadaInicial)}>
+                  <button
+                    type="button"
+                    style={buttonSecondaryStyle()}
+                    onClick={() => {
+                      setJornadaForm(jornadaInicial);
+                      setErro("");
+                      setNotice("");
+                    }}
+                  >
                     Limpar
                   </button>
                 </div>
@@ -1190,7 +1360,14 @@ export default function MapaDesenvolvimentoPage() {
               subtitle="Cada etapa representa uma atracação do fluxo. Você pode criar quantas etapas quiser."
               action={
                 etapaForm.id ? (
-                  <button style={buttonSecondaryStyle()} onClick={() => setEtapaForm(etapaInicial)}>
+                  <button
+                    style={buttonSecondaryStyle()}
+                    onClick={() => {
+                      setEtapaForm(etapaInicial);
+                      setErro("");
+                      setNotice("");
+                    }}
+                  >
                     Nova etapa
                   </button>
                 ) : null
@@ -1355,7 +1532,15 @@ export default function MapaDesenvolvimentoPage() {
                   <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
                     {etapaForm.id ? "Atualizar etapa" : "Salvar etapa"}
                   </button>
-                  <button type="button" style={buttonSecondaryStyle()} onClick={() => setEtapaForm(etapaInicial)}>
+                  <button
+                    type="button"
+                    style={buttonSecondaryStyle()}
+                    onClick={() => {
+                      setEtapaForm(etapaInicial);
+                      setErro("");
+                      setNotice("");
+                    }}
+                  >
                     Limpar
                   </button>
                 </div>
@@ -1463,7 +1648,14 @@ export default function MapaDesenvolvimentoPage() {
               subtitle="As ações podem ser vinculadas à jornada e, opcionalmente, a uma etapa específica."
               action={
                 acaoForm.id ? (
-                  <button style={buttonSecondaryStyle()} onClick={() => setAcaoForm(acaoInicial)}>
+                  <button
+                    style={buttonSecondaryStyle()}
+                    onClick={() => {
+                      setAcaoForm(acaoInicial);
+                      setErro("");
+                      setNotice("");
+                    }}
+                  >
                     Nova ação
                   </button>
                 ) : null
@@ -1696,7 +1888,15 @@ export default function MapaDesenvolvimentoPage() {
                   <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
                     {acaoForm.id ? "Atualizar ação" : "Salvar ação"}
                   </button>
-                  <button type="button" style={buttonSecondaryStyle()} onClick={() => setAcaoForm(acaoInicial)}>
+                  <button
+                    type="button"
+                    style={buttonSecondaryStyle()}
+                    onClick={() => {
+                      setAcaoForm(acaoInicial);
+                      setErro("");
+                      setNotice("");
+                    }}
+                  >
                     Limpar
                   </button>
                 </div>
@@ -1762,7 +1962,14 @@ export default function MapaDesenvolvimentoPage() {
               subtitle="O coaching é independente. Pode existir sozinho ou ser vinculado, opcionalmente, a jornada, etapa e ação."
               action={
                 coachingForm.id ? (
-                  <button style={buttonSecondaryStyle()} onClick={() => setCoachingForm(coachingInicial)}>
+                  <button
+                    style={buttonSecondaryStyle()}
+                    onClick={() => {
+                      setCoachingForm(coachingInicial);
+                      setErro("");
+                      setNotice("");
+                    }}
+                  >
                     Novo coaching
                   </button>
                 ) : null
@@ -1902,7 +2109,7 @@ export default function MapaDesenvolvimentoPage() {
                     Sessões previstas
                     <input
                       type="number"
-                      value={coachingForm.sessoes_previstas}
+                      value={coachingForm.sessoesPrevistas || coachingForm.sessoes_previstas}
                       onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_previstas: e.target.value }))}
                       style={inputStyle()}
                     />
@@ -1988,7 +2195,15 @@ export default function MapaDesenvolvimentoPage() {
                   <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
                     {coachingForm.id ? "Atualizar coaching" : "Salvar coaching"}
                   </button>
-                  <button type="button" style={buttonSecondaryStyle()} onClick={() => setCoachingForm(coachingInicial)}>
+                  <button
+                    type="button"
+                    style={buttonSecondaryStyle()}
+                    onClick={() => {
+                      setCoachingForm(coachingInicial);
+                      setErro("");
+                      setNotice("");
+                    }}
+                  >
                     Limpar
                   </button>
                 </div>
