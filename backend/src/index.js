@@ -129,9 +129,7 @@ app.use(
       "ativo",
       "troca_senha_obrigatoria",
     ],
-listMiddlewares: [
-  authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
