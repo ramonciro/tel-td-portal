@@ -21,6 +21,34 @@ function normalize(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function canonicalStatus(value) {
+  const status = normalize(value);
+
+  if (["ativa", "ativo"].includes(status)) return "ativo";
+  if (["inativa", "inativo"].includes(status)) return "inativo";
+  if (["concluida", "concluído", "concluido", "finalizada"].includes(status)) return "concluido";
+  if (["planejada", "planejado"].includes(status)) return "planejado";
+  if (["em_andamento", "em andamento"].includes(status)) return "em_andamento";
+  if (["cancelada", "cancelado"].includes(status)) return "cancelado";
+
+  return status;
+}
+
+function displayStatus(value) {
+  const status = canonicalStatus(value);
+
+  const labels = {
+    ativo: "Ativo",
+    inativo: "Inativo",
+    concluido: "Concluído",
+    planejado: "Planejado",
+    em_andamento: "Em andamento",
+    cancelado: "Cancelado",
+  };
+
+  return labels[status] || value || "—";
+}
+
 function toDateInput(value) {
   if (!value) return "";
   const raw = String(value).slice(0, 10);
@@ -38,6 +66,8 @@ function formatDate(value) {
 }
 
 function badgeStyle(type) {
+  const status = canonicalStatus(type);
+
   const base = {
     display: "inline-flex",
     alignItems: "center",
@@ -52,23 +82,18 @@ function badgeStyle(type) {
   };
 
   const map = {
-    ativa: { background: "#ecfdf5", color: "#166534", borderColor: "#bbf7d0" },
-    inativa: { background: "#f8fafc", color: "#475569", borderColor: "#e2e8f0" },
-    concluida: { background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" },
-    concluída: { background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" },
-    planejada: { background: "#faf5ff", color: "#7c3aed", borderColor: "#ddd6fe" },
+    ativo: { background: "#ecfdf5", color: "#166534", borderColor: "#bbf7d0" },
+    inativo: { background: "#f8fafc", color: "#475569", borderColor: "#e2e8f0" },
+    concluido: { background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" },
     planejado: { background: "#faf5ff", color: "#7c3aed", borderColor: "#ddd6fe" },
     em_andamento: { background: "#fff7ed", color: "#c2410c", borderColor: "#fed7aa" },
-    "em andamento": { background: "#fff7ed", color: "#c2410c", borderColor: "#fed7aa" },
-    cancelada: { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" },
     cancelado: { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" },
-    finalizada: { background: "#ecfeff", color: "#155e75", borderColor: "#a5f3fc" },
     coaching: { background: "#eef2ff", color: "#4338ca", borderColor: "#c7d2fe" },
   };
 
   return {
     ...base,
-    ...(map[normalize(type)] || {
+    ...(map[status] || {
       background: "#f8fafc",
       color: "#334155",
       borderColor: "#e2e8f0",
@@ -265,7 +290,7 @@ const jornadaInicial = {
   objetivo: "",
   publico_macro: "",
   observacoes: "",
-  status: "ativa",
+  status: "ativo",
   responsavel_id: "",
   data_inicio: "",
   data_fim: "",
@@ -279,7 +304,7 @@ const etapaInicial = {
   objetivo: "",
   tipo: "treinamento",
   ordem: "",
-  status: "planejada",
+  status: "planejado",
   responsavel_id: "",
   data_inicio: "",
   data_fim: "",
@@ -304,7 +329,7 @@ const acaoInicial = {
   quantidade_turmas_sessoes: "",
   horas_planejadas: "",
   horas_realizadas: "",
-  status: "planejada",
+  status: "planejado",
   responsavel_id: "",
   data_inicio: "",
   data_fim: "",
@@ -330,6 +355,28 @@ const coachingInicial = {
   data_inicio: "",
   data_fim: "",
 };
+
+const STATUS_OPTIONS = [
+  { value: "", label: "Todos os status" },
+  { value: "ativo", label: "Ativo" },
+  { value: "inativo", label: "Inativo" },
+  { value: "concluido", label: "Concluído" },
+  { value: "planejado", label: "Planejado" },
+  { value: "em_andamento", label: "Em andamento" },
+  { value: "cancelado", label: "Cancelado" },
+];
+
+const TIPO_OPTIONS = [
+  { value: "", label: "Todos os tipos" },
+  { value: "treinamento", label: "Treinamento" },
+  { value: "campanha", label: "Campanha" },
+  { value: "workshop", label: "Workshop" },
+  { value: "integracao", label: "Integração" },
+  { value: "reciclagem", label: "Reciclagem" },
+  { value: "acao_estrategica", label: "Ação estratégica" },
+  { value: "coaching", label: "Coaching" },
+  { value: "outro", label: "Outro" },
+];
 
 export default function MapaDesenvolvimentoPage() {
   const [activeTab, setActiveTab] = useState("geral");
@@ -362,6 +409,21 @@ export default function MapaDesenvolvimentoPage() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (!filters.jornada_id) return;
+    if (!filters.etapa_id) return;
+
+    const etapaValida = etapas.some(
+      (item) =>
+        String(item.id) === String(filters.etapa_id) &&
+        String(item.jornada_id) === String(filters.jornada_id)
+    );
+
+    if (!etapaValida) {
+      setFilters((prev) => ({ ...prev, etapa_id: "" }));
+    }
+  }, [filters.jornada_id, filters.etapa_id, etapas]);
 
   async function safeLoad(path) {
     try {
@@ -451,6 +513,7 @@ export default function MapaDesenvolvimentoPage() {
 
       return {
         ...jornada,
+        status_canonico: canonicalStatus(jornada.status),
         total_etapas: etapasDaJornada.length,
         total_acoes: acoesDaJornada.length,
         total_coachings: coachingsDaJornada.length,
@@ -476,6 +539,7 @@ export default function MapaDesenvolvimentoPage() {
 
       return {
         ...etapa,
+        status_canonico: canonicalStatus(etapa.status),
         jornada_nome: jornada?.nome || "Sem jornada",
         responsavel_nome: responsavelMap[String(etapa.responsavel_id)] || "Não definido",
         total_acoes: acoesDaEtapa.length,
@@ -491,6 +555,7 @@ export default function MapaDesenvolvimentoPage() {
       const etapa = etapasMap[String(acao.etapa_id || "")];
       return {
         ...acao,
+        status_canonico: canonicalStatus(acao.status),
         jornada_nome: jornada?.nome || "Sem jornada",
         etapa_nome: etapa?.nome || "Sem etapa",
         responsavel_nome: responsavelMap[String(acao.responsavel_id)] || "Não definido",
@@ -507,6 +572,7 @@ export default function MapaDesenvolvimentoPage() {
       const acao = acoes.find((a) => String(a.id) === String(plano.acao_id || ""));
       return {
         ...plano,
+        status_canonico: canonicalStatus(plano.status),
         jornada_nome: jornada?.nome || "Independente",
         etapa_nome: etapa?.nome || "Sem etapa",
         acao_nome: acao?.tema || "Sem ação vinculada",
@@ -516,15 +582,34 @@ export default function MapaDesenvolvimentoPage() {
     });
   }, [coachings, jornadasMap, etapasMap, acoes, responsavelMap]);
 
+  function matchBusca(textParts, termo) {
+    if (!termo) return true;
+    return normalize(textParts.filter(Boolean).join(" ")).includes(normalize(termo));
+  }
+
   const filteredJornadas = useMemo(() => {
     return jornadasEnriquecidas.filter((item) => {
       const matchJornada = !filters.jornada_id || String(item.id) === String(filters.jornada_id);
-      const matchStatus = !filters.status || normalize(item.status) === normalize(filters.status);
+      const matchStatus = !filters.status || item.status_canonico === filters.status;
       const matchResponsavel =
         !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-      const text = `${item.nome} ${item.descricao || ""} ${item.objetivo || ""} ${item.publico_macro || ""}`;
-      const matchBusca = !filters.busca || normalize(text).includes(normalize(filters.busca));
-      return matchJornada && matchStatus && matchResponsavel && matchBusca;
+
+      return (
+        matchJornada &&
+        matchStatus &&
+        matchResponsavel &&
+        matchBusca(
+          [
+            item.nome,
+            item.descricao,
+            item.objetivo,
+            item.publico_macro,
+            item.observacoes,
+            item.responsavel_nome,
+          ],
+          filters.busca
+        )
+      );
     });
   }, [jornadasEnriquecidas, filters]);
 
@@ -533,12 +618,34 @@ export default function MapaDesenvolvimentoPage() {
       const matchJornada =
         !filters.jornada_id || String(item.jornada_id || "") === String(filters.jornada_id);
       const matchEtapa = !filters.etapa_id || String(item.id) === String(filters.etapa_id);
-      const matchStatus = !filters.status || normalize(item.status) === normalize(filters.status);
+      const matchStatus = !filters.status || item.status_canonico === filters.status;
       const matchResponsavel =
         !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-      const text = `${item.nome} ${item.descricao || ""} ${item.objetivo || ""} ${item.tipo || ""}`;
-      const matchBusca = !filters.busca || normalize(text).includes(normalize(filters.busca));
-      return matchJornada && matchEtapa && matchStatus && matchResponsavel && matchBusca;
+
+      const matchTipo =
+        !filters.tipo ||
+        normalize(item.tipo) === normalize(filters.tipo) ||
+        (filters.tipo === "coaching" && normalize(item.tipo) === "coaching");
+
+      return (
+        matchJornada &&
+        matchEtapa &&
+        matchStatus &&
+        matchResponsavel &&
+        matchTipo &&
+        matchBusca(
+          [
+            item.nome,
+            item.descricao,
+            item.objetivo,
+            item.tipo,
+            item.observacoes,
+            item.jornada_nome,
+            item.responsavel_nome,
+          ],
+          filters.busca
+        )
+      );
     });
   }, [etapasEnriquecidas, filters]);
 
@@ -549,12 +656,29 @@ export default function MapaDesenvolvimentoPage() {
       const matchEtapa =
         !filters.etapa_id || String(item.etapa_id || "") === String(filters.etapa_id);
       const matchTipo = !filters.tipo || normalize(item.tipo_acao) === normalize(filters.tipo);
-      const matchStatus = !filters.status || normalize(item.status) === normalize(filters.status);
+      const matchStatus = !filters.status || item.status_canonico === filters.status;
       const matchResponsavel =
         !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-      const text = `${item.tema} ${item.subtipo || ""} ${item.publico_alvo || ""} ${item.descricao || ""}`;
-      const matchBusca = !filters.busca || normalize(text).includes(normalize(filters.busca));
-      return matchJornada && matchEtapa && matchTipo && matchStatus && matchResponsavel && matchBusca;
+
+      return (
+        matchJornada &&
+        matchEtapa &&
+        matchTipo &&
+        matchStatus &&
+        matchResponsavel &&
+        matchBusca(
+          [
+            item.tema,
+            item.subtipo,
+            item.publico_alvo,
+            item.descricao,
+            item.jornada_nome,
+            item.etapa_nome,
+            item.responsavel_nome,
+          ],
+          filters.busca
+        )
+      );
     });
   }, [acoesEnriquecidas, filters]);
 
@@ -565,14 +689,33 @@ export default function MapaDesenvolvimentoPage() {
       const matchEtapa =
         !filters.etapa_id || String(item.etapa_id || "") === String(filters.etapa_id);
       const matchTipo =
-        !filters.tipo || normalize(item.tipo_coaching) === normalize(filters.tipo);
-      const matchStatus =
-        !filters.status || normalize(item.status) === normalize(filters.status);
+        !filters.tipo ||
+        normalize(item.tipo_coaching) === normalize(filters.tipo) ||
+        filters.tipo === "coaching";
+      const matchStatus = !filters.status || item.status_canonico === filters.status;
       const matchResponsavel =
         !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-      const text = `${item.titulo} ${item.tipo_coaching || ""} ${item.publico_alvo || ""} ${item.objetivo || ""}`;
-      const matchBusca = !filters.busca || normalize(text).includes(normalize(filters.busca));
-      return matchJornada && matchEtapa && matchTipo && matchStatus && matchResponsavel && matchBusca;
+
+      return (
+        matchJornada &&
+        matchEtapa &&
+        matchTipo &&
+        matchStatus &&
+        matchResponsavel &&
+        matchBusca(
+          [
+            item.titulo,
+            item.tipo_coaching,
+            item.publico_alvo,
+            item.objetivo,
+            item.jornada_nome,
+            item.etapa_nome,
+            item.acao_nome,
+            item.responsavel_nome,
+          ],
+          filters.busca
+        )
+      );
     });
   }, [coachingsEnriquecidos, filters]);
 
@@ -602,10 +745,10 @@ export default function MapaDesenvolvimentoPage() {
       participantes: participantesAcoes + participantesCoachings,
       horasTotais: horasAcoes + horasCoachings,
       concluidas:
-        filteredAcoes.filter((i) => normalize(i.status) === "concluida").length +
-        filteredCoachings.filter((i) => normalize(i.status) === "concluido").length,
+        filteredAcoes.filter((i) => i.status_canonico === "concluido").length +
+        filteredCoachings.filter((i) => i.status_canonico === "concluido").length,
       coachingsIndependentes: filteredCoachings.filter((i) => !i.jornada_id).length,
-      fluxosAtivos: filteredJornadas.filter((i) => normalize(i.status) === "ativa").length,
+      fluxosAtivos: filteredJornadas.filter((i) => i.status_canonico === "ativo").length,
     };
   }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
 
@@ -646,7 +789,7 @@ export default function MapaDesenvolvimentoPage() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Jornada criada com sucesso no Mapa de Desenvolvimento.");
+        setNotice("Jornada registrada com sucesso.");
       }
 
       setJornadaForm(jornadaInicial);
@@ -693,13 +836,13 @@ export default function MapaDesenvolvimentoPage() {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setNotice("Etapa da jornada atualizada com sucesso.");
+        setNotice("Etapa atualizada com sucesso.");
       } else {
         await apiFetch("/jornadas-etapas", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Etapa da jornada criada com sucesso.");
+        setNotice("Etapa registrada com sucesso.");
       }
 
       setEtapaForm(etapaInicial);
@@ -728,14 +871,12 @@ export default function MapaDesenvolvimentoPage() {
       const horasPlanejadas =
         acaoForm.horas_planejadas !== ""
           ? Number(acaoForm.horas_planejadas || 0)
-          : Number(acaoForm.participantes_previstos || 0) *
-            Number(acaoForm.carga_horaria || 0);
+          : Number(acaoForm.participantes_previstos || 0) * Number(acaoForm.carga_horaria || 0);
 
       const horasRealizadas =
         acaoForm.horas_realizadas !== ""
           ? Number(acaoForm.horas_realizadas || 0)
-          : Number(acaoForm.participantes_realizados || 0) *
-            Number(acaoForm.carga_horaria || 0);
+          : Number(acaoForm.participantes_realizados || 0) * Number(acaoForm.carga_horaria || 0);
 
       const payload = {
         jornada_id: Number(acaoForm.jornada_id),
@@ -763,13 +904,13 @@ export default function MapaDesenvolvimentoPage() {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setNotice("Ação do Mapa atualizada com sucesso.");
+        setNotice("Ação atualizada com sucesso.");
       } else {
         await apiFetch("/acoes-desenvolvimento", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Ação do Mapa criada com sucesso.");
+        setNotice("Ação registrada com sucesso.");
       }
 
       setAcaoForm(acaoInicial);
@@ -833,7 +974,7 @@ export default function MapaDesenvolvimentoPage() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Coaching salvo com sucesso.");
+        setNotice("Coaching registrado com sucesso.");
       }
 
       setCoachingForm(coachingInicial);
@@ -874,7 +1015,7 @@ export default function MapaDesenvolvimentoPage() {
       objetivo: item.objetivo || "",
       publico_macro: item.publico_macro || "",
       observacoes: item.observacoes || "",
-      status: item.status || "ativa",
+      status: canonicalStatus(item.status) || "ativo",
       responsavel_id: item.responsavel_id || "",
       data_inicio: toDateInput(item.data_inicio),
       data_fim: toDateInput(item.data_fim),
@@ -891,7 +1032,7 @@ export default function MapaDesenvolvimentoPage() {
       objetivo: item.objetivo || "",
       tipo: item.tipo || "treinamento",
       ordem: String(item.ordem || ""),
-      status: item.status || "planejada",
+      status: canonicalStatus(item.status) || "planejado",
       responsavel_id: item.responsavel_id || "",
       data_inicio: toDateInput(item.data_inicio),
       data_fim: toDateInput(item.data_fim),
@@ -919,7 +1060,7 @@ export default function MapaDesenvolvimentoPage() {
       quantidade_turmas_sessoes: String(item.quantidade_turmas_sessoes || ""),
       horas_planejadas: String(item.horas_planejadas || ""),
       horas_realizadas: String(item.horas_realizadas || ""),
-      status: item.status || "planejada",
+      status: canonicalStatus(item.status) || "planejado",
       responsavel_id: item.responsavel_id || "",
       data_inicio: toDateInput(item.data_inicio),
       data_fim: toDateInput(item.data_fim),
@@ -944,7 +1085,7 @@ export default function MapaDesenvolvimentoPage() {
       sessoes_realizadas: String(item.sessoes_realizadas || ""),
       carga_horaria_sessao: String(item.carga_horaria_sessao || ""),
       horas_totais: String(item.horas_totais || ""),
-      status: item.status || "planejado",
+      status: canonicalStatus(item.status) || "planejado",
       data_inicio: toDateInput(item.data_inicio),
       data_fim: toDateInput(item.data_fim),
     });
@@ -962,40 +1103,36 @@ export default function MapaDesenvolvimentoPage() {
       title: "Fluxos ativos",
       value: fmtNumber(kpis.fluxosAtivos),
       subtitle: "Jornadas em execução",
-      accent: "#2563eb",
     },
     {
       title: "Coachings independentes",
       value: fmtNumber(kpis.coachingsIndependentes),
       subtitle: "Sem vínculo obrigatório",
-      accent: "#6366f1",
     },
     {
       title: "Entregas concluídas",
       value: fmtNumber(kpis.concluidas),
       subtitle: "Ações + coaching",
-      accent: "#16a34a",
     },
     {
       title: "Horas totais",
       value: fmtHours(kpis.horasTotais),
       subtitle: "Aplicadas no mapa",
-      accent: "#ea580c",
     },
   ];
 
   return (
     <PortalShell
       title="Mapa de Desenvolvimento"
-      subtitle="Centro de comando das jornadas, etapas, ações estratégicas e coaching."
+      subtitle="Centro de comando das jornadas, etapas, entregas e intervenções."
     >
       <div style={{ display: "grid", gap: 18 }}>
         <section style={heroWrap}>
           <div style={heroLeft}>
             <div style={heroEyebrow}>Command Center</div>
-            <h2 style={heroTitle}>Orquestração do desenvolvimento com visão macro, fluxo e intervenção.</h2>
+            <h2 style={heroTitle}>Arquitetura do desenvolvimento com leitura de fluxo, entrega e intervenção.</h2>
             <p style={heroText}>
-              O Mapa organiza a jornada como fluxo principal, as etapas como atracações, as ações como entregas e o coaching como intervenção independente ou vinculada.
+              Consolidação das jornadas, etapas, ações do mapa e coaching em uma visão única de acompanhamento gerencial.
             </p>
 
             <div style={tabBar}>
@@ -1040,8 +1177,8 @@ export default function MapaDesenvolvimentoPage() {
         </section>
 
         <SectionCard
-          title="Painel executivo"
-          subtitle="Leitura consolidada do mapa para acompanhamento gerencial."
+          title="Visão Estratégica"
+          subtitle="Leitura consolidada do ecossistema de desenvolvimento."
         >
           <div style={kpiGrid}>
             <StatCard title="Jornadas" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
@@ -1054,8 +1191,8 @@ export default function MapaDesenvolvimentoPage() {
         </SectionCard>
 
         <SectionCard
-          title="Filtros globais"
-          subtitle="Aplique filtros para reorganizar toda a leitura da página."
+          title="Recortes Gerenciais"
+          subtitle="Aplicação de filtros sobre jornadas, etapas, entregas e intervenções."
           action={
             <button
               style={buttonSecondaryStyle()}
@@ -1111,22 +1248,32 @@ export default function MapaDesenvolvimentoPage() {
 
             <label style={labelStyle()}>
               Tipo
-              <input
+              <select
                 value={filters.tipo}
                 onChange={(e) => setFilters((prev) => ({ ...prev, tipo: e.target.value }))}
-                placeholder="treinamento, coaching..."
                 style={inputStyle()}
-              />
+              >
+                {TIPO_OPTIONS.map((item) => (
+                  <option key={item.value || "all"} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label style={labelStyle()}>
               Status
-              <input
+              <select
                 value={filters.status}
                 onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
-                placeholder="ativa, concluída..."
                 style={inputStyle()}
-              />
+              >
+                {STATUS_OPTIONS.map((item) => (
+                  <option key={item.value || "all"} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label style={labelStyle()}>
@@ -1146,11 +1293,11 @@ export default function MapaDesenvolvimentoPage() {
             </label>
 
             <label style={{ ...labelStyle(), gridColumn: "span 2" }}>
-              Busca inteligente
+              Busca
               <input
                 value={filters.busca}
                 onChange={(e) => setFilters((prev) => ({ ...prev, busca: e.target.value }))}
-                placeholder="Busque por jornada, etapa, tema, público, objetivo..."
+                placeholder="Jornada, etapa, tema, público, responsável..."
                 style={inputStyle()}
               />
             </label>
@@ -1167,7 +1314,7 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "geral" && (
           <SectionCard
             title="Visão Geral"
-            subtitle="Leitura consolidada do que está em execução e do que já foi entregue."
+            subtitle="Consolidação das entregas e intervenções por recorte aplicado."
           >
             {loading ? (
               emptyCard("Carregando visão geral...")
@@ -1178,8 +1325,15 @@ export default function MapaDesenvolvimentoPage() {
                 <div style={overviewStripe}>
                   <OverviewBox label="Jornadas filtradas" value={fmtNumber(filteredJornadas.length)} />
                   <OverviewBox label="Etapas filtradas" value={fmtNumber(filteredEtapas.length)} />
-                  <OverviewBox label="Horas das ações" value={fmtHours(filteredAcoes.reduce((acc, i) => acc + Number(i.horas_realizadas_calc || 0), 0))} />
-                  <OverviewBox label="Horas do coaching" value={fmtHours(filteredCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0))} tone="coaching" />
+                  <OverviewBox
+                    label="Horas das ações"
+                    value={fmtHours(filteredAcoes.reduce((acc, i) => acc + Number(i.horas_realizadas_calc || 0), 0))}
+                  />
+                  <OverviewBox
+                    label="Horas do coaching"
+                    value={fmtHours(filteredCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0))}
+                    tone="coaching"
+                  />
                 </div>
 
                 <div style={{ overflowX: "auto" }}>
@@ -1207,7 +1361,7 @@ export default function MapaDesenvolvimentoPage() {
                           <td style={tdStyle}>{item.publico_alvo || "—"}</td>
                           <td style={tdStyle}>{item.responsavel_nome}</td>
                           <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
-                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
+                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span></td>
                           <td style={tdStyle}>{formatDate(item.data_inicio)} até {formatDate(item.data_fim)}</td>
                         </tr>
                       ))}
@@ -1223,7 +1377,7 @@ export default function MapaDesenvolvimentoPage() {
                           <td style={tdStyle}>{item.publico_alvo || "—"}</td>
                           <td style={tdStyle}>{item.responsavel_nome}</td>
                           <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
-                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
+                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span></td>
                           <td style={tdStyle}>{formatDate(item.data_inicio)} até {formatDate(item.data_fim)}</td>
                         </tr>
                       ))}
@@ -1237,9 +1391,9 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "jornadas" && (
           <>
-            <SectionCard title="Jornadas" subtitle="Fluxos estruturados com etapas livres e intervenções vinculadas.">
+            <SectionCard title="Arquitetura dos Fluxos" subtitle="Estruturação das jornadas e de suas etapas.">
               <details open style={detailsCard}>
-                <summary style={detailsSummary}>Cadastro de jornada</summary>
+                <summary style={detailsSummary}>Registro de jornada</summary>
                 <form onSubmit={saveJornada} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
                     <label style={labelStyle()}>
@@ -1259,9 +1413,9 @@ export default function MapaDesenvolvimentoPage() {
                         onChange={(e) => setJornadaForm((prev) => ({ ...prev, status: e.target.value }))}
                         style={inputStyle()}
                       >
-                        <option value="ativa">Ativa</option>
-                        <option value="inativa">Inativa</option>
-                        <option value="concluida">Concluída</option>
+                        <option value="ativo">Ativo</option>
+                        <option value="inativo">Inativo</option>
+                        <option value="concluido">Concluído</option>
                       </select>
                     </label>
 
@@ -1358,7 +1512,7 @@ export default function MapaDesenvolvimentoPage() {
               </details>
 
               <details style={{ ...detailsCard, marginTop: 14 }} open>
-                <summary style={detailsSummary}>Cadastro de etapa</summary>
+                <summary style={detailsSummary}>Registro de etapa</summary>
                 <form onSubmit={saveEtapa} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
                     <label style={labelStyle()}>
@@ -1421,10 +1575,10 @@ export default function MapaDesenvolvimentoPage() {
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, status: e.target.value }))}
                         style={inputStyle()}
                       >
-                        <option value="planejada">Planejada</option>
+                        <option value="planejado">Planejado</option>
                         <option value="em_andamento">Em andamento</option>
-                        <option value="concluida">Concluída</option>
-                        <option value="cancelada">Cancelada</option>
+                        <option value="concluido">Concluído</option>
+                        <option value="cancelado">Cancelado</option>
                       </select>
                     </label>
 
@@ -1535,8 +1689,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Fluxos das jornadas"
-              subtitle="Cada jornada aparece como um fluxo vivo, com atracações, horas e intervenções associadas."
+              title="Fluxos das Jornadas"
+              subtitle="Leitura visual dos percursos estruturados e de suas atracações."
             >
               {loading ? (
                 emptyCard("Carregando jornadas...")
@@ -1554,7 +1708,7 @@ export default function MapaDesenvolvimentoPage() {
                         <div style={flowHeader}>
                           <div style={{ display: "grid", gap: 6 }}>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                              <span style={badgeStyle(jornada.status)}>{jornada.status}</span>
+                              <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
                               <span style={miniInfo}>{jornada.total_etapas} etapa(s)</span>
                               <span style={miniInfo}>{jornada.total_acoes} ação(ões)</span>
                               <span style={miniInfo}>{jornada.total_coachings} coaching(s)</span>
@@ -1587,7 +1741,7 @@ export default function MapaDesenvolvimentoPage() {
                                 <div style={stageCard}>
                                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                                     <span style={timelineOrder}>{etapa.ordem || index + 1}</span>
-                                    <span style={badgeStyle(etapa.status)}>{etapa.status}</span>
+                                    <span style={badgeStyle(etapa.status)}>{displayStatus(etapa.status)}</span>
                                     <span style={badgeStyle(etapa.tipo)}>{etapa.tipo}</span>
                                   </div>
 
@@ -1635,9 +1789,9 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "acoes" && (
           <>
-            <SectionCard title="Ações do Mapa" subtitle="Entregas formais vinculadas à jornada e opcionalmente à etapa.">
+            <SectionCard title="Consolidação das Entregas" subtitle="Cadastro e leitura das ações formais do mapa.">
               <details open style={detailsCard}>
-                <summary style={detailsSummary}>Cadastro de ação</summary>
+                <summary style={detailsSummary}>Registro de ação</summary>
                 <form onSubmit={saveAcao} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
                     <label style={labelStyle()}>
@@ -1808,10 +1962,10 @@ export default function MapaDesenvolvimentoPage() {
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, status: e.target.value }))}
                         style={inputStyle()}
                       >
-                        <option value="planejada">Planejada</option>
+                        <option value="planejado">Planejado</option>
                         <option value="em_andamento">Em andamento</option>
-                        <option value="concluida">Concluída</option>
-                        <option value="cancelada">Cancelada</option>
+                        <option value="concluido">Concluído</option>
+                        <option value="cancelado">Cancelado</option>
                       </select>
                     </label>
 
@@ -1881,7 +2035,7 @@ export default function MapaDesenvolvimentoPage() {
               </details>
             </SectionCard>
 
-            <SectionCard title="Tabela de ações" subtitle="Leitura tática das entregas formais do mapa.">
+            <SectionCard title="Tabela de entregas" subtitle="Leitura tática das ações do mapa.">
               {loading ? (
                 emptyCard("Carregando ações...")
               ) : filteredAcoes.length === 0 ? (
@@ -1911,7 +2065,7 @@ export default function MapaDesenvolvimentoPage() {
                           <td style={tdStyle}>{item.tipo_acao}</td>
                           <td style={tdStyle}>{item.publico_alvo || "—"}</td>
                           <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
-                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
+                          <td style={tdStyle}><span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span></td>
                           <td style={tdStyle}>{item.responsavel_nome}</td>
                           <td style={tdStyle}>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1935,9 +2089,9 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "coaching" && (
           <>
-            <SectionCard title="Coaching" subtitle="Intervenção independente ou vinculada ao fluxo da jornada.">
+            <SectionCard title="Panorama de Intervenções" subtitle="Gestão das intervenções de coaching com ou sem vínculo ao fluxo principal.">
               <details open style={{ ...detailsCard, borderColor: "#c7d2fe", background: "#f8faff" }}>
-                <summary style={{ ...detailsSummary, color: "#3730a3" }}>Cadastro de coaching</summary>
+                <summary style={{ ...detailsSummary, color: "#3730a3" }}>Registro de coaching</summary>
                 <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
                     <label style={labelStyle()}>
@@ -2175,8 +2329,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Radar de coaching"
-              subtitle="Leitura apartada das intervenções, com destaque para independência e vínculos opcionais."
+              title="Radar de Coaching"
+              subtitle="Leitura das intervenções por vínculo, status e intensidade."
             >
               {loading ? (
                 emptyCard("Carregando coachings...")
@@ -2187,7 +2341,7 @@ export default function MapaDesenvolvimentoPage() {
                   <div style={coachingBand}>
                     <OverviewBox label="Coachings filtrados" value={fmtNumber(filteredCoachings.length)} tone="coaching" />
                     <OverviewBox label="Independentes" value={fmtNumber(filteredCoachings.filter((i) => !i.jornada_id).length)} tone="coaching" />
-                    <OverviewBox label="Em andamento" value={fmtNumber(filteredCoachings.filter((i) => normalize(i.status) === "em_andamento").length)} tone="coaching" />
+                    <OverviewBox label="Em andamento" value={fmtNumber(filteredCoachings.filter((i) => i.status_canonico === "em_andamento").length)} tone="coaching" />
                     <OverviewBox label="Horas" value={fmtHours(filteredCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0))} tone="coaching" />
                   </div>
 
@@ -2215,7 +2369,7 @@ export default function MapaDesenvolvimentoPage() {
                             <td style={tdStyle}><strong>{item.titulo}</strong></td>
                             <td style={tdStyle}>{item.tipo_coaching}</td>
                             <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
-                            <td style={tdStyle}><span style={badgeStyle(item.status)}>{item.status}</span></td>
+                            <td style={tdStyle}><span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span></td>
                             <td style={tdStyle}>{item.responsavel_nome}</td>
                             <td style={tdStyle}>
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
