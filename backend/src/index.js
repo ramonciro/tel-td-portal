@@ -9,6 +9,7 @@ const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { authRequired, authorizeRoles } = require("./middlewares/auth");
 
+const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
 const jornadasDesenvolvimentoRoutes = require("./routes/jornadasDesenvolvimentoRoutes");
 const acoesDesenvolvimentoRoutes = require("./routes/acoesDesenvolvimentoRoutes");
 const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
@@ -604,6 +605,7 @@ app.get(
   }
 );
 
+app.use("/api/jornadas-etapas", jornadasEtapasRoutes);
 app.use("/api/jornadas-desenvolvimento", jornadasDesenvolvimentoRoutes);
 app.use("/api/acoes-desenvolvimento", acoesDesenvolvimentoRoutes);
 app.use("/api/coaching-planos", coachingPlanosRoutes);
