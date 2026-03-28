@@ -5,10 +5,11 @@ exports.listar = async (_req, res) => {
     const [rows] = await db.query(`
       SELECT ad.*,
              jd.nome AS jornada_nome,
-             jd.cliente,
+             je.nome AS etapa_nome,
              u.nome AS responsavel_nome
       FROM acoes_desenvolvimento ad
       LEFT JOIN jornadas_desenvolvimento jd ON jd.id = ad.jornada_id
+      LEFT JOIN jornadas_etapas je ON je.id = ad.etapa_id
       LEFT JOIN usuarios u ON u.id = ad.responsavel_id
       ORDER BY ad.id DESC
     `);
@@ -28,10 +29,11 @@ exports.buscarPorId = async (req, res) => {
       `
       SELECT ad.*,
              jd.nome AS jornada_nome,
-             jd.cliente,
+             je.nome AS etapa_nome,
              u.nome AS responsavel_nome
       FROM acoes_desenvolvimento ad
       LEFT JOIN jornadas_desenvolvimento jd ON jd.id = ad.jornada_id
+      LEFT JOIN jornadas_etapas je ON je.id = ad.etapa_id
       LEFT JOIN usuarios u ON u.id = ad.responsavel_id
       WHERE ad.id = ?
       `,
@@ -53,6 +55,7 @@ exports.criar = async (req, res) => {
   try {
     const {
       jornada_id,
+      etapa_id,
       tipo_acao,
       tema,
       subtipo,
@@ -91,6 +94,7 @@ exports.criar = async (req, res) => {
       INSERT INTO acoes_desenvolvimento
       (
         jornada_id,
+        etapa_id,
         tipo_acao,
         tema,
         subtipo,
@@ -108,10 +112,11 @@ exports.criar = async (req, res) => {
         data_inicio,
         data_fim
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        jornada_id,
+        Number(jornada_id),
+        etapa_id ? Number(etapa_id) : null,
         tipo_acao || "treinamento",
         tema,
         subtipo || null,
@@ -148,6 +153,7 @@ exports.atualizar = async (req, res) => {
     const { id } = req.params;
     const {
       jornada_id,
+      etapa_id,
       tipo_acao,
       tema,
       subtipo,
@@ -179,6 +185,7 @@ exports.atualizar = async (req, res) => {
       `
       UPDATE acoes_desenvolvimento
       SET jornada_id = ?,
+          etapa_id = ?,
           tipo_acao = ?,
           tema = ?,
           subtipo = ?,
@@ -198,7 +205,8 @@ exports.atualizar = async (req, res) => {
       WHERE id = ?
       `,
       [
-        jornada_id,
+        Number(jornada_id),
+        etapa_id ? Number(etapa_id) : null,
         tipo_acao || "treinamento",
         tema,
         subtipo || null,
