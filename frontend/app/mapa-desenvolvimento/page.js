@@ -242,13 +242,15 @@ function badgeStyle(type) {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "4px 9px",
+    padding: "5px 10px",
     borderRadius: 999,
     fontSize: 10,
     fontWeight: 800,
     whiteSpace: "nowrap",
     lineHeight: 1.1,
     border: "1px solid transparent",
+    textTransform: "uppercase",
+    letterSpacing: ".03em",
   };
 
   const map = {
@@ -324,6 +326,11 @@ function prazoBadge(tone) {
       background: "#fff7ed",
       color: "#c2410c",
       border: "1px solid #fed7aa",
+    },
+    default: {
+      background: "#ffffff",
+      color: "#334155",
+      border: "1px solid #e2e8f0",
     },
   };
 
@@ -1540,15 +1547,15 @@ export default function MapaDesenvolvimentoPage() {
   return (
     <PortalShell
       title="Mapa de Desenvolvimento"
-      subtitle="Centro de comando das jornadas, etapas, entregas e intervenções."
+      subtitle="Painel executivo de jornadas, entregas, intervenções e evolução do desenvolvimento."
     >
       <div style={{ display: "grid", gap: 18 }}>
         <section style={heroWrap}>
           <div style={heroLeft}>
             <div style={heroEyebrow}>Command Center</div>
-            <h2 style={heroTitle}>Arquitetura do desenvolvimento com leitura de fluxo, entrega e intervenção.</h2>
+            <h2 style={heroTitle}>Gestão integrada do desenvolvimento com leitura de fluxo, execução e intervenção.</h2>
             <p style={heroText}>
-              Consolidação das jornadas, etapas, ações do mapa e coaching em uma visão única de acompanhamento gerencial.
+              Consolidação das jornadas, etapas, ações e coachings em uma visão única de acompanhamento gerencial, priorização e monitoramento.
             </p>
 
             <div style={tabBar}>
@@ -1593,7 +1600,7 @@ export default function MapaDesenvolvimentoPage() {
         </section>
 
         <SectionCard
-          title="Visão Estratégica"
+          title="Leitura Estratégica"
           subtitle="Leitura consolidada do ecossistema de desenvolvimento."
         >
           <div style={kpiGrid}>
@@ -1607,7 +1614,7 @@ export default function MapaDesenvolvimentoPage() {
         </SectionCard>
 
         <SectionCard
-          title="Recortes Gerenciais"
+          title="Filtros Gerenciais"
           subtitle="Aplicação de filtros sobre jornadas, etapas, entregas e intervenções."
           action={
             <button
@@ -1730,7 +1737,7 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "geral" && (
           <SectionCard
             title="Visão Geral"
-            subtitle="Painel executivo das entregas e intervenções sob acompanhamento."
+            subtitle="Leitura consolidada das entregas, intervenções, prioridades e prazos."
           >
             {loading ? (
               emptyCard("Carregando visão geral...")
@@ -1807,7 +1814,7 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "jornadas" && (
           <>
-            <SectionCard title="Arquitetura dos Fluxos" subtitle="Estruturação das jornadas e de suas etapas.">
+            <SectionCard title="Arquitetura dos Fluxos" subtitle="Estrutura, monitoramento e saúde dos fluxos de desenvolvimento.">
               <details open style={detailsCard}>
                 <summary style={detailsSummary}>Registro de jornada</summary>
                 <form onSubmit={saveJornada} style={{ display: "grid", gap: 12, marginTop: 14 }}>
@@ -2105,8 +2112,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Fluxos das Jornadas"
-              subtitle="Leitura visual e monitoramento do percurso estruturado."
+              title="Painel Executivo das Jornadas"
+              subtitle="Acompanhamento executivo das jornadas, etapas e pontos de atenção."
             >
               {loading ? (
                 emptyCard("Carregando jornadas...")
@@ -2229,7 +2236,7 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "acoes" && (
           <>
-            <SectionCard title="Consolidação das Entregas" subtitle="Cadastro e leitura tática das ações do mapa.">
+            <SectionCard title="Consolidação das Entregas" subtitle="Gestão tática das entregas vinculadas ao mapa de desenvolvimento.">
               <details open style={detailsCard}>
                 <summary style={detailsSummary}>Registro de ação</summary>
                 <form onSubmit={saveAcao} style={{ display: "grid", gap: 12, marginTop: 14 }}>
@@ -2476,8 +2483,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Painel Tático de Execução"
-              subtitle="Prioridade, prazo, intensidade e atenção das ações do mapa."
+              title="Painel Executivo das Ações"
+              subtitle="Execução, criticidade, intensidade e prazo das ações planejadas."
             >
               {loading ? (
                 emptyCard("Carregando ações...")
@@ -2564,7 +2571,7 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "coaching" && (
           <>
-            <SectionCard title="Panorama de Intervenções" subtitle="Gestão das intervenções de coaching com ou sem vínculo ao fluxo principal.">
+            <SectionCard title="Panorama de Intervenções" subtitle="Gestão das intervenções de coaching vinculadas ou independentes do fluxo.">
               <details open style={{ ...detailsCard, borderColor: "#c7d2fe", background: "#f8faff" }}>
                 <summary style={{ ...detailsSummary, color: "#3730a3" }}>Registro de coaching</summary>
                 <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
@@ -2804,8 +2811,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Radar de Coaching"
-              subtitle="Prioridade, prazo, intensidade e leitura gerencial das intervenções."
+              title="Painel Executivo de Coaching"
+              subtitle="Radar executivo das intervenções, criticidade, intensidade e prazo."
             >
               {loading ? (
                 emptyCard("Carregando coachings...")
@@ -3028,8 +3035,10 @@ const signalGrid = {
 const signalCard = {
   borderRadius: 18,
   padding: 14,
-  background: "rgba(255,255,255,.05)",
+  background: "rgba(255,255,255,.06)",
   border: "1px solid rgba(148,163,184,.18)",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,.06)",
+  backdropFilter: "blur(6px)",
 };
 
 const kpiGrid = {
@@ -3070,17 +3079,18 @@ const overviewStripe = {
 
 const overviewBox = (tone) => {
   const tones = {
-    default: { background: "#f8fafc", border: "#e2e8f0" },
+    default: { background: "#ffffff", border: "#e2e8f0" },
     coaching: { background: "#eef2ff", border: "#c7d2fe" },
     alert: { background: "#fff7ed", border: "#fed7aa" },
     danger: { background: "#fff1f2", border: "#fecaca" },
   };
   const current = tones[tone] || tones.default;
   return {
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 18,
+    padding: 16,
     background: current.background,
     border: `1px solid ${current.border}`,
+    boxShadow: "0 8px 18px rgba(15,23,42,.04)",
   };
 };
 
@@ -3089,15 +3099,15 @@ const overviewLabel = {
   color: "#64748b",
   fontWeight: 800,
   textTransform: "uppercase",
-  letterSpacing: ".04em",
+  letterSpacing: ".06em",
 };
 
 const overviewValue = {
   fontSize: 24,
   color: "#0f172a",
   fontWeight: 900,
-  marginTop: 4,
-  lineHeight: 1.2,
+  marginTop: 6,
+  lineHeight: 1.15,
 };
 
 const detailsCard = {
@@ -3127,12 +3137,12 @@ const buttonRow = {
 };
 
 const flowCard = {
-  borderRadius: 22,
+  borderRadius: 24,
   border: "1px solid #dbeafe",
   background:
     "radial-gradient(circle at top right, rgba(59,130,246,.08), transparent 30%), linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
-  padding: 16,
-  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+  padding: 18,
+  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
   display: "grid",
   gap: 14,
 };
@@ -3145,10 +3155,11 @@ const flowHeader = {
 };
 
 const flowTitle = {
-  fontSize: 20,
+  fontSize: 22,
   fontWeight: 900,
   color: "#0f172a",
-  lineHeight: 1.15,
+  lineHeight: 1.1,
+  letterSpacing: "-0.02em",
 };
 
 const flowMeta = {
@@ -3198,15 +3209,17 @@ const stageConnector = (show) => ({
 const stageCard = {
   border: "1px solid #dbeafe",
   background: "#f8fbff",
-  borderRadius: 18,
+  borderRadius: 20,
   padding: 14,
+  boxShadow: "0 6px 16px rgba(15,23,42,.03)",
 };
 
 const stageTitle = {
-  fontSize: 16,
+  fontSize: 17,
   fontWeight: 900,
   color: "#0f172a",
   marginTop: 8,
+  letterSpacing: "-0.01em",
 };
 
 const stageMeta = {
@@ -3271,21 +3284,23 @@ const tableStyle = {
 
 const thStyle = {
   textAlign: "left",
-  padding: "12px 10px",
-  fontSize: 12,
+  padding: "13px 10px",
+  fontSize: 11,
   textTransform: "uppercase",
-  letterSpacing: ".04em",
+  letterSpacing: ".08em",
   color: "#64748b",
   borderBottom: "1px solid #e2e8f0",
   background: "#f8fafc",
+  fontWeight: 800,
 };
 
 const tdStyle = {
-  padding: "12px 10px",
+  padding: "13px 10px",
   borderBottom: "1px solid #e2e8f0",
   verticalAlign: "top",
   color: "#0f172a",
-  fontSize: 14,
+  fontSize: 13,
+  lineHeight: 1.45,
 };
 
 const emptyTimeline = {
