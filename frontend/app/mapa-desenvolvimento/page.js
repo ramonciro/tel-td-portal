@@ -147,6 +147,67 @@ function getAttention(item, tipoRegistro) {
   return { level: "ok", label: "Estável" };
 }
 
+function getStageHealth(stage) {
+  if (!stage) return { label: "Sem etapa", level: "media" };
+  if (stage.prazo_info?.tone === "danger") return { label: "Crítica", level: "alta" };
+  if (stage.attention_info?.level === "alta") return { label: "Crítica", level: "alta" };
+  if (stage.attention_info?.level === "media") return { label: "Atenção", level: "media" };
+  return { label: "Saudável", level: "ok" };
+}
+
+function getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada) {
+  const prazo = getPrazoInfo(jornada);
+
+  if (!jornada.responsavel_id || etapasDaJornada.length === 0 || prazo.tone === "danger") {
+    return { label: "Crítica", level: "alta" };
+  }
+
+  const horasTotais =
+    acoesDaJornada.reduce((acc, item) => acc + Number(item.horas_realizadas || 0), 0) +
+    coachingsDaJornada.reduce((acc, item) => acc + Number(item.horas_totais || 0), 0);
+
+  if (horasTotais === 0 || (acoesDaJornada.length === 0 && coachingsDaJornada.length === 0)) {
+    return { label: "Atenção", level: "media" };
+  }
+
+  const allPlanejado = etapasDaJornada.every((e) => canonicalStatus(e.status) === "planejado");
+  if (allPlanejado) {
+    return { label: "Atenção", level: "media" };
+  }
+
+  return { label: "Saudável", level: "ok" };
+}
+
+function getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada) {
+  const prazo = getPrazoInfo(jornada);
+
+  if (!jornada.responsavel_id) {
+    return { level: "alta", label: "Sem responsável" };
+  }
+
+  if (etapasDaJornada.length === 0) {
+    return { level: "alta", label: "Sem etapas" };
+  }
+
+  if (prazo.tone === "danger") {
+    return { level: "alta", label: "Prazo vencido" };
+  }
+
+  if (acoesDaJornada.length === 0 && coachingsDaJornada.length === 0) {
+    return { level: "media", label: "Sem entregas vinculadas" };
+  }
+
+  const horasTotais =
+    acoesDaJornada.reduce((acc, item) => acc + Number(item.horas_realizadas || 0), 0) +
+    coachingsDaJornada.reduce((acc, item) => acc + Number(item.horas_totais || 0), 0);
+
+  if (horasTotais === 0) {
+    return { level: "media", label: "Sem horas registradas" };
+  }
+
+  return { level: "ok", label: "Monitorada" };
+}
+
 function badgeStyle(type) {
   const status = canonicalStatus(type);
 
@@ -657,14 +718,45 @@ export default function MapaDesenvolvimentoPage() {
         0
       );
 
+      const responsavel_nome = responsavelMap[String(jornada.responsavel_id)] || "Não definido";
+      const prazo_info = getPrazoInfo(jornada);
+      const saude_info = getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada);
+      const attention_info = getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada);
+
+      const etapasCriticas = etapasDaJornada
+        .map((etapa) => {
+          const prazo = getPrazoInfo(etapa);
+          const fakeStage = {
+            ...etapa,
+            prazo_info: prazo,
+            attention_info:
+              !etapa.responsavel_id
+                ? { level: "media", label: "Sem responsável" }
+                : prazo.tone === "danger"
+                ? { level: "alta", label: "Prazo vencido" }
+                : { level: "ok", label: "Estável" },
+          };
+          return { ...fakeStage, saude_info: getStageHealth(fakeStage) };
+        })
+        .sort((a, b) => {
+          const pa = a.saude_info.level === "alta" ? 1 : a.saude_info.level === "media" ? 2 : 3;
+          const pb = b.saude_info.level === "alta" ? 1 : b.saude_info.level === "media" ? 2 : 3;
+          if (pa !== pb) return pa - pb;
+          return Number(a.ordem || 9999) - Number(b.ordem || 9999);
+        });
+
       return {
         ...jornada,
         status_canonico: canonicalStatus(jornada.status),
-        responsavel_nome: responsavelMap[String(jornada.responsavel_id)] || "Não definido",
+        responsavel_nome,
         total_etapas: etapasDaJornada.length,
         total_acoes: acoesDaJornada.length,
         total_coachings: coachingsDaJornada.length,
         horas_totais: horasAcoes + horasCoaching,
+        prazo_info,
+        saude_info,
+        attention_info,
+        etapa_critica: etapasCriticas[0] || null,
       };
     });
   }, [jornadas, etapas, acoes, coachings, responsavelMap]);
@@ -1265,6 +1357,7 @@ export default function MapaDesenvolvimentoPage() {
       participantes_realizados: String(item.participantes_realizados || ""),
       quantidade_turmas_sessoes: String(item.quantidade_turmas_sessoes || ""),
       horas_planejadas: String(item.horas_planejadas || ""),
+      horasRealizadas: undefined,
       horas_realizadas: String(item.horas_realizadas || ""),
       status: canonicalStatus(item.status) || "planejado",
       responsavel_id: item.responsavel_id || "",
@@ -1899,7 +1992,7 @@ export default function MapaDesenvolvimentoPage() {
 
             <SectionCard
               title="Fluxos das Jornadas"
-              subtitle="Leitura visual dos percursos estruturados e de suas atracações."
+              subtitle="Leitura visual e monitoramento do percurso estruturado."
             >
               {loading ? (
                 emptyCard("Carregando jornadas...")
@@ -1918,9 +2011,9 @@ export default function MapaDesenvolvimentoPage() {
                           <div style={{ display: "grid", gap: 6 }}>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                               <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
-                              <span style={miniInfo}>{jornada.total_etapas} etapa(s)</span>
-                              <span style={miniInfo}>{jornada.total_acoes} ação(ões)</span>
-                              <span style={miniInfo}>{jornada.total_coachings} coaching(s)</span>
+                              <span style={attentionBadge(jornada.saude_info.level)}>{jornada.saude_info.label}</span>
+                              <span style={prazoBadge(jornada.prazo_info.tone)}>{jornada.prazo_info.label}</span>
+                              <span style={attentionBadge(jornada.attention_info.level)}>{jornada.attention_info.label}</span>
                             </div>
                             <div style={flowTitle}>{jornada.nome}</div>
                             <div style={flowMeta}>
@@ -1936,6 +2029,13 @@ export default function MapaDesenvolvimentoPage() {
                           </div>
                         </div>
 
+                        <div style={flowExecutiveBand}>
+                          <OverviewBox label="Saúde da jornada" value={jornada.saude_info.label} tone={jornada.saude_info.level === "alta" ? "danger" : jornada.saude_info.level === "media" ? "alert" : "default"} />
+                          <OverviewBox label="Atenção principal" value={jornada.attention_info.label} tone={jornada.attention_info.level === "alta" ? "danger" : jornada.attention_info.level === "media" ? "alert" : "default"} />
+                          <OverviewBox label="Prazo" value={jornada.prazo_info.label} tone={jornada.prazo_info.tone === "danger" ? "danger" : jornada.prazo_info.tone === "neutral" ? "default" : "default"} />
+                          <OverviewBox label="Etapa crítica" value={jornada.etapa_critica?.nome || "Sem destaque"} tone={jornada.etapa_critica?.saude_info?.level === "alta" ? "danger" : jornada.etapa_critica?.saude_info?.level === "media" ? "alert" : "default"} />
+                        </div>
+
                         <div style={flowDescription}>
                           {jornada.objetivo || jornada.descricao || "Sem descrição cadastrada."}
                         </div>
@@ -1944,38 +2044,55 @@ export default function MapaDesenvolvimentoPage() {
                           {etapasDaJornada.length === 0 ? (
                             <div style={emptyTimeline}>Sem etapas cadastradas para esta jornada.</div>
                           ) : (
-                            etapasDaJornada.map((etapa, index) => (
-                              <div key={etapa.id} style={stageWrap}>
-                                <div style={stageConnector(index < etapasDaJornada.length - 1)} />
-                                <div style={stageCard}>
-                                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                    <span style={timelineOrder}>{etapa.ordem || index + 1}</span>
-                                    <span style={badgeStyle(etapa.status)}>{displayStatus(etapa.status)}</span>
-                                    <span style={badgeStyle(etapa.tipo)}>{etapa.tipo}</span>
-                                  </div>
+                            etapasDaJornada.map((etapa, index) => {
+                              const prazo = getPrazoInfo(etapa);
+                              const stageAttention =
+                                !etapa.responsavel_id
+                                  ? { level: "media", label: "Sem responsável" }
+                                  : prazo.tone === "danger"
+                                  ? { level: "alta", label: "Prazo vencido" }
+                                  : { level: "ok", label: "Estável" };
+                              const stageHealth = getStageHealth({
+                                ...etapa,
+                                prazo_info: prazo,
+                                attention_info: stageAttention,
+                              });
 
-                                  <div style={stageTitle}>{etapa.nome}</div>
-                                  <div style={stageMeta}>
-                                    {formatDate(etapa.data_inicio)} até {formatDate(etapa.data_fim)}
-                                  </div>
+                              return (
+                                <div key={etapa.id} style={stageWrap}>
+                                  <div style={stageConnector(index < etapasDaJornada.length - 1)} />
+                                  <div style={stageCard}>
+                                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                      <span style={timelineOrder}>{etapa.ordem || index + 1}</span>
+                                      <span style={badgeStyle(etapa.status)}>{displayStatus(etapa.status)}</span>
+                                      <span style={badgeStyle(etapa.tipo)}>{etapa.tipo}</span>
+                                      <span style={attentionBadge(stageHealth.level)}>{stageHealth.label}</span>
+                                      <span style={prazoBadge(prazo.tone)}>{prazo.label}</span>
+                                    </div>
 
-                                  <div style={stageStats}>
-                                    <span>{fmtNumber(etapa.total_acoes)} ação(ões)</span>
-                                    <span>{fmtNumber(etapa.total_coachings)} coaching(s)</span>
-                                    <span>{fmtHours(etapa.horas_totais)}h</span>
-                                  </div>
+                                    <div style={stageTitle}>{etapa.nome}</div>
+                                    <div style={stageMeta}>
+                                      {formatDate(etapa.data_inicio)} até {formatDate(etapa.data_fim)}
+                                    </div>
 
-                                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                                    <button style={buttonSecondaryStyle()} onClick={() => editEtapa(etapa)}>
-                                      Editar etapa
-                                    </button>
-                                    <button style={buttonDangerStyle()} onClick={() => removeRegistro("etapa", etapa.id)}>
-                                      Excluir
-                                    </button>
+                                    <div style={stageStats}>
+                                      <span>{fmtNumber(etapa.total_acoes)} ação(ões)</span>
+                                      <span>{fmtNumber(etapa.total_coachings)} coaching(s)</span>
+                                      <span>{fmtHours(etapa.horas_totais)}h</span>
+                                    </div>
+
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                      <button style={buttonSecondaryStyle()} onClick={() => editEtapa(etapa)}>
+                                        Editar etapa
+                                      </button>
+                                      <button style={buttonDangerStyle()} onClick={() => removeRegistro("etapa", etapa.id)}>
+                                        Excluir
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
 
@@ -2805,6 +2922,7 @@ const overviewValue = {
   color: "#0f172a",
   fontWeight: 900,
   marginTop: 4,
+  lineHeight: 1.2,
 };
 
 const detailsCard = {
@@ -2875,6 +2993,12 @@ const flowMetrics = {
   gap: 8,
   flexWrap: "wrap",
   justifyContent: "flex-end",
+};
+
+const flowExecutiveBand = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
 };
 
 const riverTrack = {
