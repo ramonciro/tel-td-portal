@@ -46,31 +46,35 @@ exports.buscarPorId = async (req, res) => {
 exports.criar = async (req, res) => {
   try {
     const {
-      cliente,
       nome,
       descricao,
+      objetivo,
+      publico_macro,
+      observacoes,
       status,
       responsavel_id,
       data_inicio,
       data_fim,
     } = req.body;
 
-    if (!cliente || !nome) {
+    if (!nome) {
       return res.status(400).json({
-        error: "Cliente e nome da jornada são obrigatórios.",
+        error: "Nome da jornada é obrigatório.",
       });
     }
 
     const [result] = await db.query(
       `
       INSERT INTO jornadas_desenvolvimento
-      (cliente, nome, descricao, status, responsavel_id, data_inicio, data_fim)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      (nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        cliente,
         nome,
         descricao || null,
+        objetivo || null,
+        publico_macro || null,
+        observacoes || null,
         status || "ativa",
         responsavel_id || null,
         data_inicio || null,
@@ -94,9 +98,11 @@ exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      cliente,
       nome,
       descricao,
+      objetivo,
+      publico_macro,
+      observacoes,
       status,
       responsavel_id,
       data_inicio,
@@ -115,9 +121,11 @@ exports.atualizar = async (req, res) => {
     await db.query(
       `
       UPDATE jornadas_desenvolvimento
-      SET cliente = ?,
-          nome = ?,
+      SET nome = ?,
           descricao = ?,
+          objetivo = ?,
+          publico_macro = ?,
+          observacoes = ?,
           status = ?,
           responsavel_id = ?,
           data_inicio = ?,
@@ -125,9 +133,11 @@ exports.atualizar = async (req, res) => {
       WHERE id = ?
       `,
       [
-        cliente,
         nome,
         descricao || null,
+        objetivo || null,
+        publico_macro || null,
+        observacoes || null,
         status || "ativa",
         responsavel_id || null,
         data_inicio || null,
