@@ -106,3 +106,51 @@ export async function apiFetch(path, options = {}) {
 }
 
 export default API_URL;
+
+
+export async function apiDownload(path, filenameFallback = "arquivo.xlsx") {
+  const url = `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  const token = getToken();
+
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch {
+    throw new Error("Falha de conexão com a API durante o download.");
+  }
+
+  if (!response.ok) {
+    let message = `Erro ${response.status}`;
+    try {
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await response.json();
+        message = data?.message || data?.error || message;
+      } else {
+        const text = await response.text();
+        if (text) message = text;
+      }
+    } catch {}
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/i);
+  const filename = match?.[1] || filenameFallback;
+
+  if (typeof window !== "undefined") {
+    const href = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(href);
+  }
+
+  return true;
+}
