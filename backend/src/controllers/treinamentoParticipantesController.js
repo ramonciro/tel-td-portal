@@ -29,6 +29,25 @@ function isSunday(dateValue) {
   return d.getDay() === 0;
 }
 
+
+function normalizeHeader(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeRowKeys(row) {
+  const normalized = {};
+  Object.entries(row || {}).forEach(([key, value]) => {
+    normalized[normalizeHeader(key)] = value;
+  });
+  return normalized;
+}
+
 async function getParticipantesByTreinamento(req, res) {
   try {
     const { id } = req.params;
@@ -119,7 +138,8 @@ async function importarParticipantesExcel(req, res) {
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const primeiraAba = workbook.SheetNames[0];
     const sheet = workbook.Sheets[primeiraAba];
-    const linhas = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    const linhasOriginais = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    const linhas = linhasOriginais.map(normalizeRowKeys);
 
     if (!linhas.length) {
       return res.status(400).json({
@@ -149,6 +169,11 @@ async function importarParticipantesExcel(req, res) {
         message: `Colunas obrigatórias ausentes: ${faltando.join(", ")}`,
       });
     }
+
+    await db.query(
+      `DELETE FROM presencas WHERE treinamento_id = ?`,
+      [treinamento_id]
+    );
 
     await db.query(
       `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
@@ -318,6 +343,100 @@ async function salvarChamadaParticipantes(req, res) {
   }
 }
 
+async function createParticipanteTreinamento(req, res) {
+  try {
+    const treinamento_id = Number(req.params?.id || req.body?.treinamento_id || 0);
+    const {
+      nome,
+      matricula,
+      cliente,
+      turma,
+      supervisor,
+      operacao,
+      data_admissao,
+    } = req.body || {};
+
+    if (!treinamento_id || !String(nome || "").trim() || !String(matricula || "").trim()) {
+      return res.status(400).json({
+        ok: false,
+        message: "Informe treinamento, nome e matrícula do participante",
+      });
+    }
+
+    const [existentes] = await db.query(
+      `
+      SELECT id
+      FROM treinamento_participantes
+      WHERE treinamento_id = ? AND (matricula = ? OR nome = ?)
+      LIMIT 1
+      `,
+      [treinamento_id, String(matricula).trim(), String(nome).trim()]
+    );
+
+    if (existentes.length) {
+      return res.status(409).json({
+        ok: false,
+        message: "Já existe participante com esta matrícula ou nome nesta turma",
+      });
+    }
+
+    const [result] = await db.query(
+      `
+      INSERT INTO treinamento_participantes
+      (
+        treinamento_id,
+        nome,
+        matricula,
+        cliente,
+        turma,
+        supervisor,
+        operacao,
+        data_admissao,
+        status_presenca,
+        justificativa
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        treinamento_id,
+        String(nome || "").trim(),
+        String(matricula || "").trim(),
+        String(cliente || "").trim(),
+        String(turma || "").trim(),
+        String(supervisor || "").trim(),
+        String(operacao || "").trim(),
+        formatExcelDateToMySQL(data_admissao),
+        "pendente",
+        null,
+      ]
+    );
+
+    const [[countRow]] = await db.query(
+      `SELECT COUNT(*) AS total FROM treinamento_participantes WHERE treinamento_id = ?`,
+      [treinamento_id]
+    );
+
+    try {
+      await db.query(`UPDATE treinamentos SET participantes = ? WHERE id = ?`, [
+        Number(countRow?.total || 0),
+        treinamento_id,
+      ]);
+    } catch {}
+
+    return res.status(201).json({
+      ok: true,
+      id: result.insertId,
+      message: "Participante adicionado com sucesso",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao adicionar participante",
+      error: error.message,
+    });
+  }
+}
+
 async function deleteParticipanteTreinamento(req, res) {
   try {
     const { id } = req.params;
@@ -465,6 +584,7 @@ module.exports = {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
+  createParticipanteTreinamento,
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
 };
