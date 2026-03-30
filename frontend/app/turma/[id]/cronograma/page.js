@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { apiFetch } from "../../../../services/api";
+import { apiDownload, apiFetch } from "../../../../services/api";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -503,6 +503,17 @@ export default function CronogramaTurmaPage() {
     window.location.href = `/turma/${id}/participantes`;
   }
 
+  async function exportarPrimeiraAula() {
+    try {
+      setErro("");
+      setSucesso("");
+      await apiDownload(`/treinamentos/${id}/exportar-primeira-aula`, `turma-${id}-primeira-aula.xlsx`);
+      setSucesso("Arquivo da primeira aula exportado com sucesso.");
+    } catch (err) {
+      setErro(err.message || "Erro ao exportar a primeira aula.");
+    }
+  }
+
   function voltar() {
     window.location.href = `/turma/${id}`;
   }
@@ -572,6 +583,9 @@ export default function CronogramaTurmaPage() {
         <div style={actionsRowLeft}>
           <button style={btnSecondary} onClick={abrirParticipantes}>
             Base da turma
+          </button>
+          <button style={btnSecondary} onClick={exportarPrimeiraAula}>
+            Exportar 1ª aula
           </button>
         </div>
       </div>
