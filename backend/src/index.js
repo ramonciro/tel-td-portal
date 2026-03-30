@@ -274,14 +274,14 @@ app.post(
 app.delete(
   "/api/treinamentos/participantes/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
   deleteParticipanteTreinamento
 );
 
 app.post(
   "/api/treinamentos/participantes/excluir-lote",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
   deleteParticipantesTreinamentoBulk
 );
 
