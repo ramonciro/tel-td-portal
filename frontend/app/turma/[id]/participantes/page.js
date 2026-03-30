@@ -207,60 +207,15 @@ async function importarExcel() {
       setErro("");
       setSucesso("");
 
-      await apiFetch("/presencas/participante/remover", {
-        method: "DELETE",
-        body: JSON.stringify({
-          treinamento_id: Number(id),
-          treinando_nome: item.nome,
-        }),
-      });
-
-      const participantesRestantes = participantes
-        .filter((p) => p.id !== item.id)
-        .map((p) => ({
-          nome: p.nome,
-          matricula: p.matricula,
-          cliente: p.cliente,
-          turma: p.turma,
-          supervisor: p.supervisor,
-          operacao: p.operacao,
-          data_admissao: toInputDate(p.data_admissao),
-        }));
-
-      const XLSX = window.XLSX;
-      if (!XLSX) {
-        setSucesso("Presenças removidas, mas recarregue a base via Excel para atualizar a turma.");
-        await carregarTudo();
-        return;
+      if (!item?.id) {
+        throw new Error("Participante sem identificador para exclusão.");
       }
 
-      const worksheet = XLSX.utils.json_to_sheet(participantesRestantes);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Participantes");
-
-      const excelBuffer = XLSX.write(workbook, {
-        bookType: "xlsx",
-        type: "array",
+      await apiFetch(`/treinamentos/participantes/${item.id}`, {
+        method: "DELETE",
       });
 
-      const blob = new Blob([excelBuffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-
-      const formData = new FormData();
-      formData.append(
-        "arquivo",
-        new File([blob], "participantes.xlsx", {
-          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        })
-      );
-      formData.append("treinamento_id", String(id));
-
-      await apiFetch("/treinamentos/importar-participantes", {
-        method: "POST",
-        body: formData,
-      });
-
+      setParticipantes((atual) => atual.filter((p) => p.id !== item.id));
       setSucesso("Participante removido com sucesso.");
       await carregarTudo();
     } catch (err) {
