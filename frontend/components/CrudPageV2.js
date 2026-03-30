@@ -104,6 +104,8 @@ export default function CrudPageV2({
   allowedCreateRoles = [],
   allowedEditRoles = [],
   allowedDeleteRoles = [],
+  transformRecordToForm = null,
+  transformFormToPayload = null,
 }) {
   const [records, setRecords] = useState([]);
   const [form, setForm] = useState(buildInitialForm(fields));
@@ -176,22 +178,27 @@ export default function CrudPageV2({
       return;
     }
 
-    const nextForm = {};
+    const baseForm = {};
 
     fields.forEach((field) => {
       const rawValue = record[field.name];
 
       if (field.type === "multiselect") {
-        nextForm[field.name] = parseMultiValue(rawValue);
+        baseForm[field.name] = parseMultiValue(rawValue);
       } else if (rawValue === null || rawValue === undefined) {
-        nextForm[field.name] =
+        baseForm[field.name] =
           field.defaultValue !== undefined
             ? field.defaultValue
             : normalizeInitialValue(field);
       } else {
-        nextForm[field.name] = rawValue;
+        baseForm[field.name] = rawValue;
       }
     });
+
+    const nextForm =
+      typeof transformRecordToForm === "function"
+        ? transformRecordToForm(baseForm, record)
+        : baseForm;
 
     setForm(nextForm);
     setEditingId(record.id);
@@ -230,16 +237,21 @@ export default function CrudPageV2({
         }
       });
 
+      const finalPayload =
+        typeof transformFormToPayload === "function"
+          ? transformFormToPayload(payload, form)
+          : payload;
+
       if (editingId) {
         await apiFetch(`${endpoint}/${editingId}`, {
           method: "PUT",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(finalPayload),
         });
         setSuccess("Registro atualizado com sucesso.");
       } else {
         await apiFetch(endpoint, {
           method: "POST",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(finalPayload),
         });
         setSuccess("Registro cadastrado com sucesso.");
       }
