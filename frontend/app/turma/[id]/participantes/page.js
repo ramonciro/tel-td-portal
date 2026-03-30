@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { apiFetch } from "../../../../services/api";
+import { apiDownload, apiFetch } from "../../../../services/api";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -119,63 +119,17 @@ async function importarExcel() {
       setErro("");
       setSucesso("");
 
-      const participanteNovo = {
-        nome: form.nome,
-        matricula: form.matricula,
-        cliente: form.cliente,
-        turma: form.turma,
-        supervisor: form.supervisor,
-        operacao: form.operacao,
-        data_admissao: form.data_admissao || "",
-      };
-
-      const participantesAtualizados = [
-        ...participantes.map((p) => ({
-          nome: p.nome,
-          matricula: p.matricula,
-          cliente: p.cliente,
-          turma: p.turma,
-          supervisor: p.supervisor,
-          operacao: p.operacao,
-          data_admissao: toInputDate(p.data_admissao),
-        })),
-        participanteNovo,
-      ];
-
-      await apiFetch("/treinamentos/importar-participantes", {
+      await apiFetch(`/treinamentos/${id}/participantes`, {
         method: "POST",
-        body: (() => {
-          const formData = new FormData();
-
-          const XLSX = window.XLSX;
-          if (!XLSX) {
-            throw new Error(
-              "Biblioteca XLSX não encontrada no navegador. Use a importação por Excel."
-            );
-          }
-
-          const worksheet = XLSX.utils.json_to_sheet(participantesAtualizados);
-          const workbook = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(workbook, worksheet, "Participantes");
-
-          const excelBuffer = XLSX.write(workbook, {
-            bookType: "xlsx",
-            type: "array",
-          });
-
-          const blob = new Blob([excelBuffer], {
-            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          });
-
-          formData.append(
-            "arquivo",
-            new File([blob], "participantes.xlsx", {
-              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            })
-          );
-          formData.append("treinamento_id", String(id));
-          return formData;
-        })(),
+        body: JSON.stringify({
+          nome: form.nome,
+          matricula: form.matricula,
+          cliente: form.cliente,
+          turma: form.turma,
+          supervisor: form.supervisor,
+          operacao: form.operacao,
+          data_admissao: form.data_admissao || "",
+        }),
       });
 
       setSucesso("Participante adicionado com sucesso.");
@@ -188,12 +142,20 @@ async function importarExcel() {
       );
       await carregarTudo();
     } catch (err) {
-      setErro(
-        err.message ||
-          "Não foi possível adicionar manualmente. Use a importação por Excel."
-      );
+      setErro(err.message || "Não foi possível adicionar manualmente.");
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function exportarPrimeiraAula() {
+    try {
+      setErro("");
+      setSucesso("");
+      await apiDownload(`/treinamentos/${id}/exportar-primeira-aula`, `turma-${id}-primeira-aula.xlsx`);
+      setSucesso("Arquivo da primeira aula exportado com sucesso.");
+    } catch (err) {
+      setErro(err.message || "Erro ao exportar a primeira aula.");
     }
   }
 
@@ -322,6 +284,10 @@ async function importarExcel() {
           </button>
           <button style={btnSecondary} onClick={abrirCronograma}>
             Abrir cronograma
+          </button>
+
+          <button style={btnSecondary} onClick={exportarPrimeiraAula}>
+            Exportar 1ª aula
           </button>
         </div>
 
