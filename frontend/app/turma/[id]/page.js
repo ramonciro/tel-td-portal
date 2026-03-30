@@ -93,6 +93,20 @@ function getToneStyle(tone) {
   return map[tone] || map.neutral;
 }
 
+
+
+function parseTurmaMetadata(descricao) {
+  const text = String(descricao || "");
+  return {
+    modalidade: text.match(/\[modalidade:([^\]]+)\]/i)?.[1]?.trim() || "",
+    sala: text.match(/\[sala:([^\]]*)\]/i)?.[1]?.trim() || "",
+    descricaoLimpa: text
+      .replace(/\[modalidade:[^\]]+\]\s*/gi, "")
+      .replace(/\[sala:[^\]]*\]\s*/gi, "")
+      .trim(),
+  };
+}
+
 function statusExecucaoLabel(value) {
   const mapa = {
     planejada: "Planejada",
@@ -228,6 +242,11 @@ const status =
       proximaAula,
     };
   }, [aulas, participantes, treinamento]);
+
+  const metadataTurma = useMemo(
+    () => parseTurmaMetadata(treinamento?.descricao),
+    [treinamento?.descricao]
+  );
 
   const aulaSelecionada = useMemo(() => {
     if (!turmaAulaId) return null;
