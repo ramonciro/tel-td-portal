@@ -1,76 +1,164 @@
-
 "use client";
 
 import { useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import PortalShell from "../../../components/PortalShell";
 import SectionCard from "../../../components/SectionCard";
 import StatCard from "../../../components/StatCard";
-import baseDados from "./base-dados";
 
-function numberBR(value, digits = 0) {
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(Number(value || 0));
-}
-
-function percentBR(value, digits = 1) {
-  return `${numberBR(Number(value || 0) * 100, digits)}%`;
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const normalized = String(value)
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .replace("%", "")
+    .trim();
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : 0;
 }
 
 function normalize(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
-function formatDate(value) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("pt-BR").format(date);
+function fmtNumber(value) {
+  return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
 }
 
-function monthLabel(year, month) {
-  return new Intl.DateTimeFormat("pt-BR", { month: "short", year: "numeric" }).format(
-    new Date(Number(year), Number(month) - 1, 1)
+function fmtHours(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function fmtPercent(value) {
+  return `${new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Number(value || 0))}%`;
+}
+
+function fmtScore(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function average(values) {
+  const valid = values.filter((v) => Number.isFinite(Number(v)));
+  if (!valid.length) return 0;
+  return valid.reduce((acc, v) => acc + Number(v), 0) / valid.length;
+}
+
+function sumBy(rows, key) {
+  return rows.reduce((acc, item) => acc + toNumber(item[key]), 0);
+}
+
+function extractMonth(dateValue) {
+  if (!dateValue) return "Sem período";
+  if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {
+    return dateValue.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+  }
+
+  const raw = String(dateValue).trim();
+  const numericDate = Number(raw);
+  if (Number.isFinite(numericDate) && numericDate > 20000) {
+    const parsed = XLSX.SSF.parse_date_code(numericDate);
+    if (parsed) {
+      const dt = new Date(parsed.y, parsed.m - 1, parsed.d);
+      return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+    }
+  }
+
+  const iso = new Date(raw);
+  if (!Number.isNaN(iso.getTime())) {
+    return iso.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+  }
+
+  const parts = raw.split(/[\/\-]/);
+  if (parts.length === 3) {
+    let d, m, y;
+    if (parts[0].length === 4) {
+      [y, m, d] = parts;
+    } else {
+      [d, m, y] = parts;
+    }
+    const dt = new Date(Number(y), Number(m) - 1, Number(d));
+    if (!Number.isNaN(dt.getTime())) {
+      return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+    }
+  }
+
+  return raw;
+}
+
+function getColumnValue(row, aliases) {
+  const keys = Object.keys(row || {});
+  for (const alias of aliases) {
+    const found = keys.find((key) => normalize(key) === normalize(alias));
+    if (found) return row[found];
+  }
+  return "";
+}
+
+function mapRow(rawRow, index) {
+  return {
+    id: index + 1,
+    data: getColumnValue(rawRow, ["Data", "Data Treinamento", "Dt", "Data da Ação"]),
+    cliente: getColumnValue(rawRow, ["Cliente"]),
+    tipoTreinamento: getColumnValue(rawRow, ["Tipo Treinamento", "Tipo de Treinamento", "Tipo"]),
+    instrutor: getColumnValue(rawRow, ["Instrutor"]),
+    supervisor: getColumnValue(rawRow, ["Supervisor"]),
+    turma: getColumnValue(rawRow, ["Turma"]),
+    competencia: getColumnValue(rawRow, ["Competência", "Competencia"]),
+    participantes: toNumber(getColumnValue(rawRow, ["Participantes", "Participantes Prev", "Qtd Participantes"])),
+    presencas: toNumber(getColumnValue(rawRow, ["Presenças", "Presencas"])),
+    faltas: toNumber(getColumnValue(rawRow, ["Faltas"])),
+    presencaPct: toNumber(getColumnValue(rawRow, ["% Presença", "% Presenca", "Presença %", "Presenca %"])),
+    avaliacao: toNumber(getColumnValue(rawRow, ["Avaliação (0-10)", "Avaliacao (0-10)", "Avaliação", "Avaliacao"])),
+    indicador: getColumnValue(rawRow, ["Indicador"]),
+    antes: toNumber(getColumnValue(rawRow, ["Antes"])),
+    depois: toNumber(getColumnValue(rawRow, ["Depois"])),
+    janelaDias: toNumber(getColumnValue(rawRow, ["Janela Dias", "Janela em Dias"])),
+    evolucaoPct: toNumber(getColumnValue(rawRow, ["Evolução %", "Evolucao %"])),
+    impactoPos: toNumber(getColumnValue(rawRow, ["Impacto_Pos (0/1)", "Impacto Pos (0/1)", "Impacto_Pos", "Impacto Pos"])),
+  };
+}
+
+function groupAverage(rows, field) {
+  if (!rows.length) return 0;
+  return average(rows.map((item) => toNumber(item[field])));
+}
+
+function groupImpact(rows) {
+  if (!rows.length) return 0;
+  return average(rows.map((item) => (toNumber(item.impactoPos) > 0 ? 100 : 0)));
+}
+
+function uniqueOptions(rows, field) {
+  return [...new Set(rows.map((item) => String(item[field] || "").trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "pt-BR")
   );
 }
 
-function cardTone(accent) {
-  return {
-    borderRadius: 18,
-    padding: 18,
-    border: `1px solid ${accent}22`,
-    background: "#fff",
-    boxShadow: "0 10px 28px rgba(15,23,42,.06)",
-  };
-}
-
-function pillStyle(bg, color) {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontSize: 11,
-    fontWeight: 800,
-    background: bg,
-    color,
-    whiteSpace: "nowrap",
-  };
-}
-
-const inputStyle = {
+const inputBase = {
   width: "100%",
   border: "1px solid #cbd5e1",
   borderRadius: 12,
   padding: "10px 12px",
   fontSize: 14,
-  background: "#fff",
   outline: "none",
+  background: "#fff",
 };
 
-const labelStyle = {
+const labelBase = {
   display: "grid",
   gap: 6,
   fontSize: 13,
@@ -78,523 +166,636 @@ const labelStyle = {
   fontWeight: 700,
 };
 
+const cardWrap = {
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  background: "#fff",
+  padding: 18,
+  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+};
+
 const tableStyle = {
   width: "100%",
   borderCollapse: "separate",
   borderSpacing: 0,
-  minWidth: 1080,
+  minWidth: 980,
 };
 
 const thStyle = {
   textAlign: "left",
   padding: "12px 14px",
-  background: "#eff6ff",
-  color: "#1e3a8a",
   fontSize: 12,
   fontWeight: 800,
-  borderBottom: "1px solid #dbeafe",
+  color: "#475569",
+  background: "#f8fafc",
+  borderBottom: "1px solid #e2e8f0",
   position: "sticky",
   top: 0,
 };
 
 const tdStyle = {
   padding: "12px 14px",
-  borderBottom: "1px solid #e2e8f0",
-  color: "#0f172a",
   fontSize: 13,
+  color: "#0f172a",
+  borderBottom: "1px solid #e2e8f0",
   verticalAlign: "top",
 };
 
-function ChartBars({ items, valueKey, labelKey, formatter = (v) => v }) {
-  const max = Math.max(...items.map((item) => Number(item[valueKey] || 0)), 1);
-
+function EmptyState({ message }) {
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      {items.map((item) => {
-        const value = Number(item[valueKey] || 0);
-        const width = Math.max((value / max) * 100, value > 0 ? 8 : 0);
-        return (
-          <div key={String(item[labelKey])} style={{ display: "grid", gap: 6 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13 }}>
-              <strong style={{ color: "#0f172a" }}>{item[labelKey]}</strong>
-              <span style={{ color: "#475569", fontWeight: 700 }}>{formatter(value)}</span>
-            </div>
-            <div style={{ height: 10, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-              <div
-                style={{
-                  width: `${width}%`,
-                  height: "100%",
-                  borderRadius: 999,
-                  background: "linear-gradient(90deg, #2563eb, #7c3aed)",
-                }}
-              />
-            </div>
-          </div>
-        );
-      })}
+    <div
+      style={{
+        border: "1px dashed #cbd5e1",
+        borderRadius: 16,
+        padding: 26,
+        textAlign: "center",
+        color: "#64748b",
+        background: "#f8fafc",
+      }}
+    >
+      {message}
     </div>
   );
 }
 
-export default function ApresentacaoSebraePage() {
+function InfoBox({ label, value, tone = "default" }) {
+  const palette = {
+    default: { bg: "#f8fafc", color: "#0f172a", border: "#e2e8f0" },
+    alert: { bg: "#fff7ed", color: "#9a3412", border: "#fed7aa" },
+    success: { bg: "#ecfdf5", color: "#166534", border: "#bbf7d0" },
+  };
+  const p = palette[tone] || palette.default;
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${p.border}`,
+        background: p.bg,
+        borderRadius: 16,
+        padding: 14,
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+        {label}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 22, fontWeight: 900, color: p.color }}>{value}</div>
+    </div>
+  );
+}
+
+export default function SebraeApresentacaoPage() {
+  const [rows, setRows] = useState([]);
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
   const [filters, setFilters] = useState({
-    tipo: "",
+    tipoTreinamento: "",
     instrutor: "",
     supervisor: "",
-    indicador: "",
+    competencia: "",
     busca: "",
   });
 
-  const rows = useMemo(() => {
-    return (baseDados || []).map((item) => ({
-      id: Number(item.ID || 0),
-      data: item.Data,
-      mes: Number(item["Mês"] || 0),
-      ano: Number(item.Ano || 0),
-      cliente: item.Cliente || "SEBRAE",
-      tipoTreinamento: item.Tipo_Treinamento || "Não informado",
-      instrutor: item.Instrutor || "Não informado",
-      supervisor: item.Supervisor || "Não informado",
-      turma: item.Turma,
-      participantes: Number(item.Participantes || 0),
-      presencas: Number(item.Presenças || 0),
-      faltas: Number(item.Faltas || 0),
-      presencaPct: Number(item["% Presença"] || 0),
-      avaliacao: Number(item["Avaliação (0-10)"] || 0),
-      indicador: item.Indicador || "Não informado",
-      antes: Number(item.Antes || 0),
-      depois: Number(item.Depois || 0),
-      janelaDias: Number(item["Janela (dias)"] || 0),
-      observacoes: item.Observações || "",
-      evolucaoPct: Number(item["Evolução %"] || 0),
-      impactoPos: Number(item["Impacto_Pos (0/1)"] || 0),
-    }));
-  }, []);
+  async function handleUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  const options = useMemo(() => {
-    const unique = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
-    return {
-      tipos: unique(rows.map((r) => r.tipoTreinamento)),
-      instrutores: unique(rows.map((r) => r.instrutor)),
-      supervisores: unique(rows.map((r) => r.supervisor)),
-      indicadores: unique(rows.map((r) => r.indicador)),
-    };
-  }, [rows]);
+    setError("");
+    setFileName(file.name);
 
-  const filtered = useMemo(() => {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array", cellDates: true });
+      const sheetName =
+        workbook.SheetNames.find((name) => normalize(name) === "base_dados") ||
+        workbook.SheetNames.find((name) => normalize(name) === "base dados") ||
+        workbook.SheetNames[0];
+
+      if (!sheetName) {
+        throw new Error("Não foi possível localizar uma aba para leitura.");
+      }
+
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet, {
+        defval: "",
+        raw: false,
+      });
+
+      const mapped = json
+        .map((item, index) => mapRow(item, index))
+        .filter((item) =>
+          [
+            item.cliente,
+            item.tipoTreinamento,
+            item.instrutor,
+            item.supervisor,
+            item.turma,
+            item.competencia,
+            item.participantes,
+            item.presencas,
+            item.faltas,
+            item.avaliacao,
+          ].some((value) => String(value || "").trim() !== "" && String(value || "").trim() !== "0")
+        );
+
+      setRows(mapped);
+    } catch (err) {
+      setRows([]);
+      setError(err?.message || "Não foi possível processar o arquivo Excel.");
+    }
+  }
+
+  const options = useMemo(
+    () => ({
+      tipoTreinamento: uniqueOptions(rows, "tipoTreinamento"),
+      instrutor: uniqueOptions(rows, "instrutor"),
+      supervisor: uniqueOptions(rows, "supervisor"),
+      competencia: uniqueOptions(rows, "competencia"),
+    }),
+    [rows]
+  );
+
+  const filteredRows = useMemo(() => {
     return rows.filter((item) => {
-      const text = normalize([
-        item.tipoTreinamento,
-        item.instrutor,
-        item.supervisor,
-        item.indicador,
-        item.observacoes,
-        item.turma,
-      ].join(" "));
-      return (
-        (!filters.tipo || item.tipoTreinamento === filters.tipo) &&
-        (!filters.instrutor || item.instrutor === filters.instrutor) &&
-        (!filters.supervisor || item.supervisor === filters.supervisor) &&
-        (!filters.indicador || item.indicador === filters.indicador) &&
-        (!filters.busca || text.includes(normalize(filters.busca)))
+      const matchTipo =
+        !filters.tipoTreinamento || normalize(item.tipoTreinamento) === normalize(filters.tipoTreinamento);
+      const matchInstrutor =
+        !filters.instrutor || normalize(item.instrutor) === normalize(filters.instrutor);
+      const matchSupervisor =
+        !filters.supervisor || normalize(item.supervisor) === normalize(filters.supervisor);
+      const matchCompetencia =
+        !filters.competencia || normalize(item.competencia) === normalize(filters.competencia);
+
+      const haystack = normalize(
+        [
+          item.cliente,
+          item.tipoTreinamento,
+          item.instrutor,
+          item.supervisor,
+          item.turma,
+          item.competencia,
+          item.indicador,
+        ].join(" ")
       );
+      const matchBusca = !filters.busca || haystack.includes(normalize(filters.busca));
+
+      return matchTipo && matchInstrutor && matchSupervisor && matchCompetencia && matchBusca;
     });
   }, [rows, filters]);
 
   const summary = useMemo(() => {
-    const totalTreinamentos = filtered.length;
-    const participantes = filtered.reduce((acc, item) => acc + item.participantes, 0);
-    const presencas = filtered.reduce((acc, item) => acc + item.presencas, 0);
-    const faltas = filtered.reduce((acc, item) => acc + item.faltas, 0);
-    const mediaPresenca = totalTreinamentos ? filtered.reduce((acc, item) => acc + item.presencaPct, 0) / totalTreinamentos : 0;
-    const notaMedia = totalTreinamentos ? filtered.reduce((acc, item) => acc + item.avaliacao, 0) / totalTreinamentos : 0;
-    const evolucaoMedia = totalTreinamentos ? filtered.reduce((acc, item) => acc + item.evolucaoPct, 0) / totalTreinamentos : 0;
-    const impactoPositivo = totalTreinamentos ? filtered.reduce((acc, item) => acc + item.impactoPos, 0) / totalTreinamentos : 0;
-    const instrutoresAtivos = new Set(filtered.map((item) => item.instrutor)).size;
-    const tiposAtivos = new Set(filtered.map((item) => item.tipoTreinamento)).size;
     return {
-      totalTreinamentos,
-      participantes,
-      presencas,
-      faltas,
-      mediaPresenca,
-      notaMedia,
-      evolucaoMedia,
-      impactoPositivo,
-      instrutoresAtivos,
-      tiposAtivos,
+      treinamentos: filteredRows.length,
+      participantes: sumBy(filteredRows, "participantes"),
+      presencas: sumBy(filteredRows, "presencas"),
+      faltas: sumBy(filteredRows, "faltas"),
+      presencaMedia: average(filteredRows.map((item) => item.presencaPct)),
+      notaMedia: average(filteredRows.map((item) => item.avaliacao)),
+      evolucaoMedia: average(filteredRows.map((item) => item.evolucaoPct)),
+      impactoPositivo: groupImpact(filteredRows),
     };
-  }, [filtered]);
+  }, [filteredRows]);
 
-  const monthly = useMemo(() => {
-    const map = new Map();
-    filtered.forEach((item) => {
-      const key = `${item.ano}-${item.mes}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          label: monthLabel(item.ano, item.mes),
+  const monthlyData = useMemo(() => {
+    const bucket = {};
+    filteredRows.forEach((item) => {
+      const key = extractMonth(item.data);
+      if (!bucket[key]) {
+        bucket[key] = {
+          periodo: key,
           treinamentos: 0,
-          participantes: 0,
           presencas: 0,
-          avaliacaoTotal: 0,
-          evolucaoTotal: 0,
-          impactoTotal: 0,
-        });
+          participantes: 0,
+          notaMedia: [],
+          evolucaoMedia: [],
+        };
       }
-      const curr = map.get(key);
-      curr.treinamentos += 1;
-      curr.participantes += item.participantes;
-      curr.presencas += item.presencas;
-      curr.avaliacaoTotal += item.avaliacao;
-      curr.evolucaoTotal += item.evolucaoPct;
-      curr.impactoTotal += item.impactoPos;
+      bucket[key].treinamentos += 1;
+      bucket[key].presencas += item.presencas;
+      bucket[key].participantes += item.participantes;
+      bucket[key].notaMedia.push(item.avaliacao);
+      bucket[key].evolucaoMedia.push(item.evolucaoPct);
     });
-    return [...map.values()]
-      .map((item) => ({
-        ...item,
-        notaMedia: item.treinamentos ? item.avaliacaoTotal / item.treinamentos : 0,
-        evolucaoMedia: item.treinamentos ? item.evolucaoTotal / item.treinamentos : 0,
-        impactoPositivo: item.treinamentos ? item.impactoTotal / item.treinamentos : 0,
-      }))
-      .sort((a, b) => a.key.localeCompare(b.key));
-  }, [filtered]);
+
+    return Object.values(bucket).map((item) => ({
+      ...item,
+      notaMedia: average(item.notaMedia),
+      evolucaoMedia: average(item.evolucaoMedia),
+    }));
+  }, [filteredRows]);
 
   const byType = useMemo(() => {
-    const map = new Map();
-    filtered.forEach((item) => {
-      if (!map.has(item.tipoTreinamento)) {
-        map.set(item.tipoTreinamento, {
-          tipo: item.tipoTreinamento,
-          treinamentos: 0,
-          participantes: 0,
-          presencas: 0,
-          notaTotal: 0,
-          evolucaoTotal: 0,
-          impactoTotal: 0,
-        });
+    const bucket = {};
+    filteredRows.forEach((item) => {
+      const key = item.tipoTreinamento || "Não informado";
+      if (!bucket[key]) {
+        bucket[key] = [];
       }
-      const curr = map.get(item.tipoTreinamento);
-      curr.treinamentos += 1;
-      curr.participantes += item.participantes;
-      curr.presencas += item.presencas;
-      curr.notaTotal += item.avaliacao;
-      curr.evolucaoTotal += item.evolucaoPct;
-      curr.impactoTotal += item.impactoPos;
+      bucket[key].push(item);
     });
-    return [...map.values()]
-      .map((item) => ({
-        ...item,
-        notaMedia: item.treinamentos ? item.notaTotal / item.treinamentos : 0,
-        evolucaoMedia: item.treinamentos ? item.evolucaoTotal / item.treinamentos : 0,
-        impactoPositivo: item.treinamentos ? item.impactoTotal / item.treinamentos : 0,
+
+    return Object.entries(bucket)
+      .map(([tipo, items]) => ({
+        tipo,
+        treinamentos: items.length,
+        participantes: sumBy(items, "participantes"),
+        presencas: sumBy(items, "presencas"),
+        notaMedia: groupAverage(items, "avaliacao"),
+        evolucaoMedia: groupAverage(items, "evolucaoPct"),
+        impactoPositivo: groupImpact(items),
       }))
-      .sort((a, b) => b.treinamentos - a.treinamentos || a.tipo.localeCompare(b.tipo, "pt-BR"));
-  }, [filtered]);
+      .sort((a, b) => b.treinamentos - a.treinamentos);
+  }, [filteredRows]);
 
   const byInstructor = useMemo(() => {
-    const map = new Map();
-    filtered.forEach((item) => {
-      if (!map.has(item.instrutor)) {
-        map.set(item.instrutor, {
-          instrutor: item.instrutor,
-          treinamentos: 0,
-          participantes: 0,
-          presencas: 0,
-          notaTotal: 0,
-          evolucaoTotal: 0,
-          impactoTotal: 0,
-        });
+    const bucket = {};
+    filteredRows.forEach((item) => {
+      const key = item.instrutor || "Não informado";
+      if (!bucket[key]) {
+        bucket[key] = [];
       }
-      const curr = map.get(item.instrutor);
-      curr.treinamentos += 1;
-      curr.participantes += item.participantes;
-      curr.presencas += item.presencas;
-      curr.notaTotal += item.avaliacao;
-      curr.evolucaoTotal += item.evolucaoPct;
-      curr.impactoTotal += item.impactoPos;
+      bucket[key].push(item);
     });
-    return [...map.values()]
-      .map((item) => ({
-        ...item,
-        notaMedia: item.treinamentos ? item.notaTotal / item.treinamentos : 0,
-        evolucaoMedia: item.treinamentos ? item.evolucaoTotal / item.treinamentos : 0,
-        impactoPositivo: item.treinamentos ? item.impactoTotal / item.treinamentos : 0,
+
+    return Object.entries(bucket)
+      .map(([instrutor, items]) => ({
+        instrutor,
+        treinamentos: items.length,
+        participantes: sumBy(items, "participantes"),
+        presencas: sumBy(items, "presencas"),
+        notaMedia: groupAverage(items, "avaliacao"),
+        evolucaoMedia: groupAverage(items, "evolucaoPct"),
+        impactoPositivo: groupImpact(items),
       }))
-      .sort((a, b) => b.treinamentos - a.treinamentos || b.evolucaoMedia - a.evolucaoMedia);
-  }, [filtered]);
+      .sort((a, b) => b.treinamentos - a.treinamentos);
+  }, [filteredRows]);
 
   return (
     <PortalShell
       title="Apresentação Sebrae"
-      subtitle="Página apartada para apresentação executiva, alimentada somente pela base temporária do Sebrae."
+      subtitle="Página apartada para apresentação executiva com atualização por upload de Excel."
     >
       <div style={{ display: "grid", gap: 18 }}>
-        <section
-          style={{
-            borderRadius: 24,
-            padding: 24,
-            background: "linear-gradient(135deg, #0f172a, #1d4ed8)",
-            color: "#fff",
-            display: "grid",
-            gap: 16,
-            boxShadow: "0 16px 36px rgba(15,23,42,.22)",
-          }}
+        <SectionCard
+          title="Carga da Base"
+          subtitle="Envie o Excel do Sebrae. A página prioriza a aba Base_Dados e atualiza a apresentação imediatamente."
         >
-          <div style={pillStyle("rgba(255,255,255,.14)", "#fff")}>Visão exclusiva do cliente</div>
-          <div style={{ display: "grid", gap: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 28, lineHeight: 1.1 }}>Resultados de Treinamento — Sebrae</h2>
-            <p style={{ margin: 0, color: "#dbeafe", maxWidth: 860 }}>
-              Esta página é temporária e isolada do restante do portal. Os indicadores abaixo foram recalculados exclusivamente a partir da base do Sebrae, sem vínculo com as tabelas operacionais do sistema.
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <span style={pillStyle("rgba(255,255,255,.12)", "#fff")}>Base carregada: {numberBR(rows.length)} registros</span>
-            <span style={pillStyle("rgba(255,255,255,.12)", "#fff")}>Cliente: SEBRAE</span>
-            <span style={pillStyle("rgba(255,255,255,.12)", "#fff")}>
-              Período: {filtered.length ? `${formatDate(filtered[0].data)} até ${formatDate(filtered[filtered.length - 1].data)}` : "Sem dados"}
-            </span>
-          </div>
-        </section>
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              alignItems: "end",
+            }}
+          >
+            <label style={labelBase}>
+              Arquivo Excel
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleUpload}
+                style={inputBase}
+              />
+            </label>
 
-        <SectionCard title="Filtros da apresentação" subtitle="Selecione recortes para a reunião sem afetar o restante do portal.">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-            <label style={labelStyle}>
+            <div style={{ ...cardWrap, padding: 14 }}>
+              <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800, textTransform: "uppercase" }}>
+                Arquivo carregado
+              </div>
+              <div style={{ marginTop: 6, fontSize: 15, fontWeight: 800, color: "#0f172a" }}>
+                {fileName || "Nenhum arquivo enviado"}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setRows([]);
+                setFileName("");
+                setError("");
+                setFilters({
+                  tipoTreinamento: "",
+                  instrutor: "",
+                  supervisor: "",
+                  competencia: "",
+                  busca: "",
+                });
+              }}
+              style={{
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+                color: "#0f172a",
+                borderRadius: 12,
+                padding: "10px 14px",
+                fontWeight: 800,
+                cursor: "pointer",
+                height: 44,
+              }}
+            >
+              Limpar base
+            </button>
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: 13, color: "#475569" }}>
+            Recomendação: manter a aba <strong>Base_Dados</strong> com os nomes de colunas do modelo atual.
+          </div>
+
+          {error ? (
+            <div
+              style={{
+                marginTop: 14,
+                border: "1px solid #fecaca",
+                background: "#fff1f2",
+                color: "#b91c1c",
+                borderRadius: 12,
+                padding: "12px 14px",
+                fontWeight: 700,
+              }}
+            >
+              {error}
+            </div>
+          ) : null}
+        </SectionCard>
+
+        <SectionCard title="Resumo Executivo" subtitle="Leitura imediata para apresentação ao cliente.">
+          {!rows.length ? (
+            <EmptyState message="Envie um arquivo Excel para carregar os dados do Sebrae." />
+          ) : (
+            <div style={{ display: "grid", gap: 18 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gap: 14,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                }}
+              >
+                <StatCard title="Treinamentos" value={fmtNumber(summary.treinamentos)} accent="#2563eb" />
+                <StatCard title="Participantes" value={fmtNumber(summary.participantes)} accent="#0f766e" />
+                <StatCard title="Presenças" value={fmtNumber(summary.presencas)} accent="#16a34a" />
+                <StatCard title="Faltas" value={fmtNumber(summary.faltas)} accent="#dc2626" />
+                <StatCard title="% presença média" value={fmtPercent(summary.presencaMedia)} accent="#7c3aed" />
+                <StatCard title="Nota média" value={fmtScore(summary.notaMedia)} accent="#ea580c" />
+                <StatCard title="Evolução média" value={fmtPercent(summary.evolucaoMedia)} accent="#0891b2" />
+                <StatCard title="Impacto positivo" value={fmtPercent(summary.impactoPositivo)} accent="#65a30d" />
+              </div>
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="Filtros da Apresentação"
+          subtitle="Refine a leitura sem tocar nos dados do portal principal."
+        >
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
+            <label style={labelBase}>
               Tipo de treinamento
-              <select value={filters.tipo} onChange={(e) => setFilters((prev) => ({ ...prev, tipo: e.target.value }))} style={inputStyle}>
+              <select
+                value={filters.tipoTreinamento}
+                onChange={(e) => setFilters((prev) => ({ ...prev, tipoTreinamento: e.target.value }))}
+                style={inputBase}
+              >
                 <option value="">Todos</option>
-                {options.tipos.map((item) => <option key={item} value={item}>{item}</option>)}
+                {options.tipoTreinamento.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
               </select>
             </label>
-            <label style={labelStyle}>
+
+            <label style={labelBase}>
               Instrutor
-              <select value={filters.instrutor} onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))} style={inputStyle}>
+              <select
+                value={filters.instrutor}
+                onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))}
+                style={inputBase}
+              >
                 <option value="">Todos</option>
-                {options.instrutores.map((item) => <option key={item} value={item}>{item}</option>)}
+                {options.instrutor.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
               </select>
             </label>
-            <label style={labelStyle}>
+
+            <label style={labelBase}>
               Supervisor
-              <select value={filters.supervisor} onChange={(e) => setFilters((prev) => ({ ...prev, supervisor: e.target.value }))} style={inputStyle}>
+              <select
+                value={filters.supervisor}
+                onChange={(e) => setFilters((prev) => ({ ...prev, supervisor: e.target.value }))}
+                style={inputBase}
+              >
                 <option value="">Todos</option>
-                {options.supervisores.map((item) => <option key={item} value={item}>{item}</option>)}
+                {options.supervisor.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
               </select>
             </label>
-            <label style={labelStyle}>
-              Indicador
-              <select value={filters.indicador} onChange={(e) => setFilters((prev) => ({ ...prev, indicador: e.target.value }))} style={inputStyle}>
-                <option value="">Todos</option>
-                {options.indicadores.map((item) => <option key={item} value={item}>{item}</option>)}
+
+            <label style={labelBase}>
+              Competência
+              <select
+                value={filters.competencia}
+                onChange={(e) => setFilters((prev) => ({ ...prev, competencia: e.target.value }))}
+                style={inputBase}
+              >
+                <option value="">Todas</option>
+                {options.competencia.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
               </select>
             </label>
-            <label style={{ ...labelStyle, gridColumn: "span 2" }}>
+
+            <label style={{ ...labelBase, gridColumn: "1 / -1" }}>
               Busca livre
               <input
                 value={filters.busca}
                 onChange={(e) => setFilters((prev) => ({ ...prev, busca: e.target.value }))}
-                placeholder="Turma, observação, tipo, instrutor..."
-                style={inputStyle}
+                placeholder="Instrutor, turma, indicador, tipo..."
+                style={inputBase}
               />
             </label>
           </div>
         </SectionCard>
 
-        <SectionCard title="Resumo executivo" subtitle="Leitura rápida dos principais resultados da base filtrada.">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-            <StatCard title="Treinamentos" value={numberBR(summary.totalTreinamentos)} accent="#2563eb" />
-            <StatCard title="Participantes" value={numberBR(summary.participantes)} accent="#0f766e" />
-            <StatCard title="Presenças" value={numberBR(summary.presencas)} accent="#16a34a" />
-            <StatCard title="Faltas" value={numberBR(summary.faltas)} accent="#dc2626" />
-            <StatCard title="Presença média" value={percentBR(summary.mediaPresenca)} accent="#7c3aed" />
-            <StatCard title="Nota média" value={numberBR(summary.notaMedia, 2)} accent="#ea580c" />
-            <StatCard title="Evolução média" value={percentBR(summary.evolucaoMedia)} accent="#0891b2" />
-            <StatCard title="Impacto positivo" value={percentBR(summary.impactoPositivo)} accent="#65a30d" />
-          </div>
+        <SectionCard title="Visão Mensal" subtitle="Comportamento consolidado por período.">
+          {!filteredRows.length ? (
+            <EmptyState message="Sem dados após a aplicação dos filtros." />
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {monthlyData.map((item) => (
+                <div
+                  key={item.periodo}
+                  style={{
+                    ...cardWrap,
+                    display: "grid",
+                    gap: 14,
+                    gridTemplateColumns: "220px 1fr",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+                      Período
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
+                      {item.periodo}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 12,
+                      gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                    }}
+                  >
+                    <InfoBox label="Treinamentos" value={fmtNumber(item.treinamentos)} />
+                    <InfoBox label="Presenças" value={fmtNumber(item.presencas)} />
+                    <InfoBox label="Participantes" value={fmtNumber(item.participantes)} />
+                    <InfoBox label="Nota média" value={fmtScore(item.notaMedia)} tone="success" />
+                    <InfoBox label="Evolução média" value={fmtPercent(item.evolucaoMedia)} tone="alert" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </SectionCard>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: 18 }}>
-          <SectionCard title="Evolução mensal" subtitle="Volume e efetividade por mês da base filtrada.">
-            {monthly.length === 0 ? (
-              <div style={{ color: "#64748b" }}>Nenhum dado encontrado para os filtros selecionados.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                <ChartBars items={monthly} valueKey="treinamentos" labelKey="label" formatter={(v) => `${numberBR(v)} trein.`} />
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Mês</th>
-                        <th style={thStyle}>Treinamentos</th>
-                        <th style={thStyle}>Participantes</th>
-                        <th style={thStyle}>Presenças</th>
-                        <th style={thStyle}>Nota média</th>
-                        <th style={thStyle}>Evolução média</th>
-                        <th style={thStyle}>Impacto positivo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monthly.map((item) => (
-                        <tr key={item.key}>
-                          <td style={tdStyle}><strong>{item.label}</strong></td>
-                          <td style={tdStyle}>{numberBR(item.treinamentos)}</td>
-                          <td style={tdStyle}>{numberBR(item.participantes)}</td>
-                          <td style={tdStyle}>{numberBR(item.presencas)}</td>
-                          <td style={tdStyle}>{numberBR(item.notaMedia, 2)}</td>
-                          <td style={tdStyle}>{percentBR(item.evolucaoMedia)}</td>
-                          <td style={tdStyle}>{percentBR(item.impactoPositivo)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </SectionCard>
-
-          <SectionCard title="Leitura rápida" subtitle="Indicadores de apoio para narrativa da apresentação.">
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={cardTone("#2563eb")}>
-                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800, textTransform: "uppercase" }}>Tipos ativos</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "#0f172a", marginTop: 8 }}>{numberBR(summary.tiposAtivos)}</div>
-              </div>
-              <div style={cardTone("#16a34a")}>
-                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800, textTransform: "uppercase" }}>Instrutores ativos</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "#0f172a", marginTop: 8 }}>{numberBR(summary.instrutoresAtivos)}</div>
-              </div>
-              <div style={cardTone("#7c3aed")}>
-                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800, textTransform: "uppercase" }}>Base filtrada</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "#0f172a", marginTop: 8 }}>{numberBR(filtered.length)} linhas</div>
-                <div style={{ marginTop: 6, color: "#64748b", fontSize: 13 }}>Ideal para uma apresentação limpa e isolada do portal principal.</div>
-              </div>
-            </div>
-          </SectionCard>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-          <SectionCard title="Resultados por tipo de treinamento" subtitle="Volume, avaliação e efetividade por tema.">
-            {byType.length === 0 ? (
-              <div style={{ color: "#64748b" }}>Nenhum dado encontrado.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                <ChartBars items={byType.slice(0, 8)} valueKey="treinamentos" labelKey="tipo" formatter={(v) => numberBR(v)} />
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Tipo</th>
-                        <th style={thStyle}>Treinamentos</th>
-                        <th style={thStyle}>Participantes</th>
-                        <th style={thStyle}>Nota média</th>
-                        <th style={thStyle}>Evolução média</th>
-                        <th style={thStyle}>Impacto positivo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {byType.map((item) => (
-                        <tr key={item.tipo}>
-                          <td style={tdStyle}><strong>{item.tipo}</strong></td>
-                          <td style={tdStyle}>{numberBR(item.treinamentos)}</td>
-                          <td style={tdStyle}>{numberBR(item.participantes)}</td>
-                          <td style={tdStyle}>{numberBR(item.notaMedia, 2)}</td>
-                          <td style={tdStyle}>{percentBR(item.evolucaoMedia)}</td>
-                          <td style={tdStyle}>{percentBR(item.impactoPositivo)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </SectionCard>
-
-          <SectionCard title="Performance dos instrutores" subtitle="Acompanhamento por instrutor para a reunião com o cliente.">
-            {byInstructor.length === 0 ? (
-              <div style={{ color: "#64748b" }}>Nenhum dado encontrado.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                <ChartBars items={byInstructor.slice(0, 8)} valueKey="participantes" labelKey="instrutor" formatter={(v) => `${numberBR(v)} part.`} />
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Instrutor</th>
-                        <th style={thStyle}>Treinamentos</th>
-                        <th style={thStyle}>Participantes</th>
-                        <th style={thStyle}>Presenças</th>
-                        <th style={thStyle}>Nota média</th>
-                        <th style={thStyle}>Evolução média</th>
-                        <th style={thStyle}>Impacto positivo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {byInstructor.map((item) => (
-                        <tr key={item.instrutor}>
-                          <td style={tdStyle}><strong>{item.instrutor}</strong></td>
-                          <td style={tdStyle}>{numberBR(item.treinamentos)}</td>
-                          <td style={tdStyle}>{numberBR(item.participantes)}</td>
-                          <td style={tdStyle}>{numberBR(item.presencas)}</td>
-                          <td style={tdStyle}>{numberBR(item.notaMedia, 2)}</td>
-                          <td style={tdStyle}>{percentBR(item.evolucaoMedia)}</td>
-                          <td style={tdStyle}>{percentBR(item.impactoPositivo)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </SectionCard>
-        </div>
-
-        <SectionCard title="Base detalhada para apoio na apresentação" subtitle="Consulta detalhada dos registros filtrados para perguntas do cliente.">
-          <div style={{ overflowX: "auto", maxHeight: 560, border: "1px solid #e2e8f0", borderRadius: 18 }}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Data</th>
-                  <th style={thStyle}>Tipo</th>
-                  <th style={thStyle}>Instrutor</th>
-                  <th style={thStyle}>Supervisor</th>
-                  <th style={thStyle}>Turma</th>
-                  <th style={thStyle}>Participantes</th>
-                  <th style={thStyle}>Presenças</th>
-                  <th style={thStyle}>Faltas</th>
-                  <th style={thStyle}>% Presença</th>
-                  <th style={thStyle}>Avaliação</th>
-                  <th style={thStyle}>Indicador</th>
-                  <th style={thStyle}>Antes</th>
-                  <th style={thStyle}>Depois</th>
-                  <th style={thStyle}>Evolução</th>
-                  <th style={thStyle}>Impacto positivo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((item) => (
-                  <tr key={item.id}>
-                    <td style={tdStyle}>{formatDate(item.data)}</td>
-                    <td style={tdStyle}>{item.tipoTreinamento}</td>
-                    <td style={tdStyle}>{item.instrutor}</td>
-                    <td style={tdStyle}>{item.supervisor}</td>
-                    <td style={tdStyle}>{item.turma}</td>
-                    <td style={tdStyle}>{numberBR(item.participantes)}</td>
-                    <td style={tdStyle}>{numberBR(item.presencas)}</td>
-                    <td style={tdStyle}>{numberBR(item.faltas)}</td>
-                    <td style={tdStyle}>{percentBR(item.presencaPct)}</td>
-                    <td style={tdStyle}>{numberBR(item.avaliacao, 2)}</td>
-                    <td style={tdStyle}>{item.indicador}</td>
-                    <td style={tdStyle}>{numberBR(item.antes, 2)}</td>
-                    <td style={tdStyle}>{numberBR(item.depois, 2)}</td>
-                    <td style={tdStyle}>{percentBR(item.evolucaoPct)}</td>
-                    <td style={tdStyle}>
-                      <span style={pillStyle(item.impactoPos ? "#ecfdf5" : "#f8fafc", item.impactoPos ? "#166534" : "#475569")}>
-                        {item.impactoPos ? "Positivo" : "Neutro"}
-                      </span>
-                    </td>
+        <SectionCard title="Resultados por Tipo" subtitle="Comparativo executivo dos tipos de treinamento.">
+          {!filteredRows.length ? (
+            <EmptyState message="Sem dados para exibir a visão por tipo." />
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Tipo</th>
+                    <th style={thStyle}>Treinamentos</th>
+                    <th style={thStyle}>Participantes</th>
+                    <th style={thStyle}>Presenças</th>
+                    <th style={thStyle}>Nota média</th>
+                    <th style={thStyle}>Evolução média</th>
+                    <th style={thStyle}>Impacto positivo</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {byType.map((item) => (
+                    <tr key={item.tipo}>
+                      <td style={tdStyle}><strong>{item.tipo}</strong></td>
+                      <td style={tdStyle}>{fmtNumber(item.treinamentos)}</td>
+                      <td style={tdStyle}>{fmtNumber(item.participantes)}</td>
+                      <td style={tdStyle}>{fmtNumber(item.presencas)}</td>
+                      <td style={tdStyle}>{fmtScore(item.notaMedia)}</td>
+                      <td style={tdStyle}>{fmtPercent(item.evolucaoMedia)}</td>
+                      <td style={tdStyle}>{fmtPercent(item.impactoPositivo)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Performance dos Instrutores" subtitle="Leitura individual para apoio na apresentação.">
+          {!filteredRows.length ? (
+            <EmptyState message="Sem dados para exibir a visão por instrutor." />
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Instrutor</th>
+                    <th style={thStyle}>Treinamentos</th>
+                    <th style={thStyle}>Participantes</th>
+                    <th style={thStyle}>Presenças</th>
+                    <th style={thStyle}>Nota média</th>
+                    <th style={thStyle}>Evolução média</th>
+                    <th style={thStyle}>Impacto positivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byInstructor.map((item) => (
+                    <tr key={item.instrutor}>
+                      <td style={tdStyle}><strong>{item.instrutor}</strong></td>
+                      <td style={tdStyle}>{fmtNumber(item.treinamentos)}</td>
+                      <td style={tdStyle}>{fmtNumber(item.participantes)}</td>
+                      <td style={tdStyle}>{fmtNumber(item.presencas)}</td>
+                      <td style={tdStyle}>{fmtScore(item.notaMedia)}</td>
+                      <td style={tdStyle}>{fmtPercent(item.evolucaoMedia)}</td>
+                      <td style={tdStyle}>{fmtPercent(item.impactoPositivo)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Detalhamento da Base" subtitle="Tabela de apoio para consulta durante a reunião.">
+          {!filteredRows.length ? (
+            <EmptyState message="Sem linhas para detalhamento." />
+          ) : (
+            <div style={{ overflowX: "auto", maxHeight: 560 }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Data</th>
+                    <th style={thStyle}>Cliente</th>
+                    <th style={thStyle}>Tipo</th>
+                    <th style={thStyle}>Instrutor</th>
+                    <th style={thStyle}>Supervisor</th>
+                    <th style={thStyle}>Turma</th>
+                    <th style={thStyle}>Competência</th>
+                    <th style={thStyle}>Participantes</th>
+                    <th style={thStyle}>Presenças</th>
+                    <th style={thStyle}>Faltas</th>
+                    <th style={thStyle}>% presença</th>
+                    <th style={thStyle}>Avaliação</th>
+                    <th style={thStyle}>Indicador</th>
+                    <th style={thStyle}>Antes</th>
+                    <th style={thStyle}>Depois</th>
+                    <th style={thStyle}>Janela</th>
+                    <th style={thStyle}>Evolução</th>
+                    <th style={thStyle}>Impacto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.map((item) => (
+                    <tr key={item.id}>
+                      <td style={tdStyle}>{String(item.data || "—")}</td>
+                      <td style={tdStyle}>{item.cliente || "—"}</td>
+                      <td style={tdStyle}>{item.tipoTreinamento || "—"}</td>
+                      <td style={tdStyle}>{item.instrutor || "—"}</td>
+                      <td style={tdStyle}>{item.supervisor || "—"}</td>
+                      <td style={tdStyle}>{item.turma || "—"}</td>
+                      <td style={tdStyle}>{item.competencia || "—"}</td>
+                      <td style={tdStyle}>{fmtNumber(item.participantes)}</td>
+                      <td style={tdStyle}>{fmtNumber(item.presencas)}</td>
+                      <td style={tdStyle}>{fmtNumber(item.faltas)}</td>
+                      <td style={tdStyle}>{fmtPercent(item.presencaPct)}</td>
+                      <td style={tdStyle}>{fmtScore(item.avaliacao)}</td>
+                      <td style={tdStyle}>{item.indicador || "—"}</td>
+                      <td style={tdStyle}>{fmtScore(item.antes)}</td>
+                      <td style={tdStyle}>{fmtScore(item.depois)}</td>
+                      <td style={tdStyle}>{fmtNumber(item.janelaDias)}</td>
+                      <td style={tdStyle}>{fmtPercent(item.evolucaoPct)}</td>
+                      <td style={tdStyle}>{toNumber(item.impactoPos) > 0 ? "Positivo" : "Neutro"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </SectionCard>
       </div>
     </PortalShell>
