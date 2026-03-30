@@ -393,31 +393,6 @@ function inputStyle() {
     fontSize: 14,
     outline: "none",
     background: "#fff",
-    minWidth: 0,
-  };
-}
-
-function compactInputStyle() {
-  return {
-    ...inputStyle(),
-    height: 42,
-    padding: "10px 12px",
-  };
-}
-
-function numberInputStyle() {
-  return {
-    ...compactInputStyle(),
-    textAlign: "left",
-  };
-}
-
-function textareaStyle(minHeight = 84) {
-  return {
-    ...inputStyle(),
-    minHeight,
-    resize: "vertical",
-    padding: "12px",
   };
 }
 
@@ -428,7 +403,6 @@ function labelStyle() {
     fontSize: 13,
     color: "#334155",
     fontWeight: 700,
-    minWidth: 0,
   };
 }
 
@@ -1845,22 +1819,22 @@ export default function MapaDesenvolvimentoPage() {
                 <summary style={detailsSummary}>Registro de jornada</summary>
                 <form onSubmit={saveJornada} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
                       Nome da jornada
                       <input
                         value={jornadaForm.nome}
                         onChange={(e) => setJornadaForm((prev) => ({ ...prev, nome: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                         required
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Status
                       <select
                         value={jornadaForm.status}
                         onChange={(e) => setJornadaForm((prev) => ({ ...prev, status: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="ativo">Ativo</option>
                         <option value="inativo">Inativo</option>
@@ -1868,12 +1842,12 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Responsável
                       <select
                         value={jornadaForm.responsavel_id}
                         onChange={(e) => setJornadaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="">Selecione</option>
                         {usuarios.map((item) => (
@@ -1884,60 +1858,60 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Público macro
                       <input
                         value={jornadaForm.publico_macro}
                         onChange={(e) => setJornadaForm((prev) => ({ ...prev, publico_macro: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Data início
                       <input
                         type="date"
                         value={jornadaForm.data_inicio}
                         onChange={(e) => setJornadaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Data fim
                       <input
                         type="date"
                         value={jornadaForm.data_fim}
                         onChange={(e) => setJornadaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
                   </div>
 
-                  <label style={labelStyle()}>
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Objetivo macro
                     <textarea
                       value={jornadaForm.objetivo}
                       onChange={(e) => setJornadaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                      style={{ ...inputStyle(), minHeight: 72, resize: "vertical" }}
+                      style={textareaStyle(72)}
                     />
                   </label>
 
-                  <label style={labelStyle()}>
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Descrição
                     <textarea
                       value={jornadaForm.descricao}
                       onChange={(e) => setJornadaForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                      style={{ ...inputStyle(), minHeight: 84, resize: "vertical" }}
+                      style={textareaStyle(84)}
                     />
                   </label>
 
-                  <label style={labelStyle()}>
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Observações
                     <textarea
                       value={jornadaForm.observacoes}
                       onChange={(e) => setJornadaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
-                      style={{ ...inputStyle(), minHeight: 84, resize: "vertical" }}
+                      style={textareaStyle(84)}
                     />
                   </label>
 
@@ -3159,11 +3133,36 @@ const formGrid = {
 
 const fieldSpan = {
   full: { gridColumn: "span 12" },
-  xl: { gridColumn: "span 6" },
+  xl: { gridColumn: "span 5" },
   lg: { gridColumn: "span 4" },
   md: { gridColumn: "span 3" },
   sm: { gridColumn: "span 2" },
 };
+
+function compactInputStyle() {
+  return {
+    ...inputStyle(),
+    height: 42,
+    padding: "10px 12px",
+  };
+}
+
+function numberInputStyle() {
+  return {
+    ...inputStyle(),
+    height: 42,
+    padding: "10px 12px",
+  };
+}
+
+function textareaStyle(minHeight = 84) {
+  return {
+    ...inputStyle(),
+    minHeight,
+    resize: "vertical",
+    padding: "12px",
+  };
+}
 
 const buttonRow = {
   display: "flex",
