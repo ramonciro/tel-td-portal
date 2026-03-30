@@ -285,6 +285,46 @@ app.post(
   deleteParticipantesTreinamentoBulk
 );
 
+app.delete(
+  "/api/presencas/participante/remover",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  async (req, res) => {
+    try {
+      const { treinamento_id, nome, treinando_nome } = req.body || {};
+      const nomeParticipante = String(nome || treinando_nome || "").trim();
+
+      if (!treinamento_id || !nomeParticipante) {
+        return res.status(400).json({
+          ok: false,
+          message: "Informe treinamento e nome do participante",
+        });
+      }
+
+      await pool.query(
+        `DELETE FROM presencas WHERE treinamento_id = ? AND treinando_nome = ?`,
+        [treinamento_id, nomeParticipante]
+      );
+
+      await pool.query(
+        `DELETE FROM treinamento_participantes WHERE treinamento_id = ? AND nome = ?`,
+        [treinamento_id, nomeParticipante]
+      );
+
+      return res.json({
+        ok: true,
+        message: "Participante removido com sucesso",
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        message: "Erro ao remover participante",
+        error: error.message,
+      });
+    }
+  }
+);
+
 app.get(
   "/api/turma-aulas",
   authRequired,
