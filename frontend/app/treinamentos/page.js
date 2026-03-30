@@ -97,6 +97,27 @@ function usuarioOptionLabel(usuario) {
   return `${usuario.nome} • ${clientes.length} operações`;
 }
 
+
+function parseTurmaMetadata(descricao) {
+  const text = String(descricao || "");
+  const modalidade = text.match(/\[modalidade:([^\]]+)\]/i)?.[1]?.trim() || "";
+  const sala = text.match(/\[sala:([^\]]*)\]/i)?.[1]?.trim() || "";
+  const descricaoLimpa = text
+    .replace(/\[modalidade:[^\]]+\]\s*/gi, "")
+    .replace(/\[sala:[^\]]*\]\s*/gi, "")
+    .trim();
+
+  return { modalidade, sala, descricaoLimpa };
+}
+
+function buildDescricaoComMetadata({ descricao, modalidade, sala }) {
+  const partes = [];
+  if (modalidade) partes.push(`[modalidade:${modalidade}]`);
+  if (sala) partes.push(`[sala:${sala}]`);
+  if (descricao) partes.push(String(descricao).trim());
+  return partes.join(" ").trim();
+}
+
 export default function TreinamentosPage() {
   const [turmas, setTurmas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -270,6 +291,21 @@ export default function TreinamentosPage() {
       type: "date",
     },
     {
+      name: "modalidade",
+      label: "Modalidade",
+      type: "select",
+      options: [
+        { value: "online", label: "Online" },
+        { value: "presencial", label: "Presencial" },
+      ],
+      placeholder: "Selecione a modalidade",
+    },
+    {
+      name: "sala",
+      label: "Sala",
+      placeholder: "Ex.: Sala 01 / Lab 02",
+    },
+    {
       name: "descricao",
       label: "Observações",
       type: "textarea",
@@ -369,6 +405,22 @@ export default function TreinamentosPage() {
       ),
     },
     {
+      key: "modalidade",
+      label: "Modalidade",
+      render: (item) => {
+        const meta = parseTurmaMetadata(item.descricao);
+        return <span style={plainCell}>{meta.modalidade ? (meta.modalidade === "presencial" ? "Presencial" : "Online") : "-"}</span>;
+      },
+    },
+    {
+      key: "sala",
+      label: "Sala",
+      render: (item) => {
+        const meta = parseTurmaMetadata(item.descricao);
+        return <span style={plainCell}>{meta.sala || "-"}</span>;
+      },
+    },
+    {
       key: "supervisor",
       label: "Supervisor",
       render: (item) => <span style={plainCell}>{item.supervisor || "-"}</span>,
@@ -412,6 +464,23 @@ export default function TreinamentosPage() {
       allowedCreateRoles={["coordenador", "supervisor", "instrutor"]}
       allowedEditRoles={["coordenador", "supervisor", "instrutor"]}
       allowedDeleteRoles={["coordenador"]}
+      transformRecordToForm={(baseForm, record) => {
+        const meta = parseTurmaMetadata(record?.descricao);
+        return {
+          ...baseForm,
+          modalidade: meta.modalidade || "",
+          sala: meta.sala || "",
+          descricao: meta.descricaoLimpa || "",
+        };
+      }}
+      transformFormToPayload={(payload, form) => ({
+        ...payload,
+        descricao: buildDescricaoComMetadata({
+          descricao: form.descricao,
+          modalidade: form.modalidade,
+          sala: form.sala,
+        }),
+      })}
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
