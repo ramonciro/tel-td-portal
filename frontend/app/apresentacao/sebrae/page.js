@@ -6,18 +6,6 @@ import PortalShell from "../../../components/PortalShell";
 import SectionCard from "../../../components/SectionCard";
 import StatCard from "../../../components/StatCard";
 
-function toNumber(value) {
-  if (value === null || value === undefined || value === "") return 0;
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const normalized = String(value)
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .replace("%", "")
-    .trim();
-  const num = Number(normalized);
-  return Number.isFinite(num) ? num : 0;
-}
-
 function normalize(value) {
   return String(value || "")
     .normalize("NFD")
@@ -26,29 +14,51 @@ function normalize(value) {
     .toLowerCase();
 }
 
-function fmtNumber(value) {
-  return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
+function parseLocaleNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  if (raw.includes(",") && raw.includes(".")) {
+    const normalized = raw.replace(/\./g, "").replace(",", ".");
+    const num = Number(normalized.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  const normalized = raw.replace(",", ".");
+  const num = Number(normalized.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(num) ? num : 0;
 }
 
-function fmtHours(value) {
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
+function toNumber(value) {
+  return parseLocaleNumber(value);
 }
 
-function fmtPercent(value) {
-  return `${new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(Number(value || 0))}%`;
-}
+function toPercentValue(value) {
+  if (value === null || value === undefined || value === "") return 0;
 
-function fmtScore(value) {
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return 0;
+    if (value >= 0 && value <= 1) return value * 100;
+    if (value > 100 && value <= 10000) return value / 100;
+    return value;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  if (raw.includes("%")) {
+    const num = parseLocaleNumber(raw.replace("%", ""));
+    if (num > 100 && num <= 10000) return num / 100;
+    return num;
+  }
+
+  const num = parseLocaleNumber(raw);
+  if (num >= 0 && num <= 1) return num * 100;
+  if (num > 100 && num <= 10000) return num / 100;
+  return num;
 }
 
 function average(values) {
@@ -61,25 +71,50 @@ function sumBy(rows, key) {
   return rows.reduce((acc, item) => acc + toNumber(item[key]), 0);
 }
 
-function extractMonth(dateValue) {
-  if (!dateValue) return "Sem período";
-  if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {
-    return dateValue.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+function fmtNumber(value) {
+  return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
+}
+
+function fmtScore(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function fmtPercent(value) {
+  return `${new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Number(value || 0))}%`;
+}
+
+function excelSerialToDate(serial) {
+  if (typeof serial !== "number" || !Number.isFinite(serial)) return null;
+  const parsed = XLSX.SSF.parse_date_code(serial);
+  if (!parsed) return null;
+  const dt = new Date(parsed.y, parsed.m - 1, parsed.d);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function formatDateCell(value) {
+  if (!value) return "—";
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toLocaleDateString("pt-BR");
   }
 
-  const raw = String(dateValue).trim();
-  const numericDate = Number(raw);
-  if (Number.isFinite(numericDate) && numericDate > 20000) {
-    const parsed = XLSX.SSF.parse_date_code(numericDate);
-    if (parsed) {
-      const dt = new Date(parsed.y, parsed.m - 1, parsed.d);
-      return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
-    }
+  if (typeof value === "number") {
+    const dt = excelSerialToDate(value);
+    if (dt) return dt.toLocaleDateString("pt-BR");
   }
 
-  const iso = new Date(raw);
-  if (!Number.isNaN(iso.getTime())) {
-    return iso.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+  const raw = String(value).trim();
+  if (!raw) return "—";
+
+  const isoDate = new Date(raw);
+  if (!Number.isNaN(isoDate.getTime())) {
+    return isoDate.toLocaleDateString("pt-BR");
   }
 
   const parts = raw.split(/[\/\-]/);
@@ -87,12 +122,44 @@ function extractMonth(dateValue) {
     let d, m, y;
     if (parts[0].length === 4) {
       [y, m, d] = parts;
-    } else {
+    } else if (Number(parts[0]) > 12 && Number(parts[1]) <= 12) {
       [d, m, y] = parts;
+    } else if (Number(parts[1]) > 12 && Number(parts[0]) <= 12) {
+      [m, d, y] = parts;
+    } else {
+      [m, d, y] = parts;
     }
+
     const dt = new Date(Number(y), Number(m) - 1, Number(d));
     if (!Number.isNaN(dt.getTime())) {
-      return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+      return dt.toLocaleDateString("pt-BR");
+    }
+  }
+
+  return raw;
+}
+
+function extractMonth(value) {
+  if (!value) return "Sem período";
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+  }
+
+  if (typeof value === "number") {
+    const dt = excelSerialToDate(value);
+    if (dt) return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+  }
+
+  const raw = String(value).trim();
+  const parsed = formatDateCell(raw);
+  if (parsed !== raw && parsed !== "—") {
+    const parts = parsed.split("/");
+    if (parts.length === 3) {
+      const dt = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+      if (!Number.isNaN(dt.getTime())) {
+        return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+      }
     }
   }
 
@@ -121,13 +188,13 @@ function mapRow(rawRow, index) {
     participantes: toNumber(getColumnValue(rawRow, ["Participantes", "Participantes Prev", "Qtd Participantes"])),
     presencas: toNumber(getColumnValue(rawRow, ["Presenças", "Presencas"])),
     faltas: toNumber(getColumnValue(rawRow, ["Faltas"])),
-    presencaPct: toNumber(getColumnValue(rawRow, ["% Presença", "% Presenca", "Presença %", "Presenca %"])),
+    presencaPct: toPercentValue(getColumnValue(rawRow, ["% Presença", "% Presenca", "Presença %", "Presenca %"])),
     avaliacao: toNumber(getColumnValue(rawRow, ["Avaliação (0-10)", "Avaliacao (0-10)", "Avaliação", "Avaliacao"])),
     indicador: getColumnValue(rawRow, ["Indicador"]),
     antes: toNumber(getColumnValue(rawRow, ["Antes"])),
     depois: toNumber(getColumnValue(rawRow, ["Depois"])),
     janelaDias: toNumber(getColumnValue(rawRow, ["Janela Dias", "Janela em Dias"])),
-    evolucaoPct: toNumber(getColumnValue(rawRow, ["Evolução %", "Evolucao %"])),
+    evolucaoPct: toPercentValue(getColumnValue(rawRow, ["Evolução %", "Evolucao %"])),
     impactoPos: toNumber(getColumnValue(rawRow, ["Impacto_Pos (0/1)", "Impacto Pos (0/1)", "Impacto_Pos", "Impacto Pos"])),
   };
 }
@@ -277,7 +344,7 @@ export default function SebraeApresentacaoPage() {
       const sheet = workbook.Sheets[sheetName];
       const json = XLSX.utils.sheet_to_json(sheet, {
         defval: "",
-        raw: false,
+        raw: true,
       });
 
       const mapped = json
@@ -387,9 +454,7 @@ export default function SebraeApresentacaoPage() {
     const bucket = {};
     filteredRows.forEach((item) => {
       const key = item.tipoTreinamento || "Não informado";
-      if (!bucket[key]) {
-        bucket[key] = [];
-      }
+      if (!bucket[key]) bucket[key] = [];
       bucket[key].push(item);
     });
 
@@ -410,9 +475,7 @@ export default function SebraeApresentacaoPage() {
     const bucket = {};
     filteredRows.forEach((item) => {
       const key = item.instrutor || "Não informado";
-      if (!bucket[key]) {
-        bucket[key] = [];
-      }
+      if (!bucket[key]) bucket[key] = [];
       bucket[key].push(item);
     });
 
@@ -449,12 +512,7 @@ export default function SebraeApresentacaoPage() {
           >
             <label style={labelBase}>
               Arquivo Excel
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleUpload}
-                style={inputBase}
-              />
+              <input type="file" accept=".xlsx,.xls" onChange={handleUpload} style={inputBase} />
             </label>
 
             <div style={{ ...cardWrap, padding: 14 }}>
@@ -772,7 +830,7 @@ export default function SebraeApresentacaoPage() {
                 <tbody>
                   {filteredRows.map((item) => (
                     <tr key={item.id}>
-                      <td style={tdStyle}>{String(item.data || "—")}</td>
+                      <td style={tdStyle}>{formatDateCell(item.data)}</td>
                       <td style={tdStyle}>{item.cliente || "—"}</td>
                       <td style={tdStyle}>{item.tipoTreinamento || "—"}</td>
                       <td style={tdStyle}>{item.instrutor || "—"}</td>
