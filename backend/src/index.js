@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
+const XLSX = require("xlsx");
 
 const authRoutes = require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
@@ -22,6 +23,7 @@ const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
+  createParticipanteTreinamento,
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
 } = require("./controllers/treinamentoParticipantesController");
@@ -254,6 +256,120 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   getParticipantesByTreinamento
+);
+
+app.post(
+  "/api/treinamentos/:id/participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  createParticipanteTreinamento
+);
+
+app.get(
+  "/api/treinamentos/:id/exportar-primeira-aula",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const [[treinamento]] = await pool.query(
+        `
+        SELECT id, tema, cliente, instrutor, supervisor, data_inicio, data_fim
+        FROM treinamentos
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [id]
+      );
+
+      if (!treinamento) {
+        return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+      }
+
+      const [aulas] = await pool.query(
+        `
+        SELECT id, dia_numero, data_aula, titulo, instrutor_responsavel, ordem
+        FROM turma_aulas
+        WHERE treinamento_id = ?
+        ORDER BY dia_numero ASC, ordem ASC, id ASC
+        LIMIT 1
+        `,
+        [id]
+      );
+
+      const primeiraAula = aulas[0] || null;
+
+      const [participantes] = await pool.query(
+        `
+        SELECT nome, matricula, cliente, turma, supervisor, operacao, data_admissao
+        FROM treinamento_participantes
+        WHERE treinamento_id = ?
+        ORDER BY nome ASC
+        `,
+        [id]
+      );
+
+      const rows = participantes.map((item) => ({
+        treinamento_id: treinamento.id,
+        turma: treinamento.tema || "",
+        cliente: item.cliente || treinamento.cliente || "",
+        instrutor: primeiraAula?.instrutor_responsavel || treinamento.instrutor || "",
+        supervisor: item.supervisor || treinamento.supervisor || "",
+        aula_id: primeiraAula?.id || "",
+        aula_dia: primeiraAula?.dia_numero || 1,
+        aula_titulo: primeiraAula?.titulo || "Primeira aula",
+        data_primeira_aula: primeiraAula?.data_aula || treinamento.data_inicio || "",
+        nome: item.nome || "",
+        matricula: item.matricula || "",
+        operacao: item.operacao || "",
+        data_admissao: item.data_admissao || "",
+      }));
+
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(rows.length ? rows : [{
+        treinamento_id: treinamento.id,
+        turma: treinamento.tema || "",
+        cliente: treinamento.cliente || "",
+        instrutor: primeiraAula?.instrutor_responsavel || treinamento.instrutor || "",
+        supervisor: treinamento.supervisor || "",
+        aula_id: primeiraAula?.id || "",
+        aula_dia: primeiraAula?.dia_numero || 1,
+        aula_titulo: primeiraAula?.titulo || "Primeira aula",
+        data_primeira_aula: primeiraAula?.data_aula || treinamento.data_inicio || "",
+        nome: "",
+        matricula: "",
+        operacao: "",
+        data_admissao: "",
+      }]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Primeira Aula");
+
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+      const safeName = String(treinamento.tema || `turma-${id}`)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .toLowerCase();
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safeName || `turma-${id}`}-primeira-aula.xlsx"`
+      );
+      return res.send(buffer);
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        message: "Erro ao exportar primeira aula",
+        error: error.message,
+      });
+    }
+  }
 );
 
 app.post(
