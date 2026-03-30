@@ -393,6 +393,31 @@ function inputStyle() {
     fontSize: 14,
     outline: "none",
     background: "#fff",
+    minWidth: 0,
+  };
+}
+
+function compactInputStyle() {
+  return {
+    ...inputStyle(),
+    height: 42,
+    padding: "10px 12px",
+  };
+}
+
+function numberInputStyle() {
+  return {
+    ...compactInputStyle(),
+    textAlign: "left",
+  };
+}
+
+function textareaStyle(minHeight = 84) {
+  return {
+    ...inputStyle(),
+    minHeight,
+    resize: "vertical",
+    padding: "12px",
   };
 }
 
@@ -403,6 +428,7 @@ function labelStyle() {
     fontSize: 13,
     color: "#334155",
     fontWeight: 700,
+    minWidth: 0,
   };
 }
 
@@ -1938,12 +1964,12 @@ export default function MapaDesenvolvimentoPage() {
                 <summary style={detailsSummary}>Registro de etapa</summary>
                 <form onSubmit={saveEtapa} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Jornada
                       <select
                         value={etapaForm.jornada_id}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, jornada_id: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                         required
                       >
                         <option value="">Selecione</option>
@@ -1955,22 +1981,22 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Nome da etapa
                       <input
                         value={etapaForm.nome}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, nome: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                         required
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Tipo
                       <select
                         value={etapaForm.tipo}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, tipo: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="treinamento">Treinamento</option>
                         <option value="acao">Ação</option>
@@ -1981,22 +2007,22 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Ordem
                       <input
                         type="number"
                         value={etapaForm.ordem}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, ordem: e.target.value }))}
-                        style={inputStyle()}
+                        style={numberInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Status
                       <select
                         value={etapaForm.status}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, status: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="planejado">Planejado</option>
                         <option value="em_andamento">Em andamento</option>
@@ -2005,12 +2031,12 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Responsável
                       <select
                         value={etapaForm.responsavel_id}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="">Selecione</option>
                         {usuarios.map((item) => (
@@ -2021,73 +2047,73 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Data início
                       <input
                         type="date"
                         value={etapaForm.data_inicio}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Data fim
                       <input
                         type="date"
                         value={etapaForm.data_fim}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Carga horária prevista
                       <input
                         type="number"
                         step="0.01"
                         value={etapaForm.carga_horaria_prevista}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_prevista: e.target.value }))}
-                        style={inputStyle()}
+                        style={numberInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Carga horária realizada
                       <input
                         type="number"
                         step="0.01"
                         value={etapaForm.carga_horaria_realizada}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_realizada: e.target.value }))}
-                        style={inputStyle()}
+                        style={numberInputStyle()}
                       />
                     </label>
                   </div>
 
-                  <label style={labelStyle()}>
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Objetivo da etapa
                     <textarea
                       value={etapaForm.objetivo}
                       onChange={(e) => setEtapaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                      style={{ ...inputStyle(), minHeight: 72, resize: "vertical" }}
+                      style={textareaStyle(72)}
                     />
                   </label>
 
-                  <label style={labelStyle()}>
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Descrição
                     <textarea
                       value={etapaForm.descricao}
                       onChange={(e) => setEtapaForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                      style={{ ...inputStyle(), minHeight: 84, resize: "vertical" }}
+                      style={textareaStyle(84)}
                     />
                   </label>
 
-                  <label style={labelStyle()}>
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Observações
                     <textarea
                       value={etapaForm.observacoes}
                       onChange={(e) => setEtapaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
-                      style={{ ...inputStyle(), minHeight: 84, resize: "vertical" }}
+                      style={textareaStyle(84)}
                     />
                   </label>
 
@@ -3126,8 +3152,17 @@ const detailsSummary = {
 
 const formGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
   gap: 12,
+  alignItems: "end",
+};
+
+const fieldSpan = {
+  full: { gridColumn: "span 12" },
+  xl: { gridColumn: "span 6" },
+  lg: { gridColumn: "span 4" },
+  md: { gridColumn: "span 3" },
+  sm: { gridColumn: "span 2" },
 };
 
 const buttonRow = {
