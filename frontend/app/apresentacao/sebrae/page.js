@@ -2,10 +2,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import PortalShell from "../../../../components/PortalShell";
-import SectionCard from "../../../../components/SectionCard";
-import StatCard from "../../../../components/StatCard";
-import baseDados from "./base-dados.json";
+import PortalShell from "../../../components/PortalShell";
+import SectionCard from "../../../components/SectionCard";
+import StatCard from "../../../components/StatCard";
+import baseDados from "./base-dados";
 
 function numberBR(value, digits = 0) {
   return new Intl.NumberFormat("pt-BR", {
