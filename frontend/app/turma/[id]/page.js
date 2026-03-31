@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../../services/api";
 import { compareLocalDatesAsc, formatDateBR, parseLocalDate, todayLocal } from "../../../lib/date";
+import { compareLocalDatesAsc, formatDateBR, parseLocalDate } from "../../../lib/date";
 
 function formatDate(value) {
-  return formatDateBR(value, "-");
+  return formatDateBR(value);
 }
 
 function calcPercentual(parte, total) {
@@ -37,18 +38,28 @@ function normalizarStatusTurma(status) {
 }
 
 function calcularStatusTurma({ totalAulas, aulasComPresenca, aderenciaMedia, dataInicio, dataFim }) {
-  const hoje = todayLocal();
-  const inicio = parseLocalDate(dataInicio);
-  const fim = parseLocalDate(dataFim);
+const hoje = new Date();
+const hojeLocal = new Date(
+  hoje.getFullYear(),
+  hoje.getMonth(),
+  hoje.getDate(),
+  12,
+  0,
+  0,
+  0
+);
 
-  if (fim && !Number.isNaN(fim.getTime()) && hoje > fim) {
+const inicio = parseLocalDate(dataInicio);
+const fim = parseLocalDate(dataFim);
+
+if (fim && !Number.isNaN(fim.getTime()) && hojeLocal > fim) {
     if (aderenciaMedia >= 80 || totalAulas === 0) {
       return { label: "Concluída", tone: "success" };
     }
     return { label: "Concluída com atenção", tone: "danger" };
   }
 
-  if (inicio && !Number.isNaN(inicio.getTime()) && hoje < inicio) {
+if (inicio && !Number.isNaN(inicio.getTime()) && hojeLocal < inicio) {
     return { label: "Planejada", tone: "warning" };
   }
 
@@ -218,16 +229,13 @@ const status =
     dataFim: treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data,
   });
 
-    const proximaAula =
-      aulas
-        .filter(
-          (aula) =>
-            String(aula.status_execucao || "planejada").toLowerCase() === "planejada"
-        )
-        .sort(
-          (a, b) =>
-            compareLocalDatesAsc(a.data_aula, b.data_aula)
-        )[0] || null;
+const proximaAula =
+  aulas
+    .filter(
+      (aula) =>
+        String(aula.status_execucao || "planejada").toLowerCase() === "planejada"
+    )
+    .sort((a, b) => compareLocalDatesAsc(a.data_aula, b.data_aula))[0] || null;
 
     return {
       treinandosPrevistos,
