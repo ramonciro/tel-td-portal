@@ -5,6 +5,7 @@ import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+import { formatDateBR, parseLocalDate, toDateInputLocal, todayLocal } from "../../lib/date";
 
 function fmtNumber(value) {
   return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
@@ -66,34 +67,8 @@ function statusPriority(value) {
   return map[status] || 99;
 }
 
-function parseLocalDate(value) {
-  if (!value) return null;
-
-  const raw = String(value).slice(0, 10);
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    const [ano, mes, dia] = raw.split("-").map(Number);
-    return new Date(ano, mes - 1, dia);
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
 function toDateInput(value) {
-  if (!value) return "";
-  const raw = String(value).slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-
-  const date = parseLocalDate(value);
-  if (!date) return "";
-
-  const ano = date.getFullYear();
-  const mes = String(date.getMonth() + 1).padStart(2, "0");
-  const dia = String(date.getDate()).padStart(2, "0");
-  return `${ano}-${mes}-${dia}`;
+  return toDateInputLocal(value);
 }
 
 function parseDate(value) {
@@ -101,19 +76,11 @@ function parseDate(value) {
 }
 
 function formatDate(value) {
-  const date = parseLocalDate(value);
-  if (!date) return "—";
-
-  const dia = String(date.getDate()).padStart(2, "0");
-  const mes = String(date.getMonth() + 1).padStart(2, "0");
-  const ano = date.getFullYear();
-
-  return `${dia}/${mes}/${ano}`;
+  return formatDateBR(value, "—");
 }
 
 function getPrazoInfo(item) {
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+  const hoje = todayLocal();
 
   const inicio = parseDate(item.data_inicio);
   const fim = parseDate(item.data_fim);
@@ -128,8 +95,7 @@ function getPrazoInfo(item) {
   }
 
   if (fim) {
-    const fim0 = new Date(fim);
-    fim0.setHours(0, 0, 0, 0);
+    const fim0 = parseDate(fim);
     if (fim0 < hoje && status !== "concluido" && status !== "cancelado") {
       return { label: "Vencido", tone: "danger" };
     }
@@ -529,12 +495,9 @@ function calcHorasCoaching(plano) {
 
 function isValidDateRange(dataInicio, dataFim) {
   if (!dataInicio || !dataFim) return true;
-
   const inicio = parseDate(dataInicio);
   const fim = parseDate(dataFim);
-
   if (!inicio || !fim) return true;
-
   return fim >= inicio;
 }
 
