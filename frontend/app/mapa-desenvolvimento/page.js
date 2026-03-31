@@ -66,27 +66,49 @@ function statusPriority(value) {
   return map[status] || 99;
 }
 
+function parseLocalDate(value) {
+  if (!value) return null;
+
+  const raw = String(value).slice(0, 10);
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [ano, mes, dia] = raw.split("-").map(Number);
+    return new Date(ano, mes - 1, dia);
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
 function toDateInput(value) {
   if (!value) return "";
   const raw = String(value).slice(0, 10);
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
+
+  const date = parseLocalDate(value);
+  if (!date) return "";
+
+  const ano = date.getFullYear();
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const dia = String(date.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
 }
 
 function parseDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
+  return parseLocalDate(value);
 }
 
 function formatDate(value) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("pt-BR").format(date);
+  const date = parseLocalDate(value);
+  if (!date) return "—";
+
+  const dia = String(date.getDate()).padStart(2, "0");
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const ano = date.getFullYear();
+
+  return `${dia}/${mes}/${ano}`;
 }
 
 function getPrazoInfo(item) {
@@ -507,7 +529,13 @@ function calcHorasCoaching(plano) {
 
 function isValidDateRange(dataInicio, dataFim) {
   if (!dataInicio || !dataFim) return true;
-  return new Date(dataFim) >= new Date(dataInicio);
+
+  const inicio = parseDate(dataInicio);
+  const fim = parseDate(dataFim);
+
+  if (!inicio || !fim) return true;
+
+  return fim >= inicio;
 }
 
 function validarJornada(form) {
