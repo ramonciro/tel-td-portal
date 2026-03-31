@@ -3,19 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiDownload, apiFetch } from "../../../../services/api";
+import { compareLocalDatesAsc, formatDateBR, toDateInputLocal } from "../../../../lib/date";
 
 function formatDate(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
-  return d.toLocaleDateString("pt-BR");
+  return formatDateBR(value, "-");
 }
 
 function toInputDate(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  return toDateInputLocal(value);
 }
 
 function formatHours(value) {
@@ -74,11 +69,7 @@ function getPercentStyle(percentual) {
 }
 
 function sortByDateAsc(items, field = "data_aula") {
-  return [...items].sort((a, b) => {
-    const da = new Date(a?.[field] || 0).getTime();
-    const db = new Date(b?.[field] || 0).getTime();
-    return da - db;
-  });
+  return [...items].sort((a, b) => compareLocalDatesAsc(a?.[field], b?.[field]));
 }
 
 const CARGA_OPTIONS = [
