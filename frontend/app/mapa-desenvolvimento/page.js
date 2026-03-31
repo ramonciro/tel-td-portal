@@ -1,4196 +1,1365 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import PortalShell from "../../components/PortalShell";
-import SectionCard from "../../components/SectionCard";
-import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
-import { formatDateBR, parseLocalDate, toDateInputLocal, todayLocal } from "../../lib/date";
+import {
+  formatDateBR,
+  toDateInputLocal,
+  parseLocalDate,
+} from "../../lib/date";
 
-function fmtNumber(value) {
-  return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
-}
-
-function fmtHours(value) {
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
-}
-
-function normalize(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function canonicalStatus(value) {
-  const status = normalize(value);
-
-  if (["ativa", "ativo"].includes(status)) return "ativo";
-  if (["inativa", "inativo"].includes(status)) return "inativo";
-  if (["concluida", "concluído", "concluido", "finalizada"].includes(status)) return "concluido";
-  if (["coaching"].includes(status)) return "coaching";
-  if (["mentoria"].includes(status)) return "mentoria";
-  if (["planejada", "planejado"].includes(status)) return "planejado";
-  if (["em_andamento", "em andamento"].includes(status)) return "em_andamento";
-  if (["cancelada", "cancelado"].includes(status)) return "cancelado";
-
-  return status;
-}
-
-function displayStatus(value) {
-  const status = canonicalStatus(value);
-
-  const labels = {
-    ativo: "Ativo",
-    inativo: "Inativo",
-    concluido: "Concluído",
-    planejado: "Planejado",
-    em_andamento: "Em andamento",
-    cancelado: "Cancelado",
-    coaching: "Coaching",
-    mentoria: "Mentoria",
+function emptyJourneyForm() {
+  return {
+    id: "",
+    titulo: "",
+    cliente: "",
+    publico_alvo: "",
+    objetivo: "",
+    status: "planejada",
+    data_inicio: "",
+    data_fim: "",
   };
-
-  return labels[status] || value || "—";
 }
 
-function statusPriority(value) {
-  const status = canonicalStatus(value);
-  const map = {
-    em_andamento: 1,
-    planejado: 2,
-    ativo: 3,
-    concluido: 4,
-    inativo: 5,
-    cancelado: 6,
+function emptyActionForm() {
+  return {
+    id: "",
+    jornada_id: "",
+    titulo: "",
+    descricao: "",
+    responsavel: "",
+    status: "planejada",
+    data_inicio: "",
+    data_fim: "",
+    carga_horaria: "",
+    participantes_previstos: "",
+    turma_ids: [],
   };
-  return map[status] || 99;
-}
-
-function toDateInput(value) {
-  return toDateInputLocal(value);
-}
-
-function parseDate(value) {
-  return parseLocalDate(value);
 }
 
 function formatDate(value) {
-  return formatDateBR(value, "—");
+  return formatDateBR(value);
 }
 
-function getPrazoInfo(item) {
-  const hoje = todayLocal();
+function getStatusTone(status) {
+  const key = String(status || "").toLowerCase().trim();
 
-  const inicio = parseDate(item.data_inicio);
-  const fim = parseDate(item.data_fim);
-  const status = canonicalStatus(item.status);
-
-  if (status === "concluido") {
-    return { label: "Concluído", tone: "ok" };
-  }
-
-  if (!inicio && !fim) {
-    return { label: "Sem data", tone: "neutral" };
-  }
-
-  if (fim) {
-    const fim0 = parseDate(fim);
-    if (fim0 < hoje && status !== "concluido" && status !== "cancelado") {
-      return { label: "Vencido", tone: "danger" };
-    }
-  }
-
-  return { label: "No prazo", tone: "ok" };
-}
-
-function getAttention(item, tipoRegistro) {
-  const status = canonicalStatus(item.status);
-  const prazo = getPrazoInfo(item);
-
-  if (prazo.tone === "danger") {
-    return { level: "alta", label: "Prazo vencido" };
-  }
-
-  if (!item.responsavel_nome || item.responsavel_nome === "Não definido") {
-    return { level: "media", label: "Sem responsável" };
-  }
-
-  if (status === "planejado" && !item.data_inicio) {
-    return { level: "media", label: "Sem início definido" };
-  }
-
-  if (
-    tipoRegistro === "acao" &&
-    status === "em_andamento" &&
-    Number(item.participantes_realizados || 0) === 0
-  ) {
-    return { level: "media", label: "Sem realização" };
-  }
-
-  if (
-    tipoRegistro === "coaching" &&
-    status === "em_andamento" &&
-    Number(item.sessoes_realizadas || 0) === 0
-  ) {
-    return { level: "media", label: "Sem sessões realizadas" };
-  }
-
-  return { level: "ok", label: "Estável" };
-}
-
-function getActionIntensity(item) {
-  const horas = Number(item.horas_realizadas_calc || item.horas_realizadas || 0);
-  const participantes = Number(item.participantes_realizados || 0);
-
-  if (horas >= 40 || participantes >= 100) {
-    return { label: "Alta", tone: "danger" };
-  }
-  if (horas >= 12 || participantes >= 30) {
-    return { label: "Média", tone: "alert" };
-  }
-  return { label: "Baixa", tone: "default" };
-}
-
-function getCoachingIntensity(item) {
-  const horas = Number(item.horas_totais_calc || item.horas_totais || 0);
-  const sessoes = Number(item.sessoes_realizadas || 0);
-  const participantes = Number(item.participantes_realizados || 0);
-
-  if (horas >= 30 || sessoes >= 8 || participantes >= 25) {
-    return { label: "Alta", tone: "danger" };
-  }
-  if (horas >= 10 || sessoes >= 4 || participantes >= 8) {
-    return { label: "Média", tone: "alert" };
-  }
-  return { label: "Baixa", tone: "default" };
-}
-
-function getStageHealth(stage) {
-  if (!stage) return { label: "Sem etapa", level: "media" };
-  if (stage.prazo_info?.tone === "danger") return { label: "Crítica", level: "alta" };
-  if (stage.attention_info?.level === "alta") return { label: "Crítica", level: "alta" };
-  if (stage.attention_info?.level === "media") return { label: "Atenção", level: "media" };
-  return { label: "Saudável", level: "ok" };
-}
-
-function getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada) {
-  const prazo = getPrazoInfo(jornada);
-
-  if (!jornada.responsavel_id || etapasDaJornada.length === 0 || prazo.tone === "danger") {
-    return { label: "Crítica", level: "alta" };
-  }
-
-  const horasTotais =
-    acoesDaJornada.reduce((acc, item) => acc + Number(item.horas_realizadas || 0), 0) +
-    coachingsDaJornada.reduce((acc, item) => acc + Number(item.horas_totais || 0), 0);
-
-  if (horasTotais === 0 || (acoesDaJornada.length === 0 && coachingsDaJornada.length === 0)) {
-    return { label: "Atenção", level: "media" };
-  }
-
-  const allPlanejado = etapasDaJornada.every((e) => canonicalStatus(e.status) === "planejado");
-  if (allPlanejado) {
-    return { label: "Atenção", level: "media" };
-  }
-
-  return { label: "Saudável", level: "ok" };
-}
-
-function getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada) {
-  const prazo = getPrazoInfo(jornada);
-
-  if (!jornada.responsavel_id) {
-    return { level: "alta", label: "Sem responsável" };
-  }
-
-  if (etapasDaJornada.length === 0) {
-    return { level: "alta", label: "Sem etapas" };
-  }
-
-  if (prazo.tone === "danger") {
-    return { level: "alta", label: "Prazo vencido" };
-  }
-
-  if (acoesDaJornada.length === 0 && coachingsDaJornada.length === 0) {
-    return { level: "media", label: "Sem entregas vinculadas" };
-  }
-
-  const horasTotais =
-    acoesDaJornada.reduce((acc, item) => acc + Number(item.horas_realizadas || 0), 0) +
-    coachingsDaJornada.reduce((acc, item) => acc + Number(item.horas_totais || 0), 0);
-
-  if (horasTotais === 0) {
-    return { level: "media", label: "Sem horas registradas" };
-  }
-
-  return { level: "ok", label: "Monitorada" };
-}
-
-function badgeStyle(type) {
-  const status = canonicalStatus(type);
-
-  const base = {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "5px 10px",
-    borderRadius: 999,
-    fontSize: 10,
-    fontWeight: 800,
-    whiteSpace: "nowrap",
-    lineHeight: 1.1,
-    border: "1px solid transparent",
-    textTransform: "uppercase",
-    letterSpacing: ".03em",
-  };
-
-  const map = {
-    ativo: { background: "#ecfdf5", color: "#166534", borderColor: "#bbf7d0" },
-    inativo: { background: "#f8fafc", color: "#475569", borderColor: "#e2e8f0" },
-    concluido: { background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" },
-    planejado: { background: "#faf5ff", color: "#7c3aed", borderColor: "#ddd6fe" },
-    em_andamento: { background: "#fff7ed", color: "#c2410c", borderColor: "#fed7aa" },
-    cancelado: { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" },
-    coaching: { background: "#eef2ff", color: "#4338ca", borderColor: "#c7d2fe" },
-  };
-
-  return {
-    ...base,
-    ...(map[status] || {
-      background: "#f8fafc",
-      color: "#334155",
-      borderColor: "#e2e8f0",
-    }),
-  };
-}
-
-function attentionBadge(level) {
-  const map = {
-    alta: {
-      background: "#fff1f2",
-      color: "#b91c1c",
-      border: "1px solid #fecaca",
-    },
-    media: {
-      background: "#fff7ed",
-      color: "#c2410c",
-      border: "1px solid #fed7aa",
-    },
-    ok: {
-      background: "#ecfeff",
-      color: "#155e75",
-      border: "1px solid #a5f3fc",
-    },
-  };
-
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "4px 8px",
-    borderRadius: 999,
-    fontSize: 10,
-    fontWeight: 800,
-    lineHeight: 1.1,
-    ...(map[level] || map.ok),
-  };
-}
-
-function prazoBadge(tone) {
-  const map = {
-    ok: {
-      background: "#ecfdf5",
+  if (["concluida", "concluído", "concluido"].includes(key)) {
+    return {
+      background: "#dcfce7",
       color: "#166534",
       border: "1px solid #bbf7d0",
-    },
-    danger: {
-      background: "#fff1f2",
+      label: "Concluída",
+    };
+  }
+
+  if (["em_andamento", "em andamento"].includes(key)) {
+    return {
+      background: "#dbeafe",
+      color: "#1d4ed8",
+      border: "1px solid #bfdbfe",
+      label: "Em andamento",
+    };
+  }
+
+  if (["cancelada", "cancelado"].includes(key)) {
+    return {
+      background: "#fee2e2",
       color: "#b91c1c",
       border: "1px solid #fecaca",
-    },
-    neutral: {
-      background: "#f8fafc",
-      color: "#475569",
-      border: "1px solid #e2e8f0",
-    },
-    alert: {
-      background: "#fff7ed",
-      color: "#c2410c",
-      border: "1px solid #fed7aa",
-    },
-    default: {
-      background: "#ffffff",
-      color: "#334155",
-      border: "1px solid #e2e8f0",
-    },
-  };
+      label: "Cancelada",
+    };
+  }
 
   return {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "4px 8px",
-    borderRadius: 999,
-    fontSize: 10,
-    fontWeight: 800,
-    lineHeight: 1.1,
-    ...(map[tone] || map.neutral),
+    background: "#fef3c7",
+    color: "#92400e",
+    border: "1px solid #fde68a",
+    label: "Planejada",
   };
-}
-
-function sustentacaoTypeBadge(value) {
-  const tipo = normalize(value);
-  const map = {
-    coaching: { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", label: "Coaching" },
-    mentoria: { background: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe", label: "Mentoria" },
-  };
-
-  const item = map[tipo] || {
-    background: "#f8fafc",
-    color: "#475569",
-    border: "1px solid #e2e8f0",
-    label: value || "Sustentação",
-  };
-
-  return {
-    style: {
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "5px 10px",
-      borderRadius: 999,
-      fontSize: 10,
-      fontWeight: 800,
-      whiteSpace: "nowrap",
-      lineHeight: 1.1,
-      textTransform: "uppercase",
-      letterSpacing: ".03em",
-      background: item.background,
-      color: item.color,
-      border: item.border,
-    },
-    label: item.label,
-  };
-}
-
-function sustentacaoDescriptor(value) {
-  const tipo = normalize(value);
-  if (tipo === "coaching") return "Correção de rota e reforço da execução.";
-  if (tipo === "mentoria") return "Orientação, repertório e amadurecimento de visão.";
-  return "Apoio complementar ao percurso.";
-}
-
-function buttonPrimaryStyle(disabled = false) {
-  return {
-    border: "none",
-    background: disabled ? "#93c5fd" : "#2563eb",
-    color: "#fff",
-    borderRadius: 12,
-    padding: "10px 14px",
-    fontWeight: 800,
-    cursor: disabled ? "not-allowed" : "pointer",
-    boxShadow: disabled ? "none" : "0 8px 18px rgba(37,99,235,.22)",
-  };
-}
-
-function buttonSecondaryStyle() {
-  return {
-    border: "1px solid #cbd5e1",
-    background: "#fff",
-    color: "#0f172a",
-    borderRadius: 12,
-    padding: "10px 14px",
-    fontWeight: 700,
-    cursor: "pointer",
-  };
-}
-
-function buttonDangerStyle() {
-  return {
-    border: "1px solid #fecaca",
-    background: "#fff1f2",
-    color: "#b91c1c",
-    borderRadius: 12,
-    padding: "9px 12px",
-    fontWeight: 700,
-    cursor: "pointer",
-  };
-}
-
-function inputStyle() {
-  return {
-    width: "100%",
-    minWidth: 0,
-    border: "1px solid #cbd5e1",
-    borderRadius: 12,
-    padding: "10px 12px",
-    fontSize: 14,
-    outline: "none",
-    background: "#fff",
-    boxSizing: "border-box",
-  };
-}
-
-function compactInputStyle() {
-  return {
-    ...inputStyle(),
-    height: 44,
-    padding: "10px 12px",
-  };
-}
-
-function textareaStyle(minHeight = 84) {
-  return {
-    ...inputStyle(),
-    minHeight,
-    resize: "vertical",
-    padding: "12px",
-  };
-}
-
-function labelStyle() {
-  return {
-    display: "grid",
-    gap: 6,
-    fontSize: 13,
-    color: "#334155",
-    fontWeight: 700,
-    minWidth: 0,
-  };
-}
-
-function emptyCard(message) {
-  return (
-    <div
-      style={{
-        border: "1px dashed #cbd5e1",
-        borderRadius: 16,
-        padding: 22,
-        textAlign: "center",
-        color: "#64748b",
-        background: "#f8fafc",
-      }}
-    >
-      {message}
-    </div>
-  );
-}
-
-function calcHorasPlanejadas(acao) {
-  return Number(acao.participantes_previstos || 0) * Number(acao.carga_horaria || 0);
-}
-
-function calcHorasRealizadas(acao) {
-  return Number(acao.participantes_realizados || 0) * Number(acao.carga_horaria || 0);
-}
-
-function calcHorasCoaching(plano) {
-  return (
-    Number(plano.sessoes_realizadas || 0) *
-    Number(plano.carga_horaria_sessao || 0) *
-    Number(plano.participantes_realizados || 0)
-  );
 }
 
 function isValidDateRange(dataInicio, dataFim) {
   if (!dataInicio || !dataFim) return true;
-  const inicio = parseDate(dataInicio);
-  const fim = parseDate(dataFim);
+
+  const inicio = parseLocalDate(dataInicio);
+  const fim = parseLocalDate(dataFim);
+
   if (!inicio || !fim) return true;
   return fim >= inicio;
 }
 
-function validarJornada(form) {
-  if (!String(form.nome || "").trim()) return "Informe o nome da jornada.";
-  if (!isValidDateRange(form.data_inicio, form.data_fim)) {
-    return "A data fim da jornada não pode ser menor que a data início.";
-  }
-  return "";
-}
-
-function validarEtapa(form, jornadas) {
-  if (!form.jornada_id) return "Selecione a jornada da etapa.";
-  if (!String(form.nome || "").trim()) return "Informe o nome da etapa.";
-
-  const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
-  if (!jornadaExiste) return "A jornada selecionada para a etapa não é válida.";
-
-  if (!isValidDateRange(form.data_inicio, form.data_fim)) {
-    return "A data fim da etapa não pode ser menor que a data início.";
-  }
-  return "";
-}
-
-function validarAcao(form, jornadas, etapas) {
-  if (!form.jornada_id) return "Selecione a jornada da ação.";
-  if (!String(form.tema || "").trim()) return "Informe o título/tema da ação.";
-
-  const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
-  if (!jornadaExiste) return "A jornada selecionada para a ação não é válida.";
-
-  if (form.etapa_id) {
-    const etapa = etapas.find((e) => String(e.id) === String(form.etapa_id));
-    if (!etapa) return "A etapa selecionada para a ação não é válida.";
-    if (String(etapa.jornada_id) !== String(form.jornada_id)) {
-      return "A etapa selecionada não pertence à jornada escolhida.";
-    }
-  }
-
-  if (!isValidDateRange(form.data_inicio, form.data_fim)) {
-    return "A data fim da ação não pode ser menor que a data início.";
-  }
-  return "";
-}
-
-function validarCoaching(form, jornadas, etapas, acoes) {
-  if (!String(form.titulo || "").trim()) return "Informe o título do coaching.";
-
-  if (form.jornada_id) {
-    const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
-    if (!jornadaExiste) return "A jornada selecionada para o coaching não é válida.";
-  }
-
-  if (form.etapa_id) {
-    const etapa = etapas.find((e) => String(e.id) === String(form.etapa_id));
-    if (!etapa) return "A etapa selecionada para o coaching não é válida.";
-    if (form.jornada_id && String(etapa.jornada_id) !== String(form.jornada_id)) {
-      return "A etapa selecionada não pertence à jornada escolhida no coaching.";
-    }
-  }
-
-  if (form.acao_id) {
-    const acao = acoes.find((a) => String(a.id) === String(form.acao_id));
-    if (!acao) return "A ação vinculada ao coaching não é válida.";
-
-    if (form.jornada_id && String(acao.jornada_id) !== String(form.jornada_id)) {
-      return "A ação vinculada não pertence à jornada escolhida no coaching.";
-    }
-
-    if (form.etapa_id && String(acao.etapa_id || "") !== String(form.etapa_id)) {
-      return "A ação vinculada não pertence à etapa escolhida no coaching.";
-    }
-  }
-
-  if (!isValidDateRange(form.data_inicio, form.data_fim)) {
-    return "A data fim do coaching não pode ser menor que a data início.";
-  }
-  return "";
-}
-
-function extrairMensagemErro(error, fallback) {
-  if (!error) return fallback;
-  if (typeof error === "string") return error;
-  if (error.message) return error.message;
-  if (error.error) return error.error;
-  return fallback;
-}
-
-function getSelectStatus(resource, { loading, empty, error }) {
-  if (!resource) return { disabled: false, text: "" };
-  if (resource.state === "loading") return { disabled: true, text: loading };
-  if (resource.state === "error") return { disabled: true, text: resource.message || error };
-  if (resource.state === "empty") return { disabled: true, text: resource.message || empty };
-  return { disabled: false, text: "" };
-}
-
-function getDependentSelectStatus({
-  parentValue,
-  parentEmptyText,
-  items,
-  loadingState,
-  emptyText,
-  errorText,
-}) {
-  if (!parentValue) return { disabled: true, text: parentEmptyText };
-  if (!loadingState) return { disabled: !items.length, text: items.length ? "" : emptyText };
-  if (loadingState.state === "loading") return { disabled: true, text: "Carregando opções..." };
-  if (loadingState.state === "error") return { disabled: true, text: loadingState.message || errorText };
-  if (!items.length) return { disabled: true, text: emptyText };
-  return { disabled: false, text: "" };
-}
-
-const jornadaInicial = {
-  id: null,
-  nome: "",
-  descricao: "",
-  objetivo: "",
-  publico_macro: "",
-  observacoes: "",
-  status: "ativo",
-  responsavel_id: "",
-  data_inicio: "",
-  data_fim: "",
-};
-
-const etapaInicial = {
-  id: null,
-  jornada_id: "",
-  nome: "",
-  descricao: "",
-  objetivo: "",
-  tipo: "treinamento",
-  ordem: "",
-  status: "planejado",
-  responsavel_id: "",
-  data_inicio: "",
-  data_fim: "",
-  carga_horaria_prevista: "",
-  carga_horaria_realizada: "",
-  observacoes: "",
-};
-
-const acaoInicial = {
-  id: null,
-  jornada_id: "",
-  etapa_id: "",
-  tipo_acao: "treinamento",
-  tema: "",
-  subtipo: "",
-  publico_alvo: "",
-  obrigatoria: 0,
-  descricao: "",
-  carga_horaria: "",
-  participantes_previstos: "",
-  participantes_realizados: "",
-  quantidade_turmas_sessoes: "",
-  horas_planejadas: "",
-  horas_realizadas: "",
-  status: "planejado",
-  responsavel_id: "",
-  data_inicio: "",
-  data_fim: "",
-};
-
-const coachingInicial = {
-  id: null,
-  jornada_id: "",
-  etapa_id: "",
-  acao_id: "",
-  tipo_coaching: "coaching",
-  titulo: "",
-  publico_alvo: "",
-  objetivo: "",
-  responsavel_id: "",
-  participantes_previstos: "",
-  participantes_realizados: "",
-  sessoes_previstas: "",
-  sessoes_realizadas: "",
-  carga_horaria_sessao: "",
-  horas_totais: "",
-  status: "planejado",
-  data_inicio: "",
-  data_fim: "",
-};
-
-const STATUS_OPTIONS = [
-  { value: "", label: "Todos os status" },
-  { value: "ativo", label: "Ativo" },
-  { value: "inativo", label: "Inativo" },
-  { value: "concluido", label: "Concluído" },
-  { value: "planejado", label: "Planejado" },
-  { value: "em_andamento", label: "Em andamento" },
-  { value: "cancelado", label: "Cancelado" },
-];
-
-const TIPO_OPTIONS = [
-  { value: "", label: "Todos os tipos" },
-  { value: "treinamento", label: "Treinamento" },
-  { value: "campanha", label: "Campanha" },
-  { value: "workshop", label: "Workshop" },
-  { value: "integracao", label: "Integração" },
-  { value: "reciclagem", label: "Reciclagem" },
-  { value: "acao_estrategica", label: "Ação estratégica" },
-  { value: "coaching", label: "Coaching" },
-  { value: "outro", label: "Outro" },
-];
-
 export default function MapaDesenvolvimentoPage() {
-  const [activeTab, setActiveTab] = useState("geral");
-
-  const [usuarios, setUsuarios] = useState([]);
-  const [jornadas, setJornadas] = useState([]);
-  const [etapas, setEtapas] = useState([]);
-  const [acoes, setAcoes] = useState([]);
-  const [coachings, setCoachings] = useState([]);
-
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
-  const [notice, setNotice] = useState("");
-  const [resourceStatus, setResourceStatus] = useState({
-    usuarios: { state: "idle", message: "" },
-    jornadas: { state: "idle", message: "" },
-    etapas: { state: "idle", message: "" },
-    acoes: { state: "idle", message: "" },
-    coachings: { state: "idle", message: "" },
-  });
+  const [sucesso, setSucesso] = useState("");
 
-  const [filters, setFilters] = useState({
-    jornada_id: "",
-    etapa_id: "",
-    tipo: "",
-    status: "",
-    responsavel_id: "",
-    busca: "",
-  });
+  const [jornadas, setJornadas] = useState([]);
+  const [acoes, setAcoes] = useState([]);
+  const [turmasDisponiveis, setTurmasDisponiveis] = useState([]);
 
-  const [jornadaForm, setJornadaForm] = useState(jornadaInicial);
-  const [etapaForm, setEtapaForm] = useState(etapaInicial);
-  const [acaoForm, setAcaoForm] = useState(acaoInicial);
-  const [coachingForm, setCoachingForm] = useState(coachingInicial);
+  const [journeyForm, setJourneyForm] = useState(emptyJourneyForm());
+  const [actionForm, setActionForm] = useState(emptyActionForm());
+
+  const [salvandoJornada, setSalvandoJornada] = useState(false);
+  const [salvandoAcao, setSalvandoAcao] = useState(false);
+
+  const [busca, setBusca] = useState("");
+  const [filtroCliente, setFiltroCliente] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
 
   useEffect(() => {
-    loadAll();
+    carregarTudo();
   }, []);
 
-  useEffect(() => {
-    if (!filters.jornada_id) return;
-    if (!filters.etapa_id) return;
-
-    const etapaValida = etapas.some(
-      (item) =>
-        String(item.id) === String(filters.etapa_id) &&
-        String(item.jornada_id) === String(filters.jornada_id)
-    );
-
-    if (!etapaValida) {
-      setFilters((prev) => ({ ...prev, etapa_id: "" }));
-    }
-  }, [filters.jornada_id, filters.etapa_id, etapas]);
-
-  async function loadResource(path, key, emptyMessage = "Nenhum registro disponível.") {
+  async function carregarTudo() {
     try {
-      const data = await apiFetch(path);
-      const list = Array.isArray(data) ? data : [];
-      setResourceStatus((prev) => ({
-        ...prev,
-        [key]: {
-          state: list.length ? "success" : "empty",
-          message: list.length ? "" : emptyMessage,
-        },
-      }));
-      return list;
-    } catch (error) {
-      setResourceStatus((prev) => ({
-        ...prev,
-        [key]: {
-          state: "error",
-          message: extrairMensagemErro(error, `Erro ao carregar ${key}.`),
-        },
-      }));
-      return [];
-    }
-  }
+      setLoading(true);
+      setErro("");
+      setSucesso("");
 
-  async function loadAll() {
-    setLoading(true);
-    setErro("");
-    setResourceStatus({
-      usuarios: { state: "loading", message: "Carregando responsáveis..." },
-      jornadas: { state: "loading", message: "Carregando jornadas..." },
-      etapas: { state: "loading", message: "Carregando etapas..." },
-      acoes: { state: "loading", message: "Carregando ações..." },
-      coachings: { state: "loading", message: "Carregando coachings..." },
-    });
-
-    try {
-      const [usuariosData, jornadasData, etapasData, acoesData, coachingsData] = await Promise.all([
-        loadResource("/usuarios", "usuarios", "Nenhum responsável disponível."),
-        loadResource("/jornadas-desenvolvimento", "jornadas", "Nenhuma jornada cadastrada."),
-        loadResource("/jornadas-etapas", "etapas", "Nenhuma etapa cadastrada."),
-        loadResource("/acoes-desenvolvimento", "acoes", "Nenhuma ação cadastrada."),
-        loadResource("/coaching-planos", "coachings", "Nenhum coaching cadastrado."),
+      const [jornadasResp, acoesResp, turmasResp] = await Promise.all([
+        apiFetch("/jornadas-desenvolvimento").catch(() => []),
+        apiFetch("/acoes-desenvolvimento").catch(() => []),
+        apiFetch("/treinamentos").catch(() => []),
       ]);
 
-      setUsuarios(usuariosData);
-      setJornadas(jornadasData);
-      setEtapas(etapasData);
-      setAcoes(acoesData);
-      setCoachings(coachingsData);
-    } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao carregar o Mapa de Desenvolvimento."));
+      setJornadas(Array.isArray(jornadasResp) ? jornadasResp : []);
+      setAcoes(Array.isArray(acoesResp) ? acoesResp : []);
+      setTurmasDisponiveis(Array.isArray(turmasResp) ? turmasResp : []);
+    } catch (err) {
+      setErro(err.message || "Erro ao carregar o Mapa de Desenvolvimento.");
     } finally {
       setLoading(false);
     }
   }
 
-  const responsavelMap = useMemo(() => {
-    const map = {};
-    usuarios.forEach((u) => {
-      map[String(u.id)] = u.nome || `Usuário ${u.id}`;
-    });
-    return map;
-  }, [usuarios]);
-
-  const jornadasMap = useMemo(() => {
-    const map = {};
-    jornadas.forEach((j) => {
-      map[String(j.id)] = j;
-    });
-    return map;
-  }, [jornadas]);
-
-  const etapasMap = useMemo(() => {
-    const map = {};
-    etapas.forEach((e) => {
-      map[String(e.id)] = e;
-    });
-    return map;
-  }, [etapas]);
-
-  const etapasOrdenadas = useMemo(() => {
-    return [...etapas].sort((a, b) => {
-      const aj = Number(a.jornada_id || 0);
-      const bj = Number(b.jornada_id || 0);
-      if (aj !== bj) return aj - bj;
-
-      const ao = Number(a.ordem || 9999);
-      const bo = Number(b.ordem || 9999);
-      if (ao !== bo) return ao - bo;
-
-      return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
-    });
-  }, [etapas]);
-
-  const jornadasEnriquecidas = useMemo(() => {
-    return jornadas.map((jornada) => {
-      const etapasDaJornada = etapas.filter((e) => String(e.jornada_id) === String(jornada.id));
-      const acoesDaJornada = acoes.filter((a) => String(a.jornada_id) === String(jornada.id));
-      const coachingsDaJornada = coachings.filter((c) => String(c.jornada_id || "") === String(jornada.id));
-
-      const horasAcoes = acoesDaJornada.reduce(
-        (acc, item) => acc + Number(item.horas_realizadas || calcHorasRealizadas(item)),
-        0
-      );
-      const horasCoaching = coachingsDaJornada.reduce(
-        (acc, item) => acc + Number(item.horas_totais || calcHorasCoaching(item)),
-        0
-      );
-
-      const responsavel_nome = responsavelMap[String(jornada.responsavel_id)] || "Não definido";
-      const prazo_info = getPrazoInfo(jornada);
-      const saude_info = getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada);
-      const attention_info = getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada);
-
-      const etapasCriticas = etapasDaJornada
-        .map((etapa) => {
-          const prazo = getPrazoInfo(etapa);
-          const fakeStage = {
-            ...etapa,
-            prazo_info: prazo,
-            attention_info:
-              !etapa.responsavel_id
-                ? { level: "media", label: "Sem responsável" }
-                : prazo.tone === "danger"
-                ? { level: "alta", label: "Prazo vencido" }
-                : { level: "ok", label: "Estável" },
-          };
-          return { ...fakeStage, saude_info: getStageHealth(fakeStage) };
-        })
-        .sort((a, b) => {
-          const pa = a.saude_info.level === "alta" ? 1 : a.saude_info.level === "media" ? 2 : 3;
-          const pb = b.saude_info.level === "alta" ? 1 : b.saude_info.level === "media" ? 2 : 3;
-          if (pa !== pb) return pa - pb;
-          return Number(a.ordem || 9999) - Number(b.ordem || 9999);
-        });
-
-      return {
-        ...jornada,
-        status_canonico: canonicalStatus(jornada.status),
-        responsavel_nome,
-        total_etapas: etapasDaJornada.length,
-        total_acoes: acoesDaJornada.length,
-        total_coachings: coachingsDaJornada.length,
-        horas_totais: horasAcoes + horasCoaching,
-        prazo_info,
-        saude_info,
-        attention_info,
-        etapa_critica: etapasCriticas[0] || null,
-      };
-    });
-  }, [jornadas, etapas, acoes, coachings, responsavelMap]);
-
-  const etapasEnriquecidas = useMemo(() => {
-    return etapasOrdenadas.map((etapa) => {
-      const jornada = jornadasMap[String(etapa.jornada_id)];
-      const acoesDaEtapa = acoes.filter((a) => String(a.etapa_id || "") === String(etapa.id));
-      const coachingsDaEtapa = coachings.filter((c) => String(c.etapa_id || "") === String(etapa.id));
-
-      const horasAcoes = acoesDaEtapa.reduce(
-        (acc, item) => acc + Number(item.horas_realizadas || calcHorasRealizadas(item)),
-        0
-      );
-      const horasCoaching = coachingsDaEtapa.reduce(
-        (acc, item) => acc + Number(item.horas_totais || calcHorasCoaching(item)),
-        0
-      );
-
-      return {
-        ...etapa,
-        status_canonico: canonicalStatus(etapa.status),
-        jornada_nome: jornada?.nome || "Sem jornada",
-        responsavel_nome: responsavelMap[String(etapa.responsavel_id)] || "Não definido",
-        total_acoes: acoesDaEtapa.length,
-        total_coachings: coachingsDaEtapa.length,
-        horas_totais: horasAcoes + horasCoaching,
-      };
-    });
-  }, [etapasOrdenadas, jornadasMap, acoes, coachings, responsavelMap]);
-
-  const acoesEnriquecidas = useMemo(() => {
-    return acoes.map((acao) => {
-      const jornada = jornadasMap[String(acao.jornada_id)];
-      const etapa = etapasMap[String(acao.etapa_id || "")];
-      const base = {
-        ...acao,
-        tipo_registro: "acao",
-        status_canonico: canonicalStatus(acao.status),
-        jornada_nome: jornada?.nome || "Sem jornada",
-        etapa_nome: etapa?.nome || "Sem etapa",
-        responsavel_nome: responsavelMap[String(acao.responsavel_id)] || "Não definido",
-        horas_planejadas_calc: Number(acao.horas_planejadas || calcHorasPlanejadas(acao)),
-        horas_realizadas_calc: Number(acao.horas_realizadas || calcHorasRealizadas(acao)),
-      };
-      return {
-        ...base,
-        prazo_info: getPrazoInfo(base),
-        attention_info: getAttention(base, "acao"),
-        intensidade_info: getActionIntensity(base),
-      };
-    });
-  }, [acoes, jornadasMap, etapasMap, responsavelMap]);
-
-  const coachingsEnriquecidos = useMemo(() => {
-    return coachings.map((plano) => {
-      const jornada = jornadasMap[String(plano.jornada_id || "")];
-      const etapa = etapasMap[String(plano.etapa_id || "")];
-      const acao = acoes.find((a) => String(a.id) === String(plano.acao_id || ""));
-      const base = {
-        ...plano,
-        tipo_registro: "coaching",
-        status_canonico: canonicalStatus(plano.status),
-        jornada_nome: jornada?.nome || "Independente",
-        etapa_nome: etapa?.nome || "Sem etapa",
-        acao_nome: acao?.tema || "Sem ação vinculada",
-        responsavel_nome: responsavelMap[String(plano.responsavel_id)] || "Não definido",
-        horas_totais_calc: Number(plano.horas_totais || calcHorasCoaching(plano)),
-      };
-      return {
-        ...base,
-        prazo_info: getPrazoInfo(base),
-        attention_info: getAttention(base, "coaching"),
-        intensidade_info: getCoachingIntensity(base),
-      };
-    });
-  }, [coachings, jornadasMap, etapasMap, acoes, responsavelMap]);
-
-  function matchBusca(textParts, termo) {
-    if (!termo) return true;
-    return normalize(textParts.filter(Boolean).join(" ")).includes(normalize(termo));
-  }
-
-  const filteredJornadas = useMemo(() => {
-    return jornadasEnriquecidas.filter((item) => {
-      const matchJornada = !filters.jornada_id || String(item.id) === String(filters.jornada_id);
-      const matchStatus = !filters.status || item.status_canonico === filters.status;
-      const matchResponsavel =
-        !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-
-      return (
-        matchJornada &&
-        matchStatus &&
-        matchResponsavel &&
-        matchBusca(
-          [
-            item.nome,
-            item.descricao,
-            item.objetivo,
-            item.publico_macro,
-            item.observacoes,
-            item.responsavel_nome,
-          ],
-          filters.busca
-        )
-      );
-    });
-  }, [jornadasEnriquecidas, filters]);
-
-  const filteredEtapas = useMemo(() => {
-    return etapasEnriquecidas.filter((item) => {
-      const matchJornada =
-        !filters.jornada_id || String(item.jornada_id || "") === String(filters.jornada_id);
-      const matchEtapa = !filters.etapa_id || String(item.id) === String(filters.etapa_id);
-      const matchStatus = !filters.status || item.status_canonico === filters.status;
-      const matchResponsavel =
-        !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-
-      const matchTipo =
-        !filters.tipo ||
-        normalize(item.tipo) === normalize(filters.tipo) ||
-        (filters.tipo === "coaching" && normalize(item.tipo) === "coaching");
-
-      return (
-        matchJornada &&
-        matchEtapa &&
-        matchStatus &&
-        matchResponsavel &&
-        matchTipo &&
-        matchBusca(
-          [
-            item.nome,
-            item.descricao,
-            item.objetivo,
-            item.tipo,
-            item.observacoes,
-            item.jornada_nome,
-            item.responsavel_nome,
-          ],
-          filters.busca
-        )
-      );
-    });
-  }, [etapasEnriquecidas, filters]);
-
-  const filteredAcoes = useMemo(() => {
-    return acoesEnriquecidas.filter((item) => {
-      const matchJornada =
-        !filters.jornada_id || String(item.jornada_id || "") === String(filters.jornada_id);
-      const matchEtapa =
-        !filters.etapa_id || String(item.etapa_id || "") === String(filters.etapa_id);
-      const matchTipo = !filters.tipo || normalize(item.tipo_acao) === normalize(filters.tipo);
-      const matchStatus = !filters.status || item.status_canonico === filters.status;
-      const matchResponsavel =
-        !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-
-      return (
-        matchJornada &&
-        matchEtapa &&
-        matchTipo &&
-        matchStatus &&
-        matchResponsavel &&
-        matchBusca(
-          [
-            item.tema,
-            item.subtipo,
-            item.publico_alvo,
-            item.descricao,
-            item.jornada_nome,
-            item.etapa_nome,
-            item.responsavel_nome,
-          ],
-          filters.busca
-        )
-      );
-    });
-  }, [acoesEnriquecidas, filters]);
-
-  const filteredCoachings = useMemo(() => {
-    return coachingsEnriquecidos.filter((item) => {
-      const matchJornada =
-        !filters.jornada_id || String(item.jornada_id || "") === String(filters.jornada_id);
-      const matchEtapa =
-        !filters.etapa_id || String(item.etapa_id || "") === String(filters.etapa_id);
-      const matchTipo =
-        !filters.tipo ||
-        normalize(item.tipo_coaching) === normalize(filters.tipo) ||
-        filters.tipo === "coaching";
-      const matchStatus = !filters.status || item.status_canonico === filters.status;
-      const matchResponsavel =
-        !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
-
-      return (
-        matchJornada &&
-        matchEtapa &&
-        matchTipo &&
-        matchStatus &&
-        matchResponsavel &&
-        matchBusca(
-          [
-            item.titulo,
-            item.tipo_coaching,
-            item.publico_alvo,
-            item.objetivo,
-            item.jornada_nome,
-            item.etapa_nome,
-            item.acao_nome,
-            item.responsavel_nome,
-          ],
-          filters.busca
-        )
-      );
-    });
-  }, [coachingsEnriquecidos, filters]);
-
-  const overviewRows = useMemo(() => {
-    const rows = [
-      ...filteredAcoes.map((item) => ({
-        ...item,
-        titulo: item.tema,
-        tipo_label: item.tipo_acao,
-        horas: item.horas_realizadas_calc,
-      })),
-      ...filteredCoachings.map((item) => ({
-        ...item,
-        titulo: item.titulo,
-        tipo_label: `sustentação • ${displayStatus(item.tipo_coaching)}`,
-        horas: item.horas_totais_calc,
-      })),
-    ];
-
-    return rows.sort((a, b) => {
-      const p = statusPriority(a.status) - statusPriority(b.status);
-      if (p !== 0) return p;
-
-      const att =
-        (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
-        (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
-      if (att !== 0) return att;
-
-      const da = parseDate(a.data_fim || a.data_inicio);
-      const db = parseDate(b.data_fim || b.data_inicio);
-      if (da && db) return db - da;
-      if (da) return -1;
-      if (db) return 1;
-
-      const horas = Number(b.horas || 0) - Number(a.horas || 0);
-      if (horas !== 0) return horas;
-
-      return String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR");
-    });
-  }, [filteredAcoes, filteredCoachings]);
-
-  const orderedAcoes = useMemo(() => {
-    return [...filteredAcoes].sort((a, b) => {
-      const p = statusPriority(a.status) - statusPriority(b.status);
-      if (p !== 0) return p;
-
-      const att =
-        (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
-        (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
-      if (att !== 0) return att;
-
-      const pa = a.prazo_info?.tone === "danger" ? 1 : a.prazo_info?.tone === "neutral" ? 3 : 2;
-      const pb = b.prazo_info?.tone === "danger" ? 1 : b.prazo_info?.tone === "neutral" ? 3 : 2;
-      if (pa !== pb) return pa - pb;
-
-      const ia = a.intensidade_info?.tone === "danger" ? 1 : a.intensidade_info?.tone === "alert" ? 2 : 3;
-      const ib = b.intensidade_info?.tone === "danger" ? 1 : b.intensidade_info?.tone === "alert" ? 2 : 3;
-      if (ia !== ib) return ia - ib;
-
-      const da = parseDate(a.data_fim || a.data_inicio);
-      const db = parseDate(b.data_fim || b.data_inicio);
-      if (da && db) return db - da;
-      if (da) return -1;
-      if (db) return 1;
-
-      return String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR");
-    });
-  }, [filteredAcoes]);
-
-  const orderedCoachings = useMemo(() => {
-    return [...filteredCoachings].sort((a, b) => {
-      const p = statusPriority(a.status) - statusPriority(b.status);
-      if (p !== 0) return p;
-
-      const att =
-        (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
-        (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
-      if (att !== 0) return att;
-
-      const independentA = a.jornada_id ? 2 : 1;
-      const independentB = b.jornada_id ? 2 : 1;
-      if (independentA !== independentB) return independentA - independentB;
-
-      const pa = a.prazo_info?.tone === "danger" ? 1 : a.prazo_info?.tone === "neutral" ? 3 : 2;
-      const pb = b.prazo_info?.tone === "danger" ? 1 : b.prazo_info?.tone === "neutral" ? 3 : 2;
-      if (pa !== pb) return pa - pb;
-
-      const ia = a.intensidade_info?.tone === "danger" ? 1 : a.intensidade_info?.tone === "alert" ? 2 : 3;
-      const ib = b.intensidade_info?.tone === "danger" ? 1 : b.intensidade_info?.tone === "alert" ? 2 : 3;
-      if (ia !== ib) return ia - ib;
-
-      const da = parseDate(a.data_fim || a.data_inicio);
-      const db = parseDate(b.data_fim || b.data_inicio);
-      if (da && db) return db - da;
-      if (da) return -1;
-      if (db) return 1;
-
-      return String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR");
-    });
-  }, [filteredCoachings]);
-
-  const actionExecutive = useMemo(() => {
-    return {
-      emAndamento: orderedAcoes.filter((i) => i.status_canonico === "em_andamento").length,
-      concluidas: orderedAcoes.filter((i) => i.status_canonico === "concluido").length,
-      semResponsavel: orderedAcoes.filter((i) => i.attention_info?.label === "Sem responsável").length,
-      vencidas: orderedAcoes.filter((i) => i.prazo_info?.tone === "danger").length,
-      horas: orderedAcoes.reduce((acc, i) => acc + Number(i.horas_realizadas_calc || 0), 0),
-      criticas: orderedAcoes.filter((i) => i.attention_info?.level === "alta").length,
-    };
-  }, [orderedAcoes]);
-
-  const coachingExecutive = useMemo(() => {
-    return {
-      emAndamento: orderedCoachings.filter((i) => i.status_canonico === "em_andamento").length,
-      concluidos: orderedCoachings.filter((i) => i.status_canonico === "concluido").length,
-      independentes: orderedCoachings.filter((i) => !i.jornada_id).length,
-      semResponsavel: orderedCoachings.filter((i) => i.attention_info?.label === "Sem responsável").length,
-      vencidos: orderedCoachings.filter((i) => i.prazo_info?.tone === "danger").length,
-      horas: orderedCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0),
-      criticos: orderedCoachings.filter((i) => i.attention_info?.level === "alta").length,
-    };
-  }, [orderedCoachings]);
-
-  const executiveAlerts = useMemo(() => {
-    const rows = overviewRows;
-    return {
-      emAndamento: rows.filter((i) => i.status_canonico === "em_andamento").length,
-      criticos: rows.filter((i) => i.attention_info?.level === "alta").length,
-      semResponsavel: rows.filter((i) => i.attention_info?.label === "Sem responsável").length,
-      vencidos: rows.filter((i) => i.prazo_info?.tone === "danger").length,
-    };
-  }, [overviewRows]);
-
-  const kpis = useMemo(() => {
-    const participantesAcoes = filteredAcoes.reduce(
-      (acc, item) => acc + Number(item.participantes_realizados || 0),
-      0
-    );
-    const participantesCoachings = filteredCoachings.reduce(
-      (acc, item) => acc + Number(item.participantes_realizados || 0),
-      0
-    );
-    const horasAcoes = filteredAcoes.reduce(
-      (acc, item) => acc + Number(item.horas_realizadas_calc || 0),
-      0
-    );
-    const horasCoachings = filteredCoachings.reduce(
-      (acc, item) => acc + Number(item.horas_totais_calc || 0),
-      0
-    );
-
-    return {
-      jornadas: filteredJornadas.length,
-      etapas: filteredEtapas.length,
-      acoes: filteredAcoes.length,
-      coachings: filteredCoachings.length,
-      participantes: participantesAcoes + participantesCoachings,
-      horasTotais: horasAcoes + horasCoachings,
-      concluidas:
-        filteredAcoes.filter((i) => i.status_canonico === "concluido").length +
-        filteredCoachings.filter((i) => i.status_canonico === "concluido").length,
-      coachingsIndependentes: filteredCoachings.filter((i) => !i.jornada_id).length,
-      fluxosAtivos: filteredJornadas.filter((i) => i.status_canonico === "ativo").length,
-    };
-  }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
-
-
-  const jornadasFluxo = useMemo(() => {
-    return filteredJornadas
-      .map((jornada) => {
-        const etapasDaJornada = filteredEtapas
-          .filter((item) => String(item.jornada_id) === String(jornada.id))
-          .sort((a, b) => Number(a.ordem || 9999) - Number(b.ordem || 9999));
-
-        const acoesDaJornada = filteredAcoes.filter((item) => String(item.jornada_id) === String(jornada.id));
-        const coachingsDaJornada = filteredCoachings.filter((item) => String(item.jornada_id || "") === String(jornada.id));
-
-        const etapasConcluidas = etapasDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
-        const acoesConcluidas = acoesDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
-        const coachingsConcluidos = coachingsDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
-
-        const totalBlocos = etapasDaJornada.length + acoesDaJornada.length + coachingsDaJornada.length;
-        const concluidos = etapasConcluidas + acoesConcluidas + coachingsConcluidos;
-        const progresso = totalBlocos > 0 ? Math.round((concluidos / totalBlocos) * 100) : 0;
-
-        const etapaAtual = etapasDaJornada.find((item) => canonicalStatus(item.status) !== "concluido") || etapasDaJornada[etapasDaJornada.length - 1] || null;
-        const acoesDaEtapaAtual = etapaAtual
-          ? acoesDaJornada.filter((item) => String(item.etapa_id || "") === String(etapaAtual.id))
-          : [];
-        const coachingsDaEtapaAtual = etapaAtual
-          ? coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapaAtual.id))
-          : [];
-
-        let proximoPasso = "Definir próximos movimentos";
-        const proximaEtapa = etapasDaJornada.find((item) => canonicalStatus(item.status) === "planejado");
-        const acaoPendente = acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
-        const coachingPendente = coachingsDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
-
-        if (!etapasDaJornada.length) {
-          proximoPasso = "Estruturar as etapas da jornada";
-        } else if (proximaEtapa) {
-          proximoPasso = `Iniciar a etapa ${proximaEtapa.nome}`;
-        } else if (acaoPendente) {
-          proximoPasso = `Avançar na ação ${acaoPendente.tema}`;
-        } else if (coachingPendente) {
-          proximoPasso = `Conduzir o coaching ${coachingPendente.titulo}`;
-        } else if (totalBlocos > 0 && concluidos === totalBlocos) {
-          proximoPasso = "Concluir e registrar o fechamento da jornada";
-        }
-
-        return {
-          ...jornada,
-          etapasDaJornada,
-          acoesDaJornada,
-          coachingsDaJornada,
-          etapasConcluidas,
-          acoesConcluidas,
-          coachingsConcluidos,
-          progresso,
-          etapaAtual,
-          acoesDaEtapaAtual,
-          coachingsDaEtapaAtual,
-          proximoPasso,
-        };
-      })
-      .sort((a, b) => {
-        const att =
-          (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
-          (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
-        if (att !== 0) return att;
-        return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
-      });
-  }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
-
-  const proximosPassos = useMemo(() => {
-    return jornadasFluxo.slice(0, 6).map((item) => ({
-      id: item.id,
-      jornada: item.nome,
-      responsavel: item.responsavel_nome,
-      passo: item.proximoPasso,
-      saude: item.saude_info,
-      atencao: item.attention_info,
-      etapaAtual: item.etapaAtual?.nome || "Sem etapa definida",
-    }));
-  }, [jornadasFluxo]);
-  async function saveJornada(event) {
-    event.preventDefault();
-    setSaving(true);
-    setErro("");
-    setNotice("");
-
-    const erroValidacao = validarJornada(jornadaForm);
-    if (erroValidacao) {
-      setErro(erroValidacao);
-      setSaving(false);
-      return;
-    }
-
+  async function salvarJornada() {
     try {
+      if (!journeyForm.titulo) {
+        setErro("Informe o título da jornada.");
+        return;
+      }
+
+      if (!isValidDateRange(journeyForm.data_inicio, journeyForm.data_fim)) {
+        setErro("A data fim da jornada não pode ser anterior à data início.");
+        return;
+      }
+
+      setSalvandoJornada(true);
+      setErro("");
+      setSucesso("");
+
       const payload = {
-        nome: jornadaForm.nome,
-        descricao: jornadaForm.descricao,
-        objetivo: jornadaForm.objetivo,
-        publico_macro: jornadaForm.publico_macro,
-        observacoes: jornadaForm.observacoes,
-        status: jornadaForm.status,
-        responsavel_id: jornadaForm.responsavel_id || null,
-        data_inicio: jornadaForm.data_inicio || null,
-        data_fim: jornadaForm.data_fim || null,
+        titulo: journeyForm.titulo,
+        cliente: journeyForm.cliente || null,
+        publico_alvo: journeyForm.publico_alvo || null,
+        objetivo: journeyForm.objetivo || null,
+        status: journeyForm.status || "planejada",
+        data_inicio: journeyForm.data_inicio || null,
+        data_fim: journeyForm.data_fim || null,
       };
 
-      if (jornadaForm.id) {
-        await apiFetch(`/jornadas-desenvolvimento/${jornadaForm.id}`, {
+      if (journeyForm.id) {
+        await apiFetch(`/jornadas-desenvolvimento/${journeyForm.id}`, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setNotice("Jornada atualizada com sucesso.");
+        setSucesso("Jornada atualizada com sucesso.");
       } else {
         await apiFetch("/jornadas-desenvolvimento", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Jornada registrada com sucesso.");
+        setSucesso("Jornada cadastrada com sucesso.");
       }
 
-      setJornadaForm(jornadaInicial);
-      await loadAll();
-    } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao salvar jornada."));
+      setJourneyForm(emptyJourneyForm());
+      await carregarTudo();
+    } catch (err) {
+      setErro(err.message || "Erro ao salvar jornada.");
     } finally {
-      setSaving(false);
+      setSalvandoJornada(false);
     }
   }
 
-  async function saveEtapa(event) {
-    event.preventDefault();
-    setSaving(true);
-    setErro("");
-    setNotice("");
-
-    const erroValidacao = validarEtapa(etapaForm, jornadas);
-    if (erroValidacao) {
-      setErro(erroValidacao);
-      setSaving(false);
-      return;
-    }
-
+  async function salvarAcao() {
     try {
-      const payload = {
-        jornada_id: Number(etapaForm.jornada_id),
-        nome: etapaForm.nome,
-        descricao: etapaForm.descricao,
-        objetivo: etapaForm.objetivo,
-        tipo: etapaForm.tipo,
-        ordem: Number(etapaForm.ordem || 0),
-        status: etapaForm.status,
-        responsavel_id: etapaForm.responsavel_id || null,
-        data_inicio: etapaForm.data_inicio || null,
-        data_fim: etapaForm.data_fim || null,
-        carga_horaria_prevista: Number(etapaForm.carga_horaria_prevista || 0),
-        carga_horaria_realizada: Number(etapaForm.carga_horaria_realizada || 0),
-        observacoes: etapaForm.observacoes,
-      };
-
-      if (etapaForm.id) {
-        await apiFetch(`/jornadas-etapas/${etapaForm.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        });
-        setNotice("Etapa atualizada com sucesso.");
-      } else {
-        await apiFetch("/jornadas-etapas", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        setNotice("Etapa registrada com sucesso.");
+      if (!actionForm.jornada_id || !actionForm.titulo) {
+        setErro("Informe a jornada e o título da ação.");
+        return;
       }
 
-      setEtapaForm(etapaInicial);
-      await loadAll();
-    } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao salvar etapa."));
-    } finally {
-      setSaving(false);
-    }
-  }
+      if (!isValidDateRange(actionForm.data_inicio, actionForm.data_fim)) {
+        setErro("A data fim da ação não pode ser anterior à data início.");
+        return;
+      }
 
-  async function saveAcao(event) {
-    event.preventDefault();
-    setSaving(true);
-    setErro("");
-    setNotice("");
-
-    const erroValidacao = validarAcao(acaoForm, jornadas, etapas);
-    if (erroValidacao) {
-      setErro(erroValidacao);
-      setSaving(false);
-      return;
-    }
-
-    try {
-      const horasPlanejadas =
-        acaoForm.horas_planejadas !== ""
-          ? Number(acaoForm.horas_planejadas || 0)
-          : Number(acaoForm.participantes_previstos || 0) * Number(acaoForm.carga_horaria || 0);
-
-      const horasRealizadas =
-        acaoForm.horas_realizadas !== ""
-          ? Number(acaoForm.horas_realizadas || 0)
-          : Number(acaoForm.participantes_realizados || 0) * Number(acaoForm.carga_horaria || 0);
+      setSalvandoAcao(true);
+      setErro("");
+      setSucesso("");
 
       const payload = {
-        jornada_id: Number(acaoForm.jornada_id),
-        etapa_id: acaoForm.etapa_id ? Number(acaoForm.etapa_id) : null,
-        tipo_acao: acaoForm.tipo_acao,
-        tema: acaoForm.tema,
-        subtipo: acaoForm.subtipo,
-        publico_alvo: acaoForm.publico_alvo,
-        obrigatoria: Number(acaoForm.obrigatoria || 0),
-        descricao: acaoForm.descricao,
-        carga_horaria: Number(acaoForm.carga_horaria || 0),
-        participantes_previstos: Number(acaoForm.participantes_previstos || 0),
-        participantes_realizados: Number(acaoForm.participantes_realizados || 0),
-        quantidade_turmas_sessoes: Number(acaoForm.quantidade_turmas_sessoes || 0),
-        horas_planejadas: horasPlanejadas,
-        horas_realizadas: horasRealizadas,
-        status: acaoForm.status,
-        responsavel_id: acaoForm.responsavel_id || null,
-        data_inicio: acaoForm.data_inicio || null,
-        data_fim: acaoForm.data_fim || null,
+        jornada_id: Number(actionForm.jornada_id),
+        titulo: actionForm.titulo,
+        descricao: actionForm.descricao || null,
+        responsavel: actionForm.responsavel || null,
+        status: actionForm.status || "planejada",
+        data_inicio: actionForm.data_inicio || null,
+        data_fim: actionForm.data_fim || null,
+        carga_horaria: Number(actionForm.carga_horaria || 0),
+        participantes_previstos: Number(actionForm.participantes_previstos || 0),
+        turma_ids: Array.isArray(actionForm.turma_ids) ? actionForm.turma_ids : [],
       };
 
-      if (acaoForm.id) {
-        await apiFetch(`/acoes-desenvolvimento/${acaoForm.id}`, {
+      if (actionForm.id) {
+        await apiFetch(`/acoes-desenvolvimento/${actionForm.id}`, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setNotice("Ação atualizada com sucesso.");
+        setSucesso("Ação atualizada com sucesso.");
       } else {
         await apiFetch("/acoes-desenvolvimento", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Ação registrada com sucesso.");
+        setSucesso("Ação cadastrada com sucesso.");
       }
 
-      setAcaoForm(acaoInicial);
-      await loadAll();
-    } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao salvar ação."));
+      setActionForm(emptyActionForm());
+      await carregarTudo();
+    } catch (err) {
+      setErro(err.message || "Erro ao salvar ação.");
     } finally {
-      setSaving(false);
+      setSalvandoAcao(false);
     }
   }
 
-  async function saveCoaching(event) {
-    event.preventDefault();
-    setSaving(true);
-    setErro("");
-    setNotice("");
-
-    const erroValidacao = validarCoaching(coachingForm, jornadas, etapas, acoes);
-    if (erroValidacao) {
-      setErro(erroValidacao);
-      setSaving(false);
-      return;
-    }
+  async function removerJornada(item) {
+    const confirmar = window.confirm(
+      `Deseja remover a jornada "${item.titulo}"?`
+    );
+    if (!confirmar) return;
 
     try {
-      const horasTotais =
-        coachingForm.horas_totais !== ""
-          ? Number(coachingForm.horas_totais || 0)
-          : Number(coachingForm.sessoes_realizadas || 0) *
-            Number(coachingForm.carga_horaria_sessao || 0) *
-            Number(coachingForm.participantes_realizados || 0);
-
-      const payload = {
-        jornada_id: coachingForm.jornada_id ? Number(coachingForm.jornada_id) : null,
-        etapa_id: coachingForm.etapa_id ? Number(coachingForm.etapa_id) : null,
-        acao_id: coachingForm.acao_id ? Number(coachingForm.acao_id) : null,
-        tipo_coaching: coachingForm.tipo_coaching,
-        titulo: coachingForm.titulo,
-        publico_alvo: coachingForm.publico_alvo,
-        objetivo: coachingForm.objetivo,
-        responsavel_id: coachingForm.responsavel_id || null,
-        participantes_previstos: Number(coachingForm.participantes_previstos || 0),
-        participantes_realizados: Number(coachingForm.participantes_realizados || 0),
-        sessoes_previstas: Number(coachingForm.sessoes_previstas || 0),
-        sessoes_realizadas: Number(coachingForm.sessoes_realizadas || 0),
-        carga_horaria_sessao: Number(coachingForm.carga_horaria_sessao || 0),
-        horas_totais: horasTotais,
-        status: coachingForm.status,
-        data_inicio: coachingForm.data_inicio || null,
-        data_fim: coachingForm.data_fim || null,
-      };
-
-      if (coachingForm.id) {
-        await apiFetch(`/coaching-planos/${coachingForm.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        });
-        setNotice("Coaching atualizado com sucesso.");
-      } else {
-        await apiFetch("/coaching-planos", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        setNotice("Coaching registrado com sucesso.");
-      }
-
-      setCoachingForm(coachingInicial);
-      await loadAll();
-    } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao salvar coaching."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function removeRegistro(tipo, id) {
-    const ok = window.confirm("Deseja realmente excluir este registro?");
-    if (!ok) return;
-
-    try {
-      const pathMap = {
-        jornada: `/jornadas-desenvolvimento/${id}`,
-        etapa: `/jornadas-etapas/${id}`,
-        acao: `/acoes-desenvolvimento/${id}`,
-        coaching: `/coaching-planos/${id}`,
-      };
-
-      await apiFetch(pathMap[tipo], { method: "DELETE" });
-      setNotice("Registro excluído com sucesso.");
       setErro("");
-      await loadAll();
-    } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao excluir registro."));
+      setSucesso("");
+      await apiFetch(`/jornadas-desenvolvimento/${item.id}`, {
+        method: "DELETE",
+      });
+      setSucesso("Jornada removida com sucesso.");
+      await carregarTudo();
+    } catch (err) {
+      setErro(err.message || "Erro ao remover jornada.");
     }
   }
 
-  function editJornada(item) {
-    setJornadaForm({
-      id: item.id,
-      nome: item.nome || "",
-      descricao: item.descricao || "",
-      objetivo: item.objetivo || "",
-      publico_macro: item.publico_macro || "",
-      observacoes: item.observacoes || "",
-      status: canonicalStatus(item.status) || "ativo",
-      responsavel_id: item.responsavel_id || "",
-      data_inicio: toDateInput(item.data_inicio),
-      data_fim: toDateInput(item.data_fim),
-    });
-    setActiveTab("jornadas");
+  async function removerAcao(item) {
+    const confirmar = window.confirm(`Deseja remover a ação "${item.titulo}"?`);
+    if (!confirmar) return;
+
+    try {
+      setErro("");
+      setSucesso("");
+      await apiFetch(`/acoes-desenvolvimento/${item.id}`, {
+        method: "DELETE",
+      });
+      setSucesso("Ação removida com sucesso.");
+      await carregarTudo();
+    } catch (err) {
+      setErro(err.message || "Erro ao remover ação.");
+    }
   }
 
-  function editEtapa(item) {
-    setEtapaForm({
-      id: item.id,
-      jornada_id: item.jornada_id || "",
-      nome: item.nome || "",
-      descricao: item.descricao || "",
-      objetivo: item.objetivo || "",
-      tipo: item.tipo || "treinamento",
-      ordem: String(item.ordem || ""),
-      status: canonicalStatus(item.status) || "planejado",
-      responsavel_id: item.responsavel_id || "",
-      data_inicio: toDateInput(item.data_inicio),
-      data_fim: toDateInput(item.data_fim),
-      carga_horaria_prevista: String(item.carga_horaria_prevista || ""),
-      carga_horaria_realizada: String(item.carga_horaria_realizada || ""),
-      observacoes: item.observacoes || "",
-    });
-    setActiveTab("jornadas");
-  }
-
-  function editAcao(item) {
-    setAcaoForm({
-      id: item.id,
-      jornada_id: item.jornada_id || "",
-      etapa_id: item.etapa_id || "",
-      tipo_acao: item.tipo_acao || "treinamento",
-      tema: item.tema || "",
-      subtipo: item.subtipo || "",
+  function editarJornada(item) {
+    setJourneyForm({
+      id: item.id || "",
+      titulo: item.titulo || "",
+      cliente: item.cliente || "",
       publico_alvo: item.publico_alvo || "",
-      obrigatoria: Number(item.obrigatoria || 0),
+      objetivo: item.objetivo || "",
+      status: item.status || "planejada",
+      data_inicio: toDateInputLocal(item.data_inicio),
+      data_fim: toDateInputLocal(item.data_fim),
+    });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function editarAcao(item) {
+    setActionForm({
+      id: item.id || "",
+      jornada_id: item.jornada_id || "",
+      titulo: item.titulo || "",
       descricao: item.descricao || "",
+      responsavel: item.responsavel || "",
+      status: item.status || "planejada",
+      data_inicio: toDateInputLocal(item.data_inicio),
+      data_fim: toDateInputLocal(item.data_fim),
       carga_horaria: String(item.carga_horaria || ""),
       participantes_previstos: String(item.participantes_previstos || ""),
-      participantes_realizados: String(item.participantes_realizados || ""),
-      quantidade_turmas_sessoes: String(item.quantidade_turmas_sessoes || ""),
-      horas_planejadas: String(item.horas_planejadas || ""),
-      horas_realizadas: String(item.horas_realizadas || ""),
-      status: canonicalStatus(item.status) || "planejado",
-      responsavel_id: item.responsavel_id || "",
-      data_inicio: toDateInput(item.data_inicio),
-      data_fim: toDateInput(item.data_fim),
+      turma_ids: Array.isArray(item.turmas_vinculadas)
+        ? item.turmas_vinculadas.map((t) => Number(t.id))
+        : [],
     });
-    setActiveTab("acoes");
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function editCoaching(item) {
-    setCoachingForm({
-      id: item.id,
-      jornada_id: item.jornada_id || "",
-      etapa_id: item.etapa_id || "",
-      acao_id: item.acao_id || "",
-      tipo_coaching: item.tipo_coaching || "coaching",
-      titulo: item.titulo || "",
-      publico_alvo: item.publico_alvo || "",
-      objetivo: item.objetivo || "",
-      responsavel_id: item.responsavel_id || "",
-      participantes_previstos: String(item.participantes_previstos || ""),
-      participantes_realizados: String(item.participantes_realizados || ""),
-      sessoes_previstas: String(item.sessoes_previstas || ""),
-      sessoes_realizadas: String(item.sessoes_realizadas || ""),
-      carga_horaria_sessao: String(item.carga_horaria_sessao || ""),
-      horas_totais: String(item.horas_totais || ""),
-      status: canonicalStatus(item.status) || "planejado",
-      data_inicio: toDateInput(item.data_inicio),
-      data_fim: toDateInput(item.data_fim),
-    });
-    setActiveTab("coaching");
+  function limparJornada() {
+    setJourneyForm(emptyJourneyForm());
   }
 
-  const etapasDaJornadaAcao = useMemo(() => {
-    return etapasOrdenadas.filter(
-      (e) => !acaoForm.jornada_id || String(e.jornada_id) === String(acaoForm.jornada_id)
+  function limparAcao() {
+    setActionForm(emptyActionForm());
+  }
+
+  const clientes = useMemo(() => {
+    const values = new Set();
+
+    jornadas.forEach((j) => {
+      if (j?.cliente) values.add(j.cliente);
+    });
+
+    turmasDisponiveis.forEach((t) => {
+      if (t?.cliente) values.add(t.cliente);
+    });
+
+    return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)));
+  }, [jornadas, turmasDisponiveis]);
+
+  const jornadasFiltradas = useMemo(() => {
+    const termo = String(busca || "").trim().toLowerCase();
+
+    return jornadas.filter((item) => {
+      const matchBusca =
+        !termo ||
+        String(item.titulo || "").toLowerCase().includes(termo) ||
+        String(item.cliente || "").toLowerCase().includes(termo) ||
+        String(item.publico_alvo || "").toLowerCase().includes(termo);
+
+      const matchCliente =
+        !filtroCliente || String(item.cliente || "") === String(filtroCliente);
+
+      const matchStatus =
+        !filtroStatus ||
+        String(item.status || "").toLowerCase() === String(filtroStatus).toLowerCase();
+
+      return matchBusca && matchCliente && matchStatus;
+    });
+  }, [jornadas, busca, filtroCliente, filtroStatus]);
+
+  const acoesPorJornada = useMemo(() => {
+    const termo = String(busca || "").trim().toLowerCase();
+    const mapa = {};
+
+    acoes.forEach((acao) => {
+      const matchBusca =
+        !termo ||
+        String(acao.titulo || "").toLowerCase().includes(termo) ||
+        String(acao.responsavel || "").toLowerCase().includes(termo) ||
+        String(acao.descricao || "").toLowerCase().includes(termo);
+
+      const jornada = jornadas.find((j) => String(j.id) === String(acao.jornada_id));
+      const clienteJornada = jornada?.cliente || "";
+
+      const matchCliente =
+        !filtroCliente || String(clienteJornada) === String(filtroCliente);
+
+      const matchStatus =
+        !filtroStatus ||
+        String(acao.status || "").toLowerCase() === String(filtroStatus).toLowerCase();
+
+      if (!matchBusca || !matchCliente || !matchStatus) return;
+
+      if (!mapa[acao.jornada_id]) mapa[acao.jornada_id] = [];
+      mapa[acao.jornada_id].push(acao);
+    });
+
+    return mapa;
+  }, [acoes, jornadas, busca, filtroCliente, filtroStatus]);
+
+  const resumo = useMemo(() => {
+    const totalJornadas = jornadas.length;
+    const totalAcoes = acoes.length;
+    const totalTurmasVinculadas = acoes.reduce(
+      (acc, item) => acc + Number(item.quantidade_turmas_sessoes || 0),
+      0
     );
-  }, [etapasOrdenadas, acaoForm.jornada_id]);
-
-  const etapasDaJornadaCoaching = useMemo(() => {
-    return etapasOrdenadas.filter(
-      (e) => !coachingForm.jornada_id || String(e.jornada_id) === String(coachingForm.jornada_id)
+    const totalHoras = acoes.reduce(
+      (acc, item) => acc + Number(item.horas_realizadas || 0),
+      0
     );
-  }, [etapasOrdenadas, coachingForm.jornada_id]);
-
-  const acoesDoContextoCoaching = useMemo(() => {
-    return acoesEnriquecidas
-      .filter((item) => {
-        if (coachingForm.jornada_id && String(item.jornada_id || "") !== String(coachingForm.jornada_id)) {
-          return false;
-        }
-        if (coachingForm.etapa_id && String(item.etapa_id || "") !== String(coachingForm.etapa_id)) {
-          return false;
-        }
-        return true;
-      })
-      .sort((a, b) => String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR"));
-  }, [acoesEnriquecidas, coachingForm.jornada_id, coachingForm.etapa_id]);
-
-  const usuariosSelectStatus = getSelectStatus(resourceStatus.usuarios, {
-    loading: "Carregando responsáveis...",
-    empty: "Nenhum responsável disponível",
-    error: "Erro ao carregar responsáveis",
-  });
-
-  const jornadasSelectStatus = getSelectStatus(resourceStatus.jornadas, {
-    loading: "Carregando jornadas...",
-    empty: "Nenhuma jornada cadastrada",
-    error: "Erro ao carregar jornadas",
-  });
-
-  const etapasSelectStatus = getSelectStatus(resourceStatus.etapas, {
-    loading: "Carregando etapas...",
-    empty: "Nenhuma etapa cadastrada",
-    error: "Erro ao carregar etapas",
-  });
-
-  const acoesSelectStatus = getSelectStatus(resourceStatus.acoes, {
-    loading: "Carregando ações...",
-    empty: "Nenhuma ação cadastrada",
-    error: "Erro ao carregar ações",
-  });
-
-  const etapasAcaoStatus = getDependentSelectStatus({
-    parentValue: acaoForm.jornada_id,
-    parentEmptyText: "Selecione uma jornada primeiro",
-    items: etapasDaJornadaAcao,
-    loadingState: resourceStatus.etapas,
-    emptyText: "Nenhuma etapa cadastrada para esta jornada",
-    errorText: "Erro ao carregar etapas",
-  });
-
-  const etapasCoachingStatus = getDependentSelectStatus({
-    parentValue: coachingForm.jornada_id,
-    parentEmptyText: "Selecione uma jornada primeiro",
-    items: etapasDaJornadaCoaching,
-    loadingState: resourceStatus.etapas,
-    emptyText: "Nenhuma etapa cadastrada para esta jornada",
-    errorText: "Erro ao carregar etapas",
-  });
-
-  const acoesCoachingStatus = getDependentSelectStatus({
-    parentValue: coachingForm.jornada_id || coachingForm.etapa_id,
-    parentEmptyText: "Selecione jornada ou etapa primeiro",
-    items: acoesDoContextoCoaching,
-    loadingState: resourceStatus.acoes,
-    emptyText: "Nenhuma ação disponível para o contexto atual",
-    errorText: "Erro ao carregar ações",
-  });
-
-  const acoesOptions = useMemo(() => {
-    return [...acoesEnriquecidas].sort((a, b) =>
-      String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR")
+    const totalParticipantes = acoes.reduce(
+      (acc, item) => acc + Number(item.participantes_realizados || 0),
+      0
     );
-  }, [acoesEnriquecidas]);
 
-  const destaqueCards = [
-    {
-      title: "Fluxos ativos",
-      value: fmtNumber(kpis.fluxosAtivos),
-      subtitle: "Jornadas em execução",
-    },
-    {
-      title: "Coachings independentes",
-      value: fmtNumber(kpis.coachingsIndependentes),
-      subtitle: "Sem vínculo obrigatório",
-    },
-    {
-      title: "Entregas concluídas",
-      value: fmtNumber(kpis.concluidas),
-      subtitle: "Ações + coaching",
-    },
-    {
-      title: "Horas totais",
-      value: fmtHours(kpis.horasTotais),
-      subtitle: "Aplicadas no mapa",
-    },
-  ];
+    return {
+      totalJornadas,
+      totalAcoes,
+      totalTurmasVinculadas,
+      totalHoras,
+      totalParticipantes,
+    };
+  }, [jornadas, acoes]);
+
+  if (loading) {
+    return <div style={loadingWrap}>Carregando mapa de desenvolvimento...</div>;
+  }
 
   return (
-    <PortalShell
-      title="Oceano do Desenvolvimento"
-      subtitle="Visão integrada do desenvolvimento, do percurso macro às entregas que sustentam a jornada."
-    >
-      <div style={{ display: "grid", gap: 18 }}>
-        <section style={heroWrap}>
-          <div style={heroLeft}>
-            <div style={heroEyebrow}>Oceano do Desenvolvimento</div>
-            <h2 style={heroTitle}>Um território vivo de desenvolvimento, com rios, portos, sustentação e destino.</h2>
-            <p style={heroText}>
-              Leia o mapa como um grande oceano: jornadas como rios, etapas como ramificações e ações ou coachings como portos que conectam aprendizagem, execução e próximo trecho.
-            </p>
+    <div style={page}>
+      <div style={hero}>
+        <div style={heroBadge}>Mapa de desenvolvimento</div>
+        <h1 style={heroTitle}>Jornadas, ações e vínculo com turmas</h1>
+        <p style={heroSubtitle}>
+          Gestão consolidada das jornadas do portal, agora conectando ações do mapa
+          às turmas reais já existentes no projeto.
+        </p>
 
-            <div style={tabBar}>
-              {[
-                ["geral", "Oceano"],
-                ["jornadas", "Rios"],
-                ["acoes", "Portos"],
-                ["coaching", "Sustentação"],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setActiveTab(key)}
-                  style={tabButton(activeTab === key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div style={heroGrid}>
+          <InfoCard label="Jornadas" value={resumo.totalJornadas} />
+          <InfoCard label="Ações" value={resumo.totalAcoes} />
+          <InfoCard label="Turmas vinculadas" value={resumo.totalTurmasVinculadas} />
+          <InfoCard label="Horas realizadas" value={resumo.totalHoras} />
+          <InfoCard label="Participantes realizados" value={resumo.totalParticipantes} />
+        </div>
+      </div>
 
-          <div style={heroRight}>
-            <div style={orbCard}>
-              <div style={orbHeader}>Pulso do Oceano</div>
-              <div style={orbValue}>{fmtNumber(kpis.jornadas)}</div>
-              <div style={orbSub}>rios monitorados</div>
-            </div>
+      {erro ? <div style={errorBox}>{erro}</div> : null}
+      {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
-            <div style={signalGrid}>
-              {destaqueCards.map((item) => (
-                <div key={item.title} style={signalCard}>
-                  <div style={{ fontSize: 11, color: "#cbd5e1", fontWeight: 800, textTransform: "uppercase" }}>
-                    {item.title}
-                  </div>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginTop: 4 }}>
-                    {item.value}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 2 }}>{item.subtitle}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+      <div style={filtersCard}>
+        <div style={filtersRow}>
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar jornada, ação, cliente ou responsável"
+            style={searchInput}
+          />
 
-        <SectionCard
-          title="Cartografia do Oceano"
-          subtitle="Leitura macro do território de desenvolvimento e do volume em curso."
-        >
-          <div style={kpiGrid}>
-            <StatCard title="Rios ativos" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
-            <StatCard title="Ramificações" value={fmtNumber(kpis.etapas)} accent="#0f766e" />
-            <StatCard title="Portos de ação" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
-            <StatCard title="Portos de coaching e mentoria" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
-            <StatCard title="Público impactado" value={fmtNumber(kpis.participantes)} accent="#16a34a" />
-            <StatCard title="Horas no oceano" value={fmtHours(kpis.horasTotais)} accent="#b45309" />
-          </div>
-        </SectionCard>
+          <select
+            value={filtroCliente}
+            onChange={(e) => setFiltroCliente(e.target.value)}
+            style={field}
+          >
+            <option value="">Todos os clientes</option>
+            {clientes.map((cliente) => (
+              <option key={cliente} value={cliente}>
+                {cliente}
+              </option>
+            ))}
+          </select>
 
-        <SectionCard
-          title="Leitura do território"
-          subtitle="Refine o oceano por rio, ramificação, porto, responsável e status."
-          action={
-            <button
-              style={buttonSecondaryStyle()}
-              onClick={() =>
-                setFilters({
-                  jornada_id: "",
-                  etapa_id: "",
-                  tipo: "",
-                  status: "",
-                  responsavel_id: "",
-                  busca: "",
-                })
-              }
-            >
-              Limpar filtros
-            </button>
-          }
-        >
-          <div style={filtersPanel}>
-            <label style={labelStyle()}>
-              Jornada
+          <select
+            value={filtroStatus}
+            onChange={(e) => setFiltroStatus(e.target.value)}
+            style={field}
+          >
+            <option value="">Todos os status</option>
+            <option value="planejada">Planejada</option>
+            <option value="em_andamento">Em andamento</option>
+            <option value="concluida">Concluída</option>
+            <option value="cancelada">Cancelada</option>
+          </select>
+
+          <button style={btnSecondary} onClick={carregarTudo}>
+            Atualizar dados
+          </button>
+        </div>
+      </div>
+
+      <div style={gridForms}>
+        <div style={sectionCard}>
+          <h2 style={sectionTitle}>
+            {journeyForm.id ? "Editar jornada" : "Cadastrar jornada"}
+          </h2>
+          <p style={sectionSubtitle}>
+            Estruture a jornada principal do mapa antes de vincular ações.
+          </p>
+
+          <div style={formGrid}>
+            <Field label="Título da jornada">
+              <input
+                value={journeyForm.titulo}
+                onChange={(e) =>
+                  setJourneyForm((prev) => ({ ...prev, titulo: e.target.value }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Cliente">
+              <input
+                value={journeyForm.cliente}
+                onChange={(e) =>
+                  setJourneyForm((prev) => ({ ...prev, cliente: e.target.value }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Público-alvo">
+              <input
+                value={journeyForm.publico_alvo}
+                onChange={(e) =>
+                  setJourneyForm((prev) => ({
+                    ...prev,
+                    publico_alvo: e.target.value,
+                  }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Status">
               <select
-                value={filters.jornada_id}
-                onChange={(e) => setFilters((prev) => ({ ...prev, jornada_id: e.target.value, etapa_id: "" }))}
-                style={inputStyle()}
+                value={journeyForm.status}
+                onChange={(e) =>
+                  setJourneyForm((prev) => ({ ...prev, status: e.target.value }))
+                }
+                style={field}
               >
-                <option value="">{jornadasSelectStatus.text || "Todas"}</option>
+                <option value="planejada">Planejada</option>
+                <option value="em_andamento">Em andamento</option>
+                <option value="concluida">Concluída</option>
+                <option value="cancelada">Cancelada</option>
+              </select>
+            </Field>
+
+            <Field label="Data início">
+              <input
+                type="date"
+                value={journeyForm.data_inicio}
+                onChange={(e) =>
+                  setJourneyForm((prev) => ({
+                    ...prev,
+                    data_inicio: e.target.value,
+                  }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Data fim">
+              <input
+                type="date"
+                value={journeyForm.data_fim}
+                onChange={(e) =>
+                  setJourneyForm((prev) => ({ ...prev, data_fim: e.target.value }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Objetivo" full>
+              <textarea
+                value={journeyForm.objetivo}
+                onChange={(e) =>
+                  setJourneyForm((prev) => ({ ...prev, objetivo: e.target.value }))
+                }
+                style={textarea}
+              />
+            </Field>
+          </div>
+
+          <div style={actionsRow}>
+            <button
+              style={btnPrimary}
+              onClick={salvarJornada}
+              disabled={salvandoJornada}
+            >
+              {salvandoJornada
+                ? "Salvando..."
+                : journeyForm.id
+                ? "Salvar jornada"
+                : "Cadastrar jornada"}
+            </button>
+
+            <button style={btnSecondary} onClick={limparJornada}>
+              Limpar
+            </button>
+          </div>
+        </div>
+
+        <div style={sectionCard}>
+          <h2 style={sectionTitle}>
+            {actionForm.id ? "Editar ação" : "Cadastrar ação"}
+          </h2>
+          <p style={sectionSubtitle}>
+            Vincule a ação a uma jornada e relacione uma ou mais turmas reais do portal.
+          </p>
+
+          <div style={formGrid}>
+            <Field label="Jornada">
+              <select
+                value={actionForm.jornada_id}
+                onChange={(e) =>
+                  setActionForm((prev) => ({
+                    ...prev,
+                    jornada_id: e.target.value,
+                  }))
+                }
+                style={field}
+              >
+                <option value="">Selecione</option>
                 {jornadas.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.nome}
+                    {item.titulo} {item.cliente ? `• ${item.cliente}` : ""}
                   </option>
                 ))}
               </select>
-            </label>
+            </Field>
 
-            <label style={labelStyle()}>
-              Etapa
-              <select
-                value={filters.etapa_id}
-                onChange={(e) => setFilters((prev) => ({ ...prev, etapa_id: e.target.value }))}
-                style={inputStyle()}
-                disabled={jornadasSelectStatus.disabled}
-              >
-                <option value="">{jornadasSelectStatus.text || "Todas"}</option>
-                {etapasOrdenadas
-                  .filter((e) => !filters.jornada_id || String(e.jornada_id) === String(filters.jornada_id))
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.nome}
-                    </option>
-                  ))}
-              </select>
-            </label>
-
-            <label style={labelStyle()}>
-              Tipo
-              <select
-                value={filters.tipo}
-                onChange={(e) => setFilters((prev) => ({ ...prev, tipo: e.target.value }))}
-                style={inputStyle()}
-              >
-                {TIPO_OPTIONS.map((item) => (
-                  <option key={item.value || "all"} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label style={labelStyle()}>
-              Status
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
-                style={inputStyle()}
-              >
-                {STATUS_OPTIONS.map((item) => (
-                  <option key={item.value || "all"} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label style={labelStyle()}>
-              Responsável
-              <select
-                value={filters.responsavel_id}
-                onChange={(e) => setFilters((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                style={inputStyle()}
-                disabled={usuariosSelectStatus.disabled}
-              >
-                <option value="">{usuariosSelectStatus.text || "Todos"}</option>
-                {usuarios.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label style={{ ...labelStyle(), gridColumn: "span 2" }}>
-              Busca
+            <Field label="Título da ação">
               <input
-                value={filters.busca}
-                onChange={(e) => setFilters((prev) => ({ ...prev, busca: e.target.value }))}
-                placeholder="Jornada, etapa, tema, público, responsável..."
-                style={inputStyle()}
+                value={actionForm.titulo}
+                onChange={(e) =>
+                  setActionForm((prev) => ({ ...prev, titulo: e.target.value }))
+                }
+                style={field}
               />
-            </label>
-          </div>
+            </Field>
 
-          {(erro || notice) && (
-            <div style={{ marginTop: 14 }}>
-              {erro ? <div style={errorAlert}>{erro}</div> : null}
-              {notice ? <div style={{ ...successAlert, marginTop: erro ? 10 : 0 }}>{notice}</div> : null}
-            </div>
-          )}
-        </SectionCard>
+            <Field label="Responsável">
+              <input
+                value={actionForm.responsavel}
+                onChange={(e) =>
+                  setActionForm((prev) => ({
+                    ...prev,
+                    responsavel: e.target.value,
+                  }))
+                }
+                style={field}
+              />
+            </Field>
 
-        <SectionCard
-          title="Correntes do oceano"
-          subtitle="A lógica visual do mapa: do território macro até o destino final de cada percurso."
-        >
-          <div
-            style={{
-              display: "grid",
-              gap: 14,
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            }}
-          >
-            {[
-              ["Oceano", "Visão macro do desenvolvimento e do território em movimento."],
-              ["Rios", "Jornadas que conduzem caminhos de desenvolvimento."],
-              ["Portos", "Ações e coachings como pontos de ancoragem, reforço e entrega."],
-              ["Destino", "Resultado esperado, saúde do percurso e próximo trecho."],
-            ].map(([title, text]) => (
-              <div
-                key={title}
-                style={{
-                  border: "1px solid #dbeafe",
-                  borderRadius: 18,
-                  padding: 16,
-                  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-                  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
-                  display: "grid",
-                  gap: 8,
-                }}
+            <Field label="Status">
+              <select
+                value={actionForm.status}
+                onChange={(e) =>
+                  setActionForm((prev) => ({ ...prev, status: e.target.value }))
+                }
+                style={field}
               >
-                <div style={{ fontSize: 11, fontWeight: 900, color: "#2563eb", textTransform: "uppercase", letterSpacing: ".08em" }}>
-                  {title}
-                </div>
-                <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>{title}</div>
-                <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.5 }}>{text}</div>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
+                <option value="planejada">Planejada</option>
+                <option value="em_andamento">Em andamento</option>
+                <option value="concluida">Concluída</option>
+                <option value="cancelada">Cancelada</option>
+              </select>
+            </Field>
 
-        {activeTab === "geral" && (
-          <div style={{ display: "grid", gap: 18 }}>
-            <SectionCard
-              title="Lógica do oceano"
-              subtitle="Do macro ao destino: entenda o percurso antes de olhar o detalhe."
-            >
-              <div style={journeyGuideGrid}>
-                {[
-                  ["1. Oceano", "Define a leitura macro do desenvolvimento e do território."],
-                  ["2. Rios", "Cada jornada conduz um caminho com várias ramificações."],
-                  ["3. Portos", "Ações e coachings são pontos de ancoragem e aprendizagem."],
-                  ["4. Destino", "Cada percurso aponta para resultado, atenção e próximo trecho."],
-                ].map(([title, text]) => (
-                  <div key={title} style={journeyGuideCard}>
-                    <div style={journeyGuideTitle}>{title}</div>
-                    <div style={journeyGuideText}>{text}</div>
-                  </div>
+            <Field label="Data início">
+              <input
+                type="date"
+                value={actionForm.data_inicio}
+                onChange={(e) =>
+                  setActionForm((prev) => ({
+                    ...prev,
+                    data_inicio: e.target.value,
+                  }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Data fim">
+              <input
+                type="date"
+                value={actionForm.data_fim}
+                onChange={(e) =>
+                  setActionForm((prev) => ({ ...prev, data_fim: e.target.value }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Carga horária base">
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={actionForm.carga_horaria}
+                onChange={(e) =>
+                  setActionForm((prev) => ({
+                    ...prev,
+                    carga_horaria: e.target.value,
+                  }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Participantes previstos">
+              <input
+                type="number"
+                min="0"
+                value={actionForm.participantes_previstos}
+                onChange={(e) =>
+                  setActionForm((prev) => ({
+                    ...prev,
+                    participantes_previstos: e.target.value,
+                  }))
+                }
+                style={field}
+              />
+            </Field>
+
+            <Field label="Turmas vinculadas" full>
+              <select
+                multiple
+                value={actionForm.turma_ids.map(String)}
+                onChange={(e) => {
+                  const values = Array.from(e.target.selectedOptions).map((opt) =>
+                    Number(opt.value)
+                  );
+                  setActionForm((prev) => ({
+                    ...prev,
+                    turma_ids: values,
+                  }));
+                }}
+                style={{ ...field, height: 140, padding: 12 }}
+              >
+                {turmasDisponiveis.map((turma) => (
+                  <option key={turma.id} value={turma.id}>
+                    {(turma.tema || "Sem nome")} • {turma.cliente || "Sem cliente"} •{" "}
+                    {formatDate(turma.data_inicio || turma.data)}
+                  </option>
                 ))}
+              </select>
+              <div style={helperMini}>
+                Segure Ctrl no computador para selecionar mais de uma turma.
               </div>
-            </SectionCard>
+            </Field>
 
-            <SectionCard
-              title="Rios e trajetos"
-              subtitle="Leia cada jornada como um rio com ramificações, portos e destino em construção."
-            >
-              {loading ? (
-                emptyCard("Carregando fluxo das jornadas...")
-              ) : jornadasFluxo.length === 0 ? (
-                emptyCard("Nenhuma jornada encontrada para os filtros aplicados.")
-              ) : (
-                <div style={{ display: "grid", gap: 16 }}>
-                  {jornadasFluxo.map((jornada) => (
-                    <div key={jornada.id} style={journeyFlowCard}>
-                      <div style={journeyFlowHeader}>
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                            <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
-                            <span style={attentionBadge(jornada.saude_info.level)}>{jornada.saude_info.label}</span>
-                            <span style={attentionBadge(jornada.attention_info.level)}>{jornada.attention_info.label}</span>
-                          </div>
-                          <div style={journeyFlowTitle}>{jornada.nome}</div>
-                          <div style={journeyFlowMeta}>
-                            Objetivo: {jornada.objetivo || "Não informado"}
-                          </div>
-                          <div style={journeyFlowMeta}>
-                            Público: {jornada.publico_macro || "Não informado"} • Responsável: {jornada.responsavel_nome}
-                          </div>
-                        </div>
-
-                        <div style={journeyFlowSummary}>
-                          <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
-                          <MetricBox label="Etapas" value={`${fmtNumber(jornada.etapasConcluidas)}/${fmtNumber(jornada.etapasDaJornada.length)}`} />
-                          <MetricBox label="Ações" value={`${fmtNumber(jornada.acoesConcluidas)}/${fmtNumber(jornada.acoesDaJornada.length)}`} />
-                          <MetricBox label="Coachings" value={`${fmtNumber(jornada.coachingsConcluidos)}/${fmtNumber(jornada.coachingsDaJornada.length)}`} />
-                        </div>
-                      </div>
-
-                      <div style={journeyProgressBarWrap}>
-                        <div style={journeyProgressBarTrack}>
-                          <div style={{ ...journeyProgressBarFill, width: `${Math.max(jornada.progresso, 6)}%` }} />
-                        </div>
-                        <div style={journeyFlowMeta}>Próximo passo: {jornada.proximoPasso}</div>
-                      </div>
-
-                      <div style={journeyStagesGrid}>
-                        {jornada.etapasDaJornada.length === 0 ? (
-                          <div style={emptyTimeline}>Esta jornada ainda não possui etapas definidas.</div>
-                        ) : (
-                          jornada.etapasDaJornada.map((etapa) => {
-                            const acoesEtapa = jornada.acoesDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id));
-                            const coachingsEtapa = jornada.coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id));
-                            const isAtual = String(jornada.etapaAtual?.id || "") === String(etapa.id);
-                            return (
-                              <div key={etapa.id} style={journeyStageCard(isAtual)}>
-                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                  <span style={timelineOrder}>{etapa.ordem || "•"}</span>
-                                  <span style={badgeStyle(etapa.status)}>{displayStatus(etapa.status)}</span>
-                                  <span style={badgeStyle(etapa.tipo)}>{etapa.tipo}</span>
-                                  {isAtual ? <span style={journeyCurrentPill}>Etapa atual</span> : null}
-                                </div>
-                                <div style={journeyStageTitle}>{etapa.nome}</div>
-                                <div style={journeyStageMeta}>{formatDate(etapa.data_inicio)} até {formatDate(etapa.data_fim)}</div>
-                                <div style={journeyMiniStats}>
-                                  <span>{fmtNumber(acoesEtapa.length)} ação(ões)</span>
-                                  <span>{fmtNumber(coachingsEtapa.length)} coaching(s)</span>
-                                  <span>{fmtHours(etapa.horas_totais || 0)}h</span>
-                                </div>
-                                <div style={journeySubBlock}>
-                                  <div style={journeySubTitle}>Ações</div>
-                                  {acoesEtapa.length ? (
-                                    acoesEtapa.slice(0, 3).map((acao) => (
-                                      <div key={acao.id} style={journeyLinkedItem}>
-                                        <span style={badgeStyle(acao.status)}>{displayStatus(acao.status)}</span>
-                                        <span>{acao.tema}</span>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div style={journeyEmptyText}>Sem ações vinculadas</div>
-                                  )}
-                                </div>
-                                <div style={journeySubBlock}>
-                                  <div style={journeySubTitle}>Coaching</div>
-                                  {coachingsEtapa.length ? (
-                                    coachingsEtapa.slice(0, 2).map((coaching) => (
-                                      <div key={coaching.id} style={journeyLinkedItem}>
-                                        <span style={badgeStyle(coaching.status)}>{displayStatus(coaching.status)}</span>
-                                        <span>{coaching.titulo}</span>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div style={journeyEmptyText}>Sem coaching vinculado</div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SectionCard>
-
-            <SectionCard
-              title="Próximos trechos"
-              subtitle="O que precisa navegar agora para manter o percurso vivo."
-            >
-              {loading ? (
-                emptyCard("Carregando próximos passos...")
-              ) : proximosPassos.length === 0 ? (
-                emptyCard("Nenhum próximo passo encontrado.")
-              ) : (
-                <div style={nextStepsGrid}>
-                  {proximosPassos.map((item) => (
-                    <div key={item.id} style={nextStepCard}>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <span style={attentionBadge(item.saude.level)}>{item.saude.label}</span>
-                        <span style={attentionBadge(item.atencao.level)}>{item.atencao.label}</span>
-                      </div>
-                      <div style={nextStepJourney}>{item.jornada}</div>
-                      <div style={nextStepMeta}>Etapa atual: {item.etapaAtual}</div>
-                      <div style={nextStepAction}>{item.passo}</div>
-                      <div style={nextStepMeta}>Responsável: {item.responsavel}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SectionCard>
-
-            <SectionCard
-              title="Portos em movimento"
-              subtitle="Entregas, intervenções, prioridade e prazo no trecho atual do oceano."
-            >
-              {loading ? (
-                emptyCard("Carregando visão geral...")
-              ) : overviewRows.length === 0 ? (
-                emptyCard("Nenhum registro encontrado.")
-              ) : (
-                <div style={{ display: "grid", gap: 16 }}>
-                  <div style={overviewStripe}>
-                    <OverviewBox label="Itens em andamento" value={fmtNumber(executiveAlerts.emAndamento)} />
-                    <OverviewBox label="Pendências críticas" value={fmtNumber(executiveAlerts.criticos)} tone="alert" />
-                    <OverviewBox label="Sem responsável" value={fmtNumber(executiveAlerts.semResponsavel)} tone="alert" />
-                    <OverviewBox label="Prazos vencidos" value={fmtNumber(executiveAlerts.vencidos)} tone="danger" />
-                  </div>
-
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Jornada</th>
-                          <th style={thStyle}>Etapa</th>
-                          <th style={thStyle}>Título</th>
-                          <th style={thStyle}>Tipo</th>
-                          <th style={thStyle}>Público</th>
-                          <th style={thStyle}>Responsável</th>
-                          <th style={thStyle}>Horas</th>
-                          <th style={thStyle}>Status</th>
-                          <th style={thStyle}>Prazo</th>
-                          <th style={thStyle}>Atenção</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {overviewRows.map((item) => (
-                          <tr key={`${item.tipo_registro}-${item.id}`} style={rowTone(item)}>
-                            <td style={tdStyle}>{item.jornada_nome}</td>
-                            <td style={tdStyle}>{item.etapa_nome}</td>
-                            <td style={tdStyle}><strong>{item.titulo}</strong></td>
-                            <td style={tdStyle}>
-                              {item.tipo_registro === "coaching" ? (
-                                <>
-                                  <span style={sustentacaoTypeBadge(item.tipo_coaching).style}>{sustentacaoTypeBadge(item.tipo_coaching).label}</span>
-                                </>
-                              ) : (
-                                item.tipo_acao
-                              )}
-                            </td>
-                            <td style={tdStyle}>{item.publico_alvo || "—"}</td>
-                            <td style={tdStyle}>{item.responsavel_nome}</td>
-                            <td style={tdStyle}>{fmtHours(item.horas)}</td>
-                            <td style={tdStyle}>
-                              <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
-                            </td>
-                            <td style={tdStyle}>
-                              <div style={{ display: "grid", gap: 6 }}>
-                                <span style={prazoBadge(item.prazo_info.tone)}>{item.prazo_info.label}</span>
-                                <span style={{ fontSize: 12, color: "#64748b" }}>
-                                  {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={tdStyle}>
-                              <span style={attentionBadge(item.attention_info.level)}>
-                                {item.attention_info.label}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </SectionCard>
+            <Field label="Descrição" full>
+              <textarea
+                value={actionForm.descricao}
+                onChange={(e) =>
+                  setActionForm((prev) => ({
+                    ...prev,
+                    descricao: e.target.value,
+                  }))
+                }
+                style={textarea}
+              />
+            </Field>
           </div>
-        )}
 
-        {activeTab === "jornadas" && (
-          <>
-            <SectionCard title="Rios e ramificações" subtitle="Estrutura do percurso, saúde da travessia e pontos de ancoragem por jornada.">
-              <details open style={detailsCard}>
-                <summary style={detailsSummary}>Registro de jornada</summary>
-                <form onSubmit={saveJornada} style={{ display: "grid", gap: 12, marginTop: 14 }}>
-                  <div style={formGrid}>
-                    <label style={{ ...labelStyle(), ...fieldSpan.xxl }}>
-                      Nome da jornada
-                      <input
-                        value={jornadaForm.nome}
-                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, nome: e.target.value }))}
-                        style={compactInputStyle()}
-                        required
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Status
-                      <select
-                        value={jornadaForm.status}
-                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, status: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="ativo">Ativo</option>
-                        <option value="inativo">Inativo</option>
-                        <option value="concluido">Concluído</option>
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Responsável
-                      <select
-                        value={jornadaForm.responsavel_id}
-                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
-                        {usuarios.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
-                      Público macro
-                      <input
-                        value={jornadaForm.publico_macro}
-                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, publico_macro: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Data início
-                      <input
-                        type="date"
-                        value={jornadaForm.data_inicio}
-                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Data fim
-                      <input
-                        type="date"
-                        value={jornadaForm.data_fim}
-                        onChange={(e) => setJornadaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-                  </div>
-
-                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
-                    Objetivo macro
-                    <textarea
-                      value={jornadaForm.objetivo}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                      style={textareaStyle(88)}
-                    />
-                  </label>
-
-                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
-                    Descrição
-                    <textarea
-                      value={jornadaForm.descricao}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                      style={textareaStyle(92)}
-                    />
-                  </label>
-
-                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
-                    Observações
-                    <textarea
-                      value={jornadaForm.observacoes}
-                      onChange={(e) => setJornadaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
-                      style={textareaStyle(92)}
-                    />
-                  </label>
-
-                  <div style={buttonRow}>
-                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                      {jornadaForm.id ? "Atualizar jornada" : "Salvar jornada"}
-                    </button>
-                    <button
-                      type="button"
-                      style={buttonSecondaryStyle()}
-                      onClick={() => {
-                        setJornadaForm(jornadaInicial);
-                        setErro("");
-                        setNotice("");
-                      }}
-                    >
-                      Limpar
-                    </button>
-                  </div>
-                </form>
-              </details>
-
-              <details style={{ ...detailsCard, marginTop: 14 }} open>
-                <summary style={detailsSummary}>Registro de etapa</summary>
-                <form onSubmit={saveEtapa} style={{ display: "grid", gap: 12, marginTop: 14 }}>
-                  <div style={formGrid}>
-                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
-                      Jornada
-                      <select
-                        value={etapaForm.jornada_id}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, jornada_id: e.target.value }))}
-                        style={compactInputStyle()}
-                        disabled={jornadasSelectStatus.disabled}
-                        required
-                      >
-                        <option value="">{jornadasSelectStatus.text || "Selecione"}</option>
-                        {jornadas.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.xxl }}>
-                      Nome da etapa
-                      <input
-                        value={etapaForm.nome}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, nome: e.target.value }))}
-                        style={compactInputStyle()}
-                        required
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Tipo
-                      <select
-                        value={etapaForm.tipo}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, tipo: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="treinamento">Treinamento</option>
-                        <option value="acao">Ação</option>
-                        <option value="coaching">Coaching</option>
-                        <option value="workshop">Workshop</option>
-                        <option value="campanha">Campanha</option>
-                        <option value="marco">Marco gerencial</option>
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Ordem
-                      <input
-                        type="number"
-                        value={etapaForm.ordem}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, ordem: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Status
-                      <select
-                        value={etapaForm.status}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, status: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="planejado">Planejado</option>
-                        <option value="em_andamento">Em andamento</option>
-                        <option value="concluido">Concluído</option>
-                        <option value="cancelado">Cancelado</option>
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Responsável
-                      <select
-                        value={etapaForm.responsavel_id}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
-                        {usuarios.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Data início
-                      <input
-                        type="date"
-                        value={etapaForm.data_inicio}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Data fim
-                      <input
-                        type="date"
-                        value={etapaForm.data_fim}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Carga horária prevista
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={etapaForm.carga_horaria_prevista}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_prevista: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Carga horária realizada
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={etapaForm.carga_horaria_realizada}
-                        onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_realizada: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-                  </div>
-
-                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
-                    Objetivo da etapa
-                    <textarea
-                      value={etapaForm.objetivo}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                      style={textareaStyle(88)}
-                    />
-                  </label>
-
-                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
-                    Descrição
-                    <textarea
-                      value={etapaForm.descricao}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                      style={textareaStyle(92)}
-                    />
-                  </label>
-
-                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
-                    Observações
-                    <textarea
-                      value={etapaForm.observacoes}
-                      onChange={(e) => setEtapaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
-                      style={textareaStyle(92)}
-                    />
-                  </label>
-
-                  <div style={buttonRow}>
-                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                      {etapaForm.id ? "Atualizar etapa" : "Salvar etapa"}
-                    </button>
-                    <button
-                      type="button"
-                      style={buttonSecondaryStyle()}
-                      onClick={() => {
-                        setEtapaForm(etapaInicial);
-                        setErro("");
-                        setNotice("");
-                      }}
-                    >
-                      Limpar
-                    </button>
-                  </div>
-                </form>
-              </details>
-            </SectionCard>
-
-            <SectionCard
-              title="Rios e trajetos"
-              subtitle="Cada jornada aparece como um curso vivo de desenvolvimento, com trechos, portos e destino em construção."
+          <div style={actionsRow}>
+            <button
+              style={btnPrimary}
+              onClick={salvarAcao}
+              disabled={salvandoAcao}
             >
-              {loading ? (
-                emptyCard("Carregando jornadas...")
-              ) : filteredJornadas.length === 0 ? (
-                emptyCard("Nenhuma jornada encontrada.")
-              ) : (
-                <div style={{ display: "grid", gap: 16 }}>
-                  {filteredJornadas.map((jornada) => {
-                    const etapasDaJornada = filteredEtapas.filter(
-                      (e) => String(e.jornada_id) === String(jornada.id)
-                    );
+              {salvandoAcao
+                ? "Salvando..."
+                : actionForm.id
+                ? "Salvar ação"
+                : "Cadastrar ação"}
+            </button>
 
-                    return (
-                      <div key={jornada.id} style={flowCard}>
-                        <div style={flowHeader}>
-                          <div style={{ display: "grid", gap: 6 }}>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                              <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
-                              <span style={attentionBadge(jornada.saude_info.level)}>{jornada.saude_info.label}</span>
-                              <span style={prazoBadge(jornada.prazo_info.tone)}>{jornada.prazo_info.label}</span>
-                              <span style={attentionBadge(jornada.attention_info.level)}>{jornada.attention_info.label}</span>
-                            </div>
-                            <div style={flowTitle}>{jornada.nome}</div>
-                            <div style={flowMeta}>
-                              Responsável: {jornada.responsavel_nome} • Início: {formatDate(jornada.data_inicio)} • Fim: {formatDate(jornada.data_fim)}
-                            </div>
-                          </div>
+            <button style={btnSecondary} onClick={limparAcao}>
+              Limpar
+            </button>
+          </div>
+        </div>
+      </div>
 
-                          <div style={flowMetrics}>
-                            <MetricBox label="Etapas" value={fmtNumber(jornada.total_etapas)} />
-                            <MetricBox label="Ações" value={fmtNumber(jornada.total_acoes)} />
-                            <MetricBox label="Coachings" value={fmtNumber(jornada.total_coachings)} />
-                            <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
-                          </div>
-                        </div>
+      <div style={sectionCard}>
+        <h2 style={sectionTitle}>Mapa consolidado</h2>
+        <p style={sectionSubtitle}>
+          Visualização das jornadas e das ações vinculadas, incluindo as turmas reais do projeto.
+        </p>
 
-                        <div style={flowExecutiveBand}>
-                          <OverviewBox label="Saúde da jornada" value={jornada.saude_info.label} tone={jornada.saude_info.level === "alta" ? "danger" : jornada.saude_info.level === "media" ? "alert" : "default"} />
-                          <OverviewBox label="Atenção principal" value={jornada.attention_info.label} tone={jornada.attention_info.level === "alta" ? "danger" : jornada.attention_info.level === "media" ? "alert" : "default"} />
-                          <OverviewBox label="Prazo" value={jornada.prazo_info.label} tone={jornada.prazo_info.tone === "danger" ? "danger" : jornada.prazo_info.tone === "neutral" ? "default" : "default"} />
-                          <OverviewBox label="Etapa crítica" value={jornada.etapa_critica?.nome || "Sem destaque"} tone={jornada.etapa_critica?.saude_info?.level === "alta" ? "danger" : jornada.etapa_critica?.saude_info?.level === "media" ? "alert" : "default"} />
-                        </div>
+        <div style={journeyList}>
+          {jornadasFiltradas.map((jornada) => {
+            const tone = getStatusTone(jornada.status);
+            const acoesDaJornada = acoesPorJornada[jornada.id] || [];
 
-                        <div style={flowDescription}>
-                          {jornada.objetivo || jornada.descricao || "Sem descrição cadastrada."}
-                        </div>
-
-                        <div style={flowRouteStrip}>
-                          <div style={routeNode("origin")}>
-                            <div style={routeLabel}>Origem</div>
-                            <div style={routeValue}>{jornada.publico_macro || "Escopo geral"}</div>
-                          </div>
-
-                          <div style={routeProgressWrap}>
-                            <div style={routeProgressHeader}>
-                              <span>Percurso da jornada</span>
-                              <span>
-                                {fmtNumber(
-                                  etapasDaJornada.filter((e) => canonicalStatus(e.status) === "concluido").length
-                                )} / {fmtNumber(etapasDaJornada.length)} trechos concluídos
-                              </span>
-                            </div>
-                            <div style={routeTrackBar}>
-                              <div
-                                style={{
-                                  ...routeTrackFill,
-                                  width: `${
-                                    etapasDaJornada.length
-                                      ? Math.max(
-                                          8,
-                                          (etapasDaJornada.filter(
-                                            (e) => canonicalStatus(e.status) === "concluido"
-                                          ).length /
-                                            etapasDaJornada.length) *
-                                            100
-                                        )
-                                      : 8
-                                  }%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          <div style={routeNode("destination")}>
-                            <div style={routeLabel}>Próximo trecho</div>
-                            <div style={routeValue}>
-                              {jornada.etapa_critica?.nome || "Consolidar percurso"}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={riverTrack}>
-                          {etapasDaJornada.length === 0 ? (
-                            <div style={emptyTimeline}>Sem etapas cadastradas para esta jornada.</div>
-                          ) : (
-                            etapasDaJornada.map((etapa, index) => {
-                              const prazo = getPrazoInfo(etapa);
-                              const stageAttention =
-                                !etapa.responsavel_id
-                                  ? { level: "media", label: "Sem responsável" }
-                                  : prazo.tone === "danger"
-                                  ? { level: "alta", label: "Prazo vencido" }
-                                  : { level: "ok", label: "Estável" };
-                              const stageHealth = getStageHealth({
-                                ...etapa,
-                                prazo_info: prazo,
-                                attention_info: stageAttention,
-                              });
-
-                              return (
-                                <div key={etapa.id} style={stageWrap}>
-                                  <div style={stageConnector(index < etapasDaJornada.length - 1)} />
-                                  <div style={stageCard}>
-                                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                      <span style={timelineOrder}>{etapa.ordem || index + 1}</span>
-                                      <span style={badgeStyle(etapa.status)}>{displayStatus(etapa.status)}</span>
-                                      <span style={badgeStyle(etapa.tipo)}>{etapa.tipo}</span>
-                                      <span style={attentionBadge(stageHealth.level)}>{stageHealth.label}</span>
-                                      <span style={prazoBadge(prazo.tone)}>{prazo.label}</span>
-                                    </div>
-
-                                    <div style={stageTitle}>{etapa.nome}</div>
-                                    <div style={stageMeta}>
-                                      {formatDate(etapa.data_inicio)} até {formatDate(etapa.data_fim)}
-                                    </div>
-
-                                    <div style={stageStats}>
-                                      <span>⚓ {fmtNumber(etapa.total_acoes)} porto(s) de ação</span>
-                                      <span>🧭 {fmtNumber(etapa.total_coachings)} apoio(s) de sustentação</span>
-                                      <span>⏱ {fmtHours(etapa.horas_totais)}h navegadas</span>
-                                    </div>
-
-                                    <div style={stageInsightBand}>
-                                      <div style={stageInsightCard}>
-                                        <div style={stageInsightLabel}>Estado do trecho</div>
-                                        <div style={stageInsightValue}>{stageHealth.label}</div>
-                                      </div>
-                                      <div style={stageInsightCard}>
-                                        <div style={stageInsightLabel}>Próxima ancoragem</div>
-                                        <div style={stageInsightValue}>
-                                          {etapa.total_acoes > 0 || etapa.total_coachings > 0
-                                            ? "Executar e consolidar entregas"
-                                            : "Criar portos desta etapa"}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-                                      <button style={buttonSecondaryStyle()} onClick={() => editEtapa(etapa)}>
-                                        Editar etapa
-                                      </button>
-                                      <button style={buttonDangerStyle()} onClick={() => removeRegistro("etapa", etapa.id)}>
-                                        Excluir
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-
-                        <div style={buttonRow}>
-                          <button style={buttonSecondaryStyle()} onClick={() => editJornada(jornada)}>
-                            Editar jornada
-                          </button>
-                          <button style={buttonDangerStyle()} onClick={() => removeRegistro("jornada", jornada.id)}>
-                            Excluir
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </SectionCard>
-          </>
-        )}
-
-        {activeTab === "acoes" && (
-          <>
-            <SectionCard title="Portos e entregas" subtitle="Pontos de materialização do desenvolvimento ao longo do percurso.">
-              <details open style={detailsCard}>
-                <summary style={detailsSummary}>Registro de ação</summary>
-                <form onSubmit={saveAcao} style={{ display: "grid", gap: 12, marginTop: 14 }}>
-                  <div style={formGrid}>
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Jornada
-                      <select
-                        value={acaoForm.jornada_id}
-                        onChange={(e) =>
-                          setAcaoForm((prev) => ({
-                            ...prev,
-                            jornada_id: e.target.value,
-                            etapa_id: "",
-                          }))
-                        }
-                        style={compactInputStyle()}
-                        disabled={jornadasSelectStatus.disabled}
-                        required
-                      >
-                        <option value="">{jornadasSelectStatus.text || "Selecione"}</option>
-                        {jornadas.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Etapa da jornada
-                      <select
-                        value={acaoForm.etapa_id}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
-                        style={compactInputStyle()}
-                        disabled={etapasAcaoStatus.disabled}
-                      >
-                        <option value="">{etapasAcaoStatus.text || "Sem etapa"}</option>
-                        {etapasDaJornadaAcao.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.nome}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Tipo de ação
-                      <select
-                        value={acaoForm.tipo_acao}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, tipo_acao: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="treinamento">Treinamento</option>
-                        <option value="campanha">Campanha</option>
-                        <option value="reciclagem">Reciclagem</option>
-                        <option value="integracao">Integração</option>
-                        <option value="workshop">Workshop</option>
-                        <option value="acao_estrategica">Ação estratégica</option>
-                        <option value="outro">Outro</option>
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
-                      Título/Tema
-                      <input
-                        value={acaoForm.tema}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, tema: e.target.value }))}
-                        style={compactInputStyle()}
-                        required
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Subtipo
-                      <input
-                        value={acaoForm.subtipo}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, subtipo: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Público-alvo
-                      <input
-                        value={acaoForm.publico_alvo}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Obrigatória?
-                      <select
-                        value={acaoForm.obrigatoria}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, obrigatoria: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value={0}>Não</option>
-                        <option value={1}>Sim</option>
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Carga horária
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={acaoForm.carga_horaria}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, carga_horaria: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Participantes previstos
-                      <input
-                        type="number"
-                        value={acaoForm.participantes_previstos}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Participantes realizados
-                      <input
-                        type="number"
-                        value={acaoForm.participantes_realizados}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Turmas / sessões
-                      <input
-                        type="number"
-                        value={acaoForm.quantidade_turmas_sessoes}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, quantidade_turmas_sessoes: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Horas planejadas
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={acaoForm.horas_planejadas}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, horas_planejadas: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Horas realizadas
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={acaoForm.horas_realizadas}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, horas_realizadas: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Status
-                      <select
-                        value={acaoForm.status}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, status: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="planejado">Planejado</option>
-                        <option value="em_andamento">Em andamento</option>
-                        <option value="concluido">Concluído</option>
-                        <option value="cancelado">Cancelado</option>
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Responsável
-                      <select
-                        value={acaoForm.responsavel_id}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
-                        {usuarios.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Data início
-                      <input
-                        type="date"
-                        value={acaoForm.data_inicio}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Data fim
-                      <input
-                        type="date"
-                        value={acaoForm.data_fim}
-                        onChange={(e) => setAcaoForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
+            return (
+              <div key={jornada.id} style={journeyCard}>
+                <div style={journeyHeader}>
+                  <div>
+                    <div style={journeyTitle}>{jornada.titulo}</div>
+                    <div style={journeyMeta}>
+                      {jornada.cliente || "Sem cliente"} •{" "}
+                      {jornada.publico_alvo || "Público não informado"}
+                    </div>
                   </div>
 
-                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
-                    Descrição
-                    <textarea
-                      value={acaoForm.descricao}
-                      onChange={(e) => setAcaoForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                      style={textareaStyle(96)}
-                    />
-                  </label>
-
-                  <div style={buttonRow}>
-                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                      {acaoForm.id ? "Atualizar ação" : "Salvar ação"}
-                    </button>
-                    <button
-                      type="button"
-                      style={buttonSecondaryStyle()}
-                      onClick={() => {
-                        setAcaoForm(acaoInicial);
-                        setErro("");
-                        setNotice("");
-                      }}
-                    >
-                      Limpar
-                    </button>
-                  </div>
-                </form>
-              </details>
-            </SectionCard>
-
-            <SectionCard
-              title="Portos de ação"
-              subtitle="Leitura dos portos ativos, intensidade da execução e risco no trajeto."
-            >
-              {loading ? (
-                emptyCard("Carregando ações...")
-              ) : orderedAcoes.length === 0 ? (
-                emptyCard("Nenhuma ação encontrada.")
-              ) : (
-                <>
-                  <div style={actionBand}>
-                    <OverviewBox label="Em andamento" value={fmtNumber(actionExecutive.emAndamento)} />
-                    <OverviewBox label="Concluídas" value={fmtNumber(actionExecutive.concluidas)} />
-                    <OverviewBox label="Sem responsável" value={fmtNumber(actionExecutive.semResponsavel)} tone="alert" />
-                    <OverviewBox label="Vencidas" value={fmtNumber(actionExecutive.vencidas)} tone="danger" />
-                    <OverviewBox label="Críticas" value={fmtNumber(actionExecutive.criticas)} tone="danger" />
-                    <OverviewBox label="Horas" value={fmtHours(actionExecutive.horas)} />
-                  </div>
-
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Jornada</th>
-                          <th style={thStyle}>Etapa</th>
-                          <th style={thStyle}>Tema</th>
-                          <th style={thStyle}>Tipo</th>
-                          <th style={thStyle}>Público</th>
-                          <th style={thStyle}>Horas</th>
-                          <th style={thStyle}>Intensidade</th>
-                          <th style={thStyle}>Status</th>
-                          <th style={thStyle}>Prazo</th>
-                          <th style={thStyle}>Atenção</th>
-                          <th style={thStyle}>Responsável</th>
-                          <th style={thStyle}>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {orderedAcoes.map((item) => (
-                          <tr key={item.id} style={rowTone(item)}>
-                            <td style={tdStyle}>{item.jornada_nome}</td>
-                            <td style={tdStyle}>{item.etapa_nome}</td>
-                            <td style={tdStyle}><strong>{item.tema}</strong></td>
-                            <td style={tdStyle}>{item.tipo_acao}</td>
-                            <td style={tdStyle}>{item.publico_alvo || "—"}</td>
-                            <td style={tdStyle}>{fmtHours(item.horas_realizadas_calc)}</td>
-                            <td style={tdStyle}>
-                              <span style={prazoBadge(item.intensidade_info.tone)}>{item.intensidade_info.label}</span>
-                            </td>
-                            <td style={tdStyle}>
-                              <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
-                            </td>
-                            <td style={tdStyle}>
-                              <div style={{ display: "grid", gap: 6 }}>
-                                <span style={prazoBadge(item.prazo_info.tone)}>{item.prazo_info.label}</span>
-                                <span style={{ fontSize: 12, color: "#64748b" }}>
-                                  {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={tdStyle}>
-                              <span style={attentionBadge(item.attention_info.level)}>
-                                {item.attention_info.label}
-                              </span>
-                            </td>
-                            <td style={tdStyle}>{item.responsavel_nome}</td>
-                            <td style={tdStyle}>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button style={buttonSecondaryStyle()} onClick={() => editAcao(item)}>
-                                  Editar
-                                </button>
-                                <button style={buttonDangerStyle()} onClick={() => removeRegistro("acao", item.id)}>
-                                  Excluir
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </SectionCard>
-          </>
-        )}
-
-        {activeTab === "coaching" && (
-          <>
-            <SectionCard title="Sustentação do percurso" subtitle="Coachings como apoio, reforço e correção de rota ao longo do oceano.">
-              <div
-                style={{
-                  display: "grid",
-                  gap: 12,
-                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                  marginBottom: 14,
-                }}
-              >
-                <div
-                  style={{
-                    border: "1px solid #bfdbfe",
-                    borderTop: "4px solid #1d4ed8",
-                    borderRadius: 18,
-                    background: "#fff",
-                    padding: 16,
-                    boxShadow: "0 10px 24px rgba(15,23,42,.05)",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <span style={sustentacaoTypeBadge("coaching").style}>{sustentacaoTypeBadge("coaching").label}</span>
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Coaching</div>
-                  <div style={{ marginTop: 6, fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
-                    {sustentacaoDescriptor("coaching")}
-                  </div>
+                  <div style={{ ...statusBadge, ...tone }}>{tone.label}</div>
                 </div>
 
-                <div
-                  style={{
-                    border: "1px solid #ddd6fe",
-                    borderTop: "4px solid #7c3aed",
-                    borderRadius: 18,
-                    background: "#fff",
-                    padding: 16,
-                    boxShadow: "0 10px 24px rgba(15,23,42,.05)",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <span style={sustentacaoTypeBadge("mentoria").style}>{sustentacaoTypeBadge("mentoria").label}</span>
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Mentoria</div>
-                  <div style={{ marginTop: 6, fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
-                    {sustentacaoDescriptor("mentoria")}
-                  </div>
+                <div style={journeySummaryGrid}>
+                  <SummaryItem
+                    label="Período"
+                    value={`${formatDate(jornada.data_inicio)} até ${formatDate(
+                      jornada.data_fim
+                    )}`}
+                  />
+                  <SummaryItem
+                    label="Ações vinculadas"
+                    value={acoesDaJornada.length}
+                  />
+                  <SummaryItem
+                    label="Objetivo"
+                    value={jornada.objetivo || "-"}
+                  />
+                </div>
+
+                <div style={actionsRow}>
+                  <button style={btnSecondary} onClick={() => editarJornada(jornada)}>
+                    Editar jornada
+                  </button>
+                  <button
+                    style={btnDangerMini}
+                    onClick={() => removerJornada(jornada)}
+                  >
+                    Remover jornada
+                  </button>
+                </div>
+
+                <div style={actionsList}>
+                  {acoesDaJornada.length ? (
+                    acoesDaJornada.map((acao) => {
+                      const toneAcao = getStatusTone(acao.status);
+
+                      return (
+                        <div key={acao.id} style={actionCard}>
+                          <div style={actionHeader}>
+                            <div>
+                              <div style={actionTitle}>{acao.titulo}</div>
+                              <div style={actionMeta}>
+                                {acao.responsavel || "Responsável não informado"}
+                              </div>
+                            </div>
+
+                            <div style={{ ...statusBadge, ...toneAcao }}>
+                              {toneAcao.label}
+                            </div>
+                          </div>
+
+                          <div style={actionDesc}>{acao.descricao || "-"}</div>
+
+                          <div style={actionGrid}>
+                            <MetricItem
+                              label="Período"
+                              value={`${formatDate(acao.data_inicio)} até ${formatDate(
+                                acao.data_fim
+                              )}`}
+                            />
+                            <MetricItem
+                              label="Participantes previstos"
+                              value={acao.participantes_previstos || 0}
+                            />
+                            <MetricItem
+                              label="Turmas / sessões"
+                              value={acao.quantidade_turmas_sessoes || 0}
+                            />
+                            <MetricItem
+                              label="Participantes realizados"
+                              value={acao.participantes_realizados || 0}
+                            />
+                            <MetricItem
+                              label="Horas planejadas"
+                              value={acao.horas_planejadas || 0}
+                            />
+                            <MetricItem
+                              label="Horas realizadas"
+                              value={acao.horas_realizadas || 0}
+                            />
+                          </div>
+
+                          {Array.isArray(acao.turmas_vinculadas) &&
+                          acao.turmas_vinculadas.length ? (
+                            <div style={{ marginTop: 12 }}>
+                              <div style={miniSectionTitle}>Turmas vinculadas</div>
+
+                              <div style={tagsRow}>
+                                {acao.turmas_vinculadas.map((turma) => (
+                                  <button
+                                    key={turma.id}
+                                    type="button"
+                                    onClick={() =>
+                                      (window.location.href = `/turma/${turma.id}`)
+                                    }
+                                    style={tagButton}
+                                  >
+                                    {turma.tema || `Turma ${turma.id}`}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          <div style={actionsRow}>
+                            <button style={btnSecondary} onClick={() => editarAcao(acao)}>
+                              Editar ação
+                            </button>
+                            <button
+                              style={btnDangerMini}
+                              onClick={() => removerAcao(acao)}
+                            >
+                              Remover ação
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={emptyBox}>Nenhuma ação vinculada a esta jornada.</div>
+                  )}
                 </div>
               </div>
+            );
+          })}
 
-              <details open style={{ ...detailsCard, borderColor: "#c7d2fe", background: "#f8faff" }}>
-                <summary style={{ ...detailsSummary, color: "#3730a3" }}>Registro de sustentação</summary>
-                <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
-                  <div style={formGrid}>
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Jornada (opcional)
-                      <select
-                        value={coachingForm.jornada_id}
-                        onChange={(e) =>
-                          setCoachingForm((prev) => ({
-                            ...prev,
-                            jornada_id: e.target.value,
-                            etapa_id: "",
-                          }))
-                        }
-                        style={compactInputStyle()}
-                        disabled={jornadasSelectStatus.disabled}
-                      >
-                        <option value="">{jornadasSelectStatus.text || "Independente"}</option>
-                        {jornadas.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Etapa (opcional)
-                      <select
-                        value={coachingForm.etapa_id}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
-                        style={compactInputStyle()}
-                        disabled={etapasCoachingStatus.disabled}
-                      >
-                        <option value="">{etapasCoachingStatus.text || "Sem etapa"}</option>
-                        {etapasDaJornadaCoaching.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.nome}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Ação vinculada (opcional)
-                      <select
-                        value={coachingForm.acao_id}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, acao_id: e.target.value }))}
-                        style={compactInputStyle()}
-                        disabled={acoesCoachingStatus.disabled}
-                      >
-                        <option value="">{acoesCoachingStatus.text || "Sem ação"}</option>
-                        {acoesDoContextoCoaching.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.tema}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Tipo de sustentação
-                      <select
-                        value={coachingForm.tipo_coaching}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, tipo_coaching: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="coaching">Coaching</option>
-                        <option value="mentoria">Mentoria</option>
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
-                      Título
-                      <input
-                        value={coachingForm.titulo}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, titulo: e.target.value }))}
-                        style={compactInputStyle()}
-                        required
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Público-alvo
-                      <input
-                        value={coachingForm.publico_alvo}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
-                      Responsável
-                      <select
-                        value={coachingForm.responsavel_id}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
-                        {usuarios.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Participantes previstos
-                      <input
-                        type="number"
-                        value={coachingForm.participantes_previstos}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Participantes realizados
-                      <input
-                        type="number"
-                        value={coachingForm.participantes_realizados}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Sessões previstas
-                      <input
-                        type="number"
-                        value={coachingForm.sessoes_previstas}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_previstas: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Sessões realizadas
-                      <input
-                        type="number"
-                        value={coachingForm.sessoes_realizadas}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_realizadas: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Carga horária por sessão
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={coachingForm.carga_horaria_sessao}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, carga_horaria_sessao: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
-                      Horas totais
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={coachingForm.horas_totais}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, horas_totais: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Status
-                      <select
-                        value={coachingForm.status}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, status: e.target.value }))}
-                        style={compactInputStyle()}
-                      >
-                        <option value="planejado">Planejado</option>
-                        <option value="em_andamento">Em andamento</option>
-                        <option value="concluido">Concluído</option>
-                        <option value="cancelado">Cancelado</option>
-                      </select>
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Data início
-                      <input
-                        type="date"
-                        value={coachingForm.data_inicio}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Data fim
-                      <input
-                        type="date"
-                        value={coachingForm.data_fim}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                        style={compactInputStyle()}
-                      />
-                    </label>
-                  </div>
-
-                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
-                    Objetivo
-                    <textarea
-                      value={coachingForm.objetivo}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                      style={textareaStyle(96)}
-                    />
-                  </label>
-
-                  <div style={buttonRow}>
-                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                      {coachingForm.id ? "Atualizar coaching" : "Salvar coaching"}
-                    </button>
-                    <button
-                      type="button"
-                      style={buttonSecondaryStyle()}
-                      onClick={() => {
-                        setCoachingForm(coachingInicial);
-                        setErro("");
-                        setNotice("");
-                      }}
-                    >
-                      Limpar
-                    </button>
-                  </div>
-                </form>
-              </details>
-            </SectionCard>
-
-            <SectionCard
-              title="Portos de coaching e mentoria"
-              subtitle="Apoios que mantêm o percurso estável, aceleram a jornada e corrigem desvios."
-            >
-              {loading ? (
-                emptyCard("Carregando coachings...")
-              ) : orderedCoachings.length === 0 ? (
-                emptyCard("Nenhum coaching encontrado.")
-              ) : (
-                <>
-                  <div style={coachingBand}>
-                    <OverviewBox label="Em andamento" value={fmtNumber(coachingExecutive.emAndamento)} tone="coaching" />
-                    <OverviewBox label="Concluídos" value={fmtNumber(coachingExecutive.concluidos)} tone="coaching" />
-                    <OverviewBox label="Independentes" value={fmtNumber(coachingExecutive.independentes)} tone="coaching" />
-                    <OverviewBox label="Sem responsável" value={fmtNumber(coachingExecutive.semResponsavel)} tone="alert" />
-                    <OverviewBox label="Vencidos" value={fmtNumber(coachingExecutive.vencidos)} tone="danger" />
-                    <OverviewBox label="Críticos" value={fmtNumber(coachingExecutive.criticos)} tone="danger" />
-                    <OverviewBox label="Horas" value={fmtHours(coachingExecutive.horas)} tone="coaching" />
-                  </div>
-
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Jornada</th>
-                          <th style={thStyle}>Etapa</th>
-                          <th style={thStyle}>Ação</th>
-                          <th style={thStyle}>Título</th>
-                          <th style={thStyle}>Tipo</th>
-                          <th style={thStyle}>Horas</th>
-                          <th style={thStyle}>Intensidade</th>
-                          <th style={thStyle}>Status</th>
-                          <th style={thStyle}>Prazo</th>
-                          <th style={thStyle}>Atenção</th>
-                          <th style={thStyle}>Responsável</th>
-                          <th style={thStyle}>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {orderedCoachings.map((item) => (
-                          <tr key={item.id} style={rowTone(item)}>
-                            <td style={tdStyle}>{item.jornada_nome}</td>
-                            <td style={tdStyle}>{item.etapa_nome}</td>
-                            <td style={tdStyle}>{item.acao_nome}</td>
-                            <td style={tdStyle}><strong>{item.titulo}</strong></td>
-                            <td style={tdStyle}>
-                              <span style={sustentacaoTypeBadge(item.tipo_coaching).style}>{sustentacaoTypeBadge(item.tipo_coaching).label}</span>
-                            </td>
-                            <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
-                            <td style={tdStyle}>
-                              <span style={prazoBadge(item.intensidade_info.tone)}>{item.intensidade_info.label}</span>
-                            </td>
-                            <td style={tdStyle}>
-                              <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
-                            </td>
-                            <td style={tdStyle}>
-                              <div style={{ display: "grid", gap: 6 }}>
-                                <span style={prazoBadge(item.prazo_info.tone)}>{item.prazo_info.label}</span>
-                                <span style={{ fontSize: 12, color: "#64748b" }}>
-                                  {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={tdStyle}>
-                              <span style={attentionBadge(item.attention_info.level)}>
-                                {item.attention_info.label}
-                              </span>
-                            </td>
-                            <td style={tdStyle}>{item.responsavel_nome}</td>
-                            <td style={tdStyle}>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button style={buttonSecondaryStyle()} onClick={() => editCoaching(item)}>
-                                  Editar
-                                </button>
-                                <button style={buttonDangerStyle()} onClick={() => removeRegistro("coaching", item.id)}>
-                                  Excluir
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </SectionCard>
-          </>
-        )}
+          {!jornadasFiltradas.length ? (
+            <div style={emptyBox}>Nenhuma jornada encontrada com os filtros atuais.</div>
+          ) : null}
+        </div>
       </div>
-    </PortalShell>
+    </div>
   );
 }
 
-function rowTone(item) {
-  if (item.attention_info?.level === "alta") {
-    return { background: "#fff7f7" };
-  }
-  if (item.status_canonico === "em_andamento") {
-    return { background: "#fffdfa" };
-  }
-  if (item.tipo_registro === "coaching" && !item.jornada_id) {
-    return { background: "#fafaff" };
-  }
-  return undefined;
+function Field({ label, children, full = false }) {
+  return (
+    <div style={{ ...fieldWrap, gridColumn: full ? "1 / -1" : "auto" }}>
+      <label style={labelStyle}>{label}</label>
+      {children}
+    </div>
+  );
 }
 
-function MetricBox({ label, value }) {
+function InfoCard({ label, value }) {
   return (
-    <div style={metricBox}>
+    <div style={infoCard}>
+      <div style={infoLabel}>{label}</div>
+      <div style={infoValue}>{value}</div>
+    </div>
+  );
+}
+
+function StatCard({ title, value }) {
+  return (
+    <div style={statCard}>
+      <div style={statTitle}>{title}</div>
+      <div style={statValue}>{value}</div>
+    </div>
+  );
+}
+
+function SummaryItem({ label, value }) {
+  return (
+    <div style={summaryItem}>
+      <div style={summaryLabel}>{label}</div>
+      <div style={summaryValue}>{value}</div>
+    </div>
+  );
+}
+
+function MetricItem({ label, value }) {
+  return (
+    <div style={metricItem}>
       <div style={metricLabel}>{label}</div>
       <div style={metricValue}>{value}</div>
     </div>
   );
 }
 
-const journeyGuideGrid = {
+const page = {
+  minHeight: "100vh",
+  background: "#f8fafc",
+  padding: 24,
+};
+
+const loadingWrap = {
+  minHeight: "100vh",
   display: "grid",
-  gap: 12,
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-};
-
-const journeyGuideCard = {
-  border: "1px solid #dbeafe",
-  background: "linear-gradient(180deg, #eff6ff 0%, #ffffff 100%)",
-  borderRadius: 18,
-  padding: 16,
-  display: "grid",
-  gap: 8,
-};
-
-const journeyGuideTitle = {
-  fontSize: 15,
-  fontWeight: 900,
-  color: "#1e3a8a",
-};
-
-const journeyGuideText = {
-  fontSize: 13,
-  color: "#334155",
-  lineHeight: 1.5,
-};
-
-const journeyFlowCard = {
-  border: "1px solid #dbeafe",
-  borderRadius: 22,
-  background: "#fff",
-  padding: 18,
-  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
-  display: "grid",
-  gap: 16,
-};
-
-const journeyFlowHeader = {
-  display: "grid",
-  gap: 16,
-  gridTemplateColumns: "1.3fr .9fr",
-  alignItems: "start",
-};
-
-const journeyFlowTitle = {
-  fontSize: 22,
-  fontWeight: 900,
-  color: "#0f172a",
-  lineHeight: 1.15,
-};
-
-const journeyFlowMeta = {
-  fontSize: 13,
-  color: "#475569",
-  lineHeight: 1.45,
-};
-
-const journeyFlowSummary = {
-  display: "grid",
-  gap: 10,
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-};
-
-const journeyProgressBarWrap = {
-  display: "grid",
-  gap: 8,
-};
-
-const journeyProgressBarTrack = {
-  width: "100%",
-  height: 10,
-  borderRadius: 999,
-  background: "#e2e8f0",
-  overflow: "hidden",
-};
-
-const journeyProgressBarFill = {
-  height: "100%",
-  borderRadius: 999,
-  background: "linear-gradient(90deg, #2563eb 0%, #0ea5e9 100%)",
-};
-
-const journeyStagesGrid = {
-  display: "grid",
-  gap: 14,
-  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-};
-
-const journeyStageCard = (active) => ({
-  border: active ? "1px solid #93c5fd" : "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 16,
-  background: active ? "linear-gradient(180deg, #eff6ff 0%, #ffffff 100%)" : "#fff",
-  boxShadow: active ? "0 8px 18px rgba(37,99,235,.10)" : "none",
-  display: "grid",
-  gap: 10,
-});
-
-const journeyCurrentPill = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 10,
-  fontWeight: 800,
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  textTransform: "uppercase",
-};
-
-const journeyStageTitle = {
-  fontSize: 16,
-  fontWeight: 900,
-  color: "#0f172a",
-};
-
-const journeyStageMeta = {
-  fontSize: 12,
-  color: "#64748b",
-};
-
-const journeyMiniStats = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-  fontSize: 12,
+  placeItems: "center",
   color: "#334155",
   fontWeight: 700,
+  background: "#f8fafc",
 };
 
-const journeySubBlock = {
-  display: "grid",
-  gap: 8,
-};
-
-const journeySubTitle = {
-  fontSize: 11,
-  fontWeight: 800,
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: ".05em",
-};
-
-const journeyLinkedItem = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  flexWrap: "wrap",
-  fontSize: 12,
-  color: "#0f172a",
-};
-
-const journeyEmptyText = {
-  fontSize: 12,
-  color: "#94a3b8",
-};
-
-const nextStepsGrid = {
-  display: "grid",
-  gap: 12,
-  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-};
-
-const nextStepCard = {
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  background: "#fff",
-  padding: 16,
-  display: "grid",
-  gap: 10,
-  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
-};
-
-const nextStepJourney = {
-  fontSize: 17,
-  fontWeight: 900,
-  color: "#0f172a",
-};
-
-const nextStepAction = {
-  fontSize: 14,
-  fontWeight: 800,
-  color: "#1d4ed8",
-  lineHeight: 1.4,
-};
-
-const nextStepMeta = {
-  fontSize: 12,
-  color: "#64748b",
-  lineHeight: 1.4,
-};
-
-function OverviewBox({ label, value, tone = "default" }) {
-  return (
-    <div style={overviewBox(tone)}>
-      <div style={overviewLabel}>{label}</div>
-      <div style={overviewValue}>{value}</div>
-    </div>
-  );
-}
-
-const heroWrap = {
-  display: "grid",
-  gridTemplateColumns: "1.55fr .95fr",
-  gap: 16,
-  padding: 20,
-  borderRadius: 24,
-  background:
-    "radial-gradient(circle at 10% 15%, rgba(56,189,248,.22), transparent 28%), radial-gradient(circle at 80% 20%, rgba(37,99,235,.18), transparent 24%), linear-gradient(135deg, #082f49 0%, #0f172a 38%, #1d4ed8 100%)",
+const hero = {
+  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
+  borderRadius: 22,
+  padding: 24,
   color: "#fff",
-  border: "1px solid rgba(148,163,184,.18)",
-  boxShadow: "0 18px 40px rgba(15,23,42,.16)",
+  boxShadow: "0 18px 36px rgba(29,78,216,.18)",
 };
 
-const heroLeft = {
-  display: "grid",
-  gap: 10,
-  alignContent: "start",
-};
-
-const heroEyebrow = {
-  fontSize: 11,
+const heroBadge = {
+  display: "inline-block",
+  width: "fit-content",
+  background: "rgba(255,255,255,.14)",
+  padding: "6px 10px",
+  borderRadius: 999,
+  fontSize: 12,
   fontWeight: 800,
   textTransform: "uppercase",
-  letterSpacing: ".12em",
-  color: "#bae6fd",
+  letterSpacing: ".04em",
+  marginBottom: 10,
 };
 
 const heroTitle = {
-  fontSize: 30,
-  lineHeight: 1.1,
-  fontWeight: 900,
   margin: 0,
+  fontSize: 34,
+  lineHeight: 1.05,
 };
 
-const heroText = {
-  margin: 0,
+const heroSubtitle = {
+  margin: "8px 0 0",
   color: "rgba(255,255,255,.84)",
-  lineHeight: 1.55,
-  maxWidth: 720,
+  lineHeight: 1.6,
 };
 
-const tabBar = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-  marginTop: 8,
-};
-
-const tabButton = (active) => ({
-  border: active ? "1px solid rgba(147,197,253,.45)" : "1px solid rgba(148,163,184,.22)",
-  background: active ? "rgba(59,130,246,.16)" : "rgba(255,255,255,.04)",
-  color: active ? "#fff" : "#cbd5e1",
-  borderRadius: 999,
-  padding: "10px 14px",
-  fontWeight: 800,
-  cursor: "pointer",
-  backdropFilter: "blur(6px)",
-});
-
-const heroRight = {
+const heroGrid = {
+  marginTop: 18,
   display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 12,
 };
 
-const orbCard = {
-  borderRadius: 22,
-  padding: 18,
-  background: "linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.04) 100%)",
-  border: "1px solid rgba(148,163,184,.24)",
+const infoCard = {
+  background: "rgba(255,255,255,.10)",
+  border: "1px solid rgba(255,255,255,.14)",
+  borderRadius: 14,
+  padding: 14,
 };
 
-const orbHeader = {
+const infoLabel = {
   fontSize: 12,
-  fontWeight: 800,
-  color: "#cbd5e1",
   textTransform: "uppercase",
+  color: "rgba(255,255,255,.68)",
 };
 
-const orbValue = {
-  fontSize: 54,
-  lineHeight: 1,
-  fontWeight: 900,
-  marginTop: 8,
-};
-
-const orbSub = {
-  fontSize: 13,
-  color: "#cbd5e1",
+const infoValue = {
   marginTop: 6,
+  fontWeight: 800,
+  fontSize: 22,
 };
 
-const signalGrid = {
+const filtersCard = {
+  marginTop: 16,
+  background: "#fff",
+  borderRadius: 20,
+  padding: 16,
+  border: "1px solid #e2e8f0",
+};
+
+const filtersRow = {
+  display: "grid",
+  gridTemplateColumns: "2fr 1fr 1fr auto",
+  gap: 12,
+};
+
+const gridForms = {
+  marginTop: 16,
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: 10,
+  gap: 16,
 };
 
-const signalCard = {
-  borderRadius: 18,
-  padding: 14,
-  background: "rgba(255,255,255,.06)",
-  border: "1px solid rgba(148,163,184,.18)",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.06)",
-  backdropFilter: "blur(6px)",
+const sectionCard = {
+  marginTop: 16,
+  background: "#fff",
+  borderRadius: 20,
+  padding: 20,
+  border: "1px solid #e2e8f0",
 };
 
-const kpiGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 14,
-};
-
-const filtersPanel = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-};
-
-const errorAlert = {
-  borderRadius: 12,
-  padding: "12px 14px",
-  background: "#fff1f2",
-  color: "#b91c1c",
-  border: "1px solid #fecdd3",
-  fontWeight: 700,
-};
-
-const successAlert = {
-  borderRadius: 12,
-  padding: "12px 14px",
-  background: "#ecfeff",
-  color: "#155e75",
-  border: "1px solid #a5f3fc",
-  fontWeight: 700,
-};
-
-const overviewStripe = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-};
-
-const overviewBox = (tone) => {
-  const tones = {
-    default: { background: "#ffffff", border: "#e2e8f0" },
-    coaching: { background: "#eef2ff", border: "#c7d2fe" },
-    alert: { background: "#fff7ed", border: "#fed7aa" },
-    danger: { background: "#fff1f2", border: "#fecaca" },
-  };
-  const current = tones[tone] || tones.default;
-  return {
-    borderRadius: 18,
-    padding: 16,
-    background: current.background,
-    border: `1px solid ${current.border}`,
-    boxShadow: "0 8px 18px rgba(15,23,42,.04)",
-  };
-};
-
-const overviewLabel = {
-  fontSize: 11,
-  color: "#64748b",
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".06em",
-};
-
-const overviewValue = {
+const sectionTitle = {
+  margin: 0,
   fontSize: 24,
   color: "#0f172a",
-  fontWeight: 900,
-  marginTop: 6,
-  lineHeight: 1.15,
 };
 
-const detailsCard = {
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  background: "#ffffff",
-  padding: 14,
-};
-
-const detailsSummary = {
-  cursor: "pointer",
-  fontWeight: 800,
-  color: "#0f172a",
-  fontSize: 15,
-};
-
-const formGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
-  gap: 14,
-  alignItems: "end",
-};
-
-const fieldSpan = {
-  full: { gridColumn: "span 12" },
-  xxl: { gridColumn: "span 6" },
-  xl: { gridColumn: "span 5" },
-  lg: { gridColumn: "span 4" },
-  md: { gridColumn: "span 3" },
-  sm: { gridColumn: "span 2" },
-};
-
-const buttonRow = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const flowCard = {
-  borderRadius: 28,
-  border: "1px solid #bfdbfe",
-  background:
-    "radial-gradient(circle at top right, rgba(14,165,233,.12), transparent 26%), radial-gradient(circle at bottom left, rgba(59,130,246,.08), transparent 28%), linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)",
-  padding: 22,
-  boxShadow: "0 18px 42px rgba(15,23,42,.08)",
-  display: "grid",
-  gap: 16,
-  overflow: "hidden",
-};
-
-const flowHeader = {
-  display: "grid",
-  gridTemplateColumns: "1.25fr .75fr",
-  gap: 16,
-  alignItems: "start",
-};
-
-const flowTitle = {
-  fontSize: 22,
-  fontWeight: 900,
-  color: "#0f172a",
-  lineHeight: 1.1,
-  letterSpacing: "-0.02em",
-};
-
-const flowMeta = {
-  fontSize: 12,
+const sectionSubtitle = {
+  margin: "6px 0 0",
   color: "#64748b",
   lineHeight: 1.5,
 };
 
-const flowDescription = {
-  fontSize: 14,
-  color: "#475569",
-  lineHeight: 1.65,
-  background: "rgba(255,255,255,.72)",
-  border: "1px solid #e0f2fe",
-  borderRadius: 18,
-  padding: "14px 16px",
-};
-
-const flowMetrics = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  justifyContent: "flex-end",
-};
-
-const flowExecutiveBand = {
+const formGrid = {
+  marginTop: 16,
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: 12,
 };
 
-const riverTrack = {
-  display: "grid",
-  gap: 14,
-  position: "relative",
-};
-
-const stageWrap = {
-  position: "relative",
-  paddingLeft: 28,
-};
-
-const stageConnector = (show) => ({
-  position: "absolute",
-  left: 9,
-  top: 18,
-  bottom: show ? -24 : "auto",
-  width: 4,
-  borderRadius: 999,
-  background: show
-    ? "linear-gradient(180deg, rgba(14,165,233,.9) 0%, rgba(59,130,246,.25) 100%)"
-    : "transparent",
-  boxShadow: show ? "0 0 0 3px rgba(186,230,253,.35)" : "none",
-});
-
-const stageCard = {
-  border: "1px solid #dbeafe",
-  background: "linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%)",
-  borderRadius: 22,
-  padding: 16,
-  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
-};
-
-const stageTitle = {
-  fontSize: 17,
-  fontWeight: 900,
-  color: "#0f172a",
-  marginTop: 8,
-  letterSpacing: "-0.01em",
-};
-
-const stageMeta = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 12,
-};
-
-const stageStats = {
-  display: "flex",
-  gap: 14,
-  flexWrap: "wrap",
-  marginTop: 10,
-  color: "#334155",
-  fontSize: 12,
-  fontWeight: 800,
-};
-
-const flowRouteStrip = {
-  display: "grid",
-  gridTemplateColumns: "220px 1fr 220px",
-  gap: 14,
-  alignItems: "center",
-  background: "linear-gradient(90deg, rgba(239,246,255,.95) 0%, rgba(248,250,252,.95) 100%)",
-  border: "1px solid #dbeafe",
-  borderRadius: 20,
-  padding: 14,
-};
-
-const routeNode = (kind = "origin") => ({
-  borderRadius: 16,
-  padding: "12px 14px",
-  background: kind === "destination" ? "#eff6ff" : "#ffffff",
-  border: `1px solid ${kind === "destination" ? "#bfdbfe" : "#e2e8f0"}`,
+const fieldWrap = {
   display: "grid",
   gap: 6,
-});
-
-const routeLabel = {
-  fontSize: 11,
-  fontWeight: 800,
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
 };
 
-const routeValue = {
-  fontSize: 14,
-  fontWeight: 800,
-  color: "#0f172a",
-  lineHeight: 1.35,
-};
-
-const routeProgressWrap = {
-  display: "grid",
-  gap: 8,
-};
-
-const routeProgressHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 10,
-  color: "#475569",
+const labelStyle = {
   fontSize: 12,
   fontWeight: 800,
+  textTransform: "uppercase",
+  color: "#64748b",
+};
+
+const field = {
+  width: "100%",
+  boxSizing: "border-box",
+  height: 42,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "0 12px",
+  background: "#fff",
+};
+
+const textarea = {
+  width: "100%",
+  boxSizing: "border-box",
+  minHeight: 92,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "12px",
+  resize: "vertical",
+  background: "#fff",
+};
+
+const searchInput = {
+  width: "100%",
+  boxSizing: "border-box",
+  height: 42,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "0 12px",
+};
+
+const actionsRow = {
+  marginTop: 16,
+  display: "flex",
+  gap: 10,
   flexWrap: "wrap",
 };
 
-const routeTrackBar = {
-  width: "100%",
-  height: 14,
-  background: "#dbeafe",
-  borderRadius: 999,
-  overflow: "hidden",
-  boxShadow: "inset 0 1px 2px rgba(15,23,42,.08)",
+const btnPrimary = {
+  background: "#2563eb",
+  color: "#fff",
+  border: 0,
+  borderRadius: 12,
+  padding: "12px 18px",
+  cursor: "pointer",
+  fontWeight: 800,
 };
 
-const routeTrackFill = {
-  height: "100%",
-  borderRadius: 999,
-  background: "linear-gradient(90deg, #06b6d4 0%, #2563eb 100%)",
-  boxShadow: "0 6px 14px rgba(37,99,235,.28)",
+const btnSecondary = {
+  background: "#fff",
+  color: "#0f172a",
+  border: "1px solid #cbd5e1",
+  borderRadius: 12,
+  padding: "12px 18px",
+  cursor: "pointer",
+  fontWeight: 700,
 };
 
-const stageInsightBand = {
+const btnDangerMini = {
+  background: "#fff1f2",
+  color: "#b91c1c",
+  border: "1px solid #fecaca",
+  borderRadius: 10,
+  padding: "8px 12px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const helperMini = {
+  marginTop: 6,
+  color: "#64748b",
+  fontSize: 12,
+};
+
+const errorBox = {
+  marginTop: 16,
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  borderRadius: 14,
+  padding: 12,
+  fontWeight: 700,
+};
+
+const successBox = {
+  marginTop: 16,
+  background: "#f0fdf4",
+  border: "1px solid #bbf7d0",
+  color: "#166534",
+  borderRadius: 14,
+  padding: 12,
+  fontWeight: 700,
+};
+
+const journeyList = {
+  marginTop: 16,
+  display: "grid",
+  gap: 16,
+};
+
+const journeyCard = {
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  padding: 18,
+  background: "#fff",
+};
+
+const journeyHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+  flexWrap: "wrap",
+};
+
+const journeyTitle = {
+  fontSize: 24,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const journeyMeta = {
+  marginTop: 4,
+  color: "#64748b",
+};
+
+const statusBadge = {
+  borderRadius: 999,
+  padding: "8px 12px",
+  fontSize: 12,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+};
+
+const journeySummaryGrid = {
+  marginTop: 14,
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+  gap: 12,
+};
+
+const summaryItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 12,
+};
+
+const summaryLabel = {
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  color: "#64748b",
+};
+
+const summaryValue = {
+  marginTop: 6,
+  color: "#0f172a",
+  fontWeight: 700,
+};
+
+const actionsList = {
+  marginTop: 16,
+  display: "grid",
+  gap: 12,
+};
+
+const actionCard = {
+  border: "1px solid #dbe4f0",
+  borderRadius: 16,
+  padding: 16,
+  background: "#fbfdff",
+};
+
+const actionHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+  flexWrap: "wrap",
+};
+
+const actionTitle = {
+  fontSize: 20,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const actionMeta = {
+  marginTop: 4,
+  color: "#64748b",
+};
+
+const actionDesc = {
+  marginTop: 10,
+  color: "#334155",
+  lineHeight: 1.5,
+};
+
+const actionGrid = {
+  marginTop: 14,
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 10,
-  marginTop: 12,
 };
 
-const stageInsightCard = {
-  borderRadius: 14,
-  padding: "10px 12px",
-  background: "rgba(255,255,255,.82)",
-  border: "1px solid #dbeafe",
-  display: "grid",
-  gap: 4,
-};
-
-const stageInsightLabel = {
-  fontSize: 11,
-  fontWeight: 800,
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: ".03em",
-};
-
-const stageInsightValue = {
-  fontSize: 13,
-  fontWeight: 800,
-  color: "#0f172a",
-  lineHeight: 1.35,
-};
-
-const coachingBand = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-  marginBottom: 16,
-};
-
-const actionBand = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-  marginBottom: 16,
-};
-
-const metricBox = {
-  minWidth: 96,
-  padding: "8px 10px",
-  borderRadius: 12,
-  background: "#ffffff",
+const metricItem = {
+  background: "#fff",
   border: "1px solid #e2e8f0",
+  borderRadius: 12,
+  padding: 12,
 };
 
 const metricLabel = {
-  fontSize: 10,
-  color: "#64748b",
-  fontWeight: 700,
+  fontSize: 12,
+  fontWeight: 800,
   textTransform: "uppercase",
-  letterSpacing: ".03em",
+  color: "#64748b",
 };
 
 const metricValue = {
-  fontSize: 18,
-  fontWeight: 800,
+  marginTop: 6,
   color: "#0f172a",
-  marginTop: 3,
-  lineHeight: 1.2,
+  fontWeight: 800,
 };
 
-const tableStyle = {
-  width: "100%",
-  borderCollapse: "collapse",
-  minWidth: 1500,
-};
-
-const thStyle = {
-  textAlign: "left",
-  padding: "13px 10px",
-  fontSize: 11,
+const miniSectionTitle = {
+  fontSize: 12,
+  fontWeight: 800,
   textTransform: "uppercase",
-  letterSpacing: ".08em",
   color: "#64748b",
-  borderBottom: "1px solid #e2e8f0",
+  marginBottom: 6,
+};
+
+const tagsRow = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+};
+
+const tagButton = {
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  borderRadius: 999,
+  padding: "6px 10px",
+  fontSize: 12,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const emptyBox = {
+  marginTop: 12,
   background: "#f8fafc",
-  fontWeight: 800,
-};
-
-const tdStyle = {
-  padding: "13px 10px",
-  borderBottom: "1px solid #e2e8f0",
-  verticalAlign: "top",
-  color: "#0f172a",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
-
-const emptyTimeline = {
   border: "1px dashed #cbd5e1",
   borderRadius: 14,
-  padding: 14,
+  padding: 18,
   color: "#64748b",
-  background: "#f8fafc",
-};
-
-const timelineOrder = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 24,
-  height: 24,
-  borderRadius: "50%",
-  background: "#2563eb",
-  color: "#fff",
-  fontSize: 12,
-  fontWeight: 900,
+  textAlign: "center",
 };
