@@ -5,36 +5,18 @@ import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+import { formatDateBR, parseLocalDate } from "../../lib/date";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
 function parseDateSafe(value) {
-  if (!value) return null;
-
-  if (value instanceof Date) return value;
-
-  const text = String(value).slice(0, 10);
-  const parts = text.split("-");
-
-  if (parts.length === 3) {
-    const [year, month, day] = parts.map(Number);
-    if (year && month && day) {
-      return new Date(year, month - 1, day, 12, 0, 0);
-    }
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
+  return parseLocalDate(value);
 }
 
 function formatDate(value) {
-  if (!value) return "-";
-  const date = parseDateSafe(value);
-  if (!date) return String(value);
-  return date.toLocaleDateString("pt-BR");
+  return formatDateBR(value, "-");
 }
 
 function riscoInfo(freq) {
