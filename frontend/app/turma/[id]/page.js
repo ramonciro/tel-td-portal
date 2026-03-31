@@ -3,12 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../../services/api";
+import { compareLocalDatesAsc, formatDateBR, parseLocalDate, todayLocal } from "../../../lib/date";
 
 function formatDate(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
-  return d.toLocaleDateString("pt-BR");
+  return formatDateBR(value, "-");
 }
 
 function calcPercentual(parte, total) {
@@ -39,9 +37,9 @@ function normalizarStatusTurma(status) {
 }
 
 function calcularStatusTurma({ totalAulas, aulasComPresenca, aderenciaMedia, dataInicio, dataFim }) {
-  const hoje = new Date();
-  const inicio = dataInicio ? new Date(dataInicio) : null;
-  const fim = dataFim ? new Date(dataFim) : null;
+  const hoje = todayLocal();
+  const inicio = parseLocalDate(dataInicio);
+  const fim = parseLocalDate(dataFim);
 
   if (fim && !Number.isNaN(fim.getTime()) && hoje > fim) {
     if (aderenciaMedia >= 80 || totalAulas === 0) {
@@ -228,7 +226,7 @@ const status =
         )
         .sort(
           (a, b) =>
-            new Date(a.data_aula || 0).getTime() - new Date(b.data_aula || 0).getTime()
+            compareLocalDatesAsc(a.data_aula, b.data_aula)
         )[0] || null;
 
     return {
