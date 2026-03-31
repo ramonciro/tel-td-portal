@@ -5,7 +5,6 @@ import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
-import * as XLSX from "xlsx";
 
 function fmtNumber(value) {
   return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
@@ -1410,8 +1409,10 @@ export default function MapaDesenvolvimentoPage() {
       mentoriaAtiva: item.mentoriasAtivasJornada.length,
     }));
   }, [jornadasFluxo]);
-  function exportarRelatorioMapa() {
-    const workbook = XLSX.utils.book_new();
+  async function exportarRelatorioMapa() {
+    try {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.utils.book_new();
 
     const resumo = [
       { indicador: "Jornadas ativas", valor: kpis.fluxosAtivos },
@@ -1504,7 +1505,11 @@ export default function MapaDesenvolvimentoPage() {
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(proximosPassosSheet), "ProximosPassos");
 
     const data = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(workbook, `relatorio_mapa_desenvolvimento_${data}.xlsx`);
+      XLSX.writeFile(workbook, `relatorio_mapa_desenvolvimento_${data}.xlsx`);
+    } catch (error) {
+      console.error("Erro ao exportar relatório do mapa:", error);
+      setErro("Não foi possível exportar o relatório agora.");
+    }
   }
 
   async function saveJornada(event) {
