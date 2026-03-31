@@ -27,6 +27,8 @@ function canonicalStatus(value) {
   if (["ativa", "ativo"].includes(status)) return "ativo";
   if (["inativa", "inativo"].includes(status)) return "inativo";
   if (["concluida", "concluído", "concluido", "finalizada"].includes(status)) return "concluido";
+  if (["coaching"].includes(status)) return "coaching";
+  if (["mentoria"].includes(status)) return "mentoria";
   if (["planejada", "planejado"].includes(status)) return "planejado";
   if (["em_andamento", "em andamento"].includes(status)) return "em_andamento";
   if (["cancelada", "cancelado"].includes(status)) return "cancelado";
@@ -44,6 +46,8 @@ function displayStatus(value) {
     planejado: "Planejado",
     em_andamento: "Em andamento",
     cancelado: "Cancelado",
+    coaching: "Coaching",
+    mentoria: "Mentoria",
   };
 
   return labels[status] || value || "—";
@@ -672,7 +676,7 @@ const coachingInicial = {
   jornada_id: "",
   etapa_id: "",
   acao_id: "",
-  tipo_coaching: "coordenacao",
+  tipo_coaching: "coaching",
   titulo: "",
   publico_alvo: "",
   objetivo: "",
@@ -1138,7 +1142,7 @@ export default function MapaDesenvolvimentoPage() {
       ...filteredCoachings.map((item) => ({
         ...item,
         titulo: item.titulo,
-        tipo_label: `coaching • ${item.tipo_coaching}`,
+        tipo_label: `sustentação • ${displayStatus(item.tipo_coaching)}`,
         horas: item.horas_totais_calc,
       })),
     ];
@@ -1692,7 +1696,7 @@ export default function MapaDesenvolvimentoPage() {
       jornada_id: item.jornada_id || "",
       etapa_id: item.etapa_id || "",
       acao_id: item.acao_id || "",
-      tipo_coaching: item.tipo_coaching || "coordenacao",
+      tipo_coaching: item.tipo_coaching || "coaching",
       titulo: item.titulo || "",
       publico_alvo: item.publico_alvo || "",
       objetivo: item.objetivo || "",
@@ -3204,19 +3208,14 @@ export default function MapaDesenvolvimentoPage() {
                     </label>
 
                     <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Tipo de coaching
+                      Tipo de sustentação
                       <select
                         value={coachingForm.tipo_coaching}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, tipo_coaching: e.target.value }))}
                         style={compactInputStyle()}
                       >
-                        <option value="coordenacao">Coordenação</option>
-                        <option value="gerencia">Gerência</option>
-                        <option value="performance">Performance</option>
-                        <option value="desenvolvimento">Desenvolvimento</option>
-                        <option value="individual">Individual</option>
-                        <option value="grupo">Grupo</option>
-                        <option value="outro">Outro</option>
+                        <option value="coaching">Coaching</option>
+                        <option value="mentoria">Mentoria</option>
                       </select>
                     </label>
 
