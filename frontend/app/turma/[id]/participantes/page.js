@@ -3,19 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiDownload, apiFetch } from "../../../../services/api";
+import { formatDateBR, toDateInputLocal } from "../../../../lib/date";
 
 function formatDate(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
-  return d.toLocaleDateString("pt-BR");
+  return formatDateBR(value, "-");
 }
 
 function toInputDate(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  return toDateInputLocal(value);
 }
 
 function emptyForm(cliente = "", turma = "", supervisor = "") {
