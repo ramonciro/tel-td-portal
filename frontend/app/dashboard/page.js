@@ -5,18 +5,14 @@ import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+import { formatDateBR } from "../../lib/date";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
 function formatDate(value) {
-  if (!value) return "-";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-
-  return date.toLocaleDateString("pt-BR");
+  return formatDateBR(value, "-");
 }
 
 function getBadgeStyleByTax(value) {
