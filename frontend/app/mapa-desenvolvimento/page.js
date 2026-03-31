@@ -1776,24 +1776,24 @@ export default function MapaDesenvolvimentoPage() {
 
   return (
     <PortalShell
-      title="Mapa de Desenvolvimento"
-      subtitle="Painel executivo de jornadas, entregas, intervenções e evolução do desenvolvimento."
+      title="Oceano do Desenvolvimento"
+      subtitle="Visão integrada do desenvolvimento, do percurso macro às entregas que sustentam a jornada."
     >
       <div style={{ display: "grid", gap: 18 }}>
         <section style={heroWrap}>
           <div style={heroLeft}>
-            <div style={heroEyebrow}>Command Center</div>
-            <h2 style={heroTitle}>Mapa de desenvolvimento com leitura de fluxo, execução e próximos passos.</h2>
+            <div style={heroEyebrow}>Oceano do Desenvolvimento</div>
+            <h2 style={heroTitle}>Um território vivo de desenvolvimento, com rios, portos, sustentação e destino.</h2>
             <p style={heroText}>
-              Use a jornada como eixo central para entender o caminho, a execução atual e o próximo movimento do desenvolvimento.
+              Leia o mapa como um grande oceano: jornadas como rios, etapas como ramificações e ações ou coachings como portos que conectam aprendizagem, execução e próximo trecho.
             </p>
 
             <div style={tabBar}>
               {[
-                ["geral", "Visão Geral"],
-                ["jornadas", "Jornadas"],
-                ["acoes", "Ações do Mapa"],
-                ["coaching", "Coaching"],
+                ["geral", "Oceano"],
+                ["jornadas", "Rios"],
+                ["acoes", "Portos"],
+                ["coaching", "Sustentação"],
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -1808,9 +1808,9 @@ export default function MapaDesenvolvimentoPage() {
 
           <div style={heroRight}>
             <div style={orbCard}>
-              <div style={orbHeader}>Pulso do Mapa</div>
+              <div style={orbHeader}>Pulso do Oceano</div>
               <div style={orbValue}>{fmtNumber(kpis.jornadas)}</div>
-              <div style={orbSub}>jornadas monitoradas</div>
+              <div style={orbSub}>rios monitorados</div>
             </div>
 
             <div style={signalGrid}>
@@ -1830,22 +1830,22 @@ export default function MapaDesenvolvimentoPage() {
         </section>
 
         <SectionCard
-          title="Leitura Estratégica"
-          subtitle="Leitura consolidada do ecossistema de desenvolvimento."
+          title="Cartografia do Oceano"
+          subtitle="Leitura macro do território de desenvolvimento e do volume em curso."
         >
           <div style={kpiGrid}>
-            <StatCard title="Jornadas" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
-            <StatCard title="Etapas" value={fmtNumber(kpis.etapas)} accent="#0f766e" />
-            <StatCard title="Ações" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
-            <StatCard title="Coachings" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
-            <StatCard title="Participantes impactados" value={fmtNumber(kpis.participantes)} accent="#16a34a" />
-            <StatCard title="Horas aplicadas" value={fmtHours(kpis.horasTotais)} accent="#b45309" />
+            <StatCard title="Rios ativos" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
+            <StatCard title="Ramificações" value={fmtNumber(kpis.etapas)} accent="#0f766e" />
+            <StatCard title="Portos de ação" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
+            <StatCard title="Portos de sustentação" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
+            <StatCard title="Público impactado" value={fmtNumber(kpis.participantes)} accent="#16a34a" />
+            <StatCard title="Horas no oceano" value={fmtHours(kpis.horasTotais)} accent="#b45309" />
           </div>
         </SectionCard>
 
         <SectionCard
-          title="Filtros Gerenciais"
-          subtitle="Aplicação de filtros sobre jornadas, etapas, entregas e intervenções."
+          title="Leitura do território"
+          subtitle="Refine o oceano por rio, ramificação, porto, responsável e status."
           action={
             <button
               style={buttonSecondaryStyle()}
@@ -1966,18 +1966,57 @@ export default function MapaDesenvolvimentoPage() {
           )}
         </SectionCard>
 
+        <SectionCard
+          title="Correntes do oceano"
+          subtitle="A lógica visual do mapa: do território macro até o destino final de cada percurso."
+        >
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
+            {[
+              ["Oceano", "Visão macro do desenvolvimento e do território em movimento."],
+              ["Rios", "Jornadas que conduzem caminhos de desenvolvimento."],
+              ["Portos", "Ações e coachings como pontos de ancoragem, reforço e entrega."],
+              ["Destino", "Resultado esperado, saúde do percurso e próximo trecho."],
+            ].map(([title, text]) => (
+              <div
+                key={title}
+                style={{
+                  border: "1px solid #dbeafe",
+                  borderRadius: 18,
+                  padding: 16,
+                  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+                  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 900, color: "#2563eb", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                  {title}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>{title}</div>
+                <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.5 }}>{text}</div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
         {activeTab === "geral" && (
           <div style={{ display: "grid", gap: 18 }}>
             <SectionCard
-              title="Leitura do mapa"
-              subtitle="Use a jornada como eixo principal do desenvolvimento."
+              title="Lógica do oceano"
+              subtitle="Do macro ao destino: entenda o percurso antes de olhar o detalhe."
             >
               <div style={journeyGuideGrid}>
                 {[
-                  ["1. Jornada", "Define o objetivo, público e responsável."],
-                  ["2. Etapas", "Organizam o caminho da jornada em fases."],
-                  ["3. Ações", "Materializam a execução de cada etapa."],
-                  ["4. Coaching", "Sustenta, reforça e corrige a rota."],
+                  ["1. Oceano", "Define a leitura macro do desenvolvimento e do território."],
+                  ["2. Rios", "Cada jornada conduz um caminho com várias ramificações."],
+                  ["3. Portos", "Ações e coachings são pontos de ancoragem e aprendizagem."],
+                  ["4. Destino", "Cada percurso aponta para resultado, atenção e próximo trecho."],
                 ].map(([title, text]) => (
                   <div key={title} style={journeyGuideCard}>
                     <div style={journeyGuideTitle}>{title}</div>
@@ -1988,8 +2027,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Fluxo das jornadas"
-              subtitle="Visão do caminho de desenvolvimento, do objetivo ao próximo passo."
+              title="Rios e trajetos"
+              subtitle="Leia cada jornada como um rio com ramificações, portos e destino em construção."
             >
               {loading ? (
                 emptyCard("Carregando fluxo das jornadas...")
@@ -2091,8 +2130,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Próximos passos"
-              subtitle="Leitura rápida do que precisa avançar nas jornadas ativas."
+              title="Próximos trechos"
+              subtitle="O que precisa navegar agora para manter o percurso vivo."
             >
               {loading ? (
                 emptyCard("Carregando próximos passos...")
@@ -2117,8 +2156,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Execução atual"
-              subtitle="Leitura consolidada das entregas, intervenções, prioridades e prazos."
+              title="Portos em movimento"
+              subtitle="Entregas, intervenções, prioridade e prazo no trecho atual do oceano."
             >
               {loading ? (
                 emptyCard("Carregando visão geral...")
@@ -2196,7 +2235,7 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "jornadas" && (
           <>
-            <SectionCard title="Arquitetura dos Fluxos" subtitle="Estrutura, monitoramento e saúde dos fluxos de desenvolvimento.">
+            <SectionCard title="Rios e ramificações" subtitle="Estrutura do percurso, saúde da travessia e pontos de ancoragem por jornada.">
               <details open style={detailsCard}>
                 <summary style={detailsSummary}>Registro de jornada</summary>
                 <form onSubmit={saveJornada} style={{ display: "grid", gap: 12, marginTop: 14 }}>
@@ -2495,8 +2534,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Painel Executivo das Jornadas"
-              subtitle="Acompanhamento executivo das jornadas, etapas e pontos de atenção."
+              title="Leitura executiva dos rios"
+              subtitle="Acompanhe cada rio, suas ramificações, seus portos e o próximo trecho."
             >
               {loading ? (
                 emptyCard("Carregando jornadas...")
@@ -2619,7 +2658,7 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "acoes" && (
           <>
-            <SectionCard title="Consolidação das Entregas" subtitle="Gestão tática das entregas vinculadas ao mapa de desenvolvimento.">
+            <SectionCard title="Portos e entregas" subtitle="Pontos de materialização do desenvolvimento ao longo do percurso.">
               <details open style={detailsCard}>
                 <summary style={detailsSummary}>Registro de ação</summary>
                 <form onSubmit={saveAcao} style={{ display: "grid", gap: 12, marginTop: 14 }}>
@@ -2866,8 +2905,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Painel Executivo das Ações"
-              subtitle="Execução, criticidade, intensidade e prazo das ações planejadas."
+              title="Portos de ação"
+              subtitle="Leitura dos portos ativos, intensidade da execução e risco no trajeto."
             >
               {loading ? (
                 emptyCard("Carregando ações...")
@@ -2954,7 +2993,7 @@ export default function MapaDesenvolvimentoPage() {
 
         {activeTab === "coaching" && (
           <>
-            <SectionCard title="Panorama de Intervenções" subtitle="Gestão das intervenções de coaching vinculadas ou independentes do fluxo.">
+            <SectionCard title="Sustentação do percurso" subtitle="Coachings como apoio, reforço e correção de rota ao longo do oceano.">
               <details open style={{ ...detailsCard, borderColor: "#c7d2fe", background: "#f8faff" }}>
                 <summary style={{ ...detailsSummary, color: "#3730a3" }}>Registro de coaching</summary>
                 <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
@@ -3195,8 +3234,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Painel Executivo de Coaching"
-              subtitle="Radar executivo das intervenções, criticidade, intensidade e prazo."
+              title="Portos de sustentação"
+              subtitle="Apoios que mantêm o percurso estável, aceleram a jornada e corrigem desvios."
             >
               {loading ? (
                 emptyCard("Carregando coachings...")
@@ -3514,12 +3553,12 @@ function OverviewBox({ label, value, tone = "default" }) {
 
 const heroWrap = {
   display: "grid",
-  gridTemplateColumns: "1.4fr .9fr",
+  gridTemplateColumns: "1.55fr .95fr",
   gap: 16,
   padding: 20,
   borderRadius: 24,
   background:
-    "radial-gradient(circle at top left, rgba(37,99,235,.18), transparent 32%), linear-gradient(135deg, #0f172a 0%, #111827 45%, #1e293b 100%)",
+    "radial-gradient(circle at 10% 15%, rgba(56,189,248,.22), transparent 28%), radial-gradient(circle at 80% 20%, rgba(37,99,235,.18), transparent 24%), linear-gradient(135deg, #082f49 0%, #0f172a 38%, #1d4ed8 100%)",
   color: "#fff",
   border: "1px solid rgba(148,163,184,.18)",
   boxShadow: "0 18px 40px rgba(15,23,42,.16)",
@@ -3536,7 +3575,7 @@ const heroEyebrow = {
   fontWeight: 800,
   textTransform: "uppercase",
   letterSpacing: ".12em",
-  color: "#93c5fd",
+  color: "#bae6fd",
 };
 
 const heroTitle = {
@@ -3548,7 +3587,7 @@ const heroTitle = {
 
 const heroText = {
   margin: 0,
-  color: "#cbd5e1",
+  color: "rgba(255,255,255,.84)",
   lineHeight: 1.55,
   maxWidth: 720,
 };
