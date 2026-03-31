@@ -2534,8 +2534,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Leitura executiva dos rios"
-              subtitle="Acompanhe cada rio, suas ramificações, seus portos e o próximo trecho."
+              title="Rios e trajetos"
+              subtitle="Cada jornada aparece como um curso vivo de desenvolvimento, com trechos, portos e destino em construção."
             >
               {loading ? (
                 emptyCard("Carregando jornadas...")
@@ -2583,6 +2583,50 @@ export default function MapaDesenvolvimentoPage() {
                           {jornada.objetivo || jornada.descricao || "Sem descrição cadastrada."}
                         </div>
 
+                        <div style={flowRouteStrip}>
+                          <div style={routeNode("origin")}>
+                            <div style={routeLabel}>Origem</div>
+                            <div style={routeValue}>{jornada.publico_macro || "Escopo geral"}</div>
+                          </div>
+
+                          <div style={routeProgressWrap}>
+                            <div style={routeProgressHeader}>
+                              <span>Percurso da jornada</span>
+                              <span>
+                                {fmtNumber(
+                                  etapasDaJornada.filter((e) => canonicalStatus(e.status) === "concluido").length
+                                )} / {fmtNumber(etapasDaJornada.length)} trechos concluídos
+                              </span>
+                            </div>
+                            <div style={routeTrackBar}>
+                              <div
+                                style={{
+                                  ...routeTrackFill,
+                                  width: `${
+                                    etapasDaJornada.length
+                                      ? Math.max(
+                                          8,
+                                          (etapasDaJornada.filter(
+                                            (e) => canonicalStatus(e.status) === "concluido"
+                                          ).length /
+                                            etapasDaJornada.length) *
+                                            100
+                                        )
+                                      : 8
+                                  }%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={routeNode("destination")}>
+                            <div style={routeLabel}>Próximo trecho</div>
+                            <div style={routeValue}>
+                              {jornada.etapa_critica?.nome || "Consolidar percurso"}
+                            </div>
+                          </div>
+                        </div>
+
                         <div style={riverTrack}>
                           {etapasDaJornada.length === 0 ? (
                             <div style={emptyTimeline}>Sem etapas cadastradas para esta jornada.</div>
@@ -2619,12 +2663,27 @@ export default function MapaDesenvolvimentoPage() {
                                     </div>
 
                                     <div style={stageStats}>
-                                      <span>{fmtNumber(etapa.total_acoes)} ação(ões)</span>
-                                      <span>{fmtNumber(etapa.total_coachings)} coaching(s)</span>
-                                      <span>{fmtHours(etapa.horas_totais)}h</span>
+                                      <span>⚓ {fmtNumber(etapa.total_acoes)} porto(s) de ação</span>
+                                      <span>🧭 {fmtNumber(etapa.total_coachings)} apoio(s) de sustentação</span>
+                                      <span>⏱ {fmtHours(etapa.horas_totais)}h navegadas</span>
                                     </div>
 
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                    <div style={stageInsightBand}>
+                                      <div style={stageInsightCard}>
+                                        <div style={stageInsightLabel}>Estado do trecho</div>
+                                        <div style={stageInsightValue}>{stageHealth.label}</div>
+                                      </div>
+                                      <div style={stageInsightCard}>
+                                        <div style={stageInsightLabel}>Próxima ancoragem</div>
+                                        <div style={stageInsightValue}>
+                                          {etapa.total_acoes > 0 || etapa.total_coachings > 0
+                                            ? "Executar e consolidar entregas"
+                                            : "Criar portos desta etapa"}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
                                       <button style={buttonSecondaryStyle()} onClick={() => editEtapa(etapa)}>
                                         Editar etapa
                                       </button>
@@ -3763,20 +3822,21 @@ const buttonRow = {
 };
 
 const flowCard = {
-  borderRadius: 24,
-  border: "1px solid #dbeafe",
+  borderRadius: 28,
+  border: "1px solid #bfdbfe",
   background:
-    "radial-gradient(circle at top right, rgba(59,130,246,.08), transparent 30%), linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
-  padding: 18,
-  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
+    "radial-gradient(circle at top right, rgba(14,165,233,.12), transparent 26%), radial-gradient(circle at bottom left, rgba(59,130,246,.08), transparent 28%), linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)",
+  padding: 22,
+  boxShadow: "0 18px 42px rgba(15,23,42,.08)",
   display: "grid",
-  gap: 14,
+  gap: 16,
+  overflow: "hidden",
 };
 
 const flowHeader = {
   display: "grid",
-  gridTemplateColumns: "1.2fr .8fr",
-  gap: 14,
+  gridTemplateColumns: "1.25fr .75fr",
+  gap: 16,
   alignItems: "start",
 };
 
@@ -3797,7 +3857,11 @@ const flowMeta = {
 const flowDescription = {
   fontSize: 14,
   color: "#475569",
-  lineHeight: 1.55,
+  lineHeight: 1.65,
+  background: "rgba(255,255,255,.72)",
+  border: "1px solid #e0f2fe",
+  borderRadius: 18,
+  padding: "14px 16px",
 };
 
 const flowMetrics = {
@@ -3815,29 +3879,34 @@ const flowExecutiveBand = {
 
 const riverTrack = {
   display: "grid",
-  gap: 12,
+  gap: 14,
+  position: "relative",
 };
 
 const stageWrap = {
   position: "relative",
-  paddingLeft: 22,
+  paddingLeft: 28,
 };
 
 const stageConnector = (show) => ({
   position: "absolute",
-  left: 6,
-  top: 22,
-  bottom: show ? -18 : "auto",
-  width: 2,
-  background: show ? "#cbd5e1" : "transparent",
+  left: 9,
+  top: 18,
+  bottom: show ? -24 : "auto",
+  width: 4,
+  borderRadius: 999,
+  background: show
+    ? "linear-gradient(180deg, rgba(14,165,233,.9) 0%, rgba(59,130,246,.25) 100%)"
+    : "transparent",
+  boxShadow: show ? "0 0 0 3px rgba(186,230,253,.35)" : "none",
 });
 
 const stageCard = {
   border: "1px solid #dbeafe",
-  background: "#f8fbff",
-  borderRadius: 20,
-  padding: 14,
-  boxShadow: "0 6px 16px rgba(15,23,42,.03)",
+  background: "linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%)",
+  borderRadius: 22,
+  padding: 16,
+  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
 };
 
 const stageTitle = {
@@ -3858,10 +3927,107 @@ const stageStats = {
   display: "flex",
   gap: 14,
   flexWrap: "wrap",
-  marginTop: 8,
+  marginTop: 10,
+  color: "#334155",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const flowRouteStrip = {
+  display: "grid",
+  gridTemplateColumns: "220px 1fr 220px",
+  gap: 14,
+  alignItems: "center",
+  background: "linear-gradient(90deg, rgba(239,246,255,.95) 0%, rgba(248,250,252,.95) 100%)",
+  border: "1px solid #dbeafe",
+  borderRadius: 20,
+  padding: 14,
+};
+
+const routeNode = (kind = "origin") => ({
+  borderRadius: 16,
+  padding: "12px 14px",
+  background: kind === "destination" ? "#eff6ff" : "#ffffff",
+  border: `1px solid ${kind === "destination" ? "#bfdbfe" : "#e2e8f0"}`,
+  display: "grid",
+  gap: 6,
+});
+
+const routeLabel = {
+  fontSize: 11,
+  fontWeight: 800,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+};
+
+const routeValue = {
+  fontSize: 14,
+  fontWeight: 800,
+  color: "#0f172a",
+  lineHeight: 1.35,
+};
+
+const routeProgressWrap = {
+  display: "grid",
+  gap: 8,
+};
+
+const routeProgressHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
   color: "#475569",
   fontSize: 12,
-  fontWeight: 700,
+  fontWeight: 800,
+  flexWrap: "wrap",
+};
+
+const routeTrackBar = {
+  width: "100%",
+  height: 14,
+  background: "#dbeafe",
+  borderRadius: 999,
+  overflow: "hidden",
+  boxShadow: "inset 0 1px 2px rgba(15,23,42,.08)",
+};
+
+const routeTrackFill = {
+  height: "100%",
+  borderRadius: 999,
+  background: "linear-gradient(90deg, #06b6d4 0%, #2563eb 100%)",
+  boxShadow: "0 6px 14px rgba(37,99,235,.28)",
+};
+
+const stageInsightBand = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 10,
+  marginTop: 12,
+};
+
+const stageInsightCard = {
+  borderRadius: 14,
+  padding: "10px 12px",
+  background: "rgba(255,255,255,.82)",
+  border: "1px solid #dbeafe",
+  display: "grid",
+  gap: 4,
+};
+
+const stageInsightLabel = {
+  fontSize: 11,
+  fontWeight: 800,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: ".03em",
+};
+
+const stageInsightValue = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#0f172a",
+  lineHeight: 1.35,
 };
 
 const coachingBand = {
