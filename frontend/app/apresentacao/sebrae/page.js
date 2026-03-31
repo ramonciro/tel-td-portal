@@ -193,22 +193,35 @@ function mapRow(rawRow, index) {
     id: index + 1,
     data: getColumnValue(rawRow, ["Data", "Data Treinamento", "Dt", "Data da Ação"]),
     cliente: getColumnValue(rawRow, ["Cliente"]),
-    tipoTreinamento: getColumnValue(rawRow, ["Tipo Treinamento", "Tipo de Treinamento", "Tipo"]),
+    tipoTreinamento: getColumnValue(rawRow, [
+      "Tipo_Treinamento",
+      "Tipo Treinamento",
+      "Tipo de Treinamento",
+      "Tipo",
+    ]),
     instrutor: getColumnValue(rawRow, ["Instrutor"]),
     supervisor: getColumnValue(rawRow, ["Supervisor"]),
     turma: getColumnValue(rawRow, ["Turma"]),
-    competencia: getColumnValue(rawRow, ["Competência", "Competencia"]),
-    participantes: toNumber(getColumnValue(rawRow, ["Participantes", "Participantes Prev", "Qtd Participantes"])),
+    competencia: getColumnValue(rawRow, ["Competência", "Competencia", "Indicador"]),
+    participantes: toNumber(
+      getColumnValue(rawRow, ["Participantes", "Participantes Prev", "Qtd Participantes"])
+    ),
     presencas: toNumber(getColumnValue(rawRow, ["Presenças", "Presencas"])),
     faltas: toNumber(getColumnValue(rawRow, ["Faltas"])),
-    presencaPct: toPercentValue(getColumnValue(rawRow, ["% Presença", "% Presenca", "Presença %", "Presenca %"])),
-    avaliacao: toNumber(getColumnValue(rawRow, ["Avaliação (0-10)", "Avaliacao (0-10)", "Avaliação", "Avaliacao"])),
+    presencaPct: toPercentValue(
+      getColumnValue(rawRow, ["% Presença", "% Presenca", "Presença %", "Presenca %"])
+    ),
+    avaliacao: toNumber(
+      getColumnValue(rawRow, ["Avaliação (0-10)", "Avaliacao (0-10)", "Avaliação", "Avaliacao"])
+    ),
     indicador: getColumnValue(rawRow, ["Indicador"]),
     antes: toNumber(getColumnValue(rawRow, ["Antes"])),
     depois: toNumber(getColumnValue(rawRow, ["Depois"])),
-    janelaDias: toNumber(getColumnValue(rawRow, ["Janela Dias", "Janela em Dias"])),
+    janelaDias: toNumber(getColumnValue(rawRow, ["Janela (dias)", "Janela Dias", "Janela em Dias"])),
     evolucaoPct: toPercentValue(getColumnValue(rawRow, ["Evolução %", "Evolucao %"])),
-    impactoPos: toNumber(getColumnValue(rawRow, ["Impacto_Pos (0/1)", "Impacto Pos (0/1)", "Impacto_Pos", "Impacto Pos"])),
+    impactoPos: toNumber(
+      getColumnValue(rawRow, ["Impacto_Pos (0/1)", "Impacto Pos (0/1)", "Impacto_Pos", "Impacto Pos"])
+    ),
   };
 }
 
@@ -360,22 +373,30 @@ export default function SebraeApresentacaoPage() {
         raw: true,
       });
 
-      const mapped = json
-        .map((item, index) => mapRow(item, index))
-        .filter((item) =>
-          [
-            item.cliente,
-            item.tipoTreinamento,
-            item.instrutor,
-            item.supervisor,
-            item.turma,
-            item.competencia,
-            item.participantes,
-            item.presencas,
-            item.faltas,
-            item.avaliacao,
-          ].some((value) => String(value || "").trim() !== "" && String(value || "").trim() !== "0")
-        );
+     const mapped = json
+  .map((item, index) => mapRow(item, index))
+  .filter((item) => {
+    const linhaModelo =
+      normalize(item.cliente) === "(lista)" ||
+      normalize(item.tipoTreinamento) === "(lista)" ||
+      normalize(item.instrutor) === "(lista)" ||
+      normalize(item.supervisor) === "(lista)";
+
+    const linhaVazia = ![
+      item.cliente,
+      item.tipoTreinamento,
+      item.instrutor,
+      item.supervisor,
+      item.turma,
+      item.competencia,
+      item.participantes,
+      item.presencas,
+      item.faltas,
+      item.avaliacao,
+    ].some((value) => String(value || "").trim() !== "" && String(value || "").trim() !== "0");
+
+    return !linhaModelo && !linhaVazia;
+  });
 
       setRows(mapped);
     } catch (err) {
