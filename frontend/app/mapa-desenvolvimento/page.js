@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import PortalShell from "../../components/PortalShell";
+import SectionCard from "../../components/SectionCard";
+import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 import {
   formatDateBR,
@@ -8,75 +11,52 @@ import {
   parseLocalDate,
 } from "../../lib/date";
 
-function emptyJourneyForm() {
-  return {
-    id: "",
-    titulo: "",
-    cliente: "",
-    publico_alvo: "",
-    objetivo: "",
-    status: "planejada",
-    data_inicio: "",
-    data_fim: "",
-  };
+function fmtNumber(value) {
+  return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
 }
 
-function emptyActionForm() {
-  return {
-    id: "",
-    jornada_id: "",
-    titulo: "",
-    descricao: "",
-    responsavel: "",
-    status: "planejada",
-    data_inicio: "",
-    data_fim: "",
-    carga_horaria: "",
-    participantes_previstos: "",
-    turma_ids: [],
+function fmtHours(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function normalize(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function canonicalStatus(value) {
+  const status = normalize(value);
+
+  if (["ativa", "ativo"].includes(status)) return "ativo";
+  if (["inativa", "inativo"].includes(status)) return "inativo";
+  if (["concluida", "concluído", "concluido", "finalizada"].includes(status))
+    return "concluido";
+  if (["planejada", "planejado"].includes(status)) return "planejado";
+  if (["em_andamento", "em andamento"].includes(status)) return "em_andamento";
+  if (["cancelada", "cancelado"].includes(status)) return "cancelado";
+
+  return status || "planejado";
+}
+
+function displayStatus(value) {
+  const status = canonicalStatus(value);
+
+  const labels = {
+    ativo: "Ativo",
+    inativo: "Inativo",
+    concluido: "Concluído",
+    planejado: "Planejado",
+    em_andamento: "Em andamento",
+    cancelado: "Cancelado",
   };
+
+  return labels[status] || value || "—";
 }
 
 function formatDate(value) {
   return formatDateBR(value);
-}
-
-function getStatusTone(status) {
-  const key = String(status || "").toLowerCase().trim();
-
-  if (["concluida", "concluído", "concluido"].includes(key)) {
-    return {
-      background: "#dcfce7",
-      color: "#166534",
-      border: "1px solid #bbf7d0",
-      label: "Concluída",
-    };
-  }
-
-  if (["em_andamento", "em andamento"].includes(key)) {
-    return {
-      background: "#dbeafe",
-      color: "#1d4ed8",
-      border: "1px solid #bfdbfe",
-      label: "Em andamento",
-    };
-  }
-
-  if (["cancelada", "cancelado"].includes(key)) {
-    return {
-      background: "#fee2e2",
-      color: "#b91c1c",
-      border: "1px solid #fecaca",
-      label: "Cancelada",
-    };
-  }
-
-  return {
-    background: "#fef3c7",
-    color: "#92400e",
-    border: "1px solid #fde68a",
-    label: "Planejada",
-  };
 }
 
 function isValidDateRange(dataInicio, dataFim) {
@@ -89,211 +69,506 @@ function isValidDateRange(dataInicio, dataFim) {
   return fim >= inicio;
 }
 
+function getPrazoInfo(item) {
+  const hoje = new Date();
+  const hojeLocal = new Date(
+    hoje.getFullYear(),
+    hoje.getMonth(),
+    hoje.getDate(),
+    12,
+    0,
+    0,
+    0
+  );
+
+  const inicio = parseLocalDate(item.data_inicio);
+  const fim = parseLocalDate(item.data_fim);
+  const status = canonicalStatus(item.status);
+
+  if (status === "concluido") {
+    return { label: "Concluído", tone: "ok" };
+  }
+
+  if (!inicio && !fim) {
+    return { label: "Sem data", tone: "neutral" };
+  }
+
+  if (fim && hojeLocal > fim && status !== "cancelado") {
+    return { label: "Vencido", tone: "danger" };
+  }
+
+  if (inicio && hojeLocal < inicio) {
+    return { label: "A iniciar", tone: "alert" };
+  }
+
+  return { label: "No prazo", tone: "ok" };
+}
+
+function badgeStyle(type) {
+  const status = canonicalStatus(type);
+
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "5px 10px",
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+    lineHeight: 1.1,
+    border: "1px solid transparent",
+    textTransform: "uppercase",
+    letterSpacing: ".03em",
+  };
+
+  const map = {
+    ativo: { background: "#ecfdf5", color: "#166534", borderColor: "#bbf7d0" },
+    inativo: {
+      background: "#f8fafc",
+      color: "#475569",
+      borderColor: "#e2e8f0",
+    },
+    concluido: {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      borderColor: "#bfdbfe",
+    },
+    planejado: {
+      background: "#faf5ff",
+      color: "#7c3aed",
+      borderColor: "#ddd6fe",
+    },
+    em_andamento: {
+      background: "#fff7ed",
+      color: "#c2410c",
+      borderColor: "#fed7aa",
+    },
+    cancelado: {
+      background: "#fef2f2",
+      color: "#b91c1c",
+      borderColor: "#fecaca",
+    },
+  };
+
+  return {
+    ...base,
+    ...(map[status] || {
+      background: "#f8fafc",
+      color: "#334155",
+      borderColor: "#e2e8f0",
+    }),
+  };
+}
+
+function attentionBadge(level) {
+  const map = {
+    alta: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecaca",
+    },
+    media: {
+      background: "#fff7ed",
+      color: "#c2410c",
+      border: "1px solid #fed7aa",
+    },
+    ok: {
+      background: "#ecfeff",
+      color: "#155e75",
+      border: "1px solid #a5f3fc",
+    },
+  };
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.1,
+    ...(map[level] || map.ok),
+  };
+}
+
+function prazoBadge(tone) {
+  const map = {
+    ok: {
+      background: "#ecfdf5",
+      color: "#166534",
+      border: "1px solid #bbf7d0",
+    },
+    danger: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecaca",
+    },
+    neutral: {
+      background: "#f8fafc",
+      color: "#475569",
+      border: "1px solid #e2e8f0",
+    },
+    alert: {
+      background: "#fff7ed",
+      color: "#c2410c",
+      border: "1px solid #fed7aa",
+    },
+  };
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.1,
+    ...(map[tone] || map.neutral),
+  };
+}
+
+function inputStyle() {
+  return {
+    width: "100%",
+    minWidth: 0,
+    border: "1px solid #cbd5e1",
+    borderRadius: 12,
+    padding: "10px 12px",
+    fontSize: 14,
+    outline: "none",
+    background: "#fff",
+    boxSizing: "border-box",
+  };
+}
+
+function compactInputStyle() {
+  return {
+    ...inputStyle(),
+    height: 44,
+    padding: "10px 12px",
+  };
+}
+
+function textareaStyle(minHeight = 88) {
+  return {
+    ...inputStyle(),
+    minHeight,
+    resize: "vertical",
+    padding: "12px",
+  };
+}
+
+function labelStyle() {
+  return {
+    display: "grid",
+    gap: 6,
+    fontSize: 13,
+    color: "#334155",
+    fontWeight: 700,
+    minWidth: 0,
+  };
+}
+
+function buttonPrimaryStyle(disabled = false) {
+  return {
+    border: "none",
+    background: disabled ? "#93c5fd" : "#2563eb",
+    color: "#fff",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 800,
+    cursor: disabled ? "not-allowed" : "pointer",
+    boxShadow: disabled ? "none" : "0 8px 18px rgba(37,99,235,.22)",
+  };
+}
+
+function buttonSecondaryStyle() {
+  return {
+    border: "1px solid #cbd5e1",
+    background: "#fff",
+    color: "#0f172a",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+}
+
+function buttonDangerStyle() {
+  return {
+    border: "1px solid #fecaca",
+    background: "#fff1f2",
+    color: "#b91c1c",
+    borderRadius: 12,
+    padding: "9px 12px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+}
+
+function emptyCard(message) {
+  return (
+    <div
+      style={{
+        border: "1px dashed #cbd5e1",
+        borderRadius: 16,
+        padding: 22,
+        textAlign: "center",
+        color: "#64748b",
+        background: "#f8fafc",
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+function extrairMensagemErro(error, fallback) {
+  if (!error) return fallback;
+  if (typeof error === "string") return error;
+  if (error.message) return error.message;
+  if (error.error) return error.error;
+  return fallback;
+}
+
+const journeyInitial = {
+  id: null,
+  titulo: "",
+  cliente: "",
+  publico_alvo: "",
+  objetivo: "",
+  status: "planejada",
+  data_inicio: "",
+  data_fim: "",
+};
+
+const actionInitial = {
+  id: null,
+  jornada_id: "",
+  titulo: "",
+  descricao: "",
+  responsavel: "",
+  status: "planejada",
+  data_inicio: "",
+  data_fim: "",
+  carga_horaria: "",
+  participantes_previstos: "",
+  turma_ids: [],
+};
+
+const STATUS_OPTIONS = [
+  { value: "", label: "Todos os status" },
+  { value: "planejado", label: "Planejado" },
+  { value: "em_andamento", label: "Em andamento" },
+  { value: "concluido", label: "Concluído" },
+  { value: "cancelado", label: "Cancelado" },
+];
+
 export default function MapaDesenvolvimentoPage() {
-  const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState("");
-  const [sucesso, setSucesso] = useState("");
+  const [activeTab, setActiveTab] = useState("geral");
 
   const [jornadas, setJornadas] = useState([]);
   const [acoes, setAcoes] = useState([]);
-  const [turmasDisponiveis, setTurmasDisponiveis] = useState([]);
+  const [turmas, setTurmas] = useState([]);
 
-  const [journeyForm, setJourneyForm] = useState(emptyJourneyForm());
-  const [actionForm, setActionForm] = useState(emptyActionForm());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState("");
+  const [notice, setNotice] = useState("");
 
-  const [salvandoJornada, setSalvandoJornada] = useState(false);
-  const [salvandoAcao, setSalvandoAcao] = useState(false);
+  const [filters, setFilters] = useState({
+    jornada_id: "",
+    status: "",
+    busca: "",
+  });
 
-  const [busca, setBusca] = useState("");
-  const [filtroCliente, setFiltroCliente] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("");
+  const [jornadaForm, setJornadaForm] = useState(journeyInitial);
+  const [acaoForm, setAcaoForm] = useState(actionInitial);
 
   useEffect(() => {
-    carregarTudo();
+    loadAll();
   }, []);
 
-  async function carregarTudo() {
-    try {
-      setLoading(true);
-      setErro("");
-      setSucesso("");
+  async function loadAll() {
+    setLoading(true);
+    setErro("");
 
-      const [jornadasResp, acoesResp, turmasResp] = await Promise.all([
+    try {
+      const [jornadasData, acoesData, turmasData] = await Promise.all([
         apiFetch("/jornadas-desenvolvimento").catch(() => []),
         apiFetch("/acoes-desenvolvimento").catch(() => []),
         apiFetch("/treinamentos").catch(() => []),
       ]);
 
-      setJornadas(Array.isArray(jornadasResp) ? jornadasResp : []);
-      setAcoes(Array.isArray(acoesResp) ? acoesResp : []);
-      setTurmasDisponiveis(Array.isArray(turmasResp) ? turmasResp : []);
-    } catch (err) {
-      setErro(err.message || "Erro ao carregar o Mapa de Desenvolvimento.");
+      setJornadas(Array.isArray(jornadasData) ? jornadasData : []);
+      setAcoes(Array.isArray(acoesData) ? acoesData : []);
+      setTurmas(Array.isArray(turmasData) ? turmasData : []);
+    } catch (error) {
+      setErro(
+        extrairMensagemErro(error, "Erro ao carregar o Mapa de Desenvolvimento.")
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function salvarJornada() {
+  async function saveJornada(event) {
+    event.preventDefault();
+    setSaving(true);
+    setErro("");
+    setNotice("");
+
+    if (!String(jornadaForm.titulo || "").trim()) {
+      setErro("Informe o nome da jornada.");
+      setSaving(false);
+      return;
+    }
+
+    if (!isValidDateRange(jornadaForm.data_inicio, jornadaForm.data_fim)) {
+      setErro("A data fim da jornada não pode ser menor que a data início.");
+      setSaving(false);
+      return;
+    }
+
     try {
-      if (!journeyForm.titulo) {
-        setErro("Informe o título da jornada.");
-        return;
-      }
-
-      if (!isValidDateRange(journeyForm.data_inicio, journeyForm.data_fim)) {
-        setErro("A data fim da jornada não pode ser anterior à data início.");
-        return;
-      }
-
-      setSalvandoJornada(true);
-      setErro("");
-      setSucesso("");
-
       const payload = {
-        titulo: journeyForm.titulo,
-        cliente: journeyForm.cliente || null,
-        publico_alvo: journeyForm.publico_alvo || null,
-        objetivo: journeyForm.objetivo || null,
-        status: journeyForm.status || "planejada",
-        data_inicio: journeyForm.data_inicio || null,
-        data_fim: journeyForm.data_fim || null,
+        titulo: jornadaForm.titulo,
+        cliente: jornadaForm.cliente || null,
+        publico_alvo: jornadaForm.publico_alvo || null,
+        objetivo: jornadaForm.objetivo || null,
+        status: jornadaForm.status || "planejada",
+        data_inicio: jornadaForm.data_inicio || null,
+        data_fim: jornadaForm.data_fim || null,
       };
 
-      if (journeyForm.id) {
-        await apiFetch(`/jornadas-desenvolvimento/${journeyForm.id}`, {
+      if (jornadaForm.id) {
+        await apiFetch(`/jornadas-desenvolvimento/${jornadaForm.id}`, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setSucesso("Jornada atualizada com sucesso.");
+        setNotice("Jornada atualizada com sucesso.");
       } else {
         await apiFetch("/jornadas-desenvolvimento", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setSucesso("Jornada cadastrada com sucesso.");
+        setNotice("Jornada registrada com sucesso.");
       }
 
-      setJourneyForm(emptyJourneyForm());
-      await carregarTudo();
-    } catch (err) {
-      setErro(err.message || "Erro ao salvar jornada.");
+      setJornadaForm(journeyInitial);
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao salvar jornada."));
     } finally {
-      setSalvandoJornada(false);
+      setSaving(false);
     }
   }
 
-  async function salvarAcao() {
+  async function saveAcao(event) {
+    event.preventDefault();
+    setSaving(true);
+    setErro("");
+    setNotice("");
+
+    if (!acaoForm.jornada_id) {
+      setErro("Selecione a jornada da ação.");
+      setSaving(false);
+      return;
+    }
+
+    if (!String(acaoForm.titulo || "").trim()) {
+      setErro("Informe o título da ação.");
+      setSaving(false);
+      return;
+    }
+
+    if (!isValidDateRange(acaoForm.data_inicio, acaoForm.data_fim)) {
+      setErro("A data fim da ação não pode ser menor que a data início.");
+      setSaving(false);
+      return;
+    }
+
     try {
-      if (!actionForm.jornada_id || !actionForm.titulo) {
-        setErro("Informe a jornada e o título da ação.");
-        return;
-      }
-
-      if (!isValidDateRange(actionForm.data_inicio, actionForm.data_fim)) {
-        setErro("A data fim da ação não pode ser anterior à data início.");
-        return;
-      }
-
-      setSalvandoAcao(true);
-      setErro("");
-      setSucesso("");
-
       const payload = {
-        jornada_id: Number(actionForm.jornada_id),
-        titulo: actionForm.titulo,
-        descricao: actionForm.descricao || null,
-        responsavel: actionForm.responsavel || null,
-        status: actionForm.status || "planejada",
-        data_inicio: actionForm.data_inicio || null,
-        data_fim: actionForm.data_fim || null,
-        carga_horaria: Number(actionForm.carga_horaria || 0),
-        participantes_previstos: Number(actionForm.participantes_previstos || 0),
-        turma_ids: Array.isArray(actionForm.turma_ids) ? actionForm.turma_ids : [],
+        jornada_id: Number(acaoForm.jornada_id),
+        titulo: acaoForm.titulo,
+        descricao: acaoForm.descricao || null,
+        responsavel: acaoForm.responsavel || null,
+        status: acaoForm.status || "planejada",
+        data_inicio: acaoForm.data_inicio || null,
+        data_fim: acaoForm.data_fim || null,
+        carga_horaria: Number(acaoForm.carga_horaria || 0),
+        participantes_previstos: Number(acaoForm.participantes_previstos || 0),
+        turma_ids: Array.isArray(acaoForm.turma_ids) ? acaoForm.turma_ids : [],
       };
 
-      if (actionForm.id) {
-        await apiFetch(`/acoes-desenvolvimento/${actionForm.id}`, {
+      if (acaoForm.id) {
+        await apiFetch(`/acoes-desenvolvimento/${acaoForm.id}`, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setSucesso("Ação atualizada com sucesso.");
+        setNotice("Ação atualizada com sucesso.");
       } else {
         await apiFetch("/acoes-desenvolvimento", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setSucesso("Ação cadastrada com sucesso.");
+        setNotice("Ação registrada com sucesso.");
       }
 
-      setActionForm(emptyActionForm());
-      await carregarTudo();
-    } catch (err) {
-      setErro(err.message || "Erro ao salvar ação.");
+      setAcaoForm(actionInitial);
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao salvar ação."));
     } finally {
-      setSalvandoAcao(false);
+      setSaving(false);
     }
   }
 
-  async function removerJornada(item) {
-    const confirmar = window.confirm(
-      `Deseja remover a jornada "${item.titulo}"?`
-    );
-    if (!confirmar) return;
+  async function removeRegistro(tipo, id) {
+    const ok = window.confirm("Deseja realmente excluir este registro?");
+    if (!ok) return;
 
     try {
+      const pathMap = {
+        jornada: `/jornadas-desenvolvimento/${id}`,
+        acao: `/acoes-desenvolvimento/${id}`,
+      };
+
+      await apiFetch(pathMap[tipo], { method: "DELETE" });
+      setNotice("Registro excluído com sucesso.");
       setErro("");
-      setSucesso("");
-      await apiFetch(`/jornadas-desenvolvimento/${item.id}`, {
-        method: "DELETE",
-      });
-      setSucesso("Jornada removida com sucesso.");
-      await carregarTudo();
-    } catch (err) {
-      setErro(err.message || "Erro ao remover jornada.");
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao excluir registro."));
     }
   }
 
-  async function removerAcao(item) {
-    const confirmar = window.confirm(`Deseja remover a ação "${item.titulo}"?`);
-    if (!confirmar) return;
-
-    try {
-      setErro("");
-      setSucesso("");
-      await apiFetch(`/acoes-desenvolvimento/${item.id}`, {
-        method: "DELETE",
-      });
-      setSucesso("Ação removida com sucesso.");
-      await carregarTudo();
-    } catch (err) {
-      setErro(err.message || "Erro ao remover ação.");
-    }
-  }
-
-  function editarJornada(item) {
-    setJourneyForm({
-      id: item.id || "",
-      titulo: item.titulo || "",
+  function editJornada(item) {
+    setJornadaForm({
+      id: item.id,
+      titulo: item.titulo || item.nome || "",
       cliente: item.cliente || "",
-      publico_alvo: item.publico_alvo || "",
+      publico_alvo: item.publico_alvo || item.publico_macro || "",
       objetivo: item.objetivo || "",
-      status: item.status || "planejada",
+      status: canonicalStatus(item.status) || "planejada",
       data_inicio: toDateInputLocal(item.data_inicio),
       data_fim: toDateInputLocal(item.data_fim),
     });
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setActiveTab("jornadas");
   }
 
-  function editarAcao(item) {
-    setActionForm({
-      id: item.id || "",
+  function editAcao(item) {
+    setAcaoForm({
+      id: item.id,
       jornada_id: item.jornada_id || "",
-      titulo: item.titulo || "",
+      titulo: item.titulo || item.tema || "",
       descricao: item.descricao || "",
-      responsavel: item.responsavel || "",
-      status: item.status || "planejada",
+      responsavel: item.responsavel || item.responsavel_nome || "",
+      status: canonicalStatus(item.status) || "planejada",
       data_inicio: toDateInputLocal(item.data_inicio),
       data_fim: toDateInputLocal(item.data_fim),
       carga_horaria: String(item.carga_horaria || ""),
@@ -302,1048 +577,1383 @@ export default function MapaDesenvolvimentoPage() {
         ? item.turmas_vinculadas.map((t) => Number(t.id))
         : [],
     });
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setActiveTab("acoes");
   }
 
-  function limparJornada() {
-    setJourneyForm(emptyJourneyForm());
-  }
+  const jornadasEnriquecidas = useMemo(() => {
+    return jornadas.map((jornada) => {
+      const acoesDaJornada = acoes.filter(
+        (a) => String(a.jornada_id) === String(jornada.id)
+      );
+      const horasTotais = acoesDaJornada.reduce(
+        (acc, item) => acc + Number(item.horas_realizadas || 0),
+        0
+      );
 
-  function limparAcao() {
-    setActionForm(emptyActionForm());
-  }
+      let attention = { level: "ok", label: "Monitorada" };
 
-  const clientes = useMemo(() => {
-    const values = new Set();
+      if (!acoesDaJornada.length) {
+        attention = { level: "media", label: "Sem portos vinculados" };
+      }
 
-    jornadas.forEach((j) => {
-      if (j?.cliente) values.add(j.cliente);
+      if (getPrazoInfo(jornada).tone === "danger") {
+        attention = { level: "alta", label: "Prazo vencido" };
+      }
+
+      return {
+        ...jornada,
+        nome: jornada.nome || jornada.titulo,
+        publico_macro: jornada.publico_macro || jornada.publico_alvo,
+        total_acoes: acoesDaJornada.length,
+        horas_totais: horasTotais,
+        prazo_info: getPrazoInfo(jornada),
+        attention_info: attention,
+        status_canonico: canonicalStatus(jornada.status),
+      };
     });
-
-    turmasDisponiveis.forEach((t) => {
-      if (t?.cliente) values.add(t.cliente);
-    });
-
-    return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)));
-  }, [jornadas, turmasDisponiveis]);
-
-  const jornadasFiltradas = useMemo(() => {
-    const termo = String(busca || "").trim().toLowerCase();
-
-    return jornadas.filter((item) => {
-      const matchBusca =
-        !termo ||
-        String(item.titulo || "").toLowerCase().includes(termo) ||
-        String(item.cliente || "").toLowerCase().includes(termo) ||
-        String(item.publico_alvo || "").toLowerCase().includes(termo);
-
-      const matchCliente =
-        !filtroCliente || String(item.cliente || "") === String(filtroCliente);
-
-      const matchStatus =
-        !filtroStatus ||
-        String(item.status || "").toLowerCase() === String(filtroStatus).toLowerCase();
-
-      return matchBusca && matchCliente && matchStatus;
-    });
-  }, [jornadas, busca, filtroCliente, filtroStatus]);
-
-  const acoesPorJornada = useMemo(() => {
-    const termo = String(busca || "").trim().toLowerCase();
-    const mapa = {};
-
-    acoes.forEach((acao) => {
-      const matchBusca =
-        !termo ||
-        String(acao.titulo || "").toLowerCase().includes(termo) ||
-        String(acao.responsavel || "").toLowerCase().includes(termo) ||
-        String(acao.descricao || "").toLowerCase().includes(termo);
-
-      const jornada = jornadas.find((j) => String(j.id) === String(acao.jornada_id));
-      const clienteJornada = jornada?.cliente || "";
-
-      const matchCliente =
-        !filtroCliente || String(clienteJornada) === String(filtroCliente);
-
-      const matchStatus =
-        !filtroStatus ||
-        String(acao.status || "").toLowerCase() === String(filtroStatus).toLowerCase();
-
-      if (!matchBusca || !matchCliente || !matchStatus) return;
-
-      if (!mapa[acao.jornada_id]) mapa[acao.jornada_id] = [];
-      mapa[acao.jornada_id].push(acao);
-    });
-
-    return mapa;
-  }, [acoes, jornadas, busca, filtroCliente, filtroStatus]);
-
-  const resumo = useMemo(() => {
-    const totalJornadas = jornadas.length;
-    const totalAcoes = acoes.length;
-    const totalTurmasVinculadas = acoes.reduce(
-      (acc, item) => acc + Number(item.quantidade_turmas_sessoes || 0),
-      0
-    );
-    const totalHoras = acoes.reduce(
-      (acc, item) => acc + Number(item.horas_realizadas || 0),
-      0
-    );
-    const totalParticipantes = acoes.reduce(
-      (acc, item) => acc + Number(item.participantes_realizados || 0),
-      0
-    );
-
-    return {
-      totalJornadas,
-      totalAcoes,
-      totalTurmasVinculadas,
-      totalHoras,
-      totalParticipantes,
-    };
   }, [jornadas, acoes]);
 
-  if (loading) {
-    return <div style={loadingWrap}>Carregando mapa de desenvolvimento...</div>;
-  }
+  const acoesEnriquecidas = useMemo(() => {
+    return acoes.map((acao) => {
+      const jornada = jornadas.find((j) => String(j.id) === String(acao.jornada_id));
+
+      let attention = { level: "ok", label: "Estável" };
+      if (!acao.responsavel) {
+        attention = { level: "media", label: "Sem responsável" };
+      }
+      if (getPrazoInfo(acao).tone === "danger") {
+        attention = { level: "alta", label: "Prazo vencido" };
+      }
+
+      return {
+        ...acao,
+        tema: acao.tema || acao.titulo,
+        jornada_nome: jornada?.nome || jornada?.titulo || "Sem jornada",
+        prazo_info: getPrazoInfo(acao),
+        attention_info: attention,
+        status_canonico: canonicalStatus(acao.status),
+      };
+    });
+  }, [acoes, jornadas]);
+
+  const filteredJornadas = useMemo(() => {
+    return jornadasEnriquecidas.filter((item) => {
+      const matchJornada =
+        !filters.jornada_id || String(item.id) === String(filters.jornada_id);
+      const matchStatus =
+        !filters.status || item.status_canonico === filters.status;
+      const matchBusca =
+        !filters.busca ||
+        normalize(
+          [item.nome, item.objetivo, item.publico_macro, item.cliente].join(" ")
+        ).includes(normalize(filters.busca));
+
+      return matchJornada && matchStatus && matchBusca;
+    });
+  }, [jornadasEnriquecidas, filters]);
+
+  const filteredAcoes = useMemo(() => {
+    return acoesEnriquecidas.filter((item) => {
+      const matchJornada =
+        !filters.jornada_id || String(item.jornada_id) === String(filters.jornada_id);
+      const matchStatus =
+        !filters.status || item.status_canonico === filters.status;
+      const matchBusca =
+        !filters.busca ||
+        normalize(
+          [
+            item.tema,
+            item.descricao,
+            item.jornada_nome,
+            item.responsavel,
+            item.responsavel_nome,
+          ].join(" ")
+        ).includes(normalize(filters.busca));
+
+      return matchJornada && matchStatus && matchBusca;
+    });
+  }, [acoesEnriquecidas, filters]);
+
+  const jornadasFluxo = useMemo(() => {
+    return filteredJornadas
+      .map((jornada) => {
+        const acoesDaJornada = filteredAcoes.filter(
+          (item) => String(item.jornada_id) === String(jornada.id)
+        );
+
+        const concluidas = acoesDaJornada.filter(
+          (item) => canonicalStatus(item.status) === "concluido"
+        ).length;
+
+        const progresso = acoesDaJornada.length
+          ? Math.round((concluidas / acoesDaJornada.length) * 100)
+          : 0;
+
+        const proximoPasso =
+          acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido")
+            ?.tema ||
+          "Estruturar os próximos portos da jornada";
+
+        return {
+          ...jornada,
+          acoesDaJornada,
+          concluidas,
+          progresso,
+          proximoPasso,
+        };
+      })
+      .sort((a, b) => {
+        const pa = a.attention_info.level === "alta" ? 1 : a.attention_info.level === "media" ? 2 : 3;
+        const pb = b.attention_info.level === "alta" ? 1 : b.attention_info.level === "media" ? 2 : 3;
+        if (pa !== pb) return pa - pb;
+        return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+      });
+  }, [filteredJornadas, filteredAcoes]);
+
+  const kpis = useMemo(() => {
+    return {
+      jornadas: filteredJornadas.length,
+      acoes: filteredAcoes.length,
+      turmas: filteredAcoes.reduce(
+        (acc, item) => acc + Number(item.quantidade_turmas_sessoes || 0),
+        0
+      ),
+      participantes: filteredAcoes.reduce(
+        (acc, item) => acc + Number(item.participantes_realizados || 0),
+        0
+      ),
+      horasTotais: filteredAcoes.reduce(
+        (acc, item) => acc + Number(item.horas_realizadas || 0),
+        0
+      ),
+      concluidas: filteredAcoes.filter(
+        (i) => canonicalStatus(i.status) === "concluido"
+      ).length,
+    };
+  }, [filteredJornadas, filteredAcoes]);
+
+  const destaqueCards = [
+    {
+      title: "Rios monitorados",
+      value: fmtNumber(kpis.jornadas),
+      subtitle: "Jornadas em observação",
+    },
+    {
+      title: "Portos de ação",
+      value: fmtNumber(kpis.acoes),
+      subtitle: "Ações vinculadas ao oceano",
+    },
+    {
+      title: "Turmas ancoradas",
+      value: fmtNumber(kpis.turmas),
+      subtitle: "Turmas conectadas às ações",
+    },
+    {
+      title: "Horas no oceano",
+      value: fmtHours(kpis.horasTotais),
+      subtitle: "Execução consolidada",
+    },
+  ];
 
   return (
-    <div style={page}>
-      <div style={hero}>
-        <div style={heroBadge}>Mapa de desenvolvimento</div>
-        <h1 style={heroTitle}>Jornadas, ações e vínculo com turmas</h1>
-        <p style={heroSubtitle}>
-          Gestão consolidada das jornadas do portal, agora conectando ações do mapa
-          às turmas reais já existentes no projeto.
-        </p>
+    <PortalShell
+      title="Oceano do Desenvolvimento"
+      subtitle="Visão integrada do desenvolvimento, do percurso macro às entregas que sustentam a jornada."
+    >
+      <div style={{ display: "grid", gap: 18 }}>
+        <section style={heroWrap}>
+          <div style={heroLeft}>
+            <div style={heroEyebrow}>Oceano do Desenvolvimento</div>
+            <h2 style={heroTitle}>
+              Um território vivo de desenvolvimento, com rios, portos e destino.
+            </h2>
+            <p style={heroText}>
+              Leia o mapa como um oceano: jornadas como rios, ações como portos
+              e turmas como embarcações reais que materializam a execução.
+            </p>
 
-        <div style={heroGrid}>
-          <InfoCard label="Jornadas" value={resumo.totalJornadas} />
-          <InfoCard label="Ações" value={resumo.totalAcoes} />
-          <InfoCard label="Turmas vinculadas" value={resumo.totalTurmasVinculadas} />
-          <InfoCard label="Horas realizadas" value={resumo.totalHoras} />
-          <InfoCard label="Participantes realizados" value={resumo.totalParticipantes} />
-        </div>
-      </div>
-
-      {erro ? <div style={errorBox}>{erro}</div> : null}
-      {sucesso ? <div style={successBox}>{sucesso}</div> : null}
-
-      <div style={filtersCard}>
-        <div style={filtersRow}>
-          <input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar jornada, ação, cliente ou responsável"
-            style={searchInput}
-          />
-
-          <select
-            value={filtroCliente}
-            onChange={(e) => setFiltroCliente(e.target.value)}
-            style={field}
-          >
-            <option value="">Todos os clientes</option>
-            {clientes.map((cliente) => (
-              <option key={cliente} value={cliente}>
-                {cliente}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={filtroStatus}
-            onChange={(e) => setFiltroStatus(e.target.value)}
-            style={field}
-          >
-            <option value="">Todos os status</option>
-            <option value="planejada">Planejada</option>
-            <option value="em_andamento">Em andamento</option>
-            <option value="concluida">Concluída</option>
-            <option value="cancelada">Cancelada</option>
-          </select>
-
-          <button style={btnSecondary} onClick={carregarTudo}>
-            Atualizar dados
-          </button>
-        </div>
-      </div>
-
-      <div style={gridForms}>
-        <div style={sectionCard}>
-          <h2 style={sectionTitle}>
-            {journeyForm.id ? "Editar jornada" : "Cadastrar jornada"}
-          </h2>
-          <p style={sectionSubtitle}>
-            Estruture a jornada principal do mapa antes de vincular ações.
-          </p>
-
-          <div style={formGrid}>
-            <Field label="Título da jornada">
-              <input
-                value={journeyForm.titulo}
-                onChange={(e) =>
-                  setJourneyForm((prev) => ({ ...prev, titulo: e.target.value }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Cliente">
-              <input
-                value={journeyForm.cliente}
-                onChange={(e) =>
-                  setJourneyForm((prev) => ({ ...prev, cliente: e.target.value }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Público-alvo">
-              <input
-                value={journeyForm.publico_alvo}
-                onChange={(e) =>
-                  setJourneyForm((prev) => ({
-                    ...prev,
-                    publico_alvo: e.target.value,
-                  }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Status">
-              <select
-                value={journeyForm.status}
-                onChange={(e) =>
-                  setJourneyForm((prev) => ({ ...prev, status: e.target.value }))
-                }
-                style={field}
-              >
-                <option value="planejada">Planejada</option>
-                <option value="em_andamento">Em andamento</option>
-                <option value="concluida">Concluída</option>
-                <option value="cancelada">Cancelada</option>
-              </select>
-            </Field>
-
-            <Field label="Data início">
-              <input
-                type="date"
-                value={journeyForm.data_inicio}
-                onChange={(e) =>
-                  setJourneyForm((prev) => ({
-                    ...prev,
-                    data_inicio: e.target.value,
-                  }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Data fim">
-              <input
-                type="date"
-                value={journeyForm.data_fim}
-                onChange={(e) =>
-                  setJourneyForm((prev) => ({ ...prev, data_fim: e.target.value }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Objetivo" full>
-              <textarea
-                value={journeyForm.objetivo}
-                onChange={(e) =>
-                  setJourneyForm((prev) => ({ ...prev, objetivo: e.target.value }))
-                }
-                style={textarea}
-              />
-            </Field>
+            <div style={tabBar}>
+              {[
+                ["geral", "Oceano"],
+                ["jornadas", "Rios"],
+                ["acoes", "Portos"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  style={tabButton(activeTab === key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div style={actionsRow}>
+          <div style={heroRight}>
+            <div style={orbCard}>
+              <div style={orbHeader}>Pulso do Oceano</div>
+              <div style={orbValue}>{fmtNumber(kpis.jornadas)}</div>
+              <div style={orbSub}>rios monitorados</div>
+            </div>
+
+            <div style={signalGrid}>
+              {destaqueCards.map((item) => (
+                <div key={item.title} style={signalCard}>
+                  <div style={signalTitle}>{item.title}</div>
+                  <div style={signalValue}>{item.value}</div>
+                  <div style={signalSub}>{item.subtitle}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <SectionCard
+          title="Cartografia do Oceano"
+          subtitle="Leitura macro do território de desenvolvimento e do volume em curso."
+        >
+          <div style={kpiGrid}>
+            <StatCard title="Rios ativos" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
+            <StatCard title="Portos de ação" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
+            <StatCard title="Turmas vinculadas" value={fmtNumber(kpis.turmas)} accent="#0f766e" />
+            <StatCard title="Público impactado" value={fmtNumber(kpis.participantes)} accent="#16a34a" />
+            <StatCard title="Horas no oceano" value={fmtHours(kpis.horasTotais)} accent="#b45309" />
+            <StatCard title="Entregas concluídas" value={fmtNumber(kpis.concluidas)} accent="#1d4ed8" />
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Leitura do território"
+          subtitle="Refine o oceano por rio, status e busca."
+          action={
             <button
-              style={btnPrimary}
-              onClick={salvarJornada}
-              disabled={salvandoJornada}
+              style={buttonSecondaryStyle()}
+              onClick={() =>
+                setFilters({
+                  jornada_id: "",
+                  status: "",
+                  busca: "",
+                })
+              }
             >
-              {salvandoJornada
-                ? "Salvando..."
-                : journeyForm.id
-                ? "Salvar jornada"
-                : "Cadastrar jornada"}
+              Limpar filtros
             </button>
-
-            <button style={btnSecondary} onClick={limparJornada}>
-              Limpar
-            </button>
-          </div>
-        </div>
-
-        <div style={sectionCard}>
-          <h2 style={sectionTitle}>
-            {actionForm.id ? "Editar ação" : "Cadastrar ação"}
-          </h2>
-          <p style={sectionSubtitle}>
-            Vincule a ação a uma jornada e relacione uma ou mais turmas reais do portal.
-          </p>
-
-          <div style={formGrid}>
-            <Field label="Jornada">
+          }
+        >
+          <div style={filtersPanel}>
+            <label style={labelStyle()}>
+              Jornada
               <select
-                value={actionForm.jornada_id}
+                value={filters.jornada_id}
                 onChange={(e) =>
-                  setActionForm((prev) => ({
-                    ...prev,
-                    jornada_id: e.target.value,
-                  }))
+                  setFilters((prev) => ({ ...prev, jornada_id: e.target.value }))
                 }
-                style={field}
+                style={inputStyle()}
               >
-                <option value="">Selecione</option>
+                <option value="">Todas</option>
                 {jornadas.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.titulo} {item.cliente ? `• ${item.cliente}` : ""}
+                    {item.nome || item.titulo}
                   </option>
                 ))}
               </select>
-            </Field>
+            </label>
 
-            <Field label="Título da ação">
-              <input
-                value={actionForm.titulo}
-                onChange={(e) =>
-                  setActionForm((prev) => ({ ...prev, titulo: e.target.value }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Responsável">
-              <input
-                value={actionForm.responsavel}
-                onChange={(e) =>
-                  setActionForm((prev) => ({
-                    ...prev,
-                    responsavel: e.target.value,
-                  }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Status">
+            <label style={labelStyle()}>
+              Status
               <select
-                value={actionForm.status}
+                value={filters.status}
                 onChange={(e) =>
-                  setActionForm((prev) => ({ ...prev, status: e.target.value }))
+                  setFilters((prev) => ({ ...prev, status: e.target.value }))
                 }
-                style={field}
+                style={inputStyle()}
               >
-                <option value="planejada">Planejada</option>
-                <option value="em_andamento">Em andamento</option>
-                <option value="concluida">Concluída</option>
-                <option value="cancelada">Cancelada</option>
-              </select>
-            </Field>
-
-            <Field label="Data início">
-              <input
-                type="date"
-                value={actionForm.data_inicio}
-                onChange={(e) =>
-                  setActionForm((prev) => ({
-                    ...prev,
-                    data_inicio: e.target.value,
-                  }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Data fim">
-              <input
-                type="date"
-                value={actionForm.data_fim}
-                onChange={(e) =>
-                  setActionForm((prev) => ({ ...prev, data_fim: e.target.value }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Carga horária base">
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                value={actionForm.carga_horaria}
-                onChange={(e) =>
-                  setActionForm((prev) => ({
-                    ...prev,
-                    carga_horaria: e.target.value,
-                  }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Participantes previstos">
-              <input
-                type="number"
-                min="0"
-                value={actionForm.participantes_previstos}
-                onChange={(e) =>
-                  setActionForm((prev) => ({
-                    ...prev,
-                    participantes_previstos: e.target.value,
-                  }))
-                }
-                style={field}
-              />
-            </Field>
-
-            <Field label="Turmas vinculadas" full>
-              <select
-                multiple
-                value={actionForm.turma_ids.map(String)}
-                onChange={(e) => {
-                  const values = Array.from(e.target.selectedOptions).map((opt) =>
-                    Number(opt.value)
-                  );
-                  setActionForm((prev) => ({
-                    ...prev,
-                    turma_ids: values,
-                  }));
-                }}
-                style={{ ...field, height: 140, padding: 12 }}
-              >
-                {turmasDisponiveis.map((turma) => (
-                  <option key={turma.id} value={turma.id}>
-                    {(turma.tema || "Sem nome")} • {turma.cliente || "Sem cliente"} •{" "}
-                    {formatDate(turma.data_inicio || turma.data)}
+                {STATUS_OPTIONS.map((item) => (
+                  <option key={item.value || "all"} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </select>
-              <div style={helperMini}>
-                Segure Ctrl no computador para selecionar mais de uma turma.
-              </div>
-            </Field>
+            </label>
 
-            <Field label="Descrição" full>
-              <textarea
-                value={actionForm.descricao}
+            <label style={{ ...labelStyle(), gridColumn: "span 2" }}>
+              Busca
+              <input
+                value={filters.busca}
                 onChange={(e) =>
-                  setActionForm((prev) => ({
-                    ...prev,
-                    descricao: e.target.value,
-                  }))
+                  setFilters((prev) => ({ ...prev, busca: e.target.value }))
                 }
-                style={textarea}
+                placeholder="Jornada, ação, objetivo, responsável..."
+                style={inputStyle()}
               />
-            </Field>
+            </label>
           </div>
 
-          <div style={actionsRow}>
-            <button
-              style={btnPrimary}
-              onClick={salvarAcao}
-              disabled={salvandoAcao}
+          {(erro || notice) && (
+            <div style={{ marginTop: 14 }}>
+              {erro ? <div style={errorAlert}>{erro}</div> : null}
+              {notice ? (
+                <div style={{ ...successAlert, marginTop: erro ? 10 : 0 }}>
+                  {notice}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </SectionCard>
+
+        {activeTab === "geral" && (
+          <div style={{ display: "grid", gap: 18 }}>
+            <SectionCard
+              title="Lógica do oceano"
+              subtitle="Do macro ao destino: entenda o percurso antes de olhar o detalhe."
             >
-              {salvandoAcao
-                ? "Salvando..."
-                : actionForm.id
-                ? "Salvar ação"
-                : "Cadastrar ação"}
-            </button>
-
-            <button style={btnSecondary} onClick={limparAcao}>
-              Limpar
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div style={sectionCard}>
-        <h2 style={sectionTitle}>Mapa consolidado</h2>
-        <p style={sectionSubtitle}>
-          Visualização das jornadas e das ações vinculadas, incluindo as turmas reais do projeto.
-        </p>
-
-        <div style={journeyList}>
-          {jornadasFiltradas.map((jornada) => {
-            const tone = getStatusTone(jornada.status);
-            const acoesDaJornada = acoesPorJornada[jornada.id] || [];
-
-            return (
-              <div key={jornada.id} style={journeyCard}>
-                <div style={journeyHeader}>
-                  <div>
-                    <div style={journeyTitle}>{jornada.titulo}</div>
-                    <div style={journeyMeta}>
-                      {jornada.cliente || "Sem cliente"} •{" "}
-                      {jornada.publico_alvo || "Público não informado"}
-                    </div>
+              <div style={journeyGuideGrid}>
+                {[
+                  ["1. Oceano", "Define a leitura macro do desenvolvimento e do território."],
+                  ["2. Rios", "Cada jornada conduz um caminho com vários trechos."],
+                  ["3. Portos", "Ações funcionam como pontos de ancoragem e execução."],
+                  ["4. Embarcações", "As turmas reais materializam a jornada na operação."],
+                ].map(([title, text]) => (
+                  <div key={title} style={journeyGuideCard}>
+                    <div style={journeyGuideTitle}>{title}</div>
+                    <div style={journeyGuideText}>{text}</div>
                   </div>
+                ))}
+              </div>
+            </SectionCard>
 
-                  <div style={{ ...statusBadge, ...tone }}>{tone.label}</div>
-                </div>
-
-                <div style={journeySummaryGrid}>
-                  <SummaryItem
-                    label="Período"
-                    value={`${formatDate(jornada.data_inicio)} até ${formatDate(
-                      jornada.data_fim
-                    )}`}
-                  />
-                  <SummaryItem
-                    label="Ações vinculadas"
-                    value={acoesDaJornada.length}
-                  />
-                  <SummaryItem
-                    label="Objetivo"
-                    value={jornada.objetivo || "-"}
-                  />
-                </div>
-
-                <div style={actionsRow}>
-                  <button style={btnSecondary} onClick={() => editarJornada(jornada)}>
-                    Editar jornada
-                  </button>
-                  <button
-                    style={btnDangerMini}
-                    onClick={() => removerJornada(jornada)}
-                  >
-                    Remover jornada
-                  </button>
-                </div>
-
-                <div style={actionsList}>
-                  {acoesDaJornada.length ? (
-                    acoesDaJornada.map((acao) => {
-                      const toneAcao = getStatusTone(acao.status);
-
-                      return (
-                        <div key={acao.id} style={actionCard}>
-                          <div style={actionHeader}>
-                            <div>
-                              <div style={actionTitle}>{acao.titulo}</div>
-                              <div style={actionMeta}>
-                                {acao.responsavel || "Responsável não informado"}
-                              </div>
-                            </div>
-
-                            <div style={{ ...statusBadge, ...toneAcao }}>
-                              {toneAcao.label}
-                            </div>
+            <SectionCard
+              title="Rios e trajetos"
+              subtitle="Leia cada jornada como um rio com portos, progresso e próximo trecho."
+            >
+              {loading ? (
+                emptyCard("Carregando fluxo das jornadas...")
+              ) : jornadasFluxo.length === 0 ? (
+                emptyCard("Nenhuma jornada encontrada para os filtros aplicados.")
+              ) : (
+                <div style={{ display: "grid", gap: 16 }}>
+                  {jornadasFluxo.map((jornada) => (
+                    <div key={jornada.id} style={journeyFlowCard}>
+                      <div style={journeyFlowHeader}>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
+                            <span style={attentionBadge(jornada.attention_info.level)}>
+                              {jornada.attention_info.label}
+                            </span>
+                            <span style={prazoBadge(jornada.prazo_info.tone)}>
+                              {jornada.prazo_info.label}
+                            </span>
                           </div>
-
-                          <div style={actionDesc}>{acao.descricao || "-"}</div>
-
-                          <div style={actionGrid}>
-                            <MetricItem
-                              label="Período"
-                              value={`${formatDate(acao.data_inicio)} até ${formatDate(
-                                acao.data_fim
-                              )}`}
-                            />
-                            <MetricItem
-                              label="Participantes previstos"
-                              value={acao.participantes_previstos || 0}
-                            />
-                            <MetricItem
-                              label="Turmas / sessões"
-                              value={acao.quantidade_turmas_sessoes || 0}
-                            />
-                            <MetricItem
-                              label="Participantes realizados"
-                              value={acao.participantes_realizados || 0}
-                            />
-                            <MetricItem
-                              label="Horas planejadas"
-                              value={acao.horas_planejadas || 0}
-                            />
-                            <MetricItem
-                              label="Horas realizadas"
-                              value={acao.horas_realizadas || 0}
-                            />
+                          <div style={journeyFlowTitle}>{jornada.nome}</div>
+                          <div style={journeyFlowMeta}>
+                            Objetivo: {jornada.objetivo || "Não informado"}
                           </div>
-
-                          {Array.isArray(acao.turmas_vinculadas) &&
-                          acao.turmas_vinculadas.length ? (
-                            <div style={{ marginTop: 12 }}>
-                              <div style={miniSectionTitle}>Turmas vinculadas</div>
-
-                              <div style={tagsRow}>
-                                {acao.turmas_vinculadas.map((turma) => (
-                                  <button
-                                    key={turma.id}
-                                    type="button"
-                                    onClick={() =>
-                                      (window.location.href = `/turma/${turma.id}`)
-                                    }
-                                    style={tagButton}
-                                  >
-                                    {turma.tema || `Turma ${turma.id}`}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-
-                          <div style={actionsRow}>
-                            <button style={btnSecondary} onClick={() => editarAcao(acao)}>
-                              Editar ação
-                            </button>
-                            <button
-                              style={btnDangerMini}
-                              onClick={() => removerAcao(acao)}
-                            >
-                              Remover ação
-                            </button>
+                          <div style={journeyFlowMeta}>
+                            Público: {jornada.publico_macro || "Não informado"} • Cliente:{" "}
+                            {jornada.cliente || "Não informado"}
                           </div>
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div style={emptyBox}>Nenhuma ação vinculada a esta jornada.</div>
-                  )}
+
+                        <div style={journeyFlowSummary}>
+                          <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
+                          <MetricBox label="Concluídos" value={fmtNumber(jornada.concluidas)} />
+                          <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
+                          <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
+                        </div>
+                      </div>
+
+                      <div style={journeyProgressBarWrap}>
+                        <div style={journeyProgressBarTrack}>
+                          <div
+                            style={{
+                              ...journeyProgressBarFill,
+                              width: `${Math.max(jornada.progresso, 6)}%`,
+                            }}
+                          />
+                        </div>
+                        <div style={journeyFlowMeta}>
+                          Próximo trecho: {jornada.proximoPasso}
+                        </div>
+                      </div>
+
+                      <div style={journeyStagesGrid}>
+                        {jornada.acoesDaJornada.length === 0 ? (
+                          <div style={emptyTimeline}>Esta jornada ainda não possui portos vinculados.</div>
+                        ) : (
+                          jornada.acoesDaJornada.map((acao) => (
+                            <div key={acao.id} style={journeyStageCard(false)}>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                <span style={badgeStyle(acao.status)}>{displayStatus(acao.status)}</span>
+                                <span style={attentionBadge(acao.attention_info.level)}>
+                                  {acao.attention_info.label}
+                                </span>
+                                <span style={prazoBadge(acao.prazo_info.tone)}>
+                                  {acao.prazo_info.label}
+                                </span>
+                              </div>
+
+                              <div style={journeyStageTitle}>{acao.tema}</div>
+                              <div style={journeyStageMeta}>
+                                {formatDate(acao.data_inicio)} até {formatDate(acao.data_fim)}
+                              </div>
+
+                              <div style={journeyMiniStats}>
+                                <span>{fmtNumber(acao.quantidade_turmas_sessoes || 0)} turma(s)</span>
+                                <span>{fmtNumber(acao.participantes_realizados || 0)} participantes</span>
+                                <span>{fmtHours(acao.horas_realizadas || 0)}h</span>
+                              </div>
+
+                              {Array.isArray(acao.turmas_vinculadas) &&
+                              acao.turmas_vinculadas.length ? (
+                                <div style={journeySubBlock}>
+                                  <div style={journeySubTitle}>Embarcações ancoradas</div>
+                                  <div style={journeyTags}>
+                                    {acao.turmas_vinculadas.map((turma) => (
+                                      <button
+                                        key={turma.id}
+                                        type="button"
+                                        onClick={() =>
+                                          (window.location.href = `/turma/${turma.id}`)
+                                        }
+                                        style={journeyTag}
+                                      >
+                                        {turma.tema || `Turma ${turma.id}`}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={journeyEmptyText}>Sem turmas vinculadas</div>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            );
-          })}
+              )}
+            </SectionCard>
 
-          {!jornadasFiltradas.length ? (
-            <div style={emptyBox}>Nenhuma jornada encontrada com os filtros atuais.</div>
-          ) : null}
-        </div>
+            <SectionCard
+              title="Portos em movimento"
+              subtitle="Entregas, vínculo com turmas e leitura operacional do trecho atual."
+            >
+              {loading ? (
+                emptyCard("Carregando visão geral...")
+              ) : filteredAcoes.length === 0 ? (
+                emptyCard("Nenhuma ação encontrada.")
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Jornada</th>
+                        <th style={thStyle}>Porto</th>
+                        <th style={thStyle}>Responsável</th>
+                        <th style={thStyle}>Turmas</th>
+                        <th style={thStyle}>Participantes</th>
+                        <th style={thStyle}>Horas</th>
+                        <th style={thStyle}>Status</th>
+                        <th style={thStyle}>Prazo</th>
+                        <th style={thStyle}>Atenção</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAcoes.map((item) => (
+                        <tr key={item.id} style={rowTone(item)}>
+                          <td style={tdStyle}>{item.jornada_nome}</td>
+                          <td style={tdStyle}>
+                            <strong>{item.tema}</strong>
+                          </td>
+                          <td style={tdStyle}>{item.responsavel || item.responsavel_nome || "—"}</td>
+                          <td style={tdStyle}>{fmtNumber(item.quantidade_turmas_sessoes || 0)}</td>
+                          <td style={tdStyle}>{fmtNumber(item.participantes_realizados || 0)}</td>
+                          <td style={tdStyle}>{fmtHours(item.horas_realizadas || 0)}</td>
+                          <td style={tdStyle}>
+                            <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                          </td>
+                          <td style={tdStyle}>
+                            <span style={prazoBadge(item.prazo_info.tone)}>
+                              {item.prazo_info.label}
+                            </span>
+                          </td>
+                          <td style={tdStyle}>
+                            <span style={attentionBadge(item.attention_info.level)}>
+                              {item.attention_info.label}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        )}
+
+        {activeTab === "jornadas" && (
+          <>
+            <SectionCard
+              title="Rios e ramificações"
+              subtitle="Estruture a jornada principal do oceano."
+            >
+              <details open style={detailsCard}>
+                <summary style={detailsSummary}>Registro de jornada</summary>
+
+                <form onSubmit={saveJornada} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                  <div style={formGrid}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xxl }}>
+                      Nome da jornada
+                      <input
+                        value={jornadaForm.titulo}
+                        onChange={(e) =>
+                          setJornadaForm((prev) => ({ ...prev, titulo: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                        required
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Cliente
+                      <input
+                        value={jornadaForm.cliente}
+                        onChange={(e) =>
+                          setJornadaForm((prev) => ({ ...prev, cliente: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Público macro
+                      <input
+                        value={jornadaForm.publico_alvo}
+                        onChange={(e) =>
+                          setJornadaForm((prev) => ({
+                            ...prev,
+                            publico_alvo: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Status
+                      <select
+                        value={jornadaForm.status}
+                        onChange={(e) =>
+                          setJornadaForm((prev) => ({ ...prev, status: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="planejada">Planejada</option>
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="concluida">Concluída</option>
+                        <option value="cancelada">Cancelada</option>
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Data início
+                      <input
+                        type="date"
+                        value={jornadaForm.data_inicio}
+                        onChange={(e) =>
+                          setJornadaForm((prev) => ({
+                            ...prev,
+                            data_inicio: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Data fim
+                      <input
+                        type="date"
+                        value={jornadaForm.data_fim}
+                        onChange={(e) =>
+                          setJornadaForm((prev) => ({ ...prev, data_fim: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
+                    Objetivo macro
+                    <textarea
+                      value={jornadaForm.objetivo}
+                      onChange={(e) =>
+                        setJornadaForm((prev) => ({ ...prev, objetivo: e.target.value }))
+                      }
+                      style={textareaStyle(92)}
+                    />
+                  </label>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {jornadaForm.id ? "Atualizar jornada" : "Salvar jornada"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setJornadaForm(journeyInitial);
+                        setErro("");
+                        setNotice("");
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
+            </SectionCard>
+
+            <SectionCard
+              title="Rios cadastrados"
+              subtitle="Visão executiva das jornadas que compõem o oceano."
+            >
+              {loading ? (
+                emptyCard("Carregando jornadas...")
+              ) : filteredJornadas.length === 0 ? (
+                emptyCard("Nenhuma jornada encontrada.")
+              ) : (
+                <div style={cardsGrid}>
+                  {filteredJornadas.map((jornada) => (
+                    <div key={jornada.id} style={execCard}>
+                      <div style={execHeader}>
+                        <div>
+                          <div style={execTitle}>{jornada.nome}</div>
+                          <div style={execSubtitle}>
+                            {jornada.cliente || "Sem cliente"} •{" "}
+                            {jornada.publico_macro || "Sem público macro"}
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
+                          <span style={attentionBadge(jornada.attention_info.level)}>
+                            {jornada.attention_info.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={execBody}>
+                        <div style={execText}>{jornada.objetivo || "Sem objetivo definido."}</div>
+
+                        <div style={miniExecutiveBand}>
+                          <MiniExecutive label="Portos" value={fmtNumber(jornada.total_acoes)} />
+                          <MiniExecutive label="Horas" value={fmtHours(jornada.horas_totais)} />
+                          <MiniExecutive label="Prazo" value={jornada.prazo_info.label} />
+                        </div>
+                      </div>
+
+                      <div style={buttonRow}>
+                        <button style={buttonSecondaryStyle()} onClick={() => editJornada(jornada)}>
+                          Editar
+                        </button>
+                        <button
+                          style={buttonDangerStyle()}
+                          onClick={() => removeRegistro("jornada", jornada.id)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          </>
+        )}
+
+        {activeTab === "acoes" && (
+          <>
+            <SectionCard
+              title="Portos e ancoragens"
+              subtitle="Cadastre ações e conecte cada porto às turmas reais do projeto."
+            >
+              <details open style={detailsCard}>
+                <summary style={detailsSummary}>Registro de ação</summary>
+
+                <form onSubmit={saveAcao} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                  <div style={formGrid}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
+                      Jornada
+                      <select
+                        value={acaoForm.jornada_id}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            jornada_id: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                        required
+                      >
+                        <option value="">Selecione</option>
+                        {jornadas.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome || item.titulo}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.xxl }}>
+                      Título da ação
+                      <input
+                        value={acaoForm.titulo}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({ ...prev, titulo: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                        required
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Responsável
+                      <input
+                        value={acaoForm.responsavel}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            responsavel: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Status
+                      <select
+                        value={acaoForm.status}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({ ...prev, status: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="planejada">Planejada</option>
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="concluida">Concluída</option>
+                        <option value="cancelada">Cancelada</option>
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Data início
+                      <input
+                        type="date"
+                        value={acaoForm.data_inicio}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            data_inicio: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Data fim
+                      <input
+                        type="date"
+                        value={acaoForm.data_fim}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({ ...prev, data_fim: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Carga horária base
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={acaoForm.carga_horaria}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            carga_horaria: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Participantes previstos
+                      <input
+                        type="number"
+                        min="0"
+                        value={acaoForm.participantes_previstos}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            participantes_previstos: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.full }}>
+                      Embarcações ancoradas (turmas vinculadas)
+                      <select
+                        multiple
+                        value={acaoForm.turma_ids.map(String)}
+                        onChange={(e) => {
+                          const values = Array.from(e.target.selectedOptions).map((opt) =>
+                            Number(opt.value)
+                          );
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            turma_ids: values,
+                          }));
+                        }}
+                        style={{
+                          ...inputStyle(),
+                          minHeight: 140,
+                          padding: 12,
+                        }}
+                      >
+                        {turmas.map((turma) => (
+                          <option key={turma.id} value={turma.id}>
+                            {(turma.tema || "Sem nome")} • {turma.cliente || "Sem cliente"} •{" "}
+                            {formatDate(turma.data_inicio || turma.data)}
+                          </option>
+                        ))}
+                      </select>
+                      <span style={helpText}>
+                        Selecione uma ou mais turmas para amarrar a ação à execução real.
+                      </span>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.full }}>
+                      Descrição
+                      <textarea
+                        value={acaoForm.descricao}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            descricao: e.target.value,
+                          }))
+                        }
+                        style={textareaStyle(92)}
+                      />
+                    </label>
+                  </div>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {acaoForm.id ? "Atualizar ação" : "Salvar ação"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setAcaoForm(actionInitial);
+                        setErro("");
+                        setNotice("");
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
+            </SectionCard>
+
+            <SectionCard
+              title="Portos em movimento"
+              subtitle="Leitura executiva das ações, vínculo com turmas e materialização do percurso."
+            >
+              {loading ? (
+                emptyCard("Carregando ações...")
+              ) : filteredAcoes.length === 0 ? (
+                emptyCard("Nenhuma ação encontrada.")
+              ) : (
+                <div style={cardsGrid}>
+                  {filteredAcoes.map((acao) => (
+                    <div key={acao.id} style={execCard}>
+                      <div style={execHeader}>
+                        <div>
+                          <div style={execTitle}>{acao.tema}</div>
+                          <div style={execSubtitle}>{acao.jornada_nome}</div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <span style={badgeStyle(acao.status)}>{displayStatus(acao.status)}</span>
+                          <span style={attentionBadge(acao.attention_info.level)}>
+                            {acao.attention_info.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={execBody}>
+                        <div style={execText}>{acao.descricao || "Sem descrição registrada."}</div>
+
+                        <div style={miniExecutiveBand}>
+                          <MiniExecutive label="Turmas" value={fmtNumber(acao.quantidade_turmas_sessoes || 0)} />
+                          <MiniExecutive label="Participantes" value={fmtNumber(acao.participantes_realizados || 0)} />
+                          <MiniExecutive label="Horas" value={fmtHours(acao.horas_realizadas || 0)} />
+                        </div>
+
+                        {Array.isArray(acao.turmas_vinculadas) && acao.turmas_vinculadas.length ? (
+                          <div style={{ marginTop: 14 }}>
+                            <div style={journeySubTitle}>Embarcações ancoradas</div>
+                            <div style={journeyTags}>
+                              {acao.turmas_vinculadas.map((turma) => (
+                                <button
+                                  key={turma.id}
+                                  type="button"
+                                  onClick={() => (window.location.href = `/turma/${turma.id}`)}
+                                  style={journeyTag}
+                                >
+                                  {turma.tema || `Turma ${turma.id}`}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={journeyEmptyText}>Sem turmas vinculadas</div>
+                        )}
+                      </div>
+
+                      <div style={buttonRow}>
+                        <button style={buttonSecondaryStyle()} onClick={() => editAcao(acao)}>
+                          Editar
+                        </button>
+                        <button
+                          style={buttonDangerStyle()}
+                          onClick={() => removeRegistro("acao", acao.id)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          </>
+        )}
       </div>
-    </div>
+    </PortalShell>
   );
 }
 
-function Field({ label, children, full = false }) {
+function MetricBox({ label, value }) {
   return (
-    <div style={{ ...fieldWrap, gridColumn: full ? "1 / -1" : "auto" }}>
-      <label style={labelStyle}>{label}</label>
-      {children}
+    <div style={metricBox}>
+      <div style={metricBoxLabel}>{label}</div>
+      <div style={metricBoxValue}>{value}</div>
     </div>
   );
 }
 
-function InfoCard({ label, value }) {
+function OverviewBox({ label, value, tone = "default" }) {
+  const tones = {
+    default: {
+      background: "#f8fafc",
+      color: "#0f172a",
+      border: "1px solid #e2e8f0",
+    },
+    alert: {
+      background: "#fff7ed",
+      color: "#c2410c",
+      border: "1px solid #fed7aa",
+    },
+    danger: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecaca",
+    },
+  };
+
   return (
-    <div style={infoCard}>
-      <div style={infoLabel}>{label}</div>
-      <div style={infoValue}>{value}</div>
+    <div style={{ ...overviewBox, ...(tones[tone] || tones.default) }}>
+      <div style={overviewLabel}>{label}</div>
+      <div style={overviewValue}>{value}</div>
     </div>
   );
 }
 
-function StatCard({ title, value }) {
+function MiniExecutive({ label, value }) {
   return (
-    <div style={statCard}>
-      <div style={statTitle}>{title}</div>
-      <div style={statValue}>{value}</div>
+    <div style={miniExecutive}>
+      <div style={miniExecutiveLabel}>{label}</div>
+      <div style={miniExecutiveValue}>{value}</div>
     </div>
   );
 }
 
-function SummaryItem({ label, value }) {
-  return (
-    <div style={summaryItem}>
-      <div style={summaryLabel}>{label}</div>
-      <div style={summaryValue}>{value}</div>
-    </div>
-  );
+function tabButton(active) {
+  return {
+    border: active ? "1px solid rgba(255,255,255,.28)" : "1px solid transparent",
+    background: active ? "rgba(255,255,255,.18)" : "rgba(255,255,255,.08)",
+    color: "#fff",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontWeight: 800,
+    cursor: "pointer",
+    backdropFilter: "blur(10px)",
+  };
 }
 
-function MetricItem({ label, value }) {
-  return (
-    <div style={metricItem}>
-      <div style={metricLabel}>{label}</div>
-      <div style={metricValue}>{value}</div>
-    </div>
-  );
+function rowTone(item) {
+  if (item?.attention_info?.level === "alta") {
+    return { background: "#fffaf9" };
+  }
+  if (item?.attention_info?.level === "media") {
+    return { background: "#fffdf7" };
+  }
+  return { background: "#fff" };
 }
 
-const page = {
-  minHeight: "100vh",
-  background: "#f8fafc",
-  padding: 24,
+const fieldSpan = {
+  sm: { gridColumn: "span 1" },
+  md: { gridColumn: "span 1" },
+  lg: { gridColumn: "span 2" },
+  xl: { gridColumn: "span 2" },
+  xxl: { gridColumn: "span 3" },
+  full: { gridColumn: "1 / -1" },
 };
 
-const loadingWrap = {
-  minHeight: "100vh",
+const heroWrap = {
   display: "grid",
-  placeItems: "center",
-  color: "#334155",
-  fontWeight: 700,
-  background: "#f8fafc",
-};
-
-const hero = {
-  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
-  borderRadius: 22,
+  gridTemplateColumns: "1.4fr .9fr",
+  gap: 18,
+  alignItems: "stretch",
+  borderRadius: 28,
   padding: 24,
-  color: "#fff",
-  boxShadow: "0 18px 36px rgba(29,78,216,.18)",
+  background:
+    "radial-gradient(circle at 20% 20%, rgba(56,189,248,.22), transparent 35%), radial-gradient(circle at 80% 30%, rgba(59,130,246,.24), transparent 28%), linear-gradient(135deg, #082f49 0%, #0f172a 55%, #0f766e 120%)",
+  border: "1px solid rgba(125,211,252,.18)",
+  boxShadow: "0 22px 48px rgba(8,47,73,.35)",
 };
 
-const heroBadge = {
-  display: "inline-block",
-  width: "fit-content",
-  background: "rgba(255,255,255,.14)",
-  padding: "6px 10px",
-  borderRadius: 999,
+const heroLeft = {
+  display: "grid",
+  gap: 14,
+};
+
+const heroEyebrow = {
   fontSize: 12,
-  fontWeight: 800,
+  fontWeight: 900,
+  letterSpacing: ".12em",
   textTransform: "uppercase",
-  letterSpacing: ".04em",
-  marginBottom: 10,
+  color: "#7dd3fc",
 };
 
 const heroTitle = {
   margin: 0,
+  color: "#f8fafc",
   fontSize: 34,
-  lineHeight: 1.05,
+  lineHeight: 1.08,
+  maxWidth: 720,
 };
 
-const heroSubtitle = {
-  margin: "8px 0 0",
-  color: "rgba(255,255,255,.84)",
-  lineHeight: 1.6,
-};
-
-const heroGrid = {
-  marginTop: 18,
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-};
-
-const infoCard = {
-  background: "rgba(255,255,255,.10)",
-  border: "1px solid rgba(255,255,255,.14)",
-  borderRadius: 14,
-  padding: 14,
-};
-
-const infoLabel = {
-  fontSize: 12,
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,.68)",
-};
-
-const infoValue = {
-  marginTop: 6,
-  fontWeight: 800,
-  fontSize: 22,
-};
-
-const filtersCard = {
-  marginTop: 16,
-  background: "#fff",
-  borderRadius: 20,
-  padding: 16,
-  border: "1px solid #e2e8f0",
-};
-
-const filtersRow = {
-  display: "grid",
-  gridTemplateColumns: "2fr 1fr 1fr auto",
-  gap: 12,
-};
-
-const gridForms = {
-  marginTop: 16,
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 16,
-};
-
-const sectionCard = {
-  marginTop: 16,
-  background: "#fff",
-  borderRadius: 20,
-  padding: 20,
-  border: "1px solid #e2e8f0",
-};
-
-const sectionTitle = {
+const heroText = {
   margin: 0,
-  fontSize: 24,
-  color: "#0f172a",
+  color: "#cbd5e1",
+  lineHeight: 1.7,
+  maxWidth: 760,
 };
 
-const sectionSubtitle = {
-  margin: "6px 0 0",
-  color: "#64748b",
-  lineHeight: 1.5,
+const tabBar = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  marginTop: 6,
 };
 
-const formGrid = {
-  marginTop: 16,
+const heroRight = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
+  gap: 14,
 };
 
-const fieldWrap = {
+const orbCard = {
+  borderRadius: 22,
+  padding: 20,
+  background: "rgba(255,255,255,.08)",
+  border: "1px solid rgba(255,255,255,.12)",
   display: "grid",
   gap: 6,
 };
 
-const labelStyle = {
+const orbHeader = {
   fontSize: 12,
+  color: "#bae6fd",
+  textTransform: "uppercase",
+  letterSpacing: ".08em",
+  fontWeight: 900,
+};
+
+const orbValue = {
+  fontSize: 54,
+  lineHeight: 1,
+  color: "#fff",
+  fontWeight: 900,
+};
+
+const orbSub = {
+  color: "#cbd5e1",
+  fontSize: 13,
+};
+
+const signalGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 12,
+};
+
+const signalCard = {
+  borderRadius: 18,
+  padding: 16,
+  background: "rgba(255,255,255,.07)",
+  border: "1px solid rgba(255,255,255,.12)",
+};
+
+const signalTitle = {
+  fontSize: 11,
+  color: "#cbd5e1",
   fontWeight: 800,
   textTransform: "uppercase",
-  color: "#64748b",
 };
 
-const field = {
-  width: "100%",
-  boxSizing: "border-box",
-  height: 42,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  background: "#fff",
-};
-
-const textarea = {
-  width: "100%",
-  boxSizing: "border-box",
-  minHeight: 92,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "12px",
-  resize: "vertical",
-  background: "#fff",
-};
-
-const searchInput = {
-  width: "100%",
-  boxSizing: "border-box",
-  height: 42,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-};
-
-const actionsRow = {
-  marginTop: 16,
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
-const btnPrimary = {
-  background: "#2563eb",
+const signalValue = {
+  fontSize: 22,
+  fontWeight: 900,
   color: "#fff",
-  border: 0,
-  borderRadius: 12,
-  padding: "12px 18px",
-  cursor: "pointer",
-  fontWeight: 800,
+  marginTop: 4,
 };
 
-const btnSecondary = {
-  background: "#fff",
-  color: "#0f172a",
-  border: "1px solid #cbd5e1",
-  borderRadius: 12,
-  padding: "12px 18px",
-  cursor: "pointer",
-  fontWeight: 700,
-};
-
-const btnDangerMini = {
-  background: "#fff1f2",
-  color: "#b91c1c",
-  border: "1px solid #fecaca",
-  borderRadius: 10,
-  padding: "8px 12px",
-  cursor: "pointer",
-  fontWeight: 700,
-};
-
-const helperMini = {
-  marginTop: 6,
-  color: "#64748b",
+const signalSub = {
   fontSize: 12,
+  color: "#cbd5e1",
+  marginTop: 2,
 };
 
-const errorBox = {
-  marginTop: 16,
+const kpiGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 14,
+};
+
+const filtersPanel = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+};
+
+const errorAlert = {
   background: "#fef2f2",
-  border: "1px solid #fecaca",
   color: "#b91c1c",
+  border: "1px solid #fecaca",
+  padding: "12px 14px",
   borderRadius: 14,
-  padding: 12,
   fontWeight: 700,
 };
 
-const successBox = {
-  marginTop: 16,
+const successAlert = {
   background: "#f0fdf4",
-  border: "1px solid #bbf7d0",
   color: "#166534",
+  border: "1px solid #bbf7d0",
+  padding: "12px 14px",
   borderRadius: 14,
-  padding: 12,
   fontWeight: 700,
 };
 
-const journeyList = {
-  marginTop: 16,
+const journeyGuideGrid = {
+  display: "grid",
+  gap: 14,
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+};
+
+const journeyGuideCard = {
+  border: "1px solid #dbeafe",
+  borderRadius: 18,
+  padding: 16,
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+  display: "grid",
+  gap: 8,
+};
+
+const journeyGuideTitle = {
+  fontSize: 16,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const journeyGuideText = {
+  fontSize: 13,
+  color: "#475569",
+  lineHeight: 1.5,
+};
+
+const journeyFlowCard = {
+  border: "1px solid #dbeafe",
+  borderRadius: 22,
+  padding: 18,
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
   display: "grid",
   gap: 16,
 };
 
-const journeyCard = {
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 18,
-  background: "#fff",
+const journeyFlowHeader = {
+  display: "grid",
+  gridTemplateColumns: "1.3fr .8fr",
+  gap: 14,
+  alignItems: "start",
 };
 
-const journeyHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-  alignItems: "flex-start",
-  flexWrap: "wrap",
-};
-
-const journeyTitle = {
+const journeyFlowTitle = {
   fontSize: 24,
-  fontWeight: 800,
+  fontWeight: 900,
   color: "#0f172a",
 };
 
-const journeyMeta = {
-  marginTop: 4,
-  color: "#64748b",
-};
-
-const statusBadge = {
-  borderRadius: 999,
-  padding: "8px 12px",
-  fontSize: 12,
-  fontWeight: 800,
-  whiteSpace: "nowrap",
-};
-
-const journeySummaryGrid = {
-  marginTop: 14,
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-  gap: 12,
-};
-
-const summaryItem = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-};
-
-const summaryLabel = {
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  color: "#64748b",
-};
-
-const summaryValue = {
-  marginTop: 6,
-  color: "#0f172a",
-  fontWeight: 700,
-};
-
-const actionsList = {
-  marginTop: 16,
-  display: "grid",
-  gap: 12,
-};
-
-const actionCard = {
-  border: "1px solid #dbe4f0",
-  borderRadius: 16,
-  padding: 16,
-  background: "#fbfdff",
-};
-
-const actionHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-  alignItems: "flex-start",
-  flexWrap: "wrap",
-};
-
-const actionTitle = {
-  fontSize: 20,
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const actionMeta = {
-  marginTop: 4,
-  color: "#64748b",
-};
-
-const actionDesc = {
-  marginTop: 10,
-  color: "#334155",
+const journeyFlowMeta = {
+  fontSize: 13,
+  color: "#475569",
   lineHeight: 1.5,
 };
 
-const actionGrid = {
-  marginTop: 14,
+const journeyFlowSummary = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
   gap: 10,
 };
 
-const metricItem = {
+const metricBox = {
+  borderRadius: 16,
+  padding: 14,
   background: "#fff",
   border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: 12,
+  display: "grid",
+  gap: 6,
 };
 
-const metricLabel = {
-  fontSize: 12,
+const metricBoxLabel = {
+  fontSize: 11,
   fontWeight: 800,
-  textTransform: "uppercase",
   color: "#64748b",
+  textTransform: "uppercase",
 };
 
-const metricValue = {
-  marginTop: 6,
+const metricBoxValue = {
+  fontSize: 20,
+  fontWeight: 900,
   color: "#0f172a",
-  fontWeight: 800,
 };
 
-const miniSectionTitle = {
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  color: "#64748b",
-  marginBottom: 6,
-};
-
-const tagsRow = {
-  display: "flex",
-  flexWrap: "wrap",
+const journeyProgressBarWrap = {
+  display: "grid",
   gap: 8,
 };
 
-const tagButton = {
+const journeyProgressBarTrack = {
+  width: "100%",
+  height: 12,
+  borderRadius: 999,
+  background: "#e0f2fe",
+  overflow: "hidden",
+};
+
+const journeyProgressBarFill = {
+  height: "100%",
+  borderRadius: 999,
+  background: "linear-gradient(90deg, #06b6d4 0%, #2563eb 100%)",
+};
+
+const journeyStagesGrid = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+};
+
+const journeyStageCard = (isAtual) => ({
+  borderRadius: 18,
+  border: isAtual ? "1px solid #7dd3fc" : "1px solid #e2e8f0",
+  background: isAtual
+    ? "linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%)"
+    : "#fff",
+  padding: 16,
+  display: "grid",
+  gap: 10,
+  boxShadow: isAtual ? "0 10px 24px rgba(14,165,233,.12)" : "none",
+});
+
+const journeyStageTitle = {
+  fontSize: 18,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const journeyStageMeta = {
+  fontSize: 13,
+  color: "#64748b",
+};
+
+const journeyMiniStats = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  color: "#334155",
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const journeySubBlock = {
+  display: "grid",
+  gap: 8,
+};
+
+const journeySubTitle = {
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#0f766e",
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+};
+
+const journeyLinkedItem = {
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
+  flexWrap: "wrap",
+  fontSize: 13,
+  color: "#334155",
+};
+
+const journeyEmptyText = {
+  fontSize: 13,
+  color: "#64748b",
+};
+
+const journeyTags = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const journeyTag = {
   border: "1px solid #bfdbfe",
   background: "#eff6ff",
   color: "#1d4ed8",
@@ -1354,12 +1964,162 @@ const tagButton = {
   cursor: "pointer",
 };
 
-const emptyBox = {
-  marginTop: 12,
-  background: "#f8fafc",
+const emptyTimeline = {
   border: "1px dashed #cbd5e1",
-  borderRadius: 14,
+  borderRadius: 16,
   padding: 18,
   color: "#64748b",
-  textAlign: "center",
+  background: "#fff",
+};
+
+const detailsCard = {
+  border: "1px solid #dbeafe",
+  borderRadius: 18,
+  padding: 14,
+  background: "#f8fbff",
+};
+
+const detailsSummary = {
+  cursor: "pointer",
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const formGrid = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+};
+
+const buttonRow = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const cardsGrid = {
+  display: "grid",
+  gap: 14,
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+};
+
+const execCard = {
+  borderRadius: 20,
+  border: "1px solid #dbeafe",
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
+  padding: 18,
+  display: "grid",
+  gap: 14,
+};
+
+const execHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "start",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const execTitle = {
+  fontSize: 20,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const execSubtitle = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const execBody = {
+  display: "grid",
+  gap: 12,
+};
+
+const execText = {
+  color: "#334155",
+  fontSize: 14,
+  lineHeight: 1.6,
+};
+
+const miniExecutiveBand = {
+  display: "grid",
+  gap: 10,
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+};
+
+const miniExecutive = {
+  borderRadius: 14,
+  border: "1px solid #e2e8f0",
+  background: "#fff",
+  padding: 12,
+};
+
+const miniExecutiveLabel = {
+  fontSize: 11,
+  fontWeight: 800,
+  color: "#64748b",
+  textTransform: "uppercase",
+};
+
+const miniExecutiveValue = {
+  fontSize: 18,
+  fontWeight: 900,
+  color: "#0f172a",
+  marginTop: 4,
+};
+
+const helpText = {
+  fontSize: 12,
+  color: "#64748b",
+};
+
+const overviewBox = {
+  borderRadius: 14,
+  padding: 12,
+  display: "grid",
+  gap: 4,
+};
+
+const overviewLabel = {
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+};
+
+const overviewValue = {
+  fontSize: 18,
+  fontWeight: 900,
+};
+
+const tableStyle = {
+  width: "100%",
+  borderCollapse: "separate",
+  borderSpacing: 0,
+  minWidth: 980,
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  overflow: "hidden",
+};
+
+const thStyle = {
+  textAlign: "left",
+  padding: "14px 16px",
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#475569",
+  textTransform: "uppercase",
+  letterSpacing: ".03em",
+  background: "#f8fafc",
+  borderBottom: "1px solid #e2e8f0",
+};
+
+const tdStyle = {
+  padding: "14px 16px",
+  borderBottom: "1px solid #eef2f7",
+  color: "#0f172a",
+  fontSize: 14,
 };
