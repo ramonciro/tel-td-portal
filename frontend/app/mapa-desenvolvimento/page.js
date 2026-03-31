@@ -137,7 +137,7 @@ function getAttention(item, tipoRegistro) {
   }
 
   if (
-    tipoRegistro === "coaching" &&
+    tipoRegistro === "coaching / mentoria" &&
     status === "em_andamento" &&
     Number(item.sessoes_realizadas || 0) === 0
   ) {
@@ -160,7 +160,7 @@ function getActionIntensity(item) {
   return { label: "Baixa", tone: "default" };
 }
 
-function getCoachingIntensity(item) {
+function getCoaching / MentoriaIntensity(item) {
   const horas = Number(item.horas_totais_calc || item.horas_totais || 0);
   const sessoes = Number(item.sessoes_realizadas || 0);
   const participantes = Number(item.participantes_realizados || 0);
@@ -182,7 +182,7 @@ function getStageHealth(stage) {
   return { label: "Saudável", level: "ok" };
 }
 
-function getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada) {
+function getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coaching / mentoriasDaJornada) {
   const prazo = getPrazoInfo(jornada);
 
   if (!jornada.responsavel_id || etapasDaJornada.length === 0 || prazo.tone === "danger") {
@@ -191,9 +191,9 @@ function getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJ
 
   const horasTotais =
     acoesDaJornada.reduce((acc, item) => acc + Number(item.horas_realizadas || 0), 0) +
-    coachingsDaJornada.reduce((acc, item) => acc + Number(item.horas_totais || 0), 0);
+    coaching / mentoriasDaJornada.reduce((acc, item) => acc + Number(item.horas_totais || 0), 0);
 
-  if (horasTotais === 0 || (acoesDaJornada.length === 0 && coachingsDaJornada.length === 0)) {
+  if (horasTotais === 0 || (acoesDaJornada.length === 0 && coaching / mentoriasDaJornada.length === 0)) {
     return { label: "Atenção", level: "media" };
   }
 
@@ -205,7 +205,7 @@ function getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJ
   return { label: "Saudável", level: "ok" };
 }
 
-function getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada) {
+function getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coaching / mentoriasDaJornada) {
   const prazo = getPrazoInfo(jornada);
 
   if (!jornada.responsavel_id) {
@@ -220,13 +220,13 @@ function getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coachings
     return { level: "alta", label: "Prazo vencido" };
   }
 
-  if (acoesDaJornada.length === 0 && coachingsDaJornada.length === 0) {
+  if (acoesDaJornada.length === 0 && coaching / mentoriasDaJornada.length === 0) {
     return { level: "media", label: "Sem entregas vinculadas" };
   }
 
   const horasTotais =
     acoesDaJornada.reduce((acc, item) => acc + Number(item.horas_realizadas || 0), 0) +
-    coachingsDaJornada.reduce((acc, item) => acc + Number(item.horas_totais || 0), 0);
+    coaching / mentoriasDaJornada.reduce((acc, item) => acc + Number(item.horas_totais || 0), 0);
 
   if (horasTotais === 0) {
     return { level: "media", label: "Sem horas registradas" };
@@ -260,7 +260,7 @@ function badgeStyle(type) {
     planejado: { background: "#faf5ff", color: "#7c3aed", borderColor: "#ddd6fe" },
     em_andamento: { background: "#fff7ed", color: "#c2410c", borderColor: "#fed7aa" },
     cancelado: { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" },
-    coaching: { background: "#eef2ff", color: "#4338ca", borderColor: "#c7d2fe" },
+    coaching / mentoria: { background: "#eef2ff", color: "#4338ca", borderColor: "#c7d2fe" },
   };
 
   return {
@@ -345,6 +345,62 @@ function prazoBadge(tone) {
     lineHeight: 1.1,
     ...(map[tone] || map.neutral),
   };
+}
+
+function sustentacaoTypeBadge(value) {
+  const tipo = normalize(value);
+  const map = {
+    coaching: {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      border: "1px solid #bfdbfe",
+      label: "Coaching",
+    },
+    mentoria: {
+      background: "#f5f3ff",
+      color: "#7c3aed",
+      border: "1px solid #ddd6fe",
+      label: "Mentoria",
+    },
+  };
+
+  const item = map[tipo] || {
+    background: "#f8fafc",
+    color: "#475569",
+    border: "1px solid #e2e8f0",
+    label: value || "Sustentação",
+  };
+
+  return {
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "5px 10px",
+      borderRadius: 999,
+      fontSize: 10,
+      fontWeight: 800,
+      whiteSpace: "nowrap",
+      lineHeight: 1.1,
+      textTransform: "uppercase",
+      letterSpacing: ".03em",
+      background: item.background,
+      color: item.color,
+      border: item.border,
+    },
+    label: item.label,
+  };
+}
+
+function sustentacaoDescriptor(value) {
+  const tipo = normalize(value);
+  if (tipo === "coaching") {
+    return "Correção de rota, reforço de prática e sustentação da execução.";
+  }
+  if (tipo === "mentoria") {
+    return "Orientação, repertório e amadurecimento de visão ao longo da jornada.";
+  }
+  return "Apoio complementar ao percurso de desenvolvimento.";
 }
 
 function buttonPrimaryStyle(disabled = false) {
@@ -451,7 +507,7 @@ function calcHorasRealizadas(acao) {
   return Number(acao.participantes_realizados || 0) * Number(acao.carga_horaria || 0);
 }
 
-function calcHorasCoaching(plano) {
+function calcHorasCoaching / Mentoria(plano) {
   return (
     Number(plano.sessoes_realizadas || 0) *
     Number(plano.carga_horaria_sessao || 0) *
@@ -506,37 +562,37 @@ function validarAcao(form, jornadas, etapas) {
   return "";
 }
 
-function validarCoaching(form, jornadas, etapas, acoes) {
-  if (!String(form.titulo || "").trim()) return "Informe o título do coaching.";
+function validarCoaching / Mentoria(form, jornadas, etapas, acoes) {
+  if (!String(form.titulo || "").trim()) return "Informe o título do coaching / mentoria.";
 
   if (form.jornada_id) {
     const jornadaExiste = jornadas.some((j) => String(j.id) === String(form.jornada_id));
-    if (!jornadaExiste) return "A jornada selecionada para o coaching não é válida.";
+    if (!jornadaExiste) return "A jornada selecionada para o coaching / mentoria não é válida.";
   }
 
   if (form.etapa_id) {
     const etapa = etapas.find((e) => String(e.id) === String(form.etapa_id));
-    if (!etapa) return "A etapa selecionada para o coaching não é válida.";
+    if (!etapa) return "A etapa selecionada para o coaching / mentoria não é válida.";
     if (form.jornada_id && String(etapa.jornada_id) !== String(form.jornada_id)) {
-      return "A etapa selecionada não pertence à jornada escolhida no coaching.";
+      return "A etapa selecionada não pertence à jornada escolhida no coaching / mentoria.";
     }
   }
 
   if (form.acao_id) {
     const acao = acoes.find((a) => String(a.id) === String(form.acao_id));
-    if (!acao) return "A ação vinculada ao coaching não é válida.";
+    if (!acao) return "A ação vinculada ao coaching / mentoria não é válida.";
 
     if (form.jornada_id && String(acao.jornada_id) !== String(form.jornada_id)) {
-      return "A ação vinculada não pertence à jornada escolhida no coaching.";
+      return "A ação vinculada não pertence à jornada escolhida no coaching / mentoria.";
     }
 
     if (form.etapa_id && String(acao.etapa_id || "") !== String(form.etapa_id)) {
-      return "A ação vinculada não pertence à etapa escolhida no coaching.";
+      return "A ação vinculada não pertence à etapa escolhida no coaching / mentoria.";
     }
   }
 
   if (!isValidDateRange(form.data_inicio, form.data_fim)) {
-    return "A data fim do coaching não pode ser menor que a data início.";
+    return "A data fim do coaching / mentoria não pode ser menor que a data início.";
   }
   return "";
 }
@@ -625,12 +681,12 @@ const acaoInicial = {
   data_fim: "",
 };
 
-const coachingInicial = {
+const coaching / mentoriaInicial = {
   id: null,
   jornada_id: "",
   etapa_id: "",
   acao_id: "",
-  tipo_coaching: "coordenacao",
+  tipo_coaching / mentoria: "coordenacao",
   titulo: "",
   publico_alvo: "",
   objetivo: "",
@@ -664,7 +720,7 @@ const TIPO_OPTIONS = [
   { value: "integracao", label: "Integração" },
   { value: "reciclagem", label: "Reciclagem" },
   { value: "acao_estrategica", label: "Ação estratégica" },
-  { value: "coaching", label: "Coaching" },
+  { value: "coaching / mentoria", label: "Coaching / Mentoria" },
   { value: "outro", label: "Outro" },
 ];
 
@@ -675,7 +731,7 @@ export default function MapaDesenvolvimentoPage() {
   const [jornadas, setJornadas] = useState([]);
   const [etapas, setEtapas] = useState([]);
   const [acoes, setAcoes] = useState([]);
-  const [coachings, setCoachings] = useState([]);
+  const [coaching / mentorias, setCoaching / Mentorias] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -686,7 +742,7 @@ export default function MapaDesenvolvimentoPage() {
     jornadas: { state: "idle", message: "" },
     etapas: { state: "idle", message: "" },
     acoes: { state: "idle", message: "" },
-    coachings: { state: "idle", message: "" },
+    coaching / mentorias: { state: "idle", message: "" },
   });
 
   const [filters, setFilters] = useState({
@@ -701,7 +757,7 @@ export default function MapaDesenvolvimentoPage() {
   const [jornadaForm, setJornadaForm] = useState(jornadaInicial);
   const [etapaForm, setEtapaForm] = useState(etapaInicial);
   const [acaoForm, setAcaoForm] = useState(acaoInicial);
-  const [coachingForm, setCoachingForm] = useState(coachingInicial);
+  const [coaching / mentoriaForm, setCoaching / MentoriaForm] = useState(coaching / mentoriaInicial);
 
   useEffect(() => {
     loadAll();
@@ -754,23 +810,23 @@ export default function MapaDesenvolvimentoPage() {
       jornadas: { state: "loading", message: "Carregando jornadas..." },
       etapas: { state: "loading", message: "Carregando etapas..." },
       acoes: { state: "loading", message: "Carregando ações..." },
-      coachings: { state: "loading", message: "Carregando coachings..." },
+      coaching / mentorias: { state: "loading", message: "Carregando coaching / mentorias..." },
     });
 
     try {
-      const [usuariosData, jornadasData, etapasData, acoesData, coachingsData] = await Promise.all([
+      const [usuariosData, jornadasData, etapasData, acoesData, coaching / mentoriasData] = await Promise.all([
         loadResource("/usuarios", "usuarios", "Nenhum responsável disponível."),
         loadResource("/jornadas-desenvolvimento", "jornadas", "Nenhuma jornada cadastrada."),
         loadResource("/jornadas-etapas", "etapas", "Nenhuma etapa cadastrada."),
         loadResource("/acoes-desenvolvimento", "acoes", "Nenhuma ação cadastrada."),
-        loadResource("/coaching-planos", "coachings", "Nenhum coaching cadastrado."),
+        loadResource("/coaching / mentoria-planos", "coaching / mentorias", "Nenhum coaching / mentoria cadastrado."),
       ]);
 
       setUsuarios(usuariosData);
       setJornadas(jornadasData);
       setEtapas(etapasData);
       setAcoes(acoesData);
-      setCoachings(coachingsData);
+      setCoaching / Mentorias(coaching / mentoriasData);
     } catch (error) {
       setErro(extrairMensagemErro(error, "Erro ao carregar o Mapa de Desenvolvimento."));
     } finally {
@@ -820,21 +876,21 @@ export default function MapaDesenvolvimentoPage() {
     return jornadas.map((jornada) => {
       const etapasDaJornada = etapas.filter((e) => String(e.jornada_id) === String(jornada.id));
       const acoesDaJornada = acoes.filter((a) => String(a.jornada_id) === String(jornada.id));
-      const coachingsDaJornada = coachings.filter((c) => String(c.jornada_id || "") === String(jornada.id));
+      const coaching / mentoriasDaJornada = coaching / mentorias.filter((c) => String(c.jornada_id || "") === String(jornada.id));
 
       const horasAcoes = acoesDaJornada.reduce(
         (acc, item) => acc + Number(item.horas_realizadas || calcHorasRealizadas(item)),
         0
       );
-      const horasCoaching = coachingsDaJornada.reduce(
-        (acc, item) => acc + Number(item.horas_totais || calcHorasCoaching(item)),
+      const horasCoaching / Mentoria = coaching / mentoriasDaJornada.reduce(
+        (acc, item) => acc + Number(item.horas_totais || calcHorasCoaching / Mentoria(item)),
         0
       );
 
       const responsavel_nome = responsavelMap[String(jornada.responsavel_id)] || "Não definido";
       const prazo_info = getPrazoInfo(jornada);
-      const saude_info = getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada);
-      const attention_info = getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coachingsDaJornada);
+      const saude_info = getJornadaHealth(jornada, etapasDaJornada, acoesDaJornada, coaching / mentoriasDaJornada);
+      const attention_info = getJornadaAttention(jornada, etapasDaJornada, acoesDaJornada, coaching / mentoriasDaJornada);
 
       const etapasCriticas = etapasDaJornada
         .map((etapa) => {
@@ -864,28 +920,28 @@ export default function MapaDesenvolvimentoPage() {
         responsavel_nome,
         total_etapas: etapasDaJornada.length,
         total_acoes: acoesDaJornada.length,
-        total_coachings: coachingsDaJornada.length,
-        horas_totais: horasAcoes + horasCoaching,
+        total_coaching / mentorias: coaching / mentoriasDaJornada.length,
+        horas_totais: horasAcoes + horasCoaching / Mentoria,
         prazo_info,
         saude_info,
         attention_info,
         etapa_critica: etapasCriticas[0] || null,
       };
     });
-  }, [jornadas, etapas, acoes, coachings, responsavelMap]);
+  }, [jornadas, etapas, acoes, coaching / mentorias, responsavelMap]);
 
   const etapasEnriquecidas = useMemo(() => {
     return etapasOrdenadas.map((etapa) => {
       const jornada = jornadasMap[String(etapa.jornada_id)];
       const acoesDaEtapa = acoes.filter((a) => String(a.etapa_id || "") === String(etapa.id));
-      const coachingsDaEtapa = coachings.filter((c) => String(c.etapa_id || "") === String(etapa.id));
+      const coaching / mentoriasDaEtapa = coaching / mentorias.filter((c) => String(c.etapa_id || "") === String(etapa.id));
 
       const horasAcoes = acoesDaEtapa.reduce(
         (acc, item) => acc + Number(item.horas_realizadas || calcHorasRealizadas(item)),
         0
       );
-      const horasCoaching = coachingsDaEtapa.reduce(
-        (acc, item) => acc + Number(item.horas_totais || calcHorasCoaching(item)),
+      const horasCoaching / Mentoria = coaching / mentoriasDaEtapa.reduce(
+        (acc, item) => acc + Number(item.horas_totais || calcHorasCoaching / Mentoria(item)),
         0
       );
 
@@ -895,11 +951,11 @@ export default function MapaDesenvolvimentoPage() {
         jornada_nome: jornada?.nome || "Sem jornada",
         responsavel_nome: responsavelMap[String(etapa.responsavel_id)] || "Não definido",
         total_acoes: acoesDaEtapa.length,
-        total_coachings: coachingsDaEtapa.length,
-        horas_totais: horasAcoes + horasCoaching,
+        total_coaching / mentorias: coaching / mentoriasDaEtapa.length,
+        horas_totais: horasAcoes + horasCoaching / Mentoria,
       };
     });
-  }, [etapasOrdenadas, jornadasMap, acoes, coachings, responsavelMap]);
+  }, [etapasOrdenadas, jornadasMap, acoes, coaching / mentorias, responsavelMap]);
 
   const acoesEnriquecidas = useMemo(() => {
     return acoes.map((acao) => {
@@ -924,29 +980,29 @@ export default function MapaDesenvolvimentoPage() {
     });
   }, [acoes, jornadasMap, etapasMap, responsavelMap]);
 
-  const coachingsEnriquecidos = useMemo(() => {
-    return coachings.map((plano) => {
+  const coaching / mentoriasEnriquecidos = useMemo(() => {
+    return coaching / mentorias.map((plano) => {
       const jornada = jornadasMap[String(plano.jornada_id || "")];
       const etapa = etapasMap[String(plano.etapa_id || "")];
       const acao = acoes.find((a) => String(a.id) === String(plano.acao_id || ""));
       const base = {
         ...plano,
-        tipo_registro: "coaching",
+        tipo_registro: "coaching / mentoria",
         status_canonico: canonicalStatus(plano.status),
         jornada_nome: jornada?.nome || "Independente",
         etapa_nome: etapa?.nome || "Sem etapa",
         acao_nome: acao?.tema || "Sem ação vinculada",
         responsavel_nome: responsavelMap[String(plano.responsavel_id)] || "Não definido",
-        horas_totais_calc: Number(plano.horas_totais || calcHorasCoaching(plano)),
+        horas_totais_calc: Number(plano.horas_totais || calcHorasCoaching / Mentoria(plano)),
       };
       return {
         ...base,
         prazo_info: getPrazoInfo(base),
-        attention_info: getAttention(base, "coaching"),
-        intensidade_info: getCoachingIntensity(base),
+        attention_info: getAttention(base, "coaching / mentoria"),
+        intensidade_info: getCoaching / MentoriaIntensity(base),
       };
     });
-  }, [coachings, jornadasMap, etapasMap, acoes, responsavelMap]);
+  }, [coaching / mentorias, jornadasMap, etapasMap, acoes, responsavelMap]);
 
   function matchBusca(textParts, termo) {
     if (!termo) return true;
@@ -991,7 +1047,7 @@ export default function MapaDesenvolvimentoPage() {
       const matchTipo =
         !filters.tipo ||
         normalize(item.tipo) === normalize(filters.tipo) ||
-        (filters.tipo === "coaching" && normalize(item.tipo) === "coaching");
+        (filters.tipo === "coaching / mentoria" && normalize(item.tipo) === "coaching / mentoria");
 
       return (
         matchJornada &&
@@ -1048,16 +1104,16 @@ export default function MapaDesenvolvimentoPage() {
     });
   }, [acoesEnriquecidas, filters]);
 
-  const filteredCoachings = useMemo(() => {
-    return coachingsEnriquecidos.filter((item) => {
+  const filteredCoaching / Mentorias = useMemo(() => {
+    return coaching / mentoriasEnriquecidos.filter((item) => {
       const matchJornada =
         !filters.jornada_id || String(item.jornada_id || "") === String(filters.jornada_id);
       const matchEtapa =
         !filters.etapa_id || String(item.etapa_id || "") === String(filters.etapa_id);
       const matchTipo =
         !filters.tipo ||
-        normalize(item.tipo_coaching) === normalize(filters.tipo) ||
-        filters.tipo === "coaching";
+        normalize(item.tipo_coaching / mentoria) === normalize(filters.tipo) ||
+        filters.tipo === "coaching / mentoria";
       const matchStatus = !filters.status || item.status_canonico === filters.status;
       const matchResponsavel =
         !filters.responsavel_id || String(item.responsavel_id || "") === String(filters.responsavel_id);
@@ -1071,7 +1127,7 @@ export default function MapaDesenvolvimentoPage() {
         matchBusca(
           [
             item.titulo,
-            item.tipo_coaching,
+            item.tipo_coaching / mentoria,
             item.publico_alvo,
             item.objetivo,
             item.jornada_nome,
@@ -1083,7 +1139,7 @@ export default function MapaDesenvolvimentoPage() {
         )
       );
     });
-  }, [coachingsEnriquecidos, filters]);
+  }, [coaching / mentoriasEnriquecidos, filters]);
 
   const overviewRows = useMemo(() => {
     const rows = [
@@ -1093,10 +1149,10 @@ export default function MapaDesenvolvimentoPage() {
         tipo_label: item.tipo_acao,
         horas: item.horas_realizadas_calc,
       })),
-      ...filteredCoachings.map((item) => ({
+      ...filteredCoaching / Mentorias.map((item) => ({
         ...item,
         titulo: item.titulo,
-        tipo_label: `coaching • ${item.tipo_coaching}`,
+        tipo_label: `coaching / mentoria • ${item.tipo_coaching / mentoria}`,
         horas: item.horas_totais_calc,
       })),
     ];
@@ -1121,7 +1177,7 @@ export default function MapaDesenvolvimentoPage() {
 
       return String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR");
     });
-  }, [filteredAcoes, filteredCoachings]);
+  }, [filteredAcoes, filteredCoaching / Mentorias]);
 
   const orderedAcoes = useMemo(() => {
     return [...filteredAcoes].sort((a, b) => {
@@ -1151,8 +1207,8 @@ export default function MapaDesenvolvimentoPage() {
     });
   }, [filteredAcoes]);
 
-  const orderedCoachings = useMemo(() => {
-    return [...filteredCoachings].sort((a, b) => {
+  const orderedCoaching / Mentorias = useMemo(() => {
+    return [...filteredCoaching / Mentorias].sort((a, b) => {
       const p = statusPriority(a.status) - statusPriority(b.status);
       if (p !== 0) return p;
 
@@ -1181,7 +1237,7 @@ export default function MapaDesenvolvimentoPage() {
 
       return String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR");
     });
-  }, [filteredCoachings]);
+  }, [filteredCoaching / Mentorias]);
 
   const actionExecutive = useMemo(() => {
     return {
@@ -1194,17 +1250,17 @@ export default function MapaDesenvolvimentoPage() {
     };
   }, [orderedAcoes]);
 
-  const coachingExecutive = useMemo(() => {
+  const coaching / mentoriaExecutive = useMemo(() => {
     return {
-      emAndamento: orderedCoachings.filter((i) => i.status_canonico === "em_andamento").length,
-      concluidos: orderedCoachings.filter((i) => i.status_canonico === "concluido").length,
-      independentes: orderedCoachings.filter((i) => !i.jornada_id).length,
-      semResponsavel: orderedCoachings.filter((i) => i.attention_info?.label === "Sem responsável").length,
-      vencidos: orderedCoachings.filter((i) => i.prazo_info?.tone === "danger").length,
-      horas: orderedCoachings.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0),
-      criticos: orderedCoachings.filter((i) => i.attention_info?.level === "alta").length,
+      emAndamento: orderedCoaching / Mentorias.filter((i) => i.status_canonico === "em_andamento").length,
+      concluidos: orderedCoaching / Mentorias.filter((i) => i.status_canonico === "concluido").length,
+      independentes: orderedCoaching / Mentorias.filter((i) => !i.jornada_id).length,
+      semResponsavel: orderedCoaching / Mentorias.filter((i) => i.attention_info?.label === "Sem responsável").length,
+      vencidos: orderedCoaching / Mentorias.filter((i) => i.prazo_info?.tone === "danger").length,
+      horas: orderedCoaching / Mentorias.reduce((acc, i) => acc + Number(i.horas_totais_calc || 0), 0),
+      criticos: orderedCoaching / Mentorias.filter((i) => i.attention_info?.level === "alta").length,
     };
-  }, [orderedCoachings]);
+  }, [orderedCoaching / Mentorias]);
 
   const executiveAlerts = useMemo(() => {
     const rows = overviewRows;
@@ -1221,7 +1277,7 @@ export default function MapaDesenvolvimentoPage() {
       (acc, item) => acc + Number(item.participantes_realizados || 0),
       0
     );
-    const participantesCoachings = filteredCoachings.reduce(
+    const participantesCoaching / Mentorias = filteredCoaching / Mentorias.reduce(
       (acc, item) => acc + Number(item.participantes_realizados || 0),
       0
     );
@@ -1229,7 +1285,7 @@ export default function MapaDesenvolvimentoPage() {
       (acc, item) => acc + Number(item.horas_realizadas_calc || 0),
       0
     );
-    const horasCoachings = filteredCoachings.reduce(
+    const horasCoaching / Mentorias = filteredCoaching / Mentorias.reduce(
       (acc, item) => acc + Number(item.horas_totais_calc || 0),
       0
     );
@@ -1238,16 +1294,16 @@ export default function MapaDesenvolvimentoPage() {
       jornadas: filteredJornadas.length,
       etapas: filteredEtapas.length,
       acoes: filteredAcoes.length,
-      coachings: filteredCoachings.length,
-      participantes: participantesAcoes + participantesCoachings,
-      horasTotais: horasAcoes + horasCoachings,
+      coaching / mentorias: filteredCoaching / Mentorias.length,
+      participantes: participantesAcoes + participantesCoaching / Mentorias,
+      horasTotais: horasAcoes + horasCoaching / Mentorias,
       concluidas:
         filteredAcoes.filter((i) => i.status_canonico === "concluido").length +
-        filteredCoachings.filter((i) => i.status_canonico === "concluido").length,
-      coachingsIndependentes: filteredCoachings.filter((i) => !i.jornada_id).length,
+        filteredCoaching / Mentorias.filter((i) => i.status_canonico === "concluido").length,
+      coaching / mentoriasIndependentes: filteredCoaching / Mentorias.filter((i) => !i.jornada_id).length,
       fluxosAtivos: filteredJornadas.filter((i) => i.status_canonico === "ativo").length,
     };
-  }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
+  }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoaching / Mentorias]);
 
 
   const jornadasFluxo = useMemo(() => {
@@ -1258,28 +1314,28 @@ export default function MapaDesenvolvimentoPage() {
           .sort((a, b) => Number(a.ordem || 9999) - Number(b.ordem || 9999));
 
         const acoesDaJornada = filteredAcoes.filter((item) => String(item.jornada_id) === String(jornada.id));
-        const coachingsDaJornada = filteredCoachings.filter((item) => String(item.jornada_id || "") === String(jornada.id));
+        const coaching / mentoriasDaJornada = filteredCoaching / Mentorias.filter((item) => String(item.jornada_id || "") === String(jornada.id));
 
         const etapasConcluidas = etapasDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
         const acoesConcluidas = acoesDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
-        const coachingsConcluidos = coachingsDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
+        const coaching / mentoriasConcluidos = coaching / mentoriasDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
 
-        const totalBlocos = etapasDaJornada.length + acoesDaJornada.length + coachingsDaJornada.length;
-        const concluidos = etapasConcluidas + acoesConcluidas + coachingsConcluidos;
+        const totalBlocos = etapasDaJornada.length + acoesDaJornada.length + coaching / mentoriasDaJornada.length;
+        const concluidos = etapasConcluidas + acoesConcluidas + coaching / mentoriasConcluidos;
         const progresso = totalBlocos > 0 ? Math.round((concluidos / totalBlocos) * 100) : 0;
 
         const etapaAtual = etapasDaJornada.find((item) => canonicalStatus(item.status) !== "concluido") || etapasDaJornada[etapasDaJornada.length - 1] || null;
         const acoesDaEtapaAtual = etapaAtual
           ? acoesDaJornada.filter((item) => String(item.etapa_id || "") === String(etapaAtual.id))
           : [];
-        const coachingsDaEtapaAtual = etapaAtual
-          ? coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapaAtual.id))
+        const coaching / mentoriasDaEtapaAtual = etapaAtual
+          ? coaching / mentoriasDaJornada.filter((item) => String(item.etapa_id || "") === String(etapaAtual.id))
           : [];
 
         let proximoPasso = "Definir próximos movimentos";
         const proximaEtapa = etapasDaJornada.find((item) => canonicalStatus(item.status) === "planejado");
         const acaoPendente = acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
-        const coachingPendente = coachingsDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
+        const coaching / mentoriaPendente = coaching / mentoriasDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
 
         if (!etapasDaJornada.length) {
           proximoPasso = "Estruturar as etapas da jornada";
@@ -1287,8 +1343,8 @@ export default function MapaDesenvolvimentoPage() {
           proximoPasso = `Iniciar a etapa ${proximaEtapa.nome}`;
         } else if (acaoPendente) {
           proximoPasso = `Avançar na ação ${acaoPendente.tema}`;
-        } else if (coachingPendente) {
-          proximoPasso = `Conduzir o coaching ${coachingPendente.titulo}`;
+        } else if (coaching / mentoriaPendente) {
+          proximoPasso = `Conduzir o coaching / mentoria ${coaching / mentoriaPendente.titulo}`;
         } else if (totalBlocos > 0 && concluidos === totalBlocos) {
           proximoPasso = "Concluir e registrar o fechamento da jornada";
         }
@@ -1297,14 +1353,14 @@ export default function MapaDesenvolvimentoPage() {
           ...jornada,
           etapasDaJornada,
           acoesDaJornada,
-          coachingsDaJornada,
+          coaching / mentoriasDaJornada,
           etapasConcluidas,
           acoesConcluidas,
-          coachingsConcluidos,
+          coaching / mentoriasConcluidos,
           progresso,
           etapaAtual,
           acoesDaEtapaAtual,
-          coachingsDaEtapaAtual,
+          coaching / mentoriasDaEtapaAtual,
           proximoPasso,
         };
       })
@@ -1315,7 +1371,7 @@ export default function MapaDesenvolvimentoPage() {
         if (att !== 0) return att;
         return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
       });
-  }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
+  }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoaching / Mentorias]);
 
   const proximosPassos = useMemo(() => {
     return jornadasFluxo.slice(0, 6).map((item) => ({
@@ -1498,13 +1554,13 @@ export default function MapaDesenvolvimentoPage() {
     }
   }
 
-  async function saveCoaching(event) {
+  async function saveCoaching / Mentoria(event) {
     event.preventDefault();
     setSaving(true);
     setErro("");
     setNotice("");
 
-    const erroValidacao = validarCoaching(coachingForm, jornadas, etapas, acoes);
+    const erroValidacao = validarCoaching / Mentoria(coaching / mentoriaForm, jornadas, etapas, acoes);
     if (erroValidacao) {
       setErro(erroValidacao);
       setSaving(false);
@@ -1513,50 +1569,50 @@ export default function MapaDesenvolvimentoPage() {
 
     try {
       const horasTotais =
-        coachingForm.horas_totais !== ""
-          ? Number(coachingForm.horas_totais || 0)
-          : Number(coachingForm.sessoes_realizadas || 0) *
-            Number(coachingForm.carga_horaria_sessao || 0) *
-            Number(coachingForm.participantes_realizados || 0);
+        coaching / mentoriaForm.horas_totais !== ""
+          ? Number(coaching / mentoriaForm.horas_totais || 0)
+          : Number(coaching / mentoriaForm.sessoes_realizadas || 0) *
+            Number(coaching / mentoriaForm.carga_horaria_sessao || 0) *
+            Number(coaching / mentoriaForm.participantes_realizados || 0);
 
       const payload = {
-        jornada_id: coachingForm.jornada_id ? Number(coachingForm.jornada_id) : null,
-        etapa_id: coachingForm.etapa_id ? Number(coachingForm.etapa_id) : null,
-        acao_id: coachingForm.acao_id ? Number(coachingForm.acao_id) : null,
-        tipo_coaching: coachingForm.tipo_coaching,
-        titulo: coachingForm.titulo,
-        publico_alvo: coachingForm.publico_alvo,
-        objetivo: coachingForm.objetivo,
-        responsavel_id: coachingForm.responsavel_id || null,
-        participantes_previstos: Number(coachingForm.participantes_previstos || 0),
-        participantes_realizados: Number(coachingForm.participantes_realizados || 0),
-        sessoes_previstas: Number(coachingForm.sessoes_previstas || 0),
-        sessoes_realizadas: Number(coachingForm.sessoes_realizadas || 0),
-        carga_horaria_sessao: Number(coachingForm.carga_horaria_sessao || 0),
+        jornada_id: coaching / mentoriaForm.jornada_id ? Number(coaching / mentoriaForm.jornada_id) : null,
+        etapa_id: coaching / mentoriaForm.etapa_id ? Number(coaching / mentoriaForm.etapa_id) : null,
+        acao_id: coaching / mentoriaForm.acao_id ? Number(coaching / mentoriaForm.acao_id) : null,
+        tipo_coaching / mentoria: coaching / mentoriaForm.tipo_coaching / mentoria,
+        titulo: coaching / mentoriaForm.titulo,
+        publico_alvo: coaching / mentoriaForm.publico_alvo,
+        objetivo: coaching / mentoriaForm.objetivo,
+        responsavel_id: coaching / mentoriaForm.responsavel_id || null,
+        participantes_previstos: Number(coaching / mentoriaForm.participantes_previstos || 0),
+        participantes_realizados: Number(coaching / mentoriaForm.participantes_realizados || 0),
+        sessoes_previstas: Number(coaching / mentoriaForm.sessoes_previstas || 0),
+        sessoes_realizadas: Number(coaching / mentoriaForm.sessoes_realizadas || 0),
+        carga_horaria_sessao: Number(coaching / mentoriaForm.carga_horaria_sessao || 0),
         horas_totais: horasTotais,
-        status: coachingForm.status,
-        data_inicio: coachingForm.data_inicio || null,
-        data_fim: coachingForm.data_fim || null,
+        status: coaching / mentoriaForm.status,
+        data_inicio: coaching / mentoriaForm.data_inicio || null,
+        data_fim: coaching / mentoriaForm.data_fim || null,
       };
 
-      if (coachingForm.id) {
-        await apiFetch(`/coaching-planos/${coachingForm.id}`, {
+      if (coaching / mentoriaForm.id) {
+        await apiFetch(`/coaching / mentoria-planos/${coaching / mentoriaForm.id}`, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setNotice("Coaching atualizado com sucesso.");
+        setNotice("Coaching / Mentoria atualizado com sucesso.");
       } else {
-        await apiFetch("/coaching-planos", {
+        await apiFetch("/coaching / mentoria-planos", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Coaching registrado com sucesso.");
+        setNotice("Coaching / Mentoria registrado com sucesso.");
       }
 
-      setCoachingForm(coachingInicial);
+      setCoaching / MentoriaForm(coaching / mentoriaInicial);
       await loadAll();
     } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao salvar coaching."));
+      setErro(extrairMensagemErro(error, "Erro ao salvar coaching / mentoria."));
     } finally {
       setSaving(false);
     }
@@ -1571,7 +1627,7 @@ export default function MapaDesenvolvimentoPage() {
         jornada: `/jornadas-desenvolvimento/${id}`,
         etapa: `/jornadas-etapas/${id}`,
         acao: `/acoes-desenvolvimento/${id}`,
-        coaching: `/coaching-planos/${id}`,
+        coaching / mentoria: `/coaching / mentoria-planos/${id}`,
       };
 
       await apiFetch(pathMap[tipo], { method: "DELETE" });
@@ -1644,13 +1700,13 @@ export default function MapaDesenvolvimentoPage() {
     setActiveTab("acoes");
   }
 
-  function editCoaching(item) {
-    setCoachingForm({
+  function editCoaching / Mentoria(item) {
+    setCoaching / MentoriaForm({
       id: item.id,
       jornada_id: item.jornada_id || "",
       etapa_id: item.etapa_id || "",
       acao_id: item.acao_id || "",
-      tipo_coaching: item.tipo_coaching || "coordenacao",
+      tipo_coaching / mentoria: item.tipo_coaching / mentoria || "coordenacao",
       titulo: item.titulo || "",
       publico_alvo: item.publico_alvo || "",
       objetivo: item.objetivo || "",
@@ -1665,7 +1721,7 @@ export default function MapaDesenvolvimentoPage() {
       data_inicio: toDateInput(item.data_inicio),
       data_fim: toDateInput(item.data_fim),
     });
-    setActiveTab("coaching");
+    setActiveTab("coaching / mentoria");
   }
 
   const etapasDaJornadaAcao = useMemo(() => {
@@ -1674,25 +1730,25 @@ export default function MapaDesenvolvimentoPage() {
     );
   }, [etapasOrdenadas, acaoForm.jornada_id]);
 
-  const etapasDaJornadaCoaching = useMemo(() => {
+  const etapasDaJornadaCoaching / Mentoria = useMemo(() => {
     return etapasOrdenadas.filter(
-      (e) => !coachingForm.jornada_id || String(e.jornada_id) === String(coachingForm.jornada_id)
+      (e) => !coaching / mentoriaForm.jornada_id || String(e.jornada_id) === String(coaching / mentoriaForm.jornada_id)
     );
-  }, [etapasOrdenadas, coachingForm.jornada_id]);
+  }, [etapasOrdenadas, coaching / mentoriaForm.jornada_id]);
 
-  const acoesDoContextoCoaching = useMemo(() => {
+  const acoesDoContextoCoaching / Mentoria = useMemo(() => {
     return acoesEnriquecidas
       .filter((item) => {
-        if (coachingForm.jornada_id && String(item.jornada_id || "") !== String(coachingForm.jornada_id)) {
+        if (coaching / mentoriaForm.jornada_id && String(item.jornada_id || "") !== String(coaching / mentoriaForm.jornada_id)) {
           return false;
         }
-        if (coachingForm.etapa_id && String(item.etapa_id || "") !== String(coachingForm.etapa_id)) {
+        if (coaching / mentoriaForm.etapa_id && String(item.etapa_id || "") !== String(coaching / mentoriaForm.etapa_id)) {
           return false;
         }
         return true;
       })
       .sort((a, b) => String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR"));
-  }, [acoesEnriquecidas, coachingForm.jornada_id, coachingForm.etapa_id]);
+  }, [acoesEnriquecidas, coaching / mentoriaForm.jornada_id, coaching / mentoriaForm.etapa_id]);
 
   const usuariosSelectStatus = getSelectStatus(resourceStatus.usuarios, {
     loading: "Carregando responsáveis...",
@@ -1727,19 +1783,19 @@ export default function MapaDesenvolvimentoPage() {
     errorText: "Erro ao carregar etapas",
   });
 
-  const etapasCoachingStatus = getDependentSelectStatus({
-    parentValue: coachingForm.jornada_id,
+  const etapasCoaching / MentoriaStatus = getDependentSelectStatus({
+    parentValue: coaching / mentoriaForm.jornada_id,
     parentEmptyText: "Selecione uma jornada primeiro",
-    items: etapasDaJornadaCoaching,
+    items: etapasDaJornadaCoaching / Mentoria,
     loadingState: resourceStatus.etapas,
     emptyText: "Nenhuma etapa cadastrada para esta jornada",
     errorText: "Erro ao carregar etapas",
   });
 
-  const acoesCoachingStatus = getDependentSelectStatus({
-    parentValue: coachingForm.jornada_id || coachingForm.etapa_id,
+  const acoesCoaching / MentoriaStatus = getDependentSelectStatus({
+    parentValue: coaching / mentoriaForm.jornada_id || coaching / mentoriaForm.etapa_id,
     parentEmptyText: "Selecione jornada ou etapa primeiro",
-    items: acoesDoContextoCoaching,
+    items: acoesDoContextoCoaching / Mentoria,
     loadingState: resourceStatus.acoes,
     emptyText: "Nenhuma ação disponível para o contexto atual",
     errorText: "Erro ao carregar ações",
@@ -1758,14 +1814,14 @@ export default function MapaDesenvolvimentoPage() {
       subtitle: "Jornadas em execução",
     },
     {
-      title: "Coachings independentes",
-      value: fmtNumber(kpis.coachingsIndependentes),
+      title: "Coaching / Mentorias independentes",
+      value: fmtNumber(kpis.coaching / mentoriasIndependentes),
       subtitle: "Sem vínculo obrigatório",
     },
     {
       title: "Entregas concluídas",
       value: fmtNumber(kpis.concluidas),
-      subtitle: "Ações + coaching",
+      subtitle: "Ações + coaching / mentoria",
     },
     {
       title: "Horas totais",
@@ -1785,7 +1841,7 @@ export default function MapaDesenvolvimentoPage() {
             <div style={heroEyebrow}>Oceano do Desenvolvimento</div>
             <h2 style={heroTitle}>Um território vivo de desenvolvimento, com rios, portos, sustentação e destino.</h2>
             <p style={heroText}>
-              Leia o mapa como um grande oceano: jornadas como rios, etapas como ramificações e ações ou coachings como portos que conectam aprendizagem, execução e próximo trecho.
+              Leia o mapa como um grande oceano: jornadas como rios, etapas como ramificações e ações ou coaching / mentorias como portos que conectam aprendizagem, execução e próximo trecho.
             </p>
 
             <div style={tabBar}>
@@ -1793,7 +1849,7 @@ export default function MapaDesenvolvimentoPage() {
                 ["geral", "Oceano"],
                 ["jornadas", "Rios"],
                 ["acoes", "Portos"],
-                ["coaching", "Sustentação"],
+                ["coaching / mentoria", "Sustentação"],
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -1837,7 +1893,7 @@ export default function MapaDesenvolvimentoPage() {
             <StatCard title="Rios ativos" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
             <StatCard title="Ramificações" value={fmtNumber(kpis.etapas)} accent="#0f766e" />
             <StatCard title="Portos de ação" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
-            <StatCard title="Portos de sustentação" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
+            <StatCard title="Portos de sustentação" value={fmtNumber(kpis.coaching / mentorias)} accent="#ea580c" />
             <StatCard title="Público impactado" value={fmtNumber(kpis.participantes)} accent="#16a34a" />
             <StatCard title="Horas no oceano" value={fmtHours(kpis.horasTotais)} accent="#b45309" />
           </div>
@@ -1980,7 +2036,7 @@ export default function MapaDesenvolvimentoPage() {
             {[
               ["Oceano", "Visão macro do desenvolvimento e do território em movimento."],
               ["Rios", "Jornadas que conduzem caminhos de desenvolvimento."],
-              ["Portos", "Ações e coachings como pontos de ancoragem, reforço e entrega."],
+              ["Portos", "Ações e coaching / mentorias como pontos de ancoragem, reforço e entrega."],
               ["Destino", "Resultado esperado, saúde do percurso e próximo trecho."],
             ].map(([title, text]) => (
               <div
@@ -2015,7 +2071,7 @@ export default function MapaDesenvolvimentoPage() {
                 {[
                   ["1. Oceano", "Define a leitura macro do desenvolvimento e do território."],
                   ["2. Rios", "Cada jornada conduz um caminho com várias ramificações."],
-                  ["3. Portos", "Ações e coachings são pontos de ancoragem e aprendizagem."],
+                  ["3. Portos", "Ações e coaching / mentorias são pontos de ancoragem e aprendizagem."],
                   ["4. Destino", "Cada percurso aponta para resultado, atenção e próximo trecho."],
                 ].map(([title, text]) => (
                   <div key={title} style={journeyGuideCard}>
@@ -2058,7 +2114,7 @@ export default function MapaDesenvolvimentoPage() {
                           <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                           <MetricBox label="Etapas" value={`${fmtNumber(jornada.etapasConcluidas)}/${fmtNumber(jornada.etapasDaJornada.length)}`} />
                           <MetricBox label="Ações" value={`${fmtNumber(jornada.acoesConcluidas)}/${fmtNumber(jornada.acoesDaJornada.length)}`} />
-                          <MetricBox label="Coachings" value={`${fmtNumber(jornada.coachingsConcluidos)}/${fmtNumber(jornada.coachingsDaJornada.length)}`} />
+                          <MetricBox label="Coaching / Mentorias" value={`${fmtNumber(jornada.coaching / mentoriasConcluidos)}/${fmtNumber(jornada.coaching / mentoriasDaJornada.length)}`} />
                         </div>
                       </div>
 
@@ -2075,7 +2131,7 @@ export default function MapaDesenvolvimentoPage() {
                         ) : (
                           jornada.etapasDaJornada.map((etapa) => {
                             const acoesEtapa = jornada.acoesDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id));
-                            const coachingsEtapa = jornada.coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id));
+                            const coaching / mentoriasEtapa = jornada.coaching / mentoriasDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id));
                             const isAtual = String(jornada.etapaAtual?.id || "") === String(etapa.id);
                             return (
                               <div key={etapa.id} style={journeyStageCard(isAtual)}>
@@ -2089,7 +2145,7 @@ export default function MapaDesenvolvimentoPage() {
                                 <div style={journeyStageMeta}>{formatDate(etapa.data_inicio)} até {formatDate(etapa.data_fim)}</div>
                                 <div style={journeyMiniStats}>
                                   <span>{fmtNumber(acoesEtapa.length)} ação(ões)</span>
-                                  <span>{fmtNumber(coachingsEtapa.length)} coaching(s)</span>
+                                  <span>{fmtNumber(coaching / mentoriasEtapa.length)} sustentação(ões)</span>
                                   <span>{fmtHours(etapa.horas_totais || 0)}h</span>
                                 </div>
                                 <div style={journeySubBlock}>
@@ -2106,16 +2162,16 @@ export default function MapaDesenvolvimentoPage() {
                                   )}
                                 </div>
                                 <div style={journeySubBlock}>
-                                  <div style={journeySubTitle}>Coaching</div>
-                                  {coachingsEtapa.length ? (
-                                    coachingsEtapa.slice(0, 2).map((coaching) => (
-                                      <div key={coaching.id} style={journeyLinkedItem}>
-                                        <span style={badgeStyle(coaching.status)}>{displayStatus(coaching.status)}</span>
-                                        <span>{coaching.titulo}</span>
+                                  <div style={journeySubTitle}>Coaching / Mentoria</div>
+                                  {coaching / mentoriasEtapa.length ? (
+                                    coaching / mentoriasEtapa.slice(0, 2).map((coaching / mentoria) => (
+                                      <div key={coaching / mentoria.id} style={journeyLinkedItem}>
+                                        <span style={badgeStyle(coaching / mentoria.status)}>{displayStatus(coaching / mentoria.status)}</span>
+                                        <span>{coaching / mentoria.titulo}</span>
                                       </div>
                                     ))
                                   ) : (
-                                    <div style={journeyEmptyText}>Sem coaching vinculado</div>
+                                    <div style={journeyEmptyText}>Sem coaching / mentoria vinculado</div>
                                   )}
                                 </div>
                               </div>
@@ -2195,9 +2251,9 @@ export default function MapaDesenvolvimentoPage() {
                             <td style={tdStyle}>{item.etapa_nome}</td>
                             <td style={tdStyle}><strong>{item.titulo}</strong></td>
                             <td style={tdStyle}>
-                              {item.tipo_registro === "coaching" ? (
+                              {item.tipo_registro === "coaching / mentoria" ? (
                                 <>
-                                  <span style={badgeStyle("coaching")}>coaching</span> {item.tipo_coaching}
+                                  <span style={badgeStyle("coaching / mentoria")}>coaching / mentoria</span> {item.tipo_coaching / mentoria}
                                 </>
                               ) : (
                                 item.tipo_acao
@@ -2396,7 +2452,7 @@ export default function MapaDesenvolvimentoPage() {
                       >
                         <option value="treinamento">Treinamento</option>
                         <option value="acao">Ação</option>
-                        <option value="coaching">Coaching</option>
+                        <option value="coaching / mentoria">Coaching / Mentoria</option>
                         <option value="workshop">Workshop</option>
                         <option value="campanha">Campanha</option>
                         <option value="marco">Marco gerencial</option>
@@ -2567,7 +2623,7 @@ export default function MapaDesenvolvimentoPage() {
                           <div style={flowMetrics}>
                             <MetricBox label="Etapas" value={fmtNumber(jornada.total_etapas)} />
                             <MetricBox label="Ações" value={fmtNumber(jornada.total_acoes)} />
-                            <MetricBox label="Coachings" value={fmtNumber(jornada.total_coachings)} />
+                            <MetricBox label="Coaching / Mentorias" value={fmtNumber(jornada.total_coaching / mentorias)} />
                             <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                           </div>
                         </div>
@@ -2664,7 +2720,7 @@ export default function MapaDesenvolvimentoPage() {
 
                                     <div style={stageStats}>
                                       <span>⚓ {fmtNumber(etapa.total_acoes)} porto(s) de ação</span>
-                                      <span>🧭 {fmtNumber(etapa.total_coachings)} apoio(s) de sustentação</span>
+                                      <span>🧭 {fmtNumber(etapa.total_coaching / mentorias)} apoio(s) de sustentação</span>
                                       <span>⏱ {fmtHours(etapa.horas_totais)}h navegadas</span>
                                     </div>
 
@@ -2676,7 +2732,7 @@ export default function MapaDesenvolvimentoPage() {
                                       <div style={stageInsightCard}>
                                         <div style={stageInsightLabel}>Próxima ancoragem</div>
                                         <div style={stageInsightValue}>
-                                          {etapa.total_acoes > 0 || etapa.total_coachings > 0
+                                          {etapa.total_acoes > 0 || etapa.total_coaching / mentorias > 0
                                             ? "Executar e consolidar entregas"
                                             : "Criar portos desta etapa"}
                                         </div>
@@ -3050,19 +3106,70 @@ export default function MapaDesenvolvimentoPage() {
           </>
         )}
 
-        {activeTab === "coaching" && (
+        {activeTab === "coaching / mentoria" && (
           <>
-            <SectionCard title="Sustentação do percurso" subtitle="Coachings como apoio, reforço e correção de rota ao longo do oceano.">
+            <SectionCard title="Sustentação do percurso" subtitle="Coaching / Mentorias como apoio, reforço e correção de rota ao longo do oceano.">
+              <div
+                style={{
+                  display: "grid",
+                  gap: 12,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  style={{
+                    border: "1px solid #bfdbfe",
+                    borderTop: "4px solid #1d4ed8",
+                    borderRadius: 18,
+                    background: "#fff",
+                    padding: 16,
+                    boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={sustentacaoTypeBadge("coaching").style}>
+                      {sustentacaoTypeBadge("coaching").label}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Coaching</div>
+                  <div style={{ marginTop: 6, fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
+                    {sustentacaoDescriptor("coaching")}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    border: "1px solid #ddd6fe",
+                    borderTop: "4px solid #7c3aed",
+                    borderRadius: 18,
+                    background: "#fff",
+                    padding: 16,
+                    boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={sustentacaoTypeBadge("mentoria").style}>
+                      {sustentacaoTypeBadge("mentoria").label}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Mentoria</div>
+                  <div style={{ marginTop: 6, fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
+                    {sustentacaoDescriptor("mentoria")}
+                  </div>
+                </div>
+              </div>
+
               <details open style={{ ...detailsCard, borderColor: "#c7d2fe", background: "#f8faff" }}>
-                <summary style={{ ...detailsSummary, color: "#3730a3" }}>Registro de coaching</summary>
-                <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                <summary style={{ ...detailsSummary, color: "#3730a3" }}>Registro de sustentação</summary>
+                <form onSubmit={saveCoaching / Mentoria} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
                     <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Jornada (opcional)
                       <select
-                        value={coachingForm.jornada_id}
+                        value={coaching / mentoriaForm.jornada_id}
                         onChange={(e) =>
-                          setCoachingForm((prev) => ({
+                          setCoaching / MentoriaForm((prev) => ({
                             ...prev,
                             jornada_id: e.target.value,
                             etapa_id: "",
@@ -3083,13 +3190,13 @@ export default function MapaDesenvolvimentoPage() {
                     <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Etapa (opcional)
                       <select
-                        value={coachingForm.etapa_id}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
+                        value={coaching / mentoriaForm.etapa_id}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
                         style={compactInputStyle()}
-                        disabled={etapasCoachingStatus.disabled}
+                        disabled={etapasCoaching / MentoriaStatus.disabled}
                       >
-                        <option value="">{etapasCoachingStatus.text || "Sem etapa"}</option>
-                        {etapasDaJornadaCoaching.map((item) => (
+                        <option value="">{etapasCoaching / MentoriaStatus.text || "Sem etapa"}</option>
+                        {etapasDaJornadaCoaching / Mentoria.map((item) => (
                             <option key={item.id} value={item.id}>
                               {item.nome}
                             </option>
@@ -3100,13 +3207,13 @@ export default function MapaDesenvolvimentoPage() {
                     <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Ação vinculada (opcional)
                       <select
-                        value={coachingForm.acao_id}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, acao_id: e.target.value }))}
+                        value={coaching / mentoriaForm.acao_id}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, acao_id: e.target.value }))}
                         style={compactInputStyle()}
-                        disabled={acoesCoachingStatus.disabled}
+                        disabled={acoesCoaching / MentoriaStatus.disabled}
                       >
-                        <option value="">{acoesCoachingStatus.text || "Sem ação"}</option>
-                        {acoesDoContextoCoaching.map((item) => (
+                        <option value="">{acoesCoaching / MentoriaStatus.text || "Sem ação"}</option>
+                        {acoesDoContextoCoaching / Mentoria.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.tema}
                           </option>
@@ -3115,10 +3222,10 @@ export default function MapaDesenvolvimentoPage() {
                     </label>
 
                     <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Tipo de coaching
+                      Tipo de coaching / mentoria
                       <select
-                        value={coachingForm.tipo_coaching}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, tipo_coaching: e.target.value }))}
+                        value={coaching / mentoriaForm.tipo_coaching / mentoria}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, tipo_coaching / mentoria: e.target.value }))}
                         style={compactInputStyle()}
                       >
                         <option value="coordenacao">Coordenação</option>
@@ -3134,8 +3241,8 @@ export default function MapaDesenvolvimentoPage() {
                     <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
                       Título
                       <input
-                        value={coachingForm.titulo}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, titulo: e.target.value }))}
+                        value={coaching / mentoriaForm.titulo}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, titulo: e.target.value }))}
                         style={compactInputStyle()}
                         required
                       />
@@ -3144,8 +3251,8 @@ export default function MapaDesenvolvimentoPage() {
                     <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Público-alvo
                       <input
-                        value={coachingForm.publico_alvo}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
+                        value={coaching / mentoriaForm.publico_alvo}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3153,8 +3260,8 @@ export default function MapaDesenvolvimentoPage() {
                     <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Responsável
                       <select
-                        value={coachingForm.responsavel_id}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
+                        value={coaching / mentoriaForm.responsavel_id}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
                         style={compactInputStyle()}
                       >
                         <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
@@ -3170,8 +3277,8 @@ export default function MapaDesenvolvimentoPage() {
                       Participantes previstos
                       <input
                         type="number"
-                        value={coachingForm.participantes_previstos}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
+                        value={coaching / mentoriaForm.participantes_previstos}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3180,8 +3287,8 @@ export default function MapaDesenvolvimentoPage() {
                       Participantes realizados
                       <input
                         type="number"
-                        value={coachingForm.participantes_realizados}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
+                        value={coaching / mentoriaForm.participantes_realizados}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3190,8 +3297,8 @@ export default function MapaDesenvolvimentoPage() {
                       Sessões previstas
                       <input
                         type="number"
-                        value={coachingForm.sessoes_previstas}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_previstas: e.target.value }))}
+                        value={coaching / mentoriaForm.sessoes_previstas}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, sessoes_previstas: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3200,8 +3307,8 @@ export default function MapaDesenvolvimentoPage() {
                       Sessões realizadas
                       <input
                         type="number"
-                        value={coachingForm.sessoes_realizadas}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_realizadas: e.target.value }))}
+                        value={coaching / mentoriaForm.sessoes_realizadas}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, sessoes_realizadas: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3211,8 +3318,8 @@ export default function MapaDesenvolvimentoPage() {
                       <input
                         type="number"
                         step="0.01"
-                        value={coachingForm.carga_horaria_sessao}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, carga_horaria_sessao: e.target.value }))}
+                        value={coaching / mentoriaForm.carga_horaria_sessao}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, carga_horaria_sessao: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3222,8 +3329,8 @@ export default function MapaDesenvolvimentoPage() {
                       <input
                         type="number"
                         step="0.01"
-                        value={coachingForm.horas_totais}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, horas_totais: e.target.value }))}
+                        value={coaching / mentoriaForm.horas_totais}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, horas_totais: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3231,8 +3338,8 @@ export default function MapaDesenvolvimentoPage() {
                     <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Status
                       <select
-                        value={coachingForm.status}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, status: e.target.value }))}
+                        value={coaching / mentoriaForm.status}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, status: e.target.value }))}
                         style={compactInputStyle()}
                       >
                         <option value="planejado">Planejado</option>
@@ -3246,8 +3353,8 @@ export default function MapaDesenvolvimentoPage() {
                       Data início
                       <input
                         type="date"
-                        value={coachingForm.data_inicio}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
+                        value={coaching / mentoriaForm.data_inicio}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3256,8 +3363,8 @@ export default function MapaDesenvolvimentoPage() {
                       Data fim
                       <input
                         type="date"
-                        value={coachingForm.data_fim}
-                        onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_fim: e.target.value }))}
+                        value={coaching / mentoriaForm.data_fim}
+                        onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, data_fim: e.target.value }))}
                         style={compactInputStyle()}
                       />
                     </label>
@@ -3266,21 +3373,21 @@ export default function MapaDesenvolvimentoPage() {
                   <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Objetivo
                     <textarea
-                      value={coachingForm.objetivo}
-                      onChange={(e) => setCoachingForm((prev) => ({ ...prev, objetivo: e.target.value }))}
+                      value={coaching / mentoriaForm.objetivo}
+                      onChange={(e) => setCoaching / MentoriaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
                       style={textareaStyle(96)}
                     />
                   </label>
 
                   <div style={buttonRow}>
                     <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                      {coachingForm.id ? "Atualizar coaching" : "Salvar coaching"}
+                      {coaching / mentoriaForm.id ? "Atualizar coaching / mentoria" : "Salvar coaching / mentoria"}
                     </button>
                     <button
                       type="button"
                       style={buttonSecondaryStyle()}
                       onClick={() => {
-                        setCoachingForm(coachingInicial);
+                        setCoaching / MentoriaForm(coaching / mentoriaInicial);
                         setErro("");
                         setNotice("");
                       }}
@@ -3297,19 +3404,19 @@ export default function MapaDesenvolvimentoPage() {
               subtitle="Apoios que mantêm o percurso estável, aceleram a jornada e corrigem desvios."
             >
               {loading ? (
-                emptyCard("Carregando coachings...")
-              ) : orderedCoachings.length === 0 ? (
-                emptyCard("Nenhum coaching encontrado.")
+                emptyCard("Carregando coaching / mentorias...")
+              ) : orderedCoaching / Mentorias.length === 0 ? (
+                emptyCard("Nenhum coaching / mentoria encontrado.")
               ) : (
                 <>
-                  <div style={coachingBand}>
-                    <OverviewBox label="Em andamento" value={fmtNumber(coachingExecutive.emAndamento)} tone="coaching" />
-                    <OverviewBox label="Concluídos" value={fmtNumber(coachingExecutive.concluidos)} tone="coaching" />
-                    <OverviewBox label="Independentes" value={fmtNumber(coachingExecutive.independentes)} tone="coaching" />
-                    <OverviewBox label="Sem responsável" value={fmtNumber(coachingExecutive.semResponsavel)} tone="alert" />
-                    <OverviewBox label="Vencidos" value={fmtNumber(coachingExecutive.vencidos)} tone="danger" />
-                    <OverviewBox label="Críticos" value={fmtNumber(coachingExecutive.criticos)} tone="danger" />
-                    <OverviewBox label="Horas" value={fmtHours(coachingExecutive.horas)} tone="coaching" />
+                  <div style={coaching / mentoriaBand}>
+                    <OverviewBox label="Em andamento" value={fmtNumber(coaching / mentoriaExecutive.emAndamento)} tone="coaching / mentoria" />
+                    <OverviewBox label="Concluídos" value={fmtNumber(coaching / mentoriaExecutive.concluidos)} tone="coaching / mentoria" />
+                    <OverviewBox label="Independentes" value={fmtNumber(coaching / mentoriaExecutive.independentes)} tone="coaching / mentoria" />
+                    <OverviewBox label="Sem responsável" value={fmtNumber(coaching / mentoriaExecutive.semResponsavel)} tone="alert" />
+                    <OverviewBox label="Vencidos" value={fmtNumber(coaching / mentoriaExecutive.vencidos)} tone="danger" />
+                    <OverviewBox label="Críticos" value={fmtNumber(coaching / mentoriaExecutive.criticos)} tone="danger" />
+                    <OverviewBox label="Horas" value={fmtHours(coaching / mentoriaExecutive.horas)} tone="coaching / mentoria" />
                   </div>
 
                   <div style={{ overflowX: "auto" }}>
@@ -3331,14 +3438,14 @@ export default function MapaDesenvolvimentoPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {orderedCoachings.map((item) => (
+                        {orderedCoaching / Mentorias.map((item) => (
                           <tr key={item.id} style={rowTone(item)}>
                             <td style={tdStyle}>{item.jornada_nome}</td>
                             <td style={tdStyle}>{item.etapa_nome}</td>
                             <td style={tdStyle}>{item.acao_nome}</td>
                             <td style={tdStyle}><strong>{item.titulo}</strong></td>
                             <td style={tdStyle}>
-                              <span style={badgeStyle("coaching")}>coaching</span> {item.tipo_coaching}
+                              <span style={badgeStyle("coaching / mentoria")}>coaching / mentoria</span> {item.tipo_coaching / mentoria}
                             </td>
                             <td style={tdStyle}>{fmtHours(item.horas_totais_calc)}</td>
                             <td style={tdStyle}>
@@ -3363,10 +3470,10 @@ export default function MapaDesenvolvimentoPage() {
                             <td style={tdStyle}>{item.responsavel_nome}</td>
                             <td style={tdStyle}>
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button style={buttonSecondaryStyle()} onClick={() => editCoaching(item)}>
+                                <button style={buttonSecondaryStyle()} onClick={() => editCoaching / Mentoria(item)}>
                                   Editar
                                 </button>
-                                <button style={buttonDangerStyle()} onClick={() => removeRegistro("coaching", item.id)}>
+                                <button style={buttonDangerStyle()} onClick={() => removeRegistro("coaching / mentoria", item.id)}>
                                   Excluir
                                 </button>
                               </div>
@@ -3393,7 +3500,7 @@ function rowTone(item) {
   if (item.status_canonico === "em_andamento") {
     return { background: "#fffdfa" };
   }
-  if (item.tipo_registro === "coaching" && !item.jornada_id) {
+  if (item.tipo_registro === "coaching / mentoria" && !item.jornada_id) {
     return { background: "#fafaff" };
   }
   return undefined;
@@ -3755,7 +3862,7 @@ const overviewStripe = {
 const overviewBox = (tone) => {
   const tones = {
     default: { background: "#ffffff", border: "#e2e8f0" },
-    coaching: { background: "#eef2ff", border: "#c7d2fe" },
+    coaching / mentoria: { background: "#eef2ff", border: "#c7d2fe" },
     alert: { background: "#fff7ed", border: "#fed7aa" },
     danger: { background: "#fff1f2", border: "#fecaca" },
   };
@@ -4030,7 +4137,7 @@ const stageInsightValue = {
   lineHeight: 1.35,
 };
 
-const coachingBand = {
+const coaching / mentoriaBand = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: 12,
