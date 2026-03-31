@@ -1249,6 +1249,85 @@ export default function MapaDesenvolvimentoPage() {
     };
   }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
 
+
+  const jornadasFluxo = useMemo(() => {
+    return filteredJornadas
+      .map((jornada) => {
+        const etapasDaJornada = filteredEtapas
+          .filter((item) => String(item.jornada_id) === String(jornada.id))
+          .sort((a, b) => Number(a.ordem || 9999) - Number(b.ordem || 9999));
+
+        const acoesDaJornada = filteredAcoes.filter((item) => String(item.jornada_id) === String(jornada.id));
+        const coachingsDaJornada = filteredCoachings.filter((item) => String(item.jornada_id || "") === String(jornada.id));
+
+        const etapasConcluidas = etapasDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
+        const acoesConcluidas = acoesDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
+        const coachingsConcluidos = coachingsDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
+
+        const totalBlocos = etapasDaJornada.length + acoesDaJornada.length + coachingsDaJornada.length;
+        const concluidos = etapasConcluidas + acoesConcluidas + coachingsConcluidos;
+        const progresso = totalBlocos > 0 ? Math.round((concluidos / totalBlocos) * 100) : 0;
+
+        const etapaAtual = etapasDaJornada.find((item) => canonicalStatus(item.status) !== "concluido") || etapasDaJornada[etapasDaJornada.length - 1] || null;
+        const acoesDaEtapaAtual = etapaAtual
+          ? acoesDaJornada.filter((item) => String(item.etapa_id || "") === String(etapaAtual.id))
+          : [];
+        const coachingsDaEtapaAtual = etapaAtual
+          ? coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapaAtual.id))
+          : [];
+
+        let proximoPasso = "Definir próximos movimentos";
+        const proximaEtapa = etapasDaJornada.find((item) => canonicalStatus(item.status) === "planejado");
+        const acaoPendente = acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
+        const coachingPendente = coachingsDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
+
+        if (!etapasDaJornada.length) {
+          proximoPasso = "Estruturar as etapas da jornada";
+        } else if (proximaEtapa) {
+          proximoPasso = `Iniciar a etapa ${proximaEtapa.nome}`;
+        } else if (acaoPendente) {
+          proximoPasso = `Avançar na ação ${acaoPendente.tema}`;
+        } else if (coachingPendente) {
+          proximoPasso = `Conduzir o coaching ${coachingPendente.titulo}`;
+        } else if (totalBlocos > 0 && concluidos === totalBlocos) {
+          proximoPasso = "Concluir e registrar o fechamento da jornada";
+        }
+
+        return {
+          ...jornada,
+          etapasDaJornada,
+          acoesDaJornada,
+          coachingsDaJornada,
+          etapasConcluidas,
+          acoesConcluidas,
+          coachingsConcluidos,
+          progresso,
+          etapaAtual,
+          acoesDaEtapaAtual,
+          coachingsDaEtapaAtual,
+          proximoPasso,
+        };
+      })
+      .sort((a, b) => {
+        const att =
+          (a.attention_info?.level === "alta" ? 1 : a.attention_info?.level === "media" ? 2 : 3) -
+          (b.attention_info?.level === "alta" ? 1 : b.attention_info?.level === "media" ? 2 : 3);
+        if (att !== 0) return att;
+        return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+      });
+  }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
+
+  const proximosPassos = useMemo(() => {
+    return jornadasFluxo.slice(0, 6).map((item) => ({
+      id: item.id,
+      jornada: item.nome,
+      responsavel: item.responsavel_nome,
+      passo: item.proximoPasso,
+      saude: item.saude_info,
+      atencao: item.attention_info,
+      etapaAtual: item.etapaAtual?.nome || "Sem etapa definida",
+    }));
+  }, [jornadasFluxo]);
   async function saveJornada(event) {
     event.preventDefault();
     setSaving(true);
@@ -1704,9 +1783,9 @@ export default function MapaDesenvolvimentoPage() {
         <section style={heroWrap}>
           <div style={heroLeft}>
             <div style={heroEyebrow}>Command Center</div>
-            <h2 style={heroTitle}>Gestão integrada do desenvolvimento com leitura de fluxo, execução e intervenção.</h2>
+            <h2 style={heroTitle}>Mapa de desenvolvimento com leitura de fluxo, execução e próximos passos.</h2>
             <p style={heroText}>
-              Consolidação das jornadas, etapas, ações e coachings em uma visão única de acompanhamento gerencial, priorização e monitoramento.
+              Use a jornada como eixo central para entender o caminho, a execução atual e o próximo movimento do desenvolvimento.
             </p>
 
             <div style={tabBar}>
@@ -1888,81 +1967,231 @@ export default function MapaDesenvolvimentoPage() {
         </SectionCard>
 
         {activeTab === "geral" && (
-          <SectionCard
-            title="Visão Geral"
-            subtitle="Leitura consolidada das entregas, intervenções, prioridades e prazos."
-          >
-            {loading ? (
-              emptyCard("Carregando visão geral...")
-            ) : overviewRows.length === 0 ? (
-              emptyCard("Nenhum registro encontrado.")
-            ) : (
-              <div style={{ display: "grid", gap: 16 }}>
-                <div style={overviewStripe}>
-                  <OverviewBox label="Itens em andamento" value={fmtNumber(executiveAlerts.emAndamento)} />
-                  <OverviewBox label="Pendências críticas" value={fmtNumber(executiveAlerts.criticos)} tone="alert" />
-                  <OverviewBox label="Sem responsável" value={fmtNumber(executiveAlerts.semResponsavel)} tone="alert" />
-                  <OverviewBox label="Prazos vencidos" value={fmtNumber(executiveAlerts.vencidos)} tone="danger" />
-                </div>
-
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Jornada</th>
-                        <th style={thStyle}>Etapa</th>
-                        <th style={thStyle}>Título</th>
-                        <th style={thStyle}>Tipo</th>
-                        <th style={thStyle}>Público</th>
-                        <th style={thStyle}>Responsável</th>
-                        <th style={thStyle}>Horas</th>
-                        <th style={thStyle}>Status</th>
-                        <th style={thStyle}>Prazo</th>
-                        <th style={thStyle}>Atenção</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {overviewRows.map((item) => (
-                        <tr key={`${item.tipo_registro}-${item.id}`} style={rowTone(item)}>
-                          <td style={tdStyle}>{item.jornada_nome}</td>
-                          <td style={tdStyle}>{item.etapa_nome}</td>
-                          <td style={tdStyle}><strong>{item.titulo}</strong></td>
-                          <td style={tdStyle}>
-                            {item.tipo_registro === "coaching" ? (
-                              <>
-                                <span style={badgeStyle("coaching")}>coaching</span> {item.tipo_coaching}
-                              </>
-                            ) : (
-                              item.tipo_acao
-                            )}
-                          </td>
-                          <td style={tdStyle}>{item.publico_alvo || "—"}</td>
-                          <td style={tdStyle}>{item.responsavel_nome}</td>
-                          <td style={tdStyle}>{fmtHours(item.horas)}</td>
-                          <td style={tdStyle}>
-                            <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
-                          </td>
-                          <td style={tdStyle}>
-                            <div style={{ display: "grid", gap: 6 }}>
-                              <span style={prazoBadge(item.prazo_info.tone)}>{item.prazo_info.label}</span>
-                              <span style={{ fontSize: 12, color: "#64748b" }}>
-                                {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
-                              </span>
-                            </div>
-                          </td>
-                          <td style={tdStyle}>
-                            <span style={attentionBadge(item.attention_info.level)}>
-                              {item.attention_info.label}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+          <div style={{ display: "grid", gap: 18 }}>
+            <SectionCard
+              title="Leitura do mapa"
+              subtitle="Use a jornada como eixo principal do desenvolvimento."
+            >
+              <div style={journeyGuideGrid}>
+                {[
+                  ["1. Jornada", "Define o objetivo, público e responsável."],
+                  ["2. Etapas", "Organizam o caminho da jornada em fases."],
+                  ["3. Ações", "Materializam a execução de cada etapa."],
+                  ["4. Coaching", "Sustenta, reforça e corrige a rota."],
+                ].map(([title, text]) => (
+                  <div key={title} style={journeyGuideCard}>
+                    <div style={journeyGuideTitle}>{title}</div>
+                    <div style={journeyGuideText}>{text}</div>
+                  </div>
+                ))}
               </div>
-            )}
-          </SectionCard>
+            </SectionCard>
+
+            <SectionCard
+              title="Fluxo das jornadas"
+              subtitle="Visão do caminho de desenvolvimento, do objetivo ao próximo passo."
+            >
+              {loading ? (
+                emptyCard("Carregando fluxo das jornadas...")
+              ) : jornadasFluxo.length === 0 ? (
+                emptyCard("Nenhuma jornada encontrada para os filtros aplicados.")
+              ) : (
+                <div style={{ display: "grid", gap: 16 }}>
+                  {jornadasFluxo.map((jornada) => (
+                    <div key={jornada.id} style={journeyFlowCard}>
+                      <div style={journeyFlowHeader}>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
+                            <span style={attentionBadge(jornada.saude_info.level)}>{jornada.saude_info.label}</span>
+                            <span style={attentionBadge(jornada.attention_info.level)}>{jornada.attention_info.label}</span>
+                          </div>
+                          <div style={journeyFlowTitle}>{jornada.nome}</div>
+                          <div style={journeyFlowMeta}>
+                            Objetivo: {jornada.objetivo || "Não informado"}
+                          </div>
+                          <div style={journeyFlowMeta}>
+                            Público: {jornada.publico_macro || "Não informado"} • Responsável: {jornada.responsavel_nome}
+                          </div>
+                        </div>
+
+                        <div style={journeyFlowSummary}>
+                          <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
+                          <MetricBox label="Etapas" value={`${fmtNumber(jornada.etapasConcluidas)}/${fmtNumber(jornada.etapasDaJornada.length)}`} />
+                          <MetricBox label="Ações" value={`${fmtNumber(jornada.acoesConcluidas)}/${fmtNumber(jornada.acoesDaJornada.length)}`} />
+                          <MetricBox label="Coachings" value={`${fmtNumber(jornada.coachingsConcluidos)}/${fmtNumber(jornada.coachingsDaJornada.length)}`} />
+                        </div>
+                      </div>
+
+                      <div style={journeyProgressBarWrap}>
+                        <div style={journeyProgressBarTrack}>
+                          <div style={{ ...journeyProgressBarFill, width: `${Math.max(jornada.progresso, 6)}%` }} />
+                        </div>
+                        <div style={journeyFlowMeta}>Próximo passo: {jornada.proximoPasso}</div>
+                      </div>
+
+                      <div style={journeyStagesGrid}>
+                        {jornada.etapasDaJornada.length === 0 ? (
+                          <div style={emptyTimeline}>Esta jornada ainda não possui etapas definidas.</div>
+                        ) : (
+                          jornada.etapasDaJornada.map((etapa) => {
+                            const acoesEtapa = jornada.acoesDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id));
+                            const coachingsEtapa = jornada.coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id));
+                            const isAtual = String(jornada.etapaAtual?.id || "") === String(etapa.id);
+                            return (
+                              <div key={etapa.id} style={journeyStageCard(isAtual)}>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                  <span style={timelineOrder}>{etapa.ordem || "•"}</span>
+                                  <span style={badgeStyle(etapa.status)}>{displayStatus(etapa.status)}</span>
+                                  <span style={badgeStyle(etapa.tipo)}>{etapa.tipo}</span>
+                                  {isAtual ? <span style={journeyCurrentPill}>Etapa atual</span> : null}
+                                </div>
+                                <div style={journeyStageTitle}>{etapa.nome}</div>
+                                <div style={journeyStageMeta}>{formatDate(etapa.data_inicio)} até {formatDate(etapa.data_fim)}</div>
+                                <div style={journeyMiniStats}>
+                                  <span>{fmtNumber(acoesEtapa.length)} ação(ões)</span>
+                                  <span>{fmtNumber(coachingsEtapa.length)} coaching(s)</span>
+                                  <span>{fmtHours(etapa.horas_totais || 0)}h</span>
+                                </div>
+                                <div style={journeySubBlock}>
+                                  <div style={journeySubTitle}>Ações</div>
+                                  {acoesEtapa.length ? (
+                                    acoesEtapa.slice(0, 3).map((acao) => (
+                                      <div key={acao.id} style={journeyLinkedItem}>
+                                        <span style={badgeStyle(acao.status)}>{displayStatus(acao.status)}</span>
+                                        <span>{acao.tema}</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div style={journeyEmptyText}>Sem ações vinculadas</div>
+                                  )}
+                                </div>
+                                <div style={journeySubBlock}>
+                                  <div style={journeySubTitle}>Coaching</div>
+                                  {coachingsEtapa.length ? (
+                                    coachingsEtapa.slice(0, 2).map((coaching) => (
+                                      <div key={coaching.id} style={journeyLinkedItem}>
+                                        <span style={badgeStyle(coaching.status)}>{displayStatus(coaching.status)}</span>
+                                        <span>{coaching.titulo}</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div style={journeyEmptyText}>Sem coaching vinculado</div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              title="Próximos passos"
+              subtitle="Leitura rápida do que precisa avançar nas jornadas ativas."
+            >
+              {loading ? (
+                emptyCard("Carregando próximos passos...")
+              ) : proximosPassos.length === 0 ? (
+                emptyCard("Nenhum próximo passo encontrado.")
+              ) : (
+                <div style={nextStepsGrid}>
+                  {proximosPassos.map((item) => (
+                    <div key={item.id} style={nextStepCard}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={attentionBadge(item.saude.level)}>{item.saude.label}</span>
+                        <span style={attentionBadge(item.atencao.level)}>{item.atencao.label}</span>
+                      </div>
+                      <div style={nextStepJourney}>{item.jornada}</div>
+                      <div style={nextStepMeta}>Etapa atual: {item.etapaAtual}</div>
+                      <div style={nextStepAction}>{item.passo}</div>
+                      <div style={nextStepMeta}>Responsável: {item.responsavel}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              title="Execução atual"
+              subtitle="Leitura consolidada das entregas, intervenções, prioridades e prazos."
+            >
+              {loading ? (
+                emptyCard("Carregando visão geral...")
+              ) : overviewRows.length === 0 ? (
+                emptyCard("Nenhum registro encontrado.")
+              ) : (
+                <div style={{ display: "grid", gap: 16 }}>
+                  <div style={overviewStripe}>
+                    <OverviewBox label="Itens em andamento" value={fmtNumber(executiveAlerts.emAndamento)} />
+                    <OverviewBox label="Pendências críticas" value={fmtNumber(executiveAlerts.criticos)} tone="alert" />
+                    <OverviewBox label="Sem responsável" value={fmtNumber(executiveAlerts.semResponsavel)} tone="alert" />
+                    <OverviewBox label="Prazos vencidos" value={fmtNumber(executiveAlerts.vencidos)} tone="danger" />
+                  </div>
+
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Jornada</th>
+                          <th style={thStyle}>Etapa</th>
+                          <th style={thStyle}>Título</th>
+                          <th style={thStyle}>Tipo</th>
+                          <th style={thStyle}>Público</th>
+                          <th style={thStyle}>Responsável</th>
+                          <th style={thStyle}>Horas</th>
+                          <th style={thStyle}>Status</th>
+                          <th style={thStyle}>Prazo</th>
+                          <th style={thStyle}>Atenção</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overviewRows.map((item) => (
+                          <tr key={`${item.tipo_registro}-${item.id}`} style={rowTone(item)}>
+                            <td style={tdStyle}>{item.jornada_nome}</td>
+                            <td style={tdStyle}>{item.etapa_nome}</td>
+                            <td style={tdStyle}><strong>{item.titulo}</strong></td>
+                            <td style={tdStyle}>
+                              {item.tipo_registro === "coaching" ? (
+                                <>
+                                  <span style={badgeStyle("coaching")}>coaching</span> {item.tipo_coaching}
+                                </>
+                              ) : (
+                                item.tipo_acao
+                              )}
+                            </td>
+                            <td style={tdStyle}>{item.publico_alvo || "—"}</td>
+                            <td style={tdStyle}>{item.responsavel_nome}</td>
+                            <td style={tdStyle}>{fmtHours(item.horas)}</td>
+                            <td style={tdStyle}>
+                              <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                            </td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "grid", gap: 6 }}>
+                                <span style={prazoBadge(item.prazo_info.tone)}>{item.prazo_info.label}</span>
+                                <span style={{ fontSize: 12, color: "#64748b" }}>
+                                  {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={tdStyle}>
+                              <span style={attentionBadge(item.attention_info.level)}>
+                                {item.attention_info.label}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          </div>
         )}
 
         {activeTab === "jornadas" && (
@@ -3080,6 +3309,199 @@ function MetricBox({ label, value }) {
     </div>
   );
 }
+
+const journeyGuideGrid = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+};
+
+const journeyGuideCard = {
+  border: "1px solid #dbeafe",
+  background: "linear-gradient(180deg, #eff6ff 0%, #ffffff 100%)",
+  borderRadius: 18,
+  padding: 16,
+  display: "grid",
+  gap: 8,
+};
+
+const journeyGuideTitle = {
+  fontSize: 15,
+  fontWeight: 900,
+  color: "#1e3a8a",
+};
+
+const journeyGuideText = {
+  fontSize: 13,
+  color: "#334155",
+  lineHeight: 1.5,
+};
+
+const journeyFlowCard = {
+  border: "1px solid #dbeafe",
+  borderRadius: 22,
+  background: "#fff",
+  padding: 18,
+  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+  display: "grid",
+  gap: 16,
+};
+
+const journeyFlowHeader = {
+  display: "grid",
+  gap: 16,
+  gridTemplateColumns: "1.3fr .9fr",
+  alignItems: "start",
+};
+
+const journeyFlowTitle = {
+  fontSize: 22,
+  fontWeight: 900,
+  color: "#0f172a",
+  lineHeight: 1.15,
+};
+
+const journeyFlowMeta = {
+  fontSize: 13,
+  color: "#475569",
+  lineHeight: 1.45,
+};
+
+const journeyFlowSummary = {
+  display: "grid",
+  gap: 10,
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+};
+
+const journeyProgressBarWrap = {
+  display: "grid",
+  gap: 8,
+};
+
+const journeyProgressBarTrack = {
+  width: "100%",
+  height: 10,
+  borderRadius: 999,
+  background: "#e2e8f0",
+  overflow: "hidden",
+};
+
+const journeyProgressBarFill = {
+  height: "100%",
+  borderRadius: 999,
+  background: "linear-gradient(90deg, #2563eb 0%, #0ea5e9 100%)",
+};
+
+const journeyStagesGrid = {
+  display: "grid",
+  gap: 14,
+  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+};
+
+const journeyStageCard = (active) => ({
+  border: active ? "1px solid #93c5fd" : "1px solid #e2e8f0",
+  borderRadius: 18,
+  padding: 16,
+  background: active ? "linear-gradient(180deg, #eff6ff 0%, #ffffff 100%)" : "#fff",
+  boxShadow: active ? "0 8px 18px rgba(37,99,235,.10)" : "none",
+  display: "grid",
+  gap: 10,
+});
+
+const journeyCurrentPill = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 10,
+  fontWeight: 800,
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  textTransform: "uppercase",
+};
+
+const journeyStageTitle = {
+  fontSize: 16,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const journeyStageMeta = {
+  fontSize: 12,
+  color: "#64748b",
+};
+
+const journeyMiniStats = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  fontSize: 12,
+  color: "#334155",
+  fontWeight: 700,
+};
+
+const journeySubBlock = {
+  display: "grid",
+  gap: 8,
+};
+
+const journeySubTitle = {
+  fontSize: 11,
+  fontWeight: 800,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: ".05em",
+};
+
+const journeyLinkedItem = {
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
+  flexWrap: "wrap",
+  fontSize: 12,
+  color: "#0f172a",
+};
+
+const journeyEmptyText = {
+  fontSize: 12,
+  color: "#94a3b8",
+};
+
+const nextStepsGrid = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+};
+
+const nextStepCard = {
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  background: "#fff",
+  padding: 16,
+  display: "grid",
+  gap: 10,
+  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+};
+
+const nextStepJourney = {
+  fontSize: 17,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const nextStepAction = {
+  fontSize: 14,
+  fontWeight: 800,
+  color: "#1d4ed8",
+  lineHeight: 1.4,
+};
+
+const nextStepMeta = {
+  fontSize: 12,
+  color: "#64748b",
+  lineHeight: 1.4,
+};
 
 function OverviewBox({ label, value, tone = "default" }) {
   return (
