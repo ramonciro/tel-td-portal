@@ -3,14 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiDownload, apiFetch } from "../../../../services/api";
-import { formatDateBR, toDateInputLocal } from "../../../../lib/date";
+import { formatDateBR } from "../../../../lib/date";
 
 function formatDate(value) {
-  return formatDateBR(value, "-");
-}
-
-function toInputDate(value) {
-  return toDateInputLocal(value);
+  return formatDateBR(value);
 }
 
 function emptyForm(cliente = "", turma = "", supervisor = "") {
@@ -42,6 +38,7 @@ export default function ParticipantesTurmaPage() {
 
   useEffect(() => {
     carregarTudo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function carregarTudo() {
@@ -73,36 +70,36 @@ export default function ParticipantesTurmaPage() {
     }
   }
 
-async function importarExcel() {
-  try {
-    if (!arquivo) {
-      setErro("Selecione um arquivo Excel para importar.");
-      return;
+  async function importarExcel() {
+    try {
+      if (!arquivo) {
+        setErro("Selecione um arquivo Excel para importar.");
+        return;
+      }
+
+      setImportando(true);
+      setErro("");
+      setSucesso("");
+
+      const formData = new FormData();
+      formData.append("arquivo", arquivo);
+      formData.append("treinamento_id", String(id));
+
+      await apiFetch("/treinamentos/importar-participantes", {
+        method: "POST",
+        body: formData,
+      });
+
+      setSucesso("Participantes importados com sucesso.");
+      setArquivo(null);
+      await carregarTudo();
+    } catch (err) {
+      setErro(err.message || "Erro ao importar Excel");
+    } finally {
+      setImportando(false);
     }
-
-    setImportando(true);
-    setErro("");
-    setSucesso("");
-
-    const formData = new FormData();
-    formData.append("arquivo", arquivo);
-    formData.append("treinamento_id", String(id));
-
-    await apiFetch("/treinamentos/importar-participantes", {
-      method: "POST",
-      body: formData,
-    });
-
-    setSucesso("Participantes importados com sucesso.");
-    setArquivo(null);
-    await carregarTudo();
-  } catch (err) {
-    setErro(err.message || "Erro ao importar Excel");
-  } finally {
-    setImportando(false);
   }
-}
-  
+
   async function adicionarParticipanteManual() {
     try {
       if (!form.nome || !form.matricula || !form.cliente || !form.turma) {
@@ -147,7 +144,10 @@ async function importarExcel() {
     try {
       setErro("");
       setSucesso("");
-      await apiDownload(`/treinamentos/${id}/exportar-primeira-aula`, `turma-${id}-primeira-aula.xlsx`);
+      await apiDownload(
+        `/treinamentos/${id}/exportar-primeira-aula`,
+        `turma-${id}-primeira-aula.xlsx`
+      );
       setSucesso("Arquivo da primeira aula exportado com sucesso.");
     } catch (err) {
       setErro(err.message || "Erro ao exportar a primeira aula.");
@@ -155,9 +155,7 @@ async function importarExcel() {
   }
 
   async function removerParticipante(item) {
-    const confirmar = window.confirm(
-      `Deseja remover ${item.nome} da turma?`
-    );
+    const confirmar = window.confirm(`Deseja remover ${item.nome} da turma?`);
     if (!confirmar) return;
 
     try {
@@ -212,6 +210,7 @@ async function importarExcel() {
       const nome = String(item.nome || "").toLowerCase();
       const matricula = String(item.matricula || "").toLowerCase();
       const operacao = String(item.operacao || "").toLowerCase();
+
       return (
         nome.includes(termo) ||
         matricula.includes(termo) ||
@@ -243,7 +242,9 @@ async function importarExcel() {
           <InfoCard label="Instrutor" value={treinamento?.instrutor || "-"} />
           <InfoCard
             label="Período"
-            value={`${formatDate(treinamento?.data_inicio || treinamento?.data)} até ${formatDate(
+            value={`${formatDate(
+              treinamento?.data_inicio || treinamento?.data
+            )} até ${formatDate(
               treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data
             )}`}
           />
@@ -280,7 +281,6 @@ async function importarExcel() {
           <button style={btnSecondary} onClick={abrirCronograma}>
             Abrir cronograma
           </button>
-
           <button style={btnSecondary} onClick={exportarPrimeiraAula}>
             Exportar 1ª aula
           </button>
