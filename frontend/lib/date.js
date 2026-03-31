@@ -5,13 +5,21 @@ export function parseLocalDate(value) {
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     const [ano, mes, dia] = raw.split("-").map(Number);
-    return new Date(ano, mes - 1, dia);
+    return new Date(ano, mes - 1, dia, 12, 0, 0, 0);
   }
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
 
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    12,
+    0,
+    0,
+    0
+  );
 }
 
 export function toDateInputLocal(value) {
@@ -48,8 +56,12 @@ export function compareLocalDates(a, b) {
   if (!dateA && !dateB) return 0;
   if (!dateA) return 1;
   if (!dateB) return -1;
-  if (dateA > dateB) return 1;
-  if (dateA < dateB) return -1;
+
+  const timeA = dateA.getTime();
+  const timeB = dateB.getTime();
+
+  if (timeA > timeB) return 1;
+  if (timeA < timeB) return -1;
   return 0;
 }
 
