@@ -71,15 +71,15 @@ function sumBy(rows, key) {
   return rows.reduce((acc, item) => acc + toNumber(item[key]), 0);
 }
 
-function fmtNumber(value) {
-  return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
+function presencePercent(participantes, presencas, fallback = 0) {
+  const p = Number(participantes || 0);
+  const r = Number(presencas || 0);
+  if (p > 0) return (r / p) * 100;
+  return Number(fallback || 0);
 }
 
-function fmtScore(value) {
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
+function fmtNumber(value) {
+  return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
 }
 
 function fmtPercent(value) {
@@ -152,15 +152,28 @@ function extractMonth(value) {
   }
 
   const raw = String(value).trim();
-  const formatted = formatDateCell(raw);
-  if (formatted !== "—") {
-    const parts = formatted.split("/");
-    if (parts.length === 3) {
-      const dt = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-      if (!Number.isNaN(dt.getTime())) {
-        return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
-      }
+  const parts = raw.split(/[\/\-]/);
+  if (parts.length === 3) {
+    let d, m, y;
+    if (parts[0].length === 4) {
+      [y, m, d] = parts;
+    } else if (Number(parts[0]) > 12 && Number(parts[1]) <= 12) {
+      [d, m, y] = parts;
+    } else if (Number(parts[1]) > 12 && Number(parts[0]) <= 12) {
+      [m, d, y] = parts;
+    } else {
+      [m, d, y] = parts;
     }
+
+    const dt = new Date(Number(y), Number(m) - 1, Number(d));
+    if (!Number.isNaN(dt.getTime())) {
+      return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+    }
+  }
+
+  const isoDate = new Date(raw);
+  if (!Number.isNaN(isoDate.getTime())) {
+    return isoDate.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
   }
 
   return raw || "Sem período";
@@ -212,16 +225,6 @@ function mapRow(rawRow, index) {
   };
 }
 
-function groupAverage(rows, field) {
-  if (!rows.length) return 0;
-  return average(rows.map((item) => toNumber(item[field])));
-}
-
-function groupImpact(rows) {
-  if (!rows.length) return 0;
-  return average(rows.map((item) => (toNumber(item.impactoPos) > 0 ? 100 : 0)));
-}
-
 function uniqueOptions(rows, field) {
   return [...new Set(rows.map((item) => String(item[field] || "").trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, "pt-BR")
@@ -258,7 +261,7 @@ const tableStyle = {
   width: "100%",
   borderCollapse: "separate",
   borderSpacing: 0,
-  minWidth: 980,
+  minWidth: 900,
 };
 
 const thStyle = {
@@ -281,14 +284,6 @@ const tdStyle = {
   verticalAlign: "top",
 };
 
-const executiveHero = {
-  borderRadius: 22,
-  padding: 22,
-  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 55%, #0ea5e9 100%)",
-  color: "#fff",
-  boxShadow: "0 18px 40px rgba(15,23,42,.22)",
-};
-
 function EmptyState({ message }) {
   return (
     <div
@@ -309,8 +304,6 @@ function EmptyState({ message }) {
 function InfoBox({ label, value, tone = "default" }) {
   const palette = {
     default: { bg: "#f8fafc", color: "#0f172a", border: "#e2e8f0" },
-    alert: { bg: "#fff7ed", color: "#9a3412", border: "#fed7aa" },
-    success: { bg: "#ecfdf5", color: "#166534", border: "#bbf7d0" },
     executive: { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
   };
   const p = palette[tone] || palette.default;
@@ -375,26 +368,12 @@ function TypeExecutiveCard({ item, index }) {
         style={{
           display: "grid",
           gap: 10,
-          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
         }}
       >
         <InfoBox label="Participantes" value={fmtNumber(item.participantes)} />
         <InfoBox label="Presenças" value={fmtNumber(item.presencas)} />
-      </div>
-
-      <div
-        style={{
-          borderRadius: 14,
-          padding: "10px 12px",
-          background: "#f8fafc",
-          border: "1px solid #e2e8f0",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        <div style={{ fontSize: 12, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+        <InfoBox label="% presença" value={fmtPercent(item.presencaMedia)} tone="executive" />
       </div>
     </div>
   );
@@ -456,7 +435,6 @@ export default function SebraeApresentacaoPage() {
             item.participantes,
             item.presencas,
             item.faltas,
-            item.avaliacao,
           ].some((value) => String(value || "").trim() !== "" && String(value || "").trim() !== "0");
 
           return !linhaModelo && !linhaVazia;
@@ -508,15 +486,18 @@ export default function SebraeApresentacaoPage() {
   }, [rows, filters]);
 
   const summary = useMemo(() => {
+    const participantes = sumBy(filteredRows, "participantes");
+    const presencas = sumBy(filteredRows, "presencas");
     return {
       treinamentos: filteredRows.length,
-      participantes: sumBy(filteredRows, "participantes"),
-      presencas: sumBy(filteredRows, "presencas"),
+      participantes,
+      presencas,
       faltas: sumBy(filteredRows, "faltas"),
-      presencaMedia: average(filteredRows.map((item) => item.presencaPct)),
-      notaMedia: average(filteredRows.map((item) => item.avaliacao)),
-      evolucaoMedia: average(filteredRows.map((item) => item.evolucaoPct)),
-      impactoPositivo: groupImpact(filteredRows),
+      presencaMedia: presencePercent(
+        participantes,
+        presencas,
+        average(filteredRows.map((item) => item.presencaPct))
+      ),
     };
   }, [filteredRows]);
 
@@ -530,21 +511,16 @@ export default function SebraeApresentacaoPage() {
           treinamentos: 0,
           presencas: 0,
           participantes: 0,
-          notaMedia: [],
-          evolucaoMedia: [],
         };
       }
       bucket[key].treinamentos += 1;
       bucket[key].presencas += item.presencas;
       bucket[key].participantes += item.participantes;
-      bucket[key].notaMedia.push(item.avaliacao);
-      bucket[key].evolucaoMedia.push(item.evolucaoPct);
     });
 
     return Object.values(bucket).map((item) => ({
       ...item,
-      notaMedia: average(item.notaMedia),
-      evolucaoMedia: average(item.evolucaoMedia),
+      presencaMedia: presencePercent(item.participantes, item.presencas, 0),
     }));
   }, [filteredRows]);
 
@@ -557,15 +533,17 @@ export default function SebraeApresentacaoPage() {
     });
 
     return Object.entries(bucket)
-      .map(([tipo, items]) => ({
-        tipo,
-        treinamentos: items.length,
-        participantes: sumBy(items, "participantes"),
-        presencas: sumBy(items, "presencas"),
-        notaMedia: groupAverage(items, "avaliacao"),
-        evolucaoMedia: groupAverage(items, "evolucaoPct"),
-        impactoPositivo: groupImpact(items),
-      }))
+      .map(([tipo, items]) => {
+        const participantes = sumBy(items, "participantes");
+        const presencas = sumBy(items, "presencas");
+        return {
+          tipo,
+          treinamentos: items.length,
+          participantes,
+          presencas,
+          presencaMedia: presencePercent(participantes, presencas, average(items.map((i) => i.presencaPct))),
+        };
+      })
       .sort((a, b) => b.treinamentos - a.treinamentos);
   }, [filteredRows]);
 
@@ -578,15 +556,17 @@ export default function SebraeApresentacaoPage() {
     });
 
     return Object.entries(bucket)
-      .map(([instrutor, items]) => ({
-        instrutor,
-        treinamentos: items.length,
-        participantes: sumBy(items, "participantes"),
-        presencas: sumBy(items, "presencas"),
-        notaMedia: groupAverage(items, "avaliacao"),
-        evolucaoMedia: groupAverage(items, "evolucaoPct"),
-        impactoPositivo: groupImpact(items),
-      }))
+      .map(([instrutor, items]) => {
+        const participantes = sumBy(items, "participantes");
+        const presencas = sumBy(items, "presencas");
+        return {
+          instrutor,
+          treinamentos: items.length,
+          participantes,
+          presencas,
+          presencaMedia: presencePercent(participantes, presencas, average(items.map((i) => i.presencaPct))),
+        };
+      })
       .sort((a, b) => b.treinamentos - a.treinamentos);
   }, [filteredRows]);
 
@@ -598,85 +578,9 @@ export default function SebraeApresentacaoPage() {
       subtitle="Página apartada para apresentação executiva com atualização por upload de Excel."
     >
       <div style={{ display: "grid", gap: 18 }}>
-        <section style={executiveHero}>
-          <div
-            style={{
-              display: "grid",
-              gap: 16,
-              gridTemplateColumns: "1.6fr 1fr",
-              alignItems: "end",
-            }}
-          >
-            <div style={{ display: "grid", gap: 10 }}>
-              <div
-                style={{
-                  display: "inline-flex",
-                  width: "fit-content",
-                  borderRadius: 999,
-                  background: "rgba(255,255,255,.16)",
-                  padding: "6px 12px",
-                  fontSize: 12,
-                  fontWeight: 800,
-                  textTransform: "uppercase",
-                  letterSpacing: ".04em",
-                }}
-              >
-                Dashboard Executivo
-              </div>
-              <div style={{ fontSize: 30, fontWeight: 900, lineHeight: 1.15 }}>
-                Resultados de Treinamento Sebrae
-              </div>
-              <div style={{ fontSize: 15, color: "rgba(255,255,255,.88)", maxWidth: 760 }}>
-                Visão executiva com leitura isolada da base, acompanhamento por tipo
-                de treinamento, desempenho dos instrutores e efetividade das ações realizadas.
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              }}
-            >
-              <div
-                style={{
-                  background: "rgba(255,255,255,.12)",
-                  border: "1px solid rgba(255,255,255,.18)",
-                  borderRadius: 18,
-                  padding: 16,
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", opacity: 0.8 }}>
-                  Arquivo em uso
-                </div>
-                <div style={{ marginTop: 8, fontSize: 15, fontWeight: 800 }}>
-                  {fileName || "Nenhum arquivo enviado"}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: "rgba(255,255,255,.12)",
-                  border: "1px solid rgba(255,255,255,.18)",
-                  borderRadius: 18,
-                  padding: 16,
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", opacity: 0.8 }}>
-                  Tipos mapeados
-                </div>
-                <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
-                  {fmtNumber(byType.length)}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <SectionCard
           title="Carga da Base"
-          subtitle="Envie o Excel do Sebrae. A página prioriza a aba Base_Dados e atualiza a apresentação imediatamente."
+          subtitle="Envie o Excel do Sebrae. A página usa a aba Base_Dados."
         >
           <div
             style={{
@@ -729,10 +633,6 @@ export default function SebraeApresentacaoPage() {
             </button>
           </div>
 
-          <div style={{ marginTop: 12, fontSize: 13, color: "#475569" }}>
-            Recomendação: manter a aba <strong>Base_Dados</strong> com os nomes de colunas do modelo atual.
-          </div>
-
           {error ? (
             <div
               style={{
@@ -750,35 +650,27 @@ export default function SebraeApresentacaoPage() {
           ) : null}
         </SectionCard>
 
-        <SectionCard title="Resumo Executivo" subtitle="Leitura imediata para apresentação ao cliente.">
+        <SectionCard title="Resumo Executivo" subtitle="Leitura principal da apresentação.">
           {!rows.length ? (
             <EmptyState message="Envie um arquivo Excel para carregar os dados do Sebrae." />
           ) : (
-            <div style={{ display: "grid", gap: 18 }}>
-              <div
-                style={{
-                  display: "grid",
-                  gap: 14,
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                }}
-              >
-                <StatCard title="Treinamentos" value={fmtNumber(summary.treinamentos)} accent="#2563eb" />
-                <StatCard title="Participantes" value={fmtNumber(summary.participantes)} accent="#0f766e" />
-                <StatCard title="Presenças" value={fmtNumber(summary.presencas)} accent="#16a34a" />
-                <StatCard title="Faltas" value={fmtNumber(summary.faltas)} accent="#dc2626" />
-                <StatCard title="% presença média" value={fmtPercent(summary.presencaMedia)} accent="#7c3aed" />
-                <StatCard title="Nota média" value={fmtScore(summary.notaMedia)} accent="#ea580c" />
-                <StatCard title="Evolução média" value={fmtPercent(summary.evolucaoMedia)} accent="#0891b2" />
-                <StatCard title="Impacto positivo" value={fmtPercent(summary.impactoPositivo)} accent="#65a30d" />
-              </div>
+            <div
+              style={{
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              }}
+            >
+              <StatCard title="Treinamentos" value={fmtNumber(summary.treinamentos)} accent="#2563eb" />
+              <StatCard title="Participantes" value={fmtNumber(summary.participantes)} accent="#0f766e" />
+              <StatCard title="Presenças" value={fmtNumber(summary.presencas)} accent="#16a34a" />
+              <StatCard title="Faltas" value={fmtNumber(summary.faltas)} accent="#dc2626" />
+              <StatCard title="% presença média" value={fmtPercent(summary.presencaMedia)} accent="#7c3aed" />
             </div>
           )}
         </SectionCard>
 
-        <SectionCard
-          title="Filtros da Apresentação"
-          subtitle="Refine a leitura sem tocar nos dados do portal principal."
-        >
+        <SectionCard title="Filtros da Apresentação" subtitle="Refine a leitura.">
           <div
             style={{
               display: "grid",
@@ -795,9 +687,7 @@ export default function SebraeApresentacaoPage() {
               >
                 <option value="">Todos</option>
                 {options.tipoTreinamento.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
             </label>
@@ -811,9 +701,7 @@ export default function SebraeApresentacaoPage() {
               >
                 <option value="">Todos</option>
                 {options.instrutor.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
             </label>
@@ -827,9 +715,7 @@ export default function SebraeApresentacaoPage() {
               >
                 <option value="">Todos</option>
                 {options.supervisor.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
             </label>
@@ -843,9 +729,7 @@ export default function SebraeApresentacaoPage() {
               >
                 <option value="">Todas</option>
                 {options.competencia.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
             </label>
@@ -862,10 +746,7 @@ export default function SebraeApresentacaoPage() {
           </div>
         </SectionCard>
 
-        <SectionCard
-          title="Destaques por Tipo de Treinamento"
-          subtitle="Leitura executiva dos tipos com maior volume e relevância na base."
-        >
+        <SectionCard title="Destaques por Tipo de Treinamento" subtitle="Visão resumida por tipo.">
           {!filteredRows.length ? (
             <EmptyState message="Sem dados para exibir os destaques por tipo." />
           ) : (
@@ -883,7 +764,7 @@ export default function SebraeApresentacaoPage() {
           )}
         </SectionCard>
 
-        <SectionCard title="Visão Mensal" subtitle="Comportamento consolidado por período.">
+        <SectionCard title="Visão Mensal" subtitle="Comportamento por período.">
           {!filteredRows.length ? (
             <EmptyState message="Sem dados após a aplicação dos filtros." />
           ) : (
@@ -917,8 +798,7 @@ export default function SebraeApresentacaoPage() {
                     <InfoBox label="Treinamentos" value={fmtNumber(item.treinamentos)} />
                     <InfoBox label="Presenças" value={fmtNumber(item.presencas)} />
                     <InfoBox label="Participantes" value={fmtNumber(item.participantes)} />
-                    <InfoBox label="Nota média" value={fmtScore(item.notaMedia)} tone="success" />
-                    <InfoBox label="Evolução média" value={fmtPercent(item.evolucaoMedia)} tone="alert" />
+                    <InfoBox label="% presença" value={fmtPercent(item.presencaMedia)} tone="executive" />
                   </div>
                 </div>
               ))}
@@ -926,7 +806,7 @@ export default function SebraeApresentacaoPage() {
           )}
         </SectionCard>
 
-        <SectionCard title="Visão por Tipo de Treinamento" subtitle="Comparativo executivo dos tipos de treinamento.">
+        <SectionCard title="Visão por Tipo de Treinamento" subtitle="Comparativo por tipo.">
           {!filteredRows.length ? (
             <EmptyState message="Sem dados para exibir a visão por tipo." />
           ) : (
@@ -938,9 +818,7 @@ export default function SebraeApresentacaoPage() {
                     <th style={thStyle}>Treinamentos</th>
                     <th style={thStyle}>Participantes</th>
                     <th style={thStyle}>Presenças</th>
-                    <th style={thStyle}>Nota média</th>
-                    <th style={thStyle}>Evolução média</th>
-                    <th style={thStyle}>Impacto positivo</th>
+                    <th style={thStyle}>% presença</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -950,9 +828,7 @@ export default function SebraeApresentacaoPage() {
                       <td style={tdStyle}>{fmtNumber(item.treinamentos)}</td>
                       <td style={tdStyle}>{fmtNumber(item.participantes)}</td>
                       <td style={tdStyle}>{fmtNumber(item.presencas)}</td>
-                      <td style={tdStyle}>{fmtScore(item.notaMedia)}</td>
-                      <td style={tdStyle}>{fmtPercent(item.evolucaoMedia)}</td>
-                      <td style={tdStyle}>{fmtPercent(item.impactoPositivo)}</td>
+                      <td style={tdStyle}>{fmtPercent(item.presencaMedia)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -961,7 +837,7 @@ export default function SebraeApresentacaoPage() {
           )}
         </SectionCard>
 
-        <SectionCard title="Performance dos Instrutores" subtitle="Leitura individual para apoio na apresentação.">
+        <SectionCard title="Performance dos Instrutores" subtitle="Leitura por instrutor.">
           {!filteredRows.length ? (
             <EmptyState message="Sem dados para exibir a visão por instrutor." />
           ) : (
@@ -973,9 +849,7 @@ export default function SebraeApresentacaoPage() {
                     <th style={thStyle}>Treinamentos</th>
                     <th style={thStyle}>Participantes</th>
                     <th style={thStyle}>Presenças</th>
-                    <th style={thStyle}>Nota média</th>
-                    <th style={thStyle}>Evolução média</th>
-                    <th style={thStyle}>Impacto positivo</th>
+                    <th style={thStyle}>% presença</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -985,9 +859,7 @@ export default function SebraeApresentacaoPage() {
                       <td style={tdStyle}>{fmtNumber(item.treinamentos)}</td>
                       <td style={tdStyle}>{fmtNumber(item.participantes)}</td>
                       <td style={tdStyle}>{fmtNumber(item.presencas)}</td>
-                      <td style={tdStyle}>{fmtScore(item.notaMedia)}</td>
-                      <td style={tdStyle}>{fmtPercent(item.evolucaoMedia)}</td>
-                      <td style={tdStyle}>{fmtPercent(item.impactoPositivo)}</td>
+                      <td style={tdStyle}>{fmtPercent(item.presencaMedia)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -996,7 +868,7 @@ export default function SebraeApresentacaoPage() {
           )}
         </SectionCard>
 
-        <SectionCard title="Detalhamento da Base" subtitle="Tabela de apoio para consulta durante a reunião.">
+        <SectionCard title="Detalhamento da Base" subtitle="Tabela de apoio.">
           {!filteredRows.length ? (
             <EmptyState message="Sem linhas para detalhamento." />
           ) : (
@@ -1015,13 +887,6 @@ export default function SebraeApresentacaoPage() {
                     <th style={thStyle}>Presenças</th>
                     <th style={thStyle}>Faltas</th>
                     <th style={thStyle}>% presença</th>
-                    <th style={thStyle}>Avaliação</th>
-                    <th style={thStyle}>Indicador</th>
-                    <th style={thStyle}>Antes</th>
-                    <th style={thStyle}>Depois</th>
-                    <th style={thStyle}>Janela</th>
-                    <th style={thStyle}>Evolução</th>
-                    <th style={thStyle}>Impacto</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1037,14 +902,7 @@ export default function SebraeApresentacaoPage() {
                       <td style={tdStyle}>{fmtNumber(item.participantes)}</td>
                       <td style={tdStyle}>{fmtNumber(item.presencas)}</td>
                       <td style={tdStyle}>{fmtNumber(item.faltas)}</td>
-                      <td style={tdStyle}>{fmtPercent(item.presencaPct)}</td>
-                      <td style={tdStyle}>{fmtScore(item.avaliacao)}</td>
-                      <td style={tdStyle}>{item.indicador || "—"}</td>
-                      <td style={tdStyle}>{fmtScore(item.antes)}</td>
-                      <td style={tdStyle}>{fmtScore(item.depois)}</td>
-                      <td style={tdStyle}>{fmtNumber(item.janelaDias)}</td>
-                      <td style={tdStyle}>{fmtPercent(item.evolucaoPct)}</td>
-                      <td style={tdStyle}>{toNumber(item.impactoPos) > 0 ? "Positivo" : "Neutro"}</td>
+                      <td style={tdStyle}>{fmtPercent(presencePercent(item.participantes, item.presencas, item.presencaPct))}</td>
                     </tr>
                   ))}
                 </tbody>
