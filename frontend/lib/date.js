@@ -45,8 +45,18 @@ export function compareLocalDates(a, b) {
   const dateA = parseLocalDate(a);
   const dateB = parseLocalDate(b);
 
-  if (!dateA || !dateB) return 0;
+  if (!dateA && !dateB) return 0;
+  if (!dateA) return 1;
+  if (!dateB) return -1;
   if (dateA > dateB) return 1;
   if (dateA < dateB) return -1;
   return 0;
+}
+
+export function compareLocalDatesAsc(a, b) {
+  return compareLocalDates(a, b);
+}
+
+export function compareLocalDatesDesc(a, b) {
+  return compareLocalDates(b, a);
 }
