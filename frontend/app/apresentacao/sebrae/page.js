@@ -152,28 +152,15 @@ function extractMonth(value) {
   }
 
   const raw = String(value).trim();
-  const parts = raw.split(/[\/\-]/);
-  if (parts.length === 3) {
-    let d, m, y;
-    if (parts[0].length === 4) {
-      [y, m, d] = parts;
-    } else if (Number(parts[0]) > 12 && Number(parts[1]) <= 12) {
-      [d, m, y] = parts;
-    } else if (Number(parts[1]) > 12 && Number(parts[0]) <= 12) {
-      [m, d, y] = parts;
-    } else {
-      [m, d, y] = parts;
+  const formatted = formatDateCell(raw);
+  if (formatted !== "—") {
+    const parts = formatted.split("/");
+    if (parts.length === 3) {
+      const dt = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+      if (!Number.isNaN(dt.getTime())) {
+        return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+      }
     }
-
-    const dt = new Date(Number(y), Number(m) - 1, Number(d));
-    if (!Number.isNaN(dt.getTime())) {
-      return dt.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
-    }
-  }
-
-  const isoDate = new Date(raw);
-  if (!Number.isNaN(isoDate.getTime())) {
-    return isoDate.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
   }
 
   return raw || "Sem período";
@@ -294,6 +281,14 @@ const tdStyle = {
   verticalAlign: "top",
 };
 
+const executiveHero = {
+  borderRadius: 22,
+  padding: 22,
+  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 55%, #0ea5e9 100%)",
+  color: "#fff",
+  boxShadow: "0 18px 40px rgba(15,23,42,.22)",
+};
+
 function EmptyState({ message }) {
   return (
     <div
@@ -316,6 +311,7 @@ function InfoBox({ label, value, tone = "default" }) {
     default: { bg: "#f8fafc", color: "#0f172a", border: "#e2e8f0" },
     alert: { bg: "#fff7ed", color: "#9a3412", border: "#fed7aa" },
     success: { bg: "#ecfdf5", color: "#166534", border: "#bbf7d0" },
+    executive: { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
   };
   const p = palette[tone] || palette.default;
 
@@ -332,6 +328,81 @@ function InfoBox({ label, value, tone = "default" }) {
         {label}
       </div>
       <div style={{ marginTop: 6, fontSize: 22, fontWeight: 900, color: p.color }}>{value}</div>
+    </div>
+  );
+}
+
+function TypeExecutiveCard({ item, index }) {
+  const accents = ["#2563eb", "#0f766e", "#7c3aed", "#ea580c"];
+  const accent = accents[index % accents.length];
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${accent}22`,
+        borderTop: `4px solid ${accent}`,
+        borderRadius: 18,
+        padding: 18,
+        background: "#fff",
+        boxShadow: "0 10px 24px rgba(15,23,42,.05)",
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+          Tipo de treinamento
+        </div>
+        <div
+          style={{
+            borderRadius: 999,
+            padding: "4px 10px",
+            fontSize: 11,
+            fontWeight: 800,
+            color: accent,
+            background: `${accent}14`,
+          }}
+        >
+          {fmtNumber(item.treinamentos)} ações
+        </div>
+      </div>
+
+      <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a", lineHeight: 1.2 }}>
+        {item.tipo}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: 10,
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        }}
+      >
+        <InfoBox label="Participantes" value={fmtNumber(item.participantes)} />
+        <InfoBox label="Presenças" value={fmtNumber(item.presencas)} />
+        <InfoBox label="Nota média" value={fmtScore(item.notaMedia)} tone="success" />
+        <InfoBox label="Evolução" value={fmtPercent(item.evolucaoMedia)} tone="executive" />
+      </div>
+
+      <div
+        style={{
+          borderRadius: 14,
+          padding: "10px 12px",
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+          Impacto positivo
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 900, color: accent }}>
+          {fmtPercent(item.impactoPositivo)}
+        </div>
+      </div>
     </div>
   );
 }
@@ -373,30 +444,30 @@ export default function SebraeApresentacaoPage() {
         raw: true,
       });
 
-     const mapped = json
-  .map((item, index) => mapRow(item, index))
-  .filter((item) => {
-    const linhaModelo =
-      normalize(item.cliente) === "(lista)" ||
-      normalize(item.tipoTreinamento) === "(lista)" ||
-      normalize(item.instrutor) === "(lista)" ||
-      normalize(item.supervisor) === "(lista)";
+      const mapped = json
+        .map((item, index) => mapRow(item, index))
+        .filter((item) => {
+          const linhaModelo =
+            normalize(item.cliente) === "(lista)" ||
+            normalize(item.tipoTreinamento) === "(lista)" ||
+            normalize(item.instrutor) === "(lista)" ||
+            normalize(item.supervisor) === "(lista)";
 
-    const linhaVazia = ![
-      item.cliente,
-      item.tipoTreinamento,
-      item.instrutor,
-      item.supervisor,
-      item.turma,
-      item.competencia,
-      item.participantes,
-      item.presencas,
-      item.faltas,
-      item.avaliacao,
-    ].some((value) => String(value || "").trim() !== "" && String(value || "").trim() !== "0");
+          const linhaVazia = ![
+            item.cliente,
+            item.tipoTreinamento,
+            item.instrutor,
+            item.supervisor,
+            item.turma,
+            item.competencia,
+            item.participantes,
+            item.presencas,
+            item.faltas,
+            item.avaliacao,
+          ].some((value) => String(value || "").trim() !== "" && String(value || "").trim() !== "0");
 
-    return !linhaModelo && !linhaVazia;
-  });
+          return !linhaModelo && !linhaVazia;
+        });
 
       setRows(mapped);
     } catch (err) {
@@ -526,12 +597,90 @@ export default function SebraeApresentacaoPage() {
       .sort((a, b) => b.treinamentos - a.treinamentos);
   }, [filteredRows]);
 
+  const featuredTypes = useMemo(() => byType.slice(0, 4), [byType]);
+
   return (
     <PortalShell
       title="Apresentação Sebrae"
       subtitle="Página apartada para apresentação executiva com atualização por upload de Excel."
     >
       <div style={{ display: "grid", gap: 18 }}>
+        <section style={executiveHero}>
+          <div
+            style={{
+              display: "grid",
+              gap: 16,
+              gridTemplateColumns: "1.6fr 1fr",
+              alignItems: "end",
+            }}
+          >
+            <div style={{ display: "grid", gap: 10 }}>
+              <div
+                style={{
+                  display: "inline-flex",
+                  width: "fit-content",
+                  borderRadius: 999,
+                  background: "rgba(255,255,255,.16)",
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: ".04em",
+                }}
+              >
+                Dashboard Executivo
+              </div>
+              <div style={{ fontSize: 30, fontWeight: 900, lineHeight: 1.15 }}>
+                Resultados de Treinamento Sebrae
+              </div>
+              <div style={{ fontSize: 15, color: "rgba(255,255,255,.88)", maxWidth: 760 }}>
+                Visão executiva para apresentação ao cliente, com leitura isolada da base, acompanhamento por tipo
+                de treinamento, desempenho dos instrutores e efetividade das ações realizadas.
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              }}
+            >
+              <div
+                style={{
+                  background: "rgba(255,255,255,.12)",
+                  border: "1px solid rgba(255,255,255,.18)",
+                  borderRadius: 18,
+                  padding: 16,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", opacity: 0.8 }}>
+                  Arquivo em uso
+                </div>
+                <div style={{ marginTop: 8, fontSize: 15, fontWeight: 800 }}>
+                  {fileName || "Nenhum arquivo enviado"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "rgba(255,255,255,.12)",
+                  border: "1px solid rgba(255,255,255,.18)",
+                  borderRadius: 18,
+                  padding: 16,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", opacity: 0.8 }}>
+                  Tipos mapeados
+                </div>
+                <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
+                  {fmtNumber(byType.length)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <SectionCard
           title="Carga da Base"
           subtitle="Envie o Excel do Sebrae. A página prioriza a aba Base_Dados e atualiza a apresentação imediatamente."
@@ -718,6 +867,27 @@ export default function SebraeApresentacaoPage() {
               />
             </label>
           </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Destaques por Tipo de Treinamento"
+          subtitle="Leitura executiva dos tipos com maior volume e relevância na base."
+        >
+          {!filteredRows.length ? (
+            <EmptyState message="Sem dados para exibir os destaques por tipo." />
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              }}
+            >
+              {featuredTypes.map((item, index) => (
+                <TypeExecutiveCard key={item.tipo} item={item} index={index} />
+              ))}
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard title="Visão Mensal" subtitle="Comportamento consolidado por período.">
