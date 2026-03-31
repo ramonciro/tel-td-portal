@@ -911,6 +911,8 @@ export default function MapaDesenvolvimentoPage() {
         total_etapas: etapasDaJornada.length,
         total_acoes: acoesDaJornada.length,
         total_coachings: coachingsDaJornada.length,
+        total_coaching_exec: countSustByType(coachingsDaJornada, "coaching"),
+        total_mentoria_exec: countSustByType(coachingsDaJornada, "mentoria"),
         horas_totais: horasAcoes + horasCoaching,
         prazo_info,
         saude_info,
@@ -942,6 +944,8 @@ export default function MapaDesenvolvimentoPage() {
         responsavel_nome: responsavelMap[String(etapa.responsavel_id)] || "Não definido",
         total_acoes: acoesDaEtapa.length,
         total_coachings: coachingsDaEtapa.length,
+        total_coaching_exec: countSustByType(coachingsDaEtapa, "coaching"),
+        total_mentoria_exec: countSustByType(coachingsDaEtapa, "mentoria"),
         horas_totais: horasAcoes + horasCoaching,
       };
     });
@@ -2613,7 +2617,8 @@ export default function MapaDesenvolvimentoPage() {
                           <div style={flowMetrics}>
                             <MetricBox label="Etapas" value={fmtNumber(jornada.total_etapas)} />
                             <MetricBox label="Ações" value={fmtNumber(jornada.total_acoes)} />
-                            <MetricBox label="Coachings" value={fmtNumber(jornada.total_coachings)} />
+                            <MetricBox label="Coaching" value={fmtNumber(jornada.total_coaching_exec)} />
+                            <MetricBox label="Mentoria" value={fmtNumber(jornada.total_mentoria_exec)} />
                             <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                           </div>
                         </div>
@@ -2621,7 +2626,7 @@ export default function MapaDesenvolvimentoPage() {
                         <div style={flowExecutiveBand}>
                           <OverviewBox label="Saúde da jornada" value={jornada.saude_info.label} tone={jornada.saude_info.level === "alta" ? "danger" : jornada.saude_info.level === "media" ? "alert" : "default"} />
                           <OverviewBox label="Atenção principal" value={jornada.attention_info.label} tone={jornada.attention_info.level === "alta" ? "danger" : jornada.attention_info.level === "media" ? "alert" : "default"} />
-                          <OverviewBox label="Prazo" value={jornada.prazo_info.label} tone={jornada.prazo_info.tone === "danger" ? "danger" : jornada.prazo_info.tone === "neutral" ? "default" : "default"} />
+                          <OverviewBox label="Sustentação" value={`${fmtNumber(jornada.total_coaching_exec)} coaching • ${fmtNumber(jornada.total_mentoria_exec)} mentoria`} tone={jornada.total_coaching_exec + jornada.total_mentoria_exec > 0 ? "default" : "alert"} />
                           <OverviewBox label="Etapa crítica" value={jornada.etapa_critica?.nome || "Sem destaque"} tone={jornada.etapa_critica?.saude_info?.level === "alta" ? "danger" : jornada.etapa_critica?.saude_info?.level === "media" ? "alert" : "default"} />
                         </div>
 
@@ -2710,7 +2715,8 @@ export default function MapaDesenvolvimentoPage() {
 
                                     <div style={stageStats}>
                                       <span>⚓ {fmtNumber(etapa.total_acoes)} porto(s) de ação</span>
-                                      <span>🧭 {fmtNumber(etapa.total_coachings)} apoio(s) de sustentação</span>
+                                      <span>🧭 {fmtNumber(etapa.total_coaching_exec)} coaching(s)</span>
+                                      <span>🌱 {fmtNumber(etapa.total_mentoria_exec)} mentoria(s)</span>
                                       <span>⏱ {fmtHours(etapa.horas_totais)}h navegadas</span>
                                     </div>
 
@@ -2718,6 +2724,14 @@ export default function MapaDesenvolvimentoPage() {
                                       <div style={stageInsightCard}>
                                         <div style={stageInsightLabel}>Estado do trecho</div>
                                         <div style={stageInsightValue}>{stageHealth.label}</div>
+                                      </div>
+                                      <div style={stageInsightCard}>
+                                        <div style={stageInsightLabel}>Sustentação do trecho</div>
+                                        <div style={stageInsightValue}>
+                                          {etapa.total_coaching_exec + etapa.total_mentoria_exec > 0
+                                            ? `${fmtNumber(etapa.total_coaching_exec)} coaching • ${fmtNumber(etapa.total_mentoria_exec)} mentoria`
+                                            : "Sem sustentação vinculada"}
+                                        </div>
                                       </div>
                                       <div style={stageInsightCard}>
                                         <div style={stageInsightLabel}>Próxima ancoragem</div>
