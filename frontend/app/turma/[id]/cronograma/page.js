@@ -3,10 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiDownload, apiFetch } from "../../../../services/api";
-import { compareLocalDatesAsc, formatDateBR, toDateInputLocal } from "../../../../lib/date";
+import {
+  compareLocalDatesAsc,
+  formatDateBR,
+  toDateInputLocal,
+} from "../../../../lib/date";
 
 function formatDate(value) {
-  return formatDateBR(value, "-");
+  return formatDateBR(value);
 }
 
 function toInputDate(value) {
@@ -17,12 +21,20 @@ function formatHours(value) {
   const num = Number(value || 0);
   if (!Number.isFinite(num)) return "0h";
 
-  const horas = Math.floor(num);
-  const minutos = Math.round((num - horas) * 60);
+  const negativo = num < 0;
+  const absoluto = Math.abs(num);
 
-  if (minutos === 0) return `${horas}h`;
-  if (horas === 0) return `${minutos}min`;
-  return `${horas}h${String(minutos).padStart(2, "0")}`;
+  const horas = Math.floor(absoluto);
+  const minutos = Math.round((absoluto - horas) * 60);
+
+  const texto =
+    minutos === 0
+      ? `${horas}h`
+      : horas === 0
+      ? `${minutos}min`
+      : `${horas}h${String(minutos).padStart(2, "0")}`;
+
+  return negativo ? `-${texto}` : texto;
 }
 
 function calcPercentual(parte, total) {
@@ -169,9 +181,7 @@ export default function CronogramaTurmaPage() {
         ]);
 
       const turmaAtual = dadosTreinamento || null;
-      const listaTurmas = Array.isArray(listaTreinamentos)
-        ? listaTreinamentos
-        : [];
+      const listaTurmas = Array.isArray(listaTreinamentos) ? listaTreinamentos : [];
       const listaParticipantesSafe = Array.isArray(listaParticipantes)
         ? listaParticipantes
         : [];
@@ -221,7 +231,9 @@ export default function CronogramaTurmaPage() {
                 ausentes: Number(baseResumo.ausentes || 0),
                 justificados: Number(baseResumo.justificados || 0),
                 pendentes: Number(baseResumo.pendentes || 0),
-                percentual: Number(baseResumo.percentual || baseResumo.taxa_presenca || 0),
+                percentual: Number(
+                  baseResumo.percentual || baseResumo.taxa_presenca || 0
+                ),
               };
             } else if (listaParticipantesSafe.length > 0) {
               resumoPresenca = {
@@ -308,7 +320,6 @@ export default function CronogramaTurmaPage() {
     );
 
     const aderenciaMedia = calcPercentual(totalPresentes, totalEsperado);
-
     const ativos = participantesResumo.length;
 
     return {
@@ -498,7 +509,10 @@ export default function CronogramaTurmaPage() {
     try {
       setErro("");
       setSucesso("");
-      await apiDownload(`/treinamentos/${id}/exportar-primeira-aula`, `turma-${id}-primeira-aula.xlsx`);
+      await apiDownload(
+        `/treinamentos/${id}/exportar-primeira-aula`,
+        `turma-${id}-primeira-aula.xlsx`
+      );
       setSucesso("Arquivo da primeira aula exportado com sucesso.");
     } catch (err) {
       setErro(err.message || "Erro ao exportar a primeira aula.");
@@ -627,8 +641,7 @@ export default function CronogramaTurmaPage() {
                 <option value="">Selecione</option>
                 {turmasDisponiveis.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {(item.tema || "Sem nome")} •{" "}
-                    {item.cliente || "Sem cliente"} •{" "}
+                    {(item.tema || "Sem nome")} • {item.cliente || "Sem cliente"} •{" "}
                     {formatDate(item.data_inicio || item.data)}
                   </option>
                 ))}
