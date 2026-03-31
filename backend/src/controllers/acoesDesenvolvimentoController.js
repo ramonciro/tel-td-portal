@@ -5,7 +5,32 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-async function carregarResumoTurmasVinculadas(acaoId) {
+function normalizeIds(values) {
+  return [...new Set(
+    (Array.isArray(values) ? values : [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0)
+  )];
+}
+
+async function countParticipantesByTreinamento(treinamentoId) {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT COUNT(*) AS total
+      FROM treinamento_participantes
+      WHERE treinamento_id = ?
+      `,
+      [treinamentoId]
+    );
+
+    return toNumber(rows?.[0]?.total, 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function loadTurmasByAcaoId(acaoId) {
   const [rows] = await db.query(
     `
     SELECT
@@ -13,79 +38,70 @@ async function carregarResumoTurmasVinculadas(acaoId) {
       t.tema,
       t.cliente,
       t.instrutor,
+      t.data,
       t.data_inicio,
       t.data_fim,
       COALESCE(t.carga_horaria, 0) AS carga_horaria
     FROM acoes_desenvolvimento_turmas rel
-    INNER JOIN treinamentos t ON t.id = rel.treinamento_id
+    INNER JOIN treinamentos t
+      ON t.id = rel.treinamento_id
     WHERE rel.acao_id = ?
-    ORDER BY t.data_inicio ASC, t.id ASC
+    ORDER BY
+      COALESCE(t.data_inicio, t.data, t.data_fim) ASC,
+      t.id ASC
     `,
     [acaoId]
   );
 
-  const turmas = Array.isArray(rows) ? rows : [];
+  const base = Array.isArray(rows) ? rows : [];
 
-  const detalhes = await Promise.all(
-    turmas.map(async (turma) => {
-      let participantes = 0;
-
-      try {
-        const [partRows] = await db.query(
-          `
-          SELECT COUNT(*) AS total
-          FROM treinamento_participantes
-          WHERE treinamento_id = ?
-          `,
-          [turma.id]
-        );
-        participantes = toNumber(partRows?.[0]?.total, 0);
-      } catch {
-        participantes = 0;
-      }
+  const turmas = await Promise.all(
+    base.map(async (item) => {
+      const participantes = await countParticipantesByTreinamento(item.id);
 
       return {
-        ...turma,
+        ...item,
         participantes,
       };
     })
   );
 
-  const quantidadeTurmas = detalhes.length;
-  const participantesRealizados = detalhes.reduce(
+  return turmas;
+}
+
+async function buildResumoTurmas(acaoId) {
+  const turmas = await loadTurmasByAcaoId(acaoId);
+
+  const quantidadeTurmas = turmas.length;
+  const participantesRealizados = turmas.reduce(
     (acc, item) => acc + toNumber(item.participantes, 0),
     0
   );
-  const horasPlanejadas = detalhes.reduce(
+  const horasPlanejadas = turmas.reduce(
     (acc, item) => acc + toNumber(item.carga_horaria, 0),
     0
   );
-  const horasRealizadas = horasPlanejadas;
 
   return {
-    turmas: detalhes,
+    turmas,
     quantidadeTurmas,
     participantesRealizados,
     horasPlanejadas,
-    horasRealizadas,
+    horasRealizadas: horasPlanejadas,
   };
 }
 
-async function sincronizarTurmasDaAcao(acaoId, turmaIds = []) {
-  const idsNormalizados = [...new Set(
-    (Array.isArray(turmaIds) ? turmaIds : [])
-      .map((id) => Number(id))
-      .filter((id) => Number.isInteger(id) && id > 0)
-  )];
+async function syncTurmasDaAcao(acaoId, turmaIds = []) {
+  const ids = normalizeIds(turmaIds);
 
   await db.query(
     `DELETE FROM acoes_desenvolvimento_turmas WHERE acao_id = ?`,
     [acaoId]
   );
 
-  if (!idsNormalizados.length) return;
+  if (!ids.length) return;
 
-  const values = idsNormalizados.map((treinamentoId) => [acaoId, treinamentoId]);
+  const values = ids.map((treinamentoId) => [Number(acaoId), treinamentoId]);
 
   await db.query(
     `
@@ -94,6 +110,44 @@ async function sincronizarTurmasDaAcao(acaoId, turmaIds = []) {
     `,
     [values]
   );
+}
+
+async function persistResumoTurmas(acaoId) {
+  const resumo = await buildResumoTurmas(acaoId);
+
+  await db.query(
+    `
+    UPDATE acoes_desenvolvimento
+    SET
+      quantidade_turmas_sessoes = ?,
+      participantes_realizados = ?,
+      horas_planejadas = ?,
+      horas_realizadas = ?
+    WHERE id = ?
+    `,
+    [
+      resumo.quantidadeTurmas,
+      resumo.participantesRealizados,
+      resumo.horasPlanejadas,
+      resumo.horasRealizadas,
+      acaoId,
+    ]
+  );
+
+  return resumo;
+}
+
+async function mapAcaoWithTurmas(acao) {
+  const resumo = await buildResumoTurmas(acao.id);
+
+  return {
+    ...acao,
+    turmas_vinculadas: resumo.turmas,
+    quantidade_turmas_sessoes: resumo.quantidadeTurmas,
+    participantes_realizados: resumo.participantesRealizados,
+    horas_planejadas: resumo.horasPlanejadas,
+    horas_realizadas: resumo.horasRealizadas,
+  };
 }
 
 async function listar(req, res) {
@@ -107,28 +161,15 @@ async function listar(req, res) {
     );
 
     const lista = await Promise.all(
-      (rows || []).map(async (acao) => {
-        const resumoTurmas = await carregarResumoTurmasVinculadas(acao.id);
-
-        return {
-          ...acao,
-          turmas_vinculadas: resumoTurmas.turmas,
-          quantidade_turmas_sessoes:
-            resumoTurmas.quantidadeTurmas || toNumber(acao.quantidade_turmas_sessoes, 0),
-          participantes_realizados:
-            resumoTurmas.participantesRealizados || toNumber(acao.participantes_realizados, 0),
-          horas_planejadas:
-            resumoTurmas.horasPlanejadas || toNumber(acao.horas_planejadas, 0),
-          horas_realizadas:
-            resumoTurmas.horasRealizadas || toNumber(acao.horas_realizadas, 0),
-        };
-      })
+      (Array.isArray(rows) ? rows : []).map((acao) => mapAcaoWithTurmas(acao))
     );
 
-    res.json(lista);
+    return res.json(lista);
   } catch (error) {
-    console.error("Erro ao listar ações:", error);
-    res.status(500).json({ error: "Erro ao listar ações de desenvolvimento." });
+    console.error("Erro ao listar ações de desenvolvimento:", error);
+    return res
+      .status(500)
+      .json({ error: "Erro ao listar ações de desenvolvimento." });
   }
 }
 
@@ -147,27 +188,16 @@ async function detalhar(req, res) {
     );
 
     const acao = rows?.[0];
+
     if (!acao) {
       return res.status(404).json({ error: "Ação não encontrada." });
     }
 
-    const resumoTurmas = await carregarResumoTurmasVinculadas(acao.id);
-
-    res.json({
-      ...acao,
-      turmas_vinculadas: resumoTurmas.turmas,
-      quantidade_turmas_sessoes:
-        resumoTurmas.quantidadeTurmas || toNumber(acao.quantidade_turmas_sessoes, 0),
-      participantes_realizados:
-        resumoTurmas.participantesRealizados || toNumber(acao.participantes_realizados, 0),
-      horas_planejadas:
-        resumoTurmas.horasPlanejadas || toNumber(acao.horas_planejadas, 0),
-      horas_realizadas:
-        resumoTurmas.horasRealizadas || toNumber(acao.horas_realizadas, 0),
-    });
+    const payload = await mapAcaoWithTurmas(acao);
+    return res.json(payload);
   } catch (error) {
-    console.error("Erro ao detalhar ação:", error);
-    res.status(500).json({ error: "Erro ao detalhar ação." });
+    console.error("Erro ao detalhar ação de desenvolvimento:", error);
+    return res.status(500).json({ error: "Erro ao detalhar ação." });
   }
 }
 
@@ -175,7 +205,22 @@ async function criar(req, res) {
   try {
     const body = req.body || {};
 
-    const turmaIds = Array.isArray(body.turma_ids) ? body.turma_ids : [];
+    const jornadaId = body.jornada_id ? Number(body.jornada_id) : null;
+    const titulo = String(body.titulo || "").trim();
+    const descricao = body.descricao || null;
+    const responsavel = body.responsavel || null;
+    const status = body.status || "planejada";
+    const dataInicio = body.data_inicio || null;
+    const dataFim = body.data_fim || null;
+    const cargaHoraria = toNumber(body.carga_horaria, 0);
+    const participantesPrevistos = toNumber(body.participantes_previstos, 0);
+    const turmaIds = normalizeIds(body.turma_ids);
+
+    if (!jornadaId || !titulo) {
+      return res
+        .status(400)
+        .json({ error: "Jornada e título da ação são obrigatórios." });
+    }
 
     const [result] = await db.query(
       `
@@ -196,16 +241,16 @@ async function criar(req, res) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        body.jornada_id || null,
-        body.titulo || "",
-        body.descricao || null,
-        body.responsavel || null,
-        body.status || "planejada",
-        body.data_inicio || null,
-        body.data_fim || null,
-        toNumber(body.carga_horaria, 0),
+        jornadaId,
+        titulo,
+        descricao,
+        responsavel,
+        status,
+        dataInicio,
+        dataFim,
+        cargaHoraria,
         0,
-        toNumber(body.participantes_previstos, 0),
+        participantesPrevistos,
         0,
         0,
         0,
@@ -214,33 +259,14 @@ async function criar(req, res) {
 
     const acaoId = result.insertId;
 
-    await sincronizarTurmasDaAcao(acaoId, turmaIds);
+    await syncTurmasDaAcao(acaoId, turmaIds);
+    await persistResumoTurmas(acaoId);
 
-    const resumoTurmas = await carregarResumoTurmasVinculadas(acaoId);
-
-    await db.query(
-      `
-      UPDATE acoes_desenvolvimento
-      SET
-        quantidade_turmas_sessoes = ?,
-        participantes_realizados = ?,
-        horas_planejadas = ?,
-        horas_realizadas = ?
-      WHERE id = ?
-      `,
-      [
-        resumoTurmas.quantidadeTurmas,
-        resumoTurmas.participantesRealizados,
-        resumoTurmas.horasPlanejadas,
-        resumoTurmas.horasRealizadas,
-        acaoId,
-      ]
-    );
-
-    return detalhar({ params: { id: acaoId } }, res);
+    req.params = { id: acaoId };
+    return detalhar(req, res);
   } catch (error) {
-    console.error("Erro ao criar ação:", error);
-    res.status(500).json({ error: "Erro ao criar ação." });
+    console.error("Erro ao criar ação de desenvolvimento:", error);
+    return res.status(500).json({ error: "Erro ao criar ação." });
   }
 }
 
@@ -248,7 +274,37 @@ async function atualizar(req, res) {
   try {
     const { id } = req.params;
     const body = req.body || {};
-    const turmaIds = Array.isArray(body.turma_ids) ? body.turma_ids : [];
+
+    const jornadaId = body.jornada_id ? Number(body.jornada_id) : null;
+    const titulo = String(body.titulo || "").trim();
+    const descricao = body.descricao || null;
+    const responsavel = body.responsavel || null;
+    const status = body.status || "planejada";
+    const dataInicio = body.data_inicio || null;
+    const dataFim = body.data_fim || null;
+    const cargaHoraria = toNumber(body.carga_horaria, 0);
+    const participantesPrevistos = toNumber(body.participantes_previstos, 0);
+    const turmaIds = normalizeIds(body.turma_ids);
+
+    if (!jornadaId || !titulo) {
+      return res
+        .status(400)
+        .json({ error: "Jornada e título da ação são obrigatórios." });
+    }
+
+    const [exists] = await db.query(
+      `
+      SELECT id
+      FROM acoes_desenvolvimento
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    if (!exists?.length) {
+      return res.status(404).json({ error: "Ação não encontrada." });
+    }
 
     await db.query(
       `
@@ -266,46 +322,26 @@ async function atualizar(req, res) {
       WHERE id = ?
       `,
       [
-        body.jornada_id || null,
-        body.titulo || "",
-        body.descricao || null,
-        body.responsavel || null,
-        body.status || "planejada",
-        body.data_inicio || null,
-        body.data_fim || null,
-        toNumber(body.carga_horaria, 0),
-        toNumber(body.participantes_previstos, 0),
+        jornadaId,
+        titulo,
+        descricao,
+        responsavel,
+        status,
+        dataInicio,
+        dataFim,
+        cargaHoraria,
+        participantesPrevistos,
         id,
       ]
     );
 
-    await sincronizarTurmasDaAcao(id, turmaIds);
-
-    const resumoTurmas = await carregarResumoTurmasVinculadas(id);
-
-    await db.query(
-      `
-      UPDATE acoes_desenvolvimento
-      SET
-        quantidade_turmas_sessoes = ?,
-        participantes_realizados = ?,
-        horas_planejadas = ?,
-        horas_realizadas = ?
-      WHERE id = ?
-      `,
-      [
-        resumoTurmas.quantidadeTurmas,
-        resumoTurmas.participantesRealizados,
-        resumoTurmas.horasPlanejadas,
-        resumoTurmas.horasRealizadas,
-        id,
-      ]
-    );
+    await syncTurmasDaAcao(id, turmaIds);
+    await persistResumoTurmas(id);
 
     return detalhar(req, res);
   } catch (error) {
-    console.error("Erro ao atualizar ação:", error);
-    res.status(500).json({ error: "Erro ao atualizar ação." });
+    console.error("Erro ao atualizar ação de desenvolvimento:", error);
+    return res.status(500).json({ error: "Erro ao atualizar ação." });
   }
 }
 
@@ -313,24 +349,36 @@ async function remover(req, res) {
   try {
     const { id } = req.params;
 
-    await db.query(`DELETE FROM acoes_desenvolvimento_turmas WHERE acao_id = ?`, [id]);
+    await db.query(
+      `DELETE FROM acoes_desenvolvimento_turmas WHERE acao_id = ?`,
+      [id]
+    );
+
     await db.query(`DELETE FROM acoes_desenvolvimento WHERE id = ?`, [id]);
 
-    res.json({ ok: true });
+    return res.json({ ok: true });
   } catch (error) {
-    console.error("Erro ao remover ação:", error);
-    res.status(500).json({ error: "Erro ao remover ação." });
+    console.error("Erro ao remover ação de desenvolvimento:", error);
+    return res.status(500).json({ error: "Erro ao remover ação." });
   }
 }
 
 async function listarTurmasDaAcao(req, res) {
   try {
     const { id } = req.params;
-    const resumoTurmas = await carregarResumoTurmasVinculadas(id);
-    res.json(resumoTurmas);
+
+    const resumo = await buildResumoTurmas(id);
+
+    return res.json({
+      turmas: resumo.turmas,
+      quantidade_turmas_sessoes: resumo.quantidadeTurmas,
+      participantes_realizados: resumo.participantesRealizados,
+      horas_planejadas: resumo.horasPlanejadas,
+      horas_realizadas: resumo.horasRealizadas,
+    });
   } catch (error) {
     console.error("Erro ao listar turmas da ação:", error);
-    res.status(500).json({ error: "Erro ao listar turmas da ação." });
+    return res.status(500).json({ error: "Erro ao listar turmas da ação." });
   }
 }
 
