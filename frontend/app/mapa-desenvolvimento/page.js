@@ -69,6 +69,14 @@ function isValidDateRange(dataInicio, dataFim) {
   return fim >= inicio;
 }
 
+function extrairMensagemErro(error, fallback) {
+  if (!error) return fallback;
+  if (typeof error === "string") return error;
+  if (error.message) return error.message;
+  if (error.error) return error.error;
+  return fallback;
+}
+
 function getPrazoInfo(item) {
   const hoje = new Date();
   const hojeLocal = new Date(
@@ -230,6 +238,87 @@ function prazoBadge(tone) {
   };
 }
 
+function sustentacaoTypeBadge(value) {
+  const tipo = normalize(value);
+  const map = {
+    coaching: {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      border: "1px solid #bfdbfe",
+      label: "Coaching",
+    },
+    mentoria: {
+      background: "#f5f3ff",
+      color: "#7c3aed",
+      border: "1px solid #ddd6fe",
+      label: "Mentoria",
+    },
+  };
+
+  const item = map[tipo] || {
+    background: "#f8fafc",
+    color: "#475569",
+    border: "1px solid #e2e8f0",
+    label: value || "Sustentação",
+  };
+
+  return {
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "5px 10px",
+      borderRadius: 999,
+      fontSize: 10,
+      fontWeight: 800,
+      whiteSpace: "nowrap",
+      lineHeight: 1.1,
+      textTransform: "uppercase",
+      letterSpacing: ".03em",
+      background: item.background,
+      color: item.color,
+      border: item.border,
+    },
+    label: item.label,
+  };
+}
+
+function getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada) {
+  const prazo = getPrazoInfo(jornada);
+
+  if (prazo.tone === "danger") {
+    return { level: "alta", label: "Prazo vencido" };
+  }
+
+  if (!acoesDaJornada.length && !coachingsDaJornada.length) {
+    return { level: "media", label: "Sem entregas vinculadas" };
+  }
+
+  return { level: "ok", label: "Monitorada" };
+}
+
+function getActionAttention(acao) {
+  const prazo = getPrazoInfo(acao);
+  if (prazo.tone === "danger") return { level: "alta", label: "Prazo vencido" };
+  if (!acao.responsavel) return { level: "media", label: "Sem responsável" };
+  if (Number(acao.quantidade_turmas_sessoes || 0) === 0) {
+    return { level: "media", label: "Sem turma vinculada" };
+  }
+  return { level: "ok", label: "Estável" };
+}
+
+function getCoachingAttention(item) {
+  const prazo = getPrazoInfo(item);
+  if (prazo.tone === "danger") return { level: "alta", label: "Prazo vencido" };
+  if (!item.responsavel_id && !item.responsavel) {
+    return { level: "media", label: "Sem responsável" };
+  }
+  if (Number(item.sessoes_realizadas || 0) === 0 && canonicalStatus(item.status) === "em_andamento") {
+    return { level: "media", label: "Sem sessões realizadas" };
+  }
+  return { level: "ok", label: "Monitorada" };
+}
+
 function inputStyle() {
   return {
     width: "100%",
@@ -326,14 +415,6 @@ function emptyCard(message) {
   );
 }
 
-function extrairMensagemErro(error, fallback) {
-  if (!error) return fallback;
-  if (typeof error === "string") return error;
-  if (error.message) return error.message;
-  if (error.error) return error.error;
-  return fallback;
-}
-
 const journeyInitial = {
   id: null,
   titulo: "",
@@ -359,6 +440,26 @@ const actionInitial = {
   turma_ids: [],
 };
 
+const coachingInitial = {
+  id: null,
+  jornada_id: "",
+  acao_id: "",
+  tipo_coaching: "coaching",
+  titulo: "",
+  publico_alvo: "",
+  objetivo: "",
+  responsavel_id: "",
+  participantes_previstos: "",
+  participantes_realizados: "",
+  sessoes_previstas: "",
+  sessoes_realizadas: "",
+  carga_horaria_sessao: "",
+  horas_totais: "",
+  status: "planejado",
+  data_inicio: "",
+  data_fim: "",
+};
+
 const STATUS_OPTIONS = [
   { value: "", label: "Todos os status" },
   { value: "planejado", label: "Planejado" },
@@ -372,7 +473,9 @@ export default function MapaDesenvolvimentoPage() {
 
   const [jornadas, setJornadas] = useState([]);
   const [acoes, setAcoes] = useState([]);
+  const [coachings, setCoachings] = useState([]);
   const [turmas, setTurmas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -387,6 +490,7 @@ export default function MapaDesenvolvimentoPage() {
 
   const [jornadaForm, setJornadaForm] = useState(journeyInitial);
   const [acaoForm, setAcaoForm] = useState(actionInitial);
+  const [coachingForm, setCoachingForm] = useState(coachingInitial);
 
   useEffect(() => {
     loadAll();
@@ -397,15 +501,20 @@ export default function MapaDesenvolvimentoPage() {
     setErro("");
 
     try {
-      const [jornadasData, acoesData, turmasData] = await Promise.all([
-        apiFetch("/jornadas-desenvolvimento").catch(() => []),
-        apiFetch("/acoes-desenvolvimento").catch(() => []),
-        apiFetch("/treinamentos").catch(() => []),
-      ]);
+      const [jornadasData, acoesData, coachingsData, turmasData, usuariosData] =
+        await Promise.all([
+          apiFetch("/jornadas-desenvolvimento").catch(() => []),
+          apiFetch("/acoes-desenvolvimento").catch(() => []),
+          apiFetch("/coaching-planos").catch(() => []),
+          apiFetch("/treinamentos").catch(() => []),
+          apiFetch("/usuarios").catch(() => []),
+        ]);
 
       setJornadas(Array.isArray(jornadasData) ? jornadasData : []);
       setAcoes(Array.isArray(acoesData) ? acoesData : []);
+      setCoachings(Array.isArray(coachingsData) ? coachingsData : []);
       setTurmas(Array.isArray(turmasData) ? turmasData : []);
+      setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
     } catch (error) {
       setErro(
         extrairMensagemErro(error, "Erro ao carregar o Mapa de Desenvolvimento.")
@@ -528,6 +637,74 @@ export default function MapaDesenvolvimentoPage() {
     }
   }
 
+  async function saveCoaching(event) {
+    event.preventDefault();
+    setSaving(true);
+    setErro("");
+    setNotice("");
+
+    if (!String(coachingForm.titulo || "").trim()) {
+      setErro("Informe o título do coaching ou mentoria.");
+      setSaving(false);
+      return;
+    }
+
+    if (!isValidDateRange(coachingForm.data_inicio, coachingForm.data_fim)) {
+      setErro("A data fim da sustentação não pode ser menor que a data início.");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const horasTotais =
+        coachingForm.horas_totais !== ""
+          ? Number(coachingForm.horas_totais || 0)
+          : Number(coachingForm.sessoes_realizadas || 0) *
+            Number(coachingForm.carga_horaria_sessao || 0) *
+            Number(coachingForm.participantes_realizados || 0);
+
+      const payload = {
+        jornada_id: coachingForm.jornada_id ? Number(coachingForm.jornada_id) : null,
+        acao_id: coachingForm.acao_id ? Number(coachingForm.acao_id) : null,
+        tipo_coaching: coachingForm.tipo_coaching,
+        titulo: coachingForm.titulo,
+        publico_alvo: coachingForm.publico_alvo || null,
+        objetivo: coachingForm.objetivo || null,
+        responsavel_id: coachingForm.responsavel_id || null,
+        participantes_previstos: Number(coachingForm.participantes_previstos || 0),
+        participantes_realizados: Number(coachingForm.participantes_realizados || 0),
+        sessoes_previstas: Number(coachingForm.sessoes_previstas || 0),
+        sessoes_realizadas: Number(coachingForm.sessoes_realizadas || 0),
+        carga_horaria_sessao: Number(coachingForm.carga_horaria_sessao || 0),
+        horas_totais: horasTotais,
+        status: coachingForm.status || "planejado",
+        data_inicio: coachingForm.data_inicio || null,
+        data_fim: coachingForm.data_fim || null,
+      };
+
+      if (coachingForm.id) {
+        await apiFetch(`/coaching-planos/${coachingForm.id}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        setNotice("Sustentação atualizada com sucesso.");
+      } else {
+        await apiFetch("/coaching-planos", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setNotice("Sustentação registrada com sucesso.");
+      }
+
+      setCoachingForm(coachingInitial);
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao salvar coaching ou mentoria."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function removeRegistro(tipo, id) {
     const ok = window.confirm("Deseja realmente excluir este registro?");
     if (!ok) return;
@@ -536,6 +713,7 @@ export default function MapaDesenvolvimentoPage() {
       const pathMap = {
         jornada: `/jornadas-desenvolvimento/${id}`,
         acao: `/acoes-desenvolvimento/${id}`,
+        coaching: `/coaching-planos/${id}`,
       };
 
       await apiFetch(pathMap[tipo], { method: "DELETE" });
@@ -580,61 +758,102 @@ export default function MapaDesenvolvimentoPage() {
     setActiveTab("acoes");
   }
 
+  function editCoaching(item) {
+    setCoachingForm({
+      id: item.id,
+      jornada_id: item.jornada_id || "",
+      acao_id: item.acao_id || "",
+      tipo_coaching: item.tipo_coaching || "coaching",
+      titulo: item.titulo || "",
+      publico_alvo: item.publico_alvo || "",
+      objetivo: item.objetivo || "",
+      responsavel_id: item.responsavel_id || "",
+      participantes_previstos: String(item.participantes_previstos || ""),
+      participantes_realizados: String(item.participantes_realizados || ""),
+      sessoes_previstas: String(item.sessoes_previstas || ""),
+      sessoes_realizadas: String(item.sessoes_realizadas || ""),
+      carga_horaria_sessao: String(item.carga_horaria_sessao || ""),
+      horas_totais: String(item.horas_totais || ""),
+      status: canonicalStatus(item.status) || "planejado",
+      data_inicio: toDateInputLocal(item.data_inicio),
+      data_fim: toDateInputLocal(item.data_fim),
+    });
+    setActiveTab("coaching");
+  }
+
+  const usuariosMap = useMemo(() => {
+    const map = {};
+    usuarios.forEach((u) => {
+      map[String(u.id)] = u.nome || `Usuário ${u.id}`;
+    });
+    return map;
+  }, [usuarios]);
+
   const jornadasEnriquecidas = useMemo(() => {
     return jornadas.map((jornada) => {
       const acoesDaJornada = acoes.filter(
         (a) => String(a.jornada_id) === String(jornada.id)
       );
-      const horasTotais = acoesDaJornada.reduce(
-        (acc, item) => acc + Number(item.horas_realizadas || 0),
-        0
+      const coachingsDaJornada = coachings.filter(
+        (c) => String(c.jornada_id || "") === String(jornada.id)
       );
 
-      let attention = { level: "ok", label: "Monitorada" };
-
-      if (!acoesDaJornada.length) {
-        attention = { level: "media", label: "Sem portos vinculados" };
-      }
-
-      if (getPrazoInfo(jornada).tone === "danger") {
-        attention = { level: "alta", label: "Prazo vencido" };
-      }
+      const horasTotais =
+        acoesDaJornada.reduce(
+          (acc, item) => acc + Number(item.horas_realizadas || 0),
+          0
+        ) +
+        coachingsDaJornada.reduce(
+          (acc, item) => acc + Number(item.horas_totais || 0),
+          0
+        );
 
       return {
         ...jornada,
         nome: jornada.nome || jornada.titulo,
         publico_macro: jornada.publico_macro || jornada.publico_alvo,
         total_acoes: acoesDaJornada.length,
+        total_coachings: coachingsDaJornada.length,
         horas_totais: horasTotais,
         prazo_info: getPrazoInfo(jornada),
-        attention_info: attention,
+        attention_info: getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada),
         status_canonico: canonicalStatus(jornada.status),
       };
     });
-  }, [jornadas, acoes]);
+  }, [jornadas, acoes, coachings]);
 
   const acoesEnriquecidas = useMemo(() => {
     return acoes.map((acao) => {
       const jornada = jornadas.find((j) => String(j.id) === String(acao.jornada_id));
-
-      let attention = { level: "ok", label: "Estável" };
-      if (!acao.responsavel) {
-        attention = { level: "media", label: "Sem responsável" };
-      }
-      if (getPrazoInfo(acao).tone === "danger") {
-        attention = { level: "alta", label: "Prazo vencido" };
-      }
 
       return {
         ...acao,
         tema: acao.tema || acao.titulo,
         jornada_nome: jornada?.nome || jornada?.titulo || "Sem jornada",
         prazo_info: getPrazoInfo(acao),
-        attention_info: attention,
+        attention_info: getActionAttention(acao),
         status_canonico: canonicalStatus(acao.status),
       };
     });
   }, [acoes, jornadas]);
+
+  const coachingsEnriquecidos = useMemo(() => {
+    return coachings.map((item) => {
+      const jornada = jornadas.find((j) => String(j.id) === String(item.jornada_id || ""));
+      const acao = acoes.find((a) => String(a.id) === String(item.acao_id || ""));
+
+      return {
+        ...item,
+        jornada_nome: jornada?.nome || jornada?.titulo || "Independente",
+        acao_nome: acao?.tema || acao?.titulo || "Sem ação vinculada",
+        responsavel_nome:
+          usuariosMap[String(item.responsavel_id)] || item.responsavel || "Não definido",
+        prazo_info: getPrazoInfo(item),
+        attention_info: getCoachingAttention(item),
+        status_canonico: canonicalStatus(item.status),
+      };
+    });
+  }, [coachings, jornadas, acoes, usuariosMap]);
 
   const filteredJornadas = useMemo(() => {
     return jornadasEnriquecidas.filter((item) => {
@@ -674,6 +893,30 @@ export default function MapaDesenvolvimentoPage() {
     });
   }, [acoesEnriquecidas, filters]);
 
+  const filteredCoachings = useMemo(() => {
+    return coachingsEnriquecidos.filter((item) => {
+      const matchJornada =
+        !filters.jornada_id || String(item.jornada_id || "") === String(filters.jornada_id);
+      const matchStatus =
+        !filters.status || item.status_canonico === filters.status;
+      const matchBusca =
+        !filters.busca ||
+        normalize(
+          [
+            item.titulo,
+            item.tipo_coaching,
+            item.publico_alvo,
+            item.objetivo,
+            item.jornada_nome,
+            item.acao_nome,
+            item.responsavel_nome,
+          ].join(" ")
+        ).includes(normalize(filters.busca));
+
+      return matchJornada && matchStatus && matchBusca;
+    });
+  }, [coachingsEnriquecidos, filters]);
+
   const jornadasFluxo = useMemo(() => {
     return filteredJornadas
       .map((jornada) => {
@@ -681,23 +924,27 @@ export default function MapaDesenvolvimentoPage() {
           (item) => String(item.jornada_id) === String(jornada.id)
         );
 
-        const concluidas = acoesDaJornada.filter(
-          (item) => canonicalStatus(item.status) === "concluido"
-        ).length;
+        const coachingsDaJornada = filteredCoachings.filter(
+          (item) => String(item.jornada_id || "") === String(jornada.id)
+        );
 
-        const progresso = acoesDaJornada.length
-          ? Math.round((concluidas / acoesDaJornada.length) * 100)
-          : 0;
+        const totalBlocos = acoesDaJornada.length + coachingsDaJornada.length;
+        const concluidos =
+          acoesDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length +
+          coachingsDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
+
+        const progresso = totalBlocos ? Math.round((concluidos / totalBlocos) * 100) : 0;
 
         const proximoPasso =
-          acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido")
-            ?.tema ||
-          "Estruturar os próximos portos da jornada";
+          acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido")?.tema ||
+          coachingsDaJornada.find((item) => canonicalStatus(item.status) !== "concluido")?.titulo ||
+          "Estruturar os próximos trechos";
 
         return {
           ...jornada,
           acoesDaJornada,
-          concluidas,
+          coachingsDaJornada,
+          concluidos,
           progresso,
           proximoPasso,
         };
@@ -708,29 +955,40 @@ export default function MapaDesenvolvimentoPage() {
         if (pa !== pb) return pa - pb;
         return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
       });
-  }, [filteredJornadas, filteredAcoes]);
+  }, [filteredJornadas, filteredAcoes, filteredCoachings]);
 
   const kpis = useMemo(() => {
     return {
       jornadas: filteredJornadas.length,
       acoes: filteredAcoes.length,
+      coachings: filteredCoachings.length,
       turmas: filteredAcoes.reduce(
         (acc, item) => acc + Number(item.quantidade_turmas_sessoes || 0),
         0
       ),
-      participantes: filteredAcoes.reduce(
-        (acc, item) => acc + Number(item.participantes_realizados || 0),
-        0
-      ),
-      horasTotais: filteredAcoes.reduce(
-        (acc, item) => acc + Number(item.horas_realizadas || 0),
-        0
-      ),
-      concluidas: filteredAcoes.filter(
-        (i) => canonicalStatus(i.status) === "concluido"
-      ).length,
+      participantes:
+        filteredAcoes.reduce(
+          (acc, item) => acc + Number(item.participantes_realizados || 0),
+          0
+        ) +
+        filteredCoachings.reduce(
+          (acc, item) => acc + Number(item.participantes_realizados || 0),
+          0
+        ),
+      horasTotais:
+        filteredAcoes.reduce(
+          (acc, item) => acc + Number(item.horas_realizadas || 0),
+          0
+        ) +
+        filteredCoachings.reduce(
+          (acc, item) => acc + Number(item.horas_totais || 0),
+          0
+        ),
+      concluidas:
+        filteredAcoes.filter((i) => canonicalStatus(i.status) === "concluido").length +
+        filteredCoachings.filter((i) => canonicalStatus(i.status) === "concluido").length,
     };
-  }, [filteredJornadas, filteredAcoes]);
+  }, [filteredJornadas, filteredAcoes, filteredCoachings]);
 
   const destaqueCards = [
     {
@@ -744,9 +1002,9 @@ export default function MapaDesenvolvimentoPage() {
       subtitle: "Ações vinculadas ao oceano",
     },
     {
-      title: "Turmas ancoradas",
-      value: fmtNumber(kpis.turmas),
-      subtitle: "Turmas conectadas às ações",
+      title: "Sustentações",
+      value: fmtNumber(kpis.coachings),
+      subtitle: "Coaching e mentoria",
     },
     {
       title: "Horas no oceano",
@@ -754,6 +1012,12 @@ export default function MapaDesenvolvimentoPage() {
       subtitle: "Execução consolidada",
     },
   ];
+
+  const acoesOptions = useMemo(() => {
+    return [...acoesEnriquecidas].sort((a, b) =>
+      String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR")
+    );
+  }, [acoesEnriquecidas]);
 
   return (
     <PortalShell
@@ -765,11 +1029,12 @@ export default function MapaDesenvolvimentoPage() {
           <div style={heroLeft}>
             <div style={heroEyebrow}>Oceano do Desenvolvimento</div>
             <h2 style={heroTitle}>
-              Um território vivo de desenvolvimento, com rios, portos e destino.
+              Um território vivo de desenvolvimento, com rios, portos, sustentação e destino.
             </h2>
             <p style={heroText}>
-              Leia o mapa como um oceano: jornadas como rios, ações como portos
-              e turmas como embarcações reais que materializam a execução.
+              Leia o mapa como um oceano: jornadas como rios, ações como portos,
+              turmas como embarcações reais e coaching ou mentoria como a
+              sustentação que mantém a rota viva.
             </p>
 
             <div style={tabBar}>
@@ -777,6 +1042,7 @@ export default function MapaDesenvolvimentoPage() {
                 ["geral", "Oceano"],
                 ["jornadas", "Rios"],
                 ["acoes", "Portos"],
+                ["coaching", "Sustentação"],
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -815,10 +1081,10 @@ export default function MapaDesenvolvimentoPage() {
           <div style={kpiGrid}>
             <StatCard title="Rios ativos" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
             <StatCard title="Portos de ação" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
+            <StatCard title="Sustentação" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
             <StatCard title="Turmas vinculadas" value={fmtNumber(kpis.turmas)} accent="#0f766e" />
             <StatCard title="Público impactado" value={fmtNumber(kpis.participantes)} accent="#16a34a" />
             <StatCard title="Horas no oceano" value={fmtHours(kpis.horasTotais)} accent="#b45309" />
-            <StatCard title="Entregas concluídas" value={fmtNumber(kpis.concluidas)} accent="#1d4ed8" />
           </div>
         </SectionCard>
 
@@ -883,7 +1149,7 @@ export default function MapaDesenvolvimentoPage() {
                 onChange={(e) =>
                   setFilters((prev) => ({ ...prev, busca: e.target.value }))
                 }
-                placeholder="Jornada, ação, objetivo, responsável..."
+                placeholder="Jornada, ação, coaching, mentoria, objetivo..."
                 style={inputStyle()}
               />
             </label>
@@ -912,7 +1178,7 @@ export default function MapaDesenvolvimentoPage() {
                   ["1. Oceano", "Define a leitura macro do desenvolvimento e do território."],
                   ["2. Rios", "Cada jornada conduz um caminho com vários trechos."],
                   ["3. Portos", "Ações funcionam como pontos de ancoragem e execução."],
-                  ["4. Embarcações", "As turmas reais materializam a jornada na operação."],
+                  ["4. Sustentação", "Coaching e mentoria mantêm a rota viva após a ação."],
                 ].map(([title, text]) => (
                   <div key={title} style={journeyGuideCard}>
                     <div style={journeyGuideTitle}>{title}</div>
@@ -924,7 +1190,7 @@ export default function MapaDesenvolvimentoPage() {
 
             <SectionCard
               title="Rios e trajetos"
-              subtitle="Leia cada jornada como um rio com portos, progresso e próximo trecho."
+              subtitle="Leia cada jornada como um rio com portos, sustentação e próximo trecho."
             >
               {loading ? (
                 emptyCard("Carregando fluxo das jornadas...")
@@ -957,7 +1223,7 @@ export default function MapaDesenvolvimentoPage() {
 
                         <div style={journeyFlowSummary}>
                           <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
-                          <MetricBox label="Concluídos" value={fmtNumber(jornada.concluidas)} />
+                          <MetricBox label="Sustentações" value={fmtNumber(jornada.coachingsDaJornada.length)} />
                           <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                           <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                         </div>
@@ -978,116 +1244,65 @@ export default function MapaDesenvolvimentoPage() {
                       </div>
 
                       <div style={journeyStagesGrid}>
-                        {jornada.acoesDaJornada.length === 0 ? (
-                          <div style={emptyTimeline}>Esta jornada ainda não possui portos vinculados.</div>
+                        {jornada.acoesDaJornada.length === 0 && jornada.coachingsDaJornada.length === 0 ? (
+                          <div style={emptyTimeline}>Esta jornada ainda não possui entregas vinculadas.</div>
                         ) : (
-                          jornada.acoesDaJornada.map((acao) => (
-                            <div key={acao.id} style={journeyStageCard(false)}>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                <span style={badgeStyle(acao.status)}>{displayStatus(acao.status)}</span>
-                                <span style={attentionBadge(acao.attention_info.level)}>
-                                  {acao.attention_info.label}
-                                </span>
-                                <span style={prazoBadge(acao.prazo_info.tone)}>
-                                  {acao.prazo_info.label}
-                                </span>
-                              </div>
+                          <>
+                            {jornada.acoesDaJornada.map((acao) => (
+                              <div key={`acao-${acao.id}`} style={journeyStageCard(false)}>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                  <span style={badgeStyle(acao.status)}>{displayStatus(acao.status)}</span>
+                                  <span style={attentionBadge(acao.attention_info.level)}>
+                                    {acao.attention_info.label}
+                                  </span>
+                                  <span style={prazoBadge(acao.prazo_info.tone)}>
+                                    {acao.prazo_info.label}
+                                  </span>
+                                </div>
 
-                              <div style={journeyStageTitle}>{acao.tema}</div>
-                              <div style={journeyStageMeta}>
-                                {formatDate(acao.data_inicio)} até {formatDate(acao.data_fim)}
-                              </div>
+                                <div style={journeyStageTitle}>{acao.tema}</div>
+                                <div style={journeyStageMeta}>
+                                  {formatDate(acao.data_inicio)} até {formatDate(acao.data_fim)}
+                                </div>
 
-                              <div style={journeyMiniStats}>
-                                <span>{fmtNumber(acao.quantidade_turmas_sessoes || 0)} turma(s)</span>
-                                <span>{fmtNumber(acao.participantes_realizados || 0)} participantes</span>
-                                <span>{fmtHours(acao.horas_realizadas || 0)}h</span>
+                                <div style={journeyMiniStats}>
+                                  <span>{fmtNumber(acao.quantidade_turmas_sessoes || 0)} turma(s)</span>
+                                  <span>{fmtNumber(acao.participantes_realizados || 0)} participantes</span>
+                                  <span>{fmtHours(acao.horas_realizadas || 0)}h</span>
+                                </div>
                               </div>
+                            ))}
 
-                              {Array.isArray(acao.turmas_vinculadas) &&
-                              acao.turmas_vinculadas.length ? (
-                                <div style={journeySubBlock}>
-                                  <div style={journeySubTitle}>Embarcações ancoradas</div>
-                                  <div style={journeyTags}>
-                                    {acao.turmas_vinculadas.map((turma) => (
-                                      <button
-                                        key={turma.id}
-                                        type="button"
-                                        onClick={() =>
-                                          (window.location.href = `/turma/${turma.id}`)
-                                        }
-                                        style={journeyTag}
-                                      >
-                                        {turma.tema || `Turma ${turma.id}`}
-                                      </button>
-                                    ))}
+                            {jornada.coachingsDaJornada.map((item) => {
+                              const badge = sustentacaoTypeBadge(item.tipo_coaching);
+                              return (
+                                <div key={`coach-${item.id}`} style={journeyStageCard(false)}>
+                                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                    <span style={badge.style}>{badge.label}</span>
+                                    <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                                    <span style={attentionBadge(item.attention_info.level)}>
+                                      {item.attention_info.label}
+                                    </span>
+                                  </div>
+
+                                  <div style={journeyStageTitle}>{item.titulo}</div>
+                                  <div style={journeyStageMeta}>
+                                    {formatDate(item.data_inicio)} até {formatDate(item.data_fim)}
+                                  </div>
+
+                                  <div style={journeyMiniStats}>
+                                    <span>{fmtNumber(item.sessoes_realizadas || 0)} sessão(ões)</span>
+                                    <span>{fmtNumber(item.participantes_realizados || 0)} participantes</span>
+                                    <span>{fmtHours(item.horas_totais || 0)}h</span>
                                   </div>
                                 </div>
-                              ) : (
-                                <div style={journeyEmptyText}>Sem turmas vinculadas</div>
-                              )}
-                            </div>
-                          ))
+                              );
+                            })}
+                          </>
                         )}
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
-            </SectionCard>
-
-            <SectionCard
-              title="Portos em movimento"
-              subtitle="Entregas, vínculo com turmas e leitura operacional do trecho atual."
-            >
-              {loading ? (
-                emptyCard("Carregando visão geral...")
-              ) : filteredAcoes.length === 0 ? (
-                emptyCard("Nenhuma ação encontrada.")
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Jornada</th>
-                        <th style={thStyle}>Porto</th>
-                        <th style={thStyle}>Responsável</th>
-                        <th style={thStyle}>Turmas</th>
-                        <th style={thStyle}>Participantes</th>
-                        <th style={thStyle}>Horas</th>
-                        <th style={thStyle}>Status</th>
-                        <th style={thStyle}>Prazo</th>
-                        <th style={thStyle}>Atenção</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAcoes.map((item) => (
-                        <tr key={item.id} style={rowTone(item)}>
-                          <td style={tdStyle}>{item.jornada_nome}</td>
-                          <td style={tdStyle}>
-                            <strong>{item.tema}</strong>
-                          </td>
-                          <td style={tdStyle}>{item.responsavel || item.responsavel_nome || "—"}</td>
-                          <td style={tdStyle}>{fmtNumber(item.quantidade_turmas_sessoes || 0)}</td>
-                          <td style={tdStyle}>{fmtNumber(item.participantes_realizados || 0)}</td>
-                          <td style={tdStyle}>{fmtHours(item.horas_realizadas || 0)}</td>
-                          <td style={tdStyle}>
-                            <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
-                          </td>
-                          <td style={tdStyle}>
-                            <span style={prazoBadge(item.prazo_info.tone)}>
-                              {item.prazo_info.label}
-                            </span>
-                          </td>
-                          <td style={tdStyle}>
-                            <span style={attentionBadge(item.attention_info.level)}>
-                              {item.attention_info.label}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
               )}
             </SectionCard>
@@ -1251,8 +1466,8 @@ export default function MapaDesenvolvimentoPage() {
 
                         <div style={miniExecutiveBand}>
                           <MiniExecutive label="Portos" value={fmtNumber(jornada.total_acoes)} />
+                          <MiniExecutive label="Sustentação" value={fmtNumber(jornada.total_coachings)} />
                           <MiniExecutive label="Horas" value={fmtHours(jornada.horas_totais)} />
-                          <MiniExecutive label="Prazo" value={jornada.prazo_info.label} />
                         </div>
                       </div>
 
@@ -1551,6 +1766,377 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
           </>
         )}
+
+        {activeTab === "coaching" && (
+          <>
+            <SectionCard
+              title="Sustentação do percurso"
+              subtitle="Registre coaching e mentoria como camada de reforço e continuidade da jornada."
+            >
+              <details open style={detailsCard}>
+                <summary style={detailsSummary}>Registro de sustentação</summary>
+
+                <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                  <div style={formGrid}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Jornada
+                      <select
+                        value={coachingForm.jornada_id}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            jornada_id: e.target.value,
+                            acao_id: "",
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="">Selecione</option>
+                        {jornadas.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome || item.titulo}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Ação vinculada
+                      <select
+                        value={coachingForm.acao_id}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            acao_id: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="">Sem ação vinculada</option>
+                        {acoesOptions
+                          .filter(
+                            (item) =>
+                              !coachingForm.jornada_id ||
+                              String(item.jornada_id) === String(coachingForm.jornada_id)
+                          )
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.tema}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Tipo
+                      <select
+                        value={coachingForm.tipo_coaching}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            tipo_coaching: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="coaching">Coaching</option>
+                        <option value="mentoria">Mentoria</option>
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.xxl }}>
+                      Título
+                      <input
+                        value={coachingForm.titulo}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            titulo: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                        required
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Público-alvo
+                      <input
+                        value={coachingForm.publico_alvo}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            publico_alvo: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Responsável
+                      <select
+                        value={coachingForm.responsavel_id}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            responsavel_id: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="">Selecione</option>
+                        {usuarios.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Status
+                      <select
+                        value={coachingForm.status}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            status: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="planejado">Planejado</option>
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="concluido">Concluído</option>
+                        <option value="cancelado">Cancelado</option>
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Data início
+                      <input
+                        type="date"
+                        value={coachingForm.data_inicio}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            data_inicio: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Data fim
+                      <input
+                        type="date"
+                        value={coachingForm.data_fim}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            data_fim: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Participantes previstos
+                      <input
+                        type="number"
+                        min="0"
+                        value={coachingForm.participantes_previstos}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            participantes_previstos: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Participantes realizados
+                      <input
+                        type="number"
+                        min="0"
+                        value={coachingForm.participantes_realizados}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            participantes_realizados: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Sessões previstas
+                      <input
+                        type="number"
+                        min="0"
+                        value={coachingForm.sessoes_previstas}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            sessoes_previstas: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Sessões realizadas
+                      <input
+                        type="number"
+                        min="0"
+                        value={coachingForm.sessoes_realizadas}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            sessoes_realizadas: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Carga horária por sessão
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={coachingForm.carga_horaria_sessao}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            carga_horaria_sessao: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Horas totais
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={coachingForm.horas_totais}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            horas_totais: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.full }}>
+                      Objetivo
+                      <textarea
+                        value={coachingForm.objetivo}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            objetivo: e.target.value,
+                          }))
+                        }
+                        style={textareaStyle(92)}
+                      />
+                    </label>
+                  </div>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {coachingForm.id ? "Atualizar sustentação" : "Salvar sustentação"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setCoachingForm(coachingInitial);
+                        setErro("");
+                        setNotice("");
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
+            </SectionCard>
+
+            <SectionCard
+              title="Portos de sustentação"
+              subtitle="Coaching e mentoria como reforço contínuo do percurso."
+            >
+              {loading ? (
+                emptyCard("Carregando coaching e mentoria...")
+              ) : filteredCoachings.length === 0 ? (
+                emptyCard("Nenhum coaching ou mentoria encontrado.")
+              ) : (
+                <div style={cardsGrid}>
+                  {filteredCoachings.map((item) => {
+                    const tipoBadge = sustentacaoTypeBadge(item.tipo_coaching);
+
+                    return (
+                      <div key={item.id} style={execCard}>
+                        <div style={execHeader}>
+                          <div>
+                            <div style={execTitle}>{item.titulo}</div>
+                            <div style={execSubtitle}>
+                              {item.jornada_nome} • {item.acao_nome}
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <span style={tipoBadge.style}>{tipoBadge.label}</span>
+                            <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                            <span style={attentionBadge(item.attention_info.level)}>
+                              {item.attention_info.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={execBody}>
+                          <div style={execText}>{item.objetivo || "Sem objetivo registrado."}</div>
+
+                          <div style={miniExecutiveBand}>
+                            <MiniExecutive label="Sessões" value={fmtNumber(item.sessoes_realizadas || 0)} />
+                            <MiniExecutive label="Participantes" value={fmtNumber(item.participantes_realizados || 0)} />
+                            <MiniExecutive label="Horas" value={fmtHours(item.horas_totais || 0)} />
+                          </div>
+                        </div>
+
+                        <div style={buttonRow}>
+                          <button style={buttonSecondaryStyle()} onClick={() => editCoaching(item)}>
+                            Editar
+                          </button>
+                          <button
+                            style={buttonDangerStyle()}
+                            onClick={() => removeRegistro("coaching", item.id)}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </SectionCard>
+          </>
+        )}
       </div>
     </PortalShell>
   );
@@ -1561,33 +2147,6 @@ function MetricBox({ label, value }) {
     <div style={metricBox}>
       <div style={metricBoxLabel}>{label}</div>
       <div style={metricBoxValue}>{value}</div>
-    </div>
-  );
-}
-
-function OverviewBox({ label, value, tone = "default" }) {
-  const tones = {
-    default: {
-      background: "#f8fafc",
-      color: "#0f172a",
-      border: "1px solid #e2e8f0",
-    },
-    alert: {
-      background: "#fff7ed",
-      color: "#c2410c",
-      border: "1px solid #fed7aa",
-    },
-    danger: {
-      background: "#fff1f2",
-      color: "#b91c1c",
-      border: "1px solid #fecaca",
-    },
-  };
-
-  return (
-    <div style={{ ...overviewBox, ...(tones[tone] || tones.default) }}>
-      <div style={overviewLabel}>{label}</div>
-      <div style={overviewValue}>{value}</div>
     </div>
   );
 }
@@ -1614,18 +2173,7 @@ function tabButton(active) {
   };
 }
 
-function rowTone(item) {
-  if (item?.attention_info?.level === "alta") {
-    return { background: "#fffaf9" };
-  }
-  if (item?.attention_info?.level === "media") {
-    return { background: "#fffdf7" };
-  }
-  return { background: "#fff" };
-}
-
 const fieldSpan = {
-  sm: { gridColumn: "span 1" },
   md: { gridColumn: "span 1" },
   lg: { gridColumn: "span 2" },
   xl: { gridColumn: "span 2" },
@@ -1888,16 +2436,13 @@ const journeyStagesGrid = {
   gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
 };
 
-const journeyStageCard = (isAtual) => ({
+const journeyStageCard = () => ({
   borderRadius: 18,
-  border: isAtual ? "1px solid #7dd3fc" : "1px solid #e2e8f0",
-  background: isAtual
-    ? "linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%)"
-    : "#fff",
+  border: "1px solid #e2e8f0",
+  background: "#fff",
   padding: 16,
   display: "grid",
   gap: 10,
-  boxShadow: isAtual ? "0 10px 24px rgba(14,165,233,.12)" : "none",
 });
 
 const journeyStageTitle = {
@@ -1920,31 +2465,12 @@ const journeyMiniStats = {
   fontWeight: 700,
 };
 
-const journeySubBlock = {
-  display: "grid",
-  gap: 8,
-};
-
 const journeySubTitle = {
   fontSize: 12,
   fontWeight: 900,
   color: "#0f766e",
   textTransform: "uppercase",
   letterSpacing: ".04em",
-};
-
-const journeyLinkedItem = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  flexWrap: "wrap",
-  fontSize: 13,
-  color: "#334155",
-};
-
-const journeyEmptyText = {
-  fontSize: 13,
-  color: "#64748b",
 };
 
 const journeyTags = {
@@ -1962,6 +2488,11 @@ const journeyTag = {
   fontSize: 12,
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const journeyEmptyText = {
+  fontSize: 13,
+  color: "#64748b",
 };
 
 const emptyTimeline = {
@@ -2074,52 +2605,4 @@ const miniExecutiveValue = {
 const helpText = {
   fontSize: 12,
   color: "#64748b",
-};
-
-const overviewBox = {
-  borderRadius: 14,
-  padding: 12,
-  display: "grid",
-  gap: 4,
-};
-
-const overviewLabel = {
-  fontSize: 11,
-  fontWeight: 800,
-  textTransform: "uppercase",
-};
-
-const overviewValue = {
-  fontSize: 18,
-  fontWeight: 900,
-};
-
-const tableStyle = {
-  width: "100%",
-  borderCollapse: "separate",
-  borderSpacing: 0,
-  minWidth: 980,
-  background: "#fff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  overflow: "hidden",
-};
-
-const thStyle = {
-  textAlign: "left",
-  padding: "14px 16px",
-  fontSize: 12,
-  fontWeight: 900,
-  color: "#475569",
-  textTransform: "uppercase",
-  letterSpacing: ".03em",
-  background: "#f8fafc",
-  borderBottom: "1px solid #e2e8f0",
-};
-
-const tdStyle = {
-  padding: "14px 16px",
-  borderBottom: "1px solid #eef2f7",
-  color: "#0f172a",
-  fontSize: 14,
 };
