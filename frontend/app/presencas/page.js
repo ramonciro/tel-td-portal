@@ -5,35 +5,18 @@ import PortalShell from "../../components/PortalShell";
 import StatCard from "../../components/StatCard";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
+import { formatDateBR, parseLocalDate, todayLocal } from "../../lib/date";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
 function parseDateSafe(value) {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-
-  const text = String(value).slice(0, 10);
-  const parts = text.split("-");
-
-  if (parts.length === 3) {
-    const [year, month, day] = parts.map(Number);
-    if (year && month && day) {
-      return new Date(year, month - 1, day, 12, 0, 0);
-    }
-  }
-
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
+  return parseLocalDate(value);
 }
 
 function fmtDate(value) {
-  if (!value) return "-";
-  const d = parseDateSafe(value);
-  if (!d) return String(value).slice(0, 10);
-  return d.toLocaleDateString("pt-BR");
+  return formatDateBR(value, "-");
 }
 
 function parseHoras(value) {
@@ -64,9 +47,9 @@ function getStatusTurma({
   if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
   if (["planejada", "planejado"].includes(status)) return "Planejada";
 
-  const hoje = new Date();
-  const inicio = dataInicio ? new Date(dataInicio) : null;
-  const fim = dataFim ? new Date(dataFim) : null;
+  const hoje = todayLocal();
+  const inicio = parseDateSafe(dataInicio);
+  const fim = parseDateSafe(dataFim);
 
   if (treinandos === 0) return "Sem treinandos";
   if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
