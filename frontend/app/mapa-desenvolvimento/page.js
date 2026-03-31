@@ -549,6 +549,30 @@ function extrairMensagemErro(error, fallback) {
   return fallback;
 }
 
+function getSelectStatus(resource, { loading, empty, error }) {
+  if (!resource) return { disabled: false, text: "" };
+  if (resource.state === "loading") return { disabled: true, text: loading };
+  if (resource.state === "error") return { disabled: true, text: resource.message || error };
+  if (resource.state === "empty") return { disabled: true, text: resource.message || empty };
+  return { disabled: false, text: "" };
+}
+
+function getDependentSelectStatus({
+  parentValue,
+  parentEmptyText,
+  items,
+  loadingState,
+  emptyText,
+  errorText,
+}) {
+  if (!parentValue) return { disabled: true, text: parentEmptyText };
+  if (!loadingState) return { disabled: !items.length, text: items.length ? "" : emptyText };
+  if (loadingState.state === "loading") return { disabled: true, text: "Carregando opções..." };
+  if (loadingState.state === "error") return { disabled: true, text: loadingState.message || errorText };
+  if (!items.length) return { disabled: true, text: emptyText };
+  return { disabled: false, text: "" };
+}
+
 const jornadaInicial = {
   id: null,
   nome: "",
@@ -657,6 +681,13 @@ export default function MapaDesenvolvimentoPage() {
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
   const [notice, setNotice] = useState("");
+  const [resourceStatus, setResourceStatus] = useState({
+    usuarios: { state: "idle", message: "" },
+    jornadas: { state: "idle", message: "" },
+    etapas: { state: "idle", message: "" },
+    acoes: { state: "idle", message: "" },
+    coachings: { state: "idle", message: "" },
+  });
 
   const [filters, setFilters] = useState({
     jornada_id: "",
@@ -691,11 +722,26 @@ export default function MapaDesenvolvimentoPage() {
     }
   }, [filters.jornada_id, filters.etapa_id, etapas]);
 
-  async function safeLoad(path) {
+  async function loadResource(path, key, emptyMessage = "Nenhum registro disponível.") {
     try {
       const data = await apiFetch(path);
-      return Array.isArray(data) ? data : [];
-    } catch {
+      const list = Array.isArray(data) ? data : [];
+      setResourceStatus((prev) => ({
+        ...prev,
+        [key]: {
+          state: list.length ? "success" : "empty",
+          message: list.length ? "" : emptyMessage,
+        },
+      }));
+      return list;
+    } catch (error) {
+      setResourceStatus((prev) => ({
+        ...prev,
+        [key]: {
+          state: "error",
+          message: extrairMensagemErro(error, `Erro ao carregar ${key}.`),
+        },
+      }));
       return [];
     }
   }
@@ -703,13 +749,21 @@ export default function MapaDesenvolvimentoPage() {
   async function loadAll() {
     setLoading(true);
     setErro("");
+    setResourceStatus({
+      usuarios: { state: "loading", message: "Carregando responsáveis..." },
+      jornadas: { state: "loading", message: "Carregando jornadas..." },
+      etapas: { state: "loading", message: "Carregando etapas..." },
+      acoes: { state: "loading", message: "Carregando ações..." },
+      coachings: { state: "loading", message: "Carregando coachings..." },
+    });
+
     try {
       const [usuariosData, jornadasData, etapasData, acoesData, coachingsData] = await Promise.all([
-        safeLoad("/usuarios"),
-        safeLoad("/jornadas-desenvolvimento"),
-        safeLoad("/jornadas-etapas"),
-        safeLoad("/acoes-desenvolvimento"),
-        safeLoad("/coaching-planos"),
+        loadResource("/usuarios", "usuarios", "Nenhum responsável disponível."),
+        loadResource("/jornadas-desenvolvimento", "jornadas", "Nenhuma jornada cadastrada."),
+        loadResource("/jornadas-etapas", "etapas", "Nenhuma etapa cadastrada."),
+        loadResource("/acoes-desenvolvimento", "acoes", "Nenhuma ação cadastrada."),
+        loadResource("/coaching-planos", "coachings", "Nenhum coaching cadastrado."),
       ]);
 
       setUsuarios(usuariosData);
@@ -1535,6 +1589,83 @@ export default function MapaDesenvolvimentoPage() {
     setActiveTab("coaching");
   }
 
+  const etapasDaJornadaAcao = useMemo(() => {
+    return etapasOrdenadas.filter(
+      (e) => !acaoForm.jornada_id || String(e.jornada_id) === String(acaoForm.jornada_id)
+    );
+  }, [etapasOrdenadas, acaoForm.jornada_id]);
+
+  const etapasDaJornadaCoaching = useMemo(() => {
+    return etapasOrdenadas.filter(
+      (e) => !coachingForm.jornada_id || String(e.jornada_id) === String(coachingForm.jornada_id)
+    );
+  }, [etapasOrdenadas, coachingForm.jornada_id]);
+
+  const acoesDoContextoCoaching = useMemo(() => {
+    return acoesEnriquecidas
+      .filter((item) => {
+        if (coachingForm.jornada_id && String(item.jornada_id || "") !== String(coachingForm.jornada_id)) {
+          return false;
+        }
+        if (coachingForm.etapa_id && String(item.etapa_id || "") !== String(coachingForm.etapa_id)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR"));
+  }, [acoesEnriquecidas, coachingForm.jornada_id, coachingForm.etapa_id]);
+
+  const usuariosSelectStatus = getSelectStatus(resourceStatus.usuarios, {
+    loading: "Carregando responsáveis...",
+    empty: "Nenhum responsável disponível",
+    error: "Erro ao carregar responsáveis",
+  });
+
+  const jornadasSelectStatus = getSelectStatus(resourceStatus.jornadas, {
+    loading: "Carregando jornadas...",
+    empty: "Nenhuma jornada cadastrada",
+    error: "Erro ao carregar jornadas",
+  });
+
+  const etapasSelectStatus = getSelectStatus(resourceStatus.etapas, {
+    loading: "Carregando etapas...",
+    empty: "Nenhuma etapa cadastrada",
+    error: "Erro ao carregar etapas",
+  });
+
+  const acoesSelectStatus = getSelectStatus(resourceStatus.acoes, {
+    loading: "Carregando ações...",
+    empty: "Nenhuma ação cadastrada",
+    error: "Erro ao carregar ações",
+  });
+
+  const etapasAcaoStatus = getDependentSelectStatus({
+    parentValue: acaoForm.jornada_id,
+    parentEmptyText: "Selecione uma jornada primeiro",
+    items: etapasDaJornadaAcao,
+    loadingState: resourceStatus.etapas,
+    emptyText: "Nenhuma etapa cadastrada para esta jornada",
+    errorText: "Erro ao carregar etapas",
+  });
+
+  const etapasCoachingStatus = getDependentSelectStatus({
+    parentValue: coachingForm.jornada_id,
+    parentEmptyText: "Selecione uma jornada primeiro",
+    items: etapasDaJornadaCoaching,
+    loadingState: resourceStatus.etapas,
+    emptyText: "Nenhuma etapa cadastrada para esta jornada",
+    errorText: "Erro ao carregar etapas",
+  });
+
+  const acoesCoachingStatus = getDependentSelectStatus({
+    parentValue: coachingForm.jornada_id || coachingForm.etapa_id,
+    parentEmptyText: "Selecione jornada ou etapa primeiro",
+    items: acoesDoContextoCoaching,
+    loadingState: resourceStatus.acoes,
+    emptyText: "Nenhuma ação disponível para o contexto atual",
+    errorText: "Erro ao carregar ações",
+  });
+
   const acoesOptions = useMemo(() => {
     return [...acoesEnriquecidas].sort((a, b) =>
       String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR")
@@ -1662,7 +1793,7 @@ export default function MapaDesenvolvimentoPage() {
                 onChange={(e) => setFilters((prev) => ({ ...prev, jornada_id: e.target.value, etapa_id: "" }))}
                 style={inputStyle()}
               >
-                <option value="">Todas</option>
+                <option value="">{jornadasSelectStatus.text || "Todas"}</option>
                 {jornadas.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.nome}
@@ -1677,8 +1808,9 @@ export default function MapaDesenvolvimentoPage() {
                 value={filters.etapa_id}
                 onChange={(e) => setFilters((prev) => ({ ...prev, etapa_id: e.target.value }))}
                 style={inputStyle()}
+                disabled={jornadasSelectStatus.disabled}
               >
-                <option value="">Todas</option>
+                <option value="">{jornadasSelectStatus.text || "Todas"}</option>
                 {etapasOrdenadas
                   .filter((e) => !filters.jornada_id || String(e.jornada_id) === String(filters.jornada_id))
                   .map((item) => (
@@ -1725,8 +1857,9 @@ export default function MapaDesenvolvimentoPage() {
                 value={filters.responsavel_id}
                 onChange={(e) => setFilters((prev) => ({ ...prev, responsavel_id: e.target.value }))}
                 style={inputStyle()}
+                disabled={usuariosSelectStatus.disabled}
               >
-                <option value="">Todos</option>
+                <option value="">{usuariosSelectStatus.text || "Todos"}</option>
                 {usuarios.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.nome}
@@ -1869,7 +2002,7 @@ export default function MapaDesenvolvimentoPage() {
                         onChange={(e) => setJornadaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
                         style={compactInputStyle()}
                       >
-                        <option value="">Selecione</option>
+                        <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
                         {usuarios.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
@@ -1964,9 +2097,10 @@ export default function MapaDesenvolvimentoPage() {
                         value={etapaForm.jornada_id}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, jornada_id: e.target.value }))}
                         style={compactInputStyle()}
+                        disabled={jornadasSelectStatus.disabled}
                         required
                       >
-                        <option value="">Selecione</option>
+                        <option value="">{jornadasSelectStatus.text || "Selecione"}</option>
                         {jornadas.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
@@ -2032,7 +2166,7 @@ export default function MapaDesenvolvimentoPage() {
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
                         style={compactInputStyle()}
                       >
-                        <option value="">Selecione</option>
+                        <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
                         {usuarios.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
@@ -2273,9 +2407,10 @@ export default function MapaDesenvolvimentoPage() {
                           }))
                         }
                         style={compactInputStyle()}
+                        disabled={jornadasSelectStatus.disabled}
                         required
                       >
-                        <option value="">Selecione</option>
+                        <option value="">{jornadasSelectStatus.text || "Selecione"}</option>
                         {jornadas.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
@@ -2290,11 +2425,10 @@ export default function MapaDesenvolvimentoPage() {
                         value={acaoForm.etapa_id}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
                         style={compactInputStyle()}
+                        disabled={etapasAcaoStatus.disabled}
                       >
-                        <option value="">Sem etapa</option>
-                        {etapasOrdenadas
-                          .filter((e) => !acaoForm.jornada_id || String(e.jornada_id) === String(acaoForm.jornada_id))
-                          .map((item) => (
+                        <option value="">{etapasAcaoStatus.text || "Sem etapa"}</option>
+                        {etapasDaJornadaAcao.map((item) => (
                             <option key={item.id} value={item.id}>
                               {item.nome}
                             </option>
@@ -2443,7 +2577,7 @@ export default function MapaDesenvolvimentoPage() {
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
                         style={compactInputStyle()}
                       >
-                        <option value="">Selecione</option>
+                        <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
                         {usuarios.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
@@ -2608,8 +2742,9 @@ export default function MapaDesenvolvimentoPage() {
                           }))
                         }
                         style={compactInputStyle()}
+                        disabled={jornadasSelectStatus.disabled}
                       >
-                        <option value="">Independente</option>
+                        <option value="">{jornadasSelectStatus.text || "Independente"}</option>
                         {jornadas.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
@@ -2624,11 +2759,10 @@ export default function MapaDesenvolvimentoPage() {
                         value={coachingForm.etapa_id}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
                         style={compactInputStyle()}
+                        disabled={etapasCoachingStatus.disabled}
                       >
-                        <option value="">Sem etapa</option>
-                        {etapasOrdenadas
-                          .filter((e) => !coachingForm.jornada_id || String(e.jornada_id) === String(coachingForm.jornada_id))
-                          .map((item) => (
+                        <option value="">{etapasCoachingStatus.text || "Sem etapa"}</option>
+                        {etapasDaJornadaCoaching.map((item) => (
                             <option key={item.id} value={item.id}>
                               {item.nome}
                             </option>
@@ -2642,9 +2776,10 @@ export default function MapaDesenvolvimentoPage() {
                         value={coachingForm.acao_id}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, acao_id: e.target.value }))}
                         style={compactInputStyle()}
+                        disabled={acoesCoachingStatus.disabled}
                       >
-                        <option value="">Sem ação</option>
-                        {acoesOptions.map((item) => (
+                        <option value="">{acoesCoachingStatus.text || "Sem ação"}</option>
+                        {acoesDoContextoCoaching.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.tema}
                           </option>
@@ -2695,7 +2830,7 @@ export default function MapaDesenvolvimentoPage() {
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
                         style={compactInputStyle()}
                       >
-                        <option value="">Selecione</option>
+                        <option value="">{usuariosSelectStatus.text || "Selecione"}</option>
                         {usuarios.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.nome}
