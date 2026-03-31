@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../../services/api";
-import { compareLocalDatesAsc, formatDateBR, parseLocalDate, todayLocal } from "../../../lib/date";
 import { compareLocalDatesAsc, formatDateBR, parseLocalDate } from "../../../lib/date";
 
 function formatDate(value) {
@@ -37,29 +36,35 @@ function normalizarStatusTurma(status) {
   return null;
 }
 
-function calcularStatusTurma({ totalAulas, aulasComPresenca, aderenciaMedia, dataInicio, dataFim }) {
-const hoje = new Date();
-const hojeLocal = new Date(
-  hoje.getFullYear(),
-  hoje.getMonth(),
-  hoje.getDate(),
-  12,
-  0,
-  0,
-  0
-);
+function calcularStatusTurma({
+  totalAulas,
+  aulasComPresenca,
+  aderenciaMedia,
+  dataInicio,
+  dataFim,
+}) {
+  const hoje = new Date();
+  const hojeLocal = new Date(
+    hoje.getFullYear(),
+    hoje.getMonth(),
+    hoje.getDate(),
+    12,
+    0,
+    0,
+    0
+  );
 
-const inicio = parseLocalDate(dataInicio);
-const fim = parseLocalDate(dataFim);
+  const inicio = parseLocalDate(dataInicio);
+  const fim = parseLocalDate(dataFim);
 
-if (fim && !Number.isNaN(fim.getTime()) && hojeLocal > fim) {
+  if (fim && !Number.isNaN(fim.getTime()) && hojeLocal > fim) {
     if (aderenciaMedia >= 80 || totalAulas === 0) {
       return { label: "Concluída", tone: "success" };
     }
     return { label: "Concluída com atenção", tone: "danger" };
   }
 
-if (inicio && !Number.isNaN(inicio.getTime()) && hojeLocal < inicio) {
+  if (inicio && !Number.isNaN(inicio.getTime()) && hojeLocal < inicio) {
     return { label: "Planejada", tone: "warning" };
   }
 
@@ -101,8 +106,6 @@ function getToneStyle(tone) {
 
   return map[tone] || map.neutral;
 }
-
-
 
 function parseTurmaMetadata(descricao) {
   const text = String(descricao || "");
@@ -176,6 +179,7 @@ export default function GestaoTurmaPage() {
         const resumo = await apiFetch(`/presenca-aulas/resumo/${turmaAulaId}`).catch(
           () => null
         );
+
         if (resumo) {
           setResumoAulaSelecionada({
             total: Number(resumo.total || 0),
@@ -201,7 +205,6 @@ export default function GestaoTurmaPage() {
   const resumoGeral = useMemo(() => {
     const totalAulas = aulas.length;
     const treinandosPrevistos = participantes.length;
-
     const aulasMapeadas = aulas.length;
 
     const aulasComPresenca = aulas.filter((aula) =>
@@ -217,25 +220,25 @@ export default function GestaoTurmaPage() {
     const percentualMedio =
       totalAulas > 0 ? calcPercentual(aulasComPresenca, totalAulas) : 0;
 
-const statusOficial = normalizarStatusTurma(treinamento?.status);
+    const statusOficial = normalizarStatusTurma(treinamento?.status);
 
-const status =
-  statusOficial ||
-  calcularStatusTurma({
-    totalAulas,
-    aulasComPresenca,
-    aderenciaMedia: percentualMedio,
-    dataInicio: treinamento?.data_inicio || treinamento?.data,
-    dataFim: treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data,
-  });
+    const status =
+      statusOficial ||
+      calcularStatusTurma({
+        totalAulas,
+        aulasComPresenca,
+        aderenciaMedia: percentualMedio,
+        dataInicio: treinamento?.data_inicio || treinamento?.data,
+        dataFim: treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data,
+      });
 
-const proximaAula =
-  aulas
-    .filter(
-      (aula) =>
-        String(aula.status_execucao || "planejada").toLowerCase() === "planejada"
-    )
-    .sort((a, b) => compareLocalDatesAsc(a.data_aula, b.data_aula))[0] || null;
+    const proximaAula =
+      aulas
+        .filter(
+          (aula) =>
+            String(aula.status_execucao || "planejada").toLowerCase() === "planejada"
+        )
+        .sort((a, b) => compareLocalDatesAsc(a.data_aula, b.data_aula))[0] || null;
 
     return {
       treinandosPrevistos,
@@ -256,9 +259,7 @@ const proximaAula =
 
   const aulaSelecionada = useMemo(() => {
     if (!turmaAulaId) return null;
-    return (
-      aulas.find((item) => String(item.id) === String(turmaAulaId)) || null
-    );
+    return aulas.find((item) => String(item.id) === String(turmaAulaId)) || null;
   }, [aulas, turmaAulaId]);
 
   function voltar() {
@@ -369,7 +370,10 @@ const proximaAula =
 
         <div style={summaryGrid}>
           <SummaryItem label="Turma" value={treinamento?.tema || "-"} />
+          <SummaryItem label="Cliente" value={treinamento?.cliente || "-"} />
           <SummaryItem label="Instrutor" value={treinamento?.instrutor || "-"} />
+          <SummaryItem label="Modalidade" value={metadataTurma.modalidade || "-"} />
+          <SummaryItem label="Sala" value={metadataTurma.sala || "-"} />
           <SummaryItem
             label="Presenças acumuladas"
             value={`${resumoAulaSelecionada?.presentes ?? 0} de ${resumoAulaSelecionada?.total ?? 0}`}
@@ -419,7 +423,8 @@ const proximaAula =
               <strong>Status:</strong> {statusExecucaoLabel(aulaSelecionada.status_execucao)}
             </div>
             <div>
-              <strong>Instrutor:</strong> {aulaSelecionada.instrutor_responsavel || treinamento?.instrutor || "-"}
+              <strong>Instrutor:</strong>{" "}
+              {aulaSelecionada.instrutor_responsavel || treinamento?.instrutor || "-"}
             </div>
           </div>
         </div>
