@@ -387,12 +387,31 @@ function buttonDangerStyle() {
 function inputStyle() {
   return {
     width: "100%",
+    minWidth: 0,
     border: "1px solid #cbd5e1",
     borderRadius: 12,
     padding: "10px 12px",
     fontSize: 14,
     outline: "none",
     background: "#fff",
+    boxSizing: "border-box",
+  };
+}
+
+function compactInputStyle() {
+  return {
+    ...inputStyle(),
+    height: 44,
+    padding: "10px 12px",
+  };
+}
+
+function textareaStyle(minHeight = 84) {
+  return {
+    ...inputStyle(),
+    minHeight,
+    resize: "vertical",
+    padding: "12px",
   };
 }
 
@@ -403,6 +422,7 @@ function labelStyle() {
     fontSize: 13,
     color: "#334155",
     fontWeight: 700,
+    minWidth: 0,
   };
 }
 
@@ -1819,7 +1839,7 @@ export default function MapaDesenvolvimentoPage() {
                 <summary style={detailsSummary}>Registro de jornada</summary>
                 <form onSubmit={saveJornada} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
-                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xxl }}>
                       Nome da jornada
                       <input
                         value={jornadaForm.nome}
@@ -1829,7 +1849,7 @@ export default function MapaDesenvolvimentoPage() {
                       />
                     </label>
 
-                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Status
                       <select
                         value={jornadaForm.status}
@@ -1842,7 +1862,7 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Responsável
                       <select
                         value={jornadaForm.responsavel_id}
@@ -1858,7 +1878,7 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
                       Público macro
                       <input
                         value={jornadaForm.publico_macro}
@@ -1893,7 +1913,7 @@ export default function MapaDesenvolvimentoPage() {
                     <textarea
                       value={jornadaForm.objetivo}
                       onChange={(e) => setJornadaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                      style={textareaStyle(72)}
+                      style={textareaStyle(88)}
                     />
                   </label>
 
@@ -1902,7 +1922,7 @@ export default function MapaDesenvolvimentoPage() {
                     <textarea
                       value={jornadaForm.descricao}
                       onChange={(e) => setJornadaForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                      style={textareaStyle(84)}
+                      style={textareaStyle(92)}
                     />
                   </label>
 
@@ -1911,7 +1931,7 @@ export default function MapaDesenvolvimentoPage() {
                     <textarea
                       value={jornadaForm.observacoes}
                       onChange={(e) => setJornadaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
-                      style={textareaStyle(84)}
+                      style={textareaStyle(92)}
                     />
                   </label>
 
@@ -1938,7 +1958,7 @@ export default function MapaDesenvolvimentoPage() {
                 <summary style={detailsSummary}>Registro de etapa</summary>
                 <form onSubmit={saveEtapa} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
                       Jornada
                       <select
                         value={etapaForm.jornada_id}
@@ -1955,7 +1975,7 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xxl }}>
                       Nome da etapa
                       <input
                         value={etapaForm.nome}
@@ -1965,7 +1985,7 @@ export default function MapaDesenvolvimentoPage() {
                       />
                     </label>
 
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Tipo
                       <select
                         value={etapaForm.tipo}
@@ -1987,7 +2007,7 @@ export default function MapaDesenvolvimentoPage() {
                         type="number"
                         value={etapaForm.ordem}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, ordem: e.target.value }))}
-                        style={numberInputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
@@ -2005,7 +2025,7 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Responsável
                       <select
                         value={etapaForm.responsavel_id}
@@ -2048,7 +2068,7 @@ export default function MapaDesenvolvimentoPage() {
                         step="0.01"
                         value={etapaForm.carga_horaria_prevista}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_prevista: e.target.value }))}
-                        style={numberInputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
@@ -2059,7 +2079,7 @@ export default function MapaDesenvolvimentoPage() {
                         step="0.01"
                         value={etapaForm.carga_horaria_realizada}
                         onChange={(e) => setEtapaForm((prev) => ({ ...prev, carga_horaria_realizada: e.target.value }))}
-                        style={numberInputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
                   </div>
@@ -2069,7 +2089,7 @@ export default function MapaDesenvolvimentoPage() {
                     <textarea
                       value={etapaForm.objetivo}
                       onChange={(e) => setEtapaForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                      style={textareaStyle(72)}
+                      style={textareaStyle(88)}
                     />
                   </label>
 
@@ -2078,7 +2098,7 @@ export default function MapaDesenvolvimentoPage() {
                     <textarea
                       value={etapaForm.descricao}
                       onChange={(e) => setEtapaForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                      style={textareaStyle(84)}
+                      style={textareaStyle(92)}
                     />
                   </label>
 
@@ -2087,7 +2107,7 @@ export default function MapaDesenvolvimentoPage() {
                     <textarea
                       value={etapaForm.observacoes}
                       onChange={(e) => setEtapaForm((prev) => ({ ...prev, observacoes: e.target.value }))}
-                      style={textareaStyle(84)}
+                      style={textareaStyle(92)}
                     />
                   </label>
 
@@ -2241,7 +2261,7 @@ export default function MapaDesenvolvimentoPage() {
                 <summary style={detailsSummary}>Registro de ação</summary>
                 <form onSubmit={saveAcao} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Jornada
                       <select
                         value={acaoForm.jornada_id}
@@ -2252,7 +2272,7 @@ export default function MapaDesenvolvimentoPage() {
                             etapa_id: "",
                           }))
                         }
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                         required
                       >
                         <option value="">Selecione</option>
@@ -2264,12 +2284,12 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Etapa da jornada
                       <select
                         value={acaoForm.etapa_id}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="">Sem etapa</option>
                         {etapasOrdenadas
@@ -2282,12 +2302,12 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Tipo de ação
                       <select
                         value={acaoForm.tipo_acao}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, tipo_acao: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="treinamento">Treinamento</option>
                         <option value="campanha">Campanha</option>
@@ -2299,115 +2319,115 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
                       Título/Tema
                       <input
                         value={acaoForm.tema}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, tema: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                         required
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Subtipo
                       <input
                         value={acaoForm.subtipo}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, subtipo: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Público-alvo
                       <input
                         value={acaoForm.publico_alvo}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Obrigatória?
                       <select
                         value={acaoForm.obrigatoria}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, obrigatoria: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value={0}>Não</option>
                         <option value={1}>Sim</option>
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Carga horária
                       <input
                         type="number"
                         step="0.01"
                         value={acaoForm.carga_horaria}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, carga_horaria: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Participantes previstos
                       <input
                         type="number"
                         value={acaoForm.participantes_previstos}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Participantes realizados
                       <input
                         type="number"
                         value={acaoForm.participantes_realizados}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Turmas / sessões
                       <input
                         type="number"
                         value={acaoForm.quantidade_turmas_sessoes}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, quantidade_turmas_sessoes: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Horas planejadas
                       <input
                         type="number"
                         step="0.01"
                         value={acaoForm.horas_planejadas}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, horas_planejadas: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Horas realizadas
                       <input
                         type="number"
                         step="0.01"
                         value={acaoForm.horas_realizadas}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, horas_realizadas: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Status
                       <select
                         value={acaoForm.status}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, status: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="planejado">Planejado</option>
                         <option value="em_andamento">Em andamento</option>
@@ -2416,12 +2436,12 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Responsável
                       <select
                         value={acaoForm.responsavel_id}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="">Selecione</option>
                         {usuarios.map((item) => (
@@ -2432,33 +2452,33 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Data início
                       <input
                         type="date"
                         value={acaoForm.data_inicio}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Data fim
                       <input
                         type="date"
                         value={acaoForm.data_fim}
                         onChange={(e) => setAcaoForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
                   </div>
 
-                  <label style={labelStyle()}>
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Descrição
                     <textarea
                       value={acaoForm.descricao}
                       onChange={(e) => setAcaoForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                      style={{ ...inputStyle(), minHeight: 90, resize: "vertical" }}
+                      style={textareaStyle(96)}
                     />
                   </label>
 
@@ -2576,7 +2596,7 @@ export default function MapaDesenvolvimentoPage() {
                 <summary style={{ ...detailsSummary, color: "#3730a3" }}>Registro de coaching</summary>
                 <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Jornada (opcional)
                       <select
                         value={coachingForm.jornada_id}
@@ -2587,7 +2607,7 @@ export default function MapaDesenvolvimentoPage() {
                             etapa_id: "",
                           }))
                         }
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="">Independente</option>
                         {jornadas.map((item) => (
@@ -2598,12 +2618,12 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Etapa (opcional)
                       <select
                         value={coachingForm.etapa_id}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, etapa_id: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="">Sem etapa</option>
                         {etapasOrdenadas
@@ -2616,12 +2636,12 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Ação vinculada (opcional)
                       <select
                         value={coachingForm.acao_id}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, acao_id: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="">Sem ação</option>
                         {acoesOptions.map((item) => (
@@ -2632,12 +2652,12 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Tipo de coaching
                       <select
                         value={coachingForm.tipo_coaching}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, tipo_coaching: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="coordenacao">Coordenação</option>
                         <option value="gerencia">Gerência</option>
@@ -2649,31 +2669,31 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
                       Título
                       <input
                         value={coachingForm.titulo}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, titulo: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                         required
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Público-alvo
                       <input
                         value={coachingForm.publico_alvo}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, publico_alvo: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Responsável
                       <select
                         value={coachingForm.responsavel_id}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, responsavel_id: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="">Selecione</option>
                         {usuarios.map((item) => (
@@ -2684,74 +2704,74 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Participantes previstos
                       <input
                         type="number"
                         value={coachingForm.participantes_previstos}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_previstos: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Participantes realizados
                       <input
                         type="number"
                         value={coachingForm.participantes_realizados}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, participantes_realizados: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Sessões previstas
                       <input
                         type="number"
                         value={coachingForm.sessoes_previstas}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_previstas: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Sessões realizadas
                       <input
                         type="number"
                         value={coachingForm.sessoes_realizadas}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, sessoes_realizadas: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Carga horária por sessão
                       <input
                         type="number"
                         step="0.01"
                         value={coachingForm.carga_horaria_sessao}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, carga_horaria_sessao: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.sm }}>
                       Horas totais
                       <input
                         type="number"
                         step="0.01"
                         value={coachingForm.horas_totais}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, horas_totais: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Status
                       <select
                         value={coachingForm.status}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, status: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       >
                         <option value="planejado">Planejado</option>
                         <option value="em_andamento">Em andamento</option>
@@ -2760,33 +2780,33 @@ export default function MapaDesenvolvimentoPage() {
                       </select>
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Data início
                       <input
                         type="date"
                         value={coachingForm.data_inicio}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
 
-                    <label style={labelStyle()}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                       Data fim
                       <input
                         type="date"
                         value={coachingForm.data_fim}
                         onChange={(e) => setCoachingForm((prev) => ({ ...prev, data_fim: e.target.value }))}
-                        style={inputStyle()}
+                        style={compactInputStyle()}
                       />
                     </label>
                   </div>
 
-                  <label style={labelStyle()}>
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
                     Objetivo
                     <textarea
                       value={coachingForm.objetivo}
                       onChange={(e) => setCoachingForm((prev) => ({ ...prev, objetivo: e.target.value }))}
-                      style={{ ...inputStyle(), minHeight: 90, resize: "vertical" }}
+                      style={textareaStyle(96)}
                     />
                   </label>
 
@@ -3127,42 +3147,18 @@ const detailsSummary = {
 const formGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
-  gap: 12,
+  gap: 14,
   alignItems: "end",
 };
 
 const fieldSpan = {
   full: { gridColumn: "span 12" },
+  xxl: { gridColumn: "span 6" },
   xl: { gridColumn: "span 5" },
   lg: { gridColumn: "span 4" },
   md: { gridColumn: "span 3" },
   sm: { gridColumn: "span 2" },
 };
-
-function compactInputStyle() {
-  return {
-    ...inputStyle(),
-    height: 42,
-    padding: "10px 12px",
-  };
-}
-
-function numberInputStyle() {
-  return {
-    ...inputStyle(),
-    height: 42,
-    padding: "10px 12px",
-  };
-}
-
-function textareaStyle(minHeight = 84) {
-  return {
-    ...inputStyle(),
-    minHeight,
-    resize: "vertical",
-    padding: "12px",
-  };
-}
 
 const buttonRow = {
   display: "flex",
