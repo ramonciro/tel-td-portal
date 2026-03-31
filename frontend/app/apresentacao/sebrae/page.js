@@ -634,7 +634,7 @@ export default function SebraeApresentacaoPage() {
                 Resultados de Treinamento Sebrae
               </div>
               <div style={{ fontSize: 15, color: "rgba(255,255,255,.88)", maxWidth: 760 }}>
-                Visão executiva, acompanhamento por tipo
+                Visão executiva com leitura isolada da base, acompanhamento por tipo
                 de treinamento, desempenho dos instrutores e efetividade das ações realizadas.
               </div>
             </div>
