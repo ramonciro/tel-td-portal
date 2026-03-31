@@ -380,8 +380,6 @@ function TypeExecutiveCard({ item, index }) {
       >
         <InfoBox label="Participantes" value={fmtNumber(item.participantes)} />
         <InfoBox label="Presenças" value={fmtNumber(item.presencas)} />
-        <InfoBox label="Nota média" value={fmtScore(item.notaMedia)} tone="success" />
-        <InfoBox label="Evolução" value={fmtPercent(item.evolucaoMedia)} tone="executive" />
       </div>
 
       <div
@@ -397,11 +395,6 @@ function TypeExecutiveCard({ item, index }) {
         }}
       >
         <div style={{ fontSize: 12, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
-          Impacto positivo
-        </div>
-        <div style={{ fontSize: 18, fontWeight: 900, color: accent }}>
-          {fmtPercent(item.impactoPositivo)}
-        </div>
       </div>
     </div>
   );
