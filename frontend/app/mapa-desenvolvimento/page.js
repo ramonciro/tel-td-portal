@@ -5,6 +5,7 @@ import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+import * as XLSX from "xlsx";
 
 function fmtNumber(value) {
   return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
@@ -1280,6 +1281,17 @@ export default function MapaDesenvolvimentoPage() {
       0
     );
 
+    const coachingsAtivos = filteredCoachings.filter(
+      (i) => normalize(i.tipo_coaching) === "coaching" && i.status_canonico !== "concluido"
+    ).length;
+    const mentoriasAtivas = filteredCoachings.filter(
+      (i) => normalize(i.tipo_coaching) === "mentoria" && i.status_canonico !== "concluido"
+    ).length;
+    const riosSemSustentacao = filteredJornadas.filter((jornada) => {
+      const vinculados = filteredCoachings.filter((i) => String(i.jornada_id || "") === String(jornada.id));
+      return vinculados.length === 0;
+    }).length;
+
     return {
       jornadas: filteredJornadas.length,
       etapas: filteredEtapas.length,
@@ -1292,6 +1304,9 @@ export default function MapaDesenvolvimentoPage() {
         filteredCoachings.filter((i) => i.status_canonico === "concluido").length,
       coachingsIndependentes: filteredCoachings.filter((i) => !i.jornada_id).length,
       fluxosAtivos: filteredJornadas.filter((i) => i.status_canonico === "ativo").length,
+      coachingsAtivos,
+      mentoriasAtivas,
+      riosSemSustentacao,
     };
   }, [filteredJornadas, filteredEtapas, filteredAcoes, filteredCoachings]);
 
@@ -1321,20 +1336,35 @@ export default function MapaDesenvolvimentoPage() {
         const coachingsDaEtapaAtual = etapaAtual
           ? coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapaAtual.id))
           : [];
+        const coachingsAtivosJornada = coachingsDaJornada.filter(
+          (item) => normalize(item.tipo_coaching) === "coaching" && canonicalStatus(item.status) !== "concluido"
+        );
+        const mentoriasAtivasJornada = coachingsDaJornada.filter(
+          (item) => normalize(item.tipo_coaching) === "mentoria" && canonicalStatus(item.status) !== "concluido"
+        );
+        const coachingsEtapaAtual = coachingsDaEtapaAtual.filter((item) => normalize(item.tipo_coaching) === "coaching");
+        const mentoriasEtapaAtual = coachingsDaEtapaAtual.filter((item) => normalize(item.tipo_coaching) === "mentoria");
 
         let proximoPasso = "Definir próximos movimentos";
         const proximaEtapa = etapasDaJornada.find((item) => canonicalStatus(item.status) === "planejado");
         const acaoPendente = acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
-        const coachingPendente = coachingsDaJornada.find((item) => canonicalStatus(item.status) !== "concluido");
+        const coachingPendente = coachingsAtivosJornada.find((item) => canonicalStatus(item.status) !== "concluido");
+        const mentoriaPendente = mentoriasAtivasJornada.find((item) => canonicalStatus(item.status) !== "concluido");
 
         if (!etapasDaJornada.length) {
           proximoPasso = "Estruturar as etapas da jornada";
+        } else if (etapaAtual && !acoesDaEtapaAtual.length) {
+          proximoPasso = `Criar portos de ação para a etapa ${etapaAtual.nome}`;
+        } else if (etapaAtual && !coachingsDaEtapaAtual.length) {
+          proximoPasso = `Definir sustentação da etapa ${etapaAtual.nome}`;
         } else if (proximaEtapa) {
           proximoPasso = `Iniciar a etapa ${proximaEtapa.nome}`;
         } else if (acaoPendente) {
           proximoPasso = `Avançar na ação ${acaoPendente.tema}`;
         } else if (coachingPendente) {
           proximoPasso = `Conduzir o coaching ${coachingPendente.titulo}`;
+        } else if (mentoriaPendente) {
+          proximoPasso = `Conduzir a mentoria ${mentoriaPendente.titulo}`;
         } else if (totalBlocos > 0 && concluidos === totalBlocos) {
           proximoPasso = "Concluir e registrar o fechamento da jornada";
         }
@@ -1351,6 +1381,10 @@ export default function MapaDesenvolvimentoPage() {
           etapaAtual,
           acoesDaEtapaAtual,
           coachingsDaEtapaAtual,
+          coachingsAtivosJornada,
+          mentoriasAtivasJornada,
+          coachingsEtapaAtual,
+          mentoriasEtapaAtual,
           proximoPasso,
         };
       })
@@ -1372,8 +1406,107 @@ export default function MapaDesenvolvimentoPage() {
       saude: item.saude_info,
       atencao: item.attention_info,
       etapaAtual: item.etapaAtual?.nome || "Sem etapa definida",
+      coachingAtivo: item.coachingsAtivosJornada.length,
+      mentoriaAtiva: item.mentoriasAtivasJornada.length,
     }));
   }, [jornadasFluxo]);
+  function exportarRelatorioMapa() {
+    const workbook = XLSX.utils.book_new();
+
+    const resumo = [
+      { indicador: "Jornadas ativas", valor: kpis.fluxosAtivos },
+      { indicador: "Ramificações", valor: kpis.etapas },
+      { indicador: "Portos de ação", valor: kpis.acoes },
+      { indicador: "Sustentações", valor: kpis.coachings },
+      { indicador: "Coachings ativos", valor: kpis.coachingsAtivos },
+      { indicador: "Mentorias ativas", valor: kpis.mentoriasAtivas },
+      { indicador: "Rios sem sustentação", valor: kpis.riosSemSustentacao },
+      { indicador: "Horas no oceano", valor: kpis.horasTotais },
+    ];
+
+    const jornadasSheet = jornadasFluxo.map((item) => ({
+      jornada: item.nome,
+      objetivo: item.objetivo || item.descricao || "",
+      responsavel: item.responsavel_nome,
+      status: displayStatus(item.status),
+      saude: item.saude_info?.label || "",
+      atencao: item.attention_info?.label || "",
+      progresso_pct: item.progresso,
+      etapas: item.etapasDaJornada.length,
+      acoes: item.acoesDaJornada.length,
+      sustentacoes: item.coachingsDaJornada.length,
+      coachings_ativos: item.coachingsAtivosJornada.length,
+      mentorias_ativas: item.mentoriasAtivasJornada.length,
+      proximo_trecho: item.proximoPasso,
+      data_inicio: formatDate(item.data_inicio),
+      data_fim: formatDate(item.data_fim),
+    }));
+
+    const etapasSheet = filteredEtapas.map((item) => ({
+      jornada: item.jornada_nome,
+      etapa: item.nome,
+      tipo: item.tipo,
+      status: displayStatus(item.status),
+      responsavel: item.responsavel_nome,
+      acoes: item.total_acoes,
+      sustentacoes: item.total_coachings,
+      horas_totais: item.horas_totais,
+      inicio: formatDate(item.data_inicio),
+      fim: formatDate(item.data_fim),
+    }));
+
+    const acoesSheet = orderedAcoes.map((item) => ({
+      jornada: item.jornada_nome,
+      etapa: item.etapa_nome,
+      tema: item.tema,
+      tipo_acao: item.tipo_acao,
+      publico: item.publico_alvo,
+      responsavel: item.responsavel_nome,
+      status: displayStatus(item.status),
+      participantes_realizados: item.participantes_realizados,
+      horas_realizadas: item.horas_realizadas_calc,
+      prazo: item.prazo_info?.label || "",
+      atencao: item.attention_info?.label || "",
+    }));
+
+    const sustentacaoSheet = orderedCoachings.map((item) => ({
+      jornada: item.jornada_nome,
+      etapa: item.etapa_nome,
+      acao_vinculada: item.acao_nome,
+      titulo: item.titulo,
+      tipo_sustentacao: sustentacaoTypeBadge(item.tipo_coaching).label,
+      publico: item.publico_alvo,
+      responsavel: item.responsavel_nome,
+      status: displayStatus(item.status),
+      participantes_realizados: item.participantes_realizados,
+      sessoes_realizadas: item.sessoes_realizadas,
+      horas_totais: item.horas_totais_calc,
+      prazo: item.prazo_info?.label || "",
+      atencao: item.attention_info?.label || "",
+    }));
+
+    const proximosPassosSheet = proximosPassos.map((item) => ({
+      jornada: item.jornada,
+      etapa_atual: item.etapaAtual,
+      responsavel: item.responsavel,
+      proximo_trecho: item.passo,
+      saude: item.saude.label,
+      atencao: item.atencao.label,
+      coachings_ativos: item.coachingAtivo,
+      mentorias_ativas: item.mentoriaAtiva,
+    }));
+
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(resumo), "Resumo");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(jornadasSheet), "Jornadas");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(etapasSheet), "Etapas");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(acoesSheet), "Acoes");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sustentacaoSheet), "Sustentacao");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(proximosPassosSheet), "ProximosPassos");
+
+    const data = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `relatorio_mapa_desenvolvimento_${data}.xlsx`);
+  }
+
   async function saveJornada(event) {
     event.preventDefault();
     setSaving(true);
@@ -1893,21 +2026,26 @@ export default function MapaDesenvolvimentoPage() {
           title="Leitura do território"
           subtitle="Refine o oceano por rio, ramificação, porto, responsável e status."
           action={
-            <button
-              style={buttonSecondaryStyle()}
-              onClick={() =>
-                setFilters({
-                  jornada_id: "",
-                  etapa_id: "",
-                  tipo: "",
-                  status: "",
-                  responsavel_id: "",
-                  busca: "",
-                })
-              }
-            >
-              Limpar filtros
-            </button>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button style={buttonSecondaryStyle()} onClick={exportarRelatorioMapa}>
+                Exportar relatório
+              </button>
+              <button
+                style={buttonSecondaryStyle()}
+                onClick={() =>
+                  setFilters({
+                    jornada_id: "",
+                    etapa_id: "",
+                    tipo: "",
+                    status: "",
+                    responsavel_id: "",
+                    busca: "",
+                  })
+                }
+              >
+                Limpar filtros
+              </button>
+            </div>
           }
         >
           <div style={filtersPanel}>
@@ -2195,8 +2333,58 @@ export default function MapaDesenvolvimentoPage() {
                       <div style={nextStepMeta}>Etapa atual: {item.etapaAtual}</div>
                       <div style={nextStepAction}>{item.passo}</div>
                       <div style={nextStepMeta}>Responsável: {item.responsavel}</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span style={sustentacaoTypeBadge("coaching").style}>{item.coachingAtivo} coaching(s)</span>
+                        <span style={sustentacaoTypeBadge("mentoria").style}>{item.mentoriaAtiva} mentoria(s)</span>
+                      </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              title="Sustentação dos rios"
+              subtitle="Leia onde o percurso já conta com coaching e mentoria, e onde ainda falta apoio estruturado."
+            >
+              {loading ? (
+                emptyCard("Carregando sustentação...")
+              ) : (
+                <div style={{ display: "grid", gap: 16 }}>
+                  <div style={overviewStripe}>
+                    <OverviewBox label="Coachings ativos" value={fmtNumber(kpis.coachingsAtivos)} />
+                    <OverviewBox label="Mentorias ativas" value={fmtNumber(kpis.mentoriasAtivas)} />
+                    <OverviewBox label="Rios sem sustentação" value={fmtNumber(kpis.riosSemSustentacao)} tone="alert" />
+                    <OverviewBox label="Próximos trechos" value={fmtNumber(proximosPassos.length)} tone="default" />
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 14,
+                      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                    }}
+                  >
+                    {jornadasFluxo.slice(0, 4).map((item) => (
+                      <div key={item.id} style={flowMiniCard}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <span style={attentionBadge(item.saude_info.level)}>{item.saude_info.label}</span>
+                          <span style={attentionBadge(item.attention_info.level)}>{item.attention_info.label}</span>
+                        </div>
+                        <div style={flowMiniTitle}>{item.nome}</div>
+                        <div style={flowMiniMeta}>Etapa atual: {item.etapaAtual?.nome || "Sem etapa"}</div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                          <span style={sustentacaoTypeBadge("coaching").style}>
+                            {fmtNumber(item.coachingsAtivosJornada.length)} coaching(s)
+                          </span>
+                          <span style={sustentacaoTypeBadge("mentoria").style}>
+                            {fmtNumber(item.mentoriasAtivasJornada.length)} mentoria(s)
+                          </span>
+                        </div>
+                        <div style={flowMiniNext}>Próximo trecho: {item.proximoPasso}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </SectionCard>
@@ -2621,6 +2809,8 @@ export default function MapaDesenvolvimentoPage() {
                         <div style={flowExecutiveBand}>
                           <OverviewBox label="Saúde da jornada" value={jornada.saude_info.label} tone={jornada.saude_info.level === "alta" ? "danger" : jornada.saude_info.level === "media" ? "alert" : "default"} />
                           <OverviewBox label="Atenção principal" value={jornada.attention_info.label} tone={jornada.attention_info.level === "alta" ? "danger" : jornada.attention_info.level === "media" ? "alert" : "default"} />
+                          <OverviewBox label="Coachings" value={fmtNumber(jornada.coachingsAtivosJornada.length)} tone="default" />
+                          <OverviewBox label="Mentorias" value={fmtNumber(jornada.mentoriasAtivasJornada.length)} tone="default" />
                           <OverviewBox label="Prazo" value={jornada.prazo_info.label} tone={jornada.prazo_info.tone === "danger" ? "danger" : jornada.prazo_info.tone === "neutral" ? "default" : "default"} />
                           <OverviewBox label="Etapa crítica" value={jornada.etapa_critica?.nome || "Sem destaque"} tone={jornada.etapa_critica?.saude_info?.level === "alta" ? "danger" : jornada.etapa_critica?.saude_info?.level === "media" ? "alert" : "default"} />
                         </div>
@@ -2712,6 +2902,15 @@ export default function MapaDesenvolvimentoPage() {
                                       <span>⚓ {fmtNumber(etapa.total_acoes)} porto(s) de ação</span>
                                       <span>🧭 {fmtNumber(etapa.total_coachings)} apoio(s) de sustentação</span>
                                       <span>⏱ {fmtHours(etapa.horas_totais)}h navegadas</span>
+                                    </div>
+
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                      <span style={sustentacaoTypeBadge("coaching").style}>
+                                        {fmtNumber(jornada.coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id) && normalize(item.tipo_coaching) === "coaching").length)} coaching(s)
+                                      </span>
+                                      <span style={sustentacaoTypeBadge("mentoria").style}>
+                                        {fmtNumber(jornada.coachingsDaJornada.filter((item) => String(item.etapa_id || "") === String(etapa.id) && normalize(item.tipo_coaching) === "mentoria").length)} mentoria(s)
+                                      </span>
                                     </div>
 
                                     <div style={stageInsightBand}>
