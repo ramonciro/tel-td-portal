@@ -45,11 +45,21 @@ exports.buscarPorId = async (req, res) => {
     }
 
     res.json(rows[0]);
-  } catch (error) {
-    console.error("Erro ao buscar ação:", error);
-    res.status(500).json({ error: "Erro ao buscar ação." });
-  }
-};
+ } catch (error) {
+  console.error("Erro ao criar ação:", {
+    message: error?.message,
+    code: error?.code,
+    errno: error?.errno,
+    sqlMessage: error?.sqlMessage,
+    sql: error?.sql,
+  });
+
+  res.status(500).json({
+    error: "Erro ao criar ação.",
+    detail: error?.sqlMessage || error?.message || null,
+    code: error?.code || null,
+  });
+}
 
 exports.criar = async (req, res) => {
   try {
