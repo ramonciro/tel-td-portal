@@ -33,6 +33,12 @@ function normalizeRole(value) {
     .toLowerCase();
 }
 
+export function hasOceanAccess(user) {
+  const perfil = normalizeRole(user?.perfil);
+  const allowed = ["coordenador", "superintendente"];
+  return allowed.includes(perfil) && Number(user?.pode_acessar_oceano_desenvolvimento || 0) === 1;
+}
+
 export function hasSomeRole(user, allowedRoles = []) {
   if (!Array.isArray(allowedRoles) || !allowedRoles.length) return true;
 
