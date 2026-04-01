@@ -5,18 +5,14 @@ import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
-import { formatDateBR, parseLocalDate } from "../../lib/date";
+import { formatDateBR } from "../../lib/date";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function parseDateSafe(value) {
-  return parseLocalDate(value);
-}
-
 function formatDateSafe(value) {
-  return formatDateBR(value, "-");
+  return formatDateBR(value);
 }
 
 function getSaudeOperacao(taxaPresenca, nps, qualidade) {
@@ -121,8 +117,7 @@ function getPriorityList(kpis, ultimasTurmas) {
   return prioridades.slice(0, 5);
 }
 
-
-function getFarolExecutivoCards(kpis, ultimasTurmas, presencaPorCliente, rankingInstrutores) {
+function getFarolExecutivoCards(kpis, presencaPorCliente, rankingInstrutores) {
   const cards = [];
 
   if (Number(kpis.pendentes || 0) > 0) {
@@ -186,10 +181,34 @@ function getTurmaStatus(item) {
   const presentes = Number(item?.presentes || 0);
   const presenca = base ? Math.round((presentes / base) * 100) : 0;
 
-  if (pendentes > 0) return { label: 'Chamada em aberto', tone: 'amber' };
-  if (ausentes > 0) return { label: 'Acompanhar presença', tone: 'rose' };
-  if (presenca >= 90) return { label: 'Boa execução', tone: 'green' };
-  return { label: 'Em acompanhamento', tone: 'blue' };
+  if (pendentes > 0) return { label: "Chamada em aberto", tone: "amber" };
+  if (ausentes > 0) return { label: "Acompanhar presença", tone: "rose" };
+  if (presenca >= 90) return { label: "Boa execução", tone: "green" };
+  return { label: "Em acompanhamento", tone: "blue" };
+}
+
+function getResumoRecente(kpis, ultimasTurmas) {
+  const ultima = (ultimasTurmas || [])[0];
+
+  return [
+    {
+      titulo: "Última turma registrada",
+      valor: ultima?.tema || "Sem movimentação recente",
+      texto: ultima
+        ? `${ultima.cliente || "Sem cliente"} • ${formatDateSafe(ultima.data_inicio || ultima.data)}`
+        : "Ainda não há turmas recentes registradas na visão inicial.",
+    },
+    {
+      titulo: "Pendências em aberto",
+      valor: fmt(kpis.pendentes || 0),
+      texto: "Registros que ainda precisam de fechamento operacional na chamada diária.",
+    },
+    {
+      titulo: "Base diária acompanhada",
+      valor: fmt(kpis.treinados || 0),
+      texto: "Registros considerados na leitura executiva atual do portal.",
+    },
+  ];
 }
 
 export default function InicioPage() {
@@ -202,11 +221,10 @@ export default function InicioPage() {
       try {
         setErro("");
         setLoading(true);
-
         const response = await apiFetch("/dashboard/treinamentos");
         setDados(response || null);
       } catch (error) {
-        setErro(error.message || "Erro ao carregar a visão inicial.");
+        setErro(error?.message || "Erro ao carregar a visão inicial.");
       } finally {
         setLoading(false);
       }
@@ -221,33 +239,23 @@ export default function InicioPage() {
   const rankingNps = dados?.ranking_nps || [];
   const ultimasTurmas = dados?.ultimas_turmas || [];
 
-  const saudeOperacao = useMemo(() => {
-    return getSaudeOperacao(
-      kpis.taxa_presenca,
-      kpis.nps,
-      kpis.media_qualidade
-    );
-  }, [kpis]);
+  const saudeOperacao = useMemo(
+    () => getSaudeOperacao(kpis.taxa_presenca, kpis.nps, kpis.media_qualidade),
+    [kpis]
+  );
 
-  const prioridades = useMemo(() => {
-    return getPriorityList(kpis, ultimasTurmas);
-  }, [kpis, ultimasTurmas]);
+  const prioridades = useMemo(() => getPriorityList(kpis, ultimasTurmas), [kpis, ultimasTurmas]);
 
-  const faroisExecutivos = useMemo(() => {
-    return getFarolExecutivoCards(
-      kpis,
-      ultimasTurmas,
-      presencaPorCliente,
-      rankingInstrutores
-    );
-  }, [kpis, ultimasTurmas, presencaPorCliente, rankingInstrutores]);
+  const faroisExecutivos = useMemo(
+    () => getFarolExecutivoCards(kpis, presencaPorCliente, rankingInstrutores),
+    [kpis, presencaPorCliente, rankingInstrutores]
+  );
+
+  const resumoRecente = useMemo(() => getResumoRecente(kpis, ultimasTurmas), [kpis, ultimasTurmas]);
 
   const taxaExecucao = useMemo(() => {
-    const horasMinistradas = Number(
-      kpis.horas_ministradas || kpis.horas_treinadas || 0
-    );
+    const horasMinistradas = Number(kpis.horas_ministradas || kpis.horas_treinadas || 0);
     const cargaPlanejada = Number(kpis.carga_horaria_total || 0);
-
     if (!cargaPlanejada) return 0;
     return Math.round((horasMinistradas / cargaPlanejada) * 100);
   }, [kpis]);
@@ -255,7 +263,6 @@ export default function InicioPage() {
   const gapPresenca = useMemo(() => {
     const previstosNoDia = Number(kpis.previstos_no_dia || 0);
     const presentesNoDia = Number(kpis.presentes_no_dia || 0);
-
     const gap = previstosNoDia - presentesNoDia;
     return gap > 0 ? gap : 0;
   }, [kpis]);
@@ -278,15 +285,11 @@ export default function InicioPage() {
         `A satisfação do treinando registra NPS ${kpis.nps}, com ${fmt(kpis.respostas_nps || 0)} resposta(s) já coletadas.`
       );
     } else {
-      frases.push(
-        "Ainda não há base consolidada de NPS para leitura de satisfação."
-      );
+      frases.push("Ainda não há base consolidada de NPS para leitura de satisfação.");
     }
 
     if (Number(kpis.media_qualidade || 0) > 0) {
-      frases.push(
-        `A qualidade média dos treinamentos está em ${kpis.media_qualidade}.`
-      );
+      frases.push(`A qualidade média dos treinamentos está em ${kpis.media_qualidade}.`);
     }
 
     return frases;
@@ -308,9 +311,8 @@ export default function InicioPage() {
               <div style={heroBadge}>Resumo executivo</div>
               <h2 style={heroTitle}>Panorama estratégico da área de T&amp;D</h2>
               <p style={heroText}>
-                Acompanhe execução, presença diária, satisfação e qualidade em
-                uma visão pensada para acompanhamento gerencial e apresentação
-                de resultados.
+                Acompanhe execução, presença diária, satisfação e qualidade em uma visão pensada para
+                acompanhamento gerencial e apresentação de resultados.
               </p>
 
               <div
@@ -324,145 +326,62 @@ export default function InicioPage() {
                 {saudeOperacao.label}
               </div>
 
-              <p style={{ ...heroText, marginTop: 14 }}>
-                {saudeOperacao.message}
-              </p>
+              <p style={{ ...heroText, marginTop: 14 }}>{saudeOperacao.message}</p>
             </div>
 
             <div style={heroSide}>
               <div style={heroSideCard}>
                 <span style={heroSideLabel}>Execução da grade</span>
                 <strong style={heroSideValue}>{taxaExecucao}%</strong>
-                <span style={heroSideSub}>
-                  horas ministradas em relação à carga horária planejada
-                </span>
+                <span style={heroSideSub}>horas ministradas em relação à carga horária planejada</span>
               </div>
 
               <div style={heroSideCard}>
                 <span style={heroSideLabel}>Gap de presença</span>
                 <strong style={heroSideValue}>{fmt(gapPresenca)}</strong>
-                <span style={heroSideSub}>
-                  diferença entre previstos no dia e presença efetiva do dia
-                </span>
+                <span style={heroSideSub}>diferença entre previstos no dia e presença efetiva do dia</span>
               </div>
 
               <div style={heroSideCard}>
                 <span style={heroSideLabel}>Carga efetiva</span>
-                <strong style={heroSideValue}>
-                  {fmt(kpis.horas_treinadas || 0)}h
-                </strong>
-                <span style={heroSideSub}>
-                  horas realmente assistidas na base acompanhada
-                </span>
+                <strong style={heroSideValue}>{fmt(kpis.horas_treinadas || 0)}h</strong>
+                <span style={heroSideSub}>horas realmente assistidas na base acompanhada</span>
               </div>
             </div>
           </div>
 
           <div style={gridFive}>
-            <StatCard
-              title="Turmas"
-              value={fmt(kpis.treinamentos || 0)}
-              subtitle="Volume consolidado"
-              accent="#2563eb"
-            />
-            <StatCard
-              title="Registros de chamada"
-              value={fmt(kpis.treinados || 0)}
-              subtitle="Base real diária"
-              accent="#06b6d4"
-            />
-            <StatCard
-              title="Presença"
-              value={`${kpis.taxa_presenca || 0}%`}
-              subtitle="Presença diária consolidada"
-              accent="#0891b2"
-            />
-            <StatCard
-              title="NPS"
-              value={kpis.nps || 0}
-              subtitle="Satisfação do treinando"
-              accent="#1d4ed8"
-            />
-            <StatCard
-              title="Qualidade"
-              value={kpis.media_qualidade || 0}
-              subtitle="Aproveitamento médio"
-              accent="#059669"
-            />
+            <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Volume consolidado" accent="#2563eb" />
+            <StatCard title="Registros de chamada" value={fmt(kpis.treinados || 0)} subtitle="Base real diária" accent="#06b6d4" />
+            <StatCard title="Presença" value={`${kpis.taxa_presenca || 0}%`} subtitle="Presença diária consolidada" accent="#0891b2" />
+            <StatCard title="NPS" value={kpis.nps || 0} subtitle="Satisfação do treinando" accent="#1d4ed8" />
+            <StatCard title="Qualidade" value={kpis.media_qualidade || 0} subtitle="Aproveitamento médio" accent="#059669" />
           </div>
 
           <div style={{ ...gridFour, marginTop: 14 }}>
-            <StatCard
-              title="Presentes"
-              value={fmt(kpis.presentes || 0)}
-              subtitle="Presença confirmada"
-              accent="#16a34a"
-            />
-            <StatCard
-              title="Ausentes"
-              value={fmt(kpis.ausentes || 0)}
-              subtitle="Não compareceram"
-              accent="#dc2626"
-            />
-            <StatCard
-              title="Justificados"
-              value={fmt(kpis.justificados || 0)}
-              subtitle="Com justificativa"
-              accent="#f59e0b"
-            />
-            <StatCard
-              title="Pendentes"
-              value={fmt(kpis.pendentes || 0)}
-              subtitle="Chamada diária em aberto"
-              accent="#64748b"
-            />
+            <StatCard title="Presentes" value={fmt(kpis.presentes || 0)} subtitle="Presença confirmada" accent="#16a34a" />
+            <StatCard title="Ausentes" value={fmt(kpis.ausentes || 0)} subtitle="Não compareceram" accent="#dc2626" />
+            <StatCard title="Justificados" value={fmt(kpis.justificados || 0)} subtitle="Com justificativa" accent="#f59e0b" />
+            <StatCard title="Pendentes" value={fmt(kpis.pendentes || 0)} subtitle="Chamada diária em aberto" accent="#64748b" />
           </div>
 
           <div style={{ ...gridFour, marginTop: 14 }}>
-            <StatCard
-              title="Capacidade planejada"
-              value={fmt(kpis.participantes_previstos || 0)}
-              subtitle="Base prevista"
-              accent="#7c3aed"
-            />
-            <StatCard
-              title="Carga planejada"
-              value={`${fmt(kpis.carga_horaria_total || 0)}h`}
-              subtitle="Carga consolidada"
-              accent="#0f766e"
-            />
-            <StatCard
-              title="Horas assistidas"
-              value={`${fmt(kpis.horas_treinadas || 0)}h`}
-              subtitle="Execução real"
-              accent="#ea580c"
-            />
-            <StatCard
-              title="Conclusão"
-              value={`${kpis.taxa_conclusao_chamada || 0}%`}
-              subtitle="Fechamento da chamada diária"
-              accent="#9333ea"
-            />
+            <StatCard title="Capacidade planejada" value={fmt(kpis.participantes_previstos || 0)} subtitle="Base prevista" accent="#7c3aed" />
+            <StatCard title="Carga planejada" value={`${fmt(kpis.carga_horaria_total || 0)}h`} subtitle="Carga consolidada" accent="#0f766e" />
+            <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Execução real" accent="#ea580c" />
+            <StatCard title="Conclusão" value={`${kpis.taxa_conclusao_chamada || 0}%`} subtitle="Fechamento da chamada diária" accent="#9333ea" />
           </div>
 
           <div style={twoCol}>
-            <SectionCard
-              title="Narrativa executiva"
-              subtitle="Leitura pronta para acompanhamento gerencial."
-            >
+            <SectionCard title="Narrativa executiva" subtitle="Leitura pronta para acompanhamento gerencial.">
               <div style={narrativeGrid}>
                 {narrativaExecutiva.map((item, index) => (
-                  <div key={index} style={narrativeItem}>
-                    {item}
-                  </div>
+                  <div key={index} style={narrativeItem}>{item}</div>
                 ))}
               </div>
             </SectionCard>
 
-            <SectionCard
-              title="Prioridades imediatas"
-              subtitle="Focos de atuação para a rotina da área."
-            >
+            <SectionCard title="Prioridades imediatas" subtitle="Focos de atuação para a rotina da área.">
               <div style={priorityGrid}>
                 {prioridades.map((item, index) => (
                   <div key={index} style={priorityItem}>
@@ -478,19 +397,10 @@ export default function InicioPage() {
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <SectionCard
-              title="Faróis executivos"
-              subtitle="Alertas curtos para orientar sua atuação imediata."
-            >
+            <SectionCard title="Faróis executivos" subtitle="Alertas curtos para orientar sua atuação imediata.">
               <div style={farolGrid}>
                 {faroisExecutivos.map((item, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      ...farolCard,
-                      ...(farolToneMap[item.tone] || farolToneMap.blue),
-                    }}
-                  >
+                  <div key={index} style={{ ...farolCard, ...(farolToneMap[item.tone] || farolToneMap.blue) }}>
                     <div style={farolIcon}>{item.icon}</div>
                     <div style={farolTitle}>{item.titulo}</div>
                     <div style={farolText}>{item.texto}</div>
@@ -500,92 +410,70 @@ export default function InicioPage() {
             </SectionCard>
           </div>
 
+          <div style={{ ...threeCol, marginTop: 14 }}>
+            {resumoRecente.map((item, index) => (
+              <SectionCard key={index} title={item.titulo} subtitle="Leitura rápida da operação recente.">
+                <div style={resumoBox}>
+                  <div style={resumoValor}>{item.valor}</div>
+                  <div style={resumoTexto}>{item.texto}</div>
+                </div>
+              </SectionCard>
+            ))}
+          </div>
+
           <div style={{ ...twoCol, marginTop: 14 }}>
-            <SectionCard
-              title="Presença por cliente"
-              subtitle="Clientes com chamada registrada e taxa real de presença diária."
-            >
+            <SectionCard title="Presença por cliente" subtitle="Clientes com chamada registrada e taxa real de presença diária.">
               {presencaPorCliente.length ? (
                 <div style={listGrid}>
                   {presencaPorCliente.map((item, index) => (
                     <div key={index} style={listItem}>
                       <div style={itemHeader}>
-                        <div style={itemTitle}>
-                          {item.cliente || "Sem cliente"}
-                        </div>
-                        <div style={itemBadgeBlue}>
-                          {Number(item.taxa_presenca || 0)}%
-                        </div>
+                        <div style={itemTitle}>{item.cliente || "Sem cliente"}</div>
+                        <div style={itemBadgeBlue}>{Number(item.taxa_presenca || 0)}%</div>
                       </div>
-
                       <div style={itemMeta}>
-                        {fmt(item.total_treinados || 0)} registro(s) •{" "}
-                        {fmt(item.presentes || 0)} presentes •{" "}
-                        {fmt(item.ausentes || 0)} ausentes •{" "}
-                        {fmt(item.justificados || 0)} justificados
+                        {fmt(item.total_treinados || 0)} registro(s) • {fmt(item.presentes || 0)} presentes • {fmt(item.ausentes || 0)} ausentes • {fmt(item.justificados || 0)} justificados
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div style={emptyText}>
-                  Sem clientes com chamada registrada no momento.
-                </div>
+                <div style={emptyText}>Sem clientes com chamada registrada no momento.</div>
               )}
             </SectionCard>
 
-            <SectionCard
-              title="Ranking de instrutores"
-              subtitle="Leitura de produtividade por turmas e presença consolidada."
-            >
+            <SectionCard title="Ranking de instrutores" subtitle="Leitura de produtividade por turmas e presença consolidada.">
               {rankingInstrutores.length ? (
                 <div style={listGrid}>
                   {rankingInstrutores.map((item, index) => (
                     <div key={index} style={listItem}>
                       <div style={itemHeader}>
-                        <div style={itemTitle}>
-                          {item.instrutor || "Sem instrutor"}
-                        </div>
-                        <div style={itemBadgePurple}>
-                          {Number(item.taxa_presenca || 0)}%
-                        </div>
+                        <div style={itemTitle}>{item.instrutor || "Sem instrutor"}</div>
+                        <div style={itemBadgePurple}>{Number(item.taxa_presenca || 0)}%</div>
                       </div>
-
                       <div style={itemMeta}>
-                        {fmt(item.total_turmas || 0)} turma(s) •{" "}
-                        {fmt(item.total_treinados || 0)} registro(s) •{" "}
-                        {fmt(item.presentes || 0)} presentes
+                        {fmt(item.total_turmas || 0)} turma(s) • {fmt(item.total_treinados || 0)} registro(s) • {fmt(item.presentes || 0)} presentes
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div style={emptyText}>
-                  Sem dados de instrutores no momento.
-                </div>
+                <div style={emptyText}>Sem dados de instrutores no momento.</div>
               )}
             </SectionCard>
           </div>
 
           <div style={{ ...twoCol, marginTop: 14 }}>
-            <SectionCard
-              title="Ranking de satisfação"
-              subtitle="Clientes com base de NPS já registrada."
-            >
+            <SectionCard title="Ranking de satisfação" subtitle="Clientes com base de NPS já registrada.">
               {rankingNps.length ? (
                 <div style={listGrid}>
                   {rankingNps.map((item, index) => (
                     <div key={index} style={listItem}>
                       <div style={itemHeader}>
-                        <div style={itemTitle}>
-                          {item.cliente || "Sem cliente"}
-                        </div>
+                        <div style={itemTitle}>{item.cliente || "Sem cliente"}</div>
                         <div style={itemBadgeBlue}>{Number(item.nps || 0)}</div>
                       </div>
-
-                      <div style={itemMeta}>
-                        {fmt(item.respostas || 0)} resposta(s) de NPS
-                      </div>
+                      <div style={itemMeta}>{fmt(item.respostas || 0)} resposta(s) de NPS</div>
                     </div>
                   ))}
                 </div>
@@ -594,46 +482,28 @@ export default function InicioPage() {
               )}
             </SectionCard>
 
-            <SectionCard
-              title="Turmas recentes para acompanhamento"
-              subtitle="Leitura mais limpa das turmas mais recentes, com foco em base, presença e pendências."
-            >
+            <SectionCard title="Turmas recentes para acompanhamento" subtitle="Leitura mais limpa das turmas mais recentes, com foco em base, presença e pendências.">
               {ultimasTurmas.length ? (
                 <div style={ultimasTurmasStack}>
-                  {ultimasTurmas.slice(0, 6).map((item) => {
+                  {ultimasTurmas.slice(0, 6).map((item, idx) => {
                     const status = getTurmaStatus(item);
                     const baseAtiva = Number(item.base_ativa || 0);
                     const presentes = Number(item.presentes || 0);
                     const pendentes = Number(item.pendentes || 0);
-                    const taxaPresenca = baseAtiva
-                      ? Math.round((presentes / baseAtiva) * 100)
-                      : 0;
+                    const taxaPresenca = baseAtiva ? Math.round((presentes / baseAtiva) * 100) : 0;
 
                     return (
-                      <div key={item.id} style={turmaLinhaCard}>
+                      <div key={item.id || idx} style={turmaLinhaCard}>
                         <div style={turmaLinhaMain}>
                           <div style={turmaLinhaTop}>
-                            <div>
-                              <div style={turmaLinhaTitulo}>
-                                {item.tema || "Turma"}
-                              </div>
-                              <div style={turmaLinhaMeta}>
-                                {(item.cliente || "Sem cliente") +
-                                  " • " +
-                                  (item.instrutor || "Sem instrutor")}
-                              </div>
+                            <div style={turmaLinhaTextWrap}>
+                              <div style={turmaLinhaTitulo}>{item.tema || "Turma"}</div>
+                              <div style={turmaLinhaMeta}>{(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}</div>
                             </div>
 
                             <div style={turmaLinhaSide}>
-                              <div style={turmaResumoData}>
-                                {formatDateSafe(item.data_inicio || item.data)}
-                              </div>
-                              <div
-                                style={{
-                                  ...statusPill,
-                                  ...(statusToneMap[status.tone] || statusToneMap.blue),
-                                }}
-                              >
+                              <div style={turmaResumoData}>{formatDateSafe(item.data_inicio || item.data)}</div>
+                              <div style={{ ...statusPill, ...(statusToneMap[status.tone] || statusToneMap.blue) }}>
                                 {status.label}
                               </div>
                             </div>
@@ -645,12 +515,10 @@ export default function InicioPage() {
                             <span style={turmaMetricLabel}>Base</span>
                             <strong style={turmaMetricValue}>{fmt(baseAtiva)}</strong>
                           </div>
-
                           <div style={turmaMetricCard}>
                             <span style={turmaMetricLabel}>Presença</span>
                             <strong style={turmaMetricValue}>{taxaPresenca}%</strong>
                           </div>
-
                           <div style={turmaMetricCard}>
                             <span style={turmaMetricLabel}>Pendências</span>
                             <strong style={turmaMetricValue}>{fmt(pendentes)}</strong>
@@ -766,6 +634,12 @@ const gridFour = {
   gap: 14,
 };
 
+const threeCol = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 14,
+};
+
 const twoCol = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
@@ -827,7 +701,6 @@ const priorityDescription = {
   fontSize: 13,
 };
 
-
 const farolGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
@@ -868,6 +741,26 @@ const farolText = {
   lineHeight: 1.55,
 };
 
+const resumoBox = {
+  display: "grid",
+  gap: 8,
+  minWidth: 0,
+};
+
+const resumoValor = {
+  fontSize: 20,
+  fontWeight: 800,
+  color: "#0f172a",
+  lineHeight: 1.25,
+  wordBreak: "break-word",
+};
+
+const resumoTexto = {
+  color: "#64748b",
+  fontSize: 13,
+  lineHeight: 1.5,
+};
+
 const listGrid = {
   display: "grid",
   gap: 10,
@@ -885,6 +778,7 @@ const itemHeader = {
   justifyContent: "space-between",
   gap: 10,
   alignItems: "center",
+  flexWrap: "wrap",
 };
 
 const itemTitle = {
@@ -934,10 +828,16 @@ const turmaLinhaCard = {
   display: "grid",
   gap: 14,
   boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+  minWidth: 0,
 };
 
 const turmaLinhaMain = {
   minWidth: 0,
+};
+
+const turmaLinhaTextWrap = {
+  minWidth: 0,
+  flex: 1,
 };
 
 const turmaLinhaTop = {
@@ -954,6 +854,7 @@ const turmaLinhaTitulo = {
   color: "#0f172a",
   lineHeight: 1.3,
   wordBreak: "break-word",
+  overflowWrap: "anywhere",
 };
 
 const turmaLinhaMeta = {
@@ -969,9 +870,15 @@ const turmaLinhaSide = {
   justifyItems: "end",
 };
 
+const turmaResumoData = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#2563eb",
+};
+
 const turmaLinhaMetrics = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
   gap: 10,
 };
 
@@ -982,6 +889,7 @@ const turmaMetricCard = {
   padding: 12,
   display: "grid",
   gap: 6,
+  minWidth: 0,
 };
 
 const turmaMetricLabel = {
@@ -990,6 +898,7 @@ const turmaMetricLabel = {
   fontWeight: 700,
   textTransform: "uppercase",
   letterSpacing: ".03em",
+  overflowWrap: "anywhere",
 };
 
 const turmaMetricValue = {
