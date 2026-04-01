@@ -1531,6 +1531,23 @@ export default function MapaDesenvolvimentoPage() {
                                   {item.tipo_coaching || "sustentação"} • {fmtHours(item.horas_totais || 0)}h
                                 </div>
                               </div>
+                            <div style={buttonRow}>
+  <button
+    type="button"
+    style={buttonSecondaryStyle()}
+    onClick={() => editJornada(jornada)}
+  >
+    Editar
+  </button>
+
+  <button
+    type="button"
+    style={buttonDangerStyle()}
+    onClick={() => removeRegistro("jornada", jornada.id)}
+  >
+    Excluir
+  </button>
+</div>
                             ))
                           ) : (
                             <div style={timelineEmpty}>Nenhuma sustentação registrada.</div>
