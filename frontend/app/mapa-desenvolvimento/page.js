@@ -140,6 +140,7 @@ function badgeStyle(type) {
     border: "1px solid transparent",
     textTransform: "uppercase",
     letterSpacing: ".03em",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.7)",
   };
 
   const map = {
@@ -209,6 +210,7 @@ function attentionBadge(level) {
     fontSize: 10,
     fontWeight: 800,
     lineHeight: 1.1,
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.7)",
     ...(map[level] || map.ok),
   };
 }
@@ -246,6 +248,7 @@ function prazoBadge(tone) {
     fontSize: 10,
     fontWeight: 800,
     lineHeight: 1.1,
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.7)",
     ...(map[tone] || map.neutral),
   };
 }
@@ -581,6 +584,22 @@ export default function MapaDesenvolvimentoPage() {
     loadAll();
   }, []);
 
+  useEffect(() => {
+    if (!erro && !notice) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setErro("");
+      setNotice("");
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [erro, notice]);
+
+  useEffect(() => {
+    setErro("");
+    setNotice("");
+  }, [activeTab]);
+
   async function loadAll() {
     setLoading(true);
     setErro("");
@@ -699,7 +718,7 @@ export default function MapaDesenvolvimentoPage() {
       setNotice("Tripulação vinculada com sucesso.");
       await loadAll();
     } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao salvar participante da jornada."));
+      setErro(extrairMensagemErro(error, "Erro ao criar participante da jornada."));
     } finally {
       setSaving(false);
     }
@@ -1268,7 +1287,7 @@ export default function MapaDesenvolvimentoPage() {
         </section>
 
         <SectionCard
-          title="Cartografia do Oceano"
+          title="🗺️ Cartografia do Oceano"
           subtitle="Leitura macro do território de desenvolvimento e do volume em curso."
         >
           <div style={kpiGrid}>
@@ -1283,7 +1302,7 @@ export default function MapaDesenvolvimentoPage() {
         </SectionCard>
 
         <SectionCard
-          title="Leitura do território"
+          title="🔎 Leitura do território"
           subtitle="Refine o oceano por rio, status e busca."
           action={
             <button
@@ -1364,7 +1383,7 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "geral" && (
           <div style={{ display: "grid", gap: 18 }}>
             <SectionCard
-              title="Lógica do oceano"
+              title="🌊 Lógica do oceano"
               subtitle="Do macro ao destino: entenda o percurso antes de olhar o detalhe."
             >
               <div style={journeyGuideGrid}>
@@ -1383,7 +1402,7 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Rios e trajetos"
+              title="🌊 Rios e trajetos"
               subtitle="Leia cada jornada como um rio com portos, sustentação e próximo trecho."
             >
               {loading ? (
@@ -1470,7 +1489,7 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Portos em movimento"
+              title="⚓ Portos em movimento"
               subtitle="Leitura executiva das ações do mapa."
             >
               {loading ? (
@@ -1538,7 +1557,7 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "jornadas" && (
           <>
             <SectionCard
-              title="Rios e ramificações"
+              title="🌊 Rios e ramificações"
               subtitle="Estruture a jornada principal do oceano."
             >
               <details open style={detailsCard}>
@@ -1659,7 +1678,7 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Tripulação do rio"
+              title="🧭 Tripulação do rio"
               subtitle="Vincule pessoas manualmente ou importe a tripulação da jornada por planilha."
             >
               <div style={tripulacaoGrid}>
@@ -1881,7 +1900,7 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Linha do percurso"
+              title="🚢 Linha do percurso"
               subtitle="Leitura visual do caminho de cada rio com seus portos e sustentações."
             >
               {loading ? (
@@ -2020,7 +2039,7 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "acoes" && (
           <>
             <SectionCard
-              title="Portos e ancoragens"
+              title="⚓ Portos e ancoragens"
               subtitle="Cadastre ações com lançamento manual, sem vínculo com a página de turmas."
             >
               <details open style={detailsCard}>
@@ -2262,7 +2281,7 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Portos cadastrados"
+              title="⚓ Portos cadastrados"
               subtitle="Lista das ações já registradas no mapa."
             >
               {loading ? (
@@ -2335,7 +2354,7 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "coaching" && (
           <>
             <SectionCard
-              title="Sustentação do percurso"
+              title="🫧 Sustentação do percurso"
               subtitle="Registre coaching e mentoria como camada de reforço e continuidade da jornada."
             >
               <details open style={detailsCard}>
@@ -2646,7 +2665,7 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="Sustentações cadastradas"
+              title="🪸 Sustentações cadastradas"
               subtitle="Lista de coachings e mentorias do percurso."
             >
               {loading ? (
@@ -2848,12 +2867,12 @@ const signalGrid = {
 };
 
 const signalCard = {
-  borderRadius: 22,
+  borderRadius: 24,
   padding: 18,
-  background: "linear-gradient(180deg, rgba(255,255,255,.12) 0%, rgba(255,255,255,.06) 100%)",
-  border: "1px solid rgba(255,255,255,.16)",
-  boxShadow: "0 18px 32px rgba(2,8,23,.16)",
-  backdropFilter: "blur(10px)",
+  background: "linear-gradient(180deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.08) 100%)",
+  border: "1px solid rgba(255,255,255,.18)",
+  boxShadow: "0 16px 30px rgba(2,8,23,.12)",
+  backdropFilter: "blur(12px)",
 };
 
 const signalTitle = {
@@ -2889,21 +2908,23 @@ const filtersPanel = {
 };
 
 const errorAlert = {
-  background: "#fef2f2",
+  background: "linear-gradient(180deg, #fff5f5 0%, #fff1f2 100%)",
   color: "#b91c1c",
   border: "1px solid #fecaca",
   padding: "12px 14px",
-  borderRadius: 14,
+  borderRadius: 16,
   fontWeight: 700,
+  boxShadow: "0 10px 24px rgba(185,28,28,.08)",
 };
 
 const successAlert = {
-  background: "#f0fdf4",
+  background: "linear-gradient(180deg, #f5fff8 0%, #f0fdf4 100%)",
   color: "#166534",
   border: "1px solid #bbf7d0",
   padding: "12px 14px",
-  borderRadius: 14,
+  borderRadius: 16,
   fontWeight: 700,
+  boxShadow: "0 10px 24px rgba(22,101,52,.07)",
 };
 
 const journeyGuideGrid = {
@@ -2935,11 +2956,11 @@ const journeyGuideText = {
 };
 
 const journeyFlowCard = {
-  border: "1px solid #d7e7fb",
-  borderRadius: 28,
+  border: "1px solid #d9e8f9",
+  borderRadius: 30,
   padding: 22,
-  background: "linear-gradient(180deg, #ffffff 0%, #f6fbff 100%)",
-  boxShadow: "0 18px 40px rgba(15,23,42,.07)",
+  background: "linear-gradient(180deg, #ffffff 0%, #f7fbff 58%, #f3fbff 100%)",
+  boxShadow: "0 20px 42px rgba(15,23,42,.06)",
   display: "grid",
   gap: 18,
 };
@@ -3043,10 +3064,10 @@ const cardsGrid = {
 };
 
 const execCard = {
-  borderRadius: 24,
-  border: "1px solid #d7e7fb",
-  background: "linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)",
-  boxShadow: "0 18px 36px rgba(15,23,42,.06)",
+  borderRadius: 28,
+  border: "1px solid #dbe8f6",
+  background: "linear-gradient(180deg, #ffffff 0%, #f9fcff 100%)",
+  boxShadow: "0 16px 34px rgba(15,23,42,.05)",
   padding: 20,
   display: "grid",
   gap: 16,
@@ -3085,18 +3106,19 @@ const execText = {
 
 const miniExecutiveBand = {
   display: "grid",
-  gap: 12,
+  gap: 10,
   gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
 };
 
 const miniExecutive = {
-  borderRadius: 18,
-  border: "1px solid #d9e3f0",
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+  borderRadius: 20,
+  border: "1px solid #dce6f2",
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
   padding: 14,
-  minHeight: 88,
+  minHeight: 92,
   display: "grid",
   alignContent: "space-between",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,.85)",
 };
 
 const miniExecutiveLabel = {
@@ -3106,6 +3128,9 @@ const miniExecutiveLabel = {
   textTransform: "uppercase",
   lineHeight: 1.25,
   letterSpacing: ".04em",
+  whiteSpace: "normal",
+  wordBreak: "break-word",
+  overflowWrap: "anywhere",
 };
 
 const miniExecutiveValue = {
@@ -3135,10 +3160,10 @@ const importHintCard = {
 };
 
 const crewJourneyCard = {
-  borderRadius: 22,
-  border: "1px solid #d7e7fb",
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  boxShadow: "0 14px 32px rgba(15,23,42,.05)",
+  borderRadius: 24,
+  border: "1px solid #dbe8f6",
+  background: "linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)",
+  boxShadow: "0 14px 30px rgba(15,23,42,.045)",
   padding: 18,
   display: "grid",
   gap: 14,
@@ -3171,12 +3196,13 @@ const crewListGrid = {
 };
 
 const crewListCard = {
-  borderRadius: 18,
+  borderRadius: 20,
   border: "1px solid #dce8f7",
-  background: "#fff",
+  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
   padding: 14,
   display: "grid",
   gap: 8,
+  boxShadow: "0 10px 22px rgba(15,23,42,.04)",
 };
 
 const crewListName = {
@@ -3237,11 +3263,11 @@ const timelineItems = {
 };
 
 const timelineItem = {
-  borderRadius: 16,
+  borderRadius: 18,
   border: "1px solid #dce8f7",
   background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
   padding: 14,
-  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+  boxShadow: "0 8px 20px rgba(15,23,42,.035)",
 };
 
 const timelineItemTitle = {
