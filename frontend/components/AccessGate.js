@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getStoredUser, hasSomeRole } from "../services/api";
+import { getStoredUser, hasSomeRole, hasOceanAccess } from "../services/api";
 
-export default function AccessGate({ allowed = [], children }) {
+export default function AccessGate({ allowed = [], requireOceanAccess = false, children }) {
   const [user, setUser] = useState(undefined);
 
   useEffect(() => {
@@ -14,7 +14,7 @@ export default function AccessGate({ allowed = [], children }) {
   if (user === undefined) return null;
   if (!user) return null;
 
-  if (!hasSomeRole(user, allowed)) {
+  if (!hasSomeRole(user, allowed) || (requireOceanAccess && !hasOceanAccess(user))) {
     return (
       <div
         style={{

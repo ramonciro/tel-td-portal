@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { clearSession, getStoredUser, hasSomeRole } from "../services/api";
+import { clearSession, getStoredUser, hasSomeRole, hasOceanAccess } from "../services/api";
 
 const menuItems = [
   { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
@@ -20,7 +20,7 @@ const menuItems = [
   { href: "/responder-nps", label: "Responder NPS", icon: "🗳️", roles: ["treinando"] },
   { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "🗺️", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "🌊", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
 ];
 
 function isRouteActive(pathname, href) {
@@ -66,7 +66,12 @@ export default function PortalShell({
 
   const allowedMenuItems = useMemo(() => {
     if (!user) return [];
-    return menuItems.filter((item) => hasSomeRole(user, item.roles));
+    return menuItems.filter((item) => {
+      const roleOk = hasSomeRole(user, item.roles);
+      if (!roleOk) return false;
+      if (item.requiresOceanAccess) return hasOceanAccess(user);
+      return true;
+    });
   }, [user]);
 
   const currentItem = useMemo(() => {
@@ -78,7 +83,10 @@ export default function PortalShell({
   const currentAllowed = useMemo(() => {
     if (!currentItem) return true;
     if (!user) return false;
-    return hasSomeRole(user, currentItem.roles);
+    const roleOk = hasSomeRole(user, currentItem.roles);
+    if (!roleOk) return false;
+    if (currentItem.requiresOceanAccess) return hasOceanAccess(user);
+    return true;
   }, [currentItem, user]);
 
   function handleLogout() {
@@ -126,7 +134,7 @@ export default function PortalShell({
           </div>
           <h2 style={{ marginTop: 0 }}>Você não tem permissão para acessar esta área.</h2>
           <p style={{ color: "#64748b" }}>
-            Fale com o coordenador para revisar seu perfil de acesso.
+            Fale com a coordenação responsável para revisar o perfil e a liberação específica desta área.
           </p>
         </div>
       </div>
