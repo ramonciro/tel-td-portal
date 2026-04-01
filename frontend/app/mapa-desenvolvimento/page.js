@@ -1248,6 +1248,23 @@ export default function MapaDesenvolvimentoPage() {
                           Próximo trecho: {jornada.proximoPasso}
                         </div>
                       </div>
+
+                      <div style={buttonRow}>
+                        <button
+                          type="button"
+                          style={buttonSecondaryStyle()}
+                          onClick={() => editJornada(jornada)}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          style={buttonDangerStyle()}
+                          onClick={() => removeRegistro("jornada", jornada.id)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1519,46 +1536,41 @@ export default function MapaDesenvolvimentoPage() {
                           )}
                         </div>
                       </div>
-<div style={timelineWrap}>
-  <div style={timelineLabel}>Sustentação</div>
-  <div style={timelineItems}>
-    {jornada.coachingsDaJornada.length ? (
-      jornada.coachingsDaJornada.map((item) => (
-        <div key={`coach-${item.id}`} style={timelineItem}>
-          <div style={timelineItemTitle}>{item.titulo}</div>
-          <div style={timelineItemMeta}>
-            {item.tipo_coaching || "sustentação"} • {fmtHours(item.horas_totais || 0)}h
-          </div>
-        </div>
-      ))
-    ) : (
-      <div style={timelineEmpty}>Nenhuma sustentação registrada.</div>
-    )}
-  </div>
-</div>
 
-<div style={buttonRow}>
-  <button
-    type="button"
-    style={buttonSecondaryStyle()}
-    onClick={() => editJornada(jornada)}
-  >
-    Editar
-  </button>
-
-  <button
-    type="button"
-    style={buttonDangerStyle()}
-    onClick={() => removeRegistro("jornada", jornada.id)}
-  >
-    Excluir
-  </button>
-</div>
+                      <div style={timelineWrap}>
+                        <div style={timelineLabel}>Sustentação</div>
+                        <div style={timelineItems}>
+                          {jornada.coachingsDaJornada.length ? (
+                            jornada.coachingsDaJornada.map((item) => (
+                              <div key={`coach-${item.id}`} style={timelineItem}>
+                                <div style={timelineItemTitle}>{item.titulo}</div>
+                                <div style={timelineItemMeta}>
+                                  {item.tipo_coaching || "sustentação"} • {fmtHours(item.horas_totais || 0)}h
+                                </div>
+                              </div>
                             ))
                           ) : (
                             <div style={timelineEmpty}>Nenhuma sustentação registrada.</div>
                           )}
                         </div>
+                      </div>
+
+                      <div style={buttonRow}>
+                        <button
+                          type="button"
+                          style={buttonSecondaryStyle()}
+                          onClick={() => editJornada(jornada)}
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          type="button"
+                          style={buttonDangerStyle()}
+                          onClick={() => removeRegistro("jornada", jornada.id)}
+                        >
+                          Excluir
+                        </button>
                       </div>
                     </div>
                   ))}
