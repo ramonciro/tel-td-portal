@@ -53,6 +53,10 @@ async function list(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    if (String(error.code || "") === "ER_NO_SUCH_TABLE") {
+      return res.json([]);
+    }
+
     console.error("Erro ao listar participantes da jornada:", error);
     return res.status(500).json({ error: "Erro ao listar participantes da jornada." });
   }
@@ -89,8 +93,18 @@ async function create(req, res) {
 
     return res.status(201).json({ ok: true, message: "Participante vinculado com sucesso." });
   } catch (error) {
-    if (String(error.message || "").includes("Duplicate")) {
+    const code = String(error.code || "");
+
+    if (code === "ER_DUP_ENTRY" || String(error.message || "").includes("Duplicate")) {
       return res.status(400).json({ error: "Esta pessoa já está vinculada a esta jornada." });
+    }
+
+    if (code === "ER_NO_SUCH_TABLE") {
+      return res.status(500).json({ error: "A tabela de tripulação da jornada ainda não foi criada no banco." });
+    }
+
+    if (code === "ER_NO_REFERENCED_ROW_2") {
+      return res.status(400).json({ error: "A jornada selecionada não foi encontrada para vínculo da tripulação." });
     }
 
     console.error("Erro ao criar participante da jornada:", error);
@@ -176,6 +190,12 @@ async function importExcel(req, res) {
       total: totalImportados,
     });
   } catch (error) {
+    const code = String(error.code || "");
+
+    if (code === "ER_NO_SUCH_TABLE") {
+      return res.status(500).json({ error: "A tabela de tripulação da jornada ainda não foi criada no banco." });
+    }
+
     console.error("Erro ao importar tripulação:", error);
     return res.status(500).json({ error: "Erro ao importar tripulação da jornada." });
   }
