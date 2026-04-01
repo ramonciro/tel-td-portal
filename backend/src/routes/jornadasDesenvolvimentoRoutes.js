@@ -1,11 +1,42 @@
 const express = require("express");
 const router = express.Router();
-const controller = require("../controllers/jornadasDesenvolvimentoController");
 
-router.get("/", controller.listar);
-router.get("/:id", controller.buscarPorId);
-router.post("/", controller.criar);
-router.put("/:id", controller.atualizar);
-router.delete("/:id", controller.remover);
+const controller = require("../controllers/jornadasDesenvolvimentoController");
+const { authRequired, authorizeRoles } = require("../middlewares/auth");
+
+router.get(
+  "/",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  controller.listar
+);
+
+router.get(
+  "/:id",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  controller.buscarPorId
+);
+
+router.post(
+  "/",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  controller.criar
+);
+
+router.put(
+  "/:id",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  controller.atualizar
+);
+
+router.delete(
+  "/:id",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  controller.excluir
+);
 
 module.exports = router;
