@@ -7,13 +7,11 @@ function toNumber(value, fallback = 0) {
 
 async function listar(req, res) {
   try {
-    const [rows] = await db.query(
-      `
+    const [rows] = await db.query(`
       SELECT *
       FROM acoes_desenvolvimento
       ORDER BY id DESC
-      `
-    );
+    `);
 
     return res.json(Array.isArray(rows) ? rows : []);
   } catch (error) {
@@ -57,21 +55,17 @@ async function criar(req, res) {
 
     const jornadaId = body.jornada_id ? Number(body.jornada_id) : null;
     const titulo = String(body.titulo || "").trim();
-    const payload = {
-  jornada_id: Number(body.jornada_id),
-  titulo: body.titulo,
-  descricao: body.descricao || null,
-  responsavel: body.responsavel || null,
-  status: body.status || "planejada",
-  data_inicio: body.data_inicio || null,
-  data_fim: body.data_fim || null,
-  carga_horaria: Number(body.carga_horaria || 0),
-  participantes_previstos: Number(body.participantes_previstos || 0),
-  quantidade_turmas_sessoes: Number(body.quantidade_turmas_sessoes || 0),
-  participantes_realizados: Number(body.participantes_realizados || 0),
-  horas_planejadas: Number(body.horas_planejadas || 0),
-  horas_realizadas: Number(body.horas_realizadas || 0),
-};
+    const descricao = body.descricao || null;
+    const responsavel = body.responsavel || null;
+    const status = body.status || "planejada";
+    const dataInicio = body.data_inicio || null;
+    const dataFim = body.data_fim || null;
+    const cargaHoraria = toNumber(body.carga_horaria, 0);
+    const participantesPrevistos = toNumber(body.participantes_previstos, 0);
+    const quantidadeTurmasSessoes = toNumber(body.quantidade_turmas_sessoes, 0);
+    const participantesRealizados = toNumber(body.participantes_realizados, 0);
+    const horasPlanejadas = toNumber(body.horas_planejadas, 0);
+    const horasRealizadas = toNumber(body.horas_realizadas, 0);
 
     if (!jornadaId || !titulo) {
       return res
@@ -138,22 +132,20 @@ async function atualizar(req, res) {
     const { id } = req.params;
     const body = req.body || {};
 
-    const payload = {
-  jornada_id: Number(body.jornada_id),
-  titulo: body.titulo,
-  descricao: body.descricao || null,
-  responsavel: body.responsavel || null,
-  status: body.status || "planejada",
-  data_inicio: body.data_inicio || null,
-  data_fim: body.data_fim || null,
-  carga_horaria: Number(body.carga_horaria || 0),
-  participantes_previstos: Number(body.participantes_previstos || 0),
-  quantidade_turmas_sessoes: Number(body.quantidade_turmas_sessoes || 0),
-  participantes_realizados: Number(body.participantes_realizados || 0),
-  horas_planejadas: Number(body.horas_planejadas || 0),
-  horas_realizadas: Number(body.horas_realizadas || 0),
-}; 
-    
+    const jornadaId = body.jornada_id ? Number(body.jornada_id) : null;
+    const titulo = String(body.titulo || "").trim();
+    const descricao = body.descricao || null;
+    const responsavel = body.responsavel || null;
+    const status = body.status || "planejada";
+    const dataInicio = body.data_inicio || null;
+    const dataFim = body.data_fim || null;
+    const cargaHoraria = toNumber(body.carga_horaria, 0);
+    const participantesPrevistos = toNumber(body.participantes_previstos, 0);
+    const quantidadeTurmasSessoes = toNumber(body.quantidade_turmas_sessoes, 0);
+    const participantesRealizados = toNumber(body.participantes_realizados, 0);
+    const horasPlanejadas = toNumber(body.horas_planejadas, 0);
+    const horasRealizadas = toNumber(body.horas_realizadas, 0);
+
     if (!jornadaId || !titulo) {
       return res
         .status(400)
