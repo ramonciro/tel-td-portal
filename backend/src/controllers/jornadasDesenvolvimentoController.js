@@ -35,8 +35,7 @@ function mapRow(item) {
 async function listar(_req, res) {
   try {
     const [rows] = await db.query(`
-      SELECT jd.*,
-             u.nome AS responsavel_nome
+      SELECT jd.*, u.nome AS responsavel_nome
       FROM jornadas_desenvolvimento jd
       LEFT JOIN usuarios u ON u.id = jd.responsavel_id
       ORDER BY jd.id DESC
@@ -55,8 +54,7 @@ async function buscarPorId(req, res) {
 
     const [rows] = await db.query(
       `
-      SELECT jd.*,
-             u.nome AS responsavel_nome
+      SELECT jd.*, u.nome AS responsavel_nome
       FROM jornadas_desenvolvimento jd
       LEFT JOIN usuarios u ON u.id = jd.responsavel_id
       WHERE jd.id = ?
@@ -83,17 +81,13 @@ async function criar(req, res) {
     const objetivo = req.body.objetivo || null;
     const publico_macro = req.body.publico_macro || req.body.publico_alvo || null;
     const observacoes = req.body.observacoes || null;
-    const responsavel_id = req.body.responsavel_id
-      ? Number(req.body.responsavel_id)
-      : null;
+    const responsavel_id = req.body.responsavel_id ? Number(req.body.responsavel_id) : null;
     const status = normalizeStatusToDb(req.body.status);
     const data_inicio = req.body.data_inicio || null;
     const data_fim = req.body.data_fim || null;
 
     if (!nome) {
-      return res.status(400).json({
-        error: "Nome da jornada é obrigatório.",
-      });
+      return res.status(400).json({ error: "Nome da jornada é obrigatório." });
     }
 
     const [result] = await db.query(
@@ -102,24 +96,12 @@ async function criar(req, res) {
       (cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [
-        cliente,
-        nome,
-        descricao,
-        objetivo,
-        publico_macro,
-        observacoes,
-        status,
-        responsavel_id,
-        data_inicio,
-        data_fim,
-      ]
+      [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim]
     );
 
     const [rows] = await db.query(
       `
-      SELECT jd.*,
-             u.nome AS responsavel_nome
+      SELECT jd.*, u.nome AS responsavel_nome
       FROM jornadas_desenvolvimento jd
       LEFT JOIN usuarios u ON u.id = jd.responsavel_id
       WHERE jd.id = ?
@@ -144,24 +126,16 @@ async function atualizar(req, res) {
     const objetivo = req.body.objetivo || null;
     const publico_macro = req.body.publico_macro || req.body.publico_alvo || null;
     const observacoes = req.body.observacoes || null;
-    const responsavel_id = req.body.responsavel_id
-      ? Number(req.body.responsavel_id)
-      : null;
+    const responsavel_id = req.body.responsavel_id ? Number(req.body.responsavel_id) : null;
     const status = normalizeStatusToDb(req.body.status);
     const data_inicio = req.body.data_inicio || null;
     const data_fim = req.body.data_fim || null;
 
     if (!nome) {
-      return res.status(400).json({
-        error: "Nome da jornada é obrigatório.",
-      });
+      return res.status(400).json({ error: "Nome da jornada é obrigatório." });
     }
 
-    const [exists] = await db.query(
-      `SELECT id FROM jornadas_desenvolvimento WHERE id = ?`,
-      [id]
-    );
-
+    const [exists] = await db.query(`SELECT id FROM jornadas_desenvolvimento WHERE id = ?`, [id]);
     if (!exists.length) {
       return res.status(404).json({ error: "Jornada não encontrada." });
     }
@@ -169,37 +143,15 @@ async function atualizar(req, res) {
     await db.query(
       `
       UPDATE jornadas_desenvolvimento
-      SET cliente = ?,
-          nome = ?,
-          descricao = ?,
-          objetivo = ?,
-          publico_macro = ?,
-          observacoes = ?,
-          status = ?,
-          responsavel_id = ?,
-          data_inicio = ?,
-          data_fim = ?
+      SET cliente = ?, nome = ?, descricao = ?, objetivo = ?, publico_macro = ?, observacoes = ?, status = ?, responsavel_id = ?, data_inicio = ?, data_fim = ?
       WHERE id = ?
       `,
-      [
-        cliente,
-        nome,
-        descricao,
-        objetivo,
-        publico_macro,
-        observacoes,
-        status,
-        responsavel_id,
-        data_inicio,
-        data_fim,
-        id,
-      ]
+      [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, id]
     );
 
     const [rows] = await db.query(
       `
-      SELECT jd.*,
-             u.nome AS responsavel_nome
+      SELECT jd.*, u.nome AS responsavel_nome
       FROM jornadas_desenvolvimento jd
       LEFT JOIN usuarios u ON u.id = jd.responsavel_id
       WHERE jd.id = ?
@@ -218,15 +170,12 @@ async function remover(req, res) {
   try {
     const { id } = req.params;
 
-    const [exists] = await db.query(
-      `SELECT id FROM jornadas_desenvolvimento WHERE id = ?`,
-      [id]
-    );
-
+    const [exists] = await db.query(`SELECT id FROM jornadas_desenvolvimento WHERE id = ?`, [id]);
     if (!exists.length) {
       return res.status(404).json({ error: "Jornada não encontrada." });
     }
 
+    await db.query(`DELETE FROM jornada_participantes WHERE jornada_id = ?`, [id]).catch(() => null);
     await db.query(`DELETE FROM jornadas_desenvolvimento WHERE id = ?`, [id]);
 
     res.json({ success: true, message: "Jornada removida com sucesso." });
