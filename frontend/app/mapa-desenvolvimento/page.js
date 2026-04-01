@@ -1519,7 +1519,6 @@ export default function MapaDesenvolvimentoPage() {
                           )}
                         </div>
                       </div>
-
 <div style={timelineWrap}>
   <div style={timelineLabel}>Sustentação</div>
   <div style={timelineItems}>
