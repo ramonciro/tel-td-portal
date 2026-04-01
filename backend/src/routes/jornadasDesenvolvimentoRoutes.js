@@ -1,6 +1,5 @@
 const express = require("express");
 const router = express.Router();
-
 const controller = require("../controllers/jornadasDesenvolvimentoController");
 const { authRequired, authorizeRoles } = require("../middlewares/auth");
 
@@ -36,7 +35,7 @@ router.delete(
   "/:id",
   authRequired,
   authorizeRoles("coordenador", "superintendente"),
-  controller.excluir
+  controller.remover
 );
 
 module.exports = router;
