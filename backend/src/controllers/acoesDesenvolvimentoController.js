@@ -1,4 +1,4 @@
-const db = require("../db");
+const db = require("../lib/db");
 
 function toNumber(value, fallback = 0) {
   const num = Number(value);
