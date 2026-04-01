@@ -8,17 +8,17 @@ function toNumber(value, fallback = 0) {
 async function listar(req, res) {
   try {
     const [rows] = await db.query(`
-      SELECT *
-      FROM acoes_desenvolvimento
-      ORDER BY id DESC
+      SELECT a.*,
+             j.nome AS jornada_nome
+      FROM acoes_desenvolvimento a
+      LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
+      ORDER BY a.id DESC
     `);
 
     return res.json(Array.isArray(rows) ? rows : []);
   } catch (error) {
     console.error("Erro ao listar ações de desenvolvimento:", error);
-    return res
-      .status(500)
-      .json({ error: "Erro ao listar ações de desenvolvimento." });
+    return res.status(500).json({ error: "Erro ao listar ações de desenvolvimento." });
   }
 }
 
@@ -28,9 +28,11 @@ async function detalhar(req, res) {
 
     const [rows] = await db.query(
       `
-      SELECT *
-      FROM acoes_desenvolvimento
-      WHERE id = ?
+      SELECT a.*,
+             j.nome AS jornada_nome
+      FROM acoes_desenvolvimento a
+      LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
+      WHERE a.id = ?
       LIMIT 1
       `,
       [id]
@@ -54,76 +56,86 @@ async function criar(req, res) {
     const body = req.body || {};
 
     const jornadaId = body.jornada_id ? Number(body.jornada_id) : null;
-    const titulo = String(body.titulo || "").trim();
+    const tema = String(body.titulo || body.tema || "").trim();
     const descricao = body.descricao || null;
-    const responsavel = body.responsavel || null;
     const status = body.status || "planejada";
     const dataInicio = body.data_inicio || null;
     const dataFim = body.data_fim || null;
     const cargaHoraria = toNumber(body.carga_horaria, 0);
     const participantesPrevistos = toNumber(body.participantes_previstos, 0);
-    const quantidadeTurmasSessoes = toNumber(body.quantidade_turmas_sessoes, 0);
     const participantesRealizados = toNumber(body.participantes_realizados, 0);
+    const quantidadeTurmasSessoes = toNumber(body.quantidade_turmas_sessoes, 0);
     const horasPlanejadas = toNumber(body.horas_planejadas, 0);
     const horasRealizadas = toNumber(body.horas_realizadas, 0);
 
-    if (!jornadaId || !titulo) {
-      return res
-        .status(400)
-        .json({ error: "Jornada e título da ação são obrigatórios." });
+    if (!jornadaId || !tema) {
+      return res.status(400).json({
+        error: "Jornada e título da ação são obrigatórios.",
+      });
     }
 
-    const [result] = await db.query(
+    await db.query(
       `
       INSERT INTO acoes_desenvolvimento (
         jornada_id,
-        titulo,
+        etapa_id,
+        tipo_acao,
+        tema,
+        subtipo,
+        publico_alvo,
+        obrigatoria,
         descricao,
-        responsavel,
-        status,
-        data_inicio,
-        data_fim,
         carga_horaria,
-        quantidade_turmas_sessoes,
         participantes_previstos,
         participantes_realizados,
+        quantidade_turmas_sessoes,
         horas_planejadas,
-        horas_realizadas
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        horas_realizadas,
+        status,
+        responsavel_id,
+        data_inicio,
+        data_fim
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         jornadaId,
-        titulo,
+        null,
+        "treinamento",
+        tema,
+        null,
+        null,
+        0,
         descricao,
-        responsavel,
-        status,
-        dataInicio,
-        dataFim,
         cargaHoraria,
-        quantidadeTurmasSessoes,
         participantesPrevistos,
         participantesRealizados,
+        quantidadeTurmasSessoes,
         horasPlanejadas,
         horasRealizadas,
+        status,
+        null,
+        dataInicio,
+        dataFim,
       ]
     );
 
-    const acaoId = result.insertId;
-
     const [rows] = await db.query(
       `
-      SELECT *
-      FROM acoes_desenvolvimento
-      WHERE id = ?
+      SELECT a.*,
+             j.nome AS jornada_nome
+      FROM acoes_desenvolvimento a
+      LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
+      ORDER BY a.id DESC
       LIMIT 1
-      `,
-      [acaoId]
+      `
     );
 
-    return res.status(201).json(rows?.[0] || { id: acaoId });
+    return res.status(201).json(rows?.[0] || {});
   } catch (error) {
     console.error("Erro ao criar ação de desenvolvimento:", error);
-    return res.status(500).json({ error: "Erro ao criar ação." });
+    return res.status(500).json({
+      error: error.message || "Erro ao criar ação.",
+    });
   }
 }
 
@@ -133,23 +145,22 @@ async function atualizar(req, res) {
     const body = req.body || {};
 
     const jornadaId = body.jornada_id ? Number(body.jornada_id) : null;
-    const titulo = String(body.titulo || "").trim();
+    const tema = String(body.titulo || body.tema || "").trim();
     const descricao = body.descricao || null;
-    const responsavel = body.responsavel || null;
     const status = body.status || "planejada";
     const dataInicio = body.data_inicio || null;
     const dataFim = body.data_fim || null;
     const cargaHoraria = toNumber(body.carga_horaria, 0);
     const participantesPrevistos = toNumber(body.participantes_previstos, 0);
-    const quantidadeTurmasSessoes = toNumber(body.quantidade_turmas_sessoes, 0);
     const participantesRealizados = toNumber(body.participantes_realizados, 0);
+    const quantidadeTurmasSessoes = toNumber(body.quantidade_turmas_sessoes, 0);
     const horasPlanejadas = toNumber(body.horas_planejadas, 0);
     const horasRealizadas = toNumber(body.horas_realizadas, 0);
 
-    if (!jornadaId || !titulo) {
-      return res
-        .status(400)
-        .json({ error: "Jornada e título da ação são obrigatórios." });
+    if (!jornadaId || !tema) {
+      return res.status(400).json({
+        error: "Jornada e título da ação são obrigatórios.",
+      });
     }
 
     const [exists] = await db.query(
@@ -171,43 +182,43 @@ async function atualizar(req, res) {
       UPDATE acoes_desenvolvimento
       SET
         jornada_id = ?,
-        titulo = ?,
+        tema = ?,
         descricao = ?,
-        responsavel = ?,
-        status = ?,
-        data_inicio = ?,
-        data_fim = ?,
         carga_horaria = ?,
-        quantidade_turmas_sessoes = ?,
         participantes_previstos = ?,
         participantes_realizados = ?,
+        quantidade_turmas_sessoes = ?,
         horas_planejadas = ?,
-        horas_realizadas = ?
+        horas_realizadas = ?,
+        status = ?,
+        data_inicio = ?,
+        data_fim = ?
       WHERE id = ?
       `,
       [
         jornadaId,
-        titulo,
+        tema,
         descricao,
-        responsavel,
+        cargaHoraria,
+        participantesPrevistos,
+        participantesRealizados,
+        quantidadeTurmasSessoes,
+        horasPlanejadas,
+        horasRealizadas,
         status,
         dataInicio,
         dataFim,
-        cargaHoraria,
-        quantidadeTurmasSessoes,
-        participantesPrevistos,
-        participantesRealizados,
-        horasPlanejadas,
-        horasRealizadas,
         id,
       ]
     );
 
     const [rows] = await db.query(
       `
-      SELECT *
-      FROM acoes_desenvolvimento
-      WHERE id = ?
+      SELECT a.*,
+             j.nome AS jornada_nome
+      FROM acoes_desenvolvimento a
+      LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
+      WHERE a.id = ?
       LIMIT 1
       `,
       [id]
@@ -216,7 +227,9 @@ async function atualizar(req, res) {
     return res.json(rows?.[0] || { id: Number(id) });
   } catch (error) {
     console.error("Erro ao atualizar ação de desenvolvimento:", error);
-    return res.status(500).json({ error: "Erro ao atualizar ação." });
+    return res.status(500).json({
+      error: error.message || "Erro ao atualizar ação.",
+    });
   }
 }
 
