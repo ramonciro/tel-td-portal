@@ -36,6 +36,7 @@ router.post("/login", async (req, res) => {
       email: user.email,
       perfil: user.perfil || "instrutor",
       cliente: user.cliente || "",
+      pode_acessar_oceano_desenvolvimento: Number(user.pode_acessar_oceano_desenvolvimento || 0),
     });
 
     return res.json({
@@ -47,6 +48,7 @@ router.post("/login", async (req, res) => {
         perfil: user.perfil || "instrutor",
         cliente: user.cliente || "",
         troca_senha_obrigatoria: !!user.troca_senha_obrigatoria,
+        pode_acessar_oceano_desenvolvimento: Number(user.pode_acessar_oceano_desenvolvimento || 0),
       },
     });
   } catch (error) {
