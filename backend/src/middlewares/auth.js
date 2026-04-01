@@ -63,6 +63,37 @@ function verifyToken(token) {
   return payload;
 }
 
+
+function hasOceanAccess(user) {
+  const perfil = String(user?.perfil || "").trim().toLowerCase();
+  const allowedPerfis = ["coordenador", "superintendente"];
+  const flag = Number(user?.pode_acessar_oceano_desenvolvimento || 0) === 1;
+  return allowedPerfis.includes(perfil) && flag;
+}
+
+function authorizeOceanAccess(req, res, next) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ ok: false, message: "Usuário não autenticado" });
+    }
+
+    if (!hasOceanAccess(req.user)) {
+      return res.status(403).json({
+        ok: false,
+        message: "Acesso restrito ao Oceano do Desenvolvimento",
+      });
+    }
+
+    return next();
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao validar acesso ao Oceano do Desenvolvimento",
+      error: error.message,
+    });
+  }
+}
+
 function authRequired(req, res, next) {
   try {
     const authHeader = req.headers.authorization || "";
@@ -128,4 +159,6 @@ module.exports = {
   verifyToken,
   authRequired,
   authorizeRoles,
+  hasOceanAccess,
+  authorizeOceanAccess,
 };
