@@ -8,17 +8,22 @@ function toNumber(value, fallback = 0) {
 async function listar(req, res) {
   try {
     const [rows] = await db.query(`
-      SELECT a.*,
-             j.nome AS jornada_nome
+      SELECT 
+        a.*,
+        j.nome AS jornada_nome,
+        u.nome AS responsavel_nome
       FROM acoes_desenvolvimento a
       LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
+      LEFT JOIN usuarios u ON u.id = a.responsavel_id
       ORDER BY a.id DESC
     `);
 
     return res.json(Array.isArray(rows) ? rows : []);
   } catch (error) {
     console.error("Erro ao listar ações de desenvolvimento:", error);
-    return res.status(500).json({ error: "Erro ao listar ações de desenvolvimento." });
+    return res
+      .status(500)
+      .json({ error: "Erro ao listar ações de desenvolvimento." });
   }
 }
 
@@ -28,10 +33,13 @@ async function detalhar(req, res) {
 
     const [rows] = await db.query(
       `
-      SELECT a.*,
-             j.nome AS jornada_nome
+      SELECT 
+        a.*,
+        j.nome AS jornada_nome,
+        u.nome AS responsavel_nome
       FROM acoes_desenvolvimento a
       LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
+      LEFT JOIN usuarios u ON u.id = a.responsavel_id
       WHERE a.id = ?
       LIMIT 1
       `,
@@ -59,6 +67,7 @@ async function criar(req, res) {
     const tema = String(body.titulo || body.tema || "").trim();
     const descricao = body.descricao || null;
     const status = body.status || "planejada";
+    const responsavelId = body.responsavel_id ? Number(body.responsavel_id) : null;
     const dataInicio = body.data_inicio || null;
     const dataFim = body.data_fim || null;
     const cargaHoraria = toNumber(body.carga_horaria, 0);
@@ -74,7 +83,7 @@ async function criar(req, res) {
       });
     }
 
-    await db.query(
+    const [result] = await db.query(
       `
       INSERT INTO acoes_desenvolvimento (
         jornada_id,
@@ -113,7 +122,7 @@ async function criar(req, res) {
         horasPlanejadas,
         horasRealizadas,
         status,
-        null,
+        responsavelId,
         dataInicio,
         dataFim,
       ]
@@ -121,13 +130,17 @@ async function criar(req, res) {
 
     const [rows] = await db.query(
       `
-      SELECT a.*,
-             j.nome AS jornada_nome
+      SELECT 
+        a.*,
+        j.nome AS jornada_nome,
+        u.nome AS responsavel_nome
       FROM acoes_desenvolvimento a
       LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
-      ORDER BY a.id DESC
+      LEFT JOIN usuarios u ON u.id = a.responsavel_id
+      WHERE a.id = ?
       LIMIT 1
-      `
+      `,
+      [result.insertId]
     );
 
     return res.status(201).json(rows?.[0] || {});
@@ -148,6 +161,7 @@ async function atualizar(req, res) {
     const tema = String(body.titulo || body.tema || "").trim();
     const descricao = body.descricao || null;
     const status = body.status || "planejada";
+    const responsavelId = body.responsavel_id ? Number(body.responsavel_id) : null;
     const dataInicio = body.data_inicio || null;
     const dataFim = body.data_fim || null;
     const cargaHoraria = toNumber(body.carga_horaria, 0);
@@ -191,6 +205,7 @@ async function atualizar(req, res) {
         horas_planejadas = ?,
         horas_realizadas = ?,
         status = ?,
+        responsavel_id = ?,
         data_inicio = ?,
         data_fim = ?
       WHERE id = ?
@@ -206,6 +221,7 @@ async function atualizar(req, res) {
         horasPlanejadas,
         horasRealizadas,
         status,
+        responsavelId,
         dataInicio,
         dataFim,
         id,
@@ -214,10 +230,13 @@ async function atualizar(req, res) {
 
     const [rows] = await db.query(
       `
-      SELECT a.*,
-             j.nome AS jornada_nome
+      SELECT 
+        a.*,
+        j.nome AS jornada_nome,
+        u.nome AS responsavel_nome
       FROM acoes_desenvolvimento a
       LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
+      LEFT JOIN usuarios u ON u.id = a.responsavel_id
       WHERE a.id = ?
       LIMIT 1
       `,
