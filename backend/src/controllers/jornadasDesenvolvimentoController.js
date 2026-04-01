@@ -1,33 +1,102 @@
-const db = require("../lib/db");
+const db = require("../config/db");
 
-async function listar(_req, res) {
-  try {
-    const [rows] = await db.query(`
-      SELECT jd.*,
-             u.nome AS responsavel_nome
-      FROM jornadas_desenvolvimento jd
-      LEFT JOIN usuarios u ON u.id = jd.responsavel_id
-      ORDER BY jd.id DESC
-    `);
+function normalizeStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
 
-    res.json(rows);
-  } catch (error) {
-    console.error("Erro ao listar jornadas:", error);
-    res.status(500).json({ error: "Erro ao listar jornadas." });
+  if (["ativa", "ativo"].includes(status)) return "ativo";
+  if (["inativa", "inativo"].includes(status)) return "inativo";
+  if (["concluida", "concluído", "concluido", "finalizada"].includes(status)) {
+    return "concluido";
   }
+  if (["planejada", "planejado"].includes(status)) return "planejado";
+  if (["em_andamento", "em andamento"].includes(status)) return "em_andamento";
+  if (["cancelada", "cancelado"].includes(status)) return "cancelado";
+
+  return status || "planejado";
 }
 
-async function buscarPorId(req, res) {
+function mapPayload(body = {}) {
+  return {
+    nome: body.nome || body.titulo || null,
+    titulo: body.titulo || body.nome || null,
+    descricao: body.descricao || body.objetivo || null,
+    objetivo: body.objetivo || body.descricao || null,
+    cliente: body.cliente || null,
+    publico_macro: body.publico_macro || body.publico_alvo || null,
+    publico_alvo: body.publico_alvo || body.publico_macro || null,
+    observacoes: body.observacoes || null,
+    responsavel_id: body.responsavel_id ? Number(body.responsavel_id) : null,
+    status: normalizeStatus(body.status),
+    data_inicio: body.data_inicio || null,
+    data_fim: body.data_fim || null,
+  };
+}
+
+exports.listar = async (_req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        id,
+        nome,
+        titulo,
+        cliente,
+        publico_macro,
+        publico_alvo,
+        descricao,
+        objetivo,
+        observacoes,
+        responsavel_id,
+        status,
+        data_inicio,
+        data_fim,
+        criado_em,
+        atualizado_em
+      FROM jornadas_desenvolvimento
+      ORDER BY id DESC
+    `);
+
+    const data = rows.map((item) => ({
+      ...item,
+      titulo: item.titulo || item.nome,
+      nome: item.nome || item.titulo,
+      publico_alvo: item.publico_alvo || item.publico_macro,
+      publico_macro: item.publico_macro || item.publico_alvo,
+      objetivo: item.objetivo || item.descricao,
+      descricao: item.descricao || item.objetivo,
+    }));
+
+    return res.json(data);
+  } catch (error) {
+    console.error("Erro ao listar jornadas:", error);
+    return res.status(500).json({ error: "Erro ao listar jornadas." });
+  }
+};
+
+exports.buscarPorId = async (req, res) => {
   try {
     const { id } = req.params;
 
     const [rows] = await db.query(
       `
-      SELECT jd.*,
-             u.nome AS responsavel_nome
-      FROM jornadas_desenvolvimento jd
-      LEFT JOIN usuarios u ON u.id = jd.responsavel_id
-      WHERE jd.id = ?
+      SELECT
+        id,
+        nome,
+        titulo,
+        cliente,
+        publico_macro,
+        publico_alvo,
+        descricao,
+        objetivo,
+        observacoes,
+        responsavel_id,
+        status,
+        data_inicio,
+        data_fim,
+        criado_em,
+        atualizado_em
+      FROM jornadas_desenvolvimento
+      WHERE id = ?
+      LIMIT 1
       `,
       [id]
     );
@@ -36,81 +105,107 @@ async function buscarPorId(req, res) {
       return res.status(404).json({ error: "Jornada não encontrada." });
     }
 
-    res.json(rows[0]);
+    const item = rows[0];
+
+    return res.json({
+      ...item,
+      titulo: item.titulo || item.nome,
+      nome: item.nome || item.titulo,
+      publico_alvo: item.publico_alvo || item.publico_macro,
+      publico_macro: item.publico_macro || item.publico_alvo,
+      objetivo: item.objetivo || item.descricao,
+      descricao: item.descricao || item.objetivo,
+    });
   } catch (error) {
     console.error("Erro ao buscar jornada:", error);
-    res.status(500).json({ error: "Erro ao buscar jornada." });
+    return res.status(500).json({ error: "Erro ao buscar jornada." });
   }
-}
+};
 
-async function criar(req, res) {
+exports.criar = async (req, res) => {
   try {
-    const {
-      nome,
-      descricao,
-      objetivo,
-      publico_macro,
-      observacoes,
-      status,
-      responsavel_id,
-      data_inicio,
-      data_fim,
-    } = req.body;
+    const payload = mapPayload(req.body);
 
-    if (!nome) {
-      return res.status(400).json({
-        error: "Nome da jornada é obrigatório.",
-      });
+    if (!String(payload.nome || "").trim()) {
+      return res.status(400).json({ error: "Informe o nome da jornada." });
     }
 
     const [result] = await db.query(
       `
-      INSERT INTO jornadas_desenvolvimento
-      (nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO jornadas_desenvolvimento (
+        nome,
+        titulo,
+        cliente,
+        publico_macro,
+        publico_alvo,
+        descricao,
+        objetivo,
+        observacoes,
+        responsavel_id,
+        status,
+        data_inicio,
+        data_fim
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        nome,
-        descricao || null,
-        objetivo || null,
-        publico_macro || null,
-        observacoes || null,
-        status || "ativa",
-        responsavel_id || null,
-        data_inicio || null,
-        data_fim || null,
+        payload.nome,
+        payload.titulo,
+        payload.cliente,
+        payload.publico_macro,
+        payload.publico_alvo,
+        payload.descricao,
+        payload.objetivo,
+        payload.observacoes,
+        payload.responsavel_id,
+        payload.status,
+        payload.data_inicio,
+        payload.data_fim,
       ]
     );
 
     const [rows] = await db.query(
-      `SELECT * FROM jornadas_desenvolvimento WHERE id = ?`,
+      `
+      SELECT
+        id,
+        nome,
+        titulo,
+        cliente,
+        publico_macro,
+        publico_alvo,
+        descricao,
+        objetivo,
+        observacoes,
+        responsavel_id,
+        status,
+        data_inicio,
+        data_fim,
+        criado_em,
+        atualizado_em
+      FROM jornadas_desenvolvimento
+      WHERE id = ?
+      LIMIT 1
+      `,
       [result.insertId]
     );
 
-    res.status(201).json(rows[0]);
+    return res.status(201).json(rows[0]);
   } catch (error) {
     console.error("Erro ao criar jornada:", error);
-    res.status(500).json({ error: "Erro ao criar jornada." });
+    return res.status(500).json({ error: "Erro ao criar jornada." });
   }
-}
+};
 
-async function atualizar(req, res) {
+exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      nome,
-      descricao,
-      objetivo,
-      publico_macro,
-      observacoes,
-      status,
-      responsavel_id,
-      data_inicio,
-      data_fim,
-    } = req.body;
+    const payload = mapPayload(req.body);
+
+    if (!String(payload.nome || "").trim()) {
+      return res.status(400).json({ error: "Informe o nome da jornada." });
+    }
 
     const [exists] = await db.query(
-      `SELECT id FROM jornadas_desenvolvimento WHERE id = ?`,
+      `SELECT id FROM jornadas_desenvolvimento WHERE id = ? LIMIT 1`,
       [id]
     );
 
@@ -121,49 +216,76 @@ async function atualizar(req, res) {
     await db.query(
       `
       UPDATE jornadas_desenvolvimento
-      SET nome = ?,
-          descricao = ?,
-          objetivo = ?,
-          publico_macro = ?,
-          observacoes = ?,
-          status = ?,
-          responsavel_id = ?,
-          data_inicio = ?,
-          data_fim = ?
+      SET
+        nome = ?,
+        titulo = ?,
+        cliente = ?,
+        publico_macro = ?,
+        publico_alvo = ?,
+        descricao = ?,
+        objetivo = ?,
+        observacoes = ?,
+        responsavel_id = ?,
+        status = ?,
+        data_inicio = ?,
+        data_fim = ?
       WHERE id = ?
       `,
       [
-        nome,
-        descricao || null,
-        objetivo || null,
-        publico_macro || null,
-        observacoes || null,
-        status || "ativa",
-        responsavel_id || null,
-        data_inicio || null,
-        data_fim || null,
+        payload.nome,
+        payload.titulo,
+        payload.cliente,
+        payload.publico_macro,
+        payload.publico_alvo,
+        payload.descricao,
+        payload.objetivo,
+        payload.observacoes,
+        payload.responsavel_id,
+        payload.status,
+        payload.data_inicio,
+        payload.data_fim,
         id,
       ]
     );
 
     const [rows] = await db.query(
-      `SELECT * FROM jornadas_desenvolvimento WHERE id = ?`,
+      `
+      SELECT
+        id,
+        nome,
+        titulo,
+        cliente,
+        publico_macro,
+        publico_alvo,
+        descricao,
+        objetivo,
+        observacoes,
+        responsavel_id,
+        status,
+        data_inicio,
+        data_fim,
+        criado_em,
+        atualizado_em
+      FROM jornadas_desenvolvimento
+      WHERE id = ?
+      LIMIT 1
+      `,
       [id]
     );
 
-    res.json(rows[0]);
+    return res.json(rows[0]);
   } catch (error) {
     console.error("Erro ao atualizar jornada:", error);
-    res.status(500).json({ error: "Erro ao atualizar jornada." });
+    return res.status(500).json({ error: "Erro ao atualizar jornada." });
   }
-}
+};
 
-async function remover(req, res) {
+exports.excluir = async (req, res) => {
   try {
     const { id } = req.params;
 
     const [exists] = await db.query(
-      `SELECT id FROM jornadas_desenvolvimento WHERE id = ?`,
+      `SELECT id FROM jornadas_desenvolvimento WHERE id = ? LIMIT 1`,
       [id]
     );
 
@@ -173,17 +295,9 @@ async function remover(req, res) {
 
     await db.query(`DELETE FROM jornadas_desenvolvimento WHERE id = ?`, [id]);
 
-    res.json({ success: true, message: "Jornada removida com sucesso." });
+    return res.json({ ok: true, message: "Jornada excluída com sucesso." });
   } catch (error) {
-    console.error("Erro ao remover jornada:", error);
-    res.status(500).json({ error: "Erro ao remover jornada." });
+    console.error("Erro ao excluir jornada:", error);
+    return res.status(500).json({ error: "Erro ao excluir jornada." });
   }
-}
-
-module.exports = {
-  listar,
-  buscarPorId,
-  criar,
-  atualizar,
-  remover,
 };
