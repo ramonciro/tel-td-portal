@@ -533,7 +533,8 @@ export default function MapaDesenvolvimentoPage() {
     } finally {
       setLoading(false);
     }
-}
+  }
+
   async function saveJornada(event) {
     event.preventDefault();
     setSaving(true);
@@ -554,10 +555,13 @@ export default function MapaDesenvolvimentoPage() {
 
     try {
       const payload = {
-        titulo: jornadaForm.titulo,
-        cliente: jornadaForm.cliente || null,
-        publico_alvo: jornadaForm.publico_alvo || null,
+        nome: jornadaForm.titulo,
+        descricao: jornadaForm.cliente || null,
+        publico_macro: jornadaForm.publico_alvo || null,
         objetivo: jornadaForm.objetivo || null,
+        observacoes: jornadaForm.cliente
+          ? `Cliente: ${jornadaForm.cliente}`
+          : null,
         status: jornadaForm.status || "planejada",
         data_inicio: jornadaForm.data_inicio || null,
         data_fim: jornadaForm.data_fim || null,
@@ -1442,6 +1446,61 @@ export default function MapaDesenvolvimentoPage() {
                 </form>
               </details>
             </SectionCard>
+
+            <SectionCard
+              title="Rios cadastrados"
+              subtitle="Visão executiva das jornadas já registradas no oceano."
+            >
+              {loading ? (
+                emptyCard("Carregando jornadas...")
+              ) : filteredJornadas.length === 0 ? (
+                emptyCard("Nenhuma jornada encontrada.")
+              ) : (
+                <div style={cardsGrid}>
+                  {filteredJornadas.map((jornada) => (
+                    <div key={jornada.id} style={execCard}>
+                      <div style={execHeader}>
+                        <div>
+                          <div style={execTitle}>{jornada.nome}</div>
+                          <div style={execSubtitle}>
+                            {(jornada.cliente || jornada.observacoes || "Sem cliente")} • {jornada.publico_macro || "Sem público macro"}
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
+                          <span style={attentionBadge(jornada.attention_info.level)}>
+                            {jornada.attention_info.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={execBody}>
+                        <div style={execText}>{jornada.objetivo || "Sem objetivo definido."}</div>
+
+                        <div style={miniExecutiveBand}>
+                          <MiniExecutive label="Portos" value={fmtNumber(jornada.total_acoes)} />
+                          <MiniExecutive label="Sustentação" value={fmtNumber(jornada.total_coachings)} />
+                          <MiniExecutive label="Horas" value={fmtHours(jornada.horas_totais)} />
+                        </div>
+                      </div>
+
+                      <div style={buttonRow}>
+                        <button style={buttonSecondaryStyle()} onClick={() => editJornada(jornada)}>
+                          Editar
+                        </button>
+                        <button
+                          style={buttonDangerStyle()}
+                          onClick={() => removeRegistro("jornada", jornada.id)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
           </>
         )}
 
@@ -1998,6 +2057,66 @@ export default function MapaDesenvolvimentoPage() {
                   </div>
                 </form>
               </details>
+            </SectionCard>
+
+            <SectionCard
+              title="Portos de sustentação"
+              subtitle="Coaching e mentoria como reforço contínuo do percurso."
+            >
+              {loading ? (
+                emptyCard("Carregando coaching e mentoria...")
+              ) : filteredCoachings.length === 0 ? (
+                emptyCard("Nenhum coaching ou mentoria encontrado.")
+              ) : (
+                <div style={cardsGrid}>
+                  {filteredCoachings.map((item) => {
+                    const tipoBadge = sustentacaoTypeBadge(item.tipo_coaching);
+
+                    return (
+                      <div key={item.id} style={execCard}>
+                        <div style={execHeader}>
+                          <div>
+                            <div style={execTitle}>{item.titulo}</div>
+                            <div style={execSubtitle}>
+                              {item.jornada_nome} • {item.acao_nome}
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <span style={tipoBadge.style}>{tipoBadge.label}</span>
+                            <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                            <span style={attentionBadge(item.attention_info.level)}>
+                              {item.attention_info.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={execBody}>
+                          <div style={execText}>{item.objetivo || "Sem objetivo registrado."}</div>
+
+                          <div style={miniExecutiveBand}>
+                            <MiniExecutive label="Sessões" value={fmtNumber(item.sessoes_realizadas || 0)} />
+                            <MiniExecutive label="Participantes" value={fmtNumber(item.participantes_realizados || 0)} />
+                            <MiniExecutive label="Horas" value={fmtHours(item.horas_totais || 0)} />
+                          </div>
+                        </div>
+
+                        <div style={buttonRow}>
+                          <button style={buttonSecondaryStyle()} onClick={() => editCoaching(item)}>
+                            Editar
+                          </button>
+                          <button
+                            style={buttonDangerStyle()}
+                            onClick={() => removeRegistro("coaching", item.id)}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </SectionCard>
           </>
         )}
