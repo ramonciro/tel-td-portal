@@ -7,13 +7,12 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
-const { authRequired, authorizeRoles } = require("./middlewares/auth");
+const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
 
 const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
 const jornadasDesenvolvimentoRoutes = require("./routes/jornadasDesenvolvimentoRoutes");
 const acoesDesenvolvimentoRoutes = require("./routes/acoesDesenvolvimentoRoutes");
 const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
-const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
 
 const {
   getDashboardTreinamentos,
@@ -129,11 +128,12 @@ app.use(
       "cliente",
       "ativo",
       "troca_senha_obrigatoria",
+      "pode_acessar_oceano_desenvolvimento",
     ],
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente")],
   })
 );
 
@@ -607,10 +607,9 @@ app.get(
 );
 
 app.use("/api/jornadas-etapas", jornadasEtapasRoutes);
-app.use("/api/jornadas-desenvolvimento", jornadasDesenvolvimentoRoutes);
-app.use("/api/acoes-desenvolvimento", acoesDesenvolvimentoRoutes);
-app.use("/api/coaching-planos", coachingPlanosRoutes);
-app.use("/api/jornada-participantes", jornadaParticipantesRoutes);
+app.use("/api/jornadas-desenvolvimento", authRequired, authorizeOceanAccess, jornadasDesenvolvimentoRoutes);
+app.use("/api/acoes-desenvolvimento", authRequired, authorizeOceanAccess, acoesDesenvolvimentoRoutes);
+app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlanosRoutes);
 
 const PORT = process.env.PORT || 3000;
 
