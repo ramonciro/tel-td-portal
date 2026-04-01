@@ -1442,6 +1442,106 @@ export default function MapaDesenvolvimentoPage() {
                 </form>
               </details>
             </SectionCard>
+
+            <SectionCard
+              title="Linha do percurso"
+              subtitle="Leitura visual do caminho de cada rio com seus portos e sustentações."
+            >
+              {loading ? (
+                emptyCard("Carregando percurso das jornadas...")
+              ) : jornadasFluxo.length === 0 ? (
+                emptyCard("Nenhuma jornada encontrada para exibir o percurso.")
+              ) : (
+                <div style={{ display: "grid", gap: 16 }}>
+                  {jornadasFluxo.map((jornada) => (
+                    <div key={jornada.id} style={journeyFlowCard}>
+                      <div style={journeyFlowHeader}>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={badgeStyle(jornada.status)}>{displayStatus(jornada.status)}</span>
+                            <span style={attentionBadge(jornada.attention_info.level)}>
+                              {jornada.attention_info.label}
+                            </span>
+                            <span style={prazoBadge(jornada.prazo_info.tone)}>
+                              {jornada.prazo_info.label}
+                            </span>
+                          </div>
+
+                          <div style={journeyFlowTitle}>{jornada.nome}</div>
+
+                          <div style={journeyFlowMeta}>
+                            Objetivo: {jornada.objetivo || "Não informado"}
+                          </div>
+
+                          <div style={journeyFlowMeta}>
+                            Público: {jornada.publico_macro || "Não informado"} • Cliente: {" "}
+                            {jornada.cliente || "Não informado"}
+                          </div>
+                        </div>
+
+                        <div style={journeyFlowSummary}>
+                          <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
+                          <MetricBox label="Sustentações" value={fmtNumber(jornada.coachingsDaJornada.length)} />
+                          <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
+                          <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
+                        </div>
+                      </div>
+
+                      <div style={journeyProgressBarWrap}>
+                        <div style={journeyProgressBarTrack}>
+                          <div
+                            style={{
+                              ...journeyProgressBarFill,
+                              width: `${Math.max(jornada.progresso, 6)}%`,
+                            }}
+                          />
+                        </div>
+
+                        <div style={journeyFlowMeta}>
+                          Próximo trecho: {jornada.proximoPasso}
+                        </div>
+                      </div>
+
+                      <div style={timelineWrap}>
+                        <div style={timelineLabel}>Portos</div>
+                        <div style={timelineItems}>
+                          {jornada.acoesDaJornada.length ? (
+                            jornada.acoesDaJornada.map((acao) => (
+                              <div key={`acao-${acao.id}`} style={timelineItem}>
+                                <div style={timelineItemTitle}>{acao.tema}</div>
+                                <div style={timelineItemMeta}>
+                                  {displayStatus(acao.status)} • {fmtHours(acao.horas_realizadas || 0)}h
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={timelineEmpty}>Nenhum porto registrado.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={timelineWrap}>
+                        <div style={timelineLabel}>Sustentação</div>
+                        <div style={timelineItems}>
+                          {jornada.coachingsDaJornada.length ? (
+                            jornada.coachingsDaJornada.map((item) => (
+                              <div key={`coach-${item.id}`} style={timelineItem}>
+                                <div style={timelineItemTitle}>{item.titulo}</div>
+                                <div style={timelineItemMeta}>
+                                  {item.tipo_coaching || "sustentação"} • {fmtHours(item.horas_totais || 0)}h
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={timelineEmpty}>Nenhuma sustentação registrada.</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
           </>
         )}
 
@@ -1688,6 +1788,75 @@ export default function MapaDesenvolvimentoPage() {
                 </form>
               </details>
             </SectionCard>
+
+            <SectionCard
+              title="Portos cadastrados"
+              subtitle="Lista das ações já registradas no mapa."
+            >
+              {loading ? (
+                emptyCard("Carregando portos...")
+              ) : filteredAcoes.length === 0 ? (
+                emptyCard("Nenhum porto encontrado.")
+              ) : (
+                <div style={cardsGrid}>
+                  {filteredAcoes.map((acao) => (
+                    <div key={acao.id} style={execCard}>
+                      <div style={execHeader}>
+                        <div>
+                          <div style={execTitle}>{acao.tema}</div>
+                          <div style={execSubtitle}>
+                            {acao.jornada_nome} • {acao.responsavel_nome}
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <span style={badgeStyle(acao.status)}>{displayStatus(acao.status)}</span>
+                          <span style={attentionBadge(acao.attention_info.level)}>
+                            {acao.attention_info.label}
+                          </span>
+                          <span style={prazoBadge(acao.prazo_info.tone)}>
+                            {acao.prazo_info.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={execBody}>
+                        <div style={execText}>
+                          {acao.descricao || "Sem descrição registrada."}
+                        </div>
+
+                        <div style={miniExecutiveBand}>
+                          <MiniExecutive
+                            label="Sessões/Turmas"
+                            value={fmtNumber(acao.quantidade_turmas_sessoes || 0)}
+                          />
+                          <MiniExecutive
+                            label="Participantes"
+                            value={fmtNumber(acao.participantes_realizados || 0)}
+                          />
+                          <MiniExecutive
+                            label="Horas"
+                            value={fmtHours(acao.horas_realizadas || 0)}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={buttonRow}>
+                        <button style={buttonSecondaryStyle()} onClick={() => editAcao(acao)}>
+                          Editar
+                        </button>
+                        <button
+                          style={buttonDangerStyle()}
+                          onClick={() => removeRegistro("acao", acao.id)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
           </>
         )}
 
@@ -1735,19 +1904,23 @@ export default function MapaDesenvolvimentoPage() {
                           }))
                         }
                         style={compactInputStyle()}
+                        disabled={!coachingForm.jornada_id}
                       >
-                        <option value="">Sem ação vinculada</option>
-                        {acoesOptions
-                          .filter(
-                            (item) =>
-                              !coachingForm.jornada_id ||
-                              String(item.jornada_id) === String(coachingForm.jornada_id)
-                          )
-                          .map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.tema}
-                            </option>
-                          ))}
+                        <option value="">
+                          {coachingForm.jornada_id ? "Sem ação vinculada" : "Selecione primeiro a jornada"}
+                        </option>
+                        {coachingForm.jornada_id
+                          ? acoesOptions
+                              .filter(
+                                (item) =>
+                                  String(item.jornada_id) === String(coachingForm.jornada_id)
+                              )
+                              .map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.tema}
+                                </option>
+                              ))
+                          : null}
                       </select>
                     </label>
 
@@ -1998,6 +2171,75 @@ export default function MapaDesenvolvimentoPage() {
                   </div>
                 </form>
               </details>
+            </SectionCard>
+
+            <SectionCard
+              title="Sustentações cadastradas"
+              subtitle="Lista de coachings e mentorias do percurso."
+            >
+              {loading ? (
+                emptyCard("Carregando sustentações...")
+              ) : filteredCoachings.length === 0 ? (
+                emptyCard("Nenhuma sustentação encontrada.")
+              ) : (
+                <div style={cardsGrid}>
+                  {filteredCoachings.map((item) => {
+                    const tipoBadge = sustentacaoTypeBadge(item.tipo_coaching);
+
+                    return (
+                      <div key={item.id} style={execCard}>
+                        <div style={execHeader}>
+                          <div>
+                            <div style={execTitle}>{item.titulo}</div>
+                            <div style={execSubtitle}>
+                              {item.jornada_nome} • {item.acao_nome}
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <span style={tipoBadge.style}>{tipoBadge.label}</span>
+                            <span style={badgeStyle(item.status)}>{displayStatus(item.status)}</span>
+                            <span style={attentionBadge(item.attention_info.level)}>
+                              {item.attention_info.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={execBody}>
+                          <div style={execText}>{item.objetivo || "Sem objetivo registrado."}</div>
+
+                          <div style={miniExecutiveBand}>
+                            <MiniExecutive
+                              label="Sessões"
+                              value={fmtNumber(item.sessoes_realizadas || 0)}
+                            />
+                            <MiniExecutive
+                              label="Participantes"
+                              value={fmtNumber(item.participantes_realizados || 0)}
+                            />
+                            <MiniExecutive
+                              label="Horas"
+                              value={fmtHours(item.horas_totais || 0)}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={buttonRow}>
+                          <button style={buttonSecondaryStyle()} onClick={() => editCoaching(item)}>
+                            Editar
+                          </button>
+                          <button
+                            style={buttonDangerStyle()}
+                            onClick={() => removeRegistro("coaching", item.id)}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </SectionCard>
           </>
         )}
@@ -2391,4 +2633,48 @@ const miniExecutiveValue = {
   fontWeight: 900,
   color: "#0f172a",
   marginTop: 4,
+};
+
+
+const timelineWrap = {
+  display: "grid",
+  gap: 8,
+};
+
+const timelineLabel = {
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#475569",
+  textTransform: "uppercase",
+  letterSpacing: ".05em",
+};
+
+const timelineItems = {
+  display: "grid",
+  gap: 8,
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+};
+
+const timelineItem = {
+  borderRadius: 14,
+  border: "1px solid #dbeafe",
+  background: "#ffffff",
+  padding: 12,
+};
+
+const timelineItemTitle = {
+  fontSize: 14,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const timelineItemMeta = {
+  marginTop: 4,
+  fontSize: 12,
+  color: "#64748b",
+};
+
+const timelineEmpty = {
+  color: "#64748b",
+  fontSize: 13,
 };
