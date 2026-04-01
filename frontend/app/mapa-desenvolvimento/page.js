@@ -56,6 +56,17 @@ function displayStatus(value) {
   return labels[status] || value || "—";
 }
 
+function displayJourneyParticipantStatus(value) {
+  const labels = {
+    nao_iniciado: "Não iniciado",
+    em_percurso: "Em percurso",
+    concluido: "Concluído",
+    em_sustentacao: "Em sustentação",
+  };
+
+  return labels[String(value || "")] || "Em percurso";
+}
+
 function formatDate(value) {
   return formatDateBR(value);
 }
@@ -284,6 +295,44 @@ function sustentacaoTypeBadge(value) {
   };
 }
 
+function crewStatusBadge(value) {
+  const map = {
+    nao_iniciado: {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      border: "1px solid #bfdbfe",
+    },
+    em_percurso: {
+      background: "#ecfeff",
+      color: "#155e75",
+      border: "1px solid #a5f3fc",
+    },
+    concluido: {
+      background: "#ecfdf5",
+      color: "#166534",
+      border: "1px solid #bbf7d0",
+    },
+    em_sustentacao: {
+      background: "#f5f3ff",
+      color: "#7c3aed",
+      border: "1px solid #ddd6fe",
+    },
+  };
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    lineHeight: 1.1,
+    whiteSpace: "nowrap",
+    ...(map[String(value || "")] || map.em_percurso),
+  };
+}
+
 function getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada) {
   const prazo = getPrazoInfo(jornada);
 
@@ -474,6 +523,26 @@ const coachingInitial = {
   data_fim: "",
 };
 
+
+const participantInitial = {
+  id: null,
+  jornada_id: "",
+  nome: "",
+  matricula: "",
+  cliente: "",
+  turma: "",
+  cargo: "",
+  supervisor: "",
+  status_jornada: "em_percurso",
+};
+
+const PARTICIPANTE_STATUS_OPTIONS = [
+  { value: "nao_iniciado", label: "Não iniciado" },
+  { value: "em_percurso", label: "Em percurso" },
+  { value: "concluido", label: "Concluído" },
+  { value: "em_sustentacao", label: "Em sustentação" },
+];
+
 const STATUS_OPTIONS = [
   { value: "", label: "Todos os status" },
   { value: "planejado", label: "Planejado" },
@@ -489,6 +558,7 @@ export default function MapaDesenvolvimentoPage() {
   const [acoes, setAcoes] = useState([]);
   const [coachings, setCoachings] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [participantesJornada, setParticipantesJornada] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -504,6 +574,8 @@ export default function MapaDesenvolvimentoPage() {
   const [jornadaForm, setJornadaForm] = useState(journeyInitial);
   const [acaoForm, setAcaoForm] = useState(actionInitial);
   const [coachingForm, setCoachingForm] = useState(coachingInitial);
+  const [participanteForm, setParticipanteForm] = useState(participantInitial);
+  const [arquivoTripulacao, setArquivoTripulacao] = useState(null);
 
   useEffect(() => {
     loadAll();
@@ -514,18 +586,20 @@ export default function MapaDesenvolvimentoPage() {
     setErro("");
 
     try {
-      const [jornadasData, acoesData, coachingsData, usuariosData] =
+      const [jornadasData, acoesData, coachingsData, usuariosData, participantesData] =
         await Promise.all([
           apiFetch("/jornadas-desenvolvimento").catch(() => []),
           apiFetch("/acoes-desenvolvimento").catch(() => []),
           apiFetch("/coaching-planos").catch(() => []),
           apiFetch("/usuarios").catch(() => []),
+          apiFetch("/jornada-participantes").catch(() => []),
         ]);
 
       setJornadas(Array.isArray(jornadasData) ? jornadasData : []);
       setAcoes(Array.isArray(acoesData) ? acoesData : []);
       setCoachings(Array.isArray(coachingsData) ? coachingsData : []);
       setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+      setParticipantesJornada(Array.isArray(participantesData) ? participantesData : []);
     } catch (error) {
       setErro(
         extrairMensagemErro(error, "Erro ao carregar o Mapa de Desenvolvimento.")
@@ -583,6 +657,102 @@ export default function MapaDesenvolvimentoPage() {
       setErro(extrairMensagemErro(error, "Erro ao salvar jornada."));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveParticipante(event) {
+    event.preventDefault();
+    setSaving(true);
+    setErro("");
+    setNotice("");
+
+    if (!participanteForm.jornada_id) {
+      setErro("Selecione a jornada da tripulação.");
+      setSaving(false);
+      return;
+    }
+
+    if (!String(participanteForm.nome || "").trim()) {
+      setErro("Informe o nome da pessoa.");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        jornada_id: Number(participanteForm.jornada_id),
+        nome: participanteForm.nome,
+        matricula: participanteForm.matricula || null,
+        cliente: participanteForm.cliente || null,
+        turma: participanteForm.turma || null,
+        cargo: participanteForm.cargo || null,
+        supervisor: participanteForm.supervisor || null,
+        status_jornada: participanteForm.status_jornada || "em_percurso",
+      };
+
+      await apiFetch("/jornada-participantes", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setParticipanteForm((prev) => ({ ...participantInitial, jornada_id: prev.jornada_id }));
+      setNotice("Tripulação vinculada com sucesso.");
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao salvar participante da jornada."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function importarTripulacao() {
+    setSaving(true);
+    setErro("");
+    setNotice("");
+
+    if (!participanteForm.jornada_id) {
+      setErro("Selecione a jornada antes de importar a tripulação.");
+      setSaving(false);
+      return;
+    }
+
+    if (!arquivoTripulacao) {
+      setErro("Selecione o arquivo de importação.");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("jornada_id", String(participanteForm.jornada_id));
+      formData.append("arquivo", arquivoTripulacao);
+
+      const data = await apiFetch("/jornada-participantes/importar", {
+        method: "POST",
+        body: formData,
+      });
+
+      setArquivoTripulacao(null);
+      setNotice(data?.message || "Tripulação importada com sucesso.");
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao importar tripulação."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeParticipante(id) {
+    const ok = window.confirm("Deseja realmente remover esta pessoa da jornada?");
+    if (!ok) return;
+
+    try {
+      await apiFetch(`/jornada-participantes/${id}`, { method: "DELETE" });
+      setNotice("Pessoa removida da jornada com sucesso.");
+      setErro("");
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao remover participante da jornada."));
     }
   }
 
@@ -744,6 +914,7 @@ export default function MapaDesenvolvimentoPage() {
       data_inicio: toDateInputLocal(item.data_inicio),
       data_fim: toDateInputLocal(item.data_fim),
     });
+    setParticipanteForm((prev) => ({ ...prev, jornada_id: String(item.id) }));
     setActiveTab("jornadas");
   }
 
@@ -798,6 +969,25 @@ export default function MapaDesenvolvimentoPage() {
     return map;
   }, [usuarios]);
 
+  const participantesEnriquecidos = useMemo(() => {
+    return participantesJornada.map((item) => {
+      const jornada = jornadas.find((j) => String(j.id) === String(item.jornada_id));
+      return {
+        ...item,
+        jornada_nome: jornada?.nome || jornada?.titulo || "Sem jornada",
+      };
+    });
+  }, [participantesJornada, jornadas]);
+
+  const participantesPorJornada = useMemo(() => {
+    return participantesEnriquecidos.reduce((acc, item) => {
+      const key = String(item.jornada_id || "");
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {});
+  }, [participantesEnriquecidos]);
+
   const jornadasEnriquecidas = useMemo(() => {
     return jornadas.map((jornada) => {
       const acoesDaJornada = acoes.filter(
@@ -823,13 +1013,15 @@ export default function MapaDesenvolvimentoPage() {
         publico_macro: jornada.publico_macro || jornada.publico_alvo,
         total_acoes: acoesDaJornada.length,
         total_coachings: coachingsDaJornada.length,
+        total_tripulantes: (participantesPorJornada[String(jornada.id)] || []).length,
+        tripulacao_preview: (participantesPorJornada[String(jornada.id)] || []).slice(0, 4),
         horas_totais: horasTotais,
         prazo_info: getPrazoInfo(jornada),
         attention_info: getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada),
         status_canonico: canonicalStatus(jornada.status),
       };
     });
-  }, [jornadas, acoes, coachings]);
+  }, [jornadas, acoes, coachings, participantesPorJornada]);
 
   const acoesEnriquecidas = useMemo(() => {
     return acoes.map((acao) => {
@@ -965,7 +1157,11 @@ export default function MapaDesenvolvimentoPage() {
       jornadas: filteredJornadas.length,
       acoes: filteredAcoes.length,
       coachings: filteredCoachings.length,
-      participantes:
+      tripulacao: filteredJornadas.reduce(
+        (acc, item) => acc + Number(item.total_tripulantes || 0),
+        0
+      ),
+      participantesImpactados:
         filteredAcoes.reduce(
           (acc, item) => acc + Number(item.participantes_realizados || 0),
           0
@@ -1006,9 +1202,9 @@ export default function MapaDesenvolvimentoPage() {
       subtitle: "Coaching e mentoria",
     },
     {
-      title: "Horas no oceano",
-      value: fmtHours(kpis.horasTotais),
-      subtitle: "Execução consolidada",
+      title: "Tripulação",
+      value: fmtNumber(kpis.tripulacao),
+      subtitle: "Pessoas nos rios",
     },
   ];
 
@@ -1079,8 +1275,9 @@ export default function MapaDesenvolvimentoPage() {
             <StatCard title="Rios ativos" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
             <StatCard title="Portos de ação" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
             <StatCard title="Sustentação" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
-            <StatCard title="Público impactado" value={fmtNumber(kpis.participantes)} accent="#16a34a" />
-            <StatCard title="Horas no oceano" value={fmtHours(kpis.horasTotais)} accent="#b45309" />
+            <StatCard title="Tripulação" value={fmtNumber(kpis.tripulacao)} accent="#16a34a" />
+            <StatCard title="Público impactado" value={fmtNumber(kpis.participantesImpactados)} accent="#b45309" />
+            <StatCard title="Horas no oceano" value={fmtHours(kpis.horasTotais)} accent="#0f766e" />
             <StatCard title="Entregas concluídas" value={fmtNumber(kpis.concluidas)} accent="#1d4ed8" />
           </div>
         </SectionCard>
@@ -1230,6 +1427,7 @@ export default function MapaDesenvolvimentoPage() {
                         <div style={journeyFlowSummary}>
                           <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
                           <MetricBox label="Sustentações" value={fmtNumber(jornada.coachingsDaJornada.length)} />
+                          <MetricBox label="Tripulação" value={fmtNumber(jornada.total_tripulantes || 0)} />
                           <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                           <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                         </div>
@@ -1461,6 +1659,228 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
+              title="Tripulação do rio"
+              subtitle="Vincule pessoas manualmente ou importe a tripulação da jornada por planilha."
+            >
+              <div style={tripulacaoGrid}>
+                <details open style={detailsCard}>
+                  <summary style={detailsSummary}>Inclusão manual</summary>
+
+                  <form onSubmit={saveParticipante} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                    <div style={formGrid}>
+                      <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                        Jornada
+                        <select
+                          value={participanteForm.jornada_id}
+                          onChange={(e) =>
+                            setParticipanteForm((prev) => ({ ...prev, jornada_id: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                          required
+                        >
+                          <option value="">Selecione</option>
+                          {jornadas.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.nome || item.titulo}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
+                        Nome
+                        <input
+                          value={participanteForm.nome}
+                          onChange={(e) =>
+                            setParticipanteForm((prev) => ({ ...prev, nome: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                          required
+                        />
+                      </label>
+
+                      <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                        Matrícula
+                        <input
+                          value={participanteForm.matricula}
+                          onChange={(e) =>
+                            setParticipanteForm((prev) => ({ ...prev, matricula: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                        />
+                      </label>
+
+                      <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                        Turma
+                        <input
+                          value={participanteForm.turma}
+                          onChange={(e) =>
+                            setParticipanteForm((prev) => ({ ...prev, turma: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                        />
+                      </label>
+
+                      <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                        Cargo
+                        <input
+                          value={participanteForm.cargo}
+                          onChange={(e) =>
+                            setParticipanteForm((prev) => ({ ...prev, cargo: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                        />
+                      </label>
+
+                      <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                        Supervisor
+                        <input
+                          value={participanteForm.supervisor}
+                          onChange={(e) =>
+                            setParticipanteForm((prev) => ({ ...prev, supervisor: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                        />
+                      </label>
+
+                      <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                        Cliente
+                        <input
+                          value={participanteForm.cliente}
+                          onChange={(e) =>
+                            setParticipanteForm((prev) => ({ ...prev, cliente: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                        />
+                      </label>
+
+                      <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                        Situação na jornada
+                        <select
+                          value={participanteForm.status_jornada}
+                          onChange={(e) =>
+                            setParticipanteForm((prev) => ({ ...prev, status_jornada: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                        >
+                          {PARTICIPANTE_STATUS_OPTIONS.map((item) => (
+                            <option key={item.value} value={item.value}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div style={buttonRow}>
+                      <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                        Vincular pessoa
+                      </button>
+                      <button
+                        type="button"
+                        style={buttonSecondaryStyle()}
+                        onClick={() => setParticipanteForm((prev) => ({ ...participantInitial, jornada_id: prev.jornada_id }))}
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </form>
+                </details>
+
+                <details open style={detailsCard}>
+                  <summary style={detailsSummary}>Importação por planilha</summary>
+
+                  <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                    <label style={labelStyle()}>
+                      Arquivo Excel (.xlsx, .xls ou .csv)
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={(e) => setArquivoTripulacao(e.target.files?.[0] || null)}
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <div style={importHintCard}>
+                      Colunas aceitas: nome, matricula, cliente, turma, cargo, supervisor e status_jornada.
+                    </div>
+
+                    <div style={buttonRow}>
+                      <button
+                        type="button"
+                        style={buttonPrimaryStyle(saving)}
+                        disabled={saving}
+                        onClick={importarTripulacao}
+                      >
+                        Importar tripulação
+                      </button>
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+                {filteredJornadas.length === 0 ? (
+                  emptyCard("Selecione ou cadastre uma jornada para começar a montar a tripulação.")
+                ) : (
+                  filteredJornadas.map((jornada) => {
+                    const tripulacao = participantesPorJornada[String(jornada.id)] || [];
+
+                    return (
+                      <div key={`crew-${jornada.id}`} style={crewJourneyCard}>
+                        <div style={crewJourneyHeader}>
+                          <div>
+                            <div style={crewJourneyTitle}>{jornada.nome}</div>
+                            <div style={crewJourneyMeta}>
+                              {fmtNumber(tripulacao.length)} pessoa(s) vinculada(s)
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            style={buttonSecondaryStyle()}
+                            onClick={() => setParticipanteForm((prev) => ({ ...prev, jornada_id: String(jornada.id) }))}
+                          >
+                            Usar esta jornada
+                          </button>
+                        </div>
+
+                        <div style={crewListGrid}>
+                          {tripulacao.length ? (
+                            tripulacao.map((item) => (
+                              <div key={item.id} style={crewListCard}>
+                                <div style={crewListName}>{item.nome}</div>
+                                <div style={crewListMeta}>
+                                  {item.turma || "Sem turma"} • {item.cargo || "Sem cargo"}
+                                </div>
+                                <div style={crewListMeta}>
+                                  {item.supervisor || "Sem supervisor"}
+                                </div>
+                                <div style={buttonRow}>
+                                  <span style={crewStatusBadge(item.status_jornada)}>
+                                    {displayJourneyParticipantStatus(item.status_jornada)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    style={buttonDangerStyle()}
+                                    onClick={() => removeParticipante(item.id)}
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={timelineEmpty}>Nenhuma pessoa vinculada a esta jornada.</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard
               title="Linha do percurso"
               subtitle="Leitura visual do caminho de cada rio com seus portos e sustentações."
             >
@@ -1499,6 +1919,7 @@ export default function MapaDesenvolvimentoPage() {
                         <div style={journeyFlowSummary}>
                           <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
                           <MetricBox label="Sustentações" value={fmtNumber(jornada.coachingsDaJornada.length)} />
+                          <MetricBox label="Tripulação" value={fmtNumber(jornada.total_tripulantes || 0)} />
                           <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                           <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                         </div>
@@ -1551,6 +1972,22 @@ export default function MapaDesenvolvimentoPage() {
                             ))
                           ) : (
                             <div style={timelineEmpty}>Nenhuma sustentação registrada.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={timelineWrap}>
+                        <div style={timelineLabel}>Tripulação</div>
+                        <div style={crewPillRow}>
+                          {jornada.tripulacao_preview?.length ? (
+                            jornada.tripulacao_preview.map((item) => (
+                              <div key={`trip-${item.id}`} style={crewPill}>
+                                <div style={crewPillName}>{item.nome}</div>
+                                <div style={crewPillMeta}>{item.turma || item.cargo || "Em percurso"}</div>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={timelineEmpty}>Nenhuma pessoa vinculada a este rio.</div>
                           )}
                         </div>
                       </div>
@@ -2411,10 +2848,12 @@ const signalGrid = {
 };
 
 const signalCard = {
-  borderRadius: 18,
-  padding: 16,
-  background: "rgba(255,255,255,.07)",
-  border: "1px solid rgba(255,255,255,.12)",
+  borderRadius: 22,
+  padding: 18,
+  background: "linear-gradient(180deg, rgba(255,255,255,.12) 0%, rgba(255,255,255,.06) 100%)",
+  border: "1px solid rgba(255,255,255,.16)",
+  boxShadow: "0 18px 32px rgba(2,8,23,.16)",
+  backdropFilter: "blur(10px)",
 };
 
 const signalTitle = {
@@ -2496,13 +2935,13 @@ const journeyGuideText = {
 };
 
 const journeyFlowCard = {
-  border: "1px solid #dbeafe",
-  borderRadius: 22,
-  padding: 18,
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
+  border: "1px solid #d7e7fb",
+  borderRadius: 28,
+  padding: 22,
+  background: "linear-gradient(180deg, #ffffff 0%, #f6fbff 100%)",
+  boxShadow: "0 18px 40px rgba(15,23,42,.07)",
   display: "grid",
-  gap: 16,
+  gap: 18,
 };
 
 const journeyFlowHeader = {
@@ -2531,12 +2970,13 @@ const journeyFlowSummary = {
 };
 
 const metricBox = {
-  borderRadius: 16,
-  padding: 14,
-  background: "#fff",
-  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  padding: 16,
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+  border: "1px solid #d9e3f0",
   display: "grid",
   gap: 6,
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,.75)",
 };
 
 const metricBoxLabel = {
@@ -2598,18 +3038,18 @@ const buttonRow = {
 
 const cardsGrid = {
   display: "grid",
-  gap: 14,
+  gap: 18,
   gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
 };
 
 const execCard = {
-  borderRadius: 20,
-  border: "1px solid #dbeafe",
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  boxShadow: "0 12px 28px rgba(15,23,42,.05)",
-  padding: 18,
+  borderRadius: 24,
+  border: "1px solid #d7e7fb",
+  background: "linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)",
+  boxShadow: "0 18px 36px rgba(15,23,42,.06)",
+  padding: 20,
   display: "grid",
-  gap: 14,
+  gap: 16,
 };
 
 const execHeader = {
@@ -2645,31 +3085,137 @@ const execText = {
 
 const miniExecutiveBand = {
   display: "grid",
-  gap: 10,
+  gap: 12,
   gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
 };
 
 const miniExecutive = {
-  borderRadius: 14,
-  border: "1px solid #e2e8f0",
-  background: "#fff",
-  padding: 12,
+  borderRadius: 18,
+  border: "1px solid #d9e3f0",
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+  padding: 14,
+  minHeight: 88,
+  display: "grid",
+  alignContent: "space-between",
 };
 
 const miniExecutiveLabel = {
-  fontSize: 11,
-  fontWeight: 800,
+  fontSize: 10,
+  fontWeight: 900,
   color: "#64748b",
   textTransform: "uppercase",
+  lineHeight: 1.25,
+  letterSpacing: ".04em",
 };
 
 const miniExecutiveValue = {
-  fontSize: 18,
+  fontSize: 24,
   fontWeight: 900,
   color: "#0f172a",
-  marginTop: 4,
+  marginTop: 8,
 };
 
+
+
+const tripulacaoGrid = {
+  display: "grid",
+  gap: 16,
+  gridTemplateColumns: "1.15fr .85fr",
+  alignItems: "start",
+};
+
+const importHintCard = {
+  borderRadius: 16,
+  border: "1px dashed #bfdbfe",
+  background: "linear-gradient(180deg, #ffffff 0%, #f5faff 100%)",
+  padding: 14,
+  color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.5,
+};
+
+const crewJourneyCard = {
+  borderRadius: 22,
+  border: "1px solid #d7e7fb",
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  boxShadow: "0 14px 32px rgba(15,23,42,.05)",
+  padding: 18,
+  display: "grid",
+  gap: 14,
+};
+
+const crewJourneyHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const crewJourneyTitle = {
+  fontSize: 20,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const crewJourneyMeta = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const crewListGrid = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+};
+
+const crewListCard = {
+  borderRadius: 18,
+  border: "1px solid #dce8f7",
+  background: "#fff",
+  padding: 14,
+  display: "grid",
+  gap: 8,
+};
+
+const crewListName = {
+  fontSize: 16,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const crewListMeta = {
+  fontSize: 12,
+  color: "#64748b",
+};
+
+const crewPillRow = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const crewPill = {
+  minWidth: 160,
+  borderRadius: 999,
+  border: "1px solid #dbeafe",
+  background: "linear-gradient(180deg, #ffffff 0%, #f5faff 100%)",
+  padding: "10px 14px",
+  boxShadow: "0 8px 18px rgba(15,23,42,.04)",
+};
+
+const crewPillName = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const crewPillMeta = {
+  fontSize: 11,
+  color: "#64748b",
+  marginTop: 2,
+};
 
 const timelineWrap = {
   display: "grid",
@@ -2691,10 +3237,11 @@ const timelineItems = {
 };
 
 const timelineItem = {
-  borderRadius: 14,
-  border: "1px solid #dbeafe",
-  background: "#ffffff",
-  padding: 12,
+  borderRadius: 16,
+  border: "1px solid #dce8f7",
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  padding: 14,
+  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
 };
 
 const timelineItemTitle = {
