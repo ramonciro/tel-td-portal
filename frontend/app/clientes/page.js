@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
+import { useEffect, useMemo, useState } from "react";
 import AccessGate from "../../components/AccessGate";
 import CrudPageV2 from "../../components/CrudPageV2";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+
+function fmt(n) {
+  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
+}
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState([]);
@@ -12,22 +19,19 @@ export default function ClientesPage() {
   useEffect(() => {
     async function carregar() {
       try {
-        const data = await apiFetch("/clientes").catch(() => []);
+        const res = await apiFetch("/clientes");
+        const data = await res.json();
         setClientes(Array.isArray(data) ? data : []);
-      } catch {
+      } catch (err) {
+        console.error("Erro ao carregar clientes:", err);
         setClientes([]);
       }
     }
-
     carregar();
   }, []);
 
   const fields = [
-    {
-      name: "nome",
-      label: "Cliente",
-      placeholder: "Nome do cliente",
-    },
+    { name: "nome", label: "Cliente / Operação", placeholder: "Ex: Agibank, Claro, etc." },
     {
       name: "status",
       label: "Status",
@@ -37,29 +41,23 @@ export default function ClientesPage() {
         { value: "inativo", label: "Inativo" },
       ],
     },
-    {
-      name: "supervisor",
-      label: "Gestor / referência",
-      placeholder: "Responsável pela operação",
-    },
+    { name: "supervisor", label: "Gestor de Referência", placeholder: "Responsável pela operação" },
     {
       name: "observacoes",
       label: "Observações",
       type: "textarea",
-      placeholder: "Contexto resumido da operação",
+      placeholder: "Breve contexto sobre a operação ou particularidades do atendimento.",
     },
   ];
 
   const columns = [
     {
       key: "nome",
-      label: "Cliente",
+      label: "Operação",
       render: (item) => (
         <div>
           <div style={titleCell}>{item.nome || "-"}</div>
-          <div style={subCell}>
-            {item.supervisor || "Sem responsável informado"}
-          </div>
+          <div style={subCell}>{item.supervisor || "Sem gestor vinculado"}</div>
         </div>
       ),
     },
@@ -68,17 +66,8 @@ export default function ClientesPage() {
       label: "Status",
       render: (item) => (
         <span style={tagStatus(item.status)}>
-          {String(item.status || "-").toLowerCase() === "ativo"
-            ? "Ativo"
-            : "Inativo"}
+          {String(item.status || "").toLowerCase() === "ativo" ? "Ativo" : "Inativo"}
         </span>
-      ),
-    },
-    {
-      key: "supervisor",
-      label: "Gestor / referência",
-      render: (item) => (
-        <span style={plainCell}>{item.supervisor || "-"}</span>
       ),
     },
     {
@@ -90,14 +79,13 @@ export default function ClientesPage() {
     },
   ];
 
-  const totalClientes = clientes.length;
-  const ativos = clientes.filter(
-    (c) => String(c.status || "").toLowerCase() === "ativo"
-  ).length;
-  const inativos = clientes.filter(
-    (c) => String(c.status || "").toLowerCase() === "inativo"
-  ).length;
-  const comResponsavel = clientes.filter((c) => c.supervisor).length;
+  const kpis = useMemo(() => {
+    const total = clientes.length;
+    const ativos = clientes.filter(c => String(c.status).toLowerCase() === "ativo").length;
+    const comGestor = clientes.filter(c => c.supervisor && c.supervisor.trim() !== "").length;
+
+    return { total, ativos, comGestor };
+  }, [clientes]);
 
   return (
     <AccessGate allowed={["admin", "coordenador", "supervisor"]}>
@@ -107,46 +95,25 @@ export default function ClientesPage() {
         endpoint="/clientes"
         fields={fields}
         columns={columns}
-        recordsSubtitle="Base de operações do portal."
+        recordsTitle="Carteira de Clientes"
+        recordsSubtitle="Listagem detalhada das operações cadastradas."
+        // Apenas coordenadores podem excluir clientes para evitar perda de histórico acidental
+        allowedDeleteRoles={["coordenador"]} 
         hero={
           <div style={heroWrap}>
             <div style={heroText}>
-              <div style={heroEyebrow}>Operações T&D</div>
-              <h2 style={heroTitle}>
-                Carteira de clientes acompanhados pelo setor
-              </h2>
+              <div style={heroEyebrow}>Gestão de Operações</div>
+              <h2 style={heroTitle}>Carteira de Clientes</h2>
               <p style={heroSubtitle}>
-                Visão consolidada das operações cadastradas no portal, com foco
-                em organização, leitura executiva e gestão do ambiente
-                multicliente.
+                Cadastre e gerencie as operações. Estes nomes aparecerão nos filtros do Dashboard 
+                e nos vínculos de usuários multioperação.
               </p>
             </div>
 
             <div style={statsWrap}>
-              <StatCard
-                title="Clientes"
-                value={totalClientes}
-                subtitle="Base total"
-                accent="#2563eb"
-              />
-              <StatCard
-                title="Ativos"
-                value={ativos}
-                subtitle="Operações em andamento"
-                accent="#059669"
-              />
-              <StatCard
-                title="Inativos"
-                value={inativos}
-                subtitle="Operações sem atividade"
-                accent="#dc2626"
-              />
-              <StatCard
-                title="Com responsável"
-                value={comResponsavel}
-                subtitle="Referência cadastrada"
-                accent="#7c3aed"
-              />
+              <StatCard title="Total" value={fmt(kpis.total)} subtitle="Clientes na base" accent="#2563eb" />
+              <StatCard title="Ativos" value={fmt(kpis.ativos)} subtitle="Operações em curso" accent="#16a34a" />
+              <StatCard title="Com Gestor" value={fmt(kpis.comGestor)} subtitle="Vínculo de liderança" accent="#7c3aed" />
             </div>
           </div>
         }
@@ -155,94 +122,43 @@ export default function ClientesPage() {
   );
 }
 
-function tagStatus(status) {
-  const key = String(status || "").toLowerCase();
+// Estilização consistente com o Portal
+const titleCell = { fontWeight: 800, color: "#0f172a", fontSize: 14 };
+const subCell = { marginTop: 2, color: "#64748b", fontSize: 12 };
+const descricaoCell = { color: "#475569", fontSize: 13, lineHeight: 1.5, maxWidth: 400 };
 
-  const base = {
-    display: "inline-block",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 12,
-  };
-
-  if (key === "ativo") {
-    return {
-      ...base,
-      background: "#dcfce7",
-      color: "#166534",
-    };
-  }
-
-  return {
-    ...base,
-    background: "#fee2e2",
-    color: "#b91c1c",
-  };
-}
-
-const heroWrap = {
-  display: "grid",
-  gap: 16,
-};
-
+const heroWrap = { display: "grid", gap: 16, marginBottom: 8 };
 const heroText = {
-  background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
+  background: "linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)",
   border: "1px solid #dbeafe",
   borderRadius: 20,
-  padding: 22,
+  padding: 24,
 };
 
 const heroEyebrow = {
   display: "inline-block",
-  padding: "6px 10px",
+  padding: "4px 12px",
   borderRadius: 999,
   background: "#dbeafe",
   color: "#1d4ed8",
   fontWeight: 800,
-  fontSize: 12,
+  fontSize: 11,
   textTransform: "uppercase",
-  letterSpacing: ".03em",
 };
 
-const heroTitle = {
-  margin: "14px 0 8px",
-  color: "#0f172a",
-  fontSize: 28,
-  lineHeight: 1.1,
-};
+const heroTitle = { margin: "12px 0 8px", color: "#0f172a", fontSize: 24, fontWeight: 900 };
+const heroSubtitle = { margin: 0, color: "#64748b", fontSize: 14, lineHeight: 1.6, maxWidth: 600 };
+const statsWrap = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 };
 
-const heroSubtitle = {
-  margin: 0,
-  color: "#64748b",
-  lineHeight: 1.65,
-};
-
-const statsWrap = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
-  gap: 14,
-};
-
-const titleCell = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const subCell = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 13,
-};
-
-const plainCell = {
-  color: "#334155",
-  fontWeight: 600,
-};
-
-const descricaoCell = {
-  color: "#475569",
-  display: "inline-block",
-  maxWidth: 320,
-  lineHeight: 1.55,
-};
+function tagStatus(status) {
+  const isAtivo = String(status || "").toLowerCase() === "ativo";
+  return {
+    display: "inline-block",
+    padding: "4px 10px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 11,
+    background: isAtivo ? "#dcfce7" : "#fee2e2",
+    color: isAtivo ? "#166534" : "#b91c1c",
+  };
+}
