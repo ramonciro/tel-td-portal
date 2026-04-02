@@ -11,110 +11,133 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function formatDateSafe(value) {
+function formatDate(value) {
   return formatDateBR(value, "-");
 }
 
-function getSaudeOperacao(kpis) {
-  const presenca = Number(kpis?.taxa_presenca || 0);
-  const conclusao = Number(kpis?.taxa_conclusao_chamada || 0);
-  const pendentes = Number(kpis?.pendentes || 0);
-  const treinados = Number(kpis?.treinados || 0);
+function getHeroTone(kpis = {}) {
+  const presenca = Number(kpis.taxa_presenca || 0);
+  const fechamento = Number(kpis.taxa_conclusao_chamada || 0);
+  const pendentes = Number(kpis.pendentes || 0);
 
-  if (treinados === 0) {
+  if (presenca >= 90 && fechamento >= 90 && pendentes === 0) {
     return {
-      label: "Sem base consolidada",
-      color: "#475569",
-      bg: "#f8fafc",
-      border: "#cbd5e1",
-      message:
-        "Ainda não há base suficiente de chamada diária para uma leitura consolidada da operação.",
-    };
-  }
-
-  if (pendentes > 0 || conclusao < 100) {
-    return {
-      label: "Em atualização operacional",
-      color: "#92400e",
-      bg: "#fef3c7",
-      border: "#fcd34d",
-      message:
-        "A leitura ainda está em movimento porque existem chamadas em aberto. O ideal é consolidar o fechamento antes de uma leitura conclusiva.",
-    };
-  }
-
-  if (presenca >= 90) {
-    return {
-      label: "Estável",
-      color: "#166534",
+      label: "Ritmo estável",
       bg: "#dcfce7",
+      color: "#166534",
       border: "#86efac",
       message:
-        "A operação apresenta execução consistente, com presença diária saudável e fechamento operacional concluído.",
+        "A operação está fluindo bem. Vale manter o ritmo e acompanhar só os pontos mais sensíveis do dia.",
     };
   }
 
-  if (presenca >= 80) {
+  if (presenca >= 80 && fechamento >= 75) {
     return {
-      label: "Atenção",
-      color: "#92400e",
+      label: "Acompanhamento próximo",
       bg: "#fef3c7",
+      color: "#92400e",
       border: "#fcd34d",
       message:
-        "A operação está consolidada, mas a presença diária pede monitoramento mais próximo para evitar perda de eficiência.",
+        "O cenário está administrável, mas ainda pede atenção em presença e fechamento para o dia terminar redondo.",
     };
   }
 
   return {
-    label: "Monitoramento prioritário",
-    color: "#b91c1c",
+    label: "Prioridade de ajuste",
     bg: "#fee2e2",
+    color: "#b91c1c",
     border: "#fca5a5",
     message:
-      "A base já está consolidada e há necessidade de atuação prioritária sobre presença e execução das turmas.",
+      "Hoje a leitura pede atuação mais próxima da operação, principalmente onde ainda há chamadas abertas ou presença abaixo do esperado.",
   };
 }
 
-function getPriorityList(kpis, ultimasTurmas) {
-  const prioridades = [];
+function buildFarois(kpis = {}, oceano = {}) {
+  const items = [];
 
   if (Number(kpis.pendentes || 0) > 0) {
-    prioridades.push({
-      titulo: "Fechar chamadas do dia",
-      descricao: `${fmt(kpis.pendentes)} registro(s) ainda estão sem fechamento operacional.`,
-      tag: "Execução",
+    items.push({
+      icon: "📋",
+      title: "Chamada em aberto",
+      text: `${fmt(kpis.pendentes)} registro(s) ainda precisam de fechamento.`,
+      tone: "attention",
     });
   }
 
-  if (Number(kpis.ausentes || 0) > 0) {
-    prioridades.push({
-      titulo: "Atuar sobre ausências",
-      descricao: `${fmt(kpis.ausentes)} ausência(s) registradas nas turmas acompanhadas.`,
-      tag: "Presença",
+  if (Number(kpis.taxa_presenca || 0) > 0 && Number(kpis.taxa_presenca || 0) < 85) {
+    items.push({
+      icon: "👥",
+      title: "Presença abaixo do ideal",
+      text: `A presença está em ${fmt(kpis.taxa_presenca)}% e merece acompanhamento mais próximo.`,
+      tone: "danger",
     });
   }
 
-  const turmaCritica = (ultimasTurmas || []).find(
-    (item) => Number(item.ausentes || 0) > 0 || Number(item.pendentes || 0) > 0
+  if (Number(oceano.jornadas || 0) > 0 && Number(oceano.tripulacao || 0) === 0) {
+    items.push({
+      icon: "🧭",
+      title: "Jornadas sem tripulação",
+      text: "As jornadas já estão no ar, mas ainda sem pessoas vinculadas na base consolidada.",
+      tone: "attention",
+    });
+  }
+
+  if (Number(oceano.tripulacao || 0) > 0 && Number(oceano.progresso_tripulacao?.em_sustentacao || 0) > 0) {
+    items.push({
+      icon: "🌱",
+      title: "Sustentação em andamento",
+      text: `${fmt(oceano.progresso_tripulacao.em_sustentacao)} pessoa(s) já estão em fase de sustentação no oceano.`,
+      tone: "ok",
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      icon: "✅",
+      title: "Leitura tranquila",
+      text: "No momento, o portal não está sinalizando nenhum ponto mais sensível na operação.",
+      tone: "ok",
+    });
+  }
+
+  return items.slice(0, 4);
+}
+
+function buildResumo(kpis = {}, oceano = {}) {
+  const frases = [];
+
+  frases.push(
+    `Hoje a base mostra ${fmt(kpis.treinamentos || 0)} turma(s) acompanhada(s) e ${fmt(kpis.treinados || 0)} registro(s) de chamada já lançados.`
   );
 
-  if (turmaCritica) {
-    prioridades.push({
-      titulo: "Acompanhar turma com maior risco operacional",
-      descricao: `${turmaCritica.tema || "Treinamento"} • ${turmaCritica.cliente || "Sem cliente"}`,
-      tag: "Turma",
-    });
+  if (Number(kpis.taxa_presenca || 0) > 0) {
+    frases.push(
+      `A presença consolidada está em ${fmt(kpis.taxa_presenca)}%, com ${fmt(kpis.presentes || 0)} presença(s) confirmada(s) e ${fmt(kpis.ausentes || 0)} ausência(s).`
+    );
   }
 
-  if (!prioridades.length) {
-    prioridades.push({
-      titulo: "Operação dentro do esperado",
-      descricao: "No momento, não há prioridades críticas abertas no portal.",
-      tag: "Status",
-    });
+  if (Number(kpis.pendentes || 0) > 0) {
+    frases.push(
+      `Ainda há ${fmt(kpis.pendentes || 0)} lançamento(s) pendente(s), então a leitura pode evoluir ao longo do dia.`
+    );
+  } else {
+    frases.push("As chamadas do dia estão bem encaminhadas, sem acúmulo relevante de pendências.");
   }
 
-  return prioridades.slice(0, 4);
+  if (Number(oceano.jornadas || 0) > 0) {
+    frases.push(
+      `No Oceano do Desenvolvimento, já existem ${fmt(oceano.jornadas || 0)} jornada(s), ${fmt(oceano.acoes || 0)} ação(ões) e ${fmt(oceano.tripulacao || 0)} pessoa(s) vinculada(s).`
+    );
+  }
+
+  return frases;
+}
+
+function getMiniTone(value, good = 90, warning = 75) {
+  const number = Number(value || 0);
+  if (number >= good) return { bg: "#dcfce7", color: "#166534" };
+  if (number >= warning) return { bg: "#fef3c7", color: "#92400e" };
+  return { bg: "#fee2e2", color: "#b91c1c" };
 }
 
 export default function InicioPage() {
@@ -140,524 +163,207 @@ export default function InicioPage() {
   }, []);
 
   const kpis = dados?.kpis || {};
-  const presencaPorCliente = dados?.presenca_por_cliente || [];
-  const rankingInstrutores = dados?.ranking_instrutores || [];
   const ultimasTurmas = dados?.ultimas_turmas || [];
+  const oceano = dados?.oceano || {};
 
-  const saudeOperacao = useMemo(() => getSaudeOperacao(kpis), [kpis]);
-  const prioridades = useMemo(() => getPriorityList(kpis, ultimasTurmas), [kpis, ultimasTurmas]);
-
-  const taxaExecucao = useMemo(() => {
-    const horasMinistradas = Number(kpis.horas_ministradas || kpis.horas_treinadas || 0);
-    const cargaPlanejada = Number(kpis.carga_horaria_total || 0);
-    if (!cargaPlanejada) return 0;
-    return Math.round((horasMinistradas / cargaPlanejada) * 100);
-  }, [kpis]);
-
-  const narrativaExecutiva = useMemo(() => {
-    const frases = [];
-
-    frases.push(
-      `A área acumula ${fmt(kpis.treinamentos || 0)} turma(s), com ${fmt(kpis.treinados || 0)} registro(s) de chamada considerados na base diária.`
-    );
-
-    if (Number(kpis.taxa_presenca || 0) > 0) {
-      frases.push(
-        `A taxa consolidada de presença está em ${kpis.taxa_presenca}%, com ${fmt(kpis.presentes || 0)} presentes, ${fmt(kpis.ausentes || 0)} ausências e ${fmt(kpis.pendentes || 0)} pendência(s).`
-      );
-    }
-
-    frases.push(
-      `A taxa de conclusão da chamada diária está em ${fmt(kpis.taxa_conclusao_chamada || 0)}%, refletindo o nível de fechamento operacional do portal.`
-    );
-
-    frases.push(
-      `A execução de carga está em ${taxaExecucao}%, com ${fmt(kpis.horas_treinadas || 0)} hora(s) assistida(s).`
-    );
-
-    return frases;
-  }, [kpis, taxaExecucao]);
+  const heroTone = useMemo(() => getHeroTone(kpis), [kpis]);
+  const farois = useMemo(() => buildFarois(kpis, oceano), [kpis, oceano]);
+  const resumo = useMemo(() => buildResumo(kpis, oceano), [kpis, oceano]);
 
   return (
     <PortalShell
       title="Início"
-      subtitle="Painel executivo da operação de Treinamento & Desenvolvimento."
+      subtitle="Uma leitura rápida, clara e útil para entender como a área está andando hoje."
     >
       {loading ? (
-        <div style={loadingBox}>Carregando visão executiva...</div>
+        <div style={loadingBox}>Carregando sua visão do dia...</div>
       ) : erro ? (
         <div style={errorBox}>{erro}</div>
       ) : (
-        <>
-          <div style={heroWrap}>
+        <div style={{ display: "grid", gap: 18 }}>
+          <section style={heroWrap}>
             <div style={heroMain}>
-              <div style={heroBadge}>Resumo executivo</div>
-              <h2 style={heroTitle}>Panorama estratégico da área de T&amp;D</h2>
+              <div style={eyebrow}>Visão do dia</div>
+              <h2 style={heroTitle}>Uma leitura rápida para decidir onde vale agir primeiro.</h2>
               <p style={heroText}>
-                Acompanhe execução, presença diária e fechamento operacional em uma visão pensada para acompanhamento gerencial.
+                Em vez de te jogar um monte de números, esta página tenta resumir o
+                que realmente merece atenção e o que já está caminhando bem.
               </p>
 
               <div
                 style={{
-                  ...healthPill,
-                  background: saudeOperacao.bg,
-                  color: saudeOperacao.color,
-                  border: `1px solid ${saudeOperacao.border}`,
+                  ...statusPill,
+                  background: heroTone.bg,
+                  color: heroTone.color,
+                  border: `1px solid ${heroTone.border}`,
                 }}
               >
-                {saudeOperacao.label}
+                {heroTone.label}
               </div>
 
-              <p style={{ ...heroText, marginTop: 14 }}>
-                {saudeOperacao.message}
-              </p>
+              <p style={{ ...heroText, marginTop: 14 }}>{heroTone.message}</p>
             </div>
 
             <div style={heroSide}>
-              <div style={heroSideCard}>
-                <span style={heroSideLabel}>Execução da grade</span>
-                <strong style={heroSideValue}>{taxaExecucao}%</strong>
-                <span style={heroSideSub}>horas ministradas em relação à carga horária planejada</span>
+              <div style={heroMiniCard}>
+                <span style={heroMiniLabel}>Presença</span>
+                <strong style={heroMiniValue}>{fmt(kpis.taxa_presenca || 0)}%</strong>
+                <span style={heroMiniSub}>base consolidada do dia</span>
               </div>
 
-              <div style={heroSideCard}>
-                <span style={heroSideLabel}>Conclusão da chamada</span>
-                <strong style={heroSideValue}>{fmt(kpis.taxa_conclusao_chamada || 0)}%</strong>
-                <span style={heroSideSub}>nível de fechamento operacional da base diária</span>
+              <div style={heroMiniCard}>
+                <span style={heroMiniLabel}>Fechamento</span>
+                <strong style={heroMiniValue}>{fmt(kpis.taxa_conclusao_chamada || 0)}%</strong>
+                <span style={heroMiniSub}>lançamentos já concluídos</span>
               </div>
 
-              <div style={heroSideCard}>
-                <span style={heroSideLabel}>Carga efetiva</span>
-                <strong style={heroSideValue}>{fmt(kpis.horas_treinadas || 0)}h</strong>
-                <span style={heroSideSub}>horas realmente assistidas na base acompanhada</span>
+              <div style={heroMiniCard}>
+                <span style={heroMiniLabel}>Oceano</span>
+                <strong style={heroMiniValue}>{fmt(oceano.jornadas || 0)}</strong>
+                <span style={heroMiniSub}>jornadas em construção</span>
               </div>
             </div>
+          </section>
+
+          <SectionCard
+            title="Faróis executivos"
+            subtitle="Sinais rápidos para entender o que está bem e o que pede presença mais próxima."
+          >
+            <div style={faroisGrid}>
+              {farois.map((item) => (
+                <div key={`${item.title}-${item.text}`} style={farolCard(item.tone)}>
+                  <div style={farolIcon}>{item.icon}</div>
+                  <div style={farolTitle}>{item.title}</div>
+                  <div style={farolText}>{item.text}</div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+
+          <div style={kpiGrid}>
+            <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Base ativa no portal" accent="#2563eb" />
+            <StatCard title="Registros" value={fmt(kpis.treinados || 0)} subtitle="Chamadas já lançadas" accent="#3b82f6" />
+            <StatCard title="Presentes" value={fmt(kpis.presentes || 0)} subtitle="Participação confirmada" accent="#16a34a" />
+            <StatCard title="Pendências" value={fmt(kpis.pendentes || 0)} subtitle="Ainda em aberto" accent="#f59e0b" />
           </div>
 
-          <div style={gridFive}>
-            <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Volume consolidado" accent="#2563eb" />
-            <StatCard title="Registros de chamada" value={fmt(kpis.treinados || 0)} subtitle="Base real diária" accent="#06b6d4" />
-            <StatCard title="Presença" value={`${kpis.taxa_presenca || 0}%`} subtitle="Presença diária consolidada" accent="#0891b2" />
-            <StatCard title="Conclusão" value={`${kpis.taxa_conclusao_chamada || 0}%`} subtitle="Fechamento da chamada diária" accent="#1d4ed8" />
-            <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Execução real" accent="#059669" />
-          </div>
-
-          <div style={{ ...gridFour, marginTop: 14 }}>
-            <StatCard title="Presentes" value={fmt(kpis.presentes || 0)} subtitle="Presença confirmada" accent="#16a34a" />
-            <StatCard title="Ausentes" value={fmt(kpis.ausentes || 0)} subtitle="Não compareceram" accent="#dc2626" />
-            <StatCard title="Justificados" value={fmt(kpis.justificados || 0)} subtitle="Com justificativa" accent="#f59e0b" />
-            <StatCard title="Pendentes" value={fmt(kpis.pendentes || 0)} subtitle="Chamada diária em aberto" accent="#64748b" />
-          </div>
-
-          <div style={twoCol}>
-            <SectionCard title="Narrativa executiva" subtitle="Leitura pronta para acompanhamento gerencial.">
-              <div style={narrativeGrid}>
-                {narrativaExecutiva.map((item, index) => (
-                  <div key={index} style={narrativeItem}>{item}</div>
+          <div style={twoColumns}>
+            <SectionCard
+              title="Leitura do momento"
+              subtitle="Um resumo simples, para você bater o olho e seguir a gestão com contexto."
+            >
+              <div style={summaryList}>
+                {resumo.map((item) => (
+                  <div key={item} style={summaryItem}>{item}</div>
                 ))}
               </div>
             </SectionCard>
 
-            <SectionCard title="Prioridades imediatas" subtitle="Focos de atuação para a rotina da área.">
-              <div style={priorityGrid}>
-                {prioridades.map((item, index) => (
-                  <div key={index} style={priorityItem}>
-                    <div style={priorityHeader}>
-                      <span style={priorityTag}>{item.tag}</span>
-                      <strong style={priorityTitle}>{item.titulo}</strong>
-                    </div>
-                    <div style={priorityDescription}>{item.descricao}</div>
-                  </div>
-                ))}
+            <SectionCard
+              title="Oceano do Desenvolvimento"
+              subtitle="Um retrato curto do que já está estruturado no fluxo de jornadas."
+            >
+              <div style={oceanoGrid}>
+                <MiniStat label="Jornadas" value={fmt(oceano.jornadas || 0)} />
+                <MiniStat label="Ações" value={fmt(oceano.acoes || 0)} />
+                <MiniStat label="Sustentações" value={fmt(oceano.sustentacoes || 0)} />
+                <MiniStat label="Tripulação" value={fmt(oceano.tripulacao || 0)} />
+              </div>
+
+              <div style={progressWrap}>
+                <ProgressRow
+                  label="Em percurso"
+                  value={oceano.progresso_tripulacao?.em_percurso || 0}
+                  total={oceano.tripulacao || 0}
+                />
+                <ProgressRow
+                  label="Concluídos"
+                  value={oceano.progresso_tripulacao?.concluido || 0}
+                  total={oceano.tripulacao || 0}
+                />
+                <ProgressRow
+                  label="Em sustentação"
+                  value={oceano.progresso_tripulacao?.em_sustentacao || 0}
+                  total={oceano.tripulacao || 0}
+                />
               </div>
             </SectionCard>
           </div>
 
-          <div style={{ ...twoCol, marginTop: 14 }}>
-            <SectionCard title="Presença por cliente" subtitle="Clientes com chamada registrada e taxa real de presença diária.">
-              {presencaPorCliente.length ? (
-                <div style={listGrid}>
-                  {presencaPorCliente.map((item, index) => (
-                    <div key={index} style={listItem}>
-                      <div style={itemHeader}>
-                        <div style={itemTitle}>{item.cliente || "Sem cliente"}</div>
-                        <div style={itemBadgeBlue}>{Number(item.taxa_presenca || 0)}%</div>
-                      </div>
-
-                      <div style={itemMeta}>
-                        {fmt(item.total_treinados || 0)} registro(s) • {fmt(item.presentes || 0)} presentes • {fmt(item.ausentes || 0)} ausentes • {fmt(item.justificados || 0)} justificados
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={emptyText}>Sem clientes com chamada registrada no momento.</div>
-              )}
-            </SectionCard>
-
-            <SectionCard title="Ranking de instrutores" subtitle="Leitura de produtividade por turmas e presença consolidada.">
-              {rankingInstrutores.length ? (
-                <div style={listGrid}>
-                  {rankingInstrutores.map((item, index) => (
-                    <div key={index} style={listItem}>
-                      <div style={itemHeader}>
-                        <div style={itemTitle}>{item.instrutor || "Sem instrutor"}</div>
-                        <div style={itemBadgePurple}>{Number(item.taxa_presenca || 0)}%</div>
-                      </div>
-
-                      <div style={itemMeta}>
-                        {fmt(item.total_turmas || 0)} turma(s) • {fmt(item.total_treinados || 0)} registro(s) • {fmt(item.presentes || 0)} presentes
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={emptyText}>Sem dados de instrutores no momento.</div>
-              )}
-            </SectionCard>
-          </div>
-
-          <SectionCard title="Últimas turmas" subtitle="Resumo operacional das turmas mais recentes.">
+          <SectionCard
+            title="Resumo recente"
+            subtitle="As turmas mais novas aparecem aqui de um jeito mais leve, para facilitar a leitura."
+          >
             {ultimasTurmas.length ? (
-              <div style={ultimasTurmasGrid}>
-                {ultimasTurmas.slice(0, 6).map((item) => (
-                  <div key={item.id} style={turmaResumoCard}>
-                    <div style={turmaResumoTop}>
-                      <div>
-                        <div style={turmaResumoTitulo}>{item.tema || "Turma"}</div>
-                        <div style={turmaResumoMeta}>{(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}</div>
+              <div style={recentGrid}>
+                {ultimasTurmas.map((item) => {
+                  const tone = getMiniTone(
+                    item.treinados > 0 ? Math.round((Number(item.presentes || 0) / Number(item.treinados || 1)) * 100) : 0
+                  );
+
+                  return (
+                    <div key={item.id} style={recentCard}>
+                      <div style={recentHeader}>
+                        <div style={recentTitle}>{item.tema || "Turma sem título"}</div>
+                        <div style={{ ...miniPill, ...tone }}>
+                          {item.treinados > 0
+                            ? `${fmt(Math.round((Number(item.presentes || 0) / Number(item.treinados || 1)) * 100))}% presença`
+                            : "Sem base"}
+                        </div>
                       </div>
 
-                      <div style={turmaResumoData}>{formatDateSafe(item.data_inicio || item.data)}</div>
-                    </div>
+                      <div style={recentMeta}>
+                        {item.cliente || "Sem cliente"} • {item.instrutor || "Sem instrutor"}
+                      </div>
+                      <div style={recentMeta}>Data: {formatDate(item.data || item.data_inicio)}</div>
 
-                    <div style={turmaResumoNumbers}>
-                      <div style={turmaMiniBox}>
-                        <span style={turmaMiniLabel}>Base ativa</span>
-                        <strong style={turmaMiniValue}>{fmt(item.base_ativa || 0)}</strong>
-                      </div>
-                      <div style={turmaMiniBox}>
-                        <span style={turmaMiniLabel}>Presentes</span>
-                        <strong style={turmaMiniValue}>{fmt(item.presentes || 0)}</strong>
-                      </div>
-                      <div style={turmaMiniBox}>
-                        <span style={turmaMiniLabel}>Pendentes</span>
-                        <strong style={turmaMiniValue}>{fmt(item.pendentes || 0)}</strong>
-                      </div>
-                      <div style={turmaMiniBoxDestaque}>
-                        <span style={turmaMiniLabel}>Carga</span>
-                        <strong style={turmaMiniValue}>{item.carga_horaria || "-"}</strong>
+                      <div style={recentBand}>
+                        <span>Base {fmt(item.treinados || 0)}</span>
+                        <span>Presentes {fmt(item.presentes || 0)}</span>
+                        <span>Pendentes {fmt(item.pendentes || 0)}</span>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
-              <div style={emptyText}>Nenhuma turma recente encontrada.</div>
+              <div style={emptyState}>Ainda não há turmas recentes para mostrar por aqui.</div>
             )}
           </SectionCard>
-        </>
+        </div>
       )}
     </PortalShell>
   );
 }
 
-const heroWrap = {
-  display: "grid",
-  gridTemplateColumns: "1.4fr 1fr",
-  gap: 14,
-  marginBottom: 14,
-};
+function MiniStat({ label, value }) {
+  return (
+    <div style={miniStatCard}>
+      <div style={miniStatLabel}>{label}</div>
+      <div style={miniStatValue}>{value}</div>
+    </div>
+  );
+}
 
-const heroMain = {
-  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
-  borderRadius: 20,
-  padding: 22,
-  color: "#fff",
-  boxShadow: "0 16px 30px rgba(29,78,216,.18)",
-};
-
-const heroBadge = {
-  display: "inline-block",
-  background: "rgba(255,255,255,.14)",
-  padding: "6px 10px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".05em",
-};
-
-const heroTitle = {
-  margin: "14px 0 8px",
-  fontSize: 30,
-  lineHeight: 1.05,
-};
-
-const heroText = {
-  margin: 0,
-  color: "rgba(255,255,255,.84)",
-  lineHeight: 1.6,
-};
-
-const healthPill = {
-  display: "inline-flex",
-  marginTop: 16,
-  padding: "7px 12px",
-  borderRadius: 999,
-  fontWeight: 800,
-  fontSize: 12,
-};
-
-const heroSide = {
-  display: "grid",
-  gap: 10,
-};
-
-const heroSideCard = {
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  border: "1px solid #dbeafe",
-  borderRadius: 18,
-  padding: 16,
-  boxShadow: "0 10px 22px rgba(15,23,42,.05)",
-  display: "grid",
-  gap: 4,
-};
-
-const heroSideLabel = {
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: ".03em",
-};
-
-const heroSideValue = {
-  fontSize: 28,
-  fontWeight: 800,
-  color: "#0f172a",
-  lineHeight: 1.1,
-};
-
-const heroSideSub = {
-  color: "#64748b",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
-
-const gridFive = {
-  display: "grid",
-  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-  gap: 14,
-};
-
-const gridFour = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 14,
-};
-
-const twoCol = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 14,
-  marginTop: 16,
-};
-
-const narrativeGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const narrativeItem = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-  color: "#334155",
-  lineHeight: 1.6,
-  fontWeight: 500,
-};
-
-const priorityGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const priorityItem = {
-  background: "#fff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-};
-
-const priorityHeader = {
-  display: "grid",
-  gap: 6,
-};
-
-const priorityTag = {
-  display: "inline-block",
-  width: "fit-content",
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-};
-
-const priorityTitle = {
-  color: "#0f172a",
-};
-
-const priorityDescription = {
-  marginTop: 6,
-  color: "#64748b",
-  lineHeight: 1.5,
-  fontSize: 13,
-};
-
-const listGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const listItem = {
-  background: "#f8fafc",
-  padding: 12,
-  borderRadius: 14,
-  border: "1px solid #e2e8f0",
-};
-
-const itemHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 10,
-  alignItems: "center",
-};
-
-const itemTitle = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const itemMeta = {
-  marginTop: 5,
-  color: "#475569",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
-
-const itemBadgeBlue = {
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 800,
-};
-
-const itemBadgePurple = {
-  background: "#ede9fe",
-  color: "#6d28d9",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 800,
-};
-
-const emptyText = {
-  color: "#64748b",
-};
-
-const ultimasTurmasGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-  gap: 14,
-};
-
-const turmaResumoCard = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 16,
-  display: "grid",
-  gap: 12,
-};
-
-const turmaResumoTop = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: 12,
-};
-
-const turmaResumoTitulo = {
-  fontSize: 18,
-  fontWeight: 800,
-  color: "#0f172a",
-  lineHeight: 1.25,
-};
-
-const turmaResumoMeta = {
-  marginTop: 6,
-  color: "#64748b",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
-
-const turmaResumoData = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  fontSize: 12,
-  whiteSpace: "nowrap",
-};
-
-const turmaResumoNumbers = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 10,
-};
-
-const turmaMiniBox = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: 10,
-  display: "grid",
-  gap: 4,
-};
-
-const turmaMiniBoxDestaque = {
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  borderRadius: 12,
-  padding: 10,
-  display: "grid",
-  gap: 4,
-};
-
-const turmaMiniLabel = {
-  color: "#64748b",
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-const turmaMiniValue = {
-  color: "#0f172a",
-  fontSize: 18,
-  fontWeight: 800,
-};
+function ProgressRow({ label, value, total }) {
+  const percent = total ? Math.round((Number(value || 0) / Number(total || 1)) * 100) : 0;
+  return (
+    <div style={progressRow}>
+      <div style={progressHead}>
+        <span>{label}</span>
+        <strong>{fmt(value || 0)}</strong>
+      </div>
+      <div style={progressTrack}>
+        <div style={{ ...progressFill, width: `${Math.max(percent, total ? 8 : 0)}%` }} />
+      </div>
+    </div>
+  );
+}
 
 const loadingBox = {
-  background: "#fff",
+  background: "#ffffff",
   border: "1px solid #e2e8f0",
-  borderRadius: 16,
+  borderRadius: 18,
   padding: 18,
   color: "#475569",
   fontWeight: 700,
@@ -667,7 +373,246 @@ const errorBox = {
   background: "#fef2f2",
   border: "1px solid #fecaca",
   color: "#b91c1c",
-  borderRadius: 16,
+  borderRadius: 18,
   padding: 16,
   fontWeight: 700,
+};
+
+const heroWrap = {
+  display: "grid",
+  gridTemplateColumns: "1.45fr .9fr",
+  gap: 16,
+};
+
+const heroMain = {
+  background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)",
+  borderRadius: 26,
+  padding: 24,
+  color: "#fff",
+  boxShadow: "0 18px 38px rgba(15, 23, 42, 0.18)",
+};
+
+const heroSide = {
+  display: "grid",
+  gap: 12,
+};
+
+const eyebrow = {
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: ".12em",
+  textTransform: "uppercase",
+  color: "#bfdbfe",
+};
+
+const heroTitle = {
+  margin: "10px 0 10px",
+  fontSize: 34,
+  lineHeight: 1.1,
+};
+
+const heroText = {
+  color: "#dbeafe",
+  lineHeight: 1.7,
+  maxWidth: 760,
+  margin: 0,
+};
+
+const statusPill = {
+  display: "inline-flex",
+  marginTop: 16,
+  padding: "8px 12px",
+  borderRadius: 999,
+  fontWeight: 800,
+  fontSize: 13,
+};
+
+const heroMiniCard = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 20,
+  padding: 18,
+  display: "grid",
+  gap: 4,
+  boxShadow: "0 8px 22px rgba(15,23,42,.05)",
+};
+
+const heroMiniLabel = {
+  fontSize: 12,
+  textTransform: "uppercase",
+  letterSpacing: ".08em",
+  color: "#64748b",
+  fontWeight: 800,
+};
+
+const heroMiniValue = {
+  fontSize: 28,
+  lineHeight: 1,
+  color: "#0f172a",
+};
+
+const heroMiniSub = {
+  color: "#475569",
+  fontSize: 13,
+};
+
+const faroisGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 14,
+};
+
+function farolCard(tone) {
+  const map = {
+    ok: {
+      background: "linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%)",
+      border: "1px solid #bbf7d0",
+    },
+    attention: {
+      background: "linear-gradient(180deg, #ffffff 0%, #fffbeb 100%)",
+      border: "1px solid #fde68a",
+    },
+    danger: {
+      background: "linear-gradient(180deg, #ffffff 0%, #fff1f2 100%)",
+      border: "1px solid #fecaca",
+    },
+  };
+
+  return {
+    borderRadius: 18,
+    padding: 16,
+    display: "grid",
+    gap: 8,
+    boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+    ...(map[tone] || map.ok),
+  };
+}
+
+const farolIcon = { fontSize: 22 };
+const farolTitle = { fontWeight: 900, color: "#0f172a" };
+const farolText = { color: "#475569", lineHeight: 1.55, fontSize: 14 };
+
+const kpiGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 14,
+};
+
+const twoColumns = {
+  display: "grid",
+  gridTemplateColumns: "1.1fr .9fr",
+  gap: 16,
+};
+
+const summaryList = { display: "grid", gap: 10 };
+const summaryItem = {
+  padding: "14px 16px",
+  borderRadius: 16,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  color: "#334155",
+  lineHeight: 1.6,
+};
+
+const oceanoGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 10,
+  marginBottom: 14,
+};
+
+const miniStatCard = {
+  borderRadius: 16,
+  border: "1px solid #e2e8f0",
+  background: "#fff",
+  padding: 14,
+};
+const miniStatLabel = {
+  fontSize: 11,
+  color: "#64748b",
+  textTransform: "uppercase",
+  fontWeight: 800,
+};
+const miniStatValue = {
+  marginTop: 6,
+  fontSize: 22,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const progressWrap = { display: "grid", gap: 12 };
+const progressRow = { display: "grid", gap: 6 };
+const progressHead = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  color: "#334155",
+  fontSize: 14,
+};
+const progressTrack = {
+  height: 10,
+  borderRadius: 999,
+  background: "#e2e8f0",
+  overflow: "hidden",
+};
+const progressFill = {
+  height: "100%",
+  background: "linear-gradient(90deg, #38bdf8 0%, #2563eb 100%)",
+  borderRadius: 999,
+};
+
+const recentGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: 14,
+};
+
+const recentCard = {
+  borderRadius: 20,
+  border: "1px solid #dbeafe",
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+  padding: 16,
+  display: "grid",
+  gap: 8,
+  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
+  minWidth: 0,
+};
+
+const recentHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 10,
+  flexWrap: "wrap",
+};
+const recentTitle = {
+  fontWeight: 900,
+  color: "#0f172a",
+  lineHeight: 1.35,
+  minWidth: 0,
+  wordBreak: "break-word",
+};
+const recentMeta = { color: "#64748b", fontSize: 13, lineHeight: 1.45 };
+const recentBand = {
+  marginTop: 4,
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  color: "#334155",
+  fontSize: 13,
+};
+const miniPill = {
+  display: "inline-flex",
+  padding: "5px 9px",
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+};
+const emptyState = {
+  padding: 18,
+  borderRadius: 16,
+  background: "#f8fafc",
+  border: "1px dashed #cbd5e1",
+  color: "#64748b",
 };
