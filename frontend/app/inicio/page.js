@@ -77,7 +77,7 @@ function buildFarois(kpis = {}, oceano = {}) {
     items.push({
       icon: "📋",
       title: "Chamada em aberto",
-      text: `${fmt(kpis.pendentes)} registro(s) ainda precisam de fechamento.`,
+      text: `${fmt(kpis.pendentes)} registro(s) ainda precisam de fechamento para a leitura ficar mais redonda.`,
       tone: "attention",
     });
   }
@@ -86,7 +86,7 @@ function buildFarois(kpis = {}, oceano = {}) {
     items.push({
       icon: "👥",
       title: "Presença abaixo do ideal",
-      text: `A presença está em ${fmt(kpis.taxa_presenca)}% e merece acompanhamento mais próximo.`,
+      text: `A presença está em ${fmt(kpis.taxa_presenca)}% e vale acompanhar mais de perto este movimento.`,
       tone: "danger",
     });
   }
@@ -324,7 +324,7 @@ export default function InicioPage() {
                         <div style={recentTitle}>{item.tema || "Turma sem título"}</div>
                         <div style={{ ...miniPill, ...tone }}>
                           {item.treinados > 0
-                            ? `${fmt(Math.round((Number(item.presentes || 0) / Number(item.treinados || 1)) * 100))}% presença`
+                            ? `${fmt(Math.round((Number(item.presentes || 0) / Number(item.base_ativa || item.treinados || 1)) * 100))}% presença`
                             : "Sem base"}
                         </div>
                       </div>
@@ -340,7 +340,7 @@ export default function InicioPage() {
                       </div>
 
                       <div style={recentBand}>
-                        <span>Base {fmt(item.treinados || item.participantes || 0)}</span>
+                        <span>Base {fmt(item.base_ativa || item.treinados || item.participantes || 0)}</span>
                         <span>Presentes {fmt(item.presentes || 0)}</span>
                         <span>Pendentes {fmt(item.pendentes || 0)}</span>
                       </div>
