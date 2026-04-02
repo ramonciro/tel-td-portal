@@ -110,7 +110,7 @@ export async function apiFetch(path, options = {}) {
 
   return data;
 }
-import { API_URL } from "../../services/api";
+
 export default API_URL;
 
 
