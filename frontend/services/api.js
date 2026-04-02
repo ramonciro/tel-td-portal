@@ -21,7 +21,7 @@ export function getStoredUser() {
 }
 
 // ==========================
-// LOGOUT / 401
+// LOGOUT / 401 (Sessão Expirada)
 // ==========================
 function handleUnauthorized() {
   console.warn('Sessão expirada ou inválida');
@@ -30,6 +30,7 @@ function handleUnauthorized() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
 
+    // Redireciona para o login se não estiver lá
     if (!window.location.pathname.includes('/login')) {
       window.location.href = '/login';
     }
@@ -42,7 +43,10 @@ function handleUnauthorized() {
 export async function apiFetch(endpoint, options = {}) {
   const token = getToken();
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  // Garante que o endpoint comece com /
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+  const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -58,15 +62,15 @@ export async function apiFetch(endpoint, options = {}) {
 
   if (!response.ok) {
     const text = await response.text();
-    console.error('Erro API:', text);
-    throw new Error(`Erro ${response.status}`);
+    console.error('Erro na resposta da API:', text);
+    throw new Error(`Erro ${response.status}: ${text}`);
   }
 
   return response;
 }
 
 // ==========================
-// HELPERS
+// HELPERS (Para facilitar o uso)
 // ==========================
 export async function apiGet(endpoint) {
   const res = await apiFetch(endpoint, {
