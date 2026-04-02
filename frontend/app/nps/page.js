@@ -1,7 +1,9 @@
 "use client";
 
+// Força a renderização no lado do cliente para evitar erros de build no Vercel
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
+
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
 import StatCard from "../../components/StatCard";
@@ -39,28 +41,46 @@ export default function NpsPage() {
 
   useEffect(() => {
     async function load() {
-      const [npsData, treinamentosData] = await Promise.all([
-        apiFetch("/avaliacoes-treinandos").catch(() => []),
-        apiFetch("/treinamentos").catch(() => []),
-      ]);
+      try {
+        const [resNps, resTreinamentos] = await Promise.all([
+          apiFetch("/avaliacoes-treinandos"),
+          apiFetch("/treinamentos"),
+        ]);
 
-      setDados(Array.isArray(npsData) ? npsData : []);
-      setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+        const npsData = await resNps.json();
+        const treinamentosData = await resTreinamentos.json();
+
+        setDados(Array.isArray(npsData) ? npsData : []);
+        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+      } catch (err) {
+        console.error("Erro ao carregar dados NPS:", err);
+        setDados([]);
+        setTreinamentos([]);
+      }
     }
 
     load();
   }, []);
 
-  const total = dados.length;
-  const promotores = dados.filter((d) => Number(d.nota_nps) >= 9).length;
-  const neutros = dados.filter((d) => Number(d.nota_nps) >= 7 && Number(d.nota_nps) <= 8).length;
-  const detratores = dados.filter((d) => Number(d.nota_nps) <= 6).length;
+  // Cálculos de KPIs protegidos para o build
+  const stats = useMemo(() => {
+    const total = dados.length;
+    const promotores = dados.filter((d) => Number(d.nota_nps || 0) >= 9).length;
+    const neutros = dados.filter((d) => {
+      const n = Number(d.nota_nps || 0);
+      return n >= 7 && n <= 8;
+    }).length;
+    const detratores = dados.filter((d) => Number(d.nota_nps || 0) <= 6).length;
 
-  const nps = total
-    ? Math.round((promotores / total) * 100 - (detratores / total) * 100)
-    : 0;
+    const nps = total
+      ? Math.round((promotores / total) * 100 - (detratores / total) * 100)
+      : 0;
+
+    return { total, promotores, neutros, detratores, nps };
+  }, [dados]);
 
   const treinamentoOptions = useMemo(() => {
+    if (!Array.isArray(treinamentos)) return [];
     return treinamentos.map((t) => ({
       value: t.id,
       label: `${t.tema || "Treinamento"} - ${t.cliente || "Sem cliente"}`,
@@ -135,11 +155,11 @@ export default function NpsPage() {
       allowedDeleteRoles={[]}
       hero={
         <div style={{ display: "grid", gap: 14 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 10 }}>
-            <StatCard title="NPS" value={nps} accent="#2563eb" />
-            <StatCard title="Promotores" value={promotores} accent="#16a34a" />
-            <StatCard title="Neutros" value={neutros} accent="#f59e0b" />
-            <StatCard title="Detratores" value={detratores} accent="#dc2626" />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+            <StatCard title="NPS" value={stats.nps} accent="#2563eb" />
+            <StatCard title="Promotores" value={stats.promotores} accent="#16a34a" />
+            <StatCard title="Neutros" value={stats.neutros} accent="#f59e0b" />
+            <StatCard title="Detratores" value={stats.detratores} accent="#dc2626" />
           </div>
 
           <SectionCard
@@ -156,22 +176,6 @@ export default function NpsPage() {
   );
 }
 
-const titleCell = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const subCell = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 12,
-};
-
-const infoBox = {
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  color: "#1d4ed8",
-  borderRadius: 12,
-  padding: 12,
-  fontWeight: 600,
-};
+const titleCell = { fontWeight: 800, color: "#0f172a" };
+const subCell = { marginTop: 4, color: "#64748b", fontSize: 12 };
+const infoBox = { background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 12, padding: 12, fontWeight: 600 };
