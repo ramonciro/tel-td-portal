@@ -167,6 +167,50 @@ export default function DashboardPage() {
   const farois = useMemo(() => buildFarois(kpis, oceano), [kpis, oceano]);
   const narrativa = useMemo(() => buildNarrativa(kpis, filters), [kpis, filters]);
 
+  const clienteOptions = useMemo(() => {
+    const api = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
+    if (api.length) return api;
+    const values = [
+      ...presencaPorCliente.map((item) => item.cliente),
+      ...ultimasTurmas.map((item) => item.cliente),
+    ].filter(Boolean);
+    return Array.from(new Set(values)).sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
+  }, [filtrosApi, presencaPorCliente, ultimasTurmas]);
+
+  const instrutorOptions = useMemo(() => {
+    const api = Array.isArray(filtrosApi.instrutores) ? filtrosApi.instrutores : [];
+    if (api.length) return api;
+    const values = [
+      ...rankingInstrutores.map((item) => item.instrutor),
+      ...ultimasTurmas.map((item) => item.instrutor),
+    ].filter(Boolean);
+    return Array.from(new Set(values)).sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
+  }, [filtrosApi, rankingInstrutores, ultimasTurmas]);
+
+  const statusOptions = useMemo(() => {
+    const api = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
+    if (api.length) return api;
+    return [
+      { value: "planejado", label: "Planejada" },
+      { value: "em_andamento", label: "Em andamento" },
+      { value: "concluido", label: "Concluída" },
+      { value: "cancelado", label: "Cancelada" },
+    ];
+  }, [filtrosApi]);
+
+  const modalidadeOptions = useMemo(() => {
+    const api = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
+    if (api.length) return api;
+    const values = ultimasTurmas.map((item) => parseModalidade(item.descricao)).filter((item) => item && item !== "-");
+    const unique = Array.from(new Set(values));
+    return unique.length
+      ? unique.map((item) => ({ value: item.toLowerCase(), label: item }))
+      : [
+          { value: "online", label: "Online" },
+          { value: "presencial", label: "Presencial" },
+        ];
+  }, [filtrosApi, ultimasTurmas]);
+
   return (
     <PortalShell
       title="Dashboard"
@@ -234,7 +278,7 @@ export default function DashboardPage() {
                   onChange={(e) => setFilters((prev) => ({ ...prev, cliente: e.target.value }))}
                 >
                   <option value="">Todos</option>
-                  {(filtrosApi.clientes || []).map((item) => (
+                  {clienteOptions.map((item) => (
                     <option key={item} value={item}>{item}</option>
                   ))}
                 </select>
@@ -248,7 +292,7 @@ export default function DashboardPage() {
                   onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))}
                 >
                   <option value="">Todos</option>
-                  {(filtrosApi.instrutores || []).map((item) => (
+                  {instrutorOptions.map((item) => (
                     <option key={item} value={item}>{item}</option>
                   ))}
                 </select>
@@ -262,7 +306,7 @@ export default function DashboardPage() {
                   onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
                 >
                   <option value="">Todos</option>
-                  {(filtrosApi.status || []).map((item) => (
+                  {statusOptions.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </select>
@@ -276,7 +320,7 @@ export default function DashboardPage() {
                   onChange={(e) => setFilters((prev) => ({ ...prev, modalidade: e.target.value }))}
                 >
                   <option value="">Todas</option>
-                  {(filtrosApi.modalidades || []).map((item) => (
+                  {modalidadeOptions.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </select>
