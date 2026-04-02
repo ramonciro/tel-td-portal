@@ -1,6 +1,7 @@
 "use client";
-export const dynamic = 'force-dynamic';
 
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
@@ -98,6 +99,7 @@ function BibliotecaCard({ item, onEdit, onDelete }) {
     </div>
   );
 }
+
 
 export default function BibliotecaPage() {
   const [biblioteca, setBiblioteca] = useState([]);
