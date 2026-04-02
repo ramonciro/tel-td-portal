@@ -5,7 +5,7 @@ import PortalShell from "../../components/PortalShell";
 import StatCard from "../../components/StatCard";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
-import { formatDateBR, parseLocalDate, todayLocal } from "../../lib/date";
+import { formatDateBR, parseLocalDate, today } from "../../lib/date";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
