@@ -1,6 +1,7 @@
 "use client";
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
 import StatCard from "../../components/StatCard";
