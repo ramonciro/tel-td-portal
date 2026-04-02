@@ -116,10 +116,21 @@ export default function CrudPageV2({
   const [success, setSuccess] = useState("");
   const [search, setSearch] = useState("");
 
-  const user = getStoredUser();
+const [user, setUser] = useState(null);
 
-  const canCreate =
-    !allowedCreateRoles.length || hasSomeRole(user, allowedCreateRoles);
+useEffect(() => {
+  const storedUser = getStoredUser();
+  setUser(storedUser);
+}, []);
+
+const canCreate =
+  !allowedCreateRoles.length || (user && hasSomeRole(user, allowedCreateRoles));
+
+const canEdit =
+  !allowedEditRoles.length || (user && hasSomeRole(user, allowedEditRoles));
+
+const canDelete =
+  !allowedDeleteRoles.length || (user && hasSomeRole(user, allowedDeleteRoles));
 
   const canEdit =
     !allowedEditRoles.length || hasSomeRole(user, allowedEditRoles);
