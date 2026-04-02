@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
@@ -14,7 +16,13 @@ export default function ResponderNpsPage() {
   const [sucesso, setSucesso] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const user = getStoredUser();
+  // ✅ CORREÇÃO: user só no client
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const storedUser = getStoredUser();
+    setUser(storedUser);
+  }, []);
 
   useEffect(() => {
     async function carregar() {
@@ -64,6 +72,9 @@ export default function ResponderNpsPage() {
       setErro(error.message || "Erro ao enviar NPS.");
     }
   }
+
+  // ✅ evita render quebrado antes do user carregar
+  if (!user) return null;
 
   return (
     <PortalShell
@@ -139,6 +150,7 @@ export default function ResponderNpsPage() {
   );
 }
 
+// estilos (mantidos iguais)
 const loadingBox = {
   background: "#fff",
   border: "1px solid #e2e8f0",
@@ -195,7 +207,6 @@ const input = {
   color: "#0f172a",
   outline: "none",
   background: "#ffffff",
-  boxSizing: "border-box",
 };
 
 const textarea = {
@@ -205,10 +216,7 @@ const textarea = {
   padding: "10px 12px",
   fontSize: 14,
   color: "#0f172a",
-  outline: "none",
   background: "#ffffff",
-  resize: "vertical",
-  boxSizing: "border-box",
 };
 
 const btnPrimary = {
