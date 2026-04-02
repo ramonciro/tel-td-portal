@@ -186,8 +186,7 @@ export default function InicioPage() {
               <div style={eyebrow}>Visão do dia</div>
               <h2 style={heroTitle}>Uma leitura rápida para decidir onde vale agir primeiro.</h2>
               <p style={heroText}>
-                Em vez de te jogar um monte de números, esta página tenta resumir o
-                que realmente merece atenção e o que já está caminhando bem.
+                Resumo do que realmente merece atenção e o que já está caminhando bem.
               </p>
 
               <div
