@@ -1,15 +1,32 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-function getToken() {
+// ==========================
+// TOKEN
+// ==========================
+export function getToken() {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('token');
 }
 
+// ==========================
+// USER
+// ==========================
+export function getStoredUser() {
+  if (typeof window === 'undefined') return null;
+
+  const user = localStorage.getItem('user');
+  return user ? JSON.parse(user) : null;
+}
+
+// ==========================
+// LOGOUT / 401
+// ==========================
 function handleUnauthorized() {
-  console.warn('Sessão expirada');
+  console.warn('Sessão expirada ou inválida');
 
   if (typeof window !== 'undefined') {
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
 
     if (!window.location.pathname.includes('/login')) {
       window.location.href = '/login';
@@ -17,6 +34,9 @@ function handleUnauthorized() {
   }
 }
 
+// ==========================
+// FETCH BASE
+// ==========================
 export async function apiFetch(endpoint, options = {}) {
   const token = getToken();
 
@@ -43,8 +63,13 @@ export async function apiFetch(endpoint, options = {}) {
   return response;
 }
 
+// ==========================
+// HELPERS
+// ==========================
 export async function apiGet(endpoint) {
-  const res = await apiFetch(endpoint);
+  const res = await apiFetch(endpoint, {
+    method: 'GET'
+  });
   return res.json();
 }
 
@@ -52,6 +77,21 @@ export async function apiPost(endpoint, body) {
   const res = await apiFetch(endpoint, {
     method: 'POST',
     body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
+export async function apiPut(endpoint, body) {
+  const res = await apiFetch(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
+export async function apiDelete(endpoint) {
+  const res = await apiFetch(endpoint, {
+    method: 'DELETE'
   });
   return res.json();
 }
