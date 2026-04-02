@@ -15,6 +15,24 @@ function formatDate(value) {
   return formatDateBR(value, "-");
 }
 
+
+function normalizeStatus(status) {
+  const key = String(status || "").toLowerCase();
+  if (key.includes("concl")) return "Concluída";
+  if (key.includes("andamento")) return "Em andamento";
+  if (key.includes("cancel")) return "Cancelada";
+  return "Planejada";
+}
+
+function parseModalidade(descricao) {
+  const text = String(descricao || "");
+  const match = text.match(/\[modalidade:([^\]]+)\]/i);
+  const modalidade = String(match?.[1] || "").trim().toLowerCase();
+  if (modalidade === "presencial") return "Presencial";
+  if (modalidade === "online") return "Online";
+  return "-";
+}
+
 function getHeroTone(kpis = {}) {
   const presenca = Number(kpis.taxa_presenca || 0);
   const fechamento = Number(kpis.taxa_conclusao_chamada || 0);
@@ -186,7 +204,8 @@ export default function InicioPage() {
               <div style={eyebrow}>Visão do dia</div>
               <h2 style={heroTitle}>Uma leitura rápida para decidir onde vale agir primeiro.</h2>
               <p style={heroText}>
-                Resumo do que realmente merece atenção e o que já está caminhando bem.
+                Em vez de te jogar um monte de números, esta página tenta resumir o
+                que realmente merece atenção e o que já está caminhando bem.
               </p>
 
               <div
@@ -314,10 +333,15 @@ export default function InicioPage() {
                       <div style={recentMeta}>
                         {item.cliente || "Sem cliente"} • {item.instrutor || "Sem instrutor"}
                       </div>
-                      <div style={recentMeta}>Data: {formatDate(item.data || item.data_inicio)}</div>
+
+                      <div style={recentChips}>
+                        <span style={softChip("neutral")}>{normalizeStatus(item.status)}</span>
+                        <span style={softChip("blue")}>{parseModalidade(item.descricao)}</span>
+                        <span style={softChip("neutral")}>Data {formatDate(item.data || item.data_inicio)}</span>
+                      </div>
 
                       <div style={recentBand}>
-                        <span>Base {fmt(item.treinados || 0)}</span>
+                        <span>Base {fmt(item.treinados || item.participantes || 0)}</span>
                         <span>Presentes {fmt(item.presentes || 0)}</span>
                         <span>Pendentes {fmt(item.pendentes || 0)}</span>
                       </div>
@@ -592,6 +616,31 @@ const recentTitle = {
   wordBreak: "break-word",
 };
 const recentMeta = { color: "#64748b", fontSize: 13, lineHeight: 1.45 };
+
+const recentChips = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+  marginTop: 10,
+};
+
+function softChip(tone = "neutral") {
+  const map = {
+    neutral: { background: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0" },
+    blue: { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" },
+  };
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    ...(map[tone] || map.neutral),
+  };
+}
+
 const recentBand = {
   marginTop: 4,
   display: "flex",
