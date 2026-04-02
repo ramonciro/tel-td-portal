@@ -1,134 +1,223 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
 import { useEffect, useState } from "react";
-import { apiFetch } from "../../services/api";
+import PortalShell from "../../components/PortalShell";
+import SectionCard from "../../components/SectionCard";
+import { apiFetch, getStoredUser } from "../../services/api";
 
 export default function ResponderNpsPage() {
-  const [mounted, setMounted] = useState(false);
+  const [turmas, setTurmas] = useState([]);
+  const [treinamentoId, setTreinamentoId] = useState("");
   const [nota, setNota] = useState("");
   const [comentario, setComentario] = useState("");
-  const [enviado, setEnviado] = useState(false);
   const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  // ✅ Garante execução só no client
+  const user = getStoredUser();
+
   useEffect(() => {
-    setMounted(true);
+    async function carregar() {
+      try {
+        setLoading(true);
+        setErro("");
+        const data = await apiFetch("/nps-disponivel").catch(() => []);
+        setTurmas(Array.isArray(data) ? data : []);
+      } catch (error) {
+        setErro(error.message || "Erro ao carregar turmas disponíveis para NPS.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    carregar();
   }, []);
 
-  if (!mounted) return null;
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setErro("");
-
+  async function enviar() {
     try {
-      await apiFetch("/nps/responder", {
+      setErro("");
+      setSucesso("");
+
+      if (!treinamentoId || nota === "") {
+        setErro("Selecione a turma e informe a nota.");
+        return;
+      }
+
+      await apiFetch("/avaliacoes-treinandos", {
         method: "POST",
         body: JSON.stringify({
-          nota,
+          treinamento_id: treinamentoId,
+          treinando_nome: user?.nome || "",
+          nota_nps: Number(nota),
           comentario,
         }),
       });
 
-      setEnviado(true);
-    } catch (err) {
-      setErro(err.message || "Erro ao enviar resposta.");
+      setSucesso("NPS enviado com sucesso.");
+      setTreinamentoId("");
+      setNota("");
+      setComentario("");
+
+      const data = await apiFetch("/nps-disponivel").catch(() => []);
+      setTurmas(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setErro(error.message || "Erro ao enviar NPS.");
     }
   }
 
-  if (enviado) {
-    return (
-      <div style={container}>
-        <h2>Obrigado pela sua resposta!</h2>
-        <p>Seu feedback foi registrado com sucesso.</p>
-      </div>
-    );
-  }
-
   return (
-    <div style={container}>
-      <h1 style={title}>Pesquisa NPS</h1>
+    <PortalShell
+      title="Responder NPS"
+      subtitle="Avalie a experiência do treinamento em que você participou."
+    >
+      {loading ? (
+        <div style={loadingBox}>Carregando turmas...</div>
+      ) : (
+        <SectionCard
+          title="Sua avaliação"
+          subtitle="Você só pode responder o NPS das turmas em que está vinculado."
+        >
+          {erro ? <div style={errorBox}>{erro}</div> : null}
+          {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
-      <form onSubmit={handleSubmit} style={form}>
-        <label style={label}>De 0 a 10, quanto você recomendaria?</label>
-        <input
-          type="number"
-          min="0"
-          max="10"
-          value={nota}
-          onChange={(e) => setNota(e.target.value)}
-          style={input}
-          required
-        />
+          <div style={formGrid}>
+            <div style={fieldWrap}>
+              <label style={label}>Treinando</label>
+              <input style={input} value={user?.nome || ""} disabled />
+            </div>
 
-        <label style={label}>Comentário (opcional)</label>
-        <textarea
-          value={comentario}
-          onChange={(e) => setComentario(e.target.value)}
-          style={textarea}
-          rows={4}
-        />
+            <div style={fieldWrap}>
+              <label style={label}>Turma</label>
+              <select
+                style={input}
+                value={treinamentoId}
+                onChange={(e) => setTreinamentoId(e.target.value)}
+              >
+                <option value="">Selecione a turma</option>
+                {turmas.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {(item.tema || "Turma") + " • " + (item.cliente || "Sem cliente")}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        {erro && <div style={errorBox}>{erro}</div>}
+            <div style={fieldWrap}>
+              <label style={label}>Nota NPS (0 a 10)</label>
+              <input
+                style={input}
+                type="number"
+                min="0"
+                max="10"
+                step="1"
+                value={nota}
+                onChange={(e) => setNota(e.target.value)}
+                placeholder="Digite sua nota"
+              />
+            </div>
 
-        <button type="submit" style={button}>
-          Enviar resposta
-        </button>
-      </form>
-    </div>
+            <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
+              <label style={label}>Comentário</label>
+              <textarea
+                style={textarea}
+                rows={4}
+                value={comentario}
+                onChange={(e) => setComentario(e.target.value)}
+                placeholder="Conte como foi sua experiência no treinamento"
+              />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <button style={btnPrimary} onClick={enviar}>
+              Enviar avaliação
+            </button>
+          </div>
+        </SectionCard>
+      )}
+    </PortalShell>
   );
 }
 
-const container = {
-  maxWidth: 500,
-  margin: "40px auto",
-  padding: 20,
-};
-
-const title = {
-  fontSize: 24,
-  marginBottom: 20,
-};
-
-const form = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 12,
-};
-
-const label = {
-  fontWeight: 600,
-};
-
-const input = {
-  height: 40,
-  padding: "0 10px",
-  borderRadius: 8,
-  border: "1px solid #ccc",
-};
-
-const textarea = {
-  padding: 10,
-  borderRadius: 8,
-  border: "1px solid #ccc",
-};
-
-const button = {
-  marginTop: 10,
-  height: 42,
-  border: "none",
-  borderRadius: 8,
-  background: "#2563eb",
-  color: "#fff",
+const loadingBox = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 18,
+  color: "#475569",
   fontWeight: 700,
-  cursor: "pointer",
 };
 
 const errorBox = {
-  background: "#fee2e2",
-  color: "#991b1b",
-  padding: 10,
-  borderRadius: 8,
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  borderRadius: 14,
+  padding: 12,
+  fontWeight: 700,
+  marginBottom: 12,
+};
+
+const successBox = {
+  background: "#f0fdf4",
+  border: "1px solid #bbf7d0",
+  color: "#166534",
+  borderRadius: 14,
+  padding: 12,
+  fontWeight: 700,
+  marginBottom: 12,
+};
+
+const formGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+};
+
+const fieldWrap = {
+  display: "grid",
+  gap: 6,
+};
+
+const label = {
+  fontWeight: 800,
+  color: "#0f172a",
+  fontSize: 14,
+};
+
+const input = {
+  width: "100%",
+  height: 42,
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "0 12px",
+  fontSize: 14,
+  color: "#0f172a",
+  outline: "none",
+  background: "#ffffff",
+  boxSizing: "border-box",
+};
+
+const textarea = {
+  width: "100%",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  padding: "10px 12px",
+  fontSize: 14,
+  color: "#0f172a",
+  outline: "none",
+  background: "#ffffff",
+  resize: "vertical",
+  boxSizing: "border-box",
+};
+
+const btnPrimary = {
+  border: "none",
+  borderRadius: 10,
+  padding: "10px 16px",
+  background: "#2563eb",
+  color: "#ffffff",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 14,
 };
