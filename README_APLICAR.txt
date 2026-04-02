@@ -1,24 +1,18 @@
-PACOTE PRIMEIRO ACESSO + TROCA OBRIGATORIA DE SENHA
+PACOTE - DASHBOARD COM FILTROS + TEXTO MAIS NATURAL
 
-BACKEND
-- backend/src/controllers/authController.js
-- backend/src/controllers/usersController.js
-- backend/src/routes/index.js
+Arquivos alterados:
+- backend/src/controllers/dashboardTreinamentosController.js
+- frontend/app/dashboard/page.js
+- frontend/app/inicio/page.js
 
-FRONTEND
-- frontend/app/login/page.js
-- frontend/app/primeiro-acesso/page.js
+O que entrou:
+1. Dashboard com filtros por cliente, instrutor, status, modalidade e período.
+2. Faróis acionáveis com linguagem mais natural.
+3. Resumo do Oceano e progresso da tripulação dentro do dashboard.
+4. Página Início com textos menos robóticos e leitura mais humana.
+5. Hero e blocos revisados para apoiar decisão e não apenas exibir número.
 
-ENTREGAS
-- senha padrão: Tel@2026
-- usuário criado com troca_senha_obrigatoria = 1
-- login identifica primeiro acesso
-- redirecionamento para /primeiro-acesso
-- alteração obrigatória da senha no primeiro login
-
-PASSOS
-1. Substitua os arquivos do backend
-2. Faça commit e aguarde Railway
-3. Acesse /api/migracao-usuarios-primeiro-acesso
-4. Substitua os arquivos do frontend
-5. Faça commit e aguarde Vercel
+Como aplicar:
+- Substitua os arquivos do pacote pelos arquivos do projeto.
+- Faça o deploy do backend e do frontend.
+- Não há migration nova neste pacote.
