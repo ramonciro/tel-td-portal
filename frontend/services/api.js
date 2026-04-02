@@ -1,36 +1,26 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-export default API_URL;
-
 // ==========================
-// TOKEN
+// TOKEN & USER HELPERS
 // ==========================
 export function getToken() {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('token');
 }
 
-// ==========================
-// USER
-// ==========================
 export function getStoredUser() {
   if (typeof window === 'undefined') return null;
-
   const user = localStorage.getItem('user');
   return user ? JSON.parse(user) : null;
 }
 
 // ==========================
-// LOGOUT / 401 (Sessão Expirada)
+// TRATAMENTO DE SESSÃO
 // ==========================
 function handleUnauthorized() {
-  console.warn('Sessão expirada ou inválida');
-
   if (typeof window !== 'undefined') {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-
-    // Redireciona para o login se não estiver lá
     if (!window.location.pathname.includes('/login')) {
       window.location.href = '/login';
     }
@@ -38,12 +28,16 @@ function handleUnauthorized() {
 }
 
 // ==========================
-// FETCH BASE
+// CORE FETCH (O coração da comunicação)
 // ==========================
 export async function apiFetch(endpoint, options = {}) {
-  const token = getToken();
+  // Proteção para o Build do Vercel: Se não houver URL e for build, não trava
+  if (!API_URL && typeof window === 'undefined') {
+    console.warn(`Aviso: NEXT_PUBLIC_API_URL não definida para o endpoint ${endpoint}`);
+    return new Response(JSON.stringify({}), { status: 200 }); 
+  }
 
-  // Garante que o endpoint comece com /
+  const token = getToken();
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
   const response = await fetch(`${API_URL}${path}`, {
@@ -57,25 +51,22 @@ export async function apiFetch(endpoint, options = {}) {
 
   if (response.status === 401) {
     handleUnauthorized();
-    throw new Error('Não autorizado');
+    throw new Error('Sessão expirada');
   }
 
   if (!response.ok) {
-    const text = await response.text();
-    console.error('Erro na resposta da API:', text);
-    throw new Error(`Erro ${response.status}: ${text}`);
+    const errorText = await response.text();
+    throw new Error(`Erro API (${response.status}): ${errorText}`);
   }
 
   return response;
 }
 
 // ==========================
-// HELPERS (Para facilitar o uso)
+// MÉTODOS SIMPLIFICADOS
 // ==========================
 export async function apiGet(endpoint) {
-  const res = await apiFetch(endpoint, {
-    method: 'GET'
-  });
+  const res = await apiFetch(endpoint, { method: 'GET' });
   return res.json();
 }
 
@@ -87,17 +78,4 @@ export async function apiPost(endpoint, body) {
   return res.json();
 }
 
-export async function apiPut(endpoint, body) {
-  const res = await apiFetch(endpoint, {
-    method: 'PUT',
-    body: JSON.stringify(body)
-  });
-  return res.json();
-}
-
-export async function apiDelete(endpoint) {
-  const res = await apiFetch(endpoint, {
-    method: 'DELETE'
-  });
-  return res.json();
-}
+export default API_URL;
