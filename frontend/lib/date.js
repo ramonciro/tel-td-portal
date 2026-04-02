@@ -1,3 +1,6 @@
+export function todayLocal() {
+  return today();
+}
 export function parseLocalDate(value) {
   if (!value) return null;
 
