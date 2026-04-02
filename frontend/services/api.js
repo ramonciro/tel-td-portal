@@ -1,71 +1,55 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+// Recupera a URL do Railway das variáveis de ambiente do Vercel
+// Certifique-se de que no Vercel não haja uma "/" no final da URL
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tel-td-portal-production.up.railway.app';
 
-// ==========================
-// HELPERS DE TOKEN E USUÁRIO
-// ==========================
-export function getToken() {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('token');
-}
-
-export function getStoredUser() {
-  if (typeof window === 'undefined') return null;
-  const user = localStorage.getItem('user');
-  return user ? JSON.parse(user) : null;
-}
-
-// ==========================
-// TRATAMENTO DE LOGOUT
-// ==========================
-function handleUnauthorized() {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    if (!window.location.pathname.includes('/login')) {
-      window.location.href = '/login';
-    }
-  }
-}
-
-// ==========================
-// FUNÇÃO BASE (apiFetch)
-// ==========================
 export async function apiFetch(endpoint, options = {}) {
-  // PROTEÇÃO PARA O BUILD DO VERCEL
-  // Se estiver a compilar e não tiver URL, retorna resposta vazia para não quebrar o build
-  if (!API_URL && typeof window === 'undefined') {
-    return new Response(JSON.stringify({}), { status: 200 });
+  // 1. Tratamento de Token (Seguro para SSR/Build)
+  // Durante o 'npm run build', o localStorage não existe. Essa trava evita o erro.
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
   }
 
-  const token = getToken();
-  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  // 2. Montagem da URL
+  const url = `${API_URL}${endpoint}`;
 
   try {
-    const response = await fetch(`${API_URL}${path}`, {
+    const response = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers || {})
-      }
+      headers,
     });
 
-    if (response.status === 401) {
-      handleUnauthorized();
-      return new Response(JSON.stringify({ error: 'Não autorizado' }), { status: 401 });
+    // 3. Tratamento de Expiração de Sessão (401)
+    if (response.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      // Só redireciona se não estivermos já na tela de login para evitar loop
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
     }
 
     return response;
   } catch (error) {
-    console.error("Erro na chamada da API:", error);
-    // Retorna um fallback para evitar crash no build das rotas
-    return new Response(JSON.stringify({}), { status: 200 });
+    console.error(`Erro crítico na requisição [${endpoint}]:`, error);
+    
+    // Retorna um objeto fake para evitar que o .json() quebre a página
+    return {
+      ok: false,
+      status: 500,
+      json: async () => ([]),
+    };
   }
 }
 
-// ==========================
-// MÉTODOS AUXILIARES
-// ==========================
+/**
+ * Helpers para facilitar as chamadas nas páginas
+ */
 export async function apiGet(endpoint) {
   const res = await apiFetch(endpoint, { method: 'GET' });
   return res.json();
@@ -74,22 +58,7 @@ export async function apiGet(endpoint) {
 export async function apiPost(endpoint, body) {
   const res = await apiFetch(endpoint, {
     method: 'POST',
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
   return res.json();
 }
-
-export async function apiPut(endpoint, body) {
-  const res = await apiFetch(endpoint, {
-    method: 'PUT',
-    body: JSON.stringify(body)
-  });
-  return res.json();
-}
-
-export async function apiDelete(endpoint) {
-  const res = await apiFetch(endpoint, { method: 'DELETE' });
-  return res.json();
-}
-
-export default API_URL;
