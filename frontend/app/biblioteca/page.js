@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = 'force-dynamic';
 
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
