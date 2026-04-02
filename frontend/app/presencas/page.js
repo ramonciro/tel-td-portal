@@ -47,7 +47,7 @@ function getStatusTurma({
   if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
   if (["planejada", "planejado"].includes(status)) return "Planejada";
 
-  const hoje = todayLocal();
+  const hoje = today();
   const inicio = parseDateSafe(dataInicio);
   const fim = parseDateSafe(dataFim);
 
