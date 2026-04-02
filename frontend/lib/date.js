@@ -1,7 +1,6 @@
 // ==========================
 // HOJE (PADRÃO LOCAL)
 // ==========================
-
 export function today() {
   const now = new Date();
 
@@ -13,4 +12,91 @@ export function today() {
 
 export function todayLocal() {
   return today();
+}
+
+// ==========================
+// PARSE DATA LOCAL
+// ==========================
+export function parseLocalDate(value) {
+  if (!value) return null;
+
+  const raw = String(value).slice(0, 10);
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [ano, mes, dia] = raw.split("-").map(Number);
+    return new Date(ano, mes - 1, dia, 12, 0, 0, 0);
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    12,
+    0,
+    0,
+    0
+  );
+}
+
+// ==========================
+// PARA INPUT TYPE="date"
+// ==========================
+export function toDateInputLocal(value) {
+  if (!value) return "";
+
+  const raw = String(value).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const date = parseLocalDate(value);
+  if (!date) return "";
+
+  const ano = date.getFullYear();
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const dia = String(date.getDate()).padStart(2, "0");
+
+  return `${ano}-${mes}-${dia}`;
+}
+
+// ==========================
+// FORMATO BR
+// ==========================
+export function formatDateBR(value) {
+  const date = parseLocalDate(value);
+  if (!date) return "—";
+
+  const dia = String(date.getDate()).padStart(2, "0");
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const ano = date.getFullYear();
+
+  return `${dia}/${mes}/${ano}`;
+}
+
+// ==========================
+// COMPARADORES
+// ==========================
+export function compareLocalDates(a, b) {
+  const dateA = parseLocalDate(a);
+  const dateB = parseLocalDate(b);
+
+  if (!dateA && !dateB) return 0;
+  if (!dateA) return 1;
+  if (!dateB) return -1;
+
+  const timeA = dateA.getTime();
+  const timeB = dateB.getTime();
+
+  if (timeA > timeB) return 1;
+  if (timeA < timeB) return -1;
+  return 0;
+}
+
+export function compareLocalDatesAsc(a, b) {
+  return compareLocalDates(a, b);
+}
+
+export function compareLocalDatesDesc(a, b) {
+  return compareLocalDates(b, a);
 }
