@@ -1,7 +1,9 @@
 "use client";
 
+// Configurações para forçar o Vercel a renderizar apenas no navegador
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
+
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
@@ -111,13 +113,14 @@ export default function BibliotecaPage() {
   useEffect(() => {
     async function carregar() {
       try {
-        const data = await apiFetch("/biblioteca").catch(() => []);
+        const res = await apiFetch("/biblioteca");
+        const data = await res.json();
         setBiblioteca(Array.isArray(data) ? data : []);
-      } catch {
+      } catch (err) {
+        console.error("Erro ao carregar biblioteca:", err);
         setBiblioteca([]);
       }
     }
-
     carregar();
   }, []);
 
@@ -134,10 +137,11 @@ export default function BibliotecaPage() {
       const formData = new FormData();
       formData.append("arquivo", arquivo);
 
-      const data = await apiFetch("/biblioteca/upload", {
+      const res = await apiFetch("/biblioteca/upload", {
         method: "POST",
         body: formData,
       });
+      const data = await res.json();
 
       setUploadLink(data.link_arquivo || "");
       setUploadSucesso("Arquivo enviado com sucesso. Agora vincule esse link no cadastro do material.");
@@ -145,6 +149,19 @@ export default function BibliotecaPage() {
       setUploadErro(error.message || "Erro ao fazer upload do arquivo.");
     }
   }
+
+  // KPIs calculados de forma segura para o build
+  const stats = useMemo(() => {
+    const total = biblioteca.length;
+    const publicados = biblioteca.filter((item) => normalizeText(item.status) === "publicado").length;
+    const atualizando = biblioteca.filter((item) => {
+      const txt = normalizeText(item.status);
+      return txt === "em atualização" || txt === "em atualizacao";
+    }).length;
+    const rascunhos = biblioteca.filter((item) => normalizeText(item.status) === "rascunho").length;
+
+    return { total, publicados, atualizando, rascunhos };
+  }, [biblioteca]);
 
   const fields = [
     {
@@ -204,11 +221,6 @@ export default function BibliotecaPage() {
     },
   ];
 
-  const total = biblioteca.length;
-  const publicados = biblioteca.filter((item) => normalizeText(item.status) === "publicado").length;
-  const atualizando = biblioteca.filter((item) => normalizeText(item.status) === "em atualização" || normalizeText(item.status) === "em atualizacao").length;
-  const rascunhos = biblioteca.filter((item) => normalizeText(item.status) === "rascunho").length;
-
   return (
     <CrudPageV2
       title="Biblioteca"
@@ -231,10 +243,10 @@ export default function BibliotecaPage() {
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
-            <StatCard title="Materiais" value={fmt(total)} accent="#2563eb" />
-            <StatCard title="Publicados" value={fmt(publicados)} accent="#16a34a" />
-            <StatCard title="Em atualização" value={fmt(atualizando)} accent="#f59e0b" />
-            <StatCard title="Rascunhos" value={fmt(rascunhos)} accent="#64748b" />
+            <StatCard title="Materiais" value={fmt(stats.total)} accent="#2563eb" />
+            <StatCard title="Publicados" value={fmt(stats.publicados)} accent="#16a34a" />
+            <StatCard title="Em atualização" value={fmt(stats.atualizando)} accent="#f59e0b" />
+            <StatCard title="Rascunhos" value={fmt(stats.rascunhos)} accent="#64748b" />
           </div>
 
           <SectionCard
@@ -267,157 +279,23 @@ export default function BibliotecaPage() {
   );
 }
 
-const heroGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 10,
-};
-
-const uploadWrap = {
-  display: "flex",
-  gap: 10,
-  alignItems: "center",
-  flexWrap: "wrap",
-};
-
-const uploadBtn = {
-  border: "none",
-  borderRadius: 10,
-  padding: "10px 16px",
-  background: "#2563eb",
-  color: "#fff",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const errorBox = {
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
-  marginBottom: 12,
-};
-
-const successBox = {
-  background: "#f0fdf4",
-  border: "1px solid #bbf7d0",
-  color: "#166534",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
-  marginBottom: 12,
-};
-
-const linkBox = {
-  marginTop: 12,
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  color: "#1d4ed8",
-  borderRadius: 12,
-  padding: 12,
-};
-
-const card = {
-  background: "#fff",
-  borderRadius: 18,
-  border: "1px solid #e2e8f0",
-  boxShadow: "0 10px 24px rgba(15,23,42,.05)",
-  overflow: "hidden",
-  display: "grid",
-};
-
-const cardTop = {
-  padding: 16,
-  borderBottom: "1px solid #f1f5f9",
-};
-
-const cardTopRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const cardTitle = {
-  marginTop: 10,
-  fontSize: 18,
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const cardMeta = {
-  marginTop: 6,
-  color: "#64748b",
-  fontSize: 13,
-};
-
-const cardBody = {
-  padding: 16,
-  display: "grid",
-  gap: 12,
-};
-
-const tagRow = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const tag = {
-  display: "inline-block",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  color: "#334155",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-const descricao = {
-  margin: 0,
-  color: "#475569",
-  lineHeight: 1.6,
-  fontSize: 14,
-};
-
-const cardActions = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const openButton = {
-  textDecoration: "none",
-  border: "none",
-  borderRadius: 10,
-  padding: "10px 14px",
-  background: "#2563eb",
-  color: "#fff",
-  fontWeight: 800,
-  fontSize: 13,
-};
-
-const editBtn = {
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  padding: "10px 14px",
-  background: "#fff",
-  color: "#334155",
-  fontWeight: 800,
-  fontSize: 13,
-  cursor: "pointer",
-};
-
-const deleteBtn = {
-  border: "1px solid #fecaca",
-  borderRadius: 10,
-  padding: "10px 14px",
-  background: "#fff1f2",
-  color: "#be123c",
-  fontWeight: 800,
-  fontSize: 13,
-  cursor: "pointer",
-};
+// Estilos mantidos conforme original
+const heroGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 };
+const uploadWrap = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
+const uploadBtn = { border: "none", borderRadius: 10, padding: "10px 16px", background: "#2563eb", color: "#fff", fontWeight: 800, cursor: "pointer" };
+const errorBox = { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 14, padding: 12, fontWeight: 700, marginBottom: 12 };
+const successBox = { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", borderRadius: 14, padding: 12, fontWeight: 700, marginBottom: 12 };
+const linkBox = { marginTop: 12, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 12, padding: 12 };
+const card = { background: "#fff", borderRadius: 18, border: "1px solid #e2e8f0", boxShadow: "0 10px 24px rgba(15,23,42,.05)", overflow: "hidden", display: "grid" };
+const cardTop = { padding: 16, borderBottom: "1px solid #f1f5f9" };
+const cardTopRow = { display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" };
+const cardTitle = { marginTop: 10, fontSize: 18, fontWeight: 800, color: "#0f172a" };
+const cardMeta = { marginTop: 6, color: "#64748b", fontSize: 13 };
+const cardBody = { padding: 16, display: "grid", gap: 12 };
+const tagRow = { display: "flex", gap: 8, flexWrap: "wrap" };
+const tag = { display: "inline-block", background: "#f8fafc", border: "1px solid #e2e8f0", color: "#334155", padding: "4px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700 };
+const descricao = { margin: 0, color: "#475569", lineHeight: 1.6, fontSize: 14 };
+const cardActions = { display: "flex", gap: 8, flexWrap: "wrap" };
+const openButton = { textDecoration: "none", border: "none", borderRadius: 10, padding: "10px 14px", background: "#2563eb", color: "#fff", fontWeight: 800, fontSize: 13 };
+const editBtn = { border: "1px solid #cbd5e1", borderRadius: 10, padding: "10px 14px", background: "#fff", color: "#334155", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+const deleteBtn = { border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", background: "#fff1f2", color: "#be123c", fontWeight: 800, fontSize: 13, cursor: "pointer" };
