@@ -12,26 +12,45 @@ function fmt(n) {
 }
 
 function formatDateSafe(value) {
-  return formatDateBR(value);
+  return formatDateBR(value, "-");
 }
 
-function getSaudeOperacao(taxaPresenca, nps, qualidade) {
-  const presenca = Number(taxaPresenca || 0);
-  const npsValor = Number(nps || 0);
-  const qualidadeValor = Number(qualidade || 0);
+function getSaudeOperacao(kpis) {
+  const presenca = Number(kpis?.taxa_presenca || 0);
+  const conclusao = Number(kpis?.taxa_conclusao_chamada || 0);
+  const pendentes = Number(kpis?.pendentes || 0);
+  const treinados = Number(kpis?.treinados || 0);
 
-  if (
-    presenca >= 90 &&
-    (npsValor >= 70 || npsValor === 0) &&
-    (qualidadeValor >= 8 || qualidadeValor === 0)
-  ) {
+  if (treinados === 0) {
+    return {
+      label: "Sem base consolidada",
+      color: "#475569",
+      bg: "#f8fafc",
+      border: "#cbd5e1",
+      message:
+        "Ainda não há base suficiente de chamada diária para uma leitura consolidada da operação.",
+    };
+  }
+
+  if (pendentes > 0 || conclusao < 100) {
+    return {
+      label: "Em atualização operacional",
+      color: "#92400e",
+      bg: "#fef3c7",
+      border: "#fcd34d",
+      message:
+        "A leitura ainda está em movimento porque existem chamadas em aberto. O ideal é consolidar o fechamento antes de uma leitura conclusiva.",
+    };
+  }
+
+  if (presenca >= 90) {
     return {
       label: "Estável",
       color: "#166534",
       bg: "#dcfce7",
       border: "#86efac",
       message:
-        "A operação apresenta execução consistente, com presença diária saudável e sem desvios críticos relevantes.",
+        "A operação apresenta execução consistente, com presença diária saudável e fechamento operacional concluído.",
     };
   }
 
@@ -42,17 +61,17 @@ function getSaudeOperacao(taxaPresenca, nps, qualidade) {
       bg: "#fef3c7",
       border: "#fcd34d",
       message:
-        "Há estabilidade parcial, porém já existem sinais de atenção em presença diária, satisfação ou qualidade.",
+        "A operação está consolidada, mas a presença diária pede monitoramento mais próximo para evitar perda de eficiência.",
     };
   }
 
   return {
-    label: "Crítico",
+    label: "Monitoramento prioritário",
     color: "#b91c1c",
     bg: "#fee2e2",
     border: "#fca5a5",
     message:
-      "Os indicadores apontam necessidade de atuação imediata na execução das turmas e no fechamento das chamadas diárias.",
+      "A base já está consolidada e há necessidade de atuação prioritária sobre presença e execução das turmas.",
   };
 }
 
@@ -61,8 +80,8 @@ function getPriorityList(kpis, ultimasTurmas) {
 
   if (Number(kpis.pendentes || 0) > 0) {
     prioridades.push({
-      titulo: "Finalizar chamadas pendentes",
-      descricao: `${fmt(kpis.pendentes)} registro(s) ainda estão sem fechamento de chamada diária.`,
+      titulo: "Fechar chamadas do dia",
+      descricao: `${fmt(kpis.pendentes)} registro(s) ainda estão sem fechamento operacional.`,
       tag: "Execução",
     });
   }
@@ -70,27 +89,8 @@ function getPriorityList(kpis, ultimasTurmas) {
   if (Number(kpis.ausentes || 0) > 0) {
     prioridades.push({
       titulo: "Atuar sobre ausências",
-      descricao: `${fmt(kpis.ausentes)} ausência(s) registradas nas chamadas diárias das turmas acompanhadas.`,
+      descricao: `${fmt(kpis.ausentes)} ausência(s) registradas nas turmas acompanhadas.`,
       tag: "Presença",
-    });
-  }
-
-  if (Number(kpis.respostas_nps || 0) === 0) {
-    prioridades.push({
-      titulo: "Iniciar coleta de NPS",
-      descricao: "Ainda não há respostas de satisfação registradas na base.",
-      tag: "Experiência",
-    });
-  }
-
-  if (
-    Number(kpis.media_qualidade || 0) > 0 &&
-    Number(kpis.media_qualidade || 0) < 7
-  ) {
-    prioridades.push({
-      titulo: "Reforçar qualidade dos treinamentos",
-      descricao: `A média de qualidade está em ${kpis.media_qualidade}, abaixo do patamar desejado.`,
-      tag: "Qualidade",
     });
   }
 
@@ -114,101 +114,7 @@ function getPriorityList(kpis, ultimasTurmas) {
     });
   }
 
-  return prioridades.slice(0, 5);
-}
-
-function getFarolExecutivoCards(kpis, presencaPorCliente, rankingInstrutores) {
-  const cards = [];
-
-  if (Number(kpis.pendentes || 0) > 0) {
-    cards.push({
-      icon: "📋",
-      titulo: "Chamada em aberto",
-      texto: `${fmt(kpis.pendentes)} registro(s) ainda aguardam fechamento operacional.`,
-      tone: "amber",
-    });
-  }
-
-  const clienteAtencao = (presencaPorCliente || []).find(
-    (item) => Number(item.taxa_presenca || 0) > 0 && Number(item.taxa_presenca || 0) < 80
-  );
-  if (clienteAtencao) {
-    cards.push({
-      icon: "👥",
-      titulo: "Cliente em atenção",
-      texto: `${clienteAtencao.cliente || "Cliente"} com presença em ${Number(clienteAtencao.taxa_presenca || 0)}%.`,
-      tone: "rose",
-    });
-  }
-
-  const instrutorAtencao = (rankingInstrutores || []).find(
-    (item) => Number(item.taxa_presenca || 0) > 0 && Number(item.taxa_presenca || 0) < 85
-  );
-  if (instrutorAtencao) {
-    cards.push({
-      icon: "🧑‍🏫",
-      titulo: "Instrutor para acompanhar",
-      texto: `${instrutorAtencao.instrutor || "Instrutor"} com presença média de ${Number(instrutorAtencao.taxa_presenca || 0)}%.`,
-      tone: "amber",
-    });
-  }
-
-  if (Number(kpis.respostas_nps || 0) === 0) {
-    cards.push({
-      icon: "⭐",
-      titulo: "Sem leitura de experiência",
-      texto: "Ainda não há respostas suficientes de NPS para leitura de satisfação.",
-      tone: "blue",
-    });
-  }
-
-  if (!cards.length) {
-    cards.push({
-      icon: "✅",
-      titulo: "Operação sem alertas críticos",
-      texto: "Os principais indicadores seguem estáveis para a leitura executiva do momento.",
-      tone: "green",
-    });
-  }
-
-  return cards.slice(0, 4);
-}
-
-function getTurmaStatus(item) {
-  const pendentes = Number(item?.pendentes || 0);
-  const ausentes = Number(item?.ausentes || 0);
-  const base = Number(item?.base_ativa || 0);
-  const presentes = Number(item?.presentes || 0);
-  const presenca = base ? Math.round((presentes / base) * 100) : 0;
-
-  if (pendentes > 0) return { label: "Chamada em aberto", tone: "amber" };
-  if (ausentes > 0) return { label: "Acompanhar presença", tone: "rose" };
-  if (presenca >= 90) return { label: "Boa execução", tone: "green" };
-  return { label: "Em acompanhamento", tone: "blue" };
-}
-
-function getResumoRecente(kpis, ultimasTurmas) {
-  const ultima = (ultimasTurmas || [])[0];
-
-  return [
-    {
-      titulo: "Última turma registrada",
-      valor: ultima?.tema || "Sem movimentação recente",
-      texto: ultima
-        ? `${ultima.cliente || "Sem cliente"} • ${formatDateSafe(ultima.data_inicio || ultima.data)}`
-        : "Ainda não há turmas recentes registradas na visão inicial.",
-    },
-    {
-      titulo: "Pendências em aberto",
-      valor: fmt(kpis.pendentes || 0),
-      texto: "Registros que ainda precisam de fechamento operacional na chamada diária.",
-    },
-    {
-      titulo: "Base diária acompanhada",
-      valor: fmt(kpis.treinados || 0),
-      texto: "Registros considerados na leitura executiva atual do portal.",
-    },
-  ];
+  return prioridades.slice(0, 4);
 }
 
 export default function InicioPage() {
@@ -224,7 +130,7 @@ export default function InicioPage() {
         const response = await apiFetch("/dashboard/treinamentos");
         setDados(response || null);
       } catch (error) {
-        setErro(error?.message || "Erro ao carregar a visão inicial.");
+        setErro(error.message || "Erro ao carregar a visão inicial.");
       } finally {
         setLoading(false);
       }
@@ -236,22 +142,10 @@ export default function InicioPage() {
   const kpis = dados?.kpis || {};
   const presencaPorCliente = dados?.presenca_por_cliente || [];
   const rankingInstrutores = dados?.ranking_instrutores || [];
-  const rankingNps = dados?.ranking_nps || [];
   const ultimasTurmas = dados?.ultimas_turmas || [];
 
-  const saudeOperacao = useMemo(
-    () => getSaudeOperacao(kpis.taxa_presenca, kpis.nps, kpis.media_qualidade),
-    [kpis]
-  );
-
+  const saudeOperacao = useMemo(() => getSaudeOperacao(kpis), [kpis]);
   const prioridades = useMemo(() => getPriorityList(kpis, ultimasTurmas), [kpis, ultimasTurmas]);
-
-  const faroisExecutivos = useMemo(
-    () => getFarolExecutivoCards(kpis, presencaPorCliente, rankingInstrutores),
-    [kpis, presencaPorCliente, rankingInstrutores]
-  );
-
-  const resumoRecente = useMemo(() => getResumoRecente(kpis, ultimasTurmas), [kpis, ultimasTurmas]);
 
   const taxaExecucao = useMemo(() => {
     const horasMinistradas = Number(kpis.horas_ministradas || kpis.horas_treinadas || 0);
@@ -260,40 +154,29 @@ export default function InicioPage() {
     return Math.round((horasMinistradas / cargaPlanejada) * 100);
   }, [kpis]);
 
-  const gapPresenca = useMemo(() => {
-    const previstosNoDia = Number(kpis.previstos_no_dia || 0);
-    const presentesNoDia = Number(kpis.presentes_no_dia || 0);
-    const gap = previstosNoDia - presentesNoDia;
-    return gap > 0 ? gap : 0;
-  }, [kpis]);
-
   const narrativaExecutiva = useMemo(() => {
     const frases = [];
 
     frases.push(
-      `A área acumula ${fmt(kpis.treinamentos || 0)} turma(s), com ${fmt(kpis.treinados || 0)} registro(s) de chamada considerados na base real diária.`
+      `A área acumula ${fmt(kpis.treinamentos || 0)} turma(s), com ${fmt(kpis.treinados || 0)} registro(s) de chamada considerados na base diária.`
     );
 
     if (Number(kpis.taxa_presenca || 0) > 0) {
       frases.push(
-        `A taxa consolidada de presença diária está em ${kpis.taxa_presenca}%, com ${fmt(kpis.presentes || 0)} presentes, ${fmt(kpis.ausentes || 0)} ausências e ${fmt(kpis.pendentes || 0)} pendência(s).`
+        `A taxa consolidada de presença está em ${kpis.taxa_presenca}%, com ${fmt(kpis.presentes || 0)} presentes, ${fmt(kpis.ausentes || 0)} ausências e ${fmt(kpis.pendentes || 0)} pendência(s).`
       );
     }
 
-    if (Number(kpis.respostas_nps || 0) > 0) {
-      frases.push(
-        `A satisfação do treinando registra NPS ${kpis.nps}, com ${fmt(kpis.respostas_nps || 0)} resposta(s) já coletadas.`
-      );
-    } else {
-      frases.push("Ainda não há base consolidada de NPS para leitura de satisfação.");
-    }
+    frases.push(
+      `A taxa de conclusão da chamada diária está em ${fmt(kpis.taxa_conclusao_chamada || 0)}%, refletindo o nível de fechamento operacional do portal.`
+    );
 
-    if (Number(kpis.media_qualidade || 0) > 0) {
-      frases.push(`A qualidade média dos treinamentos está em ${kpis.media_qualidade}.`);
-    }
+    frases.push(
+      `A execução de carga está em ${taxaExecucao}%, com ${fmt(kpis.horas_treinadas || 0)} hora(s) assistida(s).`
+    );
 
     return frases;
-  }, [kpis]);
+  }, [kpis, taxaExecucao]);
 
   return (
     <PortalShell
@@ -311,8 +194,7 @@ export default function InicioPage() {
               <div style={heroBadge}>Resumo executivo</div>
               <h2 style={heroTitle}>Panorama estratégico da área de T&amp;D</h2>
               <p style={heroText}>
-                Acompanhe execução, presença diária, satisfação e qualidade em uma visão pensada para
-                acompanhamento gerencial e apresentação de resultados.
+                Acompanhe execução, presença diária e fechamento operacional em uma visão pensada para acompanhamento gerencial.
               </p>
 
               <div
@@ -326,7 +208,9 @@ export default function InicioPage() {
                 {saudeOperacao.label}
               </div>
 
-              <p style={{ ...heroText, marginTop: 14 }}>{saudeOperacao.message}</p>
+              <p style={{ ...heroText, marginTop: 14 }}>
+                {saudeOperacao.message}
+              </p>
             </div>
 
             <div style={heroSide}>
@@ -337,9 +221,9 @@ export default function InicioPage() {
               </div>
 
               <div style={heroSideCard}>
-                <span style={heroSideLabel}>Gap de presença</span>
-                <strong style={heroSideValue}>{fmt(gapPresenca)}</strong>
-                <span style={heroSideSub}>diferença entre previstos no dia e presença efetiva do dia</span>
+                <span style={heroSideLabel}>Conclusão da chamada</span>
+                <strong style={heroSideValue}>{fmt(kpis.taxa_conclusao_chamada || 0)}%</strong>
+                <span style={heroSideSub}>nível de fechamento operacional da base diária</span>
               </div>
 
               <div style={heroSideCard}>
@@ -354,8 +238,8 @@ export default function InicioPage() {
             <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Volume consolidado" accent="#2563eb" />
             <StatCard title="Registros de chamada" value={fmt(kpis.treinados || 0)} subtitle="Base real diária" accent="#06b6d4" />
             <StatCard title="Presença" value={`${kpis.taxa_presenca || 0}%`} subtitle="Presença diária consolidada" accent="#0891b2" />
-            <StatCard title="NPS" value={kpis.nps || 0} subtitle="Satisfação do treinando" accent="#1d4ed8" />
-            <StatCard title="Qualidade" value={kpis.media_qualidade || 0} subtitle="Aproveitamento médio" accent="#059669" />
+            <StatCard title="Conclusão" value={`${kpis.taxa_conclusao_chamada || 0}%`} subtitle="Fechamento da chamada diária" accent="#1d4ed8" />
+            <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Execução real" accent="#059669" />
           </div>
 
           <div style={{ ...gridFour, marginTop: 14 }}>
@@ -363,13 +247,6 @@ export default function InicioPage() {
             <StatCard title="Ausentes" value={fmt(kpis.ausentes || 0)} subtitle="Não compareceram" accent="#dc2626" />
             <StatCard title="Justificados" value={fmt(kpis.justificados || 0)} subtitle="Com justificativa" accent="#f59e0b" />
             <StatCard title="Pendentes" value={fmt(kpis.pendentes || 0)} subtitle="Chamada diária em aberto" accent="#64748b" />
-          </div>
-
-          <div style={{ ...gridFour, marginTop: 14 }}>
-            <StatCard title="Capacidade planejada" value={fmt(kpis.participantes_previstos || 0)} subtitle="Base prevista" accent="#7c3aed" />
-            <StatCard title="Carga planejada" value={`${fmt(kpis.carga_horaria_total || 0)}h`} subtitle="Carga consolidada" accent="#0f766e" />
-            <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Execução real" accent="#ea580c" />
-            <StatCard title="Conclusão" value={`${kpis.taxa_conclusao_chamada || 0}%`} subtitle="Fechamento da chamada diária" accent="#9333ea" />
           </div>
 
           <div style={twoCol}>
@@ -396,31 +273,6 @@ export default function InicioPage() {
             </SectionCard>
           </div>
 
-          <div style={{ marginTop: 14 }}>
-            <SectionCard title="Faróis executivos" subtitle="Alertas curtos para orientar sua atuação imediata.">
-              <div style={farolGrid}>
-                {faroisExecutivos.map((item, index) => (
-                  <div key={index} style={{ ...farolCard, ...(farolToneMap[item.tone] || farolToneMap.blue) }}>
-                    <div style={farolIcon}>{item.icon}</div>
-                    <div style={farolTitle}>{item.titulo}</div>
-                    <div style={farolText}>{item.texto}</div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          </div>
-
-          <div style={{ ...threeCol, marginTop: 14 }}>
-            {resumoRecente.map((item, index) => (
-              <SectionCard key={index} title={item.titulo} subtitle="Leitura rápida da operação recente.">
-                <div style={resumoBox}>
-                  <div style={resumoValor}>{item.valor}</div>
-                  <div style={resumoTexto}>{item.texto}</div>
-                </div>
-              </SectionCard>
-            ))}
-          </div>
-
           <div style={{ ...twoCol, marginTop: 14 }}>
             <SectionCard title="Presença por cliente" subtitle="Clientes com chamada registrada e taxa real de presença diária.">
               {presencaPorCliente.length ? (
@@ -431,6 +283,7 @@ export default function InicioPage() {
                         <div style={itemTitle}>{item.cliente || "Sem cliente"}</div>
                         <div style={itemBadgeBlue}>{Number(item.taxa_presenca || 0)}%</div>
                       </div>
+
                       <div style={itemMeta}>
                         {fmt(item.total_treinados || 0)} registro(s) • {fmt(item.presentes || 0)} presentes • {fmt(item.ausentes || 0)} ausentes • {fmt(item.justificados || 0)} justificados
                       </div>
@@ -451,6 +304,7 @@ export default function InicioPage() {
                         <div style={itemTitle}>{item.instrutor || "Sem instrutor"}</div>
                         <div style={itemBadgePurple}>{Number(item.taxa_presenca || 0)}%</div>
                       </div>
+
                       <div style={itemMeta}>
                         {fmt(item.total_turmas || 0)} turma(s) • {fmt(item.total_treinados || 0)} registro(s) • {fmt(item.presentes || 0)} presentes
                       </div>
@@ -463,76 +317,45 @@ export default function InicioPage() {
             </SectionCard>
           </div>
 
-          <div style={{ ...twoCol, marginTop: 14 }}>
-            <SectionCard title="Ranking de satisfação" subtitle="Clientes com base de NPS já registrada.">
-              {rankingNps.length ? (
-                <div style={listGrid}>
-                  {rankingNps.map((item, index) => (
-                    <div key={index} style={listItem}>
-                      <div style={itemHeader}>
-                        <div style={itemTitle}>{item.cliente || "Sem cliente"}</div>
-                        <div style={itemBadgeBlue}>{Number(item.nps || 0)}</div>
+          <SectionCard title="Últimas turmas" subtitle="Resumo operacional das turmas mais recentes.">
+            {ultimasTurmas.length ? (
+              <div style={ultimasTurmasGrid}>
+                {ultimasTurmas.slice(0, 6).map((item) => (
+                  <div key={item.id} style={turmaResumoCard}>
+                    <div style={turmaResumoTop}>
+                      <div>
+                        <div style={turmaResumoTitulo}>{item.tema || "Turma"}</div>
+                        <div style={turmaResumoMeta}>{(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}</div>
                       </div>
-                      <div style={itemMeta}>{fmt(item.respostas || 0)} resposta(s) de NPS</div>
+
+                      <div style={turmaResumoData}>{formatDateSafe(item.data_inicio || item.data)}</div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={emptyText}>Sem ranking de NPS no momento.</div>
-              )}
-            </SectionCard>
 
-            <SectionCard title="Turmas recentes para acompanhamento" subtitle="Leitura mais limpa das turmas mais recentes, com foco em base, presença e pendências.">
-              {ultimasTurmas.length ? (
-                <div style={ultimasTurmasStack}>
-                  {ultimasTurmas.slice(0, 6).map((item, idx) => {
-                    const status = getTurmaStatus(item);
-                    const baseAtiva = Number(item.base_ativa || 0);
-                    const presentes = Number(item.presentes || 0);
-                    const pendentes = Number(item.pendentes || 0);
-                    const taxaPresenca = baseAtiva ? Math.round((presentes / baseAtiva) * 100) : 0;
-
-                    return (
-                      <div key={item.id || idx} style={turmaLinhaCard}>
-                        <div style={turmaLinhaMain}>
-                          <div style={turmaLinhaTop}>
-                            <div style={turmaLinhaTextWrap}>
-                              <div style={turmaLinhaTitulo}>{item.tema || "Turma"}</div>
-                              <div style={turmaLinhaMeta}>{(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}</div>
-                            </div>
-
-                            <div style={turmaLinhaSide}>
-                              <div style={turmaResumoData}>{formatDateSafe(item.data_inicio || item.data)}</div>
-                              <div style={{ ...statusPill, ...(statusToneMap[status.tone] || statusToneMap.blue) }}>
-                                {status.label}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={turmaLinhaMetrics}>
-                          <div style={turmaMetricCard}>
-                            <span style={turmaMetricLabel}>Base</span>
-                            <strong style={turmaMetricValue}>{fmt(baseAtiva)}</strong>
-                          </div>
-                          <div style={turmaMetricCard}>
-                            <span style={turmaMetricLabel}>Presença</span>
-                            <strong style={turmaMetricValue}>{taxaPresenca}%</strong>
-                          </div>
-                          <div style={turmaMetricCard}>
-                            <span style={turmaMetricLabel}>Pendências</span>
-                            <strong style={turmaMetricValue}>{fmt(pendentes)}</strong>
-                          </div>
-                        </div>
+                    <div style={turmaResumoNumbers}>
+                      <div style={turmaMiniBox}>
+                        <span style={turmaMiniLabel}>Base ativa</span>
+                        <strong style={turmaMiniValue}>{fmt(item.base_ativa || 0)}</strong>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={emptyText}>Nenhuma turma recente encontrada.</div>
-              )}
-            </SectionCard>
-          </div>
+                      <div style={turmaMiniBox}>
+                        <span style={turmaMiniLabel}>Presentes</span>
+                        <strong style={turmaMiniValue}>{fmt(item.presentes || 0)}</strong>
+                      </div>
+                      <div style={turmaMiniBox}>
+                        <span style={turmaMiniLabel}>Pendentes</span>
+                        <strong style={turmaMiniValue}>{fmt(item.pendentes || 0)}</strong>
+                      </div>
+                      <div style={turmaMiniBoxDestaque}>
+                        <span style={turmaMiniLabel}>Carga</span>
+                        <strong style={turmaMiniValue}>{item.carga_horaria || "-"}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={emptyText}>Nenhuma turma recente encontrada.</div>
+            )}
+          </SectionCard>
         </>
       )}
     </PortalShell>
@@ -634,12 +457,6 @@ const gridFour = {
   gap: 14,
 };
 
-const threeCol = {
-  display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 14,
-};
-
 const twoCol = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
@@ -701,66 +518,6 @@ const priorityDescription = {
   fontSize: 13,
 };
 
-const farolGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 14,
-};
-
-const farolCard = {
-  borderRadius: 18,
-  padding: 16,
-  border: "1px solid transparent",
-  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
-  display: "grid",
-  gap: 10,
-};
-
-const farolToneMap = {
-  amber: { background: "#fff7ed", borderColor: "#fdba74" },
-  rose: { background: "#fff1f2", borderColor: "#fda4af" },
-  blue: { background: "#eff6ff", borderColor: "#93c5fd" },
-  green: { background: "#ecfdf5", borderColor: "#86efac" },
-};
-
-const farolIcon = {
-  fontSize: 20,
-  lineHeight: 1,
-};
-
-const farolTitle = {
-  fontSize: 15,
-  fontWeight: 800,
-  color: "#0f172a",
-  lineHeight: 1.35,
-};
-
-const farolText = {
-  color: "#475569",
-  fontSize: 13,
-  lineHeight: 1.55,
-};
-
-const resumoBox = {
-  display: "grid",
-  gap: 8,
-  minWidth: 0,
-};
-
-const resumoValor = {
-  fontSize: 20,
-  fontWeight: 800,
-  color: "#0f172a",
-  lineHeight: 1.25,
-  wordBreak: "break-word",
-};
-
-const resumoTexto = {
-  color: "#64748b",
-  fontSize: 13,
-  lineHeight: 1.5,
-};
-
 const listGrid = {
   display: "grid",
   gap: 10,
@@ -778,7 +535,6 @@ const itemHeader = {
   justifyContent: "space-between",
   gap: 10,
   alignItems: "center",
-  flexWrap: "wrap",
 };
 
 const itemTitle = {
@@ -815,116 +571,87 @@ const emptyText = {
   color: "#64748b",
 };
 
-const ultimasTurmasStack = {
+const ultimasTurmasGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+  gap: 14,
+};
+
+const turmaResumoCard = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  padding: 16,
   display: "grid",
   gap: 12,
 };
 
-const turmaLinhaCard = {
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  border: "1px solid #dbeafe",
-  borderRadius: 18,
-  padding: 16,
-  display: "grid",
-  gap: 14,
-  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
-  minWidth: 0,
-};
-
-const turmaLinhaMain = {
-  minWidth: 0,
-};
-
-const turmaLinhaTextWrap = {
-  minWidth: 0,
-  flex: 1,
-};
-
-const turmaLinhaTop = {
+const turmaResumoTop = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "flex-start",
-  gap: 14,
-  flexWrap: "wrap",
+  gap: 12,
 };
 
-const turmaLinhaTitulo = {
+const turmaResumoTitulo = {
   fontSize: 18,
   fontWeight: 800,
   color: "#0f172a",
-  lineHeight: 1.3,
-  wordBreak: "break-word",
-  overflowWrap: "anywhere",
+  lineHeight: 1.25,
 };
 
-const turmaLinhaMeta = {
+const turmaResumoMeta = {
   marginTop: 6,
   color: "#64748b",
-  fontSize: 14,
-  lineHeight: 1.5,
-};
-
-const turmaLinhaSide = {
-  display: "grid",
-  gap: 8,
-  justifyItems: "end",
+  fontSize: 13,
+  lineHeight: 1.45,
 };
 
 const turmaResumoData = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#2563eb",
-};
-
-const turmaLinhaMetrics = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
-  gap: 10,
-};
-
-const turmaMetricCard = {
-  background: "#fff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-  display: "grid",
-  gap: 6,
-  minWidth: 0,
-};
-
-const turmaMetricLabel = {
-  color: "#64748b",
-  fontSize: 12,
-  fontWeight: 700,
-  textTransform: "uppercase",
-  letterSpacing: ".03em",
-  overflowWrap: "anywhere",
-};
-
-const turmaMetricValue = {
-  color: "#0f172a",
-  fontSize: 22,
-  fontWeight: 800,
-  lineHeight: 1.1,
-};
-
-const statusPill = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
+  display: "inline-block",
   padding: "6px 10px",
   borderRadius: 999,
-  fontSize: 12,
+  background: "#eff6ff",
+  color: "#1d4ed8",
   fontWeight: 800,
-  border: "1px solid transparent",
+  fontSize: 12,
   whiteSpace: "nowrap",
 };
 
-const statusToneMap = {
-  amber: { background: "#fff7ed", color: "#c2410c", borderColor: "#fdba74" },
-  rose: { background: "#fff1f2", color: "#be123c", borderColor: "#fda4af" },
-  blue: { background: "#eff6ff", color: "#1d4ed8", borderColor: "#93c5fd" },
-  green: { background: "#ecfdf5", color: "#166534", borderColor: "#86efac" },
+const turmaResumoNumbers = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 10,
+};
+
+const turmaMiniBox = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 12,
+  padding: 10,
+  display: "grid",
+  gap: 4,
+};
+
+const turmaMiniBoxDestaque = {
+  background: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  borderRadius: 12,
+  padding: 10,
+  display: "grid",
+  gap: 4,
+};
+
+const turmaMiniLabel = {
+  color: "#64748b",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const turmaMiniValue = {
+  color: "#0f172a",
+  fontSize: 18,
+  fontWeight: 800,
 };
 
 const loadingBox = {
