@@ -1,9 +1,9 @@
-
 "use client";
 
 import { useState } from "react";
 import { apiFetch } from "../../services/api";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -36,6 +36,18 @@ export default function LoginPage() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
+        
+        {/* LOGO */}
+        <div style={styles.logoContainer}>
+          <Image
+            src="/logo.png"
+            alt="Logo"
+            width={120}
+            height={120}
+            style={{ objectFit: "contain" }}
+          />
+        </div>
+
         <h1 style={styles.title}>Portal T&D</h1>
         <p style={styles.subtitle}>Acesse sua conta</p>
 
@@ -70,22 +82,25 @@ const styles = {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    background: "#f4f6f8",
+    background: "linear-gradient(135deg, #1e3a8a, #2563eb)",
   },
   card: {
     background: "#fff",
     padding: "40px",
-    borderRadius: "12px",
+    borderRadius: "16px",
     width: "100%",
     maxWidth: "400px",
-    boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
+    boxShadow: "0 15px 40px rgba(0,0,0,0.2)",
     textAlign: "center",
   },
+  logoContainer: {
+    marginBottom: "15px",
+  },
   title: {
-    marginBottom: "10px",
+    marginBottom: "5px",
   },
   subtitle: {
-    marginBottom: "20px",
+    marginBottom: "25px",
     color: "#666",
   },
   form: {
@@ -107,5 +122,6 @@ const styles = {
     color: "#fff",
     fontWeight: "bold",
     cursor: "pointer",
+    transition: "0.2s",
   },
 };
