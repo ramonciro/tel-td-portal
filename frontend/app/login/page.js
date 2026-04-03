@@ -10,11 +10,9 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [loading, setLoading] = useState(false);
 
   async function handleLogin(e) {
     e.preventDefault();
-    setLoading(true);
 
     try {
       const data = await apiFetch("/auth/login", {
@@ -28,48 +26,33 @@ export default function LoginPage() {
       router.push("/inicio");
     } catch (err) {
       alert(err.message);
-    } finally {
-      setLoading(false);
     }
   }
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        
-        {/* LOGO */}
-        <div style={styles.logoContainer}>
-          <Image
-            src="/logo.png"
-            alt="Logo"
-            width={120}
-            height={120}
-            style={{ objectFit: "contain" }}
-          />
-        </div>
+        <Image src="/logo.png" alt="Logo" width={120} height={120} />
 
-        <h1 style={styles.title}>Portal T&D</h1>
-        <p style={styles.subtitle}>Acesse sua conta</p>
+        <h1>Portal T&D</h1>
 
         <form onSubmit={handleLogin} style={styles.form}>
           <input
-            style={styles.input}
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            style={styles.input}
           />
 
           <input
-            style={styles.input}
             type="password"
             placeholder="Senha"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
+            style={styles.input}
           />
 
-          <button style={styles.button} disabled={loading}>
-            {loading ? "Entrando..." : "Entrar"}
-          </button>
+          <button style={styles.button}>Entrar</button>
         </form>
       </div>
     </div>
@@ -88,40 +71,26 @@ const styles = {
     background: "#fff",
     padding: "40px",
     borderRadius: "16px",
-    width: "100%",
-    maxWidth: "400px",
-    boxShadow: "0 15px 40px rgba(0,0,0,0.2)",
     textAlign: "center",
-  },
-  logoContainer: {
-    marginBottom: "15px",
-  },
-  title: {
-    marginBottom: "5px",
-  },
-  subtitle: {
-    marginBottom: "25px",
-    color: "#666",
+    width: "350px",
   },
   form: {
     display: "flex",
     flexDirection: "column",
-    gap: "15px",
+    gap: "10px",
+    marginTop: "20px",
   },
   input: {
-    padding: "12px",
-    borderRadius: "8px",
-    border: "1px solid #ddd",
-    fontSize: "14px",
+    padding: "10px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
   },
   button: {
-    padding: "12px",
-    borderRadius: "8px",
-    border: "none",
     background: "#2563eb",
     color: "#fff",
-    fontWeight: "bold",
+    padding: "10px",
+    border: "none",
+    borderRadius: "6px",
     cursor: "pointer",
-    transition: "0.2s",
   },
 };
