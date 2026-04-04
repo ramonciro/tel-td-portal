@@ -6,17 +6,12 @@ export const fetchCache = "force-no-store";
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
 import StatCard from "../../components/StatCard";
-import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
 
-function fmt(n) {
-  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
-}
-
-function normalizarListaClientes(valor) {
+function normalizarLista(valor) {
   if (!valor) return [];
   if (Array.isArray(valor)) return valor;
-  return String(valor).split(",").map((i) => i.trim()).filter(Boolean);
+  return String(valor).split(",").map(v => v.trim()).filter(Boolean);
 }
 
 export default function UsuariosPage() {
@@ -26,61 +21,43 @@ export default function UsuariosPage() {
   useEffect(() => {
     async function carregar() {
       try {
-        const resU = await apiFetch("/usuarios");
-        const resC = await apiFetch("/clientes");
+        const [uRes, cRes] = await Promise.all([
+          apiFetch("/usuarios"),
+          apiFetch("/clientes"),
+        ]);
 
-        const uData = resU?.data || resU || [];
-        const cData = resC?.data || resC || [];
+        const u = await uRes.json();
+        const c = await cRes.json();
 
-        setUsuarios(Array.isArray(uData) ? uData : []);
-        setClientes(Array.isArray(cData) ? cData : []);
-      } catch (err) {
-        console.error(err);
+        setUsuarios(Array.isArray(u) ? u : []);
+        setClientes(Array.isArray(c) ? c : []);
+      } catch (e) {
+        console.error(e);
         setUsuarios([]);
-        setClientes([]);
       }
     }
+
     carregar();
   }, []);
 
-  // 🔹 opções clientes
   const clientesOptions = useMemo(() => {
-    return clientes
-      .map((c) => ({ value: c.nome, label: c.nome }))
-      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+    return clientes.map(c => ({
+      value: c.nome,
+      label: c.nome
+    }));
   }, [clientes]);
 
-  // 🔹 KPIs mais organizados
-  const kpis = useMemo(() => {
-    return {
-      total: usuarios.length,
-      ativos: usuarios.filter((u) => String(u.ativo) === "1").length,
-      inativos: usuarios.filter((u) => String(u.ativo) !== "1").length,
-      instrutores: usuarios.filter(
-        (u) => String(u.perfil).toLowerCase() === "instrutor"
-      ).length,
-    };
-  }, [usuarios]);
-
-  // 🔹 campos
   const fields = [
-    { name: "nome", label: "Nome", placeholder: "Nome completo" },
-    { name: "email", label: "E-mail", placeholder: "email@empresa.com" },
-    {
-      name: "senha",
-      label: "Senha",
-      type: "password",
-      hiddenOnEdit: true,
-    },
+    { name: "nome", label: "Nome" },
+    { name: "email", label: "E-mail" },
+    { name: "senha", label: "Senha", type: "password" },
     {
       name: "perfil",
       label: "Perfil",
       type: "select",
       options: [
         { value: "coordenador", label: "Coordenador" },
-        { value: "supervisor", label: "Supervisor" },
         { value: "instrutor", label: "Instrutor" },
-        { value: "treinando", label: "Treinando" },
       ],
     },
     {
@@ -100,17 +77,15 @@ export default function UsuariosPage() {
     },
   ];
 
-  // 🔹 tabela mais limpa
   const columns = [
     {
-      key: "usuario",
+      key: "nome",
       label: "Usuário",
       render: (item) => (
-        <div style={userBlock}>
-          <div style={avatar}>{item.nome?.[0]}</div>
-          <div>
-            <div style={title}>{item.nome}</div>
-            <div style={email}>{item.email}</div>
+        <div style={{ fontWeight: 600 }}>
+          {item.nome}
+          <div style={{ fontSize: 12, color: "#666" }}>
+            {item.email}
           </div>
         </div>
       ),
@@ -119,7 +94,12 @@ export default function UsuariosPage() {
       key: "perfil",
       label: "Perfil",
       render: (item) => (
-        <span style={badgePerfil(item.perfil)}>
+        <span style={{
+          background: "#eef2ff",
+          padding: "4px 8px",
+          borderRadius: 8,
+          fontSize: 12
+        }}>
           {item.perfil}
         </span>
       ),
@@ -128,18 +108,20 @@ export default function UsuariosPage() {
       key: "cliente",
       label: "Operações",
       render: (item) => {
-        const lista = normalizarListaClientes(item.cliente);
-
-        if (!lista.length) return <span style={muted}>—</span>;
+        const lista = normalizarLista(item.cliente);
 
         return (
-          <div style={chipsWrap}>
-            {lista.slice(0, 2).map((c) => (
-              <span key={c} style={chip}>{c}</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {lista.map(c => (
+              <span key={c} style={{
+                background: "#e0f2fe",
+                padding: "3px 6px",
+                borderRadius: 6,
+                fontSize: 11
+              }}>
+                {c}
+              </span>
             ))}
-            {lista.length > 2 && (
-              <span style={more}>+{lista.length - 2}</span>
-            )}
           </div>
         );
       },
@@ -148,115 +130,51 @@ export default function UsuariosPage() {
       key: "ativo",
       label: "Status",
       render: (item) => (
-        <span style={badgeStatus(item.ativo === "1")}>
-          {item.ativo === "1" ? "Ativo" : "Inativo"}
+        <span style={{
+          color: item.ativo == "1" ? "green" : "red",
+          fontWeight: 600
+        }}>
+          {item.ativo == "1" ? "Ativo" : "Inativo"}
         </span>
       ),
     },
   ];
 
+  const kpis = useMemo(() => ({
+    total: usuarios.length,
+    ativos: usuarios.filter(u => u.ativo == "1").length,
+  }), [usuarios]);
+
   return (
     <CrudPageV2
       title="Usuários"
-      subtitle="Controle de acessos, perfis e operações"
+      subtitle="Gestão de acessos"
       endpoint="/usuarios"
       fields={fields}
       columns={columns}
-      allowedCreateRoles={["coordenador", "supervisor"]}
-      allowedEditRoles={["coordenador", "supervisor"]}
-      allowedDeleteRoles={["coordenador"]}
-      transformRecordToForm={(base, record) => ({
-        ...base,
-        cliente: normalizarListaClientes(record.cliente),
-        ativo: String(record.ativo ?? "1"),
-      })}
-      transformFormToPayload={(data) => ({
-        ...data,
-        cliente: Array.isArray(data.cliente)
-          ? data.cliente.join(",")
-          : data.cliente,
-        ativo: Number(data.ativo),
-      })}
+
       hero={
-        <SectionCard title="Resumo">
-          <div style={kpiGrid}>
-            <StatCard title="Total" value={fmt(kpis.total)} />
-            <StatCard title="Ativos" value={fmt(kpis.ativos)} />
-            <StatCard title="Inativos" value={fmt(kpis.inativos)} />
-            <StatCard title="Instrutores" value={fmt(kpis.instrutores)} />
-          </div>
-        </SectionCard>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 10
+        }}>
+          <StatCard title="Total" value={kpis.total} />
+          <StatCard title="Ativos" value={kpis.ativos} />
+        </div>
       }
+
+      transformRecordToForm={(base, r) => ({
+        ...base,
+        cliente: normalizarLista(r.cliente),
+        ativo: String(r.ativo || "1"),
+      })}
+
+      transformFormToPayload={(f) => ({
+        ...f,
+        cliente: f.cliente.join(","),
+        ativo: Number(f.ativo),
+      })}
     />
   );
-}
-
-// 🎨 ESTILO NOVO (mais moderno)
-
-const kpiGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-  gap: 12,
-};
-
-const userBlock = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-};
-
-const avatar = {
-  width: 36,
-  height: 36,
-  borderRadius: "50%",
-  background: "#2563eb",
-  color: "#fff",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 700,
-};
-
-const title = { fontWeight: 700, color: "#0f172a" };
-const email = { fontSize: 12, color: "#64748b" };
-const muted = { color: "#94a3b8" };
-
-const chipsWrap = {
-  display: "flex",
-  gap: 4,
-  alignItems: "center",
-};
-
-const chip = {
-  background: "#eef2ff",
-  color: "#4338ca",
-  padding: "2px 6px",
-  borderRadius: 6,
-  fontSize: 11,
-};
-
-const more = {
-  fontSize: 11,
-  color: "#64748b",
-};
-
-function badgePerfil(perfil) {
-  return {
-    background: "#f1f5f9",
-    padding: "4px 8px",
-    borderRadius: 6,
-    fontSize: 11,
-    fontWeight: 600,
-  };
-}
-
-function badgeStatus(ativo) {
-  return {
-    background: ativo ? "#dcfce7" : "#fee2e2",
-    color: ativo ? "#166534" : "#b91c1c",
-    padding: "4px 8px",
-    borderRadius: 6,
-    fontSize: 11,
-    fontWeight: 700,
-  };
-    }
+                }
