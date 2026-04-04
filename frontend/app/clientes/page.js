@@ -1,374 +1,248 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import PortalShell from "../../components/PortalShell";
+import { useEffect, useState } from "react";
+import AccessGate from "../../components/AccessGate";
+import CrudPageV2 from "../../components/CrudPageV2";
+import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState([]);
-  const [busca, setBusca] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  const [modal, setModal] = useState(false);
-  const [clienteAtual, setClienteAtual] = useState(null);
-
-  const [form, setForm] = useState({
-    nome: "",
-    empresa: "",
-    status: "Ativo",
-    observacoes: "",
-  });
 
   useEffect(() => {
-    carregarClientes();
+    async function carregar() {
+      try {
+        const data = await apiFetch("/clientes").catch(() => []);
+        setClientes(Array.isArray(data) ? data : []);
+      } catch {
+        setClientes([]);
+      }
+    }
+
+    carregar();
   }, []);
 
-  async function carregarClientes() {
-    try {
-      const res = await apiFetch("/clientes");
-      const lista = res?.data || res || [];
-      setClientes(Array.isArray(lista) ? lista : []);
-    } catch {
-      alert("Erro ao carregar clientes");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const fields = [
+    {
+      name: "nome",
+      label: "Cliente",
+      placeholder: "Nome do cliente",
+    },
+    {
+      name: "status",
+      label: "Status",
+      type: "select",
+      options: [
+        { value: "ativo", label: "Ativo" },
+        { value: "inativo", label: "Inativo" },
+      ],
+    },
+    {
+      name: "supervisor",
+      label: "Gestor / referência",
+      placeholder: "Responsável pela operação",
+    },
+    {
+      name: "observacoes",
+      label: "Observações",
+      type: "textarea",
+      placeholder: "Contexto resumido da operação",
+    },
+  ];
 
-  function abrirNovo() {
-    setClienteAtual(null);
-    setForm({
-      nome: "",
-      empresa: "",
-      status: "Ativo",
-      observacoes: "",
-    });
-    setModal(true);
-  }
+  const columns = [
+    {
+      key: "nome",
+      label: "Cliente",
+      render: (item) => (
+        <div>
+          <div style={titleCell}>{item.nome || "-"}</div>
+          <div style={subCell}>
+            {item.supervisor || "Sem responsável informado"}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (item) => (
+        <span style={tagStatus(item.status)}>
+          {String(item.status || "-").toLowerCase() === "ativo"
+            ? "Ativo"
+            : "Inativo"}
+        </span>
+      ),
+    },
+    {
+      key: "supervisor",
+      label: "Gestor / referência",
+      render: (item) => (
+        <span style={plainCell}>{item.supervisor || "-"}</span>
+      ),
+    },
+    {
+      key: "observacoes",
+      label: "Observações",
+      render: (item) => (
+        <span style={descricaoCell}>{item.observacoes || "-"}</span>
+      ),
+    },
+  ];
 
-  function abrirEdicao(cliente) {
-    setClienteAtual(cliente);
-    setForm({
-      nome: cliente.nome || "",
-      empresa: cliente.empresa || "",
-      status: cliente.status || "Ativo",
-      observacoes: cliente.observacoes || "",
-    });
-    setModal(true);
-  }
-
-  function fecharModal() {
-    setModal(false);
-  }
-
-  async function salvar() {
-    try {
-      if (clienteAtual) {
-        await apiFetch(`/clientes/${clienteAtual.id}`, {
-          method: "PUT",
-          body: JSON.stringify(form),
-        });
-      } else {
-        await apiFetch("/clientes", {
-          method: "POST",
-          body: JSON.stringify(form),
-        });
-      }
-
-      carregarClientes();
-      fecharModal();
-    } catch {
-      alert("Erro ao salvar");
-    }
-  }
-
-  const filtrados = clientes.filter((c) =>
-    (c.nome || "").toLowerCase().includes(busca.toLowerCase())
-  );
-
-  const kpis = useMemo(() => {
-    const total = clientes.length;
-    const ativos = clientes.filter(c => c.status === "Ativo").length;
-    const inativos = clientes.filter(c => c.status === "Inativo").length;
-
-    return { total, ativos, inativos };
-  }, [clientes]);
+  const totalClientes = clientes.length;
+  const ativos = clientes.filter(
+    (c) => String(c.status || "").toLowerCase() === "ativo"
+  ).length;
+  const inativos = clientes.filter(
+    (c) => String(c.status || "").toLowerCase() === "inativo"
+  ).length;
+  const comResponsavel = clientes.filter((c) => c.supervisor).length;
 
   return (
-    <PortalShell>
-      <div style={styles.container}>
-
-        {/* HEADER */}
-        <div style={styles.header}>
-          <div>
-            <h1 style={styles.titulo}>Clientes</h1>
-            <p style={styles.sub}>Gestão e cadastro de clientes</p>
-          </div>
-
-          <button style={styles.novo} onClick={abrirNovo}>
-            + Novo Cliente
-          </button>
-        </div>
-
-        {/* KPIs */}
-        <div style={styles.kpis}>
-          <Card title="Total" value={kpis.total} />
-          <Card title="Ativos" value={kpis.ativos} />
-          <Card title="Inativos" value={kpis.inativos} />
-        </div>
-
-        {/* BUSCA */}
-        <input
-          style={styles.input}
-          placeholder="Buscar cliente..."
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-        />
-
-        {/* LISTA */}
-        <div style={styles.grid}>
-          {loading ? (
-            <p>Carregando...</p>
-          ) : filtrados.length === 0 ? (
-            <p>Nenhum cliente encontrado</p>
-          ) : (
-            filtrados.map((c) => (
-              <div key={c.id} style={styles.card}>
-
-                <div style={styles.cardHeader}>
-                  <div>
-                    <h3>{c.nome}</h3>
-                    <p style={styles.empresa}>{c.empresa}</p>
-                  </div>
-
-                  <span style={badgeStatus(c.status === "Ativo")}>
-                    {c.status}
-                  </span>
-                </div>
-
-                <p style={styles.obs}>
-                  {c.observacoes || "Sem observações"}
-                </p>
-
-                <button
-                  style={styles.editar}
-                  onClick={() => abrirEdicao(c)}
-                >
-                  Editar
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* MODAL */}
-        {modal && (
-          <div style={styles.overlay}>
-            <div style={styles.modal}>
-              <h2>
-                {clienteAtual ? "Editar Cliente" : "Novo Cliente"}
+    <AccessGate allowed={["admin", "coordenador", "supervisor"]}>
+      <CrudPageV2
+        title="Clientes"
+        subtitle="Gestão das operações acompanhadas pelo Treinamento & Desenvolvimento."
+        endpoint="/clientes"
+        fields={fields}
+        columns={columns}
+        recordsSubtitle="Base de operações do portal."
+        hero={
+          <div style={heroWrap}>
+            <div style={heroText}>
+              <div style={heroEyebrow}>Operações T&D</div>
+              <h2 style={heroTitle}>
+                Carteira de clientes acompanhados pelo setor
               </h2>
+              <p style={heroSubtitle}>
+                Visão consolidada das operações cadastradas no portal, com foco
+                em organização, leitura executiva e gestão do ambiente
+                multicliente.
+              </p>
+            </div>
 
-              <input
-                placeholder="Nome"
-                style={styles.input}
-                value={form.nome}
-                onChange={(e) =>
-                  setForm({ ...form, nome: e.target.value })
-                }
+            <div style={statsWrap}>
+              <StatCard
+                title="Clientes"
+                value={totalClientes}
+                subtitle="Base total"
+                accent="#2563eb"
               />
-
-              <input
-                placeholder="Empresa"
-                style={styles.input}
-                value={form.empresa}
-                onChange={(e) =>
-                  setForm({ ...form, empresa: e.target.value })
-                }
+              <StatCard
+                title="Ativos"
+                value={ativos}
+                subtitle="Operações em andamento"
+                accent="#059669"
               />
-
-              <select
-                style={styles.input}
-                value={form.status}
-                onChange={(e) =>
-                  setForm({ ...form, status: e.target.value })
-                }
-              >
-                <option>Ativo</option>
-                <option>Inativo</option>
-              </select>
-
-              <textarea
-                placeholder="Observações"
-                style={styles.textarea}
-                value={form.observacoes}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    observacoes: e.target.value,
-                  })
-                }
+              <StatCard
+                title="Inativos"
+                value={inativos}
+                subtitle="Operações sem atividade"
+                accent="#dc2626"
               />
-
-              <div style={styles.actions}>
-                <button onClick={salvar} style={styles.salvar}>
-                  Salvar
-                </button>
-                <button onClick={fecharModal} style={styles.cancelar}>
-                  Cancelar
-                </button>
-              </div>
+              <StatCard
+                title="Com responsável"
+                value={comResponsavel}
+                subtitle="Referência cadastrada"
+                accent="#7c3aed"
+              />
             </div>
           </div>
-        )}
-      </div>
-    </PortalShell>
+        }
+      />
+    </AccessGate>
   );
 }
 
-/* COMPONENTE KPI */
-function Card({ title, value }) {
-  return (
-    <div style={styles.kpiCard}>
-      <span>{title}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
+function tagStatus(status) {
+  const key = String(status || "").toLowerCase();
 
-/* STATUS */
-function badgeStatus(active) {
-  return {
-    padding: "4px 10px",
-    borderRadius: 20,
-    background: active ? "#DCFCE7" : "#FEE2E2",
-    color: active ? "#166534" : "#991B1B",
+  const base = {
+    display: "inline-block",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontWeight: 800,
     fontSize: 12,
+  };
+
+  if (key === "ativo") {
+    return {
+      ...base,
+      background: "#dcfce7",
+      color: "#166534",
+    };
+  }
+
+  return {
+    ...base,
+    background: "#fee2e2",
+    color: "#b91c1c",
   };
 }
 
-/* ESTILO */
-const styles = {
-  container: { display: "flex", flexDirection: "column", gap: 20 },
+const heroWrap = {
+  display: "grid",
+  gap: 16,
+};
 
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
+const heroText = {
+  background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
+  border: "1px solid #dbeafe",
+  borderRadius: 20,
+  padding: 22,
+};
 
-  titulo: { margin: 0, fontSize: 26 },
+const heroEyebrow = {
+  display: "inline-block",
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  fontSize: 12,
+  textTransform: "uppercase",
+  letterSpacing: ".03em",
+};
 
-  sub: { fontSize: 13, color: "#666" },
+const heroTitle = {
+  margin: "14px 0 8px",
+  color: "#0f172a",
+  fontSize: 28,
+  lineHeight: 1.1,
+};
 
-  novo: {
-    background: "#2563eb",
-    color: "#fff",
-    padding: "10px 16px",
-    borderRadius: 8,
-    border: "none",
-    cursor: "pointer",
-  },
+const heroSubtitle = {
+  margin: 0,
+  color: "#64748b",
+  lineHeight: 1.65,
+};
 
-  kpis: { display: "flex", gap: 16 },
+const statsWrap = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+  gap: 14,
+};
 
-  kpiCard: {
-    background: "#fff",
-    padding: 16,
-    borderRadius: 10,
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-    minWidth: 120,
-    display: "flex",
-    flexDirection: "column",
-    gap: 5,
-  },
+const titleCell = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
 
-  input: {
-    padding: 10,
-    borderRadius: 6,
-    border: "1px solid #ccc",
-  },
+const subCell = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 13,
+};
 
-  textarea: {
-    padding: 10,
-    borderRadius: 6,
-    border: "1px solid #ccc",
-    minHeight: 80,
-  },
+const plainCell = {
+  color: "#334155",
+  fontWeight: 600,
+};
 
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-    gap: 16,
-  },
-
-  card: {
-    background: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-  },
-
-  cardHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  empresa: { fontSize: 13, color: "#555" },
-
-  obs: { fontSize: 12, color: "#444" },
-
-  editar: {
-    marginTop: 10,
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    padding: "6px",
-    borderRadius: 6,
-    cursor: "pointer",
-  },
-
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.5)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  modal: {
-    background: "#fff",
-    padding: 20,
-    borderRadius: 10,
-    width: 320,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-  },
-
-  actions: {
-    display: "flex",
-    justifyContent: "space-between",
-  },
-
-  salvar: {
-    background: "#16a34a",
-    color: "#fff",
-    border: "none",
-    padding: "8px",
-    borderRadius: 6,
-  },
-
-  cancelar: {
-    background: "#6b7280",
-    color: "#fff",
-    border: "none",
-    padding: "8px",
-    borderRadius: 6,
-  },
+const descricaoCell = {
+  color: "#475569",
+  display: "inline-block",
+  maxWidth: 320,
+  lineHeight: 1.55,
 };
