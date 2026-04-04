@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,6 +8,10 @@ export default function ClientesPage() {
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
+
+  const [clienteEditando, setClienteEditando] = useState(null);
+  const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
 
   useEffect(() => {
     carregarClientes();
@@ -33,84 +36,74 @@ export default function ClientesPage() {
     }
   }
 
+  function abrirEdicao(cliente) {
+    setClienteEditando(cliente);
+    setNome(cliente.nome || "");
+    setEmail(cliente.email || "");
+  }
+
+  function fecharModal() {
+    setClienteEditando(null);
+    setNome("");
+    setEmail("");
+  }
+
+  async function salvarEdicao() {
+    try {
+      await apiFetch(`/clientes/${clienteEditando.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ nome, email }),
+      });
+
+      await carregarClientes();
+      fecharModal();
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao salvar");
+    }
+  }
+
   const filtrados = clientes.filter((c) =>
-    (c.nome || "")
-      .toLowerCase()
-      .includes(busca.toLowerCase())
+    (c.nome || "").toLowerCase().includes(busca.toLowerCase())
   );
 
   return (
     <PortalShell>
       <div style={styles.container}>
         
-        {/* HEADER */}
-        <div style={styles.header}>
-          <div>
-            <h1 style={styles.titulo}>Clientes</h1>
-            <p style={styles.sub}>Gestão completa de clientes</p>
-          </div>
+        <h1>Clientes</h1>
 
-          <button style={styles.botaoNovo}>
-            + Novo Cliente
-          </button>
-        </div>
+        <input
+          style={styles.input}
+          placeholder="Buscar..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
 
-        {/* KPI */}
-        <div style={styles.kpiBox}>
-          <div style={styles.kpiCard}>
-            <span style={styles.kpiNumero}>{clientes.length}</span>
-            <span style={styles.kpiLabel}>Clientes cadastrados</span>
-          </div>
-        </div>
-
-        {/* BUSCA */}
-        <div style={styles.buscaContainer}>
-          <input
-            style={styles.input}
-            placeholder="🔍 Buscar cliente..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
-        </div>
-
-        {/* TABELA */}
         <div style={styles.card}>
           {loading ? (
             <p>Carregando...</p>
-          ) : filtrados.length === 0 ? (
-            <p>Nenhum cliente encontrado</p>
           ) : (
             <table style={styles.tabela}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Cliente</th>
-                  <th style={styles.th}>Email</th>
-                  <th style={styles.th}>Ações</th>
+                  <th>Nome</th>
+                  <th>Email</th>
+                  <th>Ações</th>
                 </tr>
               </thead>
 
               <tbody>
-                {filtrados.map((cliente, index) => (
-                  <tr key={cliente.id || index} style={styles.tr}>
-                    <td style={styles.td}>
-                      <div style={styles.nomeBox}>
-                        <div style={styles.avatar}>
-                          {cliente.nome?.charAt(0)?.toUpperCase() || "?"}
-                        </div>
-                        <span>{cliente.nome}</span>
-                      </div>
-                    </td>
-
-                    <td style={styles.td}>
-                      {cliente.email || "-"}
-                    </td>
-
-                    <td style={styles.td}>
-                      <button style={styles.editar}>
+                {filtrados.map((cliente) => (
+                  <tr key={cliente.id}>
+                    <td>{cliente.nome}</td>
+                    <td>{cliente.email}</td>
+                    <td>
+                      <button
+                        style={styles.editar}
+                        onClick={() => abrirEdicao(cliente)}
+                      >
                         Editar
-                      </button>
-                      <button style={styles.excluir}>
-                        Excluir
                       </button>
                     </td>
                   </tr>
@@ -119,93 +112,57 @@ export default function ClientesPage() {
             </table>
           )}
         </div>
+
+        {/* MODAL */}
+        {clienteEditando && (
+          <div style={styles.overlay}>
+            <div style={styles.modal}>
+              <h2>Editar Cliente</h2>
+
+              <input
+                style={styles.input}
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Nome"
+              />
+
+              <input
+                style={styles.input}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
+              />
+
+              <div style={styles.modalActions}>
+                <button onClick={salvarEdicao} style={styles.salvar}>
+                  Salvar
+                </button>
+
+                <button onClick={fecharModal} style={styles.cancelar}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </PortalShell>
   );
 }
 
-/* 🎨 ESTILOS */
+/* 🎨 ESTILO */
 
 const styles = {
   container: {
     display: "flex",
     flexDirection: "column",
-    gap: "20px",
-  },
-
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  titulo: {
-    margin: 0,
-    fontSize: "26px",
-    fontWeight: "bold",
-  },
-
-  sub: {
-    color: "#666",
-    fontSize: "13px",
-  },
-
-  botaoNovo: {
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    padding: "10px 16px",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontWeight: "bold",
-  },
-
-  /* KPI */
-  kpiBox: {
-    display: "flex",
     gap: "15px",
   },
 
-  kpiCard: {
-    background: "linear-gradient(135deg, #1e3a8a, #2563eb)",
-    color: "#fff",
-    padding: "20px",
-    borderRadius: "12px",
-    width: "220px",
-    display: "flex",
-    flexDirection: "column",
-    boxShadow: "0 6px 20px rgba(0,0,0,0.2)",
-  },
-
-  kpiNumero: {
-    fontSize: "30px",
-    fontWeight: "bold",
-  },
-
-  kpiLabel: {
-    fontSize: "13px",
-    opacity: 0.9,
-  },
-
-  /* BUSCA */
-  buscaContainer: {
-    display: "flex",
-  },
-
-  input: {
-    padding: "10px",
-    borderRadius: "8px",
-    border: "1px solid #ccc",
-    width: "300px",
-    outline: "none",
-  },
-
-  /* CARD */
   card: {
     background: "#fff",
-    borderRadius: "12px",
     padding: "15px",
-    boxShadow: "0 6px 20px rgba(0,0,0,0.1)",
+    borderRadius: "10px",
   },
 
   tabela: {
@@ -213,56 +170,62 @@ const styles = {
     borderCollapse: "collapse",
   },
 
-  th: {
-    textAlign: "left",
+  input: {
     padding: "10px",
-    borderBottom: "1px solid #ddd",
-    fontSize: "14px",
-  },
-
-  tr: {
-    borderBottom: "1px solid #eee",
-  },
-
-  td: {
-    padding: "10px",
-    fontSize: "14px",
-  },
-
-  nomeBox: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-  },
-
-  avatar: {
-    width: "35px",
-    height: "35px",
-    borderRadius: "50%",
-    background: "#2563eb",
-    color: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: "bold",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
   },
 
   editar: {
-    marginRight: "8px",
-    background: "#f59e0b",
+    background: "#2563eb",
+    color: "#fff",
     border: "none",
     padding: "6px 10px",
-    color: "#fff",
     borderRadius: "6px",
     cursor: "pointer",
   },
 
-  excluir: {
-    background: "#dc2626",
-    border: "none",
-    padding: "6px 10px",
+  /* MODAL */
+  overlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  modal: {
+    background: "#fff",
+    padding: "20px",
+    borderRadius: "10px",
+    width: "300px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  },
+
+  modalActions: {
+    display: "flex",
+    justifyContent: "space-between",
+  },
+
+  salvar: {
+    background: "green",
     color: "#fff",
+    border: "none",
+    padding: "8px",
     borderRadius: "6px",
-    cursor: "pointer",
+  },
+
+  cancelar: {
+    background: "gray",
+    color: "#fff",
+    border: "none",
+    padding: "8px",
+    borderRadius: "6px",
   },
 };
