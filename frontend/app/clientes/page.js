@@ -6,12 +6,18 @@ import { apiFetch } from "../../services/api";
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const [clienteEditando, setClienteEditando] = useState(null);
-  const [nome, setNome] = useState("");
-  const [email, setEmail] = useState("");
+  const [modal, setModal] = useState(false);
+  const [clienteAtual, setClienteAtual] = useState(null);
+
+  const [form, setForm] = useState({
+    nome: "",
+    empresa: "",
+    status: "Ativo",
+    observacoes: "",
+  });
 
   useEffect(() => {
     carregarClientes();
@@ -19,46 +25,59 @@ export default function ClientesPage() {
 
   async function carregarClientes() {
     try {
-      const response = await apiFetch("/clientes");
-
-      const lista =
-        response?.data ||
-        response?.clientes ||
-        response ||
-        [];
-
+      const res = await apiFetch("/clientes");
+      const lista = res?.data || res || [];
       setClientes(Array.isArray(lista) ? lista : []);
-    } catch (err) {
-      console.error(err);
+    } catch {
       alert("Erro ao carregar clientes");
     } finally {
       setLoading(false);
     }
   }
 
+  function abrirNovo() {
+    setClienteAtual(null);
+    setForm({
+      nome: "",
+      empresa: "",
+      status: "Ativo",
+      observacoes: "",
+    });
+    setModal(true);
+  }
+
   function abrirEdicao(cliente) {
-    setClienteEditando(cliente);
-    setNome(cliente.nome || "");
-    setEmail(cliente.email || "");
+    setClienteAtual(cliente);
+    setForm({
+      nome: cliente.nome || "",
+      empresa: cliente.empresa || "",
+      status: cliente.status || "Ativo",
+      observacoes: cliente.observacoes || "",
+    });
+    setModal(true);
   }
 
   function fecharModal() {
-    setClienteEditando(null);
-    setNome("");
-    setEmail("");
+    setModal(false);
   }
 
-  async function salvarEdicao() {
+  async function salvar() {
     try {
-      await apiFetch(`/clientes/${clienteEditando.id}`, {
-        method: "PUT",
-        body: JSON.stringify({ nome, email }),
-      });
+      if (clienteAtual) {
+        await apiFetch(`/clientes/${clienteAtual.id}`, {
+          method: "PUT",
+          body: JSON.stringify(form),
+        });
+      } else {
+        await apiFetch("/clientes", {
+          method: "POST",
+          body: JSON.stringify(form),
+        });
+      }
 
-      await carregarClientes();
+      carregarClientes();
       fecharModal();
-    } catch (err) {
-      console.error(err);
+    } catch {
       alert("Erro ao salvar");
     }
   }
@@ -70,74 +89,119 @@ export default function ClientesPage() {
   return (
     <PortalShell>
       <div style={styles.container}>
-        
-        <h1>Clientes</h1>
 
+        {/* HEADER */}
+        <div style={styles.header}>
+          <div>
+            <h1 style={styles.titulo}>Clientes</h1>
+            <p style={styles.sub}>Cadastro e gestão de clientes</p>
+          </div>
+
+          <button style={styles.novo} onClick={abrirNovo}>
+            + Novo Cliente
+          </button>
+        </div>
+
+        {/* BUSCA */}
         <input
           style={styles.input}
-          placeholder="Buscar..."
+          placeholder="Buscar cliente..."
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
         />
 
-        <div style={styles.card}>
+        {/* LISTA */}
+        <div style={styles.grid}>
           {loading ? (
             <p>Carregando...</p>
+          ) : filtrados.length === 0 ? (
+            <p>Nenhum cliente encontrado</p>
           ) : (
-            <table style={styles.tabela}>
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Email</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
+            filtrados.map((c) => (
+              <div key={c.id} style={styles.card}>
 
-              <tbody>
-                {filtrados.map((cliente) => (
-                  <tr key={cliente.id}>
-                    <td>{cliente.nome}</td>
-                    <td>{cliente.email}</td>
-                    <td>
-                      <button
-                        style={styles.editar}
-                        onClick={() => abrirEdicao(cliente)}
-                      >
-                        Editar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                <h3>{c.nome}</h3>
+                <p style={styles.empresa}>{c.empresa}</p>
+
+                {/* STATUS */}
+                <span
+                  style={{
+                    ...styles.status,
+                    background:
+                      c.status === "Ativo" ? "#16a34a" : "#dc2626",
+                  }}
+                >
+                  {c.status}
+                </span>
+
+                <p style={styles.obs}>
+                  {c.observacoes || "Sem observações"}
+                </p>
+
+                <button
+                  style={styles.editar}
+                  onClick={() => abrirEdicao(c)}
+                >
+                  Editar
+                </button>
+              </div>
+            ))
           )}
         </div>
 
         {/* MODAL */}
-        {clienteEditando && (
+        {modal && (
           <div style={styles.overlay}>
             <div style={styles.modal}>
-              <h2>Editar Cliente</h2>
+              <h2>
+                {clienteAtual ? "Editar Cliente" : "Novo Cliente"}
+              </h2>
 
               <input
-                style={styles.input}
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
                 placeholder="Nome"
+                style={styles.input}
+                value={form.nome}
+                onChange={(e) =>
+                  setForm({ ...form, nome: e.target.value })
+                }
               />
 
               <input
+                placeholder="Empresa"
                 style={styles.input}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email"
+                value={form.empresa}
+                onChange={(e) =>
+                  setForm({ ...form, empresa: e.target.value })
+                }
               />
 
-              <div style={styles.modalActions}>
-                <button onClick={salvarEdicao} style={styles.salvar}>
+              <select
+                style={styles.input}
+                value={form.status}
+                onChange={(e) =>
+                  setForm({ ...form, status: e.target.value })
+                }
+              >
+                <option>Ativo</option>
+                <option>Inativo</option>
+              </select>
+
+              <textarea
+                placeholder="Observações"
+                style={styles.textarea}
+                value={form.observacoes}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    observacoes: e.target.value,
+                  })
+                }
+              />
+
+              <div style={styles.actions}>
+                <button onClick={salvar} style={styles.salvar}>
                   Salvar
                 </button>
-
                 <button onClick={fecharModal} style={styles.cancelar}>
                   Cancelar
                 </button>
@@ -156,76 +220,128 @@ const styles = {
   container: {
     display: "flex",
     flexDirection: "column",
-    gap: "15px",
+    gap: 20,
+  },
+
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  titulo: {
+    margin: 0,
+    fontSize: 26,
+  },
+
+  sub: {
+    fontSize: 13,
+    color: "#666",
+  },
+
+  novo: {
+    background: "#2563eb",
+    color: "#fff",
+    padding: "10px 16px",
+    borderRadius: 8,
+    border: "none",
+    cursor: "pointer",
+  },
+
+  input: {
+    padding: 10,
+    borderRadius: 6,
+    border: "1px solid #ccc",
+  },
+
+  textarea: {
+    padding: 10,
+    borderRadius: 6,
+    border: "1px solid #ccc",
+    minHeight: 80,
+  },
+
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
+    gap: 15,
   },
 
   card: {
     background: "#fff",
-    padding: "15px",
-    borderRadius: "10px",
+    padding: 15,
+    borderRadius: 10,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
   },
 
-  tabela: {
-    width: "100%",
-    borderCollapse: "collapse",
+  empresa: {
+    fontSize: 13,
+    color: "#555",
   },
 
-  input: {
-    padding: "10px",
-    borderRadius: "6px",
-    border: "1px solid #ccc",
+  status: {
+    padding: "4px 8px",
+    borderRadius: 6,
+    color: "#fff",
+    fontSize: 12,
+    width: "fit-content",
+  },
+
+  obs: {
+    fontSize: 12,
+    color: "#444",
   },
 
   editar: {
+    marginTop: 10,
     background: "#2563eb",
     color: "#fff",
     border: "none",
-    padding: "6px 10px",
-    borderRadius: "6px",
+    padding: "6px",
+    borderRadius: 6,
     cursor: "pointer",
   },
 
-  /* MODAL */
   overlay: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: "100%",
+    inset: 0,
     background: "rgba(0,0,0,0.5)",
     display: "flex",
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
   },
 
   modal: {
     background: "#fff",
-    padding: "20px",
-    borderRadius: "10px",
-    width: "300px",
+    padding: 20,
+    borderRadius: 10,
+    width: 320,
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: 10,
   },
 
-  modalActions: {
+  actions: {
     display: "flex",
     justifyContent: "space-between",
   },
 
   salvar: {
-    background: "green",
+    background: "#16a34a",
     color: "#fff",
     border: "none",
     padding: "8px",
-    borderRadius: "6px",
+    borderRadius: 6,
   },
 
   cancelar: {
-    background: "gray",
+    background: "#6b7280",
     color: "#fff",
     border: "none",
     padding: "8px",
-    borderRadius: "6px",
+    borderRadius: 6,
   },
 };
