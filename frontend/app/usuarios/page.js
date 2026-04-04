@@ -1,11 +1,10 @@
 "use client";
 
-export const dynamic = 'force-dynamic';
-export const fetchCache = 'force-no-store';
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
-import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 
@@ -16,7 +15,10 @@ function fmt(n) {
 function normalizarListaClientes(valor) {
   if (!valor) return [];
   if (Array.isArray(valor)) return valor;
-  return String(valor).split(",").map((item) => item.trim()).filter(Boolean);
+  return String(valor)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 export default function UsuariosPage() {
@@ -26,18 +28,17 @@ export default function UsuariosPage() {
   useEffect(() => {
     async function carregar() {
       try {
-        const [resU, resC] = await Promise.all([
-          apiFetch("/usuarios"),
-          apiFetch("/clientes"),
-        ]);
-        
-        const uData = await resU.json();
-        const cData = await resC.json();
+        const resU = await apiFetch("/usuarios");
+        const resC = await apiFetch("/clientes");
+
+        // 🔥 PADRONIZADO (sem .json())
+        const uData = resU?.data || resU || [];
+        const cData = resC?.data || resC || [];
 
         setUsuarios(Array.isArray(uData) ? uData : []);
         setClientes(Array.isArray(cData) ? cData : []);
       } catch (err) {
-        console.error("Erro ao carregar usuários:", err);
+        console.error("Erro ao carregar dados:", err);
         setUsuarios([]);
         setClientes([]);
       }
@@ -47,14 +48,26 @@ export default function UsuariosPage() {
 
   const clientesOptions = useMemo(() => {
     return clientes
-      .map((item) => ({ value: item.nome, label: item.nome }))
+      .map((item) => ({
+        value: item.nome,
+        label: item.nome,
+      }))
       .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
   }, [clientes]);
 
   const fields = [
     { name: "nome", label: "Nome", placeholder: "Nome completo" },
     { name: "email", label: "E-mail", placeholder: "email@empresa.com" },
-    { name: "senha", label: "Senha", type: "password", placeholder: "Senha de acesso" },
+
+    // 🔥 senha só na criação
+    {
+      name: "senha",
+      label: "Senha",
+      type: "password",
+      placeholder: "Senha de acesso",
+      hiddenOnEdit: true,
+    },
+
     {
       name: "perfil",
       label: "Perfil",
@@ -72,19 +85,26 @@ export default function UsuariosPage() {
       label: "Operações / clientes",
       type: "multiselect",
       options: clientesOptions,
-      helperText: "Selecione as operações que este usuário pode visualizar/gerenciar.",
+      helperText:
+        "Selecione as operações que este usuário pode visualizar/gerenciar.",
     },
     {
       name: "ativo",
       label: "Ativo",
       type: "select",
-      options: [{ value: "1", label: "Sim" }, { value: "0", label: "Não" }],
+      options: [
+        { value: "1", label: "Sim" },
+        { value: "0", label: "Não" },
+      ],
     },
     {
       name: "pode_acessar_oceano_desenvolvimento",
       label: "Acesso ao Oceano",
       type: "select",
-      options: [{ value: "1", label: "Liberado" }, { value: "0", label: "Bloqueado" }],
+      options: [
+        { value: "1", label: "Liberado" },
+        { value: "0", label: "Bloqueado" },
+      ],
     },
   ];
 
@@ -102,7 +122,11 @@ export default function UsuariosPage() {
     {
       key: "perfil",
       label: "Perfil",
-      render: (item) => <span style={badgePerfil(item.perfil)}>{item.perfil || "-"}</span>,
+      render: (item) => (
+        <span style={badgePerfil(item.perfil)}>
+          {item.perfil || "-"}
+        </span>
+      ),
     },
     {
       key: "cliente",
@@ -112,7 +136,11 @@ export default function UsuariosPage() {
         return (
           <div style={chipsWrap}>
             {lista.length > 0 ? (
-              lista.map((c) => <span key={c} style={chip}>{c}</span>)
+              lista.map((c) => (
+                <span key={c} style={chip}>
+                  {c}
+                </span>
+              ))
             ) : (
               <span style={plainCell}>Nenhuma</span>
             )}
@@ -134,9 +162,14 @@ export default function UsuariosPage() {
   const kpis = useMemo(() => {
     return {
       total: usuarios.length,
-      ativos: usuarios.filter(u => String(u.ativo) === "1").length,
-      instrutores: usuarios.filter(u => String(u.perfil).toLowerCase() === "instrutor").length,
-      oceano: usuarios.filter(u => String(u.pode_acessar_oceano_desenvolvimento) === "1").length,
+      ativos: usuarios.filter((u) => String(u.ativo) === "1").length,
+      instrutores: usuarios.filter(
+        (u) => String(u.perfil).toLowerCase() === "instrutor"
+      ).length,
+      oceano: usuarios.filter(
+        (u) =>
+          String(u.pode_acessar_oceano_desenvolvimento) === "1"
+      ).length,
     };
   }, [usuarios]);
 
@@ -154,13 +187,19 @@ export default function UsuariosPage() {
         ...base,
         cliente: normalizarListaClientes(record.cliente),
         ativo: String(record.ativo ?? "1"),
-        pode_acessar_oceano_desenvolvimento: String(record.pode_acessar_oceano_desenvolvimento ?? "0"),
+        pode_acessar_oceano_desenvolvimento: String(
+          record.pode_acessar_oceano_desenvolvimento ?? "0"
+        ),
       })}
       transformFormToPayload={(formData) => ({
         ...formData,
-        cliente: Array.isArray(formData.cliente) ? formData.cliente.join(",") : formData.cliente,
+        cliente: Array.isArray(formData.cliente)
+          ? formData.cliente.join(",")
+          : formData.cliente,
         ativo: Number(formData.ativo),
-        pode_acessar_oceano_desenvolvimento: Number(formData.pode_acessar_oceano_desenvolvimento),
+        pode_acessar_oceano_desenvolvimento: Number(
+          formData.pode_acessar_oceano_desenvolvimento
+        ),
       })}
       hero={
         <div style={heroGrid}>
@@ -174,12 +213,16 @@ export default function UsuariosPage() {
   );
 }
 
-// Estilos compatíveis com o layout corporativo
+// 🔥 estilos padrão do portal
 const titleCell = { fontWeight: 800, color: "#0f172a" };
 const subCell = { marginTop: 4, color: "#64748b", fontSize: 12 };
 const plainCell = { color: "#94a3b8", fontSize: 12 };
 const chipsWrap = { display: "flex", gap: 4, flexWrap: "wrap" };
-const heroGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 };
+const heroGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
 
 const chip = {
   background: "#eff6ff",
@@ -193,9 +236,18 @@ const chip = {
 
 function badgePerfil(perfil) {
   const p = String(perfil || "").toLowerCase();
-  const base = { padding: "4px 8px", borderRadius: 999, fontWeight: 800, fontSize: 10 };
-  if (p === "coordenador") return { ...base, background: "#dbeafe", color: "#1d4ed8" };
-  if (p === "instrutor") return { ...base, background: "#dcfce7", color: "#166534" };
+  const base = {
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 10,
+  };
+
+  if (p === "coordenador")
+    return { ...base, background: "#dbeafe", color: "#1d4ed8" };
+  if (p === "instrutor")
+    return { ...base, background: "#dcfce7", color: "#166534" };
+
   return { ...base, background: "#f3f4f6", color: "#374151" };
 }
 
@@ -208,4 +260,4 @@ function badgeStatus(ativo) {
     background: ativo ? "#dcfce7" : "#fee2e2",
     color: ativo ? "#166534" : "#b91c1c",
   };
-}
+      }
