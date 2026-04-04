@@ -63,6 +63,7 @@ export default function UsuariosPage() {
         { value: "supervisor", label: "Supervisor" },
         { value: "instrutor", label: "Instrutor" },
         { value: "treinando", label: "Treinando" },
+        { value: "superintendente", label: "Superintendente" },
       ],
       placeholder: "Selecione o perfil",
     },
@@ -97,6 +98,19 @@ export default function UsuariosPage() {
         { value: "0", label: "Não" },
       ],
       placeholder: "Selecione",
+    },
+
+    {
+      name: "pode_acessar_oceano_desenvolvimento",
+      label: "Acesso ao Oceano do Desenvolvimento",
+      type: "select",
+      options: [
+        { value: "1", label: "Liberado" },
+        { value: "0", label: "Bloqueado" },
+      ],
+      placeholder: "Selecione",
+      helperText:
+        "Use para liberar individualmente a página do Oceano apenas para pessoas específicas da coordenação e superintendência.",
     },
   ];
 
@@ -153,6 +167,16 @@ export default function UsuariosPage() {
         </span>
       ),
     },
+
+    {
+      key: "pode_acessar_oceano_desenvolvimento",
+      label: "Oceano",
+      render: (item) => (
+        <span style={badgeOcean(String(item.pode_acessar_oceano_desenvolvimento) === "1")}>
+          {String(item.pode_acessar_oceano_desenvolvimento) === "1" ? "Liberado" : "Bloqueado"}
+        </span>
+      ),
+    },
   ];
 
   const kpis = useMemo(() => {
@@ -205,6 +229,7 @@ export default function UsuariosPage() {
       ativos,
       instrutores,
       multiOperacao,
+      oceanoLiberado: usuarios.filter((item) => String(item.pode_acessar_oceano_desenvolvimento) === "1").length,
       porPerfil,
       alertas,
     };
@@ -221,7 +246,19 @@ export default function UsuariosPage() {
       recordsSubtitle="Visão consolidada dos usuários cadastrados no portal."
       allowedCreateRoles={["coordenador", "supervisor"]}
       allowedEditRoles={["coordenador", "supervisor"]}
-      allowedDeleteRoles={["coordenador"]}
+      allowedDeleteRoles={["coordenador", "superintendente"]}
+      transformRecordToForm={(baseForm, record) => ({
+        ...baseForm,
+        ativo: String(record.ativo ?? "1"),
+        troca_senha_obrigatoria: String(record.troca_senha_obrigatoria ?? "1"),
+        pode_acessar_oceano_desenvolvimento: String(record.pode_acessar_oceano_desenvolvimento ?? "0"),
+      })}
+      transformFormToPayload={(formData) => ({
+        ...formData,
+        ativo: Number(formData.ativo || 0),
+        troca_senha_obrigatoria: Number(formData.troca_senha_obrigatoria || 0),
+        pode_acessar_oceano_desenvolvimento: Number(formData.pode_acessar_oceano_desenvolvimento || 0),
+      })}
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           {!clientesOptions.length ? (
@@ -238,6 +275,7 @@ export default function UsuariosPage() {
           <div style={heroGrid}>
             <StatCard title="Usuários" value={fmt(kpis.total)} subtitle="Base total" accent="#2563eb" />
             <StatCard title="Ativos" value={fmt(kpis.ativos)} subtitle="Usuários liberados" accent="#16a34a" />
+            <StatCard title="Oceano liberado" value={fmt(kpis.oceanoLiberado)} subtitle="Acesso individual ativo" accent="#0891b2" />
             <StatCard title="Instrutores" value={fmt(kpis.instrutores)} subtitle="Perfis de instrução" accent="#7c3aed" />
             <StatCard title="Multioperação" value={fmt(kpis.multiOperacao)} subtitle="Mais de um cliente" accent="#ea580c" />
           </div>
@@ -270,6 +308,21 @@ export default function UsuariosPage() {
       }
     />
   );
+}
+
+function badgeOcean(active) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 12px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 12,
+    border: `1px solid ${active ? "#99f6e4" : "#e2e8f0"}` ,
+    background: active ? "#ecfeff" : "#f8fafc",
+    color: active ? "#0f766e" : "#64748b",
+  };
 }
 
 function badgePerfil(perfil) {
