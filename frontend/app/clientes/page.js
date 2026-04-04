@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import { apiFetch } from "../../services/api";
 
@@ -86,6 +86,14 @@ export default function ClientesPage() {
     (c.nome || "").toLowerCase().includes(busca.toLowerCase())
   );
 
+  const kpis = useMemo(() => {
+    const total = clientes.length;
+    const ativos = clientes.filter(c => c.status === "Ativo").length;
+    const inativos = clientes.filter(c => c.status === "Inativo").length;
+
+    return { total, ativos, inativos };
+  }, [clientes]);
+
   return (
     <PortalShell>
       <div style={styles.container}>
@@ -94,12 +102,19 @@ export default function ClientesPage() {
         <div style={styles.header}>
           <div>
             <h1 style={styles.titulo}>Clientes</h1>
-            <p style={styles.sub}>Cadastro e gestão de clientes</p>
+            <p style={styles.sub}>Gestão e cadastro de clientes</p>
           </div>
 
           <button style={styles.novo} onClick={abrirNovo}>
             + Novo Cliente
           </button>
+        </div>
+
+        {/* KPIs */}
+        <div style={styles.kpis}>
+          <Card title="Total" value={kpis.total} />
+          <Card title="Ativos" value={kpis.ativos} />
+          <Card title="Inativos" value={kpis.inativos} />
         </div>
 
         {/* BUSCA */}
@@ -120,19 +135,16 @@ export default function ClientesPage() {
             filtrados.map((c) => (
               <div key={c.id} style={styles.card}>
 
-                <h3>{c.nome}</h3>
-                <p style={styles.empresa}>{c.empresa}</p>
+                <div style={styles.cardHeader}>
+                  <div>
+                    <h3>{c.nome}</h3>
+                    <p style={styles.empresa}>{c.empresa}</p>
+                  </div>
 
-                {/* STATUS */}
-                <span
-                  style={{
-                    ...styles.status,
-                    background:
-                      c.status === "Ativo" ? "#16a34a" : "#dc2626",
-                  }}
-                >
-                  {c.status}
-                </span>
+                  <span style={badgeStatus(c.status === "Ativo")}>
+                    {c.status}
+                  </span>
+                </div>
 
                 <p style={styles.obs}>
                   {c.observacoes || "Sem observações"}
@@ -214,14 +226,30 @@ export default function ClientesPage() {
   );
 }
 
-/* 🎨 ESTILO */
+/* COMPONENTE KPI */
+function Card({ title, value }) {
+  return (
+    <div style={styles.kpiCard}>
+      <span>{title}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
 
+/* STATUS */
+function badgeStatus(active) {
+  return {
+    padding: "4px 10px",
+    borderRadius: 20,
+    background: active ? "#DCFCE7" : "#FEE2E2",
+    color: active ? "#166534" : "#991B1B",
+    fontSize: 12,
+  };
+}
+
+/* ESTILO */
 const styles = {
-  container: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 20,
-  },
+  container: { display: "flex", flexDirection: "column", gap: 20 },
 
   header: {
     display: "flex",
@@ -229,15 +257,9 @@ const styles = {
     alignItems: "center",
   },
 
-  titulo: {
-    margin: 0,
-    fontSize: 26,
-  },
+  titulo: { margin: 0, fontSize: 26 },
 
-  sub: {
-    fontSize: 13,
-    color: "#666",
-  },
+  sub: { fontSize: 13, color: "#666" },
 
   novo: {
     background: "#2563eb",
@@ -246,6 +268,19 @@ const styles = {
     borderRadius: 8,
     border: "none",
     cursor: "pointer",
+  },
+
+  kpis: { display: "flex", gap: 16 },
+
+  kpiCard: {
+    background: "#fff",
+    padding: 16,
+    borderRadius: 10,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+    minWidth: 120,
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
   },
 
   input: {
@@ -263,37 +298,29 @@ const styles = {
 
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
-    gap: 15,
+    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+    gap: 16,
   },
 
   card: {
     background: "#fff",
-    padding: 15,
-    borderRadius: 10,
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+    padding: 16,
+    borderRadius: 12,
+    boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
     display: "flex",
     flexDirection: "column",
-    gap: 8,
+    gap: 10,
   },
 
-  empresa: {
-    fontSize: 13,
-    color: "#555",
+  cardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
 
-  status: {
-    padding: "4px 8px",
-    borderRadius: 6,
-    color: "#fff",
-    fontSize: 12,
-    width: "fit-content",
-  },
+  empresa: { fontSize: 13, color: "#555" },
 
-  obs: {
-    fontSize: 12,
-    color: "#444",
-  },
+  obs: { fontSize: 12, color: "#444" },
 
   editar: {
     marginTop: 10,
