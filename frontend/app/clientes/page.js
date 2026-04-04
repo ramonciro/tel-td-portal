@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -32,8 +33,8 @@ export default function ClientesPage() {
     }
   }
 
-  const clientesFiltrados = clientes.filter((cliente) =>
-    (cliente.nome || "")
+  const filtrados = clientes.filter((c) =>
+    (c.nome || "")
       .toLowerCase()
       .includes(busca.toLowerCase())
   );
@@ -42,13 +43,11 @@ export default function ClientesPage() {
     <PortalShell>
       <div style={styles.container}>
         
-        {/* TOPO */}
-        <div style={styles.topo}>
+        {/* HEADER */}
+        <div style={styles.header}>
           <div>
             <h1 style={styles.titulo}>Clientes</h1>
-            <span style={styles.subtitulo}>
-              Gestão de clientes cadastrados
-            </span>
+            <p style={styles.sub}>Gestão completa de clientes</p>
           </div>
 
           <button style={styles.botaoNovo}>
@@ -56,35 +55,50 @@ export default function ClientesPage() {
           </button>
         </div>
 
+        {/* KPI */}
+        <div style={styles.kpiBox}>
+          <div style={styles.kpiCard}>
+            <span style={styles.kpiNumero}>{clientes.length}</span>
+            <span style={styles.kpiLabel}>Clientes cadastrados</span>
+          </div>
+        </div>
+
         {/* BUSCA */}
-        <input
-          style={styles.input}
-          placeholder="Buscar cliente por nome..."
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-        />
+        <div style={styles.buscaContainer}>
+          <input
+            style={styles.input}
+            placeholder="🔍 Buscar cliente..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
 
         {/* TABELA */}
         <div style={styles.card}>
           {loading ? (
-            <p>Carregando clientes...</p>
-          ) : clientesFiltrados.length === 0 ? (
+            <p>Carregando...</p>
+          ) : filtrados.length === 0 ? (
             <p>Nenhum cliente encontrado</p>
           ) : (
             <table style={styles.tabela}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Nome</th>
+                  <th style={styles.th}>Cliente</th>
                   <th style={styles.th}>Email</th>
                   <th style={styles.th}>Ações</th>
                 </tr>
               </thead>
 
               <tbody>
-                {clientesFiltrados.map((cliente, index) => (
-                  <tr key={cliente.id || index}>
+                {filtrados.map((cliente, index) => (
+                  <tr key={cliente.id || index} style={styles.tr}>
                     <td style={styles.td}>
-                      {cliente.nome || "-"}
+                      <div style={styles.nomeBox}>
+                        <div style={styles.avatar}>
+                          {cliente.nome?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
+                        <span>{cliente.nome}</span>
+                      </div>
                     </td>
 
                     <td style={styles.td}>
@@ -95,7 +109,6 @@ export default function ClientesPage() {
                       <button style={styles.editar}>
                         Editar
                       </button>
-
                       <button style={styles.excluir}>
                         Excluir
                       </button>
@@ -111,7 +124,7 @@ export default function ClientesPage() {
   );
 }
 
-/* ===================== STYLES ===================== */
+/* 🎨 ESTILOS */
 
 const styles = {
   container: {
@@ -120,7 +133,7 @@ const styles = {
     gap: "20px",
   },
 
-  topo: {
+  header: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
@@ -128,19 +141,13 @@ const styles = {
 
   titulo: {
     margin: 0,
-    fontSize: "24px",
+    fontSize: "26px",
+    fontWeight: "bold",
   },
 
-  subtitulo: {
-    fontSize: "13px",
+  sub: {
     color: "#666",
-  },
-
-  input: {
-    padding: "10px",
-    borderRadius: "6px",
-    border: "1px solid #ccc",
-    maxWidth: "300px",
+    fontSize: "13px",
   },
 
   botaoNovo: {
@@ -148,16 +155,57 @@ const styles = {
     color: "#fff",
     border: "none",
     padding: "10px 16px",
-    borderRadius: "6px",
+    borderRadius: "8px",
     cursor: "pointer",
     fontWeight: "bold",
   },
 
+  /* KPI */
+  kpiBox: {
+    display: "flex",
+    gap: "15px",
+  },
+
+  kpiCard: {
+    background: "linear-gradient(135deg, #1e3a8a, #2563eb)",
+    color: "#fff",
+    padding: "20px",
+    borderRadius: "12px",
+    width: "220px",
+    display: "flex",
+    flexDirection: "column",
+    boxShadow: "0 6px 20px rgba(0,0,0,0.2)",
+  },
+
+  kpiNumero: {
+    fontSize: "30px",
+    fontWeight: "bold",
+  },
+
+  kpiLabel: {
+    fontSize: "13px",
+    opacity: 0.9,
+  },
+
+  /* BUSCA */
+  buscaContainer: {
+    display: "flex",
+  },
+
+  input: {
+    padding: "10px",
+    borderRadius: "8px",
+    border: "1px solid #ccc",
+    width: "300px",
+    outline: "none",
+  },
+
+  /* CARD */
   card: {
     background: "#fff",
     borderRadius: "12px",
     padding: "15px",
-    boxShadow: "0 6px 18px rgba(0,0,0,0.1)",
+    boxShadow: "0 6px 20px rgba(0,0,0,0.1)",
   },
 
   tabela: {
@@ -168,14 +216,35 @@ const styles = {
   th: {
     textAlign: "left",
     padding: "10px",
-    borderBottom: "1px solid #eee",
+    borderBottom: "1px solid #ddd",
     fontSize: "14px",
+  },
+
+  tr: {
+    borderBottom: "1px solid #eee",
   },
 
   td: {
     padding: "10px",
-    borderBottom: "1px solid #f0f0f0",
     fontSize: "14px",
+  },
+
+  nomeBox: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+  },
+
+  avatar: {
+    width: "35px",
+    height: "35px",
+    borderRadius: "50%",
+    background: "#2563eb",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: "bold",
   },
 
   editar: {
@@ -184,7 +253,7 @@ const styles = {
     border: "none",
     padding: "6px 10px",
     color: "#fff",
-    borderRadius: "5px",
+    borderRadius: "6px",
     cursor: "pointer",
   },
 
@@ -193,7 +262,7 @@ const styles = {
     border: "none",
     padding: "6px 10px",
     color: "#fff",
-    borderRadius: "5px",
+    borderRadius: "6px",
     cursor: "pointer",
   },
 };
