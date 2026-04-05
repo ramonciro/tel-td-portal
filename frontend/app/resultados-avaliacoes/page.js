@@ -80,7 +80,7 @@ export default function ResultadosDasAvaliacoesPage() {
         const [treinamentosData, materiaisData, respostasData] = await Promise.all([
           apiFetch("/treinamentos").catch(() => []),
           apiFetch("/materiais-avaliativos").catch(() => []),
-          apiFetch("/respostas-avaliativas").catch(() => []),
+          apiFetch("/resultados-avaliativas").catch(() => []),
         ]);
 
         setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
