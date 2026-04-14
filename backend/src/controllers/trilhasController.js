@@ -1,37 +1,30 @@
-import pool from "../db.js";
+const pool = require("../lib/db");
 
-export async function listTrilhas(req, res) {
+async function listTrilhas(req, res) {
   try {
     const [rows] = await pool.query(`
-      SELECT id, cliente, titulo, descricao, etapas, criado_em
-      FROM trilhas_aprendizagem
-      ORDER BY id DESC
+      SELECT id, titulo, cliente, descricao, carga_horaria_estimada, publico, status
+      FROM trilhas ORDER BY id DESC
     `);
-
-    const normalized = rows.map((row) => ({
-      ...row,
-      etapas: row.etapas ? JSON.parse(row.etapas) : []
-    }));
-
-    res.json(normalized);
+    res.json(rows);
   } catch (error) {
     res.status(500).json({ ok: false, message: "Erro ao listar trilhas", error: error.message });
   }
 }
 
-export async function createTrilha(req, res) {
+async function createTrilha(req, res) {
   try {
-    const { cliente, titulo, descricao, etapas } = req.body || {};
-    if (!cliente || !titulo) {
-      return res.status(400).json({ ok: false, message: "Preencha cliente e título" });
+    const { titulo, cliente, descricao, carga_horaria_estimada, publico, status } = req.body || {};
+
+    if (!titulo) {
+      return res.status(400).json({ ok: false, message: "Informe o título da trilha" });
     }
 
-    const etapasJson = JSON.stringify(Array.isArray(etapas) ? etapas : []);
-
     const [result] = await pool.query(
-      `INSERT INTO trilhas_aprendizagem (cliente, titulo, descricao, etapas)
-       VALUES (?, ?, ?, ?)`,
-      [cliente, titulo, descricao || null, etapasJson]
+      `INSERT INTO trilhas (titulo, cliente, descricao, carga_horaria_estimada, publico, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [titulo, cliente || null, descricao || null,
+       carga_horaria_estimada || null, publico || "todos", status || "ativo"]
     );
 
     res.status(201).json({ ok: true, id: result.insertId });
@@ -40,21 +33,21 @@ export async function createTrilha(req, res) {
   }
 }
 
-export async function updateTrilha(req, res) {
+async function updateTrilha(req, res) {
   try {
     const { id } = req.params;
-    const { cliente, titulo, descricao, etapas } = req.body || {};
-    if (!cliente || !titulo) {
-      return res.status(400).json({ ok: false, message: "Preencha cliente e título" });
+    const { titulo, cliente, descricao, carga_horaria_estimada, publico, status } = req.body || {};
+
+    if (!titulo) {
+      return res.status(400).json({ ok: false, message: "Informe o título da trilha" });
     }
 
-    const etapasJson = JSON.stringify(Array.isArray(etapas) ? etapas : []);
-
     await pool.query(
-      `UPDATE trilhas_aprendizagem
-       SET cliente = ?, titulo = ?, descricao = ?, etapas = ?
+      `UPDATE trilhas
+       SET titulo = ?, cliente = ?, descricao = ?, carga_horaria_estimada = ?, publico = ?, status = ?
        WHERE id = ?`,
-      [cliente, titulo, descricao || null, etapasJson, id]
+      [titulo, cliente || null, descricao || null,
+       carga_horaria_estimada || null, publico || "todos", status || "ativo", id]
     );
 
     res.json({ ok: true });
@@ -63,12 +56,14 @@ export async function updateTrilha(req, res) {
   }
 }
 
-export async function deleteTrilha(req, res) {
+async function deleteTrilha(req, res) {
   try {
     const { id } = req.params;
-    await pool.query("DELETE FROM trilhas_aprendizagem WHERE id = ?", [id]);
+    await pool.query("DELETE FROM trilhas WHERE id = ?", [id]);
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ ok: false, message: "Erro ao excluir trilha", error: error.message });
   }
 }
+
+module.exports = { listTrilhas, createTrilha, updateTrilha, deleteTrilha };
