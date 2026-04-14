@@ -1,3 +1,11 @@
-// Redirecionamento para o pool canônico em lib/db.js
-// Mantido para compatibilidade com eventuais referências antigas
-module.exports = require("./lib/db");
+const mysql = require("mysql2/promise")
+const pool = mysql.createPool({
+  host: process.env.MYSQLHOST,
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
+  port: process.env.MYSQLPORT,
+  waitForConnections: true,
+  connectionLimit: 10
+})
+module.exports = pool
