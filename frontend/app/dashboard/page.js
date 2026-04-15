@@ -172,7 +172,7 @@ export default function DashboardPage() {
   return (
     <PortalShell
       title="Dashboard"
-      subtitle="Uma leitura analítica para comparar recortes, identificar prioridades e entender melhor o que o número está dizendo."
+      subtitle="Uma leitura analítica para comparar os KPIs, identificar prioridades e entender melhor o que o número está dizendo."
     >
       {loading ? (
         <div style={loadingBox}>Carregando o dashboard...</div>
