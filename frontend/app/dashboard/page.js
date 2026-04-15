@@ -289,7 +289,7 @@ export default function DashboardPage() {
           </div>
 
           <div style={twoColumns}>
-            <SectionCard title="Leitura gerencial" subtitle="Textos mais humanos para te ajudar a interpretar o cenário com mais rapidez.">
+            <SectionCard title="Leitura gerencial" subtitle="Sinais que te ajudam a interpretar o cenário com mais rapidez.">
               <div style={summaryList}>
                 {narrativa.map((item) => (
                   <div key={item} style={summaryItem}>{item}</div>
@@ -297,7 +297,7 @@ export default function DashboardPage() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Faróis acionáveis" subtitle="O painel resume aqui o que mais vale sua energia agora.">
+            <SectionCard title="Faróis acionáveis" subtitle="O painel resume o que mais vale sua energia agora.">
               <div style={farolList}>
                 {farois.map((item) => (
                   <div key={item.title} style={farolItem(item.tone)}>
@@ -327,7 +327,7 @@ export default function DashboardPage() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Instrutores no recorte" subtitle="Uma leitura simples de produtividade e presença, sem poluição visual.">
+            <SectionCard title="Instrutores no recorte" subtitle="Uma leitura simples de produtividade e presença.">
               <div style={listGrid}>
                 {rankingInstrutores.length ? rankingInstrutores.map((item) => {
                   const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
@@ -364,7 +364,7 @@ export default function DashboardPage() {
             </SectionCard>
           </div>
 
-          <SectionCard title="Turmas recentes" subtitle="As últimas turmas ganham contexto de status, modalidade e fechamento para te poupar cliques.">
+          <SectionCard title="Turmas recentes" subtitle="As últimas turmas.">
             {ultimasTurmas.length ? (
               <div style={{ overflowX: "auto" }}>
                 <table style={table}>
