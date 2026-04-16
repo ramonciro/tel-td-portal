@@ -162,9 +162,13 @@ export default function TreinamentosPage() {
       return lista;
     }
 
-    if (perfilLogado === "instrutor" || perfilLogado === "supervisor") {
-      return lista.filter((item) => temClienteEmComum(item.value, clienteLogado));
-    }
+if (perfilLogado === "instrutor" || perfilLogado === "supervisor") {
+  const filtrados = lista.filter((item) =>
+    temClienteEmComum(item.value, clienteLogado)
+  );
+
+  return filtrados.length ? filtrados : lista;
+}
 
     return lista;
   }, [clientes, perfilLogado, usuarioEhGlobal, clienteLogado]);
@@ -240,8 +244,11 @@ export default function TreinamentosPage() {
         instrutores.length > 0
           ? "Selecione o instrutor"
           : "Nenhum instrutor disponível",
-      defaultValue: perfilLogado === "instrutor" ? nomeLogado : "",
-      disabled: perfilLogado === "instrutor",
+      defaultValue:
+  perfilLogado === "instrutor" && instrutores.length
+    ? instrutores[0].value
+    : "",
+      disabled: false,
     },
     {
       name: "supervisor",
