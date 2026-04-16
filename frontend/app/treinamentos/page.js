@@ -760,7 +760,7 @@ export default function TreinamentosPage() {
 
           <SectionCard
             title="Leitura gerencial"
-            subtitle="A página agora trata automaticamente status vencido ou chamado cumprido, reduzindo inconsistência operacional."
+            subtitle="Visão automática do status vencido ou chamada cumprida, reduzindo inconsistência operacional."
           >
             <div style={alertGrid}>
               {kpis.alertas.map((item, index) => (
