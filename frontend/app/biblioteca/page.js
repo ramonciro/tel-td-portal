@@ -1,6 +1,5 @@
 "use client";
 
-// Configurações para forçar o Vercel a renderizar apenas no navegador
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
@@ -150,7 +149,6 @@ export default function BibliotecaPage() {
     }
   }
 
-  // KPIs calculados de forma segura para o build
   const stats = useMemo(() => {
     const total = biblioteca.length;
     const publicados = biblioteca.filter((item) => normalizeText(item.status) === "publicado").length;
@@ -279,7 +277,6 @@ export default function BibliotecaPage() {
   );
 }
 
-// Estilos mantidos conforme original
 const heroGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 };
 const uploadWrap = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
 const uploadBtn = { border: "none", borderRadius: 10, padding: "10px 16px", background: "#2563eb", color: "#fff", fontWeight: 800, cursor: "pointer" };
