@@ -236,7 +236,7 @@ async function getDashboardTreinamentos(req, res) {
         progresso_tripulacao: progressMap,
       };
     } catch {
-      // fallback silencioso: oceano opcional
+      
     }
 
     const ultimasTurmas = filteredRows.slice(0, 8).map((item) => ({
