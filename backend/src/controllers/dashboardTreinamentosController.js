@@ -110,10 +110,10 @@ async function getDashboardTreinamentos(req, res) {
         t.carga_horaria,
         ${participantCountExpr} AS participantes_previstos,
         COUNT(tp.id) AS treinados,
-        COALESCE(SUM(CASE WHEN tp.status_presenca = 'presente' THEN 1 ELSE 0 END), 0) AS presentes,
-        COALESCE(SUM(CASE WHEN tp.status_presenca = 'ausente' THEN 1 ELSE 0 END), 0) AS ausentes,
-        COALESCE(SUM(CASE WHEN tp.status_presenca = 'justificado' THEN 1 ELSE 0 END), 0) AS justificados,
-        COALESCE(SUM(CASE WHEN tp.status_presenca IS NULL OR tp.status_presenca = '' OR tp.status_presenca = 'pendente' THEN 1 ELSE 0 END), 0) AS pendentes
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS presentes,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS ausentes,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS justificados,
+        COALESCE(SUM(CASE WHEN tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente' THEN 1 ELSE 0 END), 0) AS pendentes
       FROM treinamentos t
       LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
       ${whereSql}
