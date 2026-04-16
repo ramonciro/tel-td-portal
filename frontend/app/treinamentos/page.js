@@ -2,80 +2,89 @@
 
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
+import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch, getStoredUser } from "../../services/api";
-
-/* ================= HELPERS ================= */
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function parseClientes(value) {
-  if (!value) return [];
-  return String(value).split(",").map(v => v.trim().toLowerCase());
+function parseHoras(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const text = String(value).replace(",", ".").trim();
+  const match = text.match(/(\d+(\.\d+)?)/);
+  return match ? Number(match[1]) || 0 : 0;
 }
 
-function temClienteEmComum(a, b) {
-  const A = parseClientes(a);
-  const B = parseClientes(b);
-  if (A.includes("global") || B.includes("global")) return true;
-  return A.some(x => B.includes(x));
+function formatDateSafe(value) {
+  if (!value) return "-";
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return String(value);
 }
 
-/* ================= NOVA REGRA ================= */
-
+/* 🔥 NOVO: presença */
 function turmaConcluidaPorPresenca(turmaId, presencas) {
   const lista = presencas.filter(
-    p => String(p.treinamento_id) === String(turmaId)
+    (p) => String(p.treinamento_id) === String(turmaId)
   );
 
   if (!lista.length) return false;
 
-  return lista.every(p =>
+  return lista.every((p) =>
     ["presente", "falta", "justificado"].includes(
       String(p.status || "").toLowerCase()
     )
   );
 }
 
+/* 🔥 AJUSTADO */
 function statusLabel(status, dataFim, turmaId, presencas) {
   if (turmaConcluidaPorPresenca(turmaId, presencas)) {
     return "Concluída";
   }
 
-  const key = String(status || "").toLowerCase();
+  const key = String(status || "").trim().toLowerCase();
 
-  if (key.includes("conclu")) return "Concluída";
-  if (key.includes("andamento")) return "Em andamento";
-  if (key.includes("cancel")) return "Cancelada";
+  if (key === "concluido" || key === "concluído" || key === "concluida") {
+    return "Concluída";
+  }
 
-  const hoje = new Date();
-  const fim = dataFim ? new Date(dataFim) : null;
+  if (key === "em_andamento" || key === "em andamento") {
+    return "Em andamento";
+  }
 
-  if (fim && fim < hoje) return "Em andamento";
+  if (key === "cancelada" || key === "cancelado") {
+    return "Cancelada";
+  }
 
   return "Planejada";
 }
 
-function statusStyle(status, dataFim, turmaId, presencas) {
-  const label = statusLabel(status, dataFim, turmaId, presencas);
+function statusStyle(status) {
+  const label = statusLabel(status, null, null, []);
 
   const base = {
+    display: "inline-block",
     padding: "5px 9px",
     borderRadius: 999,
     fontWeight: 800,
     fontSize: 11,
   };
 
-  if (label === "Concluída")
+  if (label === "Concluída") {
     return { ...base, background: "#dcfce7", color: "#166534" };
+  }
 
-  if (label === "Em andamento")
+  if (label === "Em andamento") {
     return { ...base, background: "#ffedd5", color: "#9a3412" };
+  }
 
-  if (label === "Cancelada")
+  if (label === "Cancelada") {
     return { ...base, background: "#fee2e2", color: "#b91c1c" };
+  }
 
   return { ...base, background: "#dbeafe", color: "#1d4ed8" };
 }
@@ -86,131 +95,70 @@ export default function TreinamentosPage() {
   const [turmas, setTurmas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [clientes, setClientes] = useState([]);
-  const [presencas, setPresencas] = useState([]);
+  const [presencas, setPresencas] = useState([]); // 🔥 NOVO
   const [usuarioLogado, setUsuarioLogado] = useState(null);
 
   useEffect(() => {
-    async function load() {
-      const [t, u, c, p] = await Promise.all([
-        apiFetch("/treinamentos").catch(() => []),
-        apiFetch("/usuarios").catch(() => []),
-        apiFetch("/clientes").catch(() => []),
-        apiFetch("/presencas").catch(() => []),
-      ]);
+    async function carregar() {
+      try {
+        const [treinamentosData, usuariosData, clientesData, presencasData] =
+          await Promise.all([
+            apiFetch("/treinamentos").catch(() => []),
+            apiFetch("/usuarios").catch(() => []),
+            apiFetch("/clientes").catch(() => []),
+            apiFetch("/presencas").catch(() => []), // 🔥 NOVO
+          ]);
 
-      setTurmas(t || []);
-      setUsuarios(u || []);
-      setClientes(c || []);
-      setPresencas(p || []);
-      setUsuarioLogado(getStoredUser());
+        setTurmas(Array.isArray(treinamentosData) ? treinamentosData : []);
+        setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+        setClientes(Array.isArray(clientesData) ? clientesData : []);
+        setPresencas(Array.isArray(presencasData) ? presencasData : []); // 🔥 NOVO
+        setUsuarioLogado(getStoredUser());
+      } catch {
+        setTurmas([]);
+        setUsuarios([]);
+        setClientes([]);
+        setPresencas([]); // 🔥 NOVO
+        setUsuarioLogado(getStoredUser());
+      }
     }
 
-    load();
+    carregar();
   }, []);
 
-  const perfil = usuarioLogado?.perfil?.toLowerCase();
-  const clienteLogado = usuarioLogado?.cliente || "";
-  const nomeLogado = usuarioLogado?.nome || "";
-
-  /* 🔥 CLIENTES COM FALLBACK */
-  const clientesOptions = useMemo(() => {
-    const lista = clientes.map(c => ({
-      value: c.nome,
-      label: c.nome,
-    }));
-
-    if (perfil === "instrutor" || perfil === "supervisor") {
-      const filtrado = lista.filter(i =>
-        temClienteEmComum(i.value, clienteLogado)
-      );
-      return filtrado.length ? filtrado : lista;
-    }
-
-    return lista;
-  }, [clientes, perfil, clienteLogado]);
-
-  /* 🔥 INSTRUTORES */
-  const instrutores = useMemo(() => {
-    const base = usuarios.filter(u => u.perfil === "instrutor");
-
-    if (perfil === "instrutor") {
-      return base
-        .filter(u => u.nome === nomeLogado)
-        .map(u => ({ value: u.nome, label: u.nome }));
-    }
-
-    return base.map(u => ({ value: u.nome, label: u.nome }));
-  }, [usuarios, perfil, nomeLogado]);
-
-  const fields = [
-    { name: "tema", label: "Turma" },
-
-    {
-      name: "cliente",
-      label: "Cliente",
-      type: "select",
-      options: clientesOptions,
-    },
-
-    {
-      name: "instrutor",
-      label: "Instrutor",
-      type: "select",
-      options: instrutores,
-      defaultValue:
-        perfil === "instrutor" && instrutores.length
-          ? instrutores[0].value
-          : "",
-    },
-
-    { name: "participantes", label: "Participantes", type: "number" },
-
-    {
-      name: "status",
-      label: "Status",
-      type: "select",
-      options: [
-        { value: "planejado", label: "Planejada" },
-        { value: "em_andamento", label: "Em andamento" },
-        { value: "concluido", label: "Concluída" },
-      ],
-    },
-
-    { name: "data_inicio", label: "Início", type: "date" },
-    { name: "data_fim", label: "Fim", type: "date" },
-  ];
-
-  /* 🔥 KPIs INTELIGENTES */
   const kpis = useMemo(() => {
     const total = turmas.length;
 
-    const concluidas = turmas.filter(
-      t => statusLabel(t.status, t.data_fim, t.id, presencas) === "Concluída"
+    const planejadas = turmas.filter(
+      (item) =>
+        statusLabel(item.status, item.data_fim, item.id, presencas) === "Planejada"
     ).length;
 
     const andamento = turmas.filter(
-      t => statusLabel(t.status, t.data_fim, t.id, presencas) === "Em andamento"
+      (item) =>
+        statusLabel(item.status, item.data_fim, item.id, presencas) === "Em andamento"
     ).length;
 
-    const planejadas = turmas.filter(
-      t => statusLabel(t.status, t.data_fim, t.id, presencas) === "Planejada"
+    const concluidas = turmas.filter(
+      (item) =>
+        statusLabel(item.status, item.data_fim, item.id, presencas) === "Concluída"
     ).length;
 
-    return { total, concluidas, andamento, planejadas };
+    return { total, planejadas, andamento, concluidas };
   }, [turmas, presencas]);
 
   const columns = [
     {
       key: "tema",
       label: "Turma",
-      render: i => <strong>{i.tema}</strong>,
+      render: (item) => <strong>{item.tema}</strong>,
     },
     {
       key: "status",
       label: "Status",
-      render: i => (
-        <span style={statusStyle(i.status, i.data_fim, i.id, presencas)}>
-          {statusLabel(i.status, i.data_fim, i.id, presencas)}
+      render: (item) => (
+        <span style={statusStyle(item.status)}>
+          {statusLabel(item.status, item.data_fim, item.id, presencas)}
         </span>
       ),
     },
@@ -220,11 +168,7 @@ export default function TreinamentosPage() {
     <CrudPageV2
       title="Gestão de Turmas"
       endpoint="/treinamentos"
-      fields={fields}
       columns={columns}
-      allowedCreateRoles={["coordenador", "supervisor", "instrutor"]}
-      allowedEditRoles={["coordenador", "supervisor", "instrutor"]}
-      allowedDeleteRoles={["coordenador"]}
       hero={
         <div style={{ display: "grid", gap: 12 }}>
           <StatCard title="Total" value={fmt(kpis.total)} />
