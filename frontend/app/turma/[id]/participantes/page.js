@@ -38,7 +38,7 @@ export default function ParticipantesTurmaPage() {
 
   useEffect(() => {
     carregarTudo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [id]);
 
   async function carregarTudo() {
