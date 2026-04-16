@@ -2,452 +2,216 @@
 
 import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
-import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch, getStoredUser } from "../../services/api";
+
+/* ================= HELPERS ================= */
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function parseHoras(value) {
-  if (value === null || value === undefined || value === "") return 0;
-  const text = String(value).replace(",", ".").trim();
-  const match = text.match(/(\d+(\.\d+)?)/);
-  return match ? Number(match[1]) || 0 : 0;
+function parseClientes(value) {
+  if (!value) return [];
+  return String(value).split(",").map(v => v.trim().toLowerCase());
 }
 
-function formatDateSafe(value) {
-  if (!value) return "-";
-  const text = String(value).slice(0, 10);
-  const parts = text.split("-");
-  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  return String(value);
+function temClienteEmComum(a, b) {
+  const A = parseClientes(a);
+  const B = parseClientes(b);
+  if (A.includes("global") || B.includes("global")) return true;
+  return A.some(x => B.includes(x));
 }
 
-function statusLabel(status) {
-  const key = String(status || "").trim().toLowerCase();
+/* ================= NOVA REGRA ================= */
 
-  if (key === "concluido" || key === "concluído" || key === "concluida") {
+function turmaConcluidaPorPresenca(turmaId, presencas) {
+  const lista = presencas.filter(
+    p => String(p.treinamento_id) === String(turmaId)
+  );
+
+  if (!lista.length) return false;
+
+  return lista.every(p =>
+    ["presente", "falta", "justificado"].includes(
+      String(p.status || "").toLowerCase()
+    )
+  );
+}
+
+function statusLabel(status, dataFim, turmaId, presencas) {
+  if (turmaConcluidaPorPresenca(turmaId, presencas)) {
     return "Concluída";
   }
 
-  if (key === "em_andamento" || key === "em andamento") {
-    return "Em andamento";
-  }
+  const key = String(status || "").toLowerCase();
 
-  if (key === "cancelada" || key === "cancelado") {
-    return "Cancelada";
-  }
+  if (key.includes("conclu")) return "Concluída";
+  if (key.includes("andamento")) return "Em andamento";
+  if (key.includes("cancel")) return "Cancelada";
+
+  const hoje = new Date();
+  const fim = dataFim ? new Date(dataFim) : null;
+
+  if (fim && fim < hoje) return "Em andamento";
 
   return "Planejada";
 }
 
-function statusStyle(status) {
-  const label = statusLabel(status);
+function statusStyle(status, dataFim, turmaId, presencas) {
+  const label = statusLabel(status, dataFim, turmaId, presencas);
 
   const base = {
-    display: "inline-block",
     padding: "5px 9px",
     borderRadius: 999,
     fontWeight: 800,
     fontSize: 11,
   };
 
-  if (label === "Concluída") {
+  if (label === "Concluída")
     return { ...base, background: "#dcfce7", color: "#166534" };
-  }
 
-  if (label === "Em andamento") {
+  if (label === "Em andamento")
     return { ...base, background: "#ffedd5", color: "#9a3412" };
-  }
 
-  if (label === "Cancelada") {
+  if (label === "Cancelada")
     return { ...base, background: "#fee2e2", color: "#b91c1c" };
-  }
 
   return { ...base, background: "#dbeafe", color: "#1d4ed8" };
 }
 
-function parseClientes(value) {
-  if (!value) return [];
-  return String(value)
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function isGlobalUser(cliente) {
-  return parseClientes(cliente).some((item) => item.toLowerCase() === "global");
-}
-
-function temClienteEmComum(clienteA, clienteB) {
-  const listaA = parseClientes(clienteA).map((item) => item.toLowerCase());
-  const listaB = parseClientes(clienteB).map((item) => item.toLowerCase());
-
-  if (listaA.includes("global") || listaB.includes("global")) return true;
-  return listaA.some((item) => listaB.includes(item));
-}
-
-function usuarioOptionLabel(usuario) {
-  const clientes = parseClientes(usuario.cliente);
-  if (!clientes.length) return usuario.nome;
-  if (clientes.length === 1) return `${usuario.nome} • ${clientes[0]}`;
-  if (isGlobalUser(usuario.cliente)) return `${usuario.nome} • Global`;
-  return `${usuario.nome} • ${clientes.length} operações`;
-}
-
-
-function parseTurmaMetadata(descricao) {
-  const text = String(descricao || "");
-  const modalidade = text.match(/\[modalidade:([^\]]+)\]/i)?.[1]?.trim() || "";
-  const sala = text.match(/\[sala:([^\]]*)\]/i)?.[1]?.trim() || "";
-  const descricaoLimpa = text
-    .replace(/\[modalidade:[^\]]+\]\s*/gi, "")
-    .replace(/\[sala:[^\]]*\]\s*/gi, "")
-    .trim();
-
-  return { modalidade, sala, descricaoLimpa };
-}
-
-function buildDescricaoComMetadata({ descricao, modalidade, sala }) {
-  const partes = [];
-  if (modalidade) partes.push(`[modalidade:${modalidade}]`);
-  if (sala) partes.push(`[sala:${sala}]`);
-  if (descricao) partes.push(String(descricao).trim());
-  return partes.join(" ").trim();
-}
+/* ================= PAGE ================= */
 
 export default function TreinamentosPage() {
   const [turmas, setTurmas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [clientes, setClientes] = useState([]);
+  const [presencas, setPresencas] = useState([]);
   const [usuarioLogado, setUsuarioLogado] = useState(null);
 
   useEffect(() => {
-    async function carregar() {
-      try {
-        const [treinamentosData, usuariosData, clientesData] = await Promise.all([
-          apiFetch("/treinamentos").catch(() => []),
-          apiFetch("/usuarios").catch(() => []),
-          apiFetch("/clientes").catch(() => []),
-        ]);
+    async function load() {
+      const [t, u, c, p] = await Promise.all([
+        apiFetch("/treinamentos").catch(() => []),
+        apiFetch("/usuarios").catch(() => []),
+        apiFetch("/clientes").catch(() => []),
+        apiFetch("/presencas").catch(() => []),
+      ]);
 
-        setTurmas(Array.isArray(treinamentosData) ? treinamentosData : []);
-        setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
-        setClientes(Array.isArray(clientesData) ? clientesData : []);
-        setUsuarioLogado(getStoredUser());
-      } catch {
-        setTurmas([]);
-        setUsuarios([]);
-        setClientes([]);
-        setUsuarioLogado(getStoredUser());
-      }
+      setTurmas(t || []);
+      setUsuarios(u || []);
+      setClientes(c || []);
+      setPresencas(p || []);
+      setUsuarioLogado(getStoredUser());
     }
 
-    carregar();
+    load();
   }, []);
 
-  const perfilLogado = String(usuarioLogado?.perfil || "").toLowerCase();
+  const perfil = usuarioLogado?.perfil?.toLowerCase();
   const clienteLogado = usuarioLogado?.cliente || "";
   const nomeLogado = usuarioLogado?.nome || "";
-  const usuarioEhGlobal = isGlobalUser(clienteLogado);
 
+  /* 🔥 CLIENTES COM FALLBACK */
   const clientesOptions = useMemo(() => {
-    const lista = clientes
-      .map((item) => ({ value: item.nome, label: item.nome }))
-      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+    const lista = clientes.map(c => ({
+      value: c.nome,
+      label: c.nome,
+    }));
 
-    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
-      return lista;
-    }
-
-    if (perfilLogado === "instrutor" || perfilLogado === "supervisor") {
-      return lista.filter((item) => temClienteEmComum(item.value, clienteLogado));
+    if (perfil === "instrutor" || perfil === "supervisor") {
+      const filtrado = lista.filter(i =>
+        temClienteEmComum(i.value, clienteLogado)
+      );
+      return filtrado.length ? filtrado : lista;
     }
 
     return lista;
-  }, [clientes, perfilLogado, usuarioEhGlobal, clienteLogado]);
+  }, [clientes, perfil, clienteLogado]);
 
+  /* 🔥 INSTRUTORES */
   const instrutores = useMemo(() => {
-    const base = usuarios.filter(
-      (item) => String(item.perfil || "").toLowerCase() === "instrutor"
-    );
+    const base = usuarios.filter(u => u.perfil === "instrutor");
 
-    let filtrados = base;
-
-    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
-      filtrados = base;
-    } else if (perfilLogado === "supervisor") {
-      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
-    } else if (perfilLogado === "instrutor") {
-      filtrados = base.filter((item) => item.nome === nomeLogado);
+    if (perfil === "instrutor") {
+      return base
+        .filter(u => u.nome === nomeLogado)
+        .map(u => ({ value: u.nome, label: u.nome }));
     }
 
-    return filtrados
-      .map((item) => ({
-        value: item.nome,
-        label: usuarioOptionLabel(item),
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
-  }, [usuarios, perfilLogado, usuarioEhGlobal, clienteLogado, nomeLogado]);
-
-  const supervisores = useMemo(() => {
-    const base = usuarios.filter(
-      (item) => String(item.perfil || "").toLowerCase() === "supervisor"
-    );
-
-    let filtrados = base;
-
-    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
-      filtrados = base;
-    } else if (perfilLogado === "supervisor") {
-      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
-    } else if (perfilLogado === "instrutor") {
-      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
-    }
-
-    return filtrados
-      .map((item) => ({
-        value: item.nome,
-        label: usuarioOptionLabel(item),
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
-  }, [usuarios, perfilLogado, usuarioEhGlobal, clienteLogado]);
+    return base.map(u => ({ value: u.nome, label: u.nome }));
+  }, [usuarios, perfil, nomeLogado]);
 
   const fields = [
-    {
-      name: "tema",
-      label: "Turma / treinamento",
-      placeholder: "Tema ou nome da turma",
-    },
+    { name: "tema", label: "Turma" },
+
     {
       name: "cliente",
       label: "Cliente",
       type: "select",
       options: clientesOptions,
-      placeholder:
-        clientesOptions.length > 0
-          ? "Selecione o cliente"
-          : "Nenhum cliente disponível",
     },
+
     {
       name: "instrutor",
       label: "Instrutor",
       type: "select",
       options: instrutores,
-      placeholder:
-        instrutores.length > 0
-          ? "Selecione o instrutor"
-          : "Nenhum instrutor disponível",
-      defaultValue: perfilLogado === "instrutor" ? nomeLogado : "",
-      disabled: perfilLogado === "instrutor",
+      defaultValue:
+        perfil === "instrutor" && instrutores.length
+          ? instrutores[0].value
+          : "",
     },
-    {
-      name: "supervisor",
-      label: "Supervisor",
-      type: "select",
-      options: supervisores,
-      placeholder:
-        supervisores.length > 0
-          ? "Selecione o supervisor"
-          : "Nenhum supervisor disponível",
-    },
-    {
-      name: "publico",
-      label: "Público",
-      placeholder: "Ex.: Operação, onboarding, reciclagem",
-    },
-    {
-      name: "carga_horaria",
-      label: "Carga horária total",
-      placeholder: "Ex.: 20h",
-    },
-    {
-      name: "participantes",
-      label: "Treinandos previstos",
-      type: "number",
-      placeholder: "Quantidade prevista",
-    },
+
+    { name: "participantes", label: "Participantes", type: "number" },
+
     {
       name: "status",
-      label: "Status da turma",
+      label: "Status",
       type: "select",
       options: [
         { value: "planejado", label: "Planejada" },
         { value: "em_andamento", label: "Em andamento" },
         { value: "concluido", label: "Concluída" },
       ],
-      placeholder: "Selecione o status",
     },
-    {
-      name: "data_inicio",
-      label: "Data de início",
-      type: "date",
-    },
-    {
-      name: "data_fim",
-      label: "Data de fim",
-      type: "date",
-    },
-    {
-      name: "modalidade",
-      label: "Modalidade",
-      type: "select",
-      options: [
-        { value: "online", label: "Online" },
-        { value: "presencial", label: "Presencial" },
-      ],
-      placeholder: "Selecione a modalidade",
-    },
-    {
-      name: "sala",
-      label: "Sala",
-      placeholder: "Ex.: Sala 01 / Lab 02",
-    },
-    {
-      name: "descricao",
-      label: "Observações",
-      type: "textarea",
-      placeholder: "Informações complementares",
-    },
+
+    { name: "data_inicio", label: "Início", type: "date" },
+    { name: "data_fim", label: "Fim", type: "date" },
   ];
 
+  /* 🔥 KPIs INTELIGENTES */
   const kpis = useMemo(() => {
     const total = turmas.length;
-    const planejadas = turmas.filter(
-      (item) => statusLabel(item.status) === "Planejada"
-    ).length;
-    const andamento = turmas.filter(
-      (item) => statusLabel(item.status) === "Em andamento"
-    ).length;
+
     const concluidas = turmas.filter(
-      (item) => statusLabel(item.status) === "Concluída"
+      t => statusLabel(t.status, t.data_fim, t.id, presencas) === "Concluída"
     ).length;
 
-    const treinandos = turmas.reduce(
-      (acc, item) => acc + Number(item.participantes || 0),
-      0
-    );
+    const andamento = turmas.filter(
+      t => statusLabel(t.status, t.data_fim, t.id, presencas) === "Em andamento"
+    ).length;
 
-    const horas = turmas.reduce(
-      (acc, item) => acc + parseHoras(item.carga_horaria),
-      0
-    );
+    const planejadas = turmas.filter(
+      t => statusLabel(t.status, t.data_fim, t.id, presencas) === "Planejada"
+    ).length;
 
-    const alertas = [];
-
-    if (planejadas > 0) {
-      alertas.push(`${planejadas} turma(s) ainda estão planejadas.`);
-    }
-
-    if (andamento > 0) {
-      alertas.push(`${andamento} turma(s) estão em andamento.`);
-    }
-
-    if (!alertas.length) {
-      alertas.push("Base organizada, sem pendências críticas no momento.");
-    }
-
-    return {
-      total,
-      planejadas,
-      andamento,
-      concluidas,
-      treinandos,
-      horas,
-      alertas,
-    };
-  }, [turmas]);
+    return { total, concluidas, andamento, planejadas };
+  }, [turmas, presencas]);
 
   const columns = [
     {
       key: "tema",
       label: "Turma",
-      render: (item) => (
-        <div>
-          <div style={titleCell}>{item.tema || item.titulo || "-"}</div>
-          <div style={subCell}>
-            {(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}
-          </div>
-        </div>
-      ),
+      render: i => <strong>{i.tema}</strong>,
     },
     {
       key: "status",
       label: "Status",
-      render: (item) => (
-        <span style={statusStyle(item.status)}>{statusLabel(item.status)}</span>
-      ),
-    },
-    {
-      key: "periodo",
-      label: "Período",
-      render: (item) => (
-        <span style={plainCell}>
-          {formatDateSafe(item.data_inicio || item.data)} até{" "}
-          {formatDateSafe(item.data_fim || item.data_inicio || item.data)}
+      render: i => (
+        <span style={statusStyle(i.status, i.data_fim, i.id, presencas)}>
+          {statusLabel(i.status, i.data_fim, i.id, presencas)}
         </span>
-      ),
-    },
-    {
-      key: "participantes",
-      label: "Treinandos previstos",
-      render: (item) => (
-        <strong style={scoreBlue}>{fmt(item.participantes || 0)}</strong>
-      ),
-    },
-    {
-      key: "carga_horaria",
-      label: "Carga horária",
-      render: (item) => (
-        <strong style={scoreGreen}>{item.carga_horaria || "-"}</strong>
-      ),
-    },
-    {
-      key: "modalidade",
-      label: "Modalidade",
-      render: (item) => {
-        const meta = parseTurmaMetadata(item.descricao);
-        return <span style={plainCell}>{meta.modalidade ? (meta.modalidade === "presencial" ? "Presencial" : "Online") : "-"}</span>;
-      },
-    },
-    {
-      key: "sala",
-      label: "Sala",
-      render: (item) => {
-        const meta = parseTurmaMetadata(item.descricao);
-        return <span style={plainCell}>{meta.sala || "-"}</span>;
-      },
-    },
-    {
-      key: "supervisor",
-      label: "Supervisor",
-      render: (item) => <span style={plainCell}>{item.supervisor || "-"}</span>,
-    },
-    {
-      key: "acoes",
-      label: "Ações",
-      render: (item) => (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            style={btnAcao}
-            onClick={() => {
-              window.location.href = `/turma/${item.id}`;
-            }}
-          >
-            Gestão da turma
-          </button>
-
-          <button
-            style={btnSecundario}
-            onClick={() => {
-              window.location.href = `/turma/${item.id}/cronograma`;
-            }}
-          >
-            Cronograma
-          </button>
-        </div>
       ),
     },
   ];
@@ -455,168 +219,20 @@ export default function TreinamentosPage() {
   return (
     <CrudPageV2
       title="Gestão de Turmas"
-      subtitle="Execução operacional das turmas com período de formação e controle de chamada diária."
       endpoint="/treinamentos"
       fields={fields}
       columns={columns}
-      recordsTitle="Base de turmas"
-      recordsSubtitle="Visão consolidada das turmas cadastradas no portal."
       allowedCreateRoles={["coordenador", "supervisor", "instrutor"]}
       allowedEditRoles={["coordenador", "supervisor", "instrutor"]}
       allowedDeleteRoles={["coordenador"]}
-      transformRecordToForm={(baseForm, record) => {
-        const meta = parseTurmaMetadata(record?.descricao);
-        return {
-          ...baseForm,
-          modalidade: meta.modalidade || "",
-          sala: meta.sala || "",
-          descricao: meta.descricaoLimpa || "",
-        };
-      }}
-      transformFormToPayload={(payload, form) => ({
-        ...payload,
-        descricao: buildDescricaoComMetadata({
-          descricao: form.descricao,
-          modalidade: form.modalidade,
-          sala: form.sala,
-        }),
-      })}
       hero={
-        <div style={{ display: "grid", gap: 14 }}>
-          <div style={heroGrid}>
-            <StatCard
-              title="Turmas"
-              value={fmt(kpis.total)}
-              subtitle="Base total"
-              accent="#2563eb"
-            />
-            <StatCard
-              title="Planejadas"
-              value={fmt(kpis.planejadas)}
-              subtitle="Aguardando execução"
-              accent="#f59e0b"
-            />
-            <StatCard
-              title="Em andamento"
-              value={fmt(kpis.andamento)}
-              subtitle="Turmas ativas"
-              accent="#ea580c"
-            />
-            <StatCard
-              title="Concluídas"
-              value={fmt(kpis.concluidas)}
-              subtitle="Ações finalizadas"
-              accent="#16a34a"
-            />
-          </div>
-
-          <div style={heroGrid}>
-            <StatCard
-              title="Treinandos previstos"
-              value={fmt(kpis.treinandos)}
-              subtitle="Capacidade da base"
-              accent="#06b6d4"
-            />
-            <StatCard
-              title="Carga horária total"
-              value={`${fmt(kpis.horas)}h`}
-              subtitle="Carga consolidada"
-              accent="#7c3aed"
-            />
-            <StatCard
-              title="Instrutores"
-              value={fmt(instrutores.length)}
-              subtitle="Disponíveis para seleção"
-              accent="#0f766e"
-            />
-            <StatCard
-              title="Supervisores"
-              value={fmt(supervisores.length)}
-              subtitle="Disponíveis para seleção"
-              accent="#334155"
-            />
-          </div>
-
-          <SectionCard
-            title="Leitura gerencial"
-            subtitle="Turmas com período permitem chamada diária sem perder o histórico da formação."
-          >
-            <div style={alertGrid}>
-              {kpis.alertas.map((item, index) => (
-                <div key={index} style={alertItem}>
-                  {item}
-                </div>
-              ))}
-            </div>
-          </SectionCard>
+        <div style={{ display: "grid", gap: 12 }}>
+          <StatCard title="Total" value={fmt(kpis.total)} />
+          <StatCard title="Planejadas" value={fmt(kpis.planejadas)} />
+          <StatCard title="Em andamento" value={fmt(kpis.andamento)} />
+          <StatCard title="Concluídas" value={fmt(kpis.concluidas)} />
         </div>
       }
     />
   );
 }
-
-const heroGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-};
-
-const alertGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const alertItem = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 14,
-  color: "#334155",
-  lineHeight: 1.5,
-  fontWeight: 600,
-};
-
-const titleCell = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const subCell = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 12,
-};
-
-const plainCell = {
-  color: "#334155",
-};
-
-const scoreBlue = {
-  color: "#2563eb",
-};
-
-const scoreGreen = {
-  color: "#16a34a",
-};
-
-const btnAcao = {
-  border: "1px solid #bfdbfe",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  borderRadius: 8,
-  padding: "7px 10px",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 12,
-};
-
-const btnSecundario = {
-  border: "1px solid #ddd6fe",
-  background: "#f5f3ff",
-  color: "#7c3aed",
-  borderRadius: 8,
-  padding: "7px 10px",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 12,
-};
