@@ -10,11 +10,37 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const normalized = String(value).replace(",", ".").replace(/[^\d.-]/g, "").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function parseHoras(value) {
   if (value === null || value === undefined || value === "") return 0;
   const text = String(value).replace(",", ".").trim();
   const match = text.match(/(\d+(\.\d+)?)/);
   return match ? Number(match[1]) || 0 : 0;
+}
+
+function parseDateOnly(value) {
+  if (!value) return null;
+
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length === 3) {
+    const [ano, mes, dia] = parts.map(Number);
+    const date = new Date(ano, mes - 1, dia);
+    date.setHours(0, 0, 0, 0);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
 }
 
 function formatDateSafe(value) {
@@ -25,26 +51,153 @@ function formatDateSafe(value) {
   return String(value);
 }
 
-function statusLabel(status) {
+function isTruthy(value) {
+  if (value === true) return true;
+  const text = String(value || "").trim().toLowerCase();
+  return [
+    "1",
+    "true",
+    "sim",
+    "yes",
+    "ok",
+    "concluido",
+    "concluída",
+    "concluida",
+    "cumprido",
+    "cumprida",
+    "finalizado",
+    "finalizada",
+  ].includes(text);
+}
+
+function pickFirstPositiveNumber(item, keys) {
+  for (const key of keys) {
+    const value = item?.[key];
+    const parsed = toNumber(value);
+    if (parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+function hasCompletedCalls(item) {
+  if (!item || typeof item !== "object") return false;
+
+  const done = pickFirstPositiveNumber(item, [
+    "chamadas_realizadas",
+    "chamadas_cumpridas",
+    "presencas_realizadas",
+    "aulas_realizadas",
+    "encontros_realizados",
+    "dias_realizados",
+    "modulos_realizados",
+    "etapas_realizadas",
+    "sessoes_realizadas",
+    "quantidade_chamadas_realizadas",
+  ]);
+
+  const planned = pickFirstPositiveNumber(item, [
+    "chamadas_previstas",
+    "total_chamadas",
+    "presencas_previstas",
+    "aulas_previstas",
+    "encontros_previstos",
+    "dias_previstos",
+    "modulos_previstos",
+    "etapas_previstas",
+    "sessoes_previstas",
+    "quantidade_chamadas_previstas",
+  ]);
+
+  if (planned > 0 && done >= planned) return true;
+
+  return [
+    "chamadas_concluidas",
+    "chamadas_cumpridas_flag",
+    "cronograma_concluido",
+    "presencas_concluidas",
+    "turma_concluida",
+    "todas_chamadas_cumpridas",
+    "all_calls_completed",
+  ].some((key) => isTruthy(item?.[key]));
+}
+
+function hasCompletedWorkload(item) {
+  const horasPrevistas = pickFirstPositiveNumber(item, [
+    "carga_horaria",
+    "carga_horaria_total",
+    "horas_previstas",
+  ]);
+
+  const horasRealizadas = pickFirstPositiveNumber(item, [
+    "horas_realizadas",
+    "carga_horaria_realizada",
+  ]);
+
+  return horasPrevistas > 0 && horasRealizadas >= horasPrevistas;
+}
+
+function normalizeStatusCode(status) {
   const key = String(status || "").trim().toLowerCase();
 
-  if (key === "concluido" || key === "concluído" || key === "concluida") {
-    return "Concluída";
+  if (["concluido", "concluído", "concluida", "concluída", "finalizado", "finalizada"].includes(key)) {
+    return "concluido";
   }
 
-  if (key === "em_andamento" || key === "em andamento") {
-    return "Em andamento";
+  if (["em_andamento", "em andamento", "andamento", "ativo", "ativa"].includes(key)) {
+    return "em_andamento";
   }
 
-  if (key === "cancelada" || key === "cancelado") {
-    return "Cancelada";
+  if (["cancelada", "cancelado"].includes(key)) {
+    return "cancelada";
   }
 
+  return "planejado";
+}
+
+function getStatusCode(item) {
+  const current = normalizeStatusCode(item?.status);
+
+  if (current === "cancelada" || current === "concluido") {
+    return current;
+  }
+
+  if (hasCompletedCalls(item) || hasCompletedWorkload(item)) {
+    return "concluido";
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const dataInicio = parseDateOnly(item?.data_inicio || item?.data);
+  const dataFim = parseDateOnly(
+    item?.data_fim || item?.data_termino || item?.fim || item?.data_final
+  );
+
+  if (dataFim && dataFim.getTime() < today.getTime()) {
+    return "concluido";
+  }
+
+  if (dataInicio && dataInicio.getTime() <= today.getTime()) {
+    return "em_andamento";
+  }
+
+  return current;
+}
+
+function statusLabel(statusOrItem) {
+  const code =
+    statusOrItem && typeof statusOrItem === "object"
+      ? getStatusCode(statusOrItem)
+      : normalizeStatusCode(statusOrItem);
+
+  if (code === "concluido") return "Concluída";
+  if (code === "em_andamento") return "Em andamento";
+  if (code === "cancelada") return "Cancelada";
   return "Planejada";
 }
 
-function statusStyle(status) {
-  const label = statusLabel(status);
+function statusStyle(statusOrItem) {
+  const label = statusLabel(statusOrItem);
 
   const base = {
     display: "inline-block",
@@ -96,7 +249,6 @@ function usuarioOptionLabel(usuario) {
   if (isGlobalUser(usuario.cliente)) return `${usuario.nome} • Global`;
   return `${usuario.nome} • ${clientes.length} operações`;
 }
-
 
 function parseTurmaMetadata(descricao) {
   const text = String(descricao || "");
@@ -169,6 +321,17 @@ export default function TreinamentosPage() {
     return lista;
   }, [clientes, perfilLogado, usuarioEhGlobal, clienteLogado]);
 
+  const clientePadrao = useMemo(() => {
+    if (
+      (perfilLogado === "instrutor" || perfilLogado === "supervisor") &&
+      clientesOptions.length === 1
+    ) {
+      return clientesOptions[0].value;
+    }
+
+    return "";
+  }, [perfilLogado, clientesOptions]);
+
   const instrutores = useMemo(() => {
     const base = usuarios.filter(
       (item) => String(item.perfil || "").toLowerCase() === "instrutor"
@@ -230,6 +393,7 @@ export default function TreinamentosPage() {
         clientesOptions.length > 0
           ? "Selecione o cliente"
           : "Nenhum cliente disponível",
+      defaultValue: clientePadrao,
     },
     {
       name: "instrutor",
@@ -252,6 +416,7 @@ export default function TreinamentosPage() {
         supervisores.length > 0
           ? "Selecione o supervisor"
           : "Nenhum supervisor disponível",
+      defaultValue: perfilLogado === "supervisor" ? nomeLogado : "",
     },
     {
       name: "publico",
@@ -277,6 +442,7 @@ export default function TreinamentosPage() {
         { value: "planejado", label: "Planejada" },
         { value: "em_andamento", label: "Em andamento" },
         { value: "concluido", label: "Concluída" },
+        { value: "cancelada", label: "Cancelada" },
       ],
       placeholder: "Selecione o status",
     },
@@ -315,15 +481,9 @@ export default function TreinamentosPage() {
 
   const kpis = useMemo(() => {
     const total = turmas.length;
-    const planejadas = turmas.filter(
-      (item) => statusLabel(item.status) === "Planejada"
-    ).length;
-    const andamento = turmas.filter(
-      (item) => statusLabel(item.status) === "Em andamento"
-    ).length;
-    const concluidas = turmas.filter(
-      (item) => statusLabel(item.status) === "Concluída"
-    ).length;
+    const planejadas = turmas.filter((item) => getStatusCode(item) === "planejado").length;
+    const andamento = turmas.filter((item) => getStatusCode(item) === "em_andamento").length;
+    const concluidas = turmas.filter((item) => getStatusCode(item) === "concluido").length;
 
     const treinandos = turmas.reduce(
       (acc, item) => acc + Number(item.participantes || 0),
@@ -335,6 +495,22 @@ export default function TreinamentosPage() {
       0
     );
 
+    const autoConcluidas = turmas.filter(
+      (item) =>
+        normalizeStatusCode(item.status) !== "concluido" &&
+        getStatusCode(item) === "concluido"
+    ).length;
+
+    const atrasadas = turmas.filter((item) => {
+      const dataFim = parseDateOnly(item?.data_fim || item?.data_termino || item?.fim);
+      return (
+        dataFim &&
+        dataFim.getTime() < new Date(new Date().setHours(0, 0, 0, 0)).getTime() &&
+        normalizeStatusCode(item.status) !== "concluido" &&
+        normalizeStatusCode(item.status) !== "cancelada"
+      );
+    }).length;
+
     const alertas = [];
 
     if (planejadas > 0) {
@@ -343,6 +519,18 @@ export default function TreinamentosPage() {
 
     if (andamento > 0) {
       alertas.push(`${andamento} turma(s) estão em andamento.`);
+    }
+
+    if (autoConcluidas > 0) {
+      alertas.push(
+        `${autoConcluidas} turma(s) aparecem como concluídas automaticamente por prazo encerrado ou chamadas cumpridas.`
+      );
+    }
+
+    if (atrasadas > 0) {
+      alertas.push(
+        `${atrasadas} turma(s) estavam com status desatualizado e foram tratadas como concluídas na visualização.`
+      );
     }
 
     if (!alertas.length) {
@@ -357,6 +545,8 @@ export default function TreinamentosPage() {
       treinandos,
       horas,
       alertas,
+      autoConcluidas,
+      atrasadas,
     };
   }, [turmas]);
 
@@ -376,9 +566,7 @@ export default function TreinamentosPage() {
     {
       key: "status",
       label: "Status",
-      render: (item) => (
-        <span style={statusStyle(item.status)}>{statusLabel(item.status)}</span>
-      ),
+      render: (item) => <span style={statusStyle(item)}>{statusLabel(item)}</span>,
     },
     {
       key: "periodo",
@@ -409,7 +597,15 @@ export default function TreinamentosPage() {
       label: "Modalidade",
       render: (item) => {
         const meta = parseTurmaMetadata(item.descricao);
-        return <span style={plainCell}>{meta.modalidade ? (meta.modalidade === "presencial" ? "Presencial" : "Online") : "-"}</span>;
+        return (
+          <span style={plainCell}>
+            {meta.modalidade
+              ? meta.modalidade === "presencial"
+                ? "Presencial"
+                : "Online"
+              : "-"}
+          </span>
+        );
       },
     },
     {
@@ -471,16 +667,41 @@ export default function TreinamentosPage() {
           modalidade: meta.modalidade || "",
           sala: meta.sala || "",
           descricao: meta.descricaoLimpa || "",
+          status: getStatusCode(record),
         };
       }}
-      transformFormToPayload={(payload, form) => ({
-        ...payload,
-        descricao: buildDescricaoComMetadata({
+      transformFormToPayload={(payload, form) => {
+        const descricao = buildDescricaoComMetadata({
           descricao: form.descricao,
           modalidade: form.modalidade,
           sala: form.sala,
-        }),
-      })}
+        });
+
+        const basePayload = {
+          ...payload,
+          cliente: form.cliente || payload.cliente || clientePadrao || "",
+          instrutor:
+            perfilLogado === "instrutor"
+              ? nomeLogado
+              : form.instrutor || payload.instrutor || "",
+          supervisor:
+            perfilLogado === "supervisor"
+              ? nomeLogado
+              : form.supervisor || payload.supervisor || "",
+          descricao,
+        };
+
+        return {
+          ...basePayload,
+          status: getStatusCode({
+            ...basePayload,
+            status: form.status || payload.status,
+            data_inicio: form.data_inicio || payload.data_inicio,
+            data_fim: form.data_fim || payload.data_fim,
+            carga_horaria: form.carga_horaria || payload.carga_horaria,
+          }),
+        };
+      }}
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
@@ -539,7 +760,7 @@ export default function TreinamentosPage() {
 
           <SectionCard
             title="Leitura gerencial"
-            subtitle="Turmas com período permitem chamada diária sem perder o histórico da formação."
+            subtitle="A página agora trata automaticamente status vencido ou chamado cumprido, reduzindo inconsistência operacional."
           >
             <div style={alertGrid}>
               {kpis.alertas.map((item, index) => (
