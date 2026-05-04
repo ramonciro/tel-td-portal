@@ -268,4 +268,6 @@ export default function TreinamentosPage() {
     {
       key: "periodo",
       label: "Período",
-      render: (item) => <span
+      render: (item) => (
+        <span style={plainCell}>
+          {formatDateSafe(item.data_inicio || item.data)} até {formatDateSafe(item.data_fim || item.data_inicio ||
