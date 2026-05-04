@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import PortalShell from "../../components/PortalShell";
 import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
@@ -228,8 +227,45 @@ export default function TreinamentosPage() {
     const concluidas = turmas.filter(i => getStatusCode(i) === "concluido").length;
     const treinandos = turmas.reduce((acc, i) => acc + Number(i.participantes || 0), 0);
     const horas = turmas.reduce((acc, i) => acc + parseHoras(i.carga_horaria), 0);
+    
+    const autoConcluidas = turmas.filter(i => 
+      normalizeStatusCode(i.status) !== "concluido" && getStatusCode(i) === "concluido"
+    ).length;
+
+    const atrasadas = turmas.filter(i => {
+      const dataFim = parseDateOnly(i?.data_fim || i?.data_termino);
+      return dataFim && dataFim < new Date(new Date().setHours(0,0,0,0)) && 
+             normalizeStatusCode(i.status) !== "concluido" && 
+             normalizeStatusCode(i.status) !== "cancelada";
+    }).length;
+
     const alertas = [];
-    if (planejadas > 0) alertas.push(`${planejadas} turma(s) planejadas.`);
-    if (andamento > 0) alertas.push(`${andamento} turma(s) em andamento.`);
-    if (alertas.length === 0) alertas.push("Base organizada, sem pendências.");
-    return { total, planejadas, andamento, concluid
+    if (planejadas > 0) alertas.push(`${planejadas} turma(s) ainda estão planejadas.`);
+    if (andamento > 0) alertas.push(`${andamento} turma(s) estão em andamento.`);
+    if (autoConcluidas > 0) alertas.push(`${autoConcluidas} turma(s) aparecem como concluídas automaticamente.`);
+    if (atrasadas > 0) alertas.push(`${atrasadas} turma(s) com status desatualizado.`);
+    if (alertas.length === 0) alertas.push("Base organizada, sem pendências críticas.");
+
+    return { total, planejadas, andamento, concluidas, treinandos, horas, alertas, autoConcluidas, atrasadas };
+  }, [turmas]);
+
+  const columns = [
+    {
+      key: "tema",
+      label: "Turma",
+      render: (item) => (
+        <div>
+          <div style={titleCell}>{item.tema || item.titulo || "-"}</div>
+          <div style={subCell}>{(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}</div>
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (item) => <span style={statusStyle(item)}>{statusLabel(item)}</span>,
+    },
+    {
+      key: "periodo",
+      label: "Período",
+      render: (item) => <span
