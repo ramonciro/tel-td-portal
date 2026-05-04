@@ -270,4 +270,109 @@ export default function TreinamentosPage() {
       label: "Período",
       render: (item) => (
         <span style={plainCell}>
-          {formatDateSafe(item.data_inicio || item.data)} até {formatDateSafe(item.data_fim || item.data_inicio ||
+          {formatDateSafe(item.data_inicio || item.data)} até {formatDateSafe(item.data_fim || item.data_inicio || item
+          {formatDateSafe(item.data_inicio || item.data)} até {formatDateSafe(item.data_fim || item.data_inicio || item.data)}
+        </span>
+      ),
+    },
+    {
+      key: "participantes",
+      label: "Treinandos",
+      render: (item) => <span style={plainCell}>{fmt(item.treinandos || item.participantes || 0)}</span>,
+    },
+    {
+      key: "carga",
+      label: "Carga Horária",
+      render: (item) => <span style={plainCell}>{item.carga_horaria || "-"}</span>,
+    },
+  ];
+
+  function abrirTurma(item) {
+    window.location.href = `/treinamentos/${item.id}`;
+  }
+
+  return (
+    <CrudPageV2
+      title="Treinamentos"
+      subtitle="Cadastro e gestão das turmas e treinamentos."
+      endpoint="/treinamentos"
+      fields={fields}
+      columns={columns}
+      onView={abrirTurma}
+      hero={
+        <>
+          <div style={statsGrid}>
+            <StatCard title="Total de turmas" value={fmt(kpis.total)} accent="#2563eb" />
+            <StatCard title="Planejadas" value={fmt(kpis.planejadas)} accent="#f59e0b" />
+            <StatCard title="Em andamento" value={fmt(kpis.andamento)} accent="#2563eb" />
+            <StatCard title="Concluídas" value={fmt(kpis.concluidas)} accent="#16a34a" />
+            <StatCard title="Treinandos" value={fmt(kpis.treinandos)} accent="#8b5cf6" />
+            <StatCard title="Horas totais" value={`${fmt(kpis.horas)}h`} accent="#0ea5e9" />
+          </div>
+
+          <SectionCard title="Resumo da base" subtitle="Indicadores automáticos baseados no status e datas.">
+            <div style={alertasList}>
+              {kpis.alertas.map((msg, idx) => (
+                <div key={idx} style={alertaItem}>• {msg}</div>
+              ))}
+            </div>
+          </SectionCard>
+        </>
+      }
+    />
+  );
+}
+
+// --- Estilos ---
+const statsGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 14,
+  marginBottom: 16,
+};
+
+const alertasList = {
+  display: "grid",
+  gap: 8,
+  padding: "4px 0",
+};
+
+const alertaItem = {
+  fontSize: 14,
+  color: "#334155",
+};
+
+const titleCell = {
+  fontWeight: 700,
+  color: "#0f172a",
+};
+
+const subCell = {
+  fontSize: 13,
+  color: "#64748b",
+};
+
+const plainCell = {
+  fontSize: 14,
+  color: "#334155",
+};
+
+const btnPrimario = {
+  background: "#2563eb",
+  color: "#fff",
+  border: 0,
+  borderRadius: 10,
+  padding: "10px 16px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const btnSecundario = {
+  background: "#e2e8f0",
+  color: "#0f172a",
+  border: 0,
+  borderRadius: 10,
+  padding: "10px 16px",
+  cursor: "pointer",
+  fontWeight: 700,
+};                                                                   
