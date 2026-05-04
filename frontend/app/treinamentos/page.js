@@ -270,7 +270,6 @@ export default function TreinamentosPage() {
       label: "Período",
       render: (item) => (
         <span style={plainCell}>
-          {formatDateSafe(item.data_inicio || item.data)} até {formatDateSafe(item.data_fim || item.data_inicio || item
           {formatDateSafe(item.data_inicio || item.data)} até {formatDateSafe(item.data_fim || item.data_inicio || item.data)}
         </span>
       ),
