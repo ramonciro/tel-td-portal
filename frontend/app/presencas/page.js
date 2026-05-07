@@ -461,4 +461,5 @@ export default function GestaoTurmasPage() {
     document.body.removeChild(link);
   }
 
-  return
+  return (
+    <PortalShell
