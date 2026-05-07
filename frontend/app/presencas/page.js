@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-
 import PortalShell from "../../components/PortalShell";
 import StatCard from "../../components/StatCard";
 import SectionCard from "../../components/SectionCard";
@@ -23,11 +22,8 @@ function fmtDate(value) {
 
 function parseHoras(value) {
   if (value === null || value === undefined || value === "") return 0;
-
   const text = String(value).replace(",", ".").trim();
-
   const match = text.match(/(\d+(\.\d+)?)/);
-
   return match ? Number(match[1]) || 0 : 0;
 }
 
@@ -47,37 +43,18 @@ function getStatusTurma({
 }) {
   const status = String(statusOficial || "").trim().toLowerCase();
 
-  if (["cancelada", "cancelado"].includes(status)) {
-    return "Cancelada";
-  }
-
-  if (["concluida", "concluído", "concluido"].includes(status)) {
-    return "Concluída";
-  }
-
-  if (["em_andamento", "em andamento"].includes(status)) {
-    return "Em andamento";
-  }
-
-  if (["planejada", "planejado"].includes(status)) {
-    return "Planejada";
-  }
+  if (["cancelada", "cancelado"].includes(status)) return "Cancelada";
+  if (["concluida", "concluído", "concluido"].includes(status)) return "Concluída";
+  if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
+  if (["planejada", "planejado"].includes(status)) return "Planejada";
 
   const hoje = todayLocal();
-
   const inicio = parseDateSafe(dataInicio);
-
   const fim = parseDateSafe(dataFim);
 
   if (treinandos === 0) return "Sem treinandos";
-
-  if (usaCronograma && diasPlanejados === 0) {
-    return "Sem cronograma";
-  }
-
-  if (presencasLancadas === 0) {
-    return "Chamada pendente";
-  }
+  if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
+  if (presencasLancadas === 0) return "Chamada pendente";
 
   if (fim && !Number.isNaN(fim.getTime()) && hoje > fim) {
     return "Concluída";
@@ -87,19 +64,11 @@ function getStatusTurma({
     return "Planejada";
   }
 
-  if (pendentes > 0) {
-    return "Em andamento";
-  }
-
+  if (pendentes > 0) return "Em andamento";
   return "Concluída";
 }
 
-function getClassificacao({
-  taxa,
-  treinandos,
-  pendentes,
-  statusTurma,
-}) {
+function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
   if (
     statusTurma === "Sem treinandos" ||
     statusTurma === "Sem cronograma" ||
@@ -108,28 +77,10 @@ function getClassificacao({
     return "Crítico";
   }
 
-  if (statusTurma === "Planejada") {
-    return "Atenção";
-  }
-
-  if (statusTurma === "Chamada pendente") {
-    return "Atenção";
-  }
-
-  if (
-    statusTurma === "Em andamento" &&
-    pendentes > 0
-  ) {
-    return "Atenção";
-  }
-
-  if (
-    treinandos > 0 &&
-    taxa < 85 &&
-    statusTurma !== "Concluída"
-  ) {
-    return "Crítico";
-  }
+  if (statusTurma === "Planejada") return "Atenção";
+  if (statusTurma === "Chamada pendente") return "Atenção";
+  if (statusTurma === "Em andamento" && pendentes > 0) return "Atenção";
+  if (treinandos > 0 && taxa < 85 && statusTurma !== "Concluída") return "Crítico";
 
   return "Estável";
 }
@@ -143,54 +94,27 @@ function getStatusBadgeStyle(status) {
     fontWeight: 800,
   };
 
-  if (
-    status === "Sem treinandos" ||
-    status === "Sem cronograma"
-  ) {
-    return {
-      ...base,
-      background: "#fef2f2",
-      color: "#b91c1c",
-    };
+  if (status === "Sem treinandos" || status === "Sem cronograma") {
+    return { ...base, background: "#fef2f2", color: "#b91c1c" };
   }
 
   if (status === "Planejada") {
-    return {
-      ...base,
-      background: "#fef3c7",
-      color: "#92400e",
-    };
+    return { ...base, background: "#fef3c7", color: "#92400e" };
   }
 
   if (status === "Chamada pendente") {
-    return {
-      ...base,
-      background: "#fff7ed",
-      color: "#c2410c",
-    };
+    return { ...base, background: "#fff7ed", color: "#c2410c" };
   }
 
   if (status === "Em andamento") {
-    return {
-      ...base,
-      background: "#eff6ff",
-      color: "#1d4ed8",
-    };
+    return { ...base, background: "#eff6ff", color: "#1d4ed8" };
   }
 
   if (status === "Cancelada") {
-    return {
-      ...base,
-      background: "#fee2e2",
-      color: "#b91c1c",
-    };
+    return { ...base, background: "#fee2e2", color: "#b91c1c" };
   }
 
-  return {
-    ...base,
-    background: "#ecfdf5",
-    color: "#047857",
-  };
+  return { ...base, background: "#ecfdf5", color: "#047857" };
 }
 
 function getActionConfig(statusTurma, usaCronograma) {
@@ -202,10 +126,7 @@ function getActionConfig(statusTurma, usaCronograma) {
     };
   }
 
-  if (
-    usaCronograma &&
-    statusTurma === "Sem cronograma"
-  ) {
+  if (usaCronograma && statusTurma === "Sem cronograma") {
     return {
       label: "Gerir turma",
       style: btnAlerta,
@@ -229,14 +150,9 @@ function getActionConfig(statusTurma, usaCronograma) {
     };
   }
 
-  if (
-    statusTurma === "Chamada pendente" ||
-    statusTurma === "Em andamento"
-  ) {
+  if (statusTurma === "Chamada pendente" || statusTurma === "Em andamento") {
     return {
-      label: usaCronograma
-        ? "Gerir turma"
-        : "Abrir chamada",
+      label: usaCronograma ? "Gerir turma" : "Abrir chamada",
       style: btnPrimario,
       hrefType: "turma",
     };
@@ -251,17 +167,11 @@ function getActionConfig(statusTurma, usaCronograma) {
 
 export default function GestaoTurmasPage() {
   const [treinamentos, setTreinamentos] = useState([]);
-
   const [erro, setErro] = useState("");
-
   const [loading, setLoading] = useState(true);
 
-  const [filtroStatus, setFiltroStatus] =
-    useState("todos");
-
-  const [filtroCliente, setFiltroCliente] =
-    useState("todos");
-
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [filtroCliente, setFiltroCliente] = useState("todos");
   const [busca, setBusca] = useState("");
 
   useEffect(() => {
@@ -269,218 +179,138 @@ export default function GestaoTurmasPage() {
       try {
         setLoading(true);
 
-        const [treinamentosData, presencasData] =
-          await Promise.all([
-            apiFetch("/treinamentos").catch(() => []),
-            apiFetch("/presencas").catch(() => []),
-          ]);
+        const [treinamentosData, presencasData] = await Promise.all([
+          apiFetch("/treinamentos").catch(() => []),
+          apiFetch("/presencas").catch(() => []),
+        ]);
 
-        const listaTreinamentos = Array.isArray(
-          treinamentosData
-        )
+        const listaTreinamentos = Array.isArray(treinamentosData)
           ? treinamentosData
           : [];
+        const listaPresencas = Array.isArray(presencasData) ? presencasData : [];
 
-        const listaPresencas = Array.isArray(
-          presencasData
-        )
-          ? presencasData
-          : [];
+        const turmasEnriquecidas = await Promise.all(
+          listaTreinamentos.map(async (t) => {
+            const [participantes, aulas] = await Promise.all([
+              apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []),
+              apiFetch(`/turma-aulas?treinamento_id=${t.id}`).catch(() => []),
+            ]);
 
-        const turmasEnriquecidas =
-          await Promise.all(
-            listaTreinamentos.map(async (t) => {
-              const [participantes, aulas] =
-                await Promise.all([
-                  apiFetch(
-                    `/treinamentos/${t.id}/participantes`
-                  ).catch(() => []),
+            const listaParticipantes = Array.isArray(participantes)
+              ? participantes
+              : [];
+            const listaAulas = Array.isArray(aulas) ? aulas : [];
 
-                  apiFetch(
-                    `/turma-aulas?treinamento_id=${t.id}`
-                  ).catch(() => []),
-                ]);
+            const treinandos = Number(
+              t.participantes || listaParticipantes.length || 0
+            );
+            const diasPlanejados = listaAulas.length;
+            const usaCronograma = diasPlanejados > 0;
 
-              const listaParticipantes =
-                Array.isArray(participantes)
-                  ? participantes
-                  : [];
+            let presentes = 0;
+            let ausentes = 0;
+            let justificados = 0;
+            let pendentes = 0;
+            let baseEsperada = 0;
+            let origemFrequencia = "legado";
 
-              const listaAulas = Array.isArray(aulas)
-                ? aulas
-                : [];
+            if (usaCronograma) {
+              origemFrequencia = "cronograma";
 
-              const treinandos = Number(
-                t.participantes ||
-                  listaParticipantes.length ||
-                  0
+              const resumos = await Promise.all(
+                listaAulas.map((aula) =>
+                  apiFetch(`/presenca-aulas/resumo/${aula.id}`).catch(() => null)
+                )
               );
 
-              const diasPlanejados =
-                listaAulas.length;
-
-              const usaCronograma =
-                diasPlanejados > 0;
-
-              let presentes = 0;
-
-              let ausentes = 0;
-
-              let justificados = 0;
-
-              let pendentes = 0;
-
-              let baseEsperada = 0;
-
-              let origemFrequencia = "legado";
-
-              if (usaCronograma) {
-                origemFrequencia = "cronograma";
-
-                const resumos = await Promise.all(
-                  listaAulas.map((aula) =>
-                    apiFetch(
-                      `/presenca-aulas/resumo/${aula.id}`
-                    ).catch(() => null)
-                  )
-                );
-
-                for (const item of resumos) {
-                  const resumo = item?.resumo || {};
-
-                  presentes += Number(
-                    resumo.presentes || 0
-                  );
-
-                  ausentes += Number(
-                    resumo.ausentes || 0
-                  );
-
-                  justificados += Number(
-                    resumo.justificados || 0
-                  );
-
-                  pendentes += Number(
-                    resumo.pendentes || 0
-                  );
-                }
-
-                baseEsperada =
-                  treinandos * diasPlanejados;
-              } else {
-                const presencasTurma =
-                  listaPresencas.filter(
-                    (p) =>
-                      Number(p.treinamento_id) ===
-                      Number(t.id)
-                  );
-
-                presentes =
-                  presencasTurma.filter(
-                    (p) =>
-                      normalizeStatus(p.status) ===
-                      "presente"
-                  ).length;
-
-                ausentes =
-                  presencasTurma.filter(
-                    (p) =>
-                      normalizeStatus(p.status) ===
-                      "ausente"
-                  ).length;
-
-                justificados =
-                  presencasTurma.filter(
-                    (p) =>
-                      normalizeStatus(p.status) ===
-                      "justificado"
-                  ).length;
-
-                pendentes =
-                  presencasTurma.filter(
-                    (p) =>
-                      !p.status ||
-                      normalizeStatus(p.status) ===
-                        "" ||
-                      normalizeStatus(p.status) ===
-                        "pendente"
-                  ).length;
-
-                const totalLancadoLegado =
-                  presentes +
-                  ausentes +
-                  justificados +
-                  pendentes;
-
-                baseEsperada =
-                  totalLancadoLegado > 0
-                    ? totalLancadoLegado
-                    : treinandos;
+              for (const item of resumos) {
+                const resumo = item?.resumo || {};
+                presentes += Number(resumo.presentes || 0);
+                ausentes += Number(resumo.ausentes || 0);
+                justificados += Number(resumo.justificados || 0);
+                pendentes += Number(resumo.pendentes || 0);
               }
 
-              const presencasLancadas =
-                presentes +
-                ausentes +
-                justificados +
-                pendentes;
+              baseEsperada = treinandos * diasPlanejados;
+            } else {
+              const presencasTurma = listaPresencas.filter(
+                (p) => Number(p.treinamento_id) === Number(t.id)
+              );
 
-              const taxa =
-                baseEsperada > 0
-                  ? Math.round(
-                      (presentes / baseEsperada) *
-                        100
-                    )
-                  : 0;
+              presentes = presencasTurma.filter(
+                (p) => normalizeStatus(p.status) === "presente"
+              ).length;
 
-              const statusTurma = getStatusTurma({
-                statusOficial: t.status,
-                treinandos,
-                diasPlanejados,
-                presencasLancadas,
-                pendentes,
-                usaCronograma,
-                dataInicio:
-                  t.data_inicio || t.data,
-                dataFim:
-                  t.data_fim ||
-                  t.data_inicio ||
-                  t.data,
-              });
+              ausentes = presencasTurma.filter(
+                (p) => normalizeStatus(p.status) === "ausente"
+              ).length;
 
-              const classificacao =
-                getClassificacao({
-                  taxa,
-                  treinandos,
-                  pendentes,
-                  statusTurma,
-                });
+              justificados = presencasTurma.filter(
+                (p) => normalizeStatus(p.status) === "justificado"
+              ).length;
 
-              return {
-                ...t,
-                treinandos,
-                diasPlanejados,
-                baseEsperada,
-                presentes,
-                ausentes,
-                justificados,
-                pendentes,
-                taxa,
-                classificacao,
-                statusTurma,
-                usaCronograma,
-                origemFrequencia,
-              };
-            })
-          );
+              pendentes = presencasTurma.filter(
+                (p) =>
+                  !p.status ||
+                  normalizeStatus(p.status) === "" ||
+                  normalizeStatus(p.status) === "pendente"
+              ).length;
+
+              const totalLancadoLegado =
+                presentes + ausentes + justificados + pendentes;
+
+              baseEsperada =
+                totalLancadoLegado > 0 ? totalLancadoLegado : treinandos;
+            }
+
+            const presencasLancadas =
+              presentes + ausentes + justificados + pendentes;
+
+            const taxa =
+              baseEsperada > 0
+                ? Math.round((presentes / baseEsperada) * 100)
+                : 0;
+
+            const statusTurma = getStatusTurma({
+              statusOficial: t.status,
+              treinandos,
+              diasPlanejados,
+              presencasLancadas,
+              pendentes,
+              usaCronograma,
+              dataInicio: t.data_inicio || t.data,
+              dataFim: t.data_fim || t.data_inicio || t.data,
+            });
+
+            const classificacao = getClassificacao({
+              taxa,
+              treinandos,
+              pendentes,
+              statusTurma,
+            });
+
+            return {
+              ...t,
+              treinandos,
+              diasPlanejados,
+              baseEsperada,
+              presentes,
+              ausentes,
+              justificados,
+              pendentes,
+              taxa,
+              classificacao,
+              statusTurma,
+              usaCronograma,
+              origemFrequencia,
+            };
+          })
+        );
 
         setTreinamentos(turmasEnriquecidas);
-
         setErro("");
       } catch (error) {
-        setErro(
-          error.message ||
-            "Erro ao carregar gestão de turmas."
-        );
+        setErro(error.message || "Erro ao carregar gestão de turmas.");
       } finally {
         setLoading(false);
       }
@@ -501,35 +331,17 @@ export default function GestaoTurmasPage() {
         Cancelada: 7,
       };
 
-      const aOrdem =
-        ordemStatus[a.statusTurma] || 99;
+      const aOrdem = ordemStatus[a.statusTurma] || 99;
+      const bOrdem = ordemStatus[b.statusTurma] || 99;
 
-      const bOrdem =
-        ordemStatus[b.statusTurma] || 99;
-
-      if (aOrdem !== bOrdem) {
-        return aOrdem - bOrdem;
-      }
-
+      if (aOrdem !== bOrdem) return aOrdem - bOrdem;
       return a.taxa - b.taxa;
     });
   }, [treinamentos]);
 
   const clientesOptions = useMemo(() => {
-    const lista = [
-      ...new Set(
-        turmas
-          .map((item) => item.cliente)
-          .filter(Boolean)
-      ),
-    ];
-
-    return lista.sort((a, b) =>
-      String(a).localeCompare(
-        String(b),
-        "pt-BR"
-      )
-    );
+    const lista = [...new Set(turmas.map((item) => item.cliente).filter(Boolean))];
+    return lista.sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
   }, [turmas]);
 
   const turmasFiltradas = useMemo(() => {
@@ -537,13 +349,10 @@ export default function GestaoTurmasPage() {
 
     return turmas.filter((item) => {
       const matchStatus =
-        filtroStatus === "todos" ||
-        item.statusTurma === filtroStatus;
+        filtroStatus === "todos" || item.statusTurma === filtroStatus;
 
       const matchCliente =
-        filtroCliente === "todos" ||
-        String(item.cliente || "") ===
-          filtroCliente;
+        filtroCliente === "todos" || String(item.cliente || "") === filtroCliente;
 
       const alvoBusca = [
         item.tema,
@@ -556,145 +365,61 @@ export default function GestaoTurmasPage() {
         .join(" ")
         .toLowerCase();
 
-      const matchBusca =
-        !termo || alvoBusca.includes(termo);
+      const matchBusca = !termo || alvoBusca.includes(termo);
 
-      return (
-        matchStatus &&
-        matchCliente &&
-        matchBusca
-      );
+      return matchStatus && matchCliente && matchBusca;
     });
-  }, [
-    turmas,
-    filtroStatus,
-    filtroCliente,
-    busca,
-  ]);
-
-  function calcularCHRealizada(item) {
-    const carga = parseHoras(
-      item.carga_horaria
-    );
-
-    if (item.statusTurma === "Concluída") {
-      return carga;
-    }
-
-    if (
-      item.statusTurma === "Planejada" ||
-      item.statusTurma === "Cancelada" ||
-      item.statusTurma ===
-        "Sem treinandos" ||
-      item.statusTurma ===
-        "Sem cronograma"
-    ) {
-      return 0;
-    }
-
-    if (item.diasPlanejados > 0) {
-      const aulasConcluidas =
-        item.diasPlanejados -
-        Number(item.pendentes || 0);
-
-      return Number(
-        (
-          (carga / item.diasPlanejados) *
-          aulasConcluidas
-        ).toFixed(1)
-      );
-    }
-
-    return 0;
-  }
-
-  function exportarRelatorio() {
-    const dados = turmasFiltradas.map(
-      (item) => ({
-        Turma: item.tema || "-",
-
-        Cliente: item.cliente || "-",
-
-        Status: item.statusTurma || "-",
-
-        Inicio: fmtDate(
-          item.data_inicio || item.data
-        ),
-
-        Fim: fmtDate(
-          item.data_fim || item.data
-        ),
-
-        Treinandos: Number(
-          item.treinandos || 0
-        ),
-
-        "Carga horária":
-          item.carga_horaria || "0h",
-
-        "CH realizada": `${calcularCHRealizada(
-          item
-        )}h`,
-      })
-    );
-
-    const worksheet =
-      XLSX.utils.json_to_sheet(dados);
-
-    const workbook =
-      XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(
-      workbook,
-      worksheet,
-      "Relatório Presença"
-    );
-
-    const hoje = new Date();
-
-    const dataArquivo = `${hoje.getFullYear()}-${String(
-      hoje.getMonth() + 1
-    ).padStart(2, "0")}-${String(
-      hoje.getDate()
-    ).padStart(2, "0")}`;
-
-    XLSX.writeFile(
-      workbook,
-      `relatorio_presenca_${dataArquivo}.xlsx`
-    );
-  }
+  }, [turmas, filtroStatus, filtroCliente, busca]);
 
   const resumo = useMemo(() => {
-    const turmasTotal =
-      turmasFiltradas.length;
-
-    const treinandos =
-      turmasFiltradas.reduce(
-        (acc, item) =>
-          acc +
-          Number(item.treinandos || 0),
-        0
-      );
-
-    const presentes =
-      turmasFiltradas.reduce(
-        (acc, item) =>
-          acc +
-          Number(item.presentes || 0),
-        0
-      );
-
-    const horas = turmasFiltradas.reduce(
-      (acc, item) =>
-        acc + parseHoras(item.carga_horaria),
+    const turmasTotal = turmasFiltradas.length;
+    const treinandos = turmasFiltradas.reduce(
+      (acc, item) => acc + Number(item.treinandos || 0),
       0
     );
+    const presentes = turmasFiltradas.reduce(
+      (acc, item) => acc + Number(item.presentes || 0),
+      0
+    );
+    const horas = turmasFiltradas.reduce(
+      (acc, item) => acc + parseHoras(item.carga_horaria),
+      0
+    );
+
+    const semTreinandos = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Sem treinandos"
+    ).length;
+    const semCronograma = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Sem cronograma"
+    ).length;
+    const planejadas = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Planejada"
+    ).length;
+    const pendentes = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Chamada pendente"
+    ).length;
+    const andamento = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Em andamento"
+    ).length;
+    const concluidas = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Concluída"
+    ).length;
+    const canceladas = turmasFiltradas.filter(
+      (item) => item.statusTurma === "Cancelada"
+    ).length;
 
     return {
       turmasTotal,
       treinandos,
       presentes,
       horas,
+      semTreinandos,
+      semCronograma,
+      planejadas,
+      pendentes,
+      andamento,
+      concluidas,
+      canceladas,
     };
   }, [turmasFiltradas]);
 
@@ -702,15 +427,100 @@ export default function GestaoTurmasPage() {
     window.location.href = `/turma/${item.id}`;
   }
 
+
+function calcularCHRealizada(item) {
+  const carga = parseHoras(item.carga_horaria);
+
+  if (item.statusTurma === "Concluída") {
+    return carga;
+  }
+
+  if (
+    item.statusTurma === "Planejada" ||
+    item.statusTurma === "Cancelada" ||
+    item.statusTurma === "Sem treinandos" ||
+    item.statusTurma === "Sem cronograma"
+  ) {
+    return 0;
+  }
+
+  if (item.diasPlanejados > 0) {
+    const aulasConcluidas =
+      item.diasPlanejados - Number(item.pendentes || 0);
+
+    return Number(
+      (
+        (carga / item.diasPlanejados) *
+        aulasConcluidas
+      ).toFixed(1)
+    );
+  }
+
+  return 0;
+}
+
+function exportarRelatorio() {
+  const dados = turmasFiltradas.map((item) => ({
+    Turma: item.tema || "-",
+    Cliente: item.cliente || "-",
+    Status: item.statusTurma || "-",
+    Inicio: fmtDate(item.data_inicio || item.data),
+    Fim: fmtDate(
+      item.data_fim ||
+      item.data_inicio ||
+      item.data
+    ),
+    Treinandos: Number(item.treinandos || 0),
+    "Carga horária":
+      item.carga_horaria || "0h",
+    "CH realizada": `${calcularCHRealizada(item)}h`,
+  }));
+
+  const worksheet =
+    XLSX.utils.json_to_sheet(dados);
+
+  worksheet["!cols"] = [
+    { wch: 40 },
+    { wch: 25 },
+    { wch: 20 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 18 },
+    { wch: 18 },
+  ];
+
+  const workbook =
+    XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    "Relatório Presença"
+  );
+
+  const hoje = new Date();
+
+  const dataArquivo = `${hoje.getFullYear()}-${String(
+    hoje.getMonth() + 1
+  ).padStart(2, "0")}-${String(
+    hoje.getDate()
+  ).padStart(2, "0")}`;
+
+  XLSX.writeFile(
+    workbook,
+    `relatorio_presenca_${dataArquivo}.xlsx`
+  );
+}
+
+
   return (
     <PortalShell
       title="Gestão de Turmas"
       subtitle="Execução operacional das turmas, treinandos e acompanhamento consolidado da presença."
     >
       {loading ? (
-        <div style={loadingBox}>
-          Carregando gestão de turmas...
-        </div>
+        <div style={loadingBox}>Carregando gestão de turmas...</div>
       ) : erro ? (
         <div style={errorBox}>{erro}</div>
       ) : (
@@ -721,95 +531,45 @@ export default function GestaoTurmasPage() {
           >
             <div style={filtersGrid}>
               <div style={fieldWrap}>
-                <label style={label}>
-                  Status da turma
-                </label>
-
+                <label style={label}>Status da turma</label>
                 <select
                   value={filtroStatus}
-                  onChange={(e) =>
-                    setFiltroStatus(
-                      e.target.value
-                    )
-                  }
+                  onChange={(e) => setFiltroStatus(e.target.value)}
                   style={input}
                 >
-                  <option value="todos">
-                    Todos
-                  </option>
-
-                  <option value="Sem treinandos">
-                    Sem treinandos
-                  </option>
-
-                  <option value="Sem cronograma">
-                    Sem cronograma
-                  </option>
-
-                  <option value="Planejada">
-                    Planejada
-                  </option>
-
-                  <option value="Chamada pendente">
-                    Chamada pendente
-                  </option>
-
-                  <option value="Em andamento">
-                    Em andamento
-                  </option>
-
-                  <option value="Concluída">
-                    Concluída
-                  </option>
-
-                  <option value="Cancelada">
-                    Cancelada
-                  </option>
+                  <option value="todos">Todos</option>
+                  <option value="Sem treinandos">Sem treinandos</option>
+                  <option value="Sem cronograma">Sem cronograma</option>
+                  <option value="Planejada">Planejada</option>
+                  <option value="Chamada pendente">Chamada pendente</option>
+                  <option value="Em andamento">Em andamento</option>
+                  <option value="Concluída">Concluída</option>
+                  <option value="Cancelada">Cancelada</option>
                 </select>
               </div>
 
               <div style={fieldWrap}>
-                <label style={label}>
-                  Cliente
-                </label>
-
+                <label style={label}>Cliente</label>
                 <select
                   value={filtroCliente}
-                  onChange={(e) =>
-                    setFiltroCliente(
-                      e.target.value
-                    )
-                  }
+                  onChange={(e) => setFiltroCliente(e.target.value)}
                   style={input}
                 >
-                  <option value="todos">
-                    Todos
-                  </option>
-
-                  {clientesOptions.map(
-                    (cliente) => (
-                      <option
-                        key={cliente}
-                        value={cliente}
-                      >
-                        {cliente}
-                      </option>
-                    )
-                  )}
+                  <option value="todos">Todos</option>
+                  {clientesOptions.map((cliente) => (
+                    <option key={cliente} value={cliente}>
+                      {cliente}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               <div style={fieldWrap}>
-                <label style={label}>
-                  Busca
-                </label>
-
+                <label style={label}>Busca</label>
                 <input
                   type="text"
                   value={busca}
-                  onChange={(e) =>
-                    setBusca(e.target.value)
-                  }
+                  onChange={(e) => setBusca(e.target.value)}
                   placeholder="Buscar por turma, cliente, instrutor..."
                   style={input}
                 />
@@ -820,19 +580,14 @@ export default function GestaoTurmasPage() {
                   style={{
                     display: "flex",
                     gap: 10,
+                    flexWrap: "wrap",
                   }}
                 >
                   <button
                     style={btnSecundario}
                     onClick={() => {
-                      setFiltroStatus(
-                        "todos"
-                      );
-
-                      setFiltroCliente(
-                        "todos"
-                      );
-
+                      setFiltroStatus("todos");
+                      setFiltroCliente("todos");
                       setBusca("");
                     }}
                   >
@@ -841,15 +596,188 @@ export default function GestaoTurmasPage() {
 
                   <button
                     style={btnPrimario}
-                    onClick={
-                      exportarRelatorio
-                    }
+                    onClick={exportarRelatorio}
                   >
                     Exportar relatório
                   </button>
                 </div>
               </div>
             </div>
+          </SectionCard>
+
+          <div style={statsGrid}>
+            <StatCard
+              title="Turmas"
+              value={fmt(resumo.turmasTotal)}
+              subtitle="Consolidadas no filtro"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Treinandos"
+              value={fmt(resumo.treinandos)}
+              subtitle="Capacidade planejada"
+              accent="#38bdf8"
+            />
+            <StatCard
+              title="Presentes"
+              value={fmt(resumo.presentes)}
+              subtitle="Participações confirmadas"
+              accent="#16a34a"
+            />
+            <StatCard
+              title="Carga horária"
+              value={`${fmt(resumo.horas)}h`}
+              subtitle="Carga consolidada"
+              accent="#7c3aed"
+            />
+          </div>
+
+          <div style={statusGrid}>
+            <StatCard
+              title="Sem treinandos"
+              value={fmt(resumo.semTreinandos)}
+              subtitle="Turmas sem base vinculada"
+              accent="#dc2626"
+            />
+            <StatCard
+              title="Sem cronograma"
+              value={fmt(resumo.semCronograma)}
+              subtitle="Sem aulas geradas"
+              accent="#b91c1c"
+            />
+            <StatCard
+              title="Planejadas"
+              value={fmt(resumo.planejadas)}
+              subtitle="Ainda não iniciadas"
+              accent="#d97706"
+            />
+            <StatCard
+              title="Chamada pendente"
+              value={fmt(resumo.pendentes)}
+              subtitle="Sem lançamento iniciado"
+              accent="#f59e0b"
+            />
+            <StatCard
+              title="Em andamento"
+              value={fmt(resumo.andamento)}
+              subtitle="Com pendências operacionais"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Concluídas"
+              value={fmt(resumo.concluidas)}
+              subtitle="Turmas finalizadas"
+              accent="#16a34a"
+            />
+            <StatCard
+              title="Canceladas"
+              value={fmt(resumo.canceladas)}
+              subtitle="Encerradas sem execução"
+              accent="#dc2626"
+            />
+          </div>
+
+          <SectionCard
+            title="Painel das turmas"
+            subtitle="Leitura híbrida: turmas novas usam cronograma; turmas antigas usam histórico com percentual sobre lançamentos."
+          >
+            {turmasFiltradas.length ? (
+              <div style={cardsGrid}>
+                {turmasFiltradas.map((item) => {
+                  const action = getActionConfig(item.statusTurma, item.usaCronograma);
+
+                  return (
+                    <div key={item.id} style={turmaCard}>
+                      <div style={cardTop}>
+                        <span
+                          style={
+                            item.classificacao === "Crítico"
+                              ? badgeCritico
+                              : item.classificacao === "Atenção"
+                              ? badgeAtencao
+                              : badgeEstavel
+                          }
+                        >
+                          {item.classificacao}
+                        </span>
+
+                        <span style={badgeTaxa}>{item.taxa}%</span>
+                      </div>
+
+                      <div style={statusWrap}>
+                        <span style={getStatusBadgeStyle(item.statusTurma)}>
+                          {item.statusTurma}
+                        </span>
+                      </div>
+
+                      <div style={turmaTitulo}>{item.tema || "Turma"}</div>
+
+                      <div style={turmaMeta}>
+                        {(item.cliente || "Sem cliente") +
+                          " • " +
+                          (item.instrutor || "Sem instrutor")}
+                      </div>
+
+                      <div style={miniLinha}>
+                        <span>{fmt(item.treinandos)} treinandos</span>
+                        <span>{fmt(item.diasPlanejados)} aula(s)</span>
+                        <span>{fmt(item.presentes)} pres.</span>
+                        <span>{fmt(item.ausentes)} aus.</span>
+                        <span>{fmt(item.justificados)} just.</span>
+                        <span>{fmt(item.pendentes)} pend.</span>
+                      </div>
+
+                      <div style={origemWrap}>
+                        <span
+                          style={
+                            item.origemFrequencia === "cronograma"
+                              ? origemBadgeNovo
+                              : origemBadgeLegado
+                          }
+                        >
+                          {item.origemFrequencia === "cronograma"
+                            ? "Base: cronograma"
+                            : "Base: histórico legado"}
+                        </span>
+                      </div>
+
+                      <div style={infoBloco}>
+                        <div>
+                          <strong>Período:</strong>{" "}
+                          {fmtDate(item.data_inicio || item.data)} até{" "}
+                          {fmtDate(item.data_fim || item.data_inicio || item.data)}
+                        </div>
+                        <div>
+                          <strong>Público:</strong> {item.publico || "-"}
+                        </div>
+                        <div>
+                          <strong>Carga:</strong> {item.carga_horaria || "-"}
+                        </div>
+                        <div>
+                          <strong>Supervisor:</strong> {item.supervisor || "-"}
+                        </div>
+                        <div>
+                          <strong>Base do cálculo:</strong> {fmt(item.baseEsperada)}
+                        </div>
+                      </div>
+
+                      <div style={acoesWrapCard}>
+                        <button
+                          style={action.style}
+                          onClick={() => abrirTurma(item)}
+                        >
+                          {action.label}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={emptyText}>
+                Nenhuma turma encontrada para os filtros aplicados.
+              </div>
+            )}
           </SectionCard>
         </>
       )}
@@ -859,8 +787,7 @@ export default function GestaoTurmasPage() {
 
 const filtersGrid = {
   display: "grid",
-  gridTemplateColumns:
-    "1fr 1fr 1.4fr auto",
+  gridTemplateColumns: "1fr 1fr 1.4fr auto",
   gap: 12,
   alignItems: "end",
 };
@@ -902,14 +829,149 @@ const btnSecundario = {
   fontWeight: 700,
 };
 
+const statsGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 14,
+  marginBottom: 16,
+};
+
+const statusGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 14,
+  marginBottom: 16,
+};
+
+const cardsGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: 14,
+};
+
+const turmaCard = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  padding: 16,
+  boxShadow: "0 8px 22px rgba(15,23,42,.05)",
+  display: "grid",
+  gap: 10,
+};
+
+const cardTop = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+};
+
+const statusWrap = {
+  marginTop: -2,
+};
+
+const badgeCritico = {
+  background: "#fef2f2",
+  color: "#b91c1c",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const badgeAtencao = {
+  background: "#fff7ed",
+  color: "#c2410c",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const badgeEstavel = {
+  background: "#ecfdf5",
+  color: "#047857",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const badgeTaxa = {
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const origemWrap = {
+  marginTop: -2,
+};
+
+const origemBadgeNovo = {
+  display: "inline-block",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  border: "1px solid #bfdbfe",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const origemBadgeLegado = {
+  display: "inline-block",
+  background: "#f8fafc",
+  color: "#475569",
+  border: "1px solid #cbd5e1",
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const turmaTitulo = {
+  fontSize: 20,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const turmaMeta = {
+  color: "#64748b",
+  fontSize: 14,
+};
+
+const miniLinha = {
+  display: "flex",
+  gap: 18,
+  flexWrap: "wrap",
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const infoBloco = {
+  display: "grid",
+  gap: 4,
+  fontSize: 14,
+  color: "#334155",
+};
+
+const acoesWrapCard = {
+  display: "flex",
+  justifyContent: "flex-end",
+  marginTop: 2,
+};
+
 const btnPrimario = {
   background: "#2563eb",
   color: "#fff",
   border: 0,
-  borderRadius: 10,
-  padding: "11px 14px",
+  borderRadius: 12,
+  padding: "11px 16px",
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: 800,
+  boxShadow: "0 8px 18px rgba(37,99,235,.25)",
 };
 
 const btnSecundarioAzul = {
@@ -947,4 +1009,10 @@ const errorBox = {
   padding: 18,
   color: "#b91c1c",
   fontWeight: 700,
+};
+
+const emptyText = {
+  color: "#64748b",
+  fontSize: 14,
+  padding: "8px 2px",
 };
