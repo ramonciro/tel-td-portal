@@ -462,4 +462,3 @@ export default function GestaoTurmasPage() {
   }
 
   return (
-    <PortalShell
