@@ -266,9 +266,14 @@ export default function GestaoTurmasPage() {
             const presencasLancadas =
               presentes + ausentes + justificados + pendentes;
 
+            const totalRealizado =
+              presentes + ausentes + justificados;
+
             const taxa =
               baseEsperada > 0
-                ? Math.round((presentes / baseEsperada) * 100)
+                ? Math.round(
+                    (totalRealizado / baseEsperada) * 100
+                  )
                 : 0;
 
             const statusTurma = getStatusTurma({
@@ -479,17 +484,6 @@ function exportarRelatorio() {
   const worksheet =
     XLSX.utils.json_to_sheet(dados);
 
-  worksheet["!cols"] = [
-    { wch: 40 },
-    { wch: 25 },
-    { wch: 20 },
-    { wch: 15 },
-    { wch: 15 },
-    { wch: 15 },
-    { wch: 18 },
-    { wch: 18 },
-  ];
-
   const workbook =
     XLSX.utils.book_new();
 
@@ -499,17 +493,9 @@ function exportarRelatorio() {
     "Relatório Presença"
   );
 
-  const hoje = new Date();
-
-  const dataArquivo = `${hoje.getFullYear()}-${String(
-    hoje.getMonth() + 1
-  ).padStart(2, "0")}-${String(
-    hoje.getDate()
-  ).padStart(2, "0")}`;
-
   XLSX.writeFile(
     workbook,
-    `relatorio_presenca_${dataArquivo}.xlsx`
+    "relatorio_presenca.xlsx"
   );
 }
 
@@ -576,13 +562,7 @@ function exportarRelatorio() {
               </div>
 
               <div style={actionsWrap}>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
+                <div style={{ display: "flex", gap: 10 }}>
                   <button
                     style={btnSecundario}
                     onClick={() => {
