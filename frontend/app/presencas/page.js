@@ -229,11 +229,14 @@ export default function GestaoTurmasPage() {
             let baseEsperada = 0;
             let origemFrequencia = "legado";
 
-            // FIX: só considera o cronograma se presenca_aulas tiver lançamentos reais.
-            // Quando usaCronograma=true mas a chamada foi feita pelo sistema legado
-            // (tabela presencas), os resumos retornam tudo zero e a taxa ficava 0%.
-            // Agora verificamos se há dados reais antes de decidir a origem.
-            let hasCronogramaData = false;
+            // FIX: fallback inteligente entre cronograma e legado.
+            // Só faz fallback pro legado se:
+            //   1. cronograma não tiver lançamentos reais (presentes+ausentes+just = 0)
+            //   2. E a tabela presencas (legado) tiver dados para essa turma
+            // Isso preserva chamadas inicializadas-mas-pendentes no cronograma
+            // e ainda assim mostra os dados do legado quando a chamada foi
+            // feita pela tabela presencas (sistema antigo).
+            let usarLegado = false;
 
             if (usaCronograma) {
               const resumos = await Promise.all(
@@ -251,10 +254,14 @@ export default function GestaoTurmasPage() {
                 pndTmp += Number(resumo.pendentes || 0);
               }
 
-              // só adota o cronograma se houver pelo menos um lançamento real
               const totalRealCronograma = pTmp + aTmp + jTmp;
-              if (totalRealCronograma > 0) {
-                hasCronogramaData = true;
+              const temLegadoParaEssaTurma = listaPresencas.some(
+                (p) => Number(p.treinamento_id) === Number(t.id)
+              );
+
+              if (totalRealCronograma === 0 && temLegadoParaEssaTurma) {
+                usarLegado = true;
+              } else {
                 origemFrequencia = "cronograma";
                 presentes = pTmp;
                 ausentes = aTmp;
@@ -264,7 +271,7 @@ export default function GestaoTurmasPage() {
               }
             }
 
-            if (!hasCronogramaData) {
+            if (!usaCronograma || usarLegado) {
               // legado: lê da tabela presencas
               origemFrequencia = "legado";
               const presencasTurma = listaPresencas.filter(
