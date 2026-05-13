@@ -214,25 +214,44 @@ export default function GestaoTurmasPage() {
             let baseEsperada = 0;
             let origemFrequencia = "legado";
 
-            if (usaCronograma) {
-              origemFrequencia = "cronograma";
+            // FIX: só considera o cronograma se presenca_aulas tiver lançamentos reais.
+            // Quando usaCronograma=true mas a chamada foi feita pelo sistema legado
+            // (tabela presencas), os resumos retornam tudo zero e a taxa ficava 0%.
+            // Agora verificamos se há dados reais antes de decidir a origem.
+            let hasCronogramaData = false;
 
+            if (usaCronograma) {
               const resumos = await Promise.all(
                 listaAulas.map((aula) =>
                   apiFetch(`/presenca-aulas/resumo/${aula.id}`).catch(() => null)
                 )
               );
 
+              let pTmp = 0, aTmp = 0, jTmp = 0, pndTmp = 0;
               for (const item of resumos) {
                 const resumo = item?.resumo || {};
-                presentes += Number(resumo.presentes || 0);
-                ausentes += Number(resumo.ausentes || 0);
-                justificados += Number(resumo.justificados || 0);
-                pendentes += Number(resumo.pendentes || 0);
+                pTmp += Number(resumo.presentes || 0);
+                aTmp += Number(resumo.ausentes || 0);
+                jTmp += Number(resumo.justificados || 0);
+                pndTmp += Number(resumo.pendentes || 0);
               }
 
-              baseEsperada = treinandos * diasPlanejados;
-            } else {
+              // só adota o cronograma se houver pelo menos um lançamento real
+              const totalRealCronograma = pTmp + aTmp + jTmp;
+              if (totalRealCronograma > 0) {
+                hasCronogramaData = true;
+                origemFrequencia = "cronograma";
+                presentes = pTmp;
+                ausentes = aTmp;
+                justificados = jTmp;
+                pendentes = pndTmp;
+                baseEsperada = treinandos * diasPlanejados;
+              }
+            }
+
+            if (!hasCronogramaData) {
+              // legado: lê da tabela presencas
+              origemFrequencia = "legado";
               const presencasTurma = listaPresencas.filter(
                 (p) => Number(p.treinamento_id) === Number(t.id)
               );
