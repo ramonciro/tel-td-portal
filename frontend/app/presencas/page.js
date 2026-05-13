@@ -43,10 +43,20 @@ function getStatusTurma({
 }) {
   const status = String(statusOficial || "").trim().toLowerCase();
 
-  const hoje = todayLocal();
+  const hoje = todayLocal(); // "YYYY-MM-DD" string
   const inicio = parseDateSafe(dataInicio);
   const fim = parseDateSafe(dataFim);
-  const fimPassou = fim && !Number.isNaN(fim.getTime()) && hoje > fim;
+
+  // converte fim para ISO string antes de comparar — hoje é string, fim é Date,
+  // comparar direto sempre resulta em false por coerção de tipo
+  const fimISO = fim && !Number.isNaN(fim.getTime())
+    ? [
+        fim.getFullYear(),
+        String(fim.getMonth() + 1).padStart(2, "0"),
+        String(fim.getDate()).padStart(2, "0"),
+      ].join("-")
+    : null;
+  const fimPassou = fimISO != null && hoje > fimISO;
 
   // Cancelada é definitivo — sempre respeita o status oficial
   if (["cancelada", "cancelado"].includes(status)) return "Cancelada";
