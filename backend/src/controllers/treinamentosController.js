@@ -1,4 +1,6 @@
-export async function getTreinamentoById(req, res) {
+const pool = require("../lib/db");
+
+async function getTreinamentoById(req, res) {
   try {
     const { id } = req.params;
 
@@ -11,10 +13,17 @@ export async function getTreinamentoById(req, res) {
         instrutor,
         carga_horaria,
         participantes,
+        participantes_previstos,
+        participantes_presentes,
+        concluidos,
         publico,
         status,
         descricao,
-        data
+        data,
+        data_inicio,
+        data_fim,
+        turma,
+        supervisor
       FROM treinamentos
       WHERE id = ?
       LIMIT 1
@@ -29,12 +38,14 @@ export async function getTreinamentoById(req, res) {
       });
     }
 
-    res.json(rows[0]);
+    return res.json(rows[0]);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Erro ao buscar treinamento",
       error: error.message,
     });
   }
 }
+
+module.exports = { getTreinamentoById };
