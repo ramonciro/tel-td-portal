@@ -95,6 +95,7 @@ function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
   if (statusTurma === "Planejada") return "Atenção";
   if (statusTurma === "Chamada pendente") return "Atenção";
   if (statusTurma === "Em andamento" && pendentes > 0) return "Atenção";
+  // classificação baseada na frequência real (presentes / lançados), não na execução de chamada
   if (treinandos > 0 && taxa < 85 && statusTurma !== "Concluída") return "Crítico";
 
   return "Estável";
@@ -310,12 +311,21 @@ export default function GestaoTurmasPage() {
             const totalRealizado =
               presentes + ausentes + justificados;
 
-            const taxa =
+            // taxa de execução: % de chamadas lançadas sobre a base esperada
+            const taxaExecucao =
               baseEsperada > 0
-                ? Math.round(
-                    (totalRealizado / baseEsperada) * 100
-                  )
+                ? Math.round((totalRealizado / baseEsperada) * 100)
                 : 0;
+
+            // taxa de frequência real: % de presentes sobre os lançamentos confirmados
+            // (exclui pendentes do denominador — só conta quem teve chamada lançada)
+            const taxaPresenca =
+              totalRealizado > 0
+                ? Math.round((presentes / totalRealizado) * 100)
+                : 0;
+
+            // mantém taxa = taxaPresenca para compatibilidade com ordenação e classificação
+            const taxa = taxaPresenca;
 
             const statusTurma = getStatusTurma({
               statusOficial: t.status,
@@ -345,6 +355,8 @@ export default function GestaoTurmasPage() {
               justificados,
               pendentes,
               taxa,
+              taxaPresenca,
+              taxaExecucao,
               classificacao,
               statusTurma,
               usaCronograma,
@@ -722,7 +734,14 @@ function exportarRelatorio() {
                           {item.classificacao}
                         </span>
 
-                        <span style={badgeTaxa}>{item.taxa}%</span>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                          <span style={{ ...badgeTaxa, background: "#ecfdf5", color: "#047857" }} title="Taxa de frequência: presentes / chamadas lançadas">
+                            <span style={{ fontSize: 10, fontWeight: 600, opacity: .75 }}>freq. </span>{item.taxaPresenca}%
+                          </span>
+                          <span style={{ ...badgeTaxa, background: "#eff6ff", color: "#1d4ed8", fontSize: 11 }} title="Taxa de execução: chamadas lançadas / base esperada">
+                            <span style={{ fontSize: 10, fontWeight: 600, opacity: .75 }}>exec. </span>{item.taxaExecucao}%
+                          </span>
+                        </div>
                       </div>
 
                       <div style={statusWrap}>
