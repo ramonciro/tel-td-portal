@@ -43,22 +43,27 @@ function getStatusTurma({
 }) {
   const status = String(statusOficial || "").trim().toLowerCase();
 
-  if (["cancelada", "cancelado"].includes(status)) return "Cancelada";
-  if (["concluida", "concluído", "concluido"].includes(status)) return "Concluída";
-  if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
-  if (["planejada", "planejado"].includes(status)) return "Planejada";
-
   const hoje = todayLocal();
   const inicio = parseDateSafe(dataInicio);
   const fim = parseDateSafe(dataFim);
+  const fimPassou = fim && !Number.isNaN(fim.getTime()) && hoje > fim;
+
+  // Cancelada é definitivo — sempre respeita o status oficial
+  if (["cancelada", "cancelado"].includes(status)) return "Cancelada";
+
+  // Concluída é definitivo — sempre respeita o status oficial
+  if (["concluida", "concluído", "concluido"].includes(status)) return "Concluída";
+
+  // "Em andamento" e "Planejada" no banco podem estar desatualizados:
+  // se a data_fim já passou, a turma deve ser exibida como Concluída
+  if (fimPassou) return "Concluída";
+
+  if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
+  if (["planejada", "planejado"].includes(status)) return "Planejada";
 
   if (treinandos === 0) return "Sem treinandos";
   if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
   if (presencasLancadas === 0) return "Chamada pendente";
-
-  if (fim && !Number.isNaN(fim.getTime()) && hoje > fim) {
-    return "Concluída";
-  }
 
   if (inicio && !Number.isNaN(inicio.getTime()) && hoje < inicio) {
     return "Planejada";
