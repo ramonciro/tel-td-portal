@@ -14,6 +14,9 @@ const jornadasDesenvolvimentoRoutes = require("./routes/jornadasDesenvolvimentoR
 const acoesDesenvolvimentoRoutes = require("./routes/acoesDesenvolvimentoRoutes");
 const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
 
+// FIX 1: importar a rota de jornada-participantes (estava faltando)
+const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
+
 const {
   getDashboardTreinamentos,
 } = require("./controllers/dashboardTreinamentosController");
@@ -67,6 +70,16 @@ const {
   salvarPresencaAula,
   resumoPresencaAula,
 } = require("./controllers/presencaAulasController");
+
+// FIX 2 + 3: importar o controller dedicado da biblioteca
+// (resolve o upload e os campos categoria/publico/status que o createCrudRouter ignorava)
+const {
+  listBiblioteca,
+  createBiblioteca,
+  updateBiblioteca,
+  deleteBiblioteca,
+  uploadBibliotecaArquivo,
+} = require("./controllers/bibliotecaController");
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -496,17 +509,43 @@ app.delete(
   deleteRespostaAvaliativa
 );
 
-app.use(
+// FIX 2 + 3: rotas explícitas da biblioteca usando o controller dedicado.
+// Resolve o upload (que era 404) e os campos categoria/publico/status
+// que o createCrudRouter anterior ignorava silenciosamente.
+app.get(
   "/api/biblioteca",
-  createCrudRouter({
-    table: "biblioteca_conteudos",
-    fields: ["titulo", "tipo", "cliente", "link_arquivo", "descricao"],
-    orderBy: "id DESC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
-  })
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listBiblioteca
+);
+
+app.post(
+  "/api/biblioteca",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  createBiblioteca
+);
+
+app.put(
+  "/api/biblioteca/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  updateBiblioteca
+);
+
+app.delete(
+  "/api/biblioteca/:id",
+  authRequired,
+  authorizeRoles("coordenador"),
+  deleteBiblioteca
+);
+
+app.post(
+  "/api/biblioteca/upload",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  upload.single("arquivo"),
+  uploadBibliotecaArquivo
 );
 
 app.use(
@@ -610,6 +649,9 @@ app.use("/api/jornadas-etapas", jornadasEtapasRoutes);
 app.use("/api/jornadas-desenvolvimento", authRequired, authorizeOceanAccess, jornadasDesenvolvimentoRoutes);
 app.use("/api/acoes-desenvolvimento", authRequired, authorizeOceanAccess, acoesDesenvolvimentoRoutes);
 app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlanosRoutes);
+
+// FIX 1: rota de jornada-participantes registrada junto com as rotas do Oceano
+app.use("/api/jornada-participantes", authRequired, authorizeOceanAccess, jornadaParticipantesRoutes);
 
 const PORT = process.env.PORT || 3000;
 
