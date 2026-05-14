@@ -273,8 +273,10 @@ export default function GestaoTurmasPage() {
             }
 
             if (!usaCronograma || usarLegado) {
-              // legado: lê da tabela presencas
-              origemFrequencia = "legado";
+              // "legado" só quando: fallback de cronograma OU sem treinandos
+              // Turma com treinandos mas sem cronograma usa presencas normalmente
+              origemFrequencia =
+                usarLegado || treinandos === 0 ? "legado" : "presencas";
               const presencasTurma = listaPresencas.filter(
                 (p) => Number(p.treinamento_id) === Number(t.id)
               );
@@ -782,17 +784,19 @@ function exportarRelatorio() {
                       </div>
 
                       <div style={origemWrap}>
-                        <span
-                          style={
-                            item.origemFrequencia === "cronograma"
-                              ? origemBadgeNovo
-                              : origemBadgeLegado
-                          }
-                        >
-                          {item.origemFrequencia === "cronograma"
-                            ? "Base: cronograma"
-                            : "Base: histórico legado"}
-                        </span>
+                        {item.origemFrequencia !== "presencas" && (
+                          <span
+                            style={
+                              item.origemFrequencia === "cronograma"
+                                ? origemBadgeNovo
+                                : origemBadgeLegado
+                            }
+                          >
+                            {item.origemFrequencia === "cronograma"
+                              ? "Base: cronograma"
+                              : "Base: histórico legado"}
+                          </span>
+                        )}
                       </div>
 
                       <div style={infoBloco}>
