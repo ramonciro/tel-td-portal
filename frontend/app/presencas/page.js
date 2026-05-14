@@ -735,12 +735,26 @@ function exportarRelatorio() {
                         </span>
 
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                          <span style={{ ...badgeTaxa, background: "#ecfdf5", color: "#047857" }} title="Taxa de frequência: presentes / chamadas lançadas">
-                            <span style={{ fontSize: 10, fontWeight: 600, opacity: .75 }}>freq. </span>{item.taxaPresenca}%
-                          </span>
-                          <span style={{ ...badgeTaxa, background: "#eff6ff", color: "#1d4ed8", fontSize: 11 }} title="Taxa de execução: chamadas lançadas / base esperada">
-                            <span style={{ fontSize: 10, fontWeight: 600, opacity: .75 }}>exec. </span>{item.taxaExecucao}%
-                          </span>
+                          {/* freq: só mostra % quando há lançamentos confirmados; senão "S/D" */}
+                          {item.taxaExecucao === 0 && item.pendentes === 0 ? (
+                            <span style={{ ...badgeTaxa, background: "#f3f4f6", color: "#6b7280" }} title="Sem chamadas registradas">
+                              <span style={{ fontSize: 10, fontWeight: 600, opacity: .75 }}>freq. </span>S/D
+                            </span>
+                          ) : item.taxaExecucao === 0 ? (
+                            <span style={{ ...badgeTaxa, background: "#fef9c3", color: "#92400e" }} title="Chamada inicializada mas não confirmada">
+                              <span style={{ fontSize: 10, fontWeight: 600, opacity: .75 }}>freq. </span>pend.
+                            </span>
+                          ) : (
+                            <span style={{ ...badgeTaxa, background: "#ecfdf5", color: "#047857" }} title="Taxa de frequência: presentes / chamadas lançadas">
+                              <span style={{ fontSize: 10, fontWeight: 600, opacity: .75 }}>freq. </span>{item.taxaPresenca}%
+                            </span>
+                          )}
+                          {/* exec: só exibe se há base esperada */}
+                          {item.baseEsperada > 0 && (
+                            <span style={{ ...badgeTaxa, background: "#eff6ff", color: "#1d4ed8", fontSize: 11 }} title="Taxa de execução: chamadas lançadas / base esperada">
+                              <span style={{ fontSize: 10, fontWeight: 600, opacity: .75 }}>exec. </span>{item.taxaExecucao}%
+                            </span>
+                          )}
                         </div>
                       </div>
 
