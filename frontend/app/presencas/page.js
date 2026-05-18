@@ -64,16 +64,16 @@ function getStatusTurma({
   // Concluída é definitivo — sempre respeita o status oficial
   if (["concluida", "concluído", "concluido"].includes(status)) return "Concluída";
 
-  // "Em andamento" e "Planejada" no banco podem estar desatualizados:
-  // se a data_fim já passou, a turma deve ser exibida como Concluída
-  if (fimPassou) return "Concluída";
-
-  if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
-  if (["planejada", "planejado"].includes(status)) return "Planejada";
-
   if (treinandos === 0) return "Sem treinandos";
   if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
   if (presencasLancadas === 0) return "Chamada pendente";
+
+  // data_fim no passado: Concluída — mas só se não houver chamada ainda aberta (pendentes)
+  // Se ainda tem pendentes, mantém Em andamento para que o instrutor finalize
+  if (fimPassou && pendentes === 0) return "Concluída";
+
+  if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
+  if (["planejada", "planejado"].includes(status)) return "Planejada";
 
   if (inicio && !Number.isNaN(inicio.getTime()) && hoje < inicio) {
     return "Planejada";
@@ -437,12 +437,28 @@ export default function GestaoTurmasPage() {
       (acc, item) => acc + Number(item.treinandos || 0),
       0
     );
-    const presentes = turmasFiltradas.reduce(
+
+    // participações: soma bruta de presenças confirmadas (multi-sessão para cronograma)
+    const participacoes = turmasFiltradas.reduce(
       (acc, item) => acc + Number(item.presentes || 0),
       0
     );
+
+    // taxa média ponderada: média da taxaPresenca apenas das turmas com lançamentos reais
+    const turmasComDados = turmasFiltradas.filter(
+      (item) => (item.presentes + item.ausentes + item.justificados) > 0
+    );
+    const taxaMedia =
+      turmasComDados.length > 0
+        ? Math.round(
+            turmasComDados.reduce((acc, item) => acc + item.taxaPresenca, 0) /
+              turmasComDados.length
+          )
+        : null;
+
+    // carga horária realizada (usa calcularCHRealizada para turmas Em andamento)
     const horas = turmasFiltradas.reduce(
-      (acc, item) => acc + parseHoras(item.carga_horaria),
+      (acc, item) => acc + calcularCHRealizada(item),
       0
     );
 
@@ -471,7 +487,9 @@ export default function GestaoTurmasPage() {
     return {
       turmasTotal,
       treinandos,
-      presentes,
+      participacoes,
+      taxaMedia,
+      turmasComDados: turmasComDados.length,
       horas,
       semTreinandos,
       semCronograma,
@@ -654,9 +672,17 @@ function exportarRelatorio() {
               accent="#38bdf8"
             />
             <StatCard
-              title="Presentes"
-              value={fmt(resumo.presentes)}
-              subtitle="Participações confirmadas"
+              title={resumo.taxaMedia !== null ? "Freq. Média" : "Participações"}
+              value={
+                resumo.taxaMedia !== null
+                  ? `${resumo.taxaMedia}%`
+                  : fmt(resumo.participacoes)
+              }
+              subtitle={
+                resumo.taxaMedia !== null
+                  ? `Média de ${resumo.turmasComDados} turma${resumo.turmasComDados !== 1 ? "s" : ""} com dados`
+                  : "Registros confirmados"
+              }
               accent="#16a34a"
             />
             <StatCard
