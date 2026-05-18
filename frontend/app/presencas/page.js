@@ -95,8 +95,15 @@ function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
   if (statusTurma === "Planejada") return "Atenção";
   if (statusTurma === "Chamada pendente") return "Atenção";
   if (statusTurma === "Em andamento" && pendentes > 0) return "Atenção";
+  // turmas concluídas com baixa frequência devem ser sinalizadas retroativamente
+  if (statusTurma === "Concluída") {
+    if (treinandos > 0 && taxa > 0 && taxa < 75) return "Crítico";
+    if (treinandos > 0 && taxa > 0 && taxa < 85) return "Atenção";
+    return "Estável";
+  }
+
   // classificação baseada na frequência real (presentes / lançados), não na execução de chamada
-  if (treinandos > 0 && taxa < 85 && statusTurma !== "Concluída") return "Crítico";
+  if (treinandos > 0 && taxa < 85) return "Crítico";
 
   return "Estável";
 }
@@ -337,7 +344,7 @@ export default function GestaoTurmasPage() {
               pendentes,
               usaCronograma,
               dataInicio: t.data_inicio || t.data,
-              dataFim: t.data_fim || t.data_inicio || t.data,
+              dataFim: t.data_fim || null, // não usa data_inicio como fallback — turma sem data_fim não é automaticamente concluída
             });
 
             const classificacao = getClassificacao({
@@ -523,15 +530,18 @@ function calcularCHRealizada(item) {
   }
 
   if (item.diasPlanejados > 0) {
-    const aulasConcluidas =
-      item.diasPlanejados - Number(item.pendentes || 0);
+    // proxy correto: proporção de lançamentos confirmados sobre a base esperada
+    // (pendentes são participantes, não aulas — não pode subtrair direto de diasPlanejados)
+    const baseEsperada = Number(item.baseEsperada || 0);
+    const confirmados = Number(item.presentes || 0) +
+      Number(item.ausentes || 0) +
+      Number(item.justificados || 0);
 
-    return Number(
-      (
-        (carga / item.diasPlanejados) *
-        aulasConcluidas
-      ).toFixed(1)
-    );
+    const proporcaoRealizada = baseEsperada > 0
+      ? Math.min(confirmados / baseEsperada, 1)
+      : 0;
+
+    return Number((carga * proporcaoRealizada).toFixed(1));
   }
 
   return 0;
