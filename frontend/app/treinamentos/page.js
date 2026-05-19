@@ -51,90 +51,8 @@ function formatDateSafe(value) {
   return String(value);
 }
 
-function isTruthy(value) {
-  if (value === true) return true;
-  const text = String(value || "").trim().toLowerCase();
-  return [
-    "1",
-    "true",
-    "sim",
-    "yes",
-    "ok",
-    "concluido",
-    "concluída",
-    "concluida",
-    "cumprido",
-    "cumprida",
-    "finalizado",
-    "finalizada",
-  ].includes(text);
-}
-
-function pickFirstPositiveNumber(item, keys) {
-  for (const key of keys) {
-    const value = item?.[key];
-    const parsed = toNumber(value);
-    if (parsed > 0) return parsed;
-  }
-  return 0;
-}
-
-function hasCompletedCalls(item) {
-  if (!item || typeof item !== "object") return false;
-
-  const done = pickFirstPositiveNumber(item, [
-    "chamadas_realizadas",
-    "chamadas_cumpridas",
-    "presencas_realizadas",
-    "aulas_realizadas",
-    "encontros_realizados",
-    "dias_realizados",
-    "modulos_realizados",
-    "etapas_realizadas",
-    "sessoes_realizadas",
-    "quantidade_chamadas_realizadas",
-  ]);
-
-  const planned = pickFirstPositiveNumber(item, [
-    "chamadas_previstas",
-    "total_chamadas",
-    "presencas_previstas",
-    "aulas_previstas",
-    "encontros_previstos",
-    "dias_previstos",
-    "modulos_previstos",
-    "etapas_previstas",
-    "sessoes_previstas",
-    "quantidade_chamadas_previstas",
-  ]);
-
-  if (planned > 0 && done >= planned) return true;
-
-  return [
-    "chamadas_concluidas",
-    "chamadas_cumpridas_flag",
-    "cronograma_concluido",
-    "presencas_concluidas",
-    "turma_concluida",
-    "todas_chamadas_cumpridas",
-    "all_calls_completed",
-  ].some((key) => isTruthy(item?.[key]));
-}
-
-function hasCompletedWorkload(item) {
-  const horasPrevistas = pickFirstPositiveNumber(item, [
-    "carga_horaria",
-    "carga_horaria_total",
-    "horas_previstas",
-  ]);
-
-  const horasRealizadas = pickFirstPositiveNumber(item, [
-    "horas_realizadas",
-    "carga_horaria_realizada",
-  ]);
-
-  return horasPrevistas > 0 && horasRealizadas >= horasPrevistas;
-}
+// hasCompletedCalls e hasCompletedWorkload removidos — verificavam campos que não
+// existem na tabela treinamentos e nunca retornavam true (código morto)
 
 function normalizeStatusCode(status) {
   const key = String(status || "").trim().toLowerCase();
@@ -159,10 +77,6 @@ function getStatusCode(item) {
 
   if (current === "cancelada" || current === "concluido") {
     return current;
-  }
-
-  if (hasCompletedCalls(item) || hasCompletedWorkload(item)) {
-    return "concluido";
   }
 
   const today = new Date();
@@ -275,6 +189,8 @@ export default function TreinamentosPage() {
   const [usuarios, setUsuarios] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [usuarioLogado, setUsuarioLogado] = useState(null);
+  const [filtroPeriodoInicio, setFiltroPeriodoInicio] = useState("");
+  const [filtroPeriodoFim, setFiltroPeriodoFim] = useState("");
 
   useEffect(() => {
     async function carregar() {
@@ -495,6 +411,11 @@ export default function TreinamentosPage() {
       0
     );
 
+    // carga realizada: apenas turmas concluídas
+    const horasRealizadas = turmas
+      .filter((item) => getStatusCode(item) === "concluido")
+      .reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0);
+
     const autoConcluidas = turmas.filter(
       (item) =>
         normalizeStatusCode(item.status) !== "concluido" &&
@@ -547,6 +468,7 @@ export default function TreinamentosPage() {
       alertas,
       autoConcluidas,
       atrasadas,
+      horasRealizadas,
     };
   }, [turmas]);
 
@@ -573,8 +495,8 @@ export default function TreinamentosPage() {
       label: "Período",
       render: (item) => (
         <span style={plainCell}>
-          {formatDateSafe(item.data_inicio || item.data)} até{" "}
-          {formatDateSafe(item.data_fim || item.data_inicio || item.data)}
+          {formatDateSafe(item.data_inicio || item.data)}
+          {item.data_fim ? ` até ${formatDateSafe(item.data_fim)}` : ""}
         </span>
       ),
     },
@@ -624,29 +546,56 @@ export default function TreinamentosPage() {
     {
       key: "acoes",
       label: "Ações",
-      render: (item) => (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            style={btnAcao}
-            onClick={() => {
-              window.location.href = `/turma/${item.id}`;
-            }}
-          >
-            Gestão da turma
-          </button>
-
-          <button
-            style={btnSecundario}
-            onClick={() => {
-              window.location.href = `/turma/${item.id}/cronograma`;
-            }}
-          >
-            Cronograma
-          </button>
-        </div>
-      ),
+      render: (item) => {
+        const statusCod = getStatusCode(item);
+        const atrasada =
+          statusCod !== "concluido" &&
+          statusCod !== "cancelada" &&
+          (() => {
+            const df = parseDateOnly(item.data_fim);
+            const hoje = new Date(); hoje.setHours(0,0,0,0);
+            return df && df.getTime() < hoje.getTime();
+          })();
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {atrasada && (
+              <span style={{ fontSize: 11, fontWeight: 500, color: "#b91c1c", background: "#fee2e2", borderRadius: 999, padding: "2px 8px", alignSelf: "flex-start" }}>
+                Prazo vencido
+              </span>
+            )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                style={btnAcao}
+                onClick={() => { window.location.href = `/turma/${item.id}`; }}
+              >
+                Gestão da turma
+              </button>
+              <button
+                style={btnSecundario}
+                onClick={() => { window.location.href = `/turma/${item.id}/cronograma`; }}
+              >
+                Cronograma
+              </button>
+            </div>
+          </div>
+        );
+      },
     },
   ];
+
+  // filtro de período aplicado sobre a listagem
+  const filtrarPorPeriodo = useMemo(() => {
+    if (!filtroPeriodoInicio && !filtroPeriodoFim) return null;
+    return (item) => {
+      const inicio = parseDateOnly(item.data_inicio || item.data);
+      const fim = parseDateOnly(item.data_fim);
+      const filtroI = filtroPeriodoInicio ? parseDateOnly(filtroPeriodoInicio) : null;
+      const filtroF = filtroPeriodoFim ? parseDateOnly(filtroPeriodoFim) : null;
+      if (filtroI && inicio && inicio.getTime() < filtroI.getTime()) return false;
+      if (filtroF && (fim ? fim.getTime() > filtroF.getTime() : inicio && inicio.getTime() > filtroF.getTime())) return false;
+      return true;
+    };
+  }, [filtroPeriodoInicio, filtroPeriodoFim]);
 
   return (
     <CrudPageV2
@@ -655,6 +604,7 @@ export default function TreinamentosPage() {
       endpoint="/treinamentos"
       fields={fields}
       columns={columns}
+      filterFn={filtrarPorPeriodo}
       recordsTitle="Base de turmas"
       recordsSubtitle="Visão consolidada das turmas cadastradas no portal."
       allowedCreateRoles={["coordenador", "supervisor", "instrutor"]}
@@ -691,17 +641,39 @@ export default function TreinamentosPage() {
           descricao,
         };
 
+        // respeita o status escolhido pelo usuário sem sobrescrever via getStatusCode
+        // getStatusCode é usado apenas para leitura/exibição, não para persistência
         return {
           ...basePayload,
-          status: getStatusCode({
-            ...basePayload,
-            status: form.status || payload.status,
-            data_inicio: form.data_inicio || payload.data_inicio,
-            data_fim: form.data_fim || payload.data_fim,
-            carga_horaria: form.carga_horaria || payload.carga_horaria,
-          }),
+          status: form.status || payload.status || "planejado",
         };
       }}
+      extraHeaderContent={
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500 }}>Período:</span>
+          <input
+            type="date"
+            value={filtroPeriodoInicio}
+            onChange={(e) => setFiltroPeriodoInicio(e.target.value)}
+            style={{ fontSize: 13, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+          />
+          <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>até</span>
+          <input
+            type="date"
+            value={filtroPeriodoFim}
+            onChange={(e) => setFiltroPeriodoFim(e.target.value)}
+            style={{ fontSize: 13, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+          />
+          {(filtroPeriodoInicio || filtroPeriodoFim) && (
+            <button
+              onClick={() => { setFiltroPeriodoInicio(""); setFiltroPeriodoFim(""); }}
+              style={{ fontSize: 12, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+            >
+              Limpar
+            </button>
+          )}
+        </div>
+      }
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
@@ -739,22 +711,22 @@ export default function TreinamentosPage() {
               accent="#06b6d4"
             />
             <StatCard
-              title="Carga horária total"
-              value={`${fmt(kpis.horas)}h`}
-              subtitle="Carga consolidada"
+              title="Carga realizada"
+              value={`${fmt(kpis.horasRealizadas)}h`}
+              subtitle={`de ${fmt(kpis.horas)}h planejadas`}
               accent="#7c3aed"
             />
             <StatCard
-              title="Instrutores"
-              value={fmt(instrutores.length)}
-              subtitle="Disponíveis para seleção"
+              title="Taxa de conclusão"
+              value={kpis.total > 0 ? `${Math.round((kpis.concluidas / kpis.total) * 100)}%` : "—"}
+              subtitle="Concluídas / total"
               accent="#0f766e"
             />
             <StatCard
-              title="Supervisores"
-              value={fmt(supervisores.length)}
-              subtitle="Disponíveis para seleção"
-              accent="#334155"
+              title="Atrasadas"
+              value={fmt(kpis.atrasadas)}
+              subtitle="Data vencida sem conclusão"
+              accent={kpis.atrasadas > 0 ? "#dc2626" : "#334155"}
             />
           </div>
 
