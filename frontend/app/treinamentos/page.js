@@ -422,13 +422,16 @@ export default function TreinamentosPage() {
         getStatusCode(item) === "concluido"
     ).length;
 
+    // usa getStatusCode (não normalizeStatusCode direto) para ser consistente
+    // com a exibição: turmas auto-concluídas por data não devem aparecer como atrasadas
     const atrasadas = turmas.filter((item) => {
       const dataFim = parseDateOnly(item?.data_fim || item?.data_termino || item?.fim);
+      const statusCod = getStatusCode(item);
       return (
         dataFim &&
         dataFim.getTime() < new Date(new Date().setHours(0, 0, 0, 0)).getTime() &&
-        normalizeStatusCode(item.status) !== "concluido" &&
-        normalizeStatusCode(item.status) !== "cancelada"
+        statusCod !== "concluido" &&
+        statusCod !== "cancelada"
       );
     }).length;
 
