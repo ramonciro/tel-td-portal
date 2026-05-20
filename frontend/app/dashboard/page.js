@@ -94,7 +94,6 @@ function buildNarrativa(kpis = {}, filters = {}) {
   const recortes = [];
   if (filters.cliente) recortes.push(`cliente ${filters.cliente}`);
   if (filters.instrutor) recortes.push(`instrutor ${filters.instrutor}`);
-  if (filters.supervisor) recortes.push(`supervisor ${filters.supervisor}`);
   if (filters.status) recortes.push(`status ${normalizeStatus(filters.status)}`);
   if (filters.modalidade) recortes.push(`modalidade ${filters.modalidade === "online" ? "Online" : "Presencial"}`);
 
@@ -128,7 +127,6 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState({
     cliente: "",
     instrutor: "",
-    supervisor: "",
     status: "",
     modalidade: "",
     data_inicio: "",
@@ -168,10 +166,8 @@ export default function DashboardPage() {
 
   const clienteOptions = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
   const instrutorOptions = Array.isArray(filtrosApi.instrutores) ? filtrosApi.instrutores : [];
-  const supervisorOptions = Array.isArray(filtrosApi.supervisores) ? filtrosApi.supervisores : [];
   const statusOptions = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
   const modalidadeOptions = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
-  const nps = dados?.nps || {};
 
   return (
     <PortalShell
@@ -219,7 +215,6 @@ export default function DashboardPage() {
                   setFilters({
                     cliente: "",
                     instrutor: "",
-                    supervisor: "",
                     status: "",
                     modalidade: "",
                     data_inicio: "",
@@ -247,16 +242,6 @@ export default function DashboardPage() {
                 <select style={inputStyle} value={filters.instrutor} onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))}>
                   <option value="">Todos</option>
                   {instrutorOptions.map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={fieldLabel}>
-                Supervisor
-                <select style={inputStyle} value={filters.supervisor} onChange={(e) => setFilters((prev) => ({ ...prev, supervisor: e.target.value }))}>
-                  <option value="">Todos</option>
-                  {supervisorOptions.map((item) => (
                     <option key={item} value={item}>{item}</option>
                   ))}
                 </select>
@@ -301,15 +286,6 @@ export default function DashboardPage() {
             <StatCard title="Pendências" value={fmt(kpis.pendentes || 0)} subtitle="Ainda em aberto" accent="#f59e0b" />
             <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Carga executada" accent="#0ea5e9" />
             <StatCard title="Execução" value={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} subtitle="Base já registrada" accent="#7c3aed" />
-            {nps.total_avaliacoes > 0 && (
-              <>
-                <StatCard title="NPS médio" value={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent="#ec4899" />
-                <StatCard title="Qualidade" value={nps.media_qualidade > 0 ? fmt(nps.media_qualidade) : "—"} subtitle="Nota média qualidade" accent="#f97316" />
-                {nps.media_prova > 0 && (
-                  <StatCard title="Prova" value={fmt(nps.media_prova)} subtitle="Nota média prova" accent="#14b8a6" />
-                )}
-              </>
-            )}
           </div>
 
           <div style={twoColumns}>
@@ -380,33 +356,11 @@ export default function DashboardPage() {
             </SectionCard>
 
             <SectionCard title="Progresso da tripulação" subtitle="Ajuda a enxergar se o oceano está só bonito ou realmente em movimento.">
-              {(() => {
-                const prog = oceano.progresso_tripulacao || {};
-                const total = Number(oceano.tripulacao || 0);
-                const items = [
-                  { label: "Em percurso", value: Number(prog.em_percurso || 0), color: "#3b82f6" },
-                  { label: "Concluídos", value: Number(prog.concluido || 0), color: "#16a34a" },
-                  { label: "Em sustentação", value: Number(prog.em_sustentacao || 0), color: "#7c3aed" },
-                ];
-                return (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {items.map((item) => {
-                      const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
-                      return (
-                        <div key={item.label}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 5 }}>
-                            <span>{item.label}</span>
-                            <span style={{ color: item.color }}>{fmt(item.value)} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({pct}%)</span></span>
-                          </div>
-                          <div style={{ height: 8, borderRadius: 999, background: "#f1f5f9", overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${pct}%`, background: item.color, borderRadius: 999, transition: "width .4s ease" }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
+              <div style={summaryList}>
+                <div style={summaryItem}>Em percurso: {fmt(oceano.progresso_tripulacao?.em_percurso || 0)}</div>
+                <div style={summaryItem}>Concluídos: {fmt(oceano.progresso_tripulacao?.concluido || 0)}</div>
+                <div style={summaryItem}>Em sustentação: {fmt(oceano.progresso_tripulacao?.em_sustentacao || 0)}</div>
+              </div>
             </SectionCard>
           </div>
 
@@ -423,7 +377,6 @@ export default function DashboardPage() {
                       <th style={th}>Status</th>
                       <th style={th}>Data</th>
                       <th style={th}>Base</th>
-                      <th style={th}>Presença</th>
                       <th style={th}>Presentes</th>
                       <th style={th}>Pendentes</th>
                     </tr>
@@ -438,11 +391,6 @@ export default function DashboardPage() {
                         <td style={td}>{normalizeStatus(item.status_canonico || item.status)}</td>
                         <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
                         <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
-                        <td style={td}>
-                          {item.taxa_presenca > 0
-                            ? <span style={{ ...getBadgeStyleByTax(item.taxa_presenca), padding: "3px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700 }}>{item.taxa_presenca}%</span>
-                            : <span style={{ color: "#94a3b8" }}>—</span>}
-                        </td>
                         <td style={td}>{fmt(item.presentes || 0)}</td>
                         <td style={td}>{fmt(item.pendentes || 0)}</td>
                       </tr>
