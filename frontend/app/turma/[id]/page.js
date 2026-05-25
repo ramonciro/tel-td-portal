@@ -42,22 +42,21 @@ function calcularStatusTurma({
   aderenciaMedia,
   dataInicio,
   dataFim,
+  fimPassou,
 }) {
   const hoje = new Date();
-  const hojeLocal = new Date(
-    hoje.getFullYear(),
-    hoje.getMonth(),
-    hoje.getDate(),
-    12,
-    0,
-    0,
-    0
-  );
-
+  const hojeLocal = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12, 0, 0, 0);
   const inicio = parseLocalDate(dataInicio);
-  const fim = parseLocalDate(dataFim);
 
-  if (fim && !Number.isNaN(fim.getTime()) && hojeLocal > fim) {
+  // usa fimPassou pré-calculado (ISO string comparison) quando disponível
+  const terminou = fimPassou != null
+    ? fimPassou
+    : (() => {
+        const fim = parseLocalDate(dataFim);
+        return fim && !Number.isNaN(fim.getTime()) && hojeLocal > fim;
+      })();
+
+  if (terminou) {
     if (aderenciaMedia >= 80 || totalAulas === 0) {
       return { label: "Concluída", tone: "success" };
     }
@@ -220,7 +219,27 @@ export default function GestaoTurmaPage() {
     const percentualMedio =
       totalAulas > 0 ? calcPercentual(aulasComPresenca, totalAulas) : 0;
 
-    const statusOficial = normalizarStatusTurma(treinamento?.status);
+    // FIX: data_fim tem precedência sobre o status do banco para "em_andamento"/"planejada"
+    // (mesma lógica do presencas/page.js)
+    const hoje = new Date();
+    const hojeISO = [
+      hoje.getFullYear(),
+      String(hoje.getMonth() + 1).padStart(2, "0"),
+      String(hoje.getDate()).padStart(2, "0"),
+    ].join("-");
+    const dataFimISO = treinamento?.data_fim
+      ? String(treinamento.data_fim).slice(0, 10)
+      : null;
+    const fimPassou = dataFimISO != null && hojeISO > dataFimISO;
+
+    const statusBancoKey = String(treinamento?.status || "").trim().toLowerCase();
+    const statusDefinitivo =
+      ["cancelada", "cancelado"].includes(statusBancoKey) ||
+      ["concluida", "concluído", "concluido"].includes(statusBancoKey);
+
+    const statusOficial = statusDefinitivo
+      ? normalizarStatusTurma(treinamento?.status)
+      : null;
 
     const status =
       statusOficial ||
@@ -229,7 +248,8 @@ export default function GestaoTurmaPage() {
         aulasComPresenca,
         aderenciaMedia: percentualMedio,
         dataInicio: treinamento?.data_inicio || treinamento?.data,
-        dataFim: treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data,
+        dataFim: treinamento?.data_fim || null,
+        fimPassou,
       });
 
     const proximaAula =
@@ -310,11 +330,11 @@ export default function GestaoTurmaPage() {
           <InfoCard label="Instrutor" value={treinamento?.instrutor || "-"} />
           <InfoCard
             label="Período"
-            value={`${formatDate(
-              treinamento?.data_inicio || treinamento?.data
-            )} até ${formatDate(
-              treinamento?.data_fim || treinamento?.data_inicio || treinamento?.data
-            )}`}
+            value={
+              treinamento?.data_fim
+                ? `${formatDate(treinamento?.data_inicio || treinamento?.data)} até ${formatDate(treinamento.data_fim)}`
+                : formatDate(treinamento?.data_inicio || treinamento?.data)
+            }
           />
         </div>
       </div>
