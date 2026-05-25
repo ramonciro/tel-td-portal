@@ -64,13 +64,13 @@ function getStatusTurma({
   // Concluída é definitivo — sempre respeita o status oficial
   if (["concluida", "concluído", "concluido"].includes(status)) return "Concluída";
 
+  // data_fim vencida tem prioridade sobre qualquer status operacional
+  // se o período acabou, a turma está concluída — chamadas pendentes são backlog administrativo
+  if (fimPassou) return "Concluída";
+
   if (treinandos === 0) return "Sem treinandos";
   if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
   if (presencasLancadas === 0) return "Chamada pendente";
-
-  // data_fim no passado: Concluída — mas só se não houver chamada ainda aberta (pendentes)
-  // Se ainda tem pendentes, mantém Em andamento para que o instrutor finalize
-  if (fimPassou && pendentes === 0) return "Concluída";
 
   if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
   if (["planejada", "planejado"].includes(status)) return "Planejada";
