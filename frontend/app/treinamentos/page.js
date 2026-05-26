@@ -1,32 +1,188 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { BarraHorizontal, Donut, GraficoLinha, Funil } from "../../components/Charts";
+import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
-import { apiFetch } from "../../services/api";
+import SectionCard from "../../components/SectionCard";
+import StatCard from "../../components/StatCard";
+import { apiFetch, getStoredUser } from "../../services/api";
 
-// ─── helpers ───────────────────────────────────────────────────────────────
-function fmt(n) { return Number(n || 0).toLocaleString("pt-BR"); }
-function parseHoras(v) {
-  if (!v) return 0;
-  const s = String(v).replace(",", ".").trim();
-  const m = s.match(/^(\d+(?:\.\d+)?)/);
-  return m ? parseFloat(m[1]) : 0;
+function fmt(n) {
+  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
+
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const normalized = String(value).replace(",", ".").replace(/[^\d.-]/g, "").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseHoras(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const text = String(value).replace(",", ".").trim();
+  const match = text.match(/(\d+(\.\d+)?)/);
+  return match ? Number(match[1]) || 0 : 0;
+}
+
+function parseDateOnly(value) {
+  if (!value) return null;
+
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length === 3) {
+    const [ano, mes, dia] = parts.map(Number);
+    const date = new Date(ano, mes - 1, dia);
+    date.setHours(0, 0, 0, 0);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function formatDateSafe(value) {
+  if (!value) return "-";
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return String(value);
+}
+
+// hasCompletedCalls e hasCompletedWorkload removidos — verificavam campos que não
+// existem na tabela treinamentos e nunca retornavam true (código morto)
+
+function normalizeStatusCode(status) {
+  const key = String(status || "").trim().toLowerCase();
+
+  if (["concluido", "concluído", "concluida", "concluída", "finalizado", "finalizada"].includes(key)) {
+    return "concluido";
+  }
+
+  if (["em_andamento", "em andamento", "andamento", "ativo", "ativa"].includes(key)) {
+    return "em_andamento";
+  }
+
+  if (["cancelada", "cancelado"].includes(key)) {
+    return "cancelada";
+  }
+
+  return "planejado";
+}
+
 function getStatusCode(item) {
-  const status = String(item?.status || "").trim().toLowerCase();
-  if (["cancelado","cancelada"].includes(status)) return "cancelada";
-  if (["concluido","concluída","concluida"].includes(status)) return "concluido";
-  if (["planejado","planejada"].includes(status)) return "planejado";
-  const today = new Date(); today.setHours(0,0,0,0);
-  const fim = (() => { const s = String(item?.data_fim||"").slice(0,10); if(!s) return null; const [y,m,d]=s.split("-"); return new Date(+y,+m-1,+d); })();
-  if (fim && fim.getTime() < today.getTime()) return "concluido";
-  return "em_andamento";
+  const current = normalizeStatusCode(item?.status);
+
+  if (current === "cancelada" || current === "concluido") {
+    return current;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const dataInicio = parseDateOnly(item?.data_inicio || item?.data);
+  const dataFim = parseDateOnly(
+    item?.data_fim || item?.data_termino || item?.fim || item?.data_final
+  );
+
+  if (dataFim && dataFim.getTime() < today.getTime()) {
+    return "concluido";
+  }
+
+  if (dataInicio && dataInicio.getTime() <= today.getTime()) {
+    return "em_andamento";
+  }
+
+  return current;
 }
-function parseDateOnly(s) { if(!s) return null; const str=String(s).trim(); const m=str.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return new Date(+m[1],+m[2]-1,+m[3]); const b=str.match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(b) return new Date(+b[3],+b[2]-1,+b[1]); return null; }
-function formatDateSafe(v) { const d=parseDateOnly(v); if(!d||isNaN(d)) return v||"—"; return d.toLocaleDateString("pt-BR"); }
-function normalizeStatusCode(s) { const v=String(s||"").trim().toLowerCase(); if(["concluido","concluída","concluida"].includes(v)) return "concluido"; if(["cancelado","cancelada"].includes(v)) return "cancelada"; if(["planejado","planejada"].includes(v)) return "planejado"; return "em_andamento"; }
-function normalizeStatus(s) { const v=normalizeStatusCode(s); return ({concluido:"Concluída",cancelada:"Cancelada",planejado:"Planejada",em_andamento:"Em andamento"})[v]||s||"—"; }
+
+function statusLabel(statusOrItem) {
+  const code =
+    statusOrItem && typeof statusOrItem === "object"
+      ? getStatusCode(statusOrItem)
+      : normalizeStatusCode(statusOrItem);
+
+  if (code === "concluido") return "Concluída";
+  if (code === "em_andamento") return "Em andamento";
+  if (code === "cancelada") return "Cancelada";
+  return "Planejada";
+}
+
+function statusStyle(statusOrItem) {
+  const label = statusLabel(statusOrItem);
+
+  const base = {
+    display: "inline-block",
+    padding: "5px 9px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 11,
+  };
+
+  if (label === "Concluída") {
+    return { ...base, background: "#dcfce7", color: "#166534" };
+  }
+
+  if (label === "Em andamento") {
+    return { ...base, background: "#ffedd5", color: "#9a3412" };
+  }
+
+  if (label === "Cancelada") {
+    return { ...base, background: "#fee2e2", color: "#b91c1c" };
+  }
+
+  return { ...base, background: "#dbeafe", color: "#1d4ed8" };
+}
+
+function parseClientes(value) {
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isGlobalUser(cliente) {
+  return parseClientes(cliente).some((item) => item.toLowerCase() === "global");
+}
+
+function temClienteEmComum(clienteA, clienteB) {
+  const listaA = parseClientes(clienteA).map((item) => item.toLowerCase());
+  const listaB = parseClientes(clienteB).map((item) => item.toLowerCase());
+
+  if (listaA.includes("global") || listaB.includes("global")) return true;
+  return listaA.some((item) => listaB.includes(item));
+}
+
+function usuarioOptionLabel(usuario) {
+  const clientes = parseClientes(usuario.cliente);
+  if (!clientes.length) return usuario.nome;
+  if (clientes.length === 1) return `${usuario.nome} • ${clientes[0]}`;
+  if (isGlobalUser(usuario.cliente)) return `${usuario.nome} • Global`;
+  return `${usuario.nome} • ${clientes.length} operações`;
+}
+
+function parseTurmaMetadata(descricao) {
+  const text = String(descricao || "");
+  const modalidade = text.match(/\[modalidade:([^\]]+)\]/i)?.[1]?.trim() || "";
+  const sala = text.match(/\[sala:([^\]]*)\]/i)?.[1]?.trim() || "";
+  const descricaoLimpa = text
+    .replace(/\[modalidade:[^\]]+\]\s*/gi, "")
+    .replace(/\[sala:[^\]]*\]\s*/gi, "")
+    .trim();
+
+  return { modalidade, sala, descricaoLimpa };
+}
+
+function buildDescricaoComMetadata({ descricao, modalidade, sala }) {
+  const partes = [];
+  if (modalidade) partes.push(`[modalidade:${modalidade}]`);
+  if (sala) partes.push(`[sala:${sala}]`);
+  if (descricao) partes.push(String(descricao).trim());
+  return partes.join(" ").trim();
+}
 
 export default function TreinamentosPage() {
   const [turmas, setTurmas] = useState([]);
@@ -36,208 +192,413 @@ export default function TreinamentosPage() {
   const [filtroPeriodoInicio, setFiltroPeriodoInicio] = useState("");
   const [filtroPeriodoFim, setFiltroPeriodoFim] = useState("");
 
-  // ── KPIs ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    async function carregar() {
+      try {
+        const [treinamentosData, usuariosData, clientesData] = await Promise.all([
+          apiFetch("/treinamentos").catch(() => []),
+          apiFetch("/usuarios").catch(() => []),
+          apiFetch("/clientes").catch(() => []),
+        ]);
+
+        setTurmas(Array.isArray(treinamentosData) ? treinamentosData : []);
+        setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+        setClientes(Array.isArray(clientesData) ? clientesData : []);
+        setUsuarioLogado(getStoredUser());
+      } catch {
+        setTurmas([]);
+        setUsuarios([]);
+        setClientes([]);
+        setUsuarioLogado(getStoredUser());
+      }
+    }
+
+    carregar();
+  }, []);
+
+  const perfilLogado = String(usuarioLogado?.perfil || "").toLowerCase();
+  const clienteLogado = usuarioLogado?.cliente || "";
+  const nomeLogado = usuarioLogado?.nome || "";
+  const usuarioEhGlobal = isGlobalUser(clienteLogado);
+
+  const clientesOptions = useMemo(() => {
+    const lista = clientes
+      .map((item) => ({ value: item.nome, label: item.nome }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+
+    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
+      return lista;
+    }
+
+    if (perfilLogado === "instrutor" || perfilLogado === "supervisor") {
+      return lista.filter((item) => temClienteEmComum(item.value, clienteLogado));
+    }
+
+    return lista;
+  }, [clientes, perfilLogado, usuarioEhGlobal, clienteLogado]);
+
+  const clientePadrao = useMemo(() => {
+    if (
+      (perfilLogado === "instrutor" || perfilLogado === "supervisor") &&
+      clientesOptions.length === 1
+    ) {
+      return clientesOptions[0].value;
+    }
+
+    return "";
+  }, [perfilLogado, clientesOptions]);
+
+  const instrutores = useMemo(() => {
+    const base = usuarios.filter(
+      (item) => String(item.perfil || "").toLowerCase() === "instrutor"
+    );
+
+    let filtrados = base;
+
+    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
+      filtrados = base;
+    } else if (perfilLogado === "supervisor") {
+      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
+    } else if (perfilLogado === "instrutor") {
+      filtrados = base.filter((item) => item.nome === nomeLogado);
+    }
+
+    return filtrados
+      .map((item) => ({
+        value: item.nome,
+        label: usuarioOptionLabel(item),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [usuarios, perfilLogado, usuarioEhGlobal, clienteLogado, nomeLogado]);
+
+  const supervisores = useMemo(() => {
+    const base = usuarios.filter(
+      (item) => String(item.perfil || "").toLowerCase() === "supervisor"
+    );
+
+    let filtrados = base;
+
+    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
+      filtrados = base;
+    } else if (perfilLogado === "supervisor") {
+      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
+    } else if (perfilLogado === "instrutor") {
+      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
+    }
+
+    return filtrados
+      .map((item) => ({
+        value: item.nome,
+        label: usuarioOptionLabel(item),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [usuarios, perfilLogado, usuarioEhGlobal, clienteLogado]);
+
+  const fields = [
+    {
+      name: "tema",
+      label: "Turma / treinamento",
+      placeholder: "Tema ou nome da turma",
+    },
+    {
+      name: "cliente",
+      label: "Cliente",
+      type: "select",
+      options: clientesOptions,
+      placeholder:
+        clientesOptions.length > 0
+          ? "Selecione o cliente"
+          : "Nenhum cliente disponível",
+      defaultValue: clientePadrao,
+    },
+    {
+      name: "instrutor",
+      label: "Instrutor",
+      type: "select",
+      options: instrutores,
+      placeholder:
+        instrutores.length > 0
+          ? "Selecione o instrutor"
+          : "Nenhum instrutor disponível",
+      defaultValue: perfilLogado === "instrutor" ? nomeLogado : "",
+      disabled: perfilLogado === "instrutor",
+    },
+    {
+      name: "supervisor",
+      label: "Supervisor",
+      type: "select",
+      options: supervisores,
+      placeholder:
+        supervisores.length > 0
+          ? "Selecione o supervisor"
+          : "Nenhum supervisor disponível",
+      defaultValue: perfilLogado === "supervisor" ? nomeLogado : "",
+    },
+    {
+      name: "publico",
+      label: "Público",
+      placeholder: "Ex.: Operação, onboarding, reciclagem",
+    },
+    {
+      name: "carga_horaria",
+      label: "Carga horária total",
+      placeholder: "Ex.: 20h",
+    },
+    {
+      name: "participantes",
+      label: "Treinandos previstos",
+      type: "number",
+      placeholder: "Quantidade prevista",
+    },
+    {
+      name: "status",
+      label: "Status da turma",
+      type: "select",
+      options: [
+        { value: "planejado", label: "Planejada" },
+        { value: "em_andamento", label: "Em andamento" },
+        { value: "concluido", label: "Concluída" },
+        { value: "cancelada", label: "Cancelada" },
+      ],
+      placeholder: "Selecione o status",
+    },
+    {
+      name: "data_inicio",
+      label: "Data de início",
+      type: "date",
+    },
+    {
+      name: "data_fim",
+      label: "Data de fim",
+      type: "date",
+    },
+    {
+      name: "modalidade",
+      label: "Modalidade",
+      type: "select",
+      options: [
+        { value: "online", label: "Online" },
+        { value: "presencial", label: "Presencial" },
+      ],
+      placeholder: "Selecione a modalidade",
+    },
+    {
+      name: "sala",
+      label: "Sala",
+      placeholder: "Ex.: Sala 01 / Lab 02",
+    },
+    {
+      name: "descricao",
+      label: "Observações",
+      type: "textarea",
+      placeholder: "Informações complementares",
+    },
+  ];
+
   const kpis = useMemo(() => {
     const total = turmas.length;
     const planejadas = turmas.filter((item) => getStatusCode(item) === "planejado").length;
     const andamento = turmas.filter((item) => getStatusCode(item) === "em_andamento").length;
     const concluidas = turmas.filter((item) => getStatusCode(item) === "concluido").length;
-    const canceladas = turmas.filter((item) => getStatusCode(item) === "cancelada").length;
-    const treinandos = turmas.reduce((acc,item) => acc+Number(item.participantes||0),0);
-    const horas = turmas.reduce((acc,item) => acc+parseHoras(item.carga_horaria),0);
-    const horasRealizadas = turmas.filter((item) => getStatusCode(item)==="concluido").reduce((acc,item) => acc+parseHoras(item.carga_horaria),0);
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+    const treinandos = turmas.reduce(
+      (acc, item) => acc + Number(item.participantes || 0),
+      0
+    );
+
+    const horas = turmas.reduce(
+      (acc, item) => acc + parseHoras(item.carga_horaria),
+      0
+    );
+
+    // carga realizada: apenas turmas concluídas
+    const horasRealizadas = turmas
+      .filter((item) => getStatusCode(item) === "concluido")
+      .reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0);
+
+    const autoConcluidas = turmas.filter(
+      (item) =>
+        normalizeStatusCode(item.status) !== "concluido" &&
+        getStatusCode(item) === "concluido"
+    ).length;
+
+    // usa getStatusCode (não normalizeStatusCode direto) para ser consistente
+    // com a exibição: turmas auto-concluídas por data não devem aparecer como atrasadas
     const atrasadas = turmas.filter((item) => {
-      const sc = getStatusCode(item);
-      if(sc==="concluido"||sc==="cancelada") return false;
-      const df = parseDateOnly(item?.data_fim);
-      return df && df.getTime() < hoje.getTime();
+      const dataFim = parseDateOnly(item?.data_fim || item?.data_termino || item?.fim);
+      const statusCod = getStatusCode(item);
+      return (
+        dataFim &&
+        dataFim.getTime() < new Date(new Date().setHours(0, 0, 0, 0)).getTime() &&
+        statusCod !== "concluido" &&
+        statusCod !== "cancelada"
+      );
     }).length;
-    return { total, planejadas, andamento, concluidas, canceladas, treinandos, horas, horasRealizadas, atrasadas };
+
+    const alertas = [];
+
+    if (planejadas > 0) {
+      alertas.push(`${planejadas} turma(s) ainda estão planejadas.`);
+    }
+
+    if (andamento > 0) {
+      alertas.push(`${andamento} turma(s) estão em andamento.`);
+    }
+
+    if (autoConcluidas > 0) {
+      alertas.push(
+        `${autoConcluidas} turma(s) aparecem como concluídas automaticamente por prazo encerrado ou chamadas cumpridas.`
+      );
+    }
+
+    if (atrasadas > 0) {
+      alertas.push(
+        `${atrasadas} turma(s) estavam com status desatualizado e foram tratadas como concluídas na visualização.`
+      );
+    }
+
+    if (!alertas.length) {
+      alertas.push("Base organizada, sem pendências críticas no momento.");
+    }
+
+    return {
+      total,
+      planejadas,
+      andamento,
+      concluidas,
+      treinandos,
+      horas,
+      alertas,
+      autoConcluidas,
+      atrasadas,
+      horasRealizadas,
+    };
   }, [turmas]);
 
-  // ── Dados para gráficos ───────────────────────────────────────────────────
-  const graficos = useMemo(() => {
-    // Por cliente
-    const byCliente = new Map();
-    for (const t of turmas) {
-      const cl = t.cliente||"Sem cliente";
-      if (!byCliente.has(cl)) byCliente.set(cl,{cliente:cl,total:0,concluidas:0,horas:0,treinandos:0});
-      const e = byCliente.get(cl);
-      e.total++;
-      if(getStatusCode(t)==="concluido") e.concluidas++;
-      e.horas += parseHoras(t.carga_horaria);
-      e.treinandos += Number(t.participantes||0);
-    }
-    const porCliente = Array.from(byCliente.values()).map(e=>({...e, taxa_conclusao: e.total>0?Math.round((e.concluidas/e.total)*100):0}));
+  const columns = [
+    {
+      key: "tema",
+      label: "Turma",
+      render: (item) => (
+        <div>
+          <div style={titleCell}>{item.tema || item.titulo || "-"}</div>
+          <div style={subCell}>
+            {(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (item) => <span style={statusStyle(item)}>{statusLabel(item)}</span>,
+    },
+    {
+      key: "periodo",
+      label: "Período",
+      render: (item) => (
+        <span style={plainCell}>
+          {formatDateSafe(item.data_inicio || item.data)}
+          {item.data_fim ? ` até ${formatDateSafe(item.data_fim)}` : ""}
+        </span>
+      ),
+    },
+    {
+      key: "participantes",
+      label: "Treinandos previstos",
+      render: (item) => (
+        <strong style={scoreBlue}>{fmt(item.participantes || 0)}</strong>
+      ),
+    },
+    {
+      key: "carga_horaria",
+      label: "Carga horária",
+      render: (item) => (
+        <strong style={scoreGreen}>{item.carga_horaria || "-"}</strong>
+      ),
+    },
+    {
+      key: "modalidade",
+      label: "Modalidade",
+      render: (item) => {
+        const meta = parseTurmaMetadata(item.descricao);
+        return (
+          <span style={plainCell}>
+            {meta.modalidade
+              ? meta.modalidade === "presencial"
+                ? "Presencial"
+                : "Online"
+              : "-"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "sala",
+      label: "Sala",
+      render: (item) => {
+        const meta = parseTurmaMetadata(item.descricao);
+        return <span style={plainCell}>{meta.sala || "-"}</span>;
+      },
+    },
+    {
+      key: "supervisor",
+      label: "Supervisor",
+      render: (item) => <span style={plainCell}>{item.supervisor || "-"}</span>,
+    },
+    {
+      key: "acoes",
+      label: "Ações",
+      render: (item) => {
+        const statusCod = getStatusCode(item);
+        const atrasada =
+          statusCod !== "concluido" &&
+          statusCod !== "cancelada" &&
+          (() => {
+            const df = parseDateOnly(item.data_fim);
+            const hoje = new Date(); hoje.setHours(0,0,0,0);
+            return df && df.getTime() < hoje.getTime();
+          })();
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {atrasada && (
+              <span style={{ fontSize: 11, fontWeight: 500, color: "#b91c1c", background: "#fee2e2", borderRadius: 999, padding: "2px 8px", alignSelf: "flex-start" }}>
+                Prazo vencido
+              </span>
+            )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                style={btnAcao}
+                onClick={() => { window.location.href = `/turma/${item.id}`; }}
+              >
+                Gestão da turma
+              </button>
+              <button
+                style={btnSecundario}
+                onClick={() => { window.location.href = `/turma/${item.id}/cronograma`; }}
+              >
+                Cronograma
+              </button>
+            </div>
+          </div>
+        );
+      },
+    },
+  ];
 
-    // Por instrutor
-    const byInstrutor = new Map();
-    for (const t of turmas) {
-      const inst = t.instrutor||"Sem instrutor";
-      if(!byInstrutor.has(inst)) byInstrutor.set(inst,{instrutor:inst,total:0,concluidas:0,treinandos:0});
-      const e=byInstrutor.get(inst);
-      e.total++;
-      if(getStatusCode(t)==="concluido") e.concluidas++;
-      e.treinandos+=Number(t.participantes||0);
-    }
-    const porInstrutor = Array.from(byInstrutor.values()).sort((a,b)=>b.total-a.total);
-
-    // Evolução mensal
-    const byMes = new Map();
-    for (const t of turmas) {
-      const raw = t.data_inicio||t.data;
-      if(!raw) continue;
-      const mes = String(raw).slice(0,7);
-      if(!byMes.has(mes)) byMes.set(mes,{mes,turmas:0,concluidas:0,treinandos:0,horas:0});
-      const e=byMes.get(mes);
-      e.turmas++;
-      if(getStatusCode(t)==="concluido") e.concluidas++;
-      e.treinandos+=Number(t.participantes||0);
-      e.horas+=parseHoras(t.carga_horaria);
-    }
-    const evolucao = Array.from(byMes.entries()).sort(([a],[b])=>a.localeCompare(b)).map(([,v])=>({...v,taxa_conclusao:v.turmas>0?Math.round((v.concluidas/v.turmas)*100):0}));
-
-    return { porCliente, porInstrutor, evolucao };
-  }, [turmas]);
-
-  // ── Filtro de período ─────────────────────────────────────────────────────
+  // filtro de período aplicado sobre a listagem
   const filtrarPorPeriodo = useMemo(() => {
-    if(!filtroPeriodoInicio && !filtroPeriodoFim) return null;
+    if (!filtroPeriodoInicio && !filtroPeriodoFim) return null;
     return (item) => {
-      const inicio = parseDateOnly(item.data_inicio||item.data);
+      const inicio = parseDateOnly(item.data_inicio || item.data);
       const fim = parseDateOnly(item.data_fim);
-      const fi = filtroPeriodoInicio ? parseDateOnly(filtroPeriodoInicio) : null;
-      const ff = filtroPeriodoFim ? parseDateOnly(filtroPeriodoFim) : null;
-      if(fi && inicio && inicio.getTime()<fi.getTime()) return false;
-      if(ff && (fim?fim.getTime()>ff.getTime():inicio&&inicio.getTime()>ff.getTime())) return false;
+      const filtroI = filtroPeriodoInicio ? parseDateOnly(filtroPeriodoInicio) : null;
+      const filtroF = filtroPeriodoFim ? parseDateOnly(filtroPeriodoFim) : null;
+      if (filtroI && inicio && inicio.getTime() < filtroI.getTime()) return false;
+      if (filtroF && (fim ? fim.getTime() > filtroF.getTime() : inicio && inicio.getTime() > filtroF.getTime())) return false;
       return true;
     };
   }, [filtroPeriodoInicio, filtroPeriodoFim]);
-
-  // ── Colunas ───────────────────────────────────────────────────────────────
-  const instrutores = useMemo(()=>[...new Set(turmas.map(t=>t.instrutor).filter(Boolean))].sort(),[turmas]);
-  const supervisores = useMemo(()=>[...new Set(turmas.map(t=>t.supervisor).filter(Boolean))].sort(),[turmas]);
-
-  const badgeStatus = (item) => {
-    const sc = getStatusCode(item);
-    const cores = { concluido:["#dcfce7","#15803d"], em_andamento:["#eff6ff","#1d4ed8"], planejado:["#fef9c3","#92400e"], cancelada:["#fee2e2","#991b1b"] };
-    const [bg,color] = cores[sc]||["#f3f4f6","#374151"];
-    return <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:999,background:bg,color}}>{normalizeStatus(item.status)}</span>;
-  };
-
-  const columns = [
-    { key:"tema", label:"Tema", render:(item)=><span style={{fontWeight:600}}>{item.tema||"—"}</span> },
-    { key:"cliente", label:"Cliente" },
-    { key:"instrutor", label:"Instrutor" },
-    { key:"periodo", label:"Período", render:(item)=>(
-      <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>
-        {formatDateSafe(item.data_inicio||item.data)}
-        {item.data_fim?` até ${formatDateSafe(item.data_fim)}`:""}
-      </span>
-    )},
-    { key:"status", label:"Status", render:badgeStatus },
-    { key:"acoes", label:"Ações", render:(item)=>{
-      const sc=getStatusCode(item);
-      const hoje=new Date(); hoje.setHours(0,0,0,0);
-      const df=parseDateOnly(item?.data_fim);
-      const atrasada=sc!=="concluido"&&sc!=="cancelada"&&df&&df.getTime()<hoje.getTime();
-      return (
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {atrasada&&<span style={{fontSize:11,fontWeight:500,color:"#b91c1c",background:"#fee2e2",borderRadius:999,padding:"2px 8px",alignSelf:"flex-start"}}>Prazo vencido</span>}
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button style={{fontSize:12,padding:"5px 12px",borderRadius:6,background:"#3b82f6",color:"#fff",border:"none",cursor:"pointer"}} onClick={()=>{window.location.href=`/turma/${item.id}`;}}>Gestão da turma</button>
-            <button style={{fontSize:12,padding:"5px 12px",borderRadius:6,background:"var(--color-background-secondary)",color:"var(--color-text-primary)",border:"0.5px solid var(--color-border-secondary)",cursor:"pointer"}} onClick={()=>{window.location.href=`/turma/${item.id}/cronograma`;}}>Cronograma</button>
-          </div>
-        </div>
-      );
-    }},
-  ];
-
-  const fields = [
-    {name:"tema",label:"Tema",type:"text",required:true},
-    {name:"cliente",label:"Cliente",type:"select",options:[...new Set(clientes.map(c=>c.nome||c).filter(Boolean))].sort()},
-    {name:"instrutor",label:"Instrutor",type:"select",options:instrutores},
-    {name:"supervisor",label:"Supervisor",type:"select",options:supervisores},
-    {name:"data_inicio",label:"Data início",type:"date"},
-    {name:"data_fim",label:"Data fim",type:"date"},
-    {name:"carga_horaria",label:"Carga horária",type:"text",placeholder:"Ex: 8h"},
-    {name:"participantes",label:"Participantes previstos",type:"number"},
-    {name:"publico",label:"Público",type:"text"},
-    {name:"status",label:"Status",type:"select",options:["planejado","em_andamento","concluido","cancelado"]},
-    {name:"descricao",label:"Descrição / Observações",type:"textarea"},
-  ];
-
-  const hero = (
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:20}}>
-      {[
-        {label:"TURMAS",val:fmt(kpis.total),sub:"Base total",accent:"#3b82f6"},
-        {label:"PLANEJADAS",val:fmt(kpis.planejadas),sub:"Aguardando execução",accent:"#f59e0b"},
-        {label:"EM ANDAMENTO",val:fmt(kpis.andamento),sub:"Turmas ativas",accent:"#3b82f6"},
-        {label:"CONCLUÍDAS",val:fmt(kpis.concluidas),sub:"Ações finalizadas",accent:"#16a34a"},
-        {label:"TREINANDOS PREVISTOS",val:fmt(kpis.treinandos),sub:"Capacidade da base",accent:"#8b5cf6"},
-        {label:"CARGA REALIZADA",val:`${fmt(kpis.horasRealizadas)}h`,sub:`de ${fmt(kpis.horas)}h planejadas`,accent:"#7c3aed"},
-        {label:"TAXA DE CONCLUSÃO",val:kpis.total>0?`${Math.round((kpis.concluidas/kpis.total)*100)}%`:"—",sub:"Concluídas / total",accent:"#0f766e"},
-        {label:"ATRASADAS",val:fmt(kpis.atrasadas),sub:"Data vencida sem conclusão",accent:kpis.atrasadas>0?"#dc2626":"#334155"},
-      ].map((k,i)=>(
-        <div key={i} style={{background:"var(--color-background-primary)",border:`2px solid ${k.accent}`,borderTop:`4px solid ${k.accent}`,borderRadius:10,padding:"14px 16px"}}>
-          <div style={{fontSize:10,fontWeight:700,color:k.accent,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>{k.label}</div>
-          <div style={{fontSize:22,fontWeight:800,color:"var(--color-text-primary)",marginBottom:2}}>{k.val}</div>
-          <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{k.sub}</div>
-        </div>
-      ))}
-    </div>
-  );
-
-  const graficosSection = (
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:16,marginTop:8,marginBottom:24}}>
-
-      {graficos.evolucao.length>1&&(
-        <div style={{gridColumn:"1/-1",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:20}}>
-          <p style={{fontSize:13,fontWeight:700,color:"var(--color-text-secondary)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:14}}>Evolução mensal de turmas</p>
-          <GraficoLinha dados={graficos.evolucao} eixoX="mes" linhas={[
-            {key:"turmas",label:"Turmas",cor:"#3b82f6"},
-            {key:"concluidas",label:"Concluídas",cor:"#16a34a"},
-            {key:"taxa_conclusao",label:"Taxa conclusão %",cor:"#f59e0b",sufixo:"%"},
-          ]} />
-        </div>
-      )}
-
-      <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:20}}>
-        <p style={{fontSize:13,fontWeight:700,color:"var(--color-text-secondary)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:14}}>Status das turmas</p>
-        <Donut total={kpis.total} fatias={[
-          {label:"Concluídas",valor:kpis.concluidas,cor:"#16a34a"},
-          {label:"Em andamento",valor:kpis.andamento,cor:"#3b82f6"},
-          {label:"Planejadas",valor:kpis.planejadas,cor:"#f59e0b"},
-          {label:"Canceladas",valor:kpis.canceladas,cor:"#ef4444"},
-        ].filter(f=>f.valor>0)} />
-      </div>
-
-      <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:20}}>
-        <p style={{fontSize:13,fontWeight:700,color:"var(--color-text-secondary)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:14}}>Funil de treinandos</p>
-        <Funil etapas={[
-          {label:"Previstos",valor:kpis.treinandos,cor:"#3b82f6"},
-          {label:"Em turmas ativas",valor:turmas.filter(t=>getStatusCode(t)==="em_andamento").reduce((a,t)=>a+Number(t.participantes||0),0),cor:"#8b5cf6"},
-          {label:"Em turmas concluídas",valor:turmas.filter(t=>getStatusCode(t)==="concluido").reduce((a,t)=>a+Number(t.participantes||0),0),cor:"#16a34a"},
-        ]} />
-      </div>
-
-      {graficos.porCliente.length>0&&(
-        <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:20}}>
-          <p style={{fontSize:13,fontWeight:700,color:"var(--color-text-secondary)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:14}}>Taxa de conclusão por cliente</p>
-          <BarraHorizontal dados={graficos.porCliente} labelKey="cliente" valueKey="taxa_conclusao" cor="#16a34a" sufixo="%" />
-        </div>
-      )}
-
-      {graficos.porInstrutor.length>0&&(
-        <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:20}}>
-          <p style={{fontSize:13,fontWeight:700,color:"var(--color-text-secondary)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:14}}>Turmas por instrutor</p>
-          <BarraHorizontal dados={graficos.porInstrutor} labelKey="instrutor" valueKey="total" cor="#8b5cf6" sufixo=" turmas" />
-        </div>
-      )}
-
-    </div>
-  );
 
   return (
     <CrudPageV2
@@ -247,34 +608,211 @@ export default function TreinamentosPage() {
       fields={fields}
       columns={columns}
       filterFn={filtrarPorPeriodo}
+      recordsTitle="Base de turmas"
+      recordsSubtitle="Visão consolidada das turmas cadastradas no portal."
+      allowedCreateRoles={["coordenador", "supervisor", "instrutor"]}
+      allowedEditRoles={["coordenador", "supervisor", "instrutor"]}
+      allowedDeleteRoles={["coordenador"]}
+      transformRecordToForm={(baseForm, record) => {
+        const meta = parseTurmaMetadata(record?.descricao);
+        return {
+          ...baseForm,
+          modalidade: meta.modalidade || "",
+          sala: meta.sala || "",
+          descricao: meta.descricaoLimpa || "",
+          status: getStatusCode(record),
+        };
+      }}
+      transformFormToPayload={(payload, form) => {
+        const descricao = buildDescricaoComMetadata({
+          descricao: form.descricao,
+          modalidade: form.modalidade,
+          sala: form.sala,
+        });
+
+        const basePayload = {
+          ...payload,
+          cliente: form.cliente || payload.cliente || clientePadrao || "",
+          instrutor:
+            perfilLogado === "instrutor"
+              ? nomeLogado
+              : form.instrutor || payload.instrutor || "",
+          supervisor:
+            perfilLogado === "supervisor"
+              ? nomeLogado
+              : form.supervisor || payload.supervisor || "",
+          descricao,
+        };
+
+        // respeita o status escolhido pelo usuário sem sobrescrever via getStatusCode
+        // getStatusCode é usado apenas para leitura/exibição, não para persistência
+        return {
+          ...basePayload,
+          status: form.status || payload.status || "planejado",
+        };
+      }}
       extraHeaderContent={
-        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-          <span style={{fontSize:13,color:"var(--color-text-secondary)",fontWeight:500}}>Período:</span>
-          <input type="date" value={filtroPeriodoInicio} onChange={e=>setFiltroPeriodoInicio(e.target.value)} style={{fontSize:13,padding:"5px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)"}} />
-          <span style={{fontSize:13,color:"var(--color-text-secondary)"}}>até</span>
-          <input type="date" value={filtroPeriodoFim} onChange={e=>setFiltroPeriodoFim(e.target.value)} style={{fontSize:13,padding:"5px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)"}} />
-          {(filtroPeriodoInicio||filtroPeriodoFim)&&(
-            <button onClick={()=>{setFiltroPeriodoInicio("");setFiltroPeriodoFim("");}} style={{fontSize:12,padding:"5px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",cursor:"pointer"}}>Limpar</button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500 }}>Período:</span>
+          <input
+            type="date"
+            value={filtroPeriodoInicio}
+            onChange={(e) => setFiltroPeriodoInicio(e.target.value)}
+            style={{ fontSize: 13, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+          />
+          <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>até</span>
+          <input
+            type="date"
+            value={filtroPeriodoFim}
+            onChange={(e) => setFiltroPeriodoFim(e.target.value)}
+            style={{ fontSize: 13, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+          />
+          {(filtroPeriodoInicio || filtroPeriodoFim) && (
+            <button
+              onClick={() => { setFiltroPeriodoInicio(""); setFiltroPeriodoFim(""); }}
+              style={{ fontSize: 12, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+            >
+              Limpar
+            </button>
           )}
         </div>
       }
-      hero={hero}
-      extraContent={graficosSection}
-      onDataLoad={(data)=>{
-        setTurmas(data||[]);
-        apiFetch("/usuarios").then(u=>setUsuarios(Array.isArray(u)?u:[])).catch(()=>{});
-        apiFetch("/clientes").then(cl=>setClientes(Array.isArray(cl)?cl:[])).catch(()=>{});
-        const me = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("usuario")||"null") : null;
-        setUsuarioLogado(me);
-      }}
-      transformFormToPayload={(payload,form)=>({
-        ...payload,
-        status: form.status||payload.status||"planejado",
-      })}
-      transformRecordToForm={(record)=>({
-        ...record,
-        status: record.status||"planejado",
-      })}
+      hero={
+        <div style={{ display: "grid", gap: 14 }}>
+          <div style={heroGrid}>
+            <StatCard
+              title="Turmas"
+              value={fmt(kpis.total)}
+              subtitle="Base total"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Planejadas"
+              value={fmt(kpis.planejadas)}
+              subtitle="Aguardando execução"
+              accent="#f59e0b"
+            />
+            <StatCard
+              title="Em andamento"
+              value={fmt(kpis.andamento)}
+              subtitle="Turmas ativas"
+              accent="#ea580c"
+            />
+            <StatCard
+              title="Concluídas"
+              value={fmt(kpis.concluidas)}
+              subtitle="Ações finalizadas"
+              accent="#16a34a"
+            />
+          </div>
+
+          <div style={heroGrid}>
+            <StatCard
+              title="Treinandos previstos"
+              value={fmt(kpis.treinandos)}
+              subtitle="Capacidade da base"
+              accent="#06b6d4"
+            />
+            <StatCard
+              title="Carga realizada"
+              value={`${fmt(kpis.horasRealizadas)}h`}
+              subtitle={`de ${fmt(kpis.horas)}h planejadas`}
+              accent="#7c3aed"
+            />
+            <StatCard
+              title="Taxa de conclusão"
+              value={kpis.total > 0 ? `${Math.round((kpis.concluidas / kpis.total) * 100)}%` : "—"}
+              subtitle="Concluídas / total"
+              accent="#0f766e"
+            />
+            <StatCard
+              title="Atrasadas"
+              value={fmt(kpis.atrasadas)}
+              subtitle="Data vencida sem conclusão"
+              accent={kpis.atrasadas > 0 ? "#dc2626" : "#334155"}
+            />
+          </div>
+
+          <SectionCard
+            title="Leitura gerencial"
+            subtitle="Visão automática do status vencido ou chamada cumprida, reduzindo inconsistência operacional."
+          >
+            <div style={alertGrid}>
+              {kpis.alertas.map((item, index) => (
+                <div key={index} style={alertItem}>
+                  {item}
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      }
     />
   );
 }
+
+const heroGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
+
+const alertGrid = {
+  display: "grid",
+  gap: 10,
+};
+
+const alertItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 14,
+  color: "#334155",
+  lineHeight: 1.5,
+  fontWeight: 600,
+};
+
+const titleCell = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const subCell = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 12,
+};
+
+const plainCell = {
+  color: "#334155",
+};
+
+const scoreBlue = {
+  color: "#2563eb",
+};
+
+const scoreGreen = {
+  color: "#16a34a",
+};
+
+const btnAcao = {
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  borderRadius: 8,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const btnSecundario = {
+  border: "1px solid #ddd6fe",
+  background: "#f5f3ff",
+  color: "#7c3aed",
+  borderRadius: 8,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
