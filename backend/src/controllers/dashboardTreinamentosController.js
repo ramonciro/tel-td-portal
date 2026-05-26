@@ -322,29 +322,6 @@ async function getDashboardTreinamentos(req, res) {
       };
     });
 
-    const statusCounts = {
-      planejadas: filteredRows.filter((r) => normalizeStatus(r.status) === "planejado").length,
-      em_andamento: filteredRows.filter((r) => normalizeStatus(r.status) === "em_andamento").length,
-      concluidas: filteredRows.filter((r) => normalizeStatus(r.status) === "concluido").length,
-      canceladas: filteredRows.filter((r) => normalizeStatus(r.status) === "cancelada").length,
-    };
-    const funil = { previstos: totalPrevistos, registrados: totalTreinados, presentes: totalPresentes };
-    const evolucaoMap = new Map();
-    for (const row of filteredRows) {
-      const rawDate = row.data_inicio || row.data;
-      if (!rawDate) continue;
-      const mes = String(rawDate).slice(0, 7);
-      if (!evolucaoMap.has(mes)) evolucaoMap.set(mes, { mes, turmas: 0, presentes: 0, treinados: 0 });
-      const entry = evolucaoMap.get(mes);
-      entry.turmas += 1;
-      const useTP = n(row.treinados) > 0;
-      entry.presentes += useTP ? n(row.presentes) : n(row.pleg_presentes);
-      entry.treinados += useTP ? n(row.treinados) : n(row.pleg_total);
-    }
-    const evolucaoMensal = Array.from(evolucaoMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, v]) => ({ ...v, taxa_presenca: v.treinados > 0 ? Math.round((v.presentes / v.treinados) * 100) : 0 }));
-
     return res.json({
       ok: true,
       kpis: {
@@ -391,9 +368,6 @@ async function getDashboardTreinamentos(req, res) {
       ultimas_turmas: ultimasTurmas,
       oceano,
       nps: npsData,
-      status_counts: statusCounts,
-      funil,
-      evolucao_mensal: evolucaoMensal,
     });
   } catch (error) {
     console.error("[dashboard] Erro:", error.message);
