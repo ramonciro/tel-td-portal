@@ -1,5 +1,4 @@
 "use client";
-import { BarraHorizontal, Donut, GraficoLinha, Funil, FarolGrid } from "../../components/Charts";
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
@@ -163,10 +162,6 @@ export default function DashboardPage() {
   const rankingInstrutores = dados?.ranking_instrutores || [];
   const ultimasTurmas = dados?.ultimas_turmas || [];
   const oceano = dados?.oceano || {};
-  const statusCounts = dados?.status_counts || {};
-  const funil = dados?.funil || {};
-  const evolucaoMensal = dados?.evolucao_mensal || [];
-  const farois = dados?.farois || [];
 
   const farois = useMemo(() => buildFarois(kpis, oceano, presencaPorCliente, ultimasTurmas), [kpis, oceano, presencaPorCliente, ultimasTurmas]);
   const narrativa = useMemo(() => buildNarrativa(kpis, filters), [kpis, filters]);
@@ -470,61 +465,6 @@ function MiniStat({ label, value }) {
     <div style={miniStatCard}>
       <div style={miniStatLabel}>{label}</div>
       <div style={miniStatValue}>{value}</div>
-
-      {/* ── Gráficos ───────────────────────────────────────────────── */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))", gap:16, marginTop:24 }}>
-
-        {evolucaoMensal.length > 0 && (
-          <div style={{ gridColumn:"1/-1", background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", padding:20 }}>
-            <p style={{ fontSize:13, fontWeight:700, color:"var(--color-text-secondary)", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Evolução mensal</p>
-            <GraficoLinha dados={evolucaoMensal} eixoX="mes" linhas={[
-              { key:"turmas", label:"Turmas", cor:"#3b82f6" },
-              { key:"taxa_presenca", label:"Presença %", cor:"#16a34a", sufixo:"%" },
-            ]} />
-          </div>
-        )}
-
-        <div style={{ background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", padding:20 }}>
-          <p style={{ fontSize:13, fontWeight:700, color:"var(--color-text-secondary)", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Status das turmas</p>
-          <Donut total={kpis.turmas_total} fatias={[
-            { label:"Concluídas", valor:statusCounts.concluidas||0, cor:"#16a34a" },
-            { label:"Em andamento", valor:statusCounts.em_andamento||0, cor:"#3b82f6" },
-            { label:"Planejadas", valor:statusCounts.planejadas||0, cor:"#f59e0b" },
-            { label:"Canceladas", valor:statusCounts.canceladas||0, cor:"#ef4444" },
-          ].filter(f=>f.valor>0)} />
-        </div>
-
-        <div style={{ background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", padding:20 }}>
-          <p style={{ fontSize:13, fontWeight:700, color:"var(--color-text-secondary)", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Funil de execução</p>
-          <Funil etapas={[
-            { label:"Previstos", valor:funil.previstos||0, cor:"#3b82f6" },
-            { label:"Registrados", valor:funil.registrados||0, cor:"#8b5cf6" },
-            { label:"Presentes", valor:funil.presentes||0, cor:"#16a34a" },
-          ]} />
-        </div>
-
-        {presencaPorCliente.length > 0 && (
-          <div style={{ background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", padding:20 }}>
-            <p style={{ fontSize:13, fontWeight:700, color:"var(--color-text-secondary)", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Presença por cliente</p>
-            <BarraHorizontal dados={presencaPorCliente} labelKey="cliente" valueKey="taxa_presenca" cor="#16a34a" sufixo="%" />
-          </div>
-        )}
-
-        {rankingInstrutores.length > 0 && (
-          <div style={{ background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", padding:20 }}>
-            <p style={{ fontSize:13, fontWeight:700, color:"var(--color-text-secondary)", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Ranking de instrutores</p>
-            <BarraHorizontal dados={rankingInstrutores} labelKey="instrutor" valueKey="taxa_presenca" cor="#8b5cf6" sufixo="%" />
-          </div>
-        )}
-
-        {farois.length > 0 && (
-          <div style={{ gridColumn:"1/-1", background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", padding:20 }}>
-            <p style={{ fontSize:13, fontWeight:700, color:"var(--color-text-secondary)", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Faróis de atenção</p>
-            <FarolGrid farois={farois} />
-          </div>
-        )}
-
-      </div>
     </div>
   );
 }
