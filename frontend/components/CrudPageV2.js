@@ -106,6 +106,10 @@ export default function CrudPageV2({
   allowedDeleteRoles = [],
   transformRecordToForm = null,
   transformFormToPayload = null,
+  filterFn = null,
+  onDataLoad = null,
+  extraHeaderContent = null,
+  extraContent = null,
 }) {
   const [records, setRecords] = useState([]);
   const [form, setForm] = useState(buildInitialForm(fields));
@@ -140,7 +144,9 @@ export default function CrudPageV2({
       setLoading(true);
       setError("");
       const data = await apiFetch(endpoint);
-      setRecords(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setRecords(list);
+      if (typeof onDataLoad === "function") onDataLoad(list);
     } catch (err) {
       setError(err.message || "Erro ao carregar registros.");
       setRecords([]);
@@ -290,20 +296,22 @@ export default function CrudPageV2({
   }
 
   const filteredRecords = useMemo(() => {
+    let list = records;
+    if (typeof filterFn === "function") list = list.filter(filterFn);
     const term = search.trim().toLowerCase();
-    if (!term) return records;
-
-    return records.filter((record) =>
+    if (!term) return list;
+    return list.filter((record) =>
       Object.values(record || {}).some((value) =>
         String(value || "").toLowerCase().includes(term)
       )
     );
-  }, [records, search]);
+  }, [records, search, filterFn]);
 
   return (
     <PortalShell title={title} subtitle={subtitle}>
       <div style={{ display: "grid", gap: 14 }}>
         {hero}
+        {extraHeaderContent}
 
         {error ? <div style={errorBox}>{error}</div> : null}
         {success ? <div style={successBox}>{success}</div> : null}
@@ -349,8 +357,8 @@ export default function CrudPageV2({
                         {field.placeholder || "Selecione uma opção"}
                       </option>
                       {(field.options || []).map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
+                        <option key={typeof option === "object" ? option.value : option} value={typeof option === "object" ? option.value : option}>
+                          {typeof option === "object" ? option.label : option}
                         </option>
                       ))}
                     </select>
@@ -462,6 +470,7 @@ export default function CrudPageV2({
             </div>
           )}
         </SectionCard>
+        {extraContent}
       </div>
     </PortalShell>
   );
