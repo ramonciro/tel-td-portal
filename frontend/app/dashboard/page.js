@@ -213,6 +213,62 @@ export default function DashboardPage() {
             </div>
           </section>
 
+      {/* ── Gráficos ──────────────────────────────────────────────────── */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))", gap:16, marginTop:8 }}>
+
+        {evolucaoMensal.length > 1 && (
+          <div style={{ gridColumn:"1/-1", background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
+            <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Evolução mensal</p>
+            <GraficoLinha dados={evolucaoMensal} eixoX="mes" linhas={[
+              { key:"turmas", label:"Turmas", cor:"#3b82f6" },
+              { key:"taxa_presenca", label:"Presença %", cor:"#16a34a", sufixo:"%" },
+            ]} />
+          </div>
+        )}
+
+        <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
+          <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Status das turmas</p>
+          <Donut total={kpis.turmas_total} fatias={[
+            { label:"Concluídas", valor:statusCounts.concluidas||0, cor:"#16a34a" },
+            { label:"Em andamento", valor:statusCounts.em_andamento||0, cor:"#3b82f6" },
+            { label:"Planejadas", valor:statusCounts.planejadas||0, cor:"#f59e0b" },
+            { label:"Canceladas", valor:statusCounts.canceladas||0, cor:"#ef4444" },
+          ].filter(f=>f.valor>0)} />
+        </div>
+
+        <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
+          <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Funil de execução</p>
+          <Funil etapas={[
+            { label:"Previstos", valor:funilData.previstos||0, cor:"#3b82f6" },
+            { label:"Registrados", valor:funilData.registrados||0, cor:"#8b5cf6" },
+            { label:"Presentes", valor:funilData.presentes||0, cor:"#16a34a" },
+          ]} />
+        </div>
+
+        {presencaPorCliente.length > 0 && (
+          <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
+            <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Presença por cliente</p>
+            <BarraHorizontal dados={presencaPorCliente} labelKey="cliente" valueKey="taxa_presenca" cor="#16a34a" sufixo="%" />
+          </div>
+        )}
+
+        {dados?.ranking_instrutores?.length > 0 && (
+          <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
+            <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Ranking de instrutores</p>
+            <BarraHorizontal dados={dados.ranking_instrutores} labelKey="instrutor" valueKey="taxa_presenca" cor="#8b5cf6" sufixo="%" />
+          </div>
+        )}
+
+        {farois.length > 0 && (
+          <div style={{ gridColumn:"1/-1", background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
+            <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Faróis de atenção</p>
+            <FarolGrid farois={farois} />
+          </div>
+        )}
+
+      </div>
+
+
           <SectionCard
             title="Filtros do painel"
             subtitle="Escolha o recorte que faz mais sentido para a sua leitura e refine a análise sem perder contexto."
@@ -460,61 +516,6 @@ export default function DashboardPage() {
           </SectionCard>
         </div>
       )}
-
-      {/* ── Gráficos ──────────────────────────────────────────────────── */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))", gap:16, marginTop:8 }}>
-
-        {evolucaoMensal.length > 1 && (
-          <div style={{ gridColumn:"1/-1", background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Evolução mensal</p>
-            <GraficoLinha dados={evolucaoMensal} eixoX="mes" linhas={[
-              { key:"turmas", label:"Turmas", cor:"#3b82f6" },
-              { key:"taxa_presenca", label:"Presença %", cor:"#16a34a", sufixo:"%" },
-            ]} />
-          </div>
-        )}
-
-        <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
-          <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Status das turmas</p>
-          <Donut total={kpis.turmas_total} fatias={[
-            { label:"Concluídas", valor:statusCounts.concluidas||0, cor:"#16a34a" },
-            { label:"Em andamento", valor:statusCounts.em_andamento||0, cor:"#3b82f6" },
-            { label:"Planejadas", valor:statusCounts.planejadas||0, cor:"#f59e0b" },
-            { label:"Canceladas", valor:statusCounts.canceladas||0, cor:"#ef4444" },
-          ].filter(f=>f.valor>0)} />
-        </div>
-
-        <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
-          <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Funil de execução</p>
-          <Funil etapas={[
-            { label:"Previstos", valor:funilData.previstos||0, cor:"#3b82f6" },
-            { label:"Registrados", valor:funilData.registrados||0, cor:"#8b5cf6" },
-            { label:"Presentes", valor:funilData.presentes||0, cor:"#16a34a" },
-          ]} />
-        </div>
-
-        {presencaPorCliente.length > 0 && (
-          <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Presença por cliente</p>
-            <BarraHorizontal dados={presencaPorCliente} labelKey="cliente" valueKey="taxa_presenca" cor="#16a34a" sufixo="%" />
-          </div>
-        )}
-
-        {dados?.ranking_instrutores?.length > 0 && (
-          <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Ranking de instrutores</p>
-            <BarraHorizontal dados={dados.ranking_instrutores} labelKey="instrutor" valueKey="taxa_presenca" cor="#8b5cf6" sufixo="%" />
-          </div>
-        )}
-
-        {farois.length > 0 && (
-          <div style={{ gridColumn:"1/-1", background:"#fff", border:"1px solid #e2e8f0", borderRadius:18, padding:20 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".05em", marginBottom:14 }}>Faróis de atenção</p>
-            <FarolGrid farois={farois} />
-          </div>
-        )}
-
-      </div>
     </PortalShell>
   );
 }
