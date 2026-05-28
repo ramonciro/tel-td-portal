@@ -138,40 +138,8 @@ export default function TreinamentosPage() {
     {name:"descricao",label:"Descrição / Observações",type:"textarea"},
   ];
 
-  const hero=(
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:4}}>
-      {[
-        {label:"TURMAS",val:fmt(kpis.total),sub:"Base total",accent:"#3b82f6"},
-        {label:"PLANEJADAS",val:fmt(kpis.planejadas),sub:"Aguardando execução",accent:"#f59e0b"},
-        {label:"EM ANDAMENTO",val:fmt(kpis.andamento),sub:"Turmas ativas",accent:"#3b82f6"},
-        {label:"CONCLUÍDAS",val:fmt(kpis.concluidas),sub:"Ações finalizadas",accent:"#16a34a"},
-        {label:"TREINANDOS PREVISTOS",val:fmt(kpis.treinandos),sub:"Capacidade da base",accent:"#8b5cf6"},
-        {label:"CARGA REALIZADA",val:`${fmt(kpis.horasRealizadas)}h`,sub:`de ${fmt(kpis.horas)}h planejadas`,accent:"#7c3aed"},
-        {label:"TAXA DE CONCLUSÃO",val:kpis.total>0?`${Math.round((kpis.concluidas/kpis.total)*100)}%`:"—",sub:"Concluídas / total",accent:"#0f766e"},
-        {label:"ATRASADAS",val:fmt(kpis.atrasadas),sub:"Data vencida sem conclusão",accent:kpis.atrasadas>0?"#dc2626":"#334155"},
-      ].map((k,i)=>(
-        <div key={i} style={{background:"#fff",border:`2px solid ${k.accent}`,borderTop:`4px solid ${k.accent}`,borderRadius:12,padding:"14px 16px"}}>
-          <div style={{fontSize:10,fontWeight:800,color:k.accent,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>{k.label}</div>
-          <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:2}}>{k.val}</div>
-          <div style={{fontSize:11,color:"#64748b"}}>{k.sub}</div>
-        </div>
-      ))}
-    </div>
-  );
+  const graficosTop=(
 
-  const extraHeaderContent=(
-    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
-      <span style={{fontSize:13,color:"#64748b",fontWeight:700}}>Período:</span>
-      <input type="date" value={filtroPeriodoInicio} onChange={e=>setFiltroPeriodoInicio(e.target.value)} style={{fontSize:13,padding:"5px 10px",borderRadius:10,border:"1px solid #cbd5e1",background:"#fff",color:"#0f172a"}}/>
-      <span style={{fontSize:13,color:"#64748b"}}>até</span>
-      <input type="date" value={filtroPeriodoFim} onChange={e=>setFiltroPeriodoFim(e.target.value)} style={{fontSize:13,padding:"5px 10px",borderRadius:10,border:"1px solid #cbd5e1",background:"#fff",color:"#0f172a"}}/>
-      {(filtroPeriodoInicio||filtroPeriodoFim)&&(
-        <button onClick={()=>{setFiltroPeriodoInicio("");setFiltroPeriodoFim("");}} style={{fontSize:12,padding:"5px 10px",borderRadius:10,border:"1px solid #cbd5e1",background:"#f8fafc",color:"#64748b",cursor:"pointer"}}>Limpar</button>
-      )}
-    </div>
-  );
-
-  const extraContent=(
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:16,marginTop:16}}>
       {graficos.evolucao.length>1&&(
         <div style={{gridColumn:"1/-1",background:"#fff",border:"1px solid #e2e8f0",borderRadius:18,padding:20}}>
@@ -213,7 +181,46 @@ export default function TreinamentosPage() {
         </div>
       )}
     </div>
+  )
   );
+
+  const hero=(
+    <>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:16,marginBottom:16}}>{graficosTop}</div>
+    
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:4}}>
+      {[
+        {label:"TURMAS",val:fmt(kpis.total),sub:"Base total",accent:"#3b82f6"},
+        {label:"PLANEJADAS",val:fmt(kpis.planejadas),sub:"Aguardando execução",accent:"#f59e0b"},
+        {label:"EM ANDAMENTO",val:fmt(kpis.andamento),sub:"Turmas ativas",accent:"#3b82f6"},
+        {label:"CONCLUÍDAS",val:fmt(kpis.concluidas),sub:"Ações finalizadas",accent:"#16a34a"},
+        {label:"TREINANDOS PREVISTOS",val:fmt(kpis.treinandos),sub:"Capacidade da base",accent:"#8b5cf6"},
+        {label:"CARGA REALIZADA",val:`${fmt(kpis.horasRealizadas)}h`,sub:`de ${fmt(kpis.horas)}h planejadas`,accent:"#7c3aed"},
+        {label:"TAXA DE CONCLUSÃO",val:kpis.total>0?`${Math.round((kpis.concluidas/kpis.total)*100)}%`:"—",sub:"Concluídas / total",accent:"#0f766e"},
+        {label:"ATRASADAS",val:fmt(kpis.atrasadas),sub:"Data vencida sem conclusão",accent:kpis.atrasadas>0?"#dc2626":"#334155"},
+      ].map((k,i)=>(
+        <div key={i} style={{background:"#fff",border:`2px solid ${k.accent}`,borderTop:`4px solid ${k.accent}`,borderRadius:12,padding:"14px 16px"}}>
+          <div style={{fontSize:10,fontWeight:800,color:k.accent,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>{k.label}</div>
+          <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:2}}>{k.val}</div>
+          <div style={{fontSize:11,color:"#64748b"}}>{k.sub}</div>
+        </div>
+      ))}
+    </div>
+    </>
+  );
+
+  const extraHeaderContent=(
+    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
+      <span style={{fontSize:13,color:"#64748b",fontWeight:700}}>Período:</span>
+      <input type="date" value={filtroPeriodoInicio} onChange={e=>setFiltroPeriodoInicio(e.target.value)} style={{fontSize:13,padding:"5px 10px",borderRadius:10,border:"1px solid #cbd5e1",background:"#fff",color:"#0f172a"}}/>
+      <span style={{fontSize:13,color:"#64748b"}}>até</span>
+      <input type="date" value={filtroPeriodoFim} onChange={e=>setFiltroPeriodoFim(e.target.value)} style={{fontSize:13,padding:"5px 10px",borderRadius:10,border:"1px solid #cbd5e1",background:"#fff",color:"#0f172a"}}/>
+      {(filtroPeriodoInicio||filtroPeriodoFim)&&(
+        <button onClick={()=>{setFiltroPeriodoInicio("");setFiltroPeriodoFim("");}} style={{fontSize:12,padding:"5px 10px",borderRadius:10,border:"1px solid #cbd5e1",background:"#f8fafc",color:"#64748b",cursor:"pointer"}}>Limpar</button>
+      )}
+    </div>
+  );
+
 
   return (
     <CrudPageV2
@@ -226,7 +233,6 @@ export default function TreinamentosPage() {
       recordsTitle="Turmas cadastradas"
       recordsSubtitle="Lista completa com filtros e ações"
       extraHeaderContent={extraHeaderContent}
-      extraContent={extraContent}
       filterFn={filtrarPorPeriodo}
       onDataLoad={(data)=>setTurmas(data||[])}
       transformFormToPayload={(payload,form)=>({
