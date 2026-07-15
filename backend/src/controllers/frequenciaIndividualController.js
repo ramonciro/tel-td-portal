@@ -48,10 +48,18 @@ async function getFrequenciaIndividual(req, res) {
             ELSE 0
           END
         ) AS pendentes,
+        -- frequência = presentes / (presentes + ausentes).
+        -- "justificado" (falta aprovada) e "pendente" (chamada ainda não feita)
+        -- não entram no denominador: antes contavam contra o participante,
+        -- fazendo treinamentos em andamento ou com atestados aprovados
+        -- mostrarem frequência artificialmente baixa.
         ROUND(
           (
             SUM(CASE WHEN p.status = 'presente' THEN 1 ELSE 0 END) /
-            NULLIF(COUNT(*), 0)
+            NULLIF(
+              SUM(CASE WHEN p.status IN ('presente', 'ausente') THEN 1 ELSE 0 END),
+              0
+            )
           ) * 100,
           1
         ) AS frequencia_percentual,

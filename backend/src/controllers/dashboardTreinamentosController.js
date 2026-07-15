@@ -27,6 +27,56 @@ function normalizeStatus(value) {
   return "planejado";
 }
 
+// ---------------------------------------------------------------------------
+// resolvePresenca: fonte ÚNICA de verdade para presença de um treinamento.
+//
+// Antes, cada bloco do dashboard (KPI geral, ranking por cliente, ranking por
+// instrutor) calculava "quantos treinados / quantos presentes" de um jeito
+// diferente, e todos usavam `treinamento_participantes.status_presenca` — um
+// campo ÚNICO que é SOBRESCRITO a cada chamada salva. Isso fazia o dashboard
+// refletir só o status do ÚLTIMO dia de chamada, não a presença real ao longo
+// do treinamento inteiro.
+//
+// Esta função usa o HISTÓRICO real de chamadas (tabela `presencas`, uma linha
+// por participante por dia) sempre que ele existir, e só cai para o snapshot
+// (`treinamento_participantes.status_presenca`) quando não há nenhum
+// histórico de chamada gravado para o treinamento.
+//
+// Regra de negócio adotada (mesma usada na Frequência Individual):
+//  - "presente" e "ausente" entram no cálculo da taxa de presença.
+//  - "justificado" (falta aprovada) e "pendente" (chamada ainda não feita)
+//    NÃO contam contra a taxa de presença — mas "pendente" ainda conta
+//    contra a taxa de conclusão de chamada.
+// ---------------------------------------------------------------------------
+function resolvePresenca(row) {
+  const temHistorico = n(row.hist_dias) > 0;
+
+  const diasPresente = temHistorico ? n(row.hist_presentes) : n(row.snap_presentes);
+  const diasAusente = temHistorico ? n(row.hist_ausentes) : n(row.snap_ausentes);
+  const diasJustificado = temHistorico ? n(row.hist_justificados) : n(row.snap_justificados);
+  const diasPendente = temHistorico ? n(row.hist_pendentes) : n(row.snap_pendentes);
+
+  // Base de participantes = tamanho do grupo (pessoas), nunca "dias de chamada".
+  // Preferimos o roster (treinamento_participantes); se o treinamento nunca
+  // teve um roster importado, usamos a quantidade de pessoas distintas que
+  // aparecem no histórico de chamada.
+  const baseParticipantes =
+    n(row.roster_total) > 0 ? n(row.roster_total) : n(row.hist_participantes_distintos);
+
+  const diasRegistrados = temHistorico ? n(row.hist_dias) : baseParticipantes;
+  const denomPresenca = diasPresente + diasAusente;
+
+  return {
+    baseParticipantes,
+    diasRegistrados,
+    diasPresente,
+    diasAusente,
+    diasJustificado,
+    diasPendente,
+    taxaPresenca: denomPresenca > 0 ? Math.round((diasPresente / denomPresenca) * 100) : 0,
+  };
+}
+
 async function getDashboardTreinamentos(req, res) {
   try {
     const query = req.query || {};
@@ -70,7 +120,7 @@ async function getDashboardTreinamentos(req, res) {
 
     const whereSql = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // query completa: inclui subquery de presencas (legado) e supervisor
+    // query completa: inclui histórico real de presença (tabela `presencas`) e supervisor
     // se alguma coluna não existir no ambiente, cai para a query simplificada
     let baseRows;
     try {
@@ -81,25 +131,39 @@ async function getDashboardTreinamentos(req, res) {
           t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
           t.carga_horaria,
           ${participantCountExpr} AS participantes_previstos,
-          COUNT(tp.id) AS treinados,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS presentes,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS ausentes,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS justificados,
-          COALESCE(SUM(CASE WHEN tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente' THEN 1 ELSE 0 END), 0) AS pendentes,
-          COALESCE(pleg.pres_presentes, 0) AS pleg_presentes,
-          COALESCE(pleg.pres_ausentes, 0) AS pleg_ausentes,
-          COALESCE(pleg.pres_justificados, 0) AS pleg_justificados,
-          COALESCE(pleg.pres_total, 0) AS pleg_total
+
+          -- roster: participantes cadastrados no treinamento
+          COUNT(DISTINCT tp.id) AS roster_total,
+
+          -- snapshot: status da ÚLTIMA chamada por participante (usado só como fallback,
+          -- quando o treinamento não tem nenhum histórico de chamada em presencas)
+          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS snap_presentes,
+          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS snap_ausentes,
+          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS snap_justificados,
+          COALESCE(SUM(CASE WHEN tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente' THEN 1 ELSE 0 END), 0) AS snap_pendentes,
+
+          -- histórico real: agregado de TODAS as chamadas diárias já feitas (tabela presencas)
+          -- esta é a fonte PREFERIDA de presença, pois preserva o dia a dia
+          COALESCE(hist.dias, 0) AS hist_dias,
+          COALESCE(hist.presentes, 0) AS hist_presentes,
+          COALESCE(hist.ausentes, 0) AS hist_ausentes,
+          COALESCE(hist.justificados, 0) AS hist_justificados,
+          COALESCE(hist.pendentes, 0) AS hist_pendentes,
+          COALESCE(hist.participantes_distintos, 0) AS hist_participantes_distintos
         FROM treinamentos t
         LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
         LEFT JOIN (
-          SELECT treinamento_id,
-            COUNT(*) AS pres_total,
-            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'presente' THEN 1 ELSE 0 END) AS pres_presentes,
-            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'ausente' THEN 1 ELSE 0 END) AS pres_ausentes,
-            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'justificado' THEN 1 ELSE 0 END) AS pres_justificados
-          FROM presencas GROUP BY treinamento_id
-        ) pleg ON pleg.treinamento_id = t.id
+          SELECT
+            treinamento_id,
+            COUNT(*) AS dias,
+            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'presente' THEN 1 ELSE 0 END) AS presentes,
+            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
+            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'justificado' THEN 1 ELSE 0 END) AS justificados,
+            SUM(CASE WHEN status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) = 'pendente' THEN 1 ELSE 0 END) AS pendentes,
+            COUNT(DISTINCT treinando_nome) AS participantes_distintos
+          FROM presencas
+          GROUP BY treinamento_id
+        ) hist ON hist.treinamento_id = t.id
         ${whereSql}
         GROUP BY t.id, t.tema, t.cliente, t.instrutor, t.supervisor,
           t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
@@ -109,7 +173,7 @@ async function getDashboardTreinamentos(req, res) {
       );
       baseRows = rows;
     } catch (queryErr) {
-      // fallback: query original sem subquery de presencas nem supervisor
+      // fallback: query original sem histórico de presencas nem supervisor
       console.warn("[dashboard] query completa falhou, usando fallback:", queryErr.message);
       const [rows] = await pool.query(
         `SELECT
@@ -118,13 +182,13 @@ async function getDashboardTreinamentos(req, res) {
           t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
           t.carga_horaria,
           ${participantCountExpr} AS participantes_previstos,
-          COUNT(tp.id) AS treinados,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS presentes,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS ausentes,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS justificados,
-          COALESCE(SUM(CASE WHEN tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente' THEN 1 ELSE 0 END), 0) AS pendentes,
-          0 AS pleg_presentes, 0 AS pleg_ausentes,
-          0 AS pleg_justificados, 0 AS pleg_total
+          COUNT(DISTINCT tp.id) AS roster_total,
+          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS snap_presentes,
+          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS snap_ausentes,
+          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS snap_justificados,
+          COALESCE(SUM(CASE WHEN tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente' THEN 1 ELSE 0 END), 0) AS snap_pendentes,
+          0 AS hist_dias, 0 AS hist_presentes, 0 AS hist_ausentes,
+          0 AS hist_justificados, 0 AS hist_pendentes, 0 AS hist_participantes_distintos
         FROM treinamentos t
         LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
         ${whereSql}
@@ -137,53 +201,62 @@ async function getDashboardTreinamentos(req, res) {
       baseRows = rows;
     }
 
-    // FIX 4: filtro de modalidade feito em memória (campo embutido em descricao)
+    // filtro de modalidade feito em memória (campo embutido em descricao)
     // quando modalidade tiver campo próprio na tabela, mover para o WHERE do SQL
     const filteredRows = baseRows.filter((row) => {
       if (!query.modalidade) return true;
       return parseModalidadeFromDescricao(row.descricao) === String(query.modalidade).toLowerCase();
     });
 
-    const totalTreinamentos = filteredRows.length;
-    const totalPrevistos = filteredRows.reduce((acc, item) => acc + n(item.participantes_previstos), 0);
-    // FIX 2: para turmas sem treinamento_participantes (treinados=0), usa tabela presencas
-    const totalTreinados = filteredRows.reduce((acc, item) => {
-      const useTP = n(item.treinados) > 0;
-      return acc + (useTP ? n(item.treinados) : n(item.pleg_total));
-    }, 0);
-    const totalPresentes = filteredRows.reduce((acc, item) => {
-      const useTP = n(item.treinados) > 0;
-      return acc + (useTP ? n(item.presentes) : n(item.pleg_presentes));
-    }, 0);
-    const totalAusentes = filteredRows.reduce((acc, item) => {
-      const useTP = n(item.treinados) > 0;
-      return acc + (useTP ? n(item.ausentes) : n(item.pleg_ausentes));
-    }, 0);
-    const totalJustificados = filteredRows.reduce((acc, item) => {
-      const useTP = n(item.treinados) > 0;
-      return acc + (useTP ? n(item.justificados) : n(item.pleg_justificados));
-    }, 0);
-    const totalPendentes = filteredRows.reduce((acc, item) => {
-      const useTP = n(item.treinados) > 0;
-      return acc + (useTP ? n(item.pendentes) : 0);
-    }, 0);
+    // enriquece cada turma com a presença resolvida de forma única (fim das
+    // três fórmulas divergentes que existiam entre KPI geral / cliente / instrutor)
+    const enriched = filteredRows.map((row) => ({ ...row, presenca: resolvePresenca(row) }));
+
+    const totalTreinamentos = enriched.length;
+    const totalPrevistos = enriched.reduce((acc, item) => acc + n(item.participantes_previstos), 0);
+    const totalTreinados = enriched.reduce((acc, item) => acc + item.presenca.baseParticipantes, 0);
+    const totalPresentes = enriched.reduce((acc, item) => acc + item.presenca.diasPresente, 0);
+    const totalAusentes = enriched.reduce((acc, item) => acc + item.presenca.diasAusente, 0);
+    const totalJustificados = enriched.reduce((acc, item) => acc + item.presenca.diasJustificado, 0);
+    const totalPendentes = enriched.reduce((acc, item) => acc + item.presenca.diasPendente, 0);
+    const totalDiasRegistrados = enriched.reduce((acc, item) => acc + item.presenca.diasRegistrados, 0);
+
     // horas ministradas: soma de carga das turmas com participantes registrados
     // (carga × presentes inflava multi-sessão: 10 pessoas × 12 aulas = 120 "presentes")
-    const horasMinistradas = filteredRows.reduce((acc, item) => acc + (n(item.treinados) > 0 ? parseHorasTexto(item.carga_horaria) : 0), 0);
+    const horasMinistradas = enriched.reduce(
+      (acc, item) => acc + (item.presenca.baseParticipantes > 0 ? parseHorasTexto(item.carga_horaria) : 0),
+      0
+    );
     const horasTreinadas = horasMinistradas; // alias mantido por compatibilidade
-    const cargaHorariaTotal = filteredRows.reduce((acc, item) => acc + parseHorasTexto(item.carga_horaria), 0);
-    const taxaPresenca = totalTreinados > 0 ? Math.round((totalPresentes / totalTreinados) * 100) : 0;
-    const taxaConclusaoChamada = totalTreinados > 0 ? Math.round(((totalTreinados - totalPendentes) / totalTreinados) * 100) : 0;
-    // taxa_execucao_diaria zerava quando participantes_previstos era nulo
-    // usa treinados/base ativa apenas entre turmas que têm base definida
-    const turmasComBase = filteredRows.filter((item) => n(item.participantes_previstos) > 0 || n(item.treinados) > 0);
-    const baseAtiva = turmasComBase.reduce((acc, item) => acc + Math.max(n(item.participantes_previstos), n(item.treinados)), 0);
-    const taxaExecucaoDiaria = baseAtiva > 0 ? Math.min(Math.round((totalTreinados / baseAtiva) * 100), 100) : 0;
-    const mediaParticipantesPorTurma = totalTreinamentos > 0 ? Number((totalPrevistos / totalTreinamentos).toFixed(1)) : 0;
-    const gapDiario = Math.max(totalPrevistos - totalTreinados, 0);
+    const cargaHorariaTotal = enriched.reduce((acc, item) => acc + parseHorasTexto(item.carga_horaria), 0);
 
-    // FIX: opções de filtro sempre construídas de baseRows (não filteredRows)
-    // Evita que selecionar um filtro esvazie as opções dos outros
+    // taxa de presença: presentes / (presentes + ausentes) — justificado e
+    // pendente não contam contra a taxa (mesma regra da Frequência Individual)
+    const taxaPresenca =
+      totalPresentes + totalAusentes > 0
+        ? Math.round((totalPresentes / (totalPresentes + totalAusentes)) * 100)
+        : 0;
+
+    // taxa de conclusão de chamada: dias já registrados (não pendentes) / dias esperados
+    const taxaConclusaoChamada =
+      totalDiasRegistrados > 0
+        ? Math.round(((totalDiasRegistrados - totalPendentes) / totalDiasRegistrados) * 100)
+        : 0;
+
+    // execução: participantes efetivamente treinados / base ativa (previstos ou já treinados)
+    const turmasComBase = enriched.filter(
+      (item) => n(item.participantes_previstos) > 0 || item.presenca.baseParticipantes > 0
+    );
+    const baseAtiva = turmasComBase.reduce(
+      (acc, item) => acc + Math.max(n(item.participantes_previstos), item.presenca.baseParticipantes),
+      0
+    );
+    const taxaExecucao = baseAtiva > 0 ? Math.min(Math.round((totalTreinados / baseAtiva) * 100), 100) : 0;
+    const mediaParticipantesPorTurma = totalTreinamentos > 0 ? Number((totalPrevistos / totalTreinamentos).toFixed(1)) : 0;
+    const gapPrevistosVsTreinados = Math.max(totalPrevistos - totalTreinados, 0);
+
+    // opções de filtro sempre construídas de baseRows (não filteredRows)
+    // evita que selecionar um filtro esvazie as opções dos outros
     const clientesSet = new Set();
     const instrutoresSet = new Set();
     const supervisoresSet = new Set();
@@ -203,35 +276,39 @@ async function getDashboardTreinamentos(req, res) {
     const byCliente = new Map();
     const byInstrutor = new Map();
 
-    for (const row of filteredRows) {
+    for (const row of enriched) {
       const cliente = row.cliente || "Sem cliente";
       const instrutor = row.instrutor || "Sem instrutor";
+      const p = row.presenca;
 
       if (!byCliente.has(cliente)) {
         byCliente.set(cliente, { cliente, total_turmas: 0, total_treinados: 0, presentes: 0, pendentes: 0, ausentes: 0, justificados: 0 });
       }
       const c = byCliente.get(cliente);
       c.total_turmas += 1;
-      const useTP = n(row.treinados) > 0;
-      c.total_treinados += useTP ? n(row.treinados) : n(row.pleg_total) || n(row.participantes_previstos);
-      c.presentes += useTP ? n(row.presentes) : n(row.pleg_presentes);
-      c.pendentes += useTP ? n(row.pendentes) : 0;
-      c.ausentes += useTP ? n(row.ausentes) : n(row.pleg_ausentes);
-      c.justificados += useTP ? n(row.justificados) : n(row.pleg_justificados);
+      c.total_treinados += p.baseParticipantes;
+      c.presentes += p.diasPresente;
+      c.pendentes += p.diasPendente;
+      c.ausentes += p.diasAusente;
+      c.justificados += p.diasJustificado;
 
       if (!byInstrutor.has(instrutor)) {
-        byInstrutor.set(instrutor, { instrutor, total_turmas: 0, total_treinados: 0, presentes: 0 });
+        byInstrutor.set(instrutor, { instrutor, total_turmas: 0, total_treinados: 0, presentes: 0, ausentes: 0 });
       }
       const i = byInstrutor.get(instrutor);
       i.total_turmas += 1;
-      i.total_treinados += n(row.treinados) > 0 ? n(row.treinados) : n(row.participantes_previstos);
-      i.presentes += n(row.presentes);
+      i.total_treinados += p.baseParticipantes;
+      i.presentes += p.diasPresente;
+      i.ausentes += p.diasAusente;
     }
 
+    // taxa_presenca por cliente/instrutor agora usa a MESMA regra do KPI geral
+    // (presentes / (presentes + ausentes)) — antes cada bloco calculava diferente
+    // e os números nunca batiam entre si
     const presencaPorCliente = Array.from(byCliente.values())
       .map((item) => ({
         ...item,
-        taxa_presenca: item.total_treinados > 0 ? Math.round((item.presentes / item.total_treinados) * 100) : 0,
+        taxa_presenca: item.presentes + item.ausentes > 0 ? Math.round((item.presentes / (item.presentes + item.ausentes)) * 100) : 0,
       }))
       .sort((a, b) => b.total_turmas - a.total_turmas || b.total_treinados - a.total_treinados)
       .slice(0, 10);
@@ -239,12 +316,12 @@ async function getDashboardTreinamentos(req, res) {
     const rankingInstrutores = Array.from(byInstrutor.values())
       .map((item) => ({
         ...item,
-        taxa_presenca: item.total_treinados > 0 ? Math.round((item.presentes / item.total_treinados) * 100) : 0,
+        taxa_presenca: item.presentes + item.ausentes > 0 ? Math.round((item.presentes / (item.presentes + item.ausentes)) * 100) : 0,
       }))
       .sort((a, b) => b.total_turmas - a.total_turmas || b.total_treinados - a.total_treinados)
       .slice(0, 10);
 
-    // FIX 8: NPS e avaliações por turma
+    // NPS e avaliações por turma
     let npsData = { media_nps: 0, media_qualidade: 0, media_prova: 0, total_avaliacoes: 0 };
     try {
       const turmaIds = filteredRows.map((r) => r.id).filter(Boolean);
@@ -303,20 +380,17 @@ async function getDashboardTreinamentos(req, res) {
         progresso_tripulacao: progressMap,
       };
     } catch {
-      
+
     }
 
-    const ultimasTurmas = filteredRows.slice(0, 8).map((item) => {
-      const useTP = n(item.treinados) > 0;
-      const base = useTP ? n(item.treinados) : n(item.pleg_total);
-      const pres = useTP ? n(item.presentes) : n(item.pleg_presentes);
-      const pend = useTP ? n(item.pendentes) : 0;
+    const ultimasTurmas = enriched.slice(0, 8).map((item) => {
+      const p = item.presenca;
       return {
         ...item,
-        base_ativa: base > 0 ? base : n(item.participantes_previstos),
-        taxa_presenca: base > 0 ? Math.round((pres / base) * 100) : 0,
-        presentes: pres,
-        pendentes: pend,
+        base_ativa: p.baseParticipantes,
+        taxa_presenca: p.taxaPresenca,
+        presentes: p.diasPresente,
+        pendentes: p.diasPendente,
         modalidade: parseModalidadeFromDescricao(item.descricao),
         status_canonico: normalizeStatus(item.status),
       };
@@ -334,17 +408,16 @@ async function getDashboardTreinamentos(req, res) {
         pendentes: totalPendentes,
         taxa_presenca: taxaPresenca,
         taxa_conclusao_chamada: taxaConclusaoChamada,
-        taxa_execucao_diaria: taxaExecucaoDiaria,
+        // mantido com o nome antigo por compatibilidade com o frontend
+        // (não é um número "do dia" — é a execução do período filtrado)
+        taxa_execucao_diaria: taxaExecucao,
         media_participantes_por_turma: mediaParticipantesPorTurma,
         horas_treinadas: n(horasTreinadas),
         horas_ministradas: n(horasMinistradas),
         carga_horaria_total: n(cargaHorariaTotal),
         clientes_ativos: Array.from(clientesSet).filter((item) => item && item !== "Sem cliente").length,
         clientes_com_treinamento: Array.from(clientesSet).filter((item) => item && item !== "Sem cliente").length,
-        capacidade_diaria_prevista: totalPrevistos,
-        gap_diario: gapDiario,
-        previstos_no_dia: totalPrevistos,
-        presentes_no_dia: totalPresentes,
+        gap_previstos_vs_treinados: gapPrevistosVsTreinados,
       },
       filtros: {
         clientes: Array.from(clientesSet).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "pt-BR")),
