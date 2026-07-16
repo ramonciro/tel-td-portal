@@ -1,4 +1,5 @@
 const pool = require("../lib/db");
+const { getResumoPresenca } = require("../services/presencaResolver");
 
 function parseHorasTexto(valor) {
   if (valor === null || valor === undefined || valor === "") return 0;
@@ -37,10 +38,15 @@ function normalizeStatus(value) {
 // refletir só o status do ÚLTIMO dia de chamada, não a presença real ao longo
 // do treinamento inteiro.
 //
-// Esta função usa o HISTÓRICO real de chamadas (tabela `presencas`, uma linha
-// por participante por dia) sempre que ele existir, e só cai para o snapshot
-// (`treinamento_participantes.status_presenca`) quando não há nenhum
-// histórico de chamada gravado para o treinamento.
+// Esta função agora delega 100% ao resolver compartilhado
+// (backend/src/services/presencaResolver.js), que já decide cronograma vs.
+// legado vs. snapshot e classifica cada participante (nível "pessoa", não
+// "registro") de forma idêntica em todo o app. O Dashboard não mantém mais
+// nenhuma lógica de presença própria — antes disso, os campos hist_*/snap_*
+// calculados aqui dentro (nível REGISTRO) eram somados junto com os campos
+// de cronograma (nível PESSOA) da mesma forma, o que misturava "quantidade
+// de dias de chamada" com "quantidade de pessoas" na mesma métrica e gerava
+// taxas de presença sem sentido (ex.: 200%+ em turmas multi-dia).
 //
 // Regra de negócio adotada (mesma usada na Frequência Individual):
 //  - "presente" e "ausente" entram no cálculo da taxa de presença.
@@ -48,22 +54,14 @@ function normalizeStatus(value) {
 //    NÃO contam contra a taxa de presença — mas "pendente" ainda conta
 //    contra a taxa de conclusão de chamada.
 // ---------------------------------------------------------------------------
-function resolvePresenca(row) {
-  const temHistorico = n(row.hist_dias) > 0;
+function resolvePresenca(resumo) {
+  const diasPresente = n(resumo?.presentes_pessoas);
+  const diasAusente = n(resumo?.ausentes_pessoas);
+  const diasJustificado = n(resumo?.justificados_pessoas);
+  const diasPendente = n(resumo?.pendentes_pessoas);
+  const baseParticipantes = n(resumo?.treinandos_confirmados);
+  const diasRegistrados = diasPresente + diasAusente + diasJustificado + diasPendente;
 
-  const diasPresente = temHistorico ? n(row.hist_presentes) : n(row.snap_presentes);
-  const diasAusente = temHistorico ? n(row.hist_ausentes) : n(row.snap_ausentes);
-  const diasJustificado = temHistorico ? n(row.hist_justificados) : n(row.snap_justificados);
-  const diasPendente = temHistorico ? n(row.hist_pendentes) : n(row.snap_pendentes);
-
-  // Base de participantes = tamanho do grupo (pessoas), nunca "dias de chamada".
-  // Preferimos o roster (treinamento_participantes); se o treinamento nunca
-  // teve um roster importado, usamos a quantidade de pessoas distintas que
-  // aparecem no histórico de chamada.
-  const baseParticipantes =
-    n(row.roster_total) > 0 ? n(row.roster_total) : n(row.hist_participantes_distintos);
-
-  const diasRegistrados = temHistorico ? n(row.hist_dias) : baseParticipantes;
   const denomPresenca = diasPresente + diasAusente;
 
   return {
@@ -140,7 +138,7 @@ async function getDashboardTreinamentos(req, res) {
           COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS snap_presentes,
           COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS snap_ausentes,
           COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS snap_justificados,
-          COALESCE(SUM(CASE WHEN tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente' THEN 1 ELSE 0 END), 0) AS snap_pendentes,
+          COALESCE(SUM(CASE WHEN tp.id IS NOT NULL AND (tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente') THEN 1 ELSE 0 END), 0) AS snap_pendentes,
 
           -- histórico real: agregado de TODAS as chamadas diárias já feitas (tabela presencas)
           -- esta é a fonte PREFERIDA de presença, pois preserva o dia a dia
@@ -186,7 +184,7 @@ async function getDashboardTreinamentos(req, res) {
           COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS snap_presentes,
           COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS snap_ausentes,
           COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS snap_justificados,
-          COALESCE(SUM(CASE WHEN tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente' THEN 1 ELSE 0 END), 0) AS snap_pendentes,
+          COALESCE(SUM(CASE WHEN tp.id IS NOT NULL AND (tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente') THEN 1 ELSE 0 END), 0) AS snap_pendentes,
           0 AS hist_dias, 0 AS hist_presentes, 0 AS hist_ausentes,
           0 AS hist_justificados, 0 AS hist_pendentes, 0 AS hist_participantes_distintos
         FROM treinamentos t
@@ -208,9 +206,25 @@ async function getDashboardTreinamentos(req, res) {
       return parseModalidadeFromDescricao(row.descricao) === String(query.modalidade).toLowerCase();
     });
 
+    // presença + status: buscados uma única vez do resolver compartilhado e
+    // cruzados por id de treinamento — mesma fonte usada por
+    // /api/presenca-resumo (Gestão de Turmas), garantindo que as duas telas
+    // nunca mais divirjam sobre a mesma turma.
+    let resumoPresencaPorId = new Map();
+    try {
+      const resumoPresenca = await getResumoPresenca();
+      resumoPresencaPorId = new Map(resumoPresenca.map((item) => [Number(item.id), item]));
+    } catch (err) {
+      console.warn("[dashboard] resumo de presença indisponível:", err.message);
+    }
+
     // enriquece cada turma com a presença resolvida de forma única (fim das
-    // três fórmulas divergentes que existiam entre KPI geral / cliente / instrutor)
-    const enriched = filteredRows.map((row) => ({ ...row, presenca: resolvePresenca(row) }));
+    // três fórmulas divergentes que existiam entre KPI geral / cliente / instrutor,
+    // e agora também com o cronograma como fonte de maior prioridade)
+    const enriched = filteredRows.map((row) => ({
+      ...row,
+      presenca: resolvePresenca(resumoPresencaPorId.get(Number(row.id))),
+    }));
 
     const totalTreinamentos = enriched.length;
     const totalPrevistos = enriched.reduce((acc, item) => acc + n(item.participantes_previstos), 0);
