@@ -6,14 +6,10 @@ import PortalShell from "../../components/PortalShell";
 import StatCard from "../../components/StatCard";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
-import { formatDateBR, parseLocalDate, todayLocal } from "../../lib/date";
+import { formatDateBR } from "../../lib/date";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
-}
-
-function parseDateSafe(value) {
-  return parseLocalDate(value);
 }
 
 function fmtDate(value) {
@@ -27,86 +23,10 @@ function parseHoras(value) {
   return match ? Number(match[1]) || 0 : 0;
 }
 
-function normalizeStatus(value) {
-  return String(value || "").toLowerCase().trim();
-}
-
-function getStatusTurma({
-  statusOficial,
-  treinandos,
-  diasPlanejados,
-  presencasLancadas,
-  pendentes,
-  usaCronograma,
-  dataInicio,
-  dataFim,
-}) {
-  const status = String(statusOficial || "").trim().toLowerCase();
-
-  const hoje = todayLocal(); // "YYYY-MM-DD" string
-  const inicio = parseDateSafe(dataInicio);
-  const fim = parseDateSafe(dataFim);
-
-  // converte fim para ISO string antes de comparar — hoje é string, fim é Date,
-  // comparar direto sempre resulta em false por coerção de tipo
-  const fimISO = fim && !Number.isNaN(fim.getTime())
-    ? [
-        fim.getFullYear(),
-        String(fim.getMonth() + 1).padStart(2, "0"),
-        String(fim.getDate()).padStart(2, "0"),
-      ].join("-")
-    : null;
-  const fimPassou = fimISO != null && hoje > fimISO;
-
-  // Cancelada é definitivo — sempre respeita o status oficial
-  if (["cancelada", "cancelado"].includes(status)) return "Cancelada";
-
-  // Concluída é definitivo — sempre respeita o status oficial
-  if (["concluida", "concluído", "concluido"].includes(status)) return "Concluída";
-
-  // data_fim vencida tem prioridade sobre qualquer status operacional
-  // se o período acabou, a turma está concluída — chamadas pendentes são backlog administrativo
-  if (fimPassou) return "Concluída";
-
-  if (treinandos === 0) return "Sem treinandos";
-  if (usaCronograma && diasPlanejados === 0) return "Sem cronograma";
-  if (presencasLancadas === 0) return "Chamada pendente";
-
-  if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
-  if (["planejada", "planejado"].includes(status)) return "Planejada";
-
-  if (inicio && !Number.isNaN(inicio.getTime()) && hoje < inicio) {
-    return "Planejada";
-  }
-
-  if (pendentes > 0) return "Em andamento";
-  return "Concluída";
-}
-
-function getClassificacao({ taxa, treinandos, pendentes, statusTurma }) {
-  if (
-    statusTurma === "Sem treinandos" ||
-    statusTurma === "Sem cronograma" ||
-    statusTurma === "Cancelada"
-  ) {
-    return "Crítico";
-  }
-
-  if (statusTurma === "Planejada") return "Atenção";
-  if (statusTurma === "Chamada pendente") return "Atenção";
-  if (statusTurma === "Em andamento" && pendentes > 0) return "Atenção";
-  // turmas concluídas com baixa frequência devem ser sinalizadas retroativamente
-  if (statusTurma === "Concluída") {
-    if (treinandos > 0 && taxa > 0 && taxa < 75) return "Crítico";
-    if (treinandos > 0 && taxa > 0 && taxa < 85) return "Atenção";
-    return "Estável";
-  }
-
-  // classificação baseada na frequência real (presentes / lançados), não na execução de chamada
-  if (treinandos > 0 && taxa < 85) return "Crítico";
-
-  return "Estável";
-}
+// status_turma e classificacao agora vêm prontos do backend
+// (/api/presenca-resumo, backend/src/services/presencaResolver.js) — essa
+// é a mesma função usada pela tela Treinamentos, então as duas telas nunca
+// mais divergem sobre o status da mesma turma.
 
 function getStatusBadgeStyle(status) {
   const base = {
@@ -202,177 +122,32 @@ export default function GestaoTurmasPage() {
       try {
         setLoading(true);
 
-        const [treinamentosData, presencasData] = await Promise.all([
-          apiFetch("/treinamentos").catch(() => []),
-          apiFetch("/presencas").catch(() => []),
-        ]);
+        // Fonte única de presença + status (cronograma > legado > snapshot),
+        // resolvida no backend (backend/src/services/presencaResolver.js).
+        // Antes esta tela buscava /treinamentos + /presencas + participantes
+        // e aulas de cada turma (N+1 chamadas) e recalculava tudo aqui — a
+        // mesma lógica que o Dashboard também recalculava à sua própria
+        // maneira. Agora as duas telas leem o mesmo resumo já pronto.
+        const resposta = await apiFetch("/presenca-resumo");
+        const itens = Array.isArray(resposta?.itens) ? resposta.itens : [];
 
-        const listaTreinamentos = Array.isArray(treinamentosData)
-          ? treinamentosData
-          : [];
-        const listaPresencas = Array.isArray(presencasData) ? presencasData : [];
-
-        const turmasEnriquecidas = await Promise.all(
-          listaTreinamentos.map(async (t) => {
-            const [participantes, aulas] = await Promise.all([
-              apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []),
-              apiFetch(`/turma-aulas?treinamento_id=${t.id}`).catch(() => []),
-            ]);
-
-            const listaParticipantes = Array.isArray(participantes)
-              ? participantes
-              : [];
-            const listaAulas = Array.isArray(aulas) ? aulas : [];
-
-            const treinandos = Number(
-              t.participantes || listaParticipantes.length || 0
-            );
-            const diasPlanejados = listaAulas.length;
-            const usaCronograma = diasPlanejados > 0;
-
-            let presentes = 0;
-            let ausentes = 0;
-            let justificados = 0;
-            let pendentes = 0;
-            let baseEsperada = 0;
-            let origemFrequencia = "legado";
-
-            // FIX: fallback inteligente entre cronograma e legado.
-            // Só faz fallback pro legado se:
-            //   1. cronograma não tiver lançamentos reais (presentes+ausentes+just = 0)
-            //   2. E a tabela presencas (legado) tiver dados para essa turma
-            // Isso preserva chamadas inicializadas-mas-pendentes no cronograma
-            // e ainda assim mostra os dados do legado quando a chamada foi
-            // feita pela tabela presencas (sistema antigo).
-            let usarLegado = false;
-
-            if (usaCronograma) {
-              const resumos = await Promise.all(
-                listaAulas.map((aula) =>
-                  apiFetch(`/presenca-aulas/resumo/${aula.id}`).catch(() => null)
-                )
-              );
-
-              let pTmp = 0, aTmp = 0, jTmp = 0, pndTmp = 0;
-              for (const item of resumos) {
-                const resumo = item?.resumo || {};
-                pTmp += Number(resumo.presentes || 0);
-                aTmp += Number(resumo.ausentes || 0);
-                jTmp += Number(resumo.justificados || 0);
-                pndTmp += Number(resumo.pendentes || 0);
-              }
-
-              const totalRealCronograma = pTmp + aTmp + jTmp;
-              const temLegadoParaEssaTurma = listaPresencas.some(
-                (p) => Number(p.treinamento_id) === Number(t.id)
-              );
-
-              if (totalRealCronograma === 0 && temLegadoParaEssaTurma) {
-                usarLegado = true;
-              } else {
-                origemFrequencia = "cronograma";
-                presentes = pTmp;
-                ausentes = aTmp;
-                justificados = jTmp;
-                pendentes = pndTmp;
-                baseEsperada = treinandos * diasPlanejados;
-              }
-            }
-
-            if (!usaCronograma || usarLegado) {
-              // "legado" só quando: fallback de cronograma OU sem treinandos
-              // Turma com treinandos mas sem cronograma usa presencas normalmente
-              origemFrequencia =
-                usarLegado || treinandos === 0 ? "legado" : "presencas";
-              const presencasTurma = listaPresencas.filter(
-                (p) => Number(p.treinamento_id) === Number(t.id)
-              );
-
-              presentes = presencasTurma.filter(
-                (p) => normalizeStatus(p.status) === "presente"
-              ).length;
-
-              ausentes = presencasTurma.filter(
-                (p) => normalizeStatus(p.status) === "ausente"
-              ).length;
-
-              justificados = presencasTurma.filter(
-                (p) => normalizeStatus(p.status) === "justificado"
-              ).length;
-
-              pendentes = presencasTurma.filter(
-                (p) =>
-                  !p.status ||
-                  normalizeStatus(p.status) === "" ||
-                  normalizeStatus(p.status) === "pendente"
-              ).length;
-
-              const totalLancadoLegado =
-                presentes + ausentes + justificados + pendentes;
-
-              baseEsperada =
-                totalLancadoLegado > 0 ? totalLancadoLegado : treinandos;
-            }
-
-            const presencasLancadas =
-              presentes + ausentes + justificados + pendentes;
-
-            const totalRealizado =
-              presentes + ausentes + justificados;
-
-            // taxa de execução: % de chamadas lançadas sobre a base esperada
-            const taxaExecucao =
-              baseEsperada > 0
-                ? Math.round((totalRealizado / baseEsperada) * 100)
-                : 0;
-
-            // taxa de frequência real: % de presentes sobre os lançamentos confirmados
-            // (exclui pendentes do denominador — só conta quem teve chamada lançada)
-            const taxaPresenca =
-              totalRealizado > 0
-                ? Math.round((presentes / totalRealizado) * 100)
-                : 0;
-
-            // mantém taxa = taxaPresenca para compatibilidade com ordenação e classificação
-            const taxa = taxaPresenca;
-
-            const statusTurma = getStatusTurma({
-              statusOficial: t.status,
-              treinandos,
-              diasPlanejados,
-              presencasLancadas,
-              pendentes,
-              usaCronograma,
-              dataInicio: t.data_inicio || t.data,
-              dataFim: t.data_fim || null, // não usa data_inicio como fallback — turma sem data_fim não é automaticamente concluída
-            });
-
-            const classificacao = getClassificacao({
-              taxa,
-              treinandos,
-              pendentes,
-              statusTurma,
-            });
-
-            return {
-              ...t,
-              treinandos,
-              diasPlanejados,
-              baseEsperada,
-              presentes,
-              ausentes,
-              justificados,
-              pendentes,
-              taxa,
-              taxaPresenca,
-              taxaExecucao,
-              classificacao,
-              statusTurma,
-              usaCronograma,
-              origemFrequencia,
-            };
-          })
-        );
+        const turmasEnriquecidas = itens.map((t) => ({
+          ...t,
+          treinandos: Number(t.treinandos_previstos || 0),
+          diasPlanejados: Number(t.dias_planejados || 0),
+          baseEsperada: Number(t.base_esperada || 0),
+          presentes: Number(t.presentes || 0),
+          ausentes: Number(t.ausentes || 0),
+          justificados: Number(t.justificados || 0),
+          pendentes: Number(t.pendentes || 0),
+          taxa: Number(t.taxa_presenca || 0),
+          taxaPresenca: Number(t.taxa_presenca || 0),
+          taxaExecucao: Number(t.taxa_execucao || 0),
+          classificacao: t.classificacao,
+          statusTurma: t.status_turma,
+          usaCronograma: !!t.usa_cronograma,
+          origemFrequencia: t.origem_frequencia,
+        }));
 
         setTreinamentos(turmasEnriquecidas);
         setErro("");
@@ -811,7 +586,7 @@ function exportarRelatorio() {
                       </div>
 
                       <div style={miniLinha}>
-                        <span>{fmt(item.treinandos)} treinandos</span>
+                        <span>{fmt(item.treinandos)} previstos</span>
                         <span>{fmt(item.diasPlanejados)} aula(s)</span>
                         <span>{fmt(item.presentes)} pres.</span>
                         <span>{fmt(item.ausentes)} aus.</span>
