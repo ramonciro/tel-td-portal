@@ -112,7 +112,14 @@ function statusLabel(statusOrItem) {
 
 function statusStyle(statusOrItem) {
   const label = statusLabel(statusOrItem);
+  return statusStyleFromLabel(label);
+}
 
+// Cobre também os rótulos mais granulares que só o backend consegue
+// calcular (Chamada pendente, Sem cronograma, Sem treinandos), vindos de
+// /api/presenca-resumo — mesma paleta usada na tela Presenças, pra manter
+// a leitura visual consistente entre as duas telas.
+function statusStyleFromLabel(label) {
   const base = {
     display: "inline-block",
     padding: "5px 9px",
@@ -131,6 +138,14 @@ function statusStyle(statusOrItem) {
 
   if (label === "Cancelada") {
     return { ...base, background: "#fee2e2", color: "#b91c1c" };
+  }
+
+  if (label === "Chamada pendente") {
+    return { ...base, background: "#fff7ed", color: "#c2410c" };
+  }
+
+  if (label === "Sem cronograma" || label === "Sem treinandos") {
+    return { ...base, background: "#fef2f2", color: "#b91c1c" };
   }
 
   return { ...base, background: "#dbeafe", color: "#1d4ed8" };
@@ -191,30 +206,42 @@ export default function TreinamentosPage() {
   const [usuarioLogado, setUsuarioLogado] = useState(null);
   const [filtroPeriodoInicio, setFiltroPeriodoInicio] = useState("");
   const [filtroPeriodoFim, setFiltroPeriodoFim] = useState("");
+  const [resumoPresenca, setResumoPresenca] = useState([]);
 
   useEffect(() => {
     async function carregar() {
       try {
-        const [treinamentosData, usuariosData, clientesData] = await Promise.all([
+        const [treinamentosData, usuariosData, clientesData, resumoData] = await Promise.all([
           apiFetch("/treinamentos").catch(() => []),
           apiFetch("/usuarios").catch(() => []),
           apiFetch("/clientes").catch(() => []),
+          apiFetch("/presenca-resumo").catch(() => null),
         ]);
 
         setTurmas(Array.isArray(treinamentosData) ? treinamentosData : []);
         setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
         setClientes(Array.isArray(clientesData) ? clientesData : []);
+        setResumoPresenca(Array.isArray(resumoData?.itens) ? resumoData.itens : []);
         setUsuarioLogado(getStoredUser());
       } catch {
         setTurmas([]);
         setUsuarios([]);
         setClientes([]);
+        setResumoPresenca([]);
         setUsuarioLogado(getStoredUser());
       }
     }
 
     carregar();
   }, []);
+
+  // status_turma unificado (mesma função usada pela tela Presenças, via
+  // backend/src/services/presencaResolver.js) — cruzado por id de turma.
+  // Enquanto o resumo não chega, cai no cálculo local (getStatusCode) só
+  // como estado de transição do primeiro carregamento.
+  const resumoPorId = useMemo(() => {
+    return new Map(resumoPresenca.map((item) => [Number(item.id), item]));
+  }, [resumoPresenca]);
 
   const perfilLogado = String(usuarioLogado?.perfil || "").toLowerCase();
   const clienteLogado = usuarioLogado?.cliente || "";
@@ -396,15 +423,27 @@ export default function TreinamentosPage() {
   ];
 
   const kpis = useMemo(() => {
+    // status unificado: usa o resumo do backend quando já carregou; cai no
+    // cálculo local (getStatusCode) só durante o instante do primeiro load.
+    function statusDaTurma(item) {
+      const resumo = resumoPorId.get(Number(item.id));
+      return resumo ? resumo.status_turma : statusLabel(item);
+    }
+
     const total = turmas.length;
-    const planejadas = turmas.filter((item) => getStatusCode(item) === "planejado").length;
-    const andamento = turmas.filter((item) => getStatusCode(item) === "em_andamento").length;
-    const concluidas = turmas.filter((item) => getStatusCode(item) === "concluido").length;
+    const planejadas = turmas.filter((item) => statusDaTurma(item) === "Planejada").length;
+    const andamento = turmas.filter((item) => statusDaTurma(item) === "Em andamento").length;
+    const concluidas = turmas.filter((item) => statusDaTurma(item) === "Concluída").length;
 
     const treinandos = turmas.reduce(
       (acc, item) => acc + Number(item.participantes || 0),
       0
     );
+
+    const confirmados = turmas.reduce((acc, item) => {
+      const resumo = resumoPorId.get(Number(item.id));
+      return acc + (resumo ? Number(resumo.treinandos_confirmados || 0) : 0);
+    }, 0);
 
     const horas = turmas.reduce(
       (acc, item) => acc + parseHoras(item.carga_horaria),
@@ -413,25 +452,26 @@ export default function TreinamentosPage() {
 
     // carga realizada: apenas turmas concluídas
     const horasRealizadas = turmas
-      .filter((item) => getStatusCode(item) === "concluido")
+      .filter((item) => statusDaTurma(item) === "Concluída")
       .reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0);
 
     const autoConcluidas = turmas.filter(
       (item) =>
         normalizeStatusCode(item.status) !== "concluido" &&
-        getStatusCode(item) === "concluido"
+        statusDaTurma(item) === "Concluída"
     ).length;
 
-    // usa getStatusCode (não normalizeStatusCode direto) para ser consistente
-    // com a exibição: turmas auto-concluídas por data não devem aparecer como atrasadas
+    // usa o status unificado (não normalizeStatusCode direto) para ser
+    // consistente com a exibição: turmas auto-concluídas por data não devem
+    // aparecer como atrasadas
     const atrasadas = turmas.filter((item) => {
       const dataFim = parseDateOnly(item?.data_fim || item?.data_termino || item?.fim);
-      const statusCod = getStatusCode(item);
+      const status = statusDaTurma(item);
       return (
         dataFim &&
         dataFim.getTime() < new Date(new Date().setHours(0, 0, 0, 0)).getTime() &&
-        statusCod !== "concluido" &&
-        statusCod !== "cancelada"
+        status !== "Concluída" &&
+        status !== "Cancelada"
       );
     }).length;
 
@@ -467,13 +507,14 @@ export default function TreinamentosPage() {
       andamento,
       concluidas,
       treinandos,
+      confirmados,
       horas,
       alertas,
       autoConcluidas,
       atrasadas,
       horasRealizadas,
     };
-  }, [turmas]);
+  }, [turmas, resumoPorId]);
 
   const columns = [
     {
@@ -491,7 +532,11 @@ export default function TreinamentosPage() {
     {
       key: "status",
       label: "Status",
-      render: (item) => <span style={statusStyle(item)}>{statusLabel(item)}</span>,
+      render: (item) => {
+        const resumo = resumoPorId.get(Number(item.id));
+        const label = resumo ? resumo.status_turma : statusLabel(item);
+        return <span style={statusStyleFromLabel(label)}>{label}</span>;
+      },
     },
     {
       key: "periodo",
@@ -509,6 +554,15 @@ export default function TreinamentosPage() {
       render: (item) => (
         <strong style={scoreBlue}>{fmt(item.participantes || 0)}</strong>
       ),
+    },
+    {
+      key: "confirmados",
+      label: "Treinandos confirmados",
+      render: (item) => {
+        const resumo = resumoPorId.get(Number(item.id));
+        if (!resumo) return <span style={plainCell}>—</span>;
+        return <strong style={scoreGreen}>{fmt(resumo.treinandos_confirmados || 0)}</strong>;
+      },
     },
     {
       key: "carga_horaria",
@@ -712,6 +766,12 @@ export default function TreinamentosPage() {
               value={fmt(kpis.treinandos)}
               subtitle="Capacidade da base"
               accent="#06b6d4"
+            />
+            <StatCard
+              title="Treinandos confirmados"
+              value={fmt(kpis.confirmados)}
+              subtitle="Com chamada registrada"
+              accent="#16a34a"
             />
             <StatCard
               title="Carga realizada"
