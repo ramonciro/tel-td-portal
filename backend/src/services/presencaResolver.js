@@ -103,6 +103,25 @@ async function agregarFontePresenca(tabela) {
 
 // status_execucao/status oficiais + datas: decide Planejada / Em andamento /
 // Concluída / Cancelada / Chamada pendente / Sem cronograma / Sem treinandos.
+// Converte valor de data vindo do banco para "YYYY-MM-DD". O driver mysql2
+// devolve colunas DATE como objetos Date nativos do JS (não como string) —
+// `String(dataObj)` produz "Mon Jun 01 2026 00:00:00 GMT..." em vez de
+// "2026-06-01", e comparar essa string com um "YYYY-MM-DD" nunca dá certo
+// (a comparação de string sempre falha silenciosamente). Esta função trata
+// os dois formatos (Date nativo e string) de forma robusta.
+function toISODate(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return [
+      value.getFullYear(),
+      String(value.getMonth() + 1).padStart(2, "0"),
+      String(value.getDate()).padStart(2, "0"),
+    ].join("-");
+  }
+  return String(value).slice(0, 10);
+}
+
 function resolverStatusTurma({
   statusOficial,
   treinandosPrevistos,
@@ -117,7 +136,7 @@ function resolverStatusTurma({
   const status = String(statusOficial || "").trim().toLowerCase();
 
   const hojeISO = hoje;
-  const fimISO = dataFim ? String(dataFim).slice(0, 10) : null;
+  const fimISO = toISODate(dataFim);
   const fimPassou = fimISO != null && hojeISO > fimISO;
 
   if (["cancelada", "cancelado"].includes(status)) return "Cancelada";
