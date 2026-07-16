@@ -296,7 +296,8 @@ export default function DashboardPage() {
 
           <div style={kpiGrid}>
             <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Base no recorte" accent="#2563eb" />
-            <StatCard title="Registros" value={fmt(kpis.treinados || 0)} subtitle="Chamadas lançadas" accent="#3b82f6" />
+            <StatCard title="Previstos" value={fmt(kpis.participantes_previstos || 0)} subtitle="Capacidade cadastrada" accent="#0ea5e9" />
+            <StatCard title="Confirmados" value={fmt(kpis.treinados || 0)} subtitle="Com chamada registrada" accent="#3b82f6" />
             <StatCard title="Presença" value={`${fmt(kpis.taxa_presenca || 0)}%`} subtitle="Consolidado" accent="#16a34a" />
             <StatCard title="Pendências" value={fmt(kpis.pendentes || 0)} subtitle="Ainda em aberto" accent="#f59e0b" />
             <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Carga executada" accent="#0ea5e9" />
