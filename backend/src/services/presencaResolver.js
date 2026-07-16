@@ -150,7 +150,7 @@ function resolverStatusTurma({
   if (["em_andamento", "em andamento"].includes(status)) return "Em andamento";
   if (["planejada", "planejado"].includes(status)) return "Planejada";
 
-  const inicioISO = dataInicio ? String(dataInicio).slice(0, 10) : null;
+  const inicioISO = toISODate(dataInicio);
   if (inicioISO && hojeISO < inicioISO) return "Planejada";
 
   if (pendentes > 0) return "Em andamento";
