@@ -399,6 +399,7 @@ async function getDashboardTreinamentos(req, res) {
 
     const ultimasTurmas = enriched.slice(0, 8).map((item) => {
       const p = item.presenca;
+      const resumo = resumoPresencaPorId.get(Number(item.id));
       return {
         ...item,
         base_ativa: p.baseParticipantes,
@@ -406,7 +407,10 @@ async function getDashboardTreinamentos(req, res) {
         presentes: p.diasPresente,
         pendentes: p.diasPendente,
         modalidade: parseModalidadeFromDescricao(item.descricao),
-        status_canonico: normalizeStatus(item.status),
+        // antes usava normalizeStatus(item.status) — só prettificava o texto
+        // cru do banco, sem nunca considerar se data_fim já tinha passado.
+        // Agora usa a mesma fonte de status das telas Treinamentos/Presenças.
+        status_canonico: resumo ? resumo.status_turma : normalizeStatus(item.status),
       };
     });
 
