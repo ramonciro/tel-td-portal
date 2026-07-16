@@ -22,6 +22,11 @@ const {
 } = require("./controllers/dashboardTreinamentosController");
 
 const {
+  listarResumoGeral,
+  obterResumoPorTreinamento,
+} = require("./controllers/presencaResumoController");
+
+const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
@@ -93,6 +98,21 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   getDashboardTreinamentos
+);
+
+// Fonte única de presença + status de turma (cronograma > legado > snapshot),
+// usada pelas páginas Presenças e Treinamentos.
+app.get(
+  "/api/presenca-resumo",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listarResumoGeral
+);
+app.get(
+  "/api/presenca-resumo/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  obterResumoPorTreinamento
 );
 
 app.get("/api", async (req, res) => {
