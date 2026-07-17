@@ -18,46 +18,59 @@
 const pool = require("../lib/db");
 
 async function getPublicacoesManuais(treinamentoId) {
-  const [rows] = await pool.query(
-    `SELECT id, autor_nome, titulo, conteudo, fixado, criado_em, atualizado_em
-     FROM turma_publicacoes
-     WHERE treinamento_id = ?
-     ORDER BY criado_em DESC`,
-    [treinamentoId]
-  );
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, autor_nome, titulo, conteudo, fixado, criado_em, atualizado_em
+       FROM turma_publicacoes
+       WHERE treinamento_id = ?
+       ORDER BY criado_em DESC`,
+      [treinamentoId]
+    );
 
-  return rows.map((r) => ({
-    tipo: "publicacao",
-    id: `pub-${r.id}`,
-    registro_id: r.id,
-    titulo: r.titulo || "Aviso",
-    descricao: r.conteudo,
-    autor: r.autor_nome,
-    data: r.criado_em,
-    fixado: !!r.fixado,
-    editavel: true,
-  }));
+    return rows.map((r) => ({
+      tipo: "publicacao",
+      id: `pub-${r.id}`,
+      registro_id: r.id,
+      titulo: r.titulo || "Aviso",
+      descricao: r.conteudo,
+      autor: r.autor_nome,
+      data: r.criado_em,
+      fixado: !!r.fixado,
+      editavel: true,
+    }));
+  } catch (error) {
+    // tabela nova (turma_publicacoes) — se a migration ainda não rodou neste
+    // banco, o mural não pode quebrar por causa disso; só fica sem a seção
+    // de publicações manuais até a migration ser aplicada.
+    console.warn("[mural] não foi possível carregar publicações manuais:", error.message);
+    return [];
+  }
 }
 
 async function getEventosAvaliacoes(treinamentoId) {
-  const [rows] = await pool.query(
-    `SELECT * FROM avaliacoes WHERE treinamento_id = ? ORDER BY id DESC`,
-    [treinamentoId]
-  );
+  try {
+    const [rows] = await pool.query(
+      `SELECT * FROM avaliacoes WHERE treinamento_id = ? ORDER BY id DESC`,
+      [treinamentoId]
+    );
 
-  return rows.map((a) => ({
-    tipo: "avaliacao",
-    id: `aval-${a.id}`,
-    registro_id: a.id,
-    titulo: `Avaliação "${a.titulo || "sem título"}" publicada`,
-    descricao: a.treinando_nome ? `Para ${a.treinando_nome}` : null,
-    autor: null,
-    // nem toda instalação tem coluna de data nessa tabela — quando não tem,
-    // o evento ainda aparece no mural, só sem ordenação cronológica exata
-    // (usamos o id como proxy de recência nesse caso).
-    data: a.criado_em || a.created_at || null,
-    editavel: false,
-  }));
+    return rows.map((a) => ({
+      tipo: "avaliacao",
+      id: `aval-${a.id}`,
+      registro_id: a.id,
+      titulo: `Avaliação "${a.titulo || "sem título"}" publicada`,
+      descricao: a.treinando_nome ? `Para ${a.treinando_nome}` : null,
+      autor: null,
+      // nem toda instalação tem coluna de data nessa tabela — quando não tem,
+      // o evento ainda aparece no mural, só sem ordenação cronológica exata
+      // (usamos o id como proxy de recência nesse caso).
+      data: a.criado_em || a.created_at || null,
+      editavel: false,
+    }));
+  } catch (error) {
+    console.warn("[mural] não foi possível carregar eventos de avaliação:", error.message);
+    return [];
+  }
 }
 
 async function getEventosMateriais(cliente) {
