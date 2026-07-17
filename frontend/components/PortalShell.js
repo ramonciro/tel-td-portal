@@ -8,21 +8,22 @@ import { clearSession, getStoredUser, hasSomeRole, hasOceanAccess } from "../ser
 const menuItems = [
   { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor"] },
-  { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
-  { href: "/usuarios", label: "Gestão de Usuários", icon: "👥", roles: ["coordenador", "supervisor"] },
+  { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "🌊", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
+  { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/presencas", label: "Gestão de Turmas", icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/frequencia-individual", label: "Frequência Individual", icon: "📍", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/avaliacoes", label: "Avaliações", icon: "⭐", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/responder-avaliacao", label: "Responder Avaliação", icon: "📝", roles: ["treinando", "instrutor", "supervisor", "coordenador"] },
-  { href: "/resultados-avaliacoes", label: "Resultados das Avaliações", icon: "📈", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/nps", label: "NPS", icon: "💬", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/responder-nps", label: "Responder NPS", icon: "🗳️", roles: ["treinando"] },
   { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "🌊", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
+  { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
+  { href: "/usuarios", label: "Gestão de Usuários", icon: "👥", roles: ["coordenador", "supervisor"] },
   { href: "/auditoria", label: "Auditoria", icon: "🛡️", roles: ["coordenador", "superintendente"] },
 ];
+// Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
+// ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
+// Frequência Individual, Avaliações, Responder Avaliação,
+// Resultados das Avaliações, NPS, Responder NPS.
+// As páginas em si continuam existindo (/avaliacoes segue como biblioteca de
+// provas, /responder-avaliacao e /responder-nps continuam sendo os links
+// que a aba da turma usa) — só saíram da navegação principal.
 
 function isRouteActive(pathname, href) {
   if (!pathname) return false;

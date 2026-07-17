@@ -7,6 +7,8 @@ const ABAS = [
   { key: "visao", label: "Visão geral", href: (id) => `/turma/${id}` },
   { key: "cronograma", label: "Cronograma", href: (id) => `/turma/${id}/cronograma` },
   { key: "participantes", label: "Pessoas", href: (id) => `/turma/${id}/participantes` },
+  { key: "avaliacoes", label: "Avaliações", href: (id) => `/turma/${id}/avaliacoes` },
+  { key: "nps", label: "NPS", href: (id) => `/turma/${id}/nps` },
 ];
 
 export default function TurmaTabs({ id, ativa }) {
@@ -32,11 +34,6 @@ export default function TurmaTabs({ id, ativa }) {
           </a>
         );
       })}
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", paddingRight: 8 }}>
-        <span style={{ fontSize: 11, color: colors.textMuted, borderRadius: radius.pill, background: colors.surfaceMuted, padding: "3px 8px" }}>
-          Avaliações e NPS continuam em telas próprias por enquanto
-        </span>
-      </div>
     </div>
   );
 }
