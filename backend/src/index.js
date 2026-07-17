@@ -26,6 +26,9 @@ const {
   obterResumoPorTreinamento,
 } = require("./controllers/presencaResumoController");
 
+const { registrarAuditoria } = require("./services/auditoria");
+const { listarAuditoriaHandler } = require("./controllers/auditoriaController");
+
 const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
@@ -115,6 +118,13 @@ app.get(
   obterResumoPorTreinamento
 );
 
+app.get(
+  "/api/auditoria",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  listarAuditoriaHandler
+);
+
 app.get("/api", async (req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -167,6 +177,22 @@ app.use(
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente")],
+    auditoria: {
+      entidade: "usuario",
+      resumoCriar: (dados) => `Criou o usuário "${dados.nome || "?"}" (${dados.perfil || "sem perfil"})`,
+      resumoEditar: (antes, depois) => {
+        const alvo = antes?.nome || `#${antes?.id}`;
+        if ("senha" in depois) return `Alterou a senha do usuário "${alvo}"`;
+        if (depois.perfil && depois.perfil !== antes?.perfil) {
+          return `Mudou o perfil de "${alvo}" de "${antes?.perfil}" para "${depois.perfil}"`;
+        }
+        if ("ativo" in depois && String(depois.ativo) !== String(antes?.ativo)) {
+          return `${String(depois.ativo) === "1" ? "Reativou" : "Desativou"} o usuário "${alvo}"`;
+        }
+        return `Editou o usuário "${alvo}"`;
+      },
+      resumoExcluir: (antes) => `Excluiu o usuário "${antes?.nome || "?"}" (${antes?.perfil || "sem perfil"})`,
+    },
   })
 );
 
@@ -178,6 +204,9 @@ app.delete(
     try {
       const { id } = req.params;
 
+      const [linhas] = await pool.query(`SELECT * FROM treinamentos WHERE id = ?`, [id]);
+      const antes = linhas[0] || null;
+
       await pool.query(`DELETE FROM presenca_aulas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM treinamento_participantes WHERE treinamento_id = ?`, [id]);
@@ -185,6 +214,16 @@ app.delete(
       await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
+
+      registrarAuditoria({
+        usuario: req.user,
+        acao: "excluir",
+        entidade: "treinamento",
+        entidadeId: id,
+        resumo: `${req.user?.nome || "Alguém"} excluiu o treinamento "${antes?.tema || "?"}" (${antes?.cliente || "?"}) e todos os dados relacionados (presenças, aulas, avaliações, participantes)`,
+        dadosAntes: antes,
+        ip: req.ip,
+      });
 
       return res.json({
         ok: true,
@@ -227,6 +266,11 @@ app.use(
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
+    auditoria: {
+      entidade: "treinamento",
+      resumoCriar: (dados) => `Criou o treinamento "${dados.tema || "?"}" (${dados.cliente || "?"})`,
+      resumoEditar: (antes, depois) => `Editou o treinamento "${antes?.tema || "?"}" (${antes?.cliente || "?"})`,
+    },
   })
 );
 
@@ -420,6 +464,12 @@ app.use(
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    auditoria: {
+      entidade: "presenca",
+      resumoEditar: (antes, depois) =>
+        `Editou retroativamente a chamada de "${antes?.treinando_nome || "?"}" em ${antes?.data_chamada || "?"} (de "${antes?.status || "?"}" para "${depois.status || antes?.status || "?"}")`,
+      resumoExcluir: (antes) => `Excluiu o registro de chamada de "${antes?.treinando_nome || "?"}" em ${antes?.data_chamada || "?"}`,
+    },
   })
 );
 
@@ -442,6 +492,20 @@ app.use(
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    auditoria: {
+      entidade: "avaliacao",
+      resumoCriar: (dados) => `Lançou avaliação "${dados.titulo || "?"}" para "${dados.treinando_nome || "?"}"`,
+      resumoEditar: (antes, depois) => {
+        const mudouNota =
+          ("nota_prova" in depois && String(depois.nota_prova) !== String(antes?.nota_prova)) ||
+          ("nota_qualidade" in depois && String(depois.nota_qualidade) !== String(antes?.nota_qualidade));
+        const alvo = antes?.treinando_nome || `#${antes?.id}`;
+        return mudouNota
+          ? `Corrigiu/alterou a nota da avaliação "${antes?.titulo || "?"}" de "${alvo}"`
+          : `Editou a avaliação "${antes?.titulo || "?"}" de "${alvo}"`;
+      },
+      resumoExcluir: (antes) => `Excluiu a avaliação "${antes?.titulo || "?"}" de "${antes?.treinando_nome || "?"}"`,
+    },
   })
 );
 
