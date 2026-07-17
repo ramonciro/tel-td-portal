@@ -6,6 +6,7 @@ import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
+import { corDoCliente } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -158,7 +159,32 @@ function getMiniTone(value, good = 90, warning = 75) {
   return { bg: "#fee2e2", color: "#b91c1c" };
 }
 
+function getStoredUser() {
+  if (typeof window === "undefined") return null;
+  try {
+    return JSON.parse(localStorage.getItem("usuario") || "null");
+  } catch {
+    return null;
+  }
+}
+
 export default function InicioPage() {
+  const [usuario, setUsuario] = useState(undefined);
+
+  useEffect(() => {
+    setUsuario(getStoredUser());
+  }, []);
+
+  if (usuario === undefined) return null;
+
+  if (usuario?.perfil === "instrutor" || usuario?.perfil === "treinando") {
+    return <MinhasTurmas usuario={usuario} />;
+  }
+
+  return <InicioCoordenacao />;
+}
+
+function InicioCoordenacao() {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
@@ -663,3 +689,157 @@ const emptyState = {
   border: "1px dashed #cbd5e1",
   color: "#64748b",
 };
+
+// ---------------------------------------------------------------------------
+// "Minhas turmas" — home por papel para instrutor e treinando. Em vez do
+// painel de KPIs (feito para coordenação), aqui a pergunta é sempre
+// "o que eu preciso fazer agora" — por isso os cards já trazem a ação mais
+// provável (fazer chamada, ver mural) em vez de só listar números.
+// ---------------------------------------------------------------------------
+function MinhasTurmas({ usuario }) {
+  const [turmas, setTurmas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function carregar() {
+    try {
+      setLoading(true);
+      const [treinamentosData, resumoData] = await Promise.all([
+        apiFetch("/treinamentos").catch(() => []),
+        apiFetch("/presenca-resumo").catch(() => null),
+      ]);
+
+      const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
+      const resumoPorId = new Map(
+        (Array.isArray(resumoData?.itens) ? resumoData.itens : []).map((r) => [Number(r.id), r])
+      );
+
+      let minhas = [];
+
+      if (usuario?.perfil === "instrutor") {
+        const nomeUsuario = String(usuario?.nome || "").trim().toLowerCase();
+        minhas = listaTreinamentos.filter(
+          (t) => String(t.instrutor || "").trim().toLowerCase() === nomeUsuario
+        );
+      } else {
+        // treinando: a turma "é minha" se meu nome aparece no roster dela.
+        // Sem uma tabela de matrícula formal, esse é o melhor sinal disponível
+        // hoje (mesmo padrão de nome usado no resto do portal).
+        const nomeUsuario = String(usuario?.nome || "").trim().toLowerCase();
+        const verificacoes = await Promise.all(
+          listaTreinamentos.map(async (t) => {
+            try {
+              const participantes = await apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []);
+              const pertence = (Array.isArray(participantes) ? participantes : []).some(
+                (p) => String(p.nome || "").trim().toLowerCase() === nomeUsuario
+              );
+              return pertence ? t : null;
+            } catch {
+              return null;
+            }
+          })
+        );
+        minhas = verificacoes.filter(Boolean);
+      }
+
+      const comResumo = minhas.map((t) => ({
+        ...t,
+        resumo: resumoPorId.get(Number(t.id)) || null,
+      }));
+
+      setTurmas(comResumo);
+      setErro("");
+    } catch (error) {
+      setErro(error.message || "Erro ao carregar suas turmas.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const pendentes = turmas.filter((t) => t.resumo?.status_turma === "Chamada pendente").length;
+
+  return (
+    <PortalShell>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>Minhas turmas</h1>
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569" }}>
+              {usuario?.nome} · {usuario?.perfil}
+            </p>
+          </div>
+        </div>
+
+        {pendentes > 0 && (
+          <div style={{ borderRadius: 12, border: "0.5px solid #fed7aa", background: "#fff7ed", padding: "12px 16px", fontSize: 13, color: "#9a3412", fontWeight: 600 }}>
+            Você tem chamada pendente em {pendentes} turma{pendentes > 1 ? "s" : ""} hoje.
+          </div>
+        )}
+
+        {erro && (
+          <div style={{ borderRadius: 12, background: "#fee2e2", color: "#b91c1c", padding: "12px 16px", fontSize: 13 }}>{erro}</div>
+        )}
+
+        {loading && <p style={{ fontSize: 13, color: "#475569" }}>Carregando suas turmas...</p>}
+        {!loading && turmas.length === 0 && (
+          <p style={{ fontSize: 13, color: "#94a3b8" }}>Nenhuma turma encontrada para você no momento.</p>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+          {turmas.map((t) => (
+            <CardTurma key={t.id} turma={t} usuario={usuario} />
+          ))}
+        </div>
+      </div>
+    </PortalShell>
+  );
+}
+
+function CardTurma({ turma, usuario }) {
+  const resumo = turma.resumo;
+  const status = resumo?.status_turma || "—";
+  const taxa = resumo?.taxa_presenca_pessoas ?? resumo?.taxa_presenca ?? 0;
+  const cor = corDoCliente(turma.cliente);
+
+  const acaoPrimaria =
+    status === "Chamada pendente"
+      ? { label: "Fazer chamada", href: `/turma/${turma.id}/mural` }
+      : { label: "Ver mural", href: `/turma/${turma.id}/mural` };
+
+  return (
+    <div style={{ borderRadius: 12, border: "0.5px solid #e2e8f0", overflow: "hidden", background: "#fff" }}>
+      <div style={{ background: cor.bg, padding: "14px 16px" }}>
+        <p style={{ margin: 0, fontSize: 12, color: cor.text, fontWeight: 600 }}>{turma.cliente || "—"}</p>
+        <p style={{ margin: "4px 0 0", fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{turma.tema || "Turma"}</p>
+      </div>
+      <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "#475569" }}>
+          <span>{status}</span>
+          <span>{taxa}% presença</span>
+        </div>
+        <div style={{ height: 6, borderRadius: 999, background: "#f1f5f9", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${Math.min(taxa, 100)}%`, background: taxa >= 85 ? "#16a34a" : taxa >= 75 ? "#f59e0b" : "#dc2626" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+          <a
+            href={acaoPrimaria.href}
+            style={{ flex: 1, textAlign: "center", height: 32, lineHeight: "32px", fontSize: 13, background: "#2563eb", color: "#fff", borderRadius: 8, textDecoration: "none", fontWeight: 700 }}
+          >
+            {acaoPrimaria.label}
+          </a>
+          <a
+            href={`/turma/${turma.id}`}
+            style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, border: "1px solid #e2e8f0", textDecoration: "none", color: "#475569" }}
+          >
+            →
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
