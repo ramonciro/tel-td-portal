@@ -138,7 +138,7 @@ app.get(
 app.get(
   "/api/turma-mural/:treinamento_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   obterMural
 );
 app.post(
