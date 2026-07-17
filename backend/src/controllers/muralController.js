@@ -7,6 +7,13 @@ const {
 } = require("../services/muralResolver");
 const { registrarAuditoria } = require("../services/auditoria");
 
+function mensagemErro(error, acaoDescricao) {
+  const tabelaAusente = /doesn't exist/i.test(error.message);
+  return tabelaAusente
+    ? `A tabela turma_publicacoes ainda não existe neste banco. Rode a migration database/migrations/2026-07-17_turma_publicacoes.sql no banco de produção e tente ${acaoDescricao} de novo.`
+    : `Erro ao ${acaoDescricao}: ${error.message}`;
+}
+
 async function obterMural(req, res) {
   try {
     const treinamentoId = Number(req.params.treinamento_id);
@@ -49,7 +56,7 @@ async function criarPublicacaoHandler(req, res) {
 
     return res.status(201).json({ ok: true, id });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao publicar aviso", error: error.message });
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "publicar o aviso"), error: error.message });
   }
 }
 
@@ -76,7 +83,7 @@ async function editarPublicacaoHandler(req, res) {
 
     return res.json({ ok: true, message: "Publicação atualizada" });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao editar publicação", error: error.message });
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "editar o aviso"), error: error.message });
   }
 }
 
@@ -102,7 +109,7 @@ async function excluirPublicacaoHandler(req, res) {
 
     return res.json({ ok: true, message: "Publicação excluída" });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao excluir publicação", error: error.message });
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "excluir o aviso"), error: error.message });
   }
 }
 
