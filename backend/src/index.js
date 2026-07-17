@@ -30,6 +30,13 @@ const { registrarAuditoria } = require("./services/auditoria");
 const { listarAuditoriaHandler } = require("./controllers/auditoriaController");
 
 const {
+  obterMural,
+  criarPublicacaoHandler,
+  editarPublicacaoHandler,
+  excluirPublicacaoHandler,
+} = require("./controllers/muralController");
+
+const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
@@ -123,6 +130,34 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "superintendente"),
   listarAuditoriaHandler
+);
+
+// Mural da turma: publicações manuais + eventos derivados (avaliação
+// publicada, material adicionado, chamada concluída). Ver
+// backend/src/services/muralResolver.js.
+app.get(
+  "/api/turma-mural/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  obterMural
+);
+app.post(
+  "/api/turma-mural/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  criarPublicacaoHandler
+);
+app.put(
+  "/api/turma-mural/publicacao/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  editarPublicacaoHandler
+);
+app.delete(
+  "/api/turma-mural/publicacao/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  excluirPublicacaoHandler
 );
 
 app.get("/api", async (req, res) => {
