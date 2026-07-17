@@ -21,6 +21,7 @@ const menuItems = [
   { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "🌊", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
+  { href: "/auditoria", label: "Auditoria", icon: "🛡️", roles: ["coordenador", "superintendente"] },
 ];
 
 function isRouteActive(pathname, href) {
