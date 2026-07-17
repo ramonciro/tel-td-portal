@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiDownload, apiFetch } from "../../../../services/api";
+import TurmaTabs from "../../../../components/TurmaTabs";
 import { formatDateBR } from "../../../../lib/date";
 
 function formatDate(value) {
@@ -235,6 +236,8 @@ export default function ParticipantesTurmaPage() {
           ← Voltar para gestão da turma
         </button>
       </div>
+
+      <TurmaTabs id={id} ativa="participantes" />
 
       <div style={hero}>
         <div style={heroGrid}>
