@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../../services/api";
 import { compareLocalDatesAsc, formatDateBR, parseLocalDate } from "../../../lib/date";
+import TurmaTabs from "../../../components/TurmaTabs";
 
 function formatDate(value) {
   return formatDateBR(value);
@@ -290,6 +291,10 @@ export default function GestaoTurmaPage() {
     window.location.href = `/turma/${id}/cronograma`;
   }
 
+  function abrirMural() {
+    window.location.href = `/turma/${id}/mural`;
+  }
+
   function abrirParticipantes() {
     window.location.href = `/turma/${id}/participantes`;
   }
@@ -316,6 +321,8 @@ export default function GestaoTurmaPage() {
           ← Voltar
         </button>
       </div>
+
+      <TurmaTabs id={id} ativa="visao" />
 
       <div style={hero}>
         <div style={heroBadge}>Gestão da turma</div>
@@ -364,6 +371,10 @@ export default function GestaoTurmaPage() {
         </p>
 
         <div style={actionsRow}>
+          <button style={btnPrimary} onClick={abrirMural}>
+            Abrir mural
+          </button>
+
           <button style={btnSecondary} onClick={abrirCronograma}>
             Abrir cronograma
           </button>
