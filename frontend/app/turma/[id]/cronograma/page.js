@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiDownload, apiFetch } from "../../../../services/api";
+import TurmaTabs from "../../../../components/TurmaTabs";
 import {
   compareLocalDatesAsc,
   formatDateBR,
@@ -534,6 +535,8 @@ export default function CronogramaTurmaPage() {
           ← Voltar para gestão da turma
         </button>
       </div>
+
+      <TurmaTabs id={id} ativa="cronograma" />
 
       <div style={hero}>
         <div style={heroBadge}>Cronograma da turma</div>
