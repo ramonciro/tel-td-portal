@@ -5,6 +5,7 @@ import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch, getStoredUser } from "../../services/api";
+import { colors, chart, estiloBadgeStatus } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -115,40 +116,10 @@ function statusStyle(statusOrItem) {
   return statusStyleFromLabel(label);
 }
 
-// Cobre também os rótulos mais granulares que só o backend consegue
-// calcular (Chamada pendente, Sem cronograma, Sem treinandos), vindos de
-// /api/presenca-resumo — mesma paleta usada na tela Presenças, pra manter
-// a leitura visual consistente entre as duas telas.
+// Delega pro theme.js — mesma paleta usada em toda a Turma e na Auditoria,
+// uma fonte só em vez de reimplementar as mesmas cores em cada arquivo.
 function statusStyleFromLabel(label) {
-  const base = {
-    display: "inline-block",
-    padding: "5px 9px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 11,
-  };
-
-  if (label === "Concluída") {
-    return { ...base, background: "#dcfce7", color: "#166534" };
-  }
-
-  if (label === "Em andamento") {
-    return { ...base, background: "#ffedd5", color: "#9a3412" };
-  }
-
-  if (label === "Cancelada") {
-    return { ...base, background: "#fee2e2", color: "#b91c1c" };
-  }
-
-  if (label === "Chamada pendente") {
-    return { ...base, background: "#fff7ed", color: "#c2410c" };
-  }
-
-  if (label === "Sem cronograma" || label === "Sem treinandos") {
-    return { ...base, background: "#fef2f2", color: "#b91c1c" };
-  }
-
-  return { ...base, background: "#dbeafe", color: "#1d4ed8" };
+  return estiloBadgeStatus(label);
 }
 
 function parseClientes(value) {
@@ -754,25 +725,25 @@ export default function TreinamentosPage() {
               title="Turmas"
               value={fmt(kpis.total)}
               subtitle="Base total"
-              accent="#2563eb"
+              accent={chart.blue}
             />
             <StatCard
               title="Planejadas"
               value={fmt(kpis.planejadas)}
               subtitle="Aguardando execução"
-              accent="#f59e0b"
+              accent={colors.primary}
             />
             <StatCard
               title="Em andamento"
               value={fmt(kpis.andamento)}
               subtitle="Turmas ativas"
-              accent="#ea580c"
+              accent={colors.warning}
             />
             <StatCard
               title="Concluídas"
               value={fmt(kpis.concluidas)}
               subtitle="Ações finalizadas"
-              accent="#16a34a"
+              accent={colors.success}
             />
           </div>
 
@@ -781,31 +752,31 @@ export default function TreinamentosPage() {
               title="Treinandos previstos"
               value={fmt(kpis.treinandos)}
               subtitle="Capacidade da base"
-              accent="#06b6d4"
+              accent={chart.cyan}
             />
             <StatCard
               title="Treinandos confirmados"
               value={fmt(kpis.confirmados)}
               subtitle="Com chamada registrada"
-              accent="#16a34a"
+              accent={colors.success}
             />
             <StatCard
               title="Carga realizada"
               value={`${fmt(kpis.horasRealizadas)}h`}
               subtitle={`de ${fmt(kpis.horas)}h planejadas`}
-              accent="#7c3aed"
+              accent={chart.purple}
             />
             <StatCard
               title="Taxa de conclusão"
               value={kpis.total > 0 ? `${Math.round((kpis.concluidas / kpis.total) * 100)}%` : "—"}
               subtitle="Concluídas / total"
-              accent="#0f766e"
+              accent={chart.teal}
             />
             <StatCard
               title="Atrasadas"
               value={fmt(kpis.atrasadas)}
               subtitle="Data vencida sem conclusão"
-              accent={kpis.atrasadas > 0 ? "#dc2626" : "#334155"}
+              accent={kpis.atrasadas > 0 ? colors.danger : colors.neutral}
             />
           </div>
 
