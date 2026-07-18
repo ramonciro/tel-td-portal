@@ -7,6 +7,7 @@ import StatCard from "../../components/StatCard";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
+import { colors, chart, estiloBadgeStatus, estiloBadgeClassificacao } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -28,36 +29,11 @@ function parseHoras(value) {
 // é a mesma função usada pela tela Treinamentos, então as duas telas nunca
 // mais divergem sobre o status da mesma turma.
 
+// Delega pro theme.js — antes essa função tinha uma paleta própria que
+// divergia da usada em Treinamentos (ex.: "Planejada" era âmbar aqui e azul
+// lá, "Em andamento" era azul aqui e laranja lá). Unificado numa fonte só.
 function getStatusBadgeStyle(status) {
-  const base = {
-    display: "inline-block",
-    padding: "5px 10px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 800,
-  };
-
-  if (status === "Sem treinandos" || status === "Sem cronograma") {
-    return { ...base, background: "#fef2f2", color: "#b91c1c" };
-  }
-
-  if (status === "Planejada") {
-    return { ...base, background: "#fef3c7", color: "#92400e" };
-  }
-
-  if (status === "Chamada pendente") {
-    return { ...base, background: "#fff7ed", color: "#c2410c" };
-  }
-
-  if (status === "Em andamento") {
-    return { ...base, background: "#eff6ff", color: "#1d4ed8" };
-  }
-
-  if (status === "Cancelada") {
-    return { ...base, background: "#fee2e2", color: "#b91c1c" };
-  }
-
-  return { ...base, background: "#ecfdf5", color: "#047857" };
+  return estiloBadgeStatus(status);
 }
 
 function getActionConfig(statusTurma, usaCronograma) {
@@ -448,13 +424,13 @@ function exportarRelatorio() {
               title="Turmas"
               value={fmt(resumo.turmasTotal)}
               subtitle="Consolidadas no filtro"
-              accent="#2563eb"
+              accent={chart.blue}
             />
             <StatCard
               title="Treinandos"
               value={fmt(resumo.treinandos)}
               subtitle="Capacidade planejada"
-              accent="#38bdf8"
+              accent={chart.cyan}
             />
             <StatCard
               title={resumo.taxaMedia !== null ? "Freq. Média" : "Participações"}
@@ -468,13 +444,13 @@ function exportarRelatorio() {
                   ? `Média de ${resumo.turmasComDados} turma${resumo.turmasComDados !== 1 ? "s" : ""} com dados`
                   : "Registros confirmados"
               }
-              accent="#16a34a"
+              accent={colors.success}
             />
             <StatCard
               title="Carga horária"
               value={`${fmt(resumo.horas)}h`}
               subtitle="Carga consolidada"
-              accent="#7c3aed"
+              accent={chart.purple}
             />
           </div>
 
@@ -483,43 +459,43 @@ function exportarRelatorio() {
               title="Sem treinandos"
               value={fmt(resumo.semTreinandos)}
               subtitle="Turmas sem base vinculada"
-              accent="#dc2626"
+              accent={colors.danger}
             />
             <StatCard
               title="Sem cronograma"
               value={fmt(resumo.semCronograma)}
               subtitle="Sem aulas geradas"
-              accent="#b91c1c"
+              accent={colors.danger}
             />
             <StatCard
               title="Planejadas"
               value={fmt(resumo.planejadas)}
               subtitle="Ainda não iniciadas"
-              accent="#d97706"
+              accent={colors.primary}
             />
             <StatCard
               title="Chamada pendente"
               value={fmt(resumo.pendentes)}
               subtitle="Sem lançamento iniciado"
-              accent="#f59e0b"
+              accent={colors.warning}
             />
             <StatCard
               title="Em andamento"
               value={fmt(resumo.andamento)}
               subtitle="Com pendências operacionais"
-              accent="#2563eb"
+              accent={colors.warning}
             />
             <StatCard
               title="Concluídas"
               value={fmt(resumo.concluidas)}
               subtitle="Turmas finalizadas"
-              accent="#16a34a"
+              accent={colors.success}
             />
             <StatCard
               title="Canceladas"
               value={fmt(resumo.canceladas)}
               subtitle="Encerradas sem execução"
-              accent="#dc2626"
+              accent={colors.neutral}
             />
           </div>
 
@@ -535,15 +511,7 @@ function exportarRelatorio() {
                   return (
                     <div key={item.id} style={turmaCard}>
                       <div style={cardTop}>
-                        <span
-                          style={
-                            item.classificacao === "Crítico"
-                              ? badgeCritico
-                              : item.classificacao === "Atenção"
-                              ? badgeAtencao
-                              : badgeEstavel
-                          }
-                        >
+                        <span style={estiloBadgeClassificacao(item.classificacao)}>
                           {item.classificacao}
                         </span>
 
@@ -736,33 +704,6 @@ const cardTop = {
 
 const statusWrap = {
   marginTop: -2,
-};
-
-const badgeCritico = {
-  background: "#fef2f2",
-  color: "#b91c1c",
-  borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 12,
-  fontWeight: 800,
-};
-
-const badgeAtencao = {
-  background: "#fff7ed",
-  color: "#c2410c",
-  borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 12,
-  fontWeight: 800,
-};
-
-const badgeEstavel = {
-  background: "#ecfdf5",
-  color: "#047857",
-  borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 12,
-  fontWeight: 800,
 };
 
 const badgeTaxa = {
