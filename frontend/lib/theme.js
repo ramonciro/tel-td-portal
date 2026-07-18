@@ -114,7 +114,29 @@ export function estiloBadgeClassificacao(label) {
   return { ...base, background: colors.successLight, color: colors.successText };
 }
 
+// paleta curada para métricas que não têm semântica de status (não são
+// "bom/ruim"), só precisam de cores distintas e consistentes entre telas —
+// substitui os hex codes escolhidos um a um em cada página.
+export const chart = {
+  blue: "#2563eb",
+  cyan: "#0ea5e9",
+  teal: "#0f766e",
+  purple: "#7c3aed",
+  pink: "#db2777",
+  orange: "#ea580c",
+};
+
 export const card = {
+  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
+  border: `1px solid ${colors.border}`,
+  borderRadius: radius.lg,
+  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
+};
+
+// versão sem sombra/gradiente — pra listas densas (linhas de tabela, itens
+// de feed) onde o efeito elevado do card principal ficaria pesado repetido
+// muitas vezes na mesma tela.
+export const cardFlat = {
   borderRadius: radius.md,
   border: `0.5px solid ${colors.border}`,
   background: colors.surface,
