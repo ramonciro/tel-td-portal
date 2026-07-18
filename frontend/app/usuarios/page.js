@@ -5,6 +5,7 @@ import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+import { colors, chart } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -273,11 +274,11 @@ export default function UsuariosPage() {
           ) : null}
 
           <div style={heroGrid}>
-            <StatCard title="Usuários" value={fmt(kpis.total)} subtitle="Base total" accent="#2563eb" />
-            <StatCard title="Ativos" value={fmt(kpis.ativos)} subtitle="Usuários liberados" accent="#16a34a" />
-            <StatCard title="Oceano liberado" value={fmt(kpis.oceanoLiberado)} subtitle="Acesso individual ativo" accent="#0891b2" />
-            <StatCard title="Instrutores" value={fmt(kpis.instrutores)} subtitle="Perfis de instrução" accent="#7c3aed" />
-            <StatCard title="Multioperação" value={fmt(kpis.multiOperacao)} subtitle="Mais de um cliente" accent="#ea580c" />
+            <StatCard title="Usuários" value={fmt(kpis.total)} subtitle="Base total" accent={chart.blue} />
+            <StatCard title="Ativos" value={fmt(kpis.ativos)} subtitle="Usuários liberados" accent={colors.success} />
+            <StatCard title="Oceano liberado" value={fmt(kpis.oceanoLiberado)} subtitle="Acesso individual ativo" accent={chart.cyan} />
+            <StatCard title="Instrutores" value={fmt(kpis.instrutores)} subtitle="Perfis de instrução" accent={chart.purple} />
+            <StatCard title="Multioperação" value={fmt(kpis.multiOperacao)} subtitle="Mais de um cliente" accent={chart.orange} />
           </div>
 
           <div style={heroGrid}>
@@ -287,7 +288,7 @@ export default function UsuariosPage() {
                 title={item.label}
                 value={fmt(item.value)}
                 subtitle="Distribuição por perfil"
-                accent="#475569"
+                accent={colors.neutral}
               />
             ))}
           </div>
@@ -349,8 +350,8 @@ function badgeStatus(ativo) {
     borderRadius: 999,
     fontWeight: 800,
     fontSize: 11,
-    background: ativo ? "#dcfce7" : "#fee2e2",
-    color: ativo ? "#166534" : "#b91c1c",
+    background: ativo ? colors.successLight : colors.dangerLight,
+    color: ativo ? colors.successText : colors.dangerText,
   };
 }
 
