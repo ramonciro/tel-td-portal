@@ -207,27 +207,31 @@ export default function TreinamentosPage() {
   const [filtroPeriodoInicio, setFiltroPeriodoInicio] = useState("");
   const [filtroPeriodoFim, setFiltroPeriodoFim] = useState("");
   const [resumoPresenca, setResumoPresenca] = useState([]);
+  const [necessidades, setNecessidades] = useState([]);
 
   useEffect(() => {
     async function carregar() {
       try {
-        const [treinamentosData, usuariosData, clientesData, resumoData] = await Promise.all([
+        const [treinamentosData, usuariosData, clientesData, resumoData, necessidadesData] = await Promise.all([
           apiFetch("/treinamentos").catch(() => []),
           apiFetch("/usuarios").catch(() => []),
           apiFetch("/clientes").catch(() => []),
           apiFetch("/presenca-resumo").catch(() => null),
+          apiFetch("/necessidades").catch(() => null),
         ]);
 
         setTurmas(Array.isArray(treinamentosData) ? treinamentosData : []);
         setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
         setClientes(Array.isArray(clientesData) ? clientesData : []);
         setResumoPresenca(Array.isArray(resumoData?.itens) ? resumoData.itens : []);
+        setNecessidades(Array.isArray(necessidadesData?.itens) ? necessidadesData.itens : []);
         setUsuarioLogado(getStoredUser());
       } catch {
         setTurmas([]);
         setUsuarios([]);
         setClientes([]);
         setResumoPresenca([]);
+        setNecessidades([]);
         setUsuarioLogado(getStoredUser());
       }
     }
@@ -337,6 +341,18 @@ export default function TreinamentosPage() {
           ? "Selecione o cliente"
           : "Nenhum cliente disponível",
       defaultValue: clientePadrao,
+    },
+    {
+      name: "necessidade_id",
+      label: "Atende a necessidade (opcional)",
+      type: "select",
+      options: necessidades
+        .filter((n) => n.status_calculado !== "atendida" && n.status_calculado !== "cancelada")
+        .map((n) => ({
+          value: n.id,
+          label: `${n.cliente} — ${n.tema} (${n.horas_atendidas}h de ${n.horas_necessarias || "?"}h)`,
+        })),
+      placeholder: "Nenhuma necessidade vinculada",
     },
     {
       name: "instrutor",
