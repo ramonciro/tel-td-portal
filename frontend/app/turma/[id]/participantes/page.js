@@ -28,6 +28,7 @@ export default function ParticipantesTurmaPage() {
 
   const [treinamento, setTreinamento] = useState(null);
   const [participantes, setParticipantes] = useState([]);
+  const [frequencias, setFrequencias] = useState([]);
   const [arquivo, setArquivo] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [loading, setLoading] = useState(true);
@@ -50,13 +51,15 @@ export default function ParticipantesTurmaPage() {
       setErro("");
       setSucesso("");
 
-      const [dadosTreinamento, listaParticipantes] = await Promise.all([
+      const [dadosTreinamento, listaParticipantes, frequenciaData] = await Promise.all([
         apiFetch(`/treinamentos/${id}`),
         apiFetch(`/treinamentos/${id}/participantes`).catch(() => []),
+        apiFetch(`/frequencia-individual?treinamento_id=${id}`).catch(() => null),
       ]);
 
       setTreinamento(dadosTreinamento || null);
       setParticipantes(Array.isArray(listaParticipantes) ? listaParticipantes : []);
+      setFrequencias(Array.isArray(frequenciaData?.itens) ? frequenciaData.itens : []);
       setForm(
         emptyForm(
           dadosTreinamento?.cliente || "",
@@ -395,11 +398,16 @@ export default function ParticipantesTurmaPage() {
                 <th style={th}>Operação</th>
                 <th style={th}>Admissão</th>
                 <th style={th}>Status</th>
+                <th style={th}>Frequência</th>
                 <th style={th}>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {listaFiltrada.map((item) => (
+              {listaFiltrada.map((item) => {
+                const freq = frequencias.find(
+                  (f) => String(f.treinando_nome || "").trim().toLowerCase() === String(item.nome || "").trim().toLowerCase()
+                );
+                return (
                 <tr key={item.id}>
                   <td style={td}>{item.nome}</td>
                   <td style={td}>{item.matricula}</td>
@@ -410,15 +418,29 @@ export default function ParticipantesTurmaPage() {
                   <td style={td}>{formatDate(item.data_admissao)}</td>
                   <td style={td}>{item.status_presenca || "pendente"}</td>
                   <td style={td}>
+                    {freq ? (
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, borderRadius: 999, padding: "3px 9px",
+                        background: freq.frequencia_percentual >= 90 ? "#dcfce7" : freq.frequencia_percentual >= 75 ? "#fff7ed" : "#fee2e2",
+                        color: freq.frequencia_percentual >= 90 ? "#166534" : freq.frequencia_percentual >= 75 ? "#9a3412" : "#b91c1c",
+                      }}>
+                        {freq.frequencia_percentual}%
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "#94a3b8" }}>sem dados</span>
+                    )}
+                  </td>
+                  <td style={td}>
                     <button style={btnDangerMini} onClick={() => removerParticipante(item)}>
                       Remover
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {!listaFiltrada.length ? (
                 <tr>
-                  <td style={emptyTd} colSpan={9}>
+                  <td style={emptyTd} colSpan={10}>
                     Nenhum participante encontrado.
                   </td>
                 </tr>
