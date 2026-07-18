@@ -5,6 +5,7 @@ import AccessGate from "../../components/AccessGate";
 import CrudPageV2 from "../../components/CrudPageV2";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+import { colors, chart } from "../../lib/theme";
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState([]);
@@ -127,25 +128,25 @@ export default function ClientesPage() {
                 title="Clientes"
                 value={totalClientes}
                 subtitle="Base total"
-                accent="#2563eb"
+                accent={chart.blue}
               />
               <StatCard
                 title="Ativos"
                 value={ativos}
                 subtitle="Operações em andamento"
-                accent="#059669"
+                accent={colors.success}
               />
               <StatCard
                 title="Inativos"
                 value={inativos}
                 subtitle="Operações sem atividade"
-                accent="#dc2626"
+                accent={colors.danger}
               />
               <StatCard
                 title="Com responsável"
                 value={comResponsavel}
                 subtitle="Referência cadastrada"
-                accent="#7c3aed"
+                accent={chart.purple}
               />
             </div>
           </div>
