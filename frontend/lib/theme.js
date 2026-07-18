@@ -8,6 +8,14 @@
 // pressa, sempre que forem mexidas por outro motivo.
 
 export const colors = {
+  // identidade da marca — usada no chrome do portal (sidebar, cabeçalhos de
+  // destaque) e em CTAs primários. Não usar em badges de status — status
+  // usa sempre success/warning/danger, pra não competir visualmente.
+  navy: "#0B1220",
+  navySoft: "#161D2E",
+  accent: "#FF6B4A",
+  accentLight: "#FFE4DB",
+
   // marca / ação primária
   primary: "#2563eb",
   primaryLight: "#dbeafe",
