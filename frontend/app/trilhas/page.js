@@ -5,6 +5,7 @@ import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+import { colors, chart } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -340,12 +341,12 @@ export default function TrilhasPage() {
           </div>
 
           <div style={statsGrid}>
-            <StatCard title="Trilhas" value={fmt(kpis.total)} subtitle="Base cadastrada" accent="#2563eb" />
-            <StatCard title="Estruturadas" value={fmt(kpis.estruturadas)} subtitle="Com maior maturidade" accent="#16a34a" />
-            <StatCard title="Ativas" value={fmt(kpis.ativas)} subtitle="Em uso e evolução" accent="#0f766e" />
-            <StatCard title="Em estruturação" value={fmt(kpis.emEstruturacao)} subtitle="Pedem complemento" accent="#ea580c" />
-            <StatCard title="Públicos cobertos" value={fmt(kpis.publicosCobertos)} subtitle="Perfis atendidos" accent="#7c3aed" />
-            <StatCard title="Horas estimadas" value={fmt(kpis.horasEstimadas)} subtitle="Carga sugerida do catálogo" accent="#0891b2" />
+            <StatCard title="Trilhas" value={fmt(kpis.total)} subtitle="Base cadastrada" accent={chart.blue} />
+            <StatCard title="Estruturadas" value={fmt(kpis.estruturadas)} subtitle="Com maior maturidade" accent={colors.success} />
+            <StatCard title="Ativas" value={fmt(kpis.ativas)} subtitle="Em uso e evolução" accent={chart.teal} />
+            <StatCard title="Em estruturação" value={fmt(kpis.emEstruturacao)} subtitle="Pedem complemento" accent={colors.warning} />
+            <StatCard title="Públicos cobertos" value={fmt(kpis.publicosCobertos)} subtitle="Perfis atendidos" accent={chart.purple} />
+            <StatCard title="Horas estimadas" value={fmt(kpis.horasEstimadas)} subtitle="Carga sugerida do catálogo" accent={chart.cyan} />
           </div>
         </section>
 
