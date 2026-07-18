@@ -125,6 +125,7 @@ export default function DashboardPage() {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
+  const [drillDown, setDrillDown] = useState(null); // { turma, itens, loading }
   const [filters, setFilters] = useState({
     cliente: "",
     instrutor: "",
@@ -155,6 +156,16 @@ export default function DashboardPage() {
     }
     carregar();
   }, [filters]);
+
+  async function abrirDrillDown(item) {
+    setDrillDown({ turma: item, itens: [], loading: true });
+    try {
+      const resposta = await apiFetch(`/frequencia-individual?treinamento_id=${item.id}`);
+      setDrillDown({ turma: item, itens: Array.isArray(resposta?.itens) ? resposta.itens : [], loading: false });
+    } catch (error) {
+      setDrillDown({ turma: item, itens: [], loading: false, erro: error.message });
+    }
+  }
 
   const kpis = dados?.kpis || {};
   const filtrosApi = dados?.filtros || {};
@@ -431,7 +442,7 @@ export default function DashboardPage() {
                   </thead>
                   <tbody>
                     {ultimasTurmas.map((item) => (
-                      <tr key={item.id}>
+                      <tr key={item.id} onClick={() => abrirDrillDown(item)} style={{ cursor: "pointer" }} title="Clique para ver a frequência por pessoa">
                         <td style={td}>{item.tema || "-"}</td>
                         <td style={td}>{item.cliente || "-"}</td>
                         <td style={td}>{item.instrutor || "-"}</td>
@@ -455,6 +466,50 @@ export default function DashboardPage() {
               <div style={emptyState}>Não apareceu nenhuma turma nesse recorte.</div>
             )}
           </SectionCard>
+        </div>
+      )}
+
+      {drillDown && (
+        <div
+          onClick={() => setDrillDown(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 520, width: "100%", maxHeight: "80vh", overflowY: "auto" }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Frequência por pessoa</p>
+                <p style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 800, color: "#0f172a" }}>{drillDown.turma?.tema || "Turma"}</p>
+              </div>
+              <button onClick={() => setDrillDown(null)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: "#64748b" }}>✕</button>
+            </div>
+
+            {drillDown.loading && <p style={{ fontSize: 13, color: "#64748b" }}>Carregando...</p>}
+            {drillDown.erro && <p style={{ fontSize: 13, color: "#b91c1c" }}>{drillDown.erro}</p>}
+            {!drillDown.loading && !drillDown.erro && drillDown.itens.length === 0 && (
+              <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem dados de frequência individual para esta turma ainda.</p>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {drillDown.itens.map((pessoa, idx) => (
+                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: "1px solid #eef2f7" }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{pessoa.treinando_nome}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{pessoa.presentes} presentes · {pessoa.ausentes} ausentes · {pessoa.justificados} justificados</p>
+                  </div>
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, borderRadius: 999, padding: "4px 10px",
+                    background: pessoa.frequencia_percentual >= 90 ? "#dcfce7" : pessoa.frequencia_percentual >= 75 ? "#fff7ed" : "#fee2e2",
+                    color: pessoa.frequencia_percentual >= 90 ? "#166534" : pessoa.frequencia_percentual >= 75 ? "#9a3412" : "#b91c1c",
+                  }}>
+                    {pessoa.frequencia_percentual}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </PortalShell>
