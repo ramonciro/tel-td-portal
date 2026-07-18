@@ -37,6 +37,13 @@ const {
 } = require("./controllers/muralController");
 
 const {
+  listarHandler: listarNecessidadesHandler,
+  criarHandler: criarNecessidadeHandler,
+  editarHandler: editarNecessidadeHandler,
+  excluirHandler: excluirNecessidadeHandler,
+} = require("./controllers/necessidadesController");
+
+const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
@@ -158,6 +165,33 @@ app.delete(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   excluirPublicacaoHandler
+);
+
+// Fase 1 do ciclo ISO 10015: necessidade de treinamento (antes de a turma
+// existir). Ver backend/src/services/necessidadesResolver.js.
+app.get(
+  "/api/necessidades",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  listarNecessidadesHandler
+);
+app.post(
+  "/api/necessidades",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  criarNecessidadeHandler
+);
+app.put(
+  "/api/necessidades/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  editarNecessidadeHandler
+);
+app.delete(
+  "/api/necessidades/:id",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  excluirNecessidadeHandler
 );
 
 app.get("/api", async (req, res) => {
@@ -295,6 +329,7 @@ app.use(
       "data_fim",
       "turma",
       "supervisor",
+      "necessidade_id",
     ],
     orderBy: "id DESC",
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
