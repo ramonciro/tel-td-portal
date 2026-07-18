@@ -375,8 +375,105 @@ async function getResumoPresenca({ treinamentoId } = {}) {
   });
 }
 
+// Frequência por participante — mesma decisão cronograma > legado usada em
+// getResumoPresenca(), mas aqui expondo o detalhe POR PESSOA (nome, dias
+// registrados, presentes, ausentes, % de frequência), para telas de
+// drill-down (Dashboard, aba Pessoas da turma). Antes, a Frequência
+// Individual só olhava para a tabela `presencas` (legado) — turmas geridas
+// por cronograma apareciam como se ninguém tivesse frequência nenhuma.
+async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fim } = {}) {
+  const resumo = await getResumoPresenca({ treinamentoId });
+  const origemPorId = new Map(resumo.map((r) => [r.id, r.origem_frequencia]));
+
+  const whereBase = [];
+  const paramsBase = [];
+  if (cliente) { whereBase.push("t.cliente = ?"); paramsBase.push(cliente); }
+  if (treinamentoId) { whereBase.push("t.id = ?"); paramsBase.push(treinamentoId); }
+
+  // fonte 1: legado (presencas) — usada quando origem_frequencia é
+  // 'legado' ou 'presencas' (turmas sem cronograma, ou cronograma vazio)
+  const whereLegado = [...whereBase, "DAYOFWEEK(p.data_chamada) <> 1"];
+  const paramsLegado = [...paramsBase];
+  if (inicio) { whereLegado.push("DATE(p.data_chamada) >= ?"); paramsLegado.push(inicio); }
+  if (fim) { whereLegado.push("DATE(p.data_chamada) <= ?"); paramsLegado.push(fim); }
+
+  const [linhasLegado] = await pool.query(
+    `
+    SELECT
+      p.treinando_nome, t.id AS treinamento_id, t.tema, t.cliente, t.instrutor,
+      COUNT(*) AS dias_registrados,
+      SUM(CASE WHEN p.status = 'presente' THEN 1 ELSE 0 END) AS presentes,
+      SUM(CASE WHEN p.status = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
+      SUM(CASE WHEN p.status = 'justificado' THEN 1 ELSE 0 END) AS justificados,
+      SUM(CASE WHEN p.status IS NULL OR p.status = '' OR p.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,
+      MIN(p.data_chamada) AS primeira_chamada,
+      MAX(p.data_chamada) AS ultima_chamada
+    FROM presencas p
+    INNER JOIN treinamentos t ON t.id = p.treinamento_id
+    ${whereLegado.length ? `WHERE ${whereLegado.join(" AND ")}` : ""}
+    GROUP BY p.treinando_nome, t.id, t.tema, t.cliente, t.instrutor
+    `,
+    paramsLegado
+  );
+
+  // fonte 2: cronograma (presenca_aulas) — usada quando origem_frequencia é
+  // 'cronograma'
+  const whereCron = [...whereBase, "DAYOFWEEK(pa.data_aula) <> 1"];
+  const paramsCron = [...paramsBase];
+  if (inicio) { whereCron.push("DATE(pa.data_aula) >= ?"); paramsCron.push(inicio); }
+  if (fim) { whereCron.push("DATE(pa.data_aula) <= ?"); paramsCron.push(fim); }
+
+  const [linhasCron] = await pool.query(
+    `
+    SELECT
+      pa.treinando_nome, t.id AS treinamento_id, t.tema, t.cliente, t.instrutor,
+      COUNT(*) AS dias_registrados,
+      SUM(CASE WHEN pa.status = 'presente' THEN 1 ELSE 0 END) AS presentes,
+      SUM(CASE WHEN pa.status = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
+      SUM(CASE WHEN pa.status = 'justificado' THEN 1 ELSE 0 END) AS justificados,
+      SUM(CASE WHEN pa.status IS NULL OR pa.status = '' OR pa.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,
+      MIN(pa.data_aula) AS primeira_chamada,
+      MAX(pa.data_aula) AS ultima_chamada
+    FROM presenca_aulas pa
+    INNER JOIN treinamentos t ON t.id = pa.treinamento_id
+    ${whereCron.length ? `WHERE ${whereCron.join(" AND ")}` : ""}
+    GROUP BY pa.treinando_nome, t.id, t.tema, t.cliente, t.instrutor
+    `,
+    paramsCron
+  );
+
+  const combinadas = [
+    ...linhasLegado.filter((l) => origemPorId.get(Number(l.treinamento_id)) !== "cronograma"),
+    ...linhasCron.filter((l) => origemPorId.get(Number(l.treinamento_id)) === "cronograma"),
+  ];
+
+  return combinadas
+    .map((item) => {
+      const presentes = n(item.presentes);
+      const ausentes = n(item.ausentes);
+      const computaveis = presentes + ausentes;
+      return {
+        treinando_nome: item.treinando_nome,
+        treinamento_id: Number(item.treinamento_id),
+        tema: item.tema,
+        cliente: item.cliente,
+        instrutor: item.instrutor,
+        dias_registrados: n(item.dias_registrados),
+        presentes,
+        ausentes,
+        justificados: n(item.justificados),
+        pendentes: n(item.pendentes),
+        frequencia_percentual: computaveis > 0 ? Math.round((presentes / computaveis) * 1000) / 10 : 0,
+        primeira_chamada: item.primeira_chamada,
+        ultima_chamada: item.ultima_chamada,
+      };
+    })
+    .sort((a, b) => a.frequencia_percentual - b.frequencia_percentual || a.treinando_nome.localeCompare(b.treinando_nome));
+}
+
 module.exports = {
   getResumoPresenca,
+  getFrequenciaPorParticipante,
   classificarParticipante,
   resolverStatusTurma,
   resolverClassificacaoTurma,
