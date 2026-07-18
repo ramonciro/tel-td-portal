@@ -271,7 +271,7 @@ export default function PortalShell({
 
 const sidebar = {
   minHeight: "100vh",
-  background: "linear-gradient(180deg, #0f172a 0%, #1d4ed8 100%)",
+  background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)",
   color: "#fff",
   display: "flex",
   flexDirection: "column",
@@ -331,9 +331,9 @@ const navItem = {
 };
 
 const navItemActive = {
-  background: "#2563eb",
+  background: "#FF6B4A",
   color: "#fff",
-  boxShadow: "0 10px 18px rgba(37,99,235,0.35)",
+  boxShadow: "0 10px 18px rgba(255,107,74,0.35)",
 };
 
 const navIcon = {
@@ -424,7 +424,7 @@ const mobileTopbar = {
   position: "sticky",
   top: 0,
   zIndex: 20,
-  background: "linear-gradient(180deg, #0f172a 0%, #1d4ed8 100%)",
+  background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)",
   color: "#fff",
   display: "flex",
   alignItems: "center",
@@ -473,7 +473,7 @@ const mobileMenuButton = {
 };
 
 const mobileDrawer = {
-  background: "linear-gradient(180deg, #0f172a 0%, #1d4ed8 100%)",
+  background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)",
   color: "#fff",
   padding: "0 16px 16px",
 };
@@ -497,7 +497,7 @@ const mobileNavItem = {
 };
 
 const mobileNavItemActive = {
-  background: "#2563eb",
+  background: "#FF6B4A",
   color: "#fff",
 };
 
