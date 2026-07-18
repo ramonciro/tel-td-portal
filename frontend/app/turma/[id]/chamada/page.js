@@ -440,11 +440,11 @@ const btnVoltar = {
 };
 
 const hero = {
-  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
+  background: "linear-gradient(135deg, #0B1220 0%, #161D2E 100%)",
   borderRadius: 22,
   padding: 24,
   color: "#fff",
-  boxShadow: "0 18px 36px rgba(29,78,216,.18)",
+  boxShadow: "0 18px 36px rgba(11,18,32,.22)",
 };
 
 const heroBadge = {
@@ -618,7 +618,7 @@ const bulkActions = {
 };
 
 const btnPrimary = {
-  background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+  background: "linear-gradient(135deg, #FF6B4A 0%, #E5502F 100%)",
   color: "#fff",
   border: 0,
   borderRadius: 12,
