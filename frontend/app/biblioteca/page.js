@@ -8,6 +8,7 @@ import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
+import { colors, chart } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -29,14 +30,14 @@ function statusStyle(status) {
   };
 
   if (key === "publicado") {
-    return { ...base, background: "#dcfce7", color: "#166534" };
+    return { ...base, background: colors.successLight, color: colors.successText };
   }
 
   if (key === "em atualização" || key === "em atualizacao") {
-    return { ...base, background: "#ffedd5", color: "#9a3412" };
+    return { ...base, background: colors.warningLight, color: colors.warningText };
   }
 
-  return { ...base, background: "#e2e8f0", color: "#334155" };
+  return { ...base, background: colors.neutralLight, color: colors.textSecondary };
 }
 
 function tipoStyle() {
@@ -241,10 +242,10 @@ export default function BibliotecaPage() {
       hero={
         <div style={{ display: "grid", gap: 14 }}>
           <div style={heroGrid}>
-            <StatCard title="Materiais" value={fmt(stats.total)} accent="#2563eb" />
-            <StatCard title="Publicados" value={fmt(stats.publicados)} accent="#16a34a" />
-            <StatCard title="Em atualização" value={fmt(stats.atualizando)} accent="#f59e0b" />
-            <StatCard title="Rascunhos" value={fmt(stats.rascunhos)} accent="#64748b" />
+            <StatCard title="Materiais" value={fmt(stats.total)} accent={chart.blue} />
+            <StatCard title="Publicados" value={fmt(stats.publicados)} accent={colors.success} />
+            <StatCard title="Em atualização" value={fmt(stats.atualizando)} accent={colors.warning} />
+            <StatCard title="Rascunhos" value={fmt(stats.rascunhos)} accent={colors.neutral} />
           </div>
 
           <SectionCard
