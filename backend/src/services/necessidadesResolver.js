@@ -50,10 +50,20 @@ async function listarNecessidades({ cliente, status } = {}) {
     valores
   );
 
-  const [treinamentosVinculados] = await pool.query(
-    `SELECT id, necessidade_id, tema, carga_horaria, status, participantes
-     FROM treinamentos WHERE necessidade_id IS NOT NULL`
-  );
+  let treinamentosVinculados = [];
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, necessidade_id, tema, carga_horaria, status, participantes
+       FROM treinamentos WHERE necessidade_id IS NOT NULL`
+    );
+    treinamentosVinculados = rows;
+  } catch (error) {
+    // coluna necessidade_id pode ainda não existir se só a CREATE TABLE da
+    // migration rodou e o ALTER TABLE não — a lista de necessidades não
+    // pode quebrar por causa disso, só fica sem o vínculo até a migration
+    // completa ser aplicada.
+    console.warn("[necessidades] não foi possível ler treinamentos vinculados:", error.message);
+  }
 
   const porNecessidade = new Map();
   for (const t of treinamentosVinculados) {
