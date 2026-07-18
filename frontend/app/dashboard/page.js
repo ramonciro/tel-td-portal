@@ -6,6 +6,7 @@ import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
+import { colors, chart } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -36,9 +37,9 @@ function parseModalidade(descricao, modalidade) {
 
 function getBadgeStyleByTax(value) {
   const number = Number(value || 0);
-  if (number >= 90) return { background: "#dcfce7", color: "#166534", border: "1px solid #86efac" };
-  if (number >= 80) return { background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d" };
-  return { background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" };
+  if (number >= 90) return { background: colors.successLight, color: colors.successText, border: "1px solid #86efac" };
+  if (number >= 80) return { background: colors.warningLight, color: colors.warningText, border: "1px solid #fcd34d" };
+  return { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fca5a5" };
 }
 
 function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTurmas = []) {
@@ -306,19 +307,19 @@ export default function DashboardPage() {
           </SectionCard>
 
           <div style={kpiGrid}>
-            <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Base no recorte" accent="#2563eb" />
-            <StatCard title="Previstos" value={fmt(kpis.participantes_previstos || 0)} subtitle="Capacidade cadastrada" accent="#0ea5e9" />
-            <StatCard title="Confirmados" value={fmt(kpis.treinados || 0)} subtitle="Com chamada registrada" accent="#3b82f6" />
-            <StatCard title="Presença" value={`${fmt(kpis.taxa_presenca || 0)}%`} subtitle="Consolidado" accent="#16a34a" />
-            <StatCard title="Pendências" value={fmt(kpis.pendentes || 0)} subtitle="Ainda em aberto" accent="#f59e0b" />
-            <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Carga executada" accent="#0ea5e9" />
-            <StatCard title="Execução" value={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} subtitle="Base já registrada" accent="#7c3aed" />
+            <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Base no recorte" accent={chart.blue} />
+            <StatCard title="Previstos" value={fmt(kpis.participantes_previstos || 0)} subtitle="Capacidade cadastrada" accent={chart.cyan} />
+            <StatCard title="Confirmados" value={fmt(kpis.treinados || 0)} subtitle="Com chamada registrada" accent={colors.primary} />
+            <StatCard title="Presença" value={`${fmt(kpis.taxa_presenca || 0)}%`} subtitle="Consolidado" accent={colors.success} />
+            <StatCard title="Pendências" value={fmt(kpis.pendentes || 0)} subtitle="Ainda em aberto" accent={colors.warning} />
+            <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Carga executada" accent={chart.cyan} />
+            <StatCard title="Execução" value={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} subtitle="Base já registrada" accent={chart.purple} />
             {nps.total_avaliacoes > 0 && (
               <>
-                <StatCard title="NPS médio" value={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent="#ec4899" />
-                <StatCard title="Qualidade" value={nps.media_qualidade > 0 ? fmt(nps.media_qualidade) : "—"} subtitle="Nota média qualidade" accent="#f97316" />
+                <StatCard title="NPS médio" value={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent={chart.pink} />
+                <StatCard title="Qualidade" value={nps.media_qualidade > 0 ? fmt(nps.media_qualidade) : "—"} subtitle="Nota média qualidade" accent={chart.orange} />
                 {nps.media_prova > 0 && (
-                  <StatCard title="Prova" value={fmt(nps.media_prova)} subtitle="Nota média prova" accent="#14b8a6" />
+                  <StatCard title="Prova" value={fmt(nps.media_prova)} subtitle="Nota média prova" accent={chart.teal} />
                 )}
               </>
             )}
@@ -501,8 +502,8 @@ export default function DashboardPage() {
                   </div>
                   <span style={{
                     fontSize: 12, fontWeight: 700, borderRadius: 999, padding: "4px 10px",
-                    background: pessoa.frequencia_percentual >= 90 ? "#dcfce7" : pessoa.frequencia_percentual >= 75 ? "#fff7ed" : "#fee2e2",
-                    color: pessoa.frequencia_percentual >= 90 ? "#166534" : pessoa.frequencia_percentual >= 75 ? "#9a3412" : "#b91c1c",
+                    background: pessoa.frequencia_percentual >= 90 ? colors.successLight : pessoa.frequencia_percentual >= 75 ? colors.warningLight : colors.dangerLight,
+                    color: pessoa.frequencia_percentual >= 90 ? colors.successText : pessoa.frequencia_percentual >= 75 ? colors.warningText : colors.dangerText,
                   }}>
                     {pessoa.frequencia_percentual}%
                   </span>
