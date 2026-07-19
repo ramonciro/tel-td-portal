@@ -289,12 +289,10 @@ const brandBox = {
 };
 
 const logo = {
-  width: 70,
-  height: 70,
-  borderRadius: 18,
-  background: "#fff",
+  width: 44,
+  height: 44,
+  borderRadius: 12,
   objectFit: "contain",
-  padding: 8,
 };
 
 const brandTitle = {
@@ -441,12 +439,10 @@ const mobileBrandWrap = {
 };
 
 const mobileLogo = {
-  width: 48,
-  height: 48,
-  borderRadius: 14,
-  background: "#fff",
+  width: 38,
+  height: 38,
+  borderRadius: 10,
   objectFit: "contain",
-  padding: 6,
 };
 
 const mobileBrandTitle = {
