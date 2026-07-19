@@ -122,7 +122,7 @@ app.get(
 app.get(
   "/api/presenca-resumo",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   listarResumoGeral
 );
 app.get(
@@ -332,7 +332,7 @@ app.use(
       "necessidade_id",
     ],
     orderBy: "id DESC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
@@ -400,7 +400,7 @@ app.get(
 app.get(
   "/api/treinamentos/:id/participantes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   getParticipantesByTreinamento
 );
 
