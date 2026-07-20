@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
+import PageHero from "../../components/PageHero";
 import { apiFetch } from "../../services/api";
 import { colors, chart } from "../../lib/theme";
 
@@ -238,8 +239,6 @@ export default function UsuariosPage() {
 
   return (
     <CrudPageV2
-      title="Usuários"
-      subtitle="Gestão de acessos, perfis e operações vinculadas."
       endpoint="/usuarios"
       fields={fields}
       columns={columns}
@@ -262,6 +261,11 @@ export default function UsuariosPage() {
       })}
       hero={
         <div style={{ display: "grid", gap: 14 }}>
+          <PageHero
+            eyebrow="Governança"
+            title="Usuários"
+            subtitle="Gestão de acessos, perfis e operações vinculadas."
+          />
           {!clientesOptions.length ? (
             <SectionCard
               title="Atenção"
