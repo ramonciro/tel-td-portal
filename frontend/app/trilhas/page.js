@@ -311,13 +311,7 @@ export default function TrilhasPage() {
   }
 
   return (
-    <PortalShell
-      title="Trilhas"
-      subtitle="Ambiente para organizar cursos e atividades por público interno, com visual mais executivo e foco em desenvolvimento de instrutores e supervisores."
-      topRight={
-        <div style={heroBadge}>Estrutura interna de capacitação</div>
-      }
-    >
+    <PortalShell>
       <div style={pageGrid}>
         {error ? <div style={errorBox}>{error}</div> : null}
         {success ? <div style={successBox}>{success}</div> : null}
@@ -562,11 +556,11 @@ const pageGrid = {
 };
 
 const exclusiveHero = {
-  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 55%, #38bdf8 100%)",
+  background: "linear-gradient(135deg, #0B1220 0%, #161D2E 100%)",
   borderRadius: 24,
   padding: 22,
   color: "#ffffff",
-  boxShadow: "0 16px 32px rgba(37,99,235,0.18)",
+  boxShadow: "0 16px 32px rgba(11,18,32,.22)",
 };
 
 const heroHeaderRow = {
