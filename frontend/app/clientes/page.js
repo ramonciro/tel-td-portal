@@ -103,8 +103,6 @@ export default function ClientesPage() {
   return (
     <AccessGate allowed={["admin", "coordenador", "supervisor"]}>
       <CrudPageV2
-        title="Clientes"
-        subtitle="Gestão das operações acompanhadas pelo Treinamento & Desenvolvimento."
         endpoint="/clientes"
         fields={fields}
         columns={columns}
@@ -188,18 +186,19 @@ const heroWrap = {
 };
 
 const heroText = {
-  background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
-  border: "1px solid #dbeafe",
+  background: "linear-gradient(135deg, #0B1220 0%, #161D2E 100%)",
+  border: "none",
   borderRadius: 20,
   padding: 22,
+  boxShadow: "0 18px 36px rgba(11,18,32,.18)",
 };
 
 const heroEyebrow = {
   display: "inline-block",
   padding: "6px 10px",
   borderRadius: 999,
-  background: "#dbeafe",
-  color: "#1d4ed8",
+  background: "rgba(255,255,255,0.12)",
+  color: "#fff",
   fontWeight: 800,
   fontSize: 12,
   textTransform: "uppercase",
@@ -208,14 +207,14 @@ const heroEyebrow = {
 
 const heroTitle = {
   margin: "14px 0 8px",
-  color: "#0f172a",
+  color: "#fff",
   fontSize: 28,
   lineHeight: 1.1,
 };
 
 const heroSubtitle = {
   margin: 0,
-  color: "#64748b",
+  color: "#C7CCDA",
   lineHeight: 1.65,
 };
 
