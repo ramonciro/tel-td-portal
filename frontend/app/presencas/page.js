@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import PortalShell from "../../components/PortalShell";
 import StatCard from "../../components/StatCard";
+import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
@@ -335,10 +336,14 @@ function exportarRelatorio() {
 
 
   return (
-    <PortalShell
-      title="Gestão de Turmas"
-      subtitle="Execução operacional das turmas, treinandos e acompanhamento consolidado da presença."
-    >
+    <PortalShell>
+      <div style={{ marginBottom: 18 }}>
+        <PageHero
+          eyebrow="Execução"
+          title="Gestão de Turmas"
+          subtitle="Execução operacional das turmas, treinandos e acompanhamento consolidado da presença."
+        />
+      </div>
       {loading ? (
         <div style={loadingBox}>Carregando gestão de turmas...</div>
       ) : erro ? (
