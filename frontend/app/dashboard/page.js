@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
-import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
@@ -128,7 +127,6 @@ export default function DashboardPage() {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
   const [drillDown, setDrillDown] = useState(null); // { turma, itens, loading }
-  const [alertas, setAlertas] = useState({ turmasCriticas: [], necessidadesAtrasadas: [], chamadasPendentes: [] });
   const [filters, setFilters] = useState({
     cliente: "",
     instrutor: "",
@@ -138,31 +136,6 @@ export default function DashboardPage() {
     data_inicio: "",
     data_fim: "",
   });
-
-  // alertas: carregados uma vez, independente dos filtros do KPI abaixo —
-  // "o que precisa de atenção hoje" não deveria mudar conforme você filtra
-  // a tabela.
-  useEffect(() => {
-    async function carregarAlertas() {
-      try {
-        const [resumoData, necessidadesData] = await Promise.all([
-          apiFetch("/presenca-resumo").catch(() => null),
-          apiFetch("/necessidades").catch(() => null),
-        ]);
-        const turmas = Array.isArray(resumoData?.itens) ? resumoData.itens : [];
-        const necessidades = Array.isArray(necessidadesData?.itens) ? necessidadesData.itens : [];
-
-        setAlertas({
-          turmasCriticas: turmas.filter((t) => t.classificacao === "Crítico" && t.status_turma !== "Sem treinandos"),
-          necessidadesAtrasadas: necessidades.filter((n) => n.status_calculado === "atrasada"),
-          chamadasPendentes: turmas.filter((t) => t.status_turma === "Chamada pendente"),
-        });
-      } catch {
-        // alertas são um complemento — se falhar, o resto do dashboard segue normal
-      }
-    }
-    carregarAlertas();
-  }, []);
 
   useEffect(() => {
     async function carregar() {
@@ -213,25 +186,40 @@ export default function DashboardPage() {
   const nps = dados?.nps || {};
 
   return (
-    <PortalShell>
+    <PortalShell
+      title="Dashboard"
+      subtitle="Uma leitura analítica para comparar os KPIs, identificar prioridades e entender melhor o que o número está dizendo."
+    >
       {loading ? (
         <div style={loadingBox}>Carregando o dashboard...</div>
       ) : erro ? (
         <div style={errorBox}>{erro}</div>
       ) : (
         <div style={{ display: "grid", gap: 18 }}>
-          <PageHero
-            eyebrow="Painel analítico"
-            title="Filtre, compare e encontre com mais clareza onde a gestão precisa agir."
-            subtitle="Aqui a ideia é sair da visão geral e entrar no detalhe certo: cliente, instrutor, modalidade, período e status."
-            stats={[
-              { label: "turmas no recorte", value: fmt(kpis.treinamentos || 0) },
-              { label: "presença consolidada", value: `${fmt(kpis.taxa_presenca || 0)}%` },
-              { label: "execução do recorte", value: `${fmt(kpis.taxa_execucao_diaria || 0)}%` },
-            ]}
-          />
+          <section style={heroWrap}>
+            <div style={heroMain}>
+              <div style={heroBadge}>Painel analítico</div>
+              <h2 style={heroTitle}>Filtre, compare e encontre com mais clareza onde a gestão precisa agir.</h2>
+              <p style={heroText}>
+                Aqui a ideia é sair da visão geral e entrar no detalhe certo: cliente, instrutor, modalidade, período e status.
+              </p>
+            </div>
 
-          <AlertasDashboard alertas={alertas} onAbrirTurma={abrirDrillDown} />
+            <div style={heroMiniGrid}>
+              <div style={heroMiniCard}>
+                <strong>{fmt(kpis.treinamentos || 0)}</strong>
+                <span>turmas no recorte</span>
+              </div>
+              <div style={heroMiniCard}>
+                <strong>{fmt(kpis.taxa_presenca || 0)}%</strong>
+                <span>presença consolidada</span>
+              </div>
+              <div style={heroMiniCard}>
+                <strong>{fmt(kpis.taxa_execucao_diaria || 0)}%</strong>
+                <span>execução do recorte</span>
+              </div>
+            </div>
+          </section>
 
           <SectionCard
             title="Filtros do painel"
@@ -579,96 +567,3 @@ const table = { width: "100%", borderCollapse: "separate", borderSpacing: 0, min
 const th = { textAlign: "left", padding: "12px 14px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" };
 const td = { padding: "12px 14px", borderBottom: "1px solid #eef2f7", color: "#334155", fontSize: 14 };
 const emptyState = { padding: 18, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", color: "#64748b" };
-
-// ---------------------------------------------------------------------------
-// Bloco de alertas — "o que precisa de atenção hoje", antes de qualquer
-// filtro. A ideia é que o Dashboard avise, em vez de esperar você perguntar.
-// As 3 fontes já existiam espalhadas no sistema (presenca-resumo e
-// necessidades) — isso só junta num único lugar de leitura rápida.
-// ---------------------------------------------------------------------------
-function AlertasDashboard({ alertas, onAbrirTurma }) {
-  const cards = [
-    {
-      key: "criticas",
-      label: "Turmas críticas",
-      cor: colors.danger,
-      corFundo: colors.dangerLight,
-      itens: alertas.turmasCriticas,
-      render: (t) => (
-        <span key={t.id} onClick={() => onAbrirTurma(t)} style={alertaItemLink}>
-          {t.tema} · {t.cliente} — {t.taxa_presenca}%
-        </span>
-      ),
-      href: null,
-    },
-    {
-      key: "pendentes",
-      label: "Chamadas pendentes",
-      cor: colors.warning,
-      corFundo: colors.warningLight,
-      itens: alertas.chamadasPendentes,
-      render: (t) => (
-        <a key={t.id} href="/presencas" style={alertaItemLink}>
-          {t.tema} · {t.cliente}
-        </a>
-      ),
-      href: "/presencas",
-    },
-    {
-      key: "necessidades",
-      label: "Necessidades atrasadas",
-      cor: chart.purple,
-      corFundo: "#EDE9FE",
-      itens: alertas.necessidadesAtrasadas,
-      render: (n) => (
-        <a key={n.id} href="/necessidades" style={alertaItemLink}>
-          {n.tema} · {n.cliente}
-        </a>
-      ),
-      href: "/necessidades",
-    },
-  ];
-
-  const algumAlerta = cards.some((c) => c.itens.length > 0);
-
-  if (!algumAlerta) {
-    return (
-      <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 18 }}>✅</span>
-        <span style={{ fontSize: 13.5, color: colors.successText, fontWeight: 600 }}>Nada precisando de atenção imediata agora — todos os indicadores estão dentro do esperado.</span>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
-      {cards.filter((c) => c.itens.length > 0).map((c) => (
-        <div key={c.key} style={{ borderRadius: 16, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${c.cor}`, background: "#fff", padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: c.cor }}>{c.itens.length}</span>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: colors.textPrimary }}>{c.label}</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {c.itens.slice(0, 3).map(c.render)}
-          </div>
-          {c.itens.length > 3 && c.href && (
-            <a href={c.href} style={{ display: "inline-block", marginTop: 6, fontSize: 11.5, color: c.cor, fontWeight: 700, textDecoration: "none" }}>
-              +{c.itens.length - 3} outra(s) →
-            </a>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const alertaItemLink = {
-  display: "block",
-  fontSize: 12,
-  color: "#475569",
-  textDecoration: "none",
-  cursor: "pointer",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
