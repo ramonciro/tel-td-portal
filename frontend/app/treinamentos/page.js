@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
+import PageHero from "../../components/PageHero";
 import { apiFetch, getStoredUser } from "../../services/api";
 import { colors, chart, estiloBadgeStatus } from "../../lib/theme";
 
@@ -643,8 +644,6 @@ export default function TreinamentosPage() {
 
   return (
     <CrudPageV2
-      title="Gestão de Turmas"
-      subtitle="Execução operacional das turmas com período de formação e controle de chamada diária."
       endpoint="/treinamentos"
       fields={fields}
       columns={columns}
@@ -720,6 +719,11 @@ export default function TreinamentosPage() {
       }
       hero={
         <div style={{ display: "grid", gap: 14 }}>
+          <PageHero
+            eyebrow="Planejamento e execução"
+            title="Gestão de Turmas"
+            subtitle="Execução operacional das turmas com período de formação e controle de chamada diária."
+          />
           <div style={heroGrid}>
             <StatCard
               title="Turmas"
