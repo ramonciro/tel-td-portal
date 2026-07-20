@@ -1,569 +1,917 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import PortalShell from "../../components/PortalShell";
+import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
-import { apiFetch } from "../../services/api";
-import { formatDateBR } from "../../lib/date";
-import { colors, chart } from "../../lib/theme";
+import PageHero from "../../components/PageHero";
+import { apiFetch, getStoredUser } from "../../services/api";
+import { colors, chart, estiloBadgeStatus } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function formatDate(value) {
-  return formatDateBR(value, "-");
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const normalized = String(value).replace(",", ".").replace(/[^\d.-]/g, "").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function normalizeStatus(status) {
-  const key = String(status || "").toLowerCase();
-  if (key.includes("concl")) return "Concluída";
-  if (key.includes("andamento")) return "Em andamento";
-  if (key.includes("cancel")) return "Cancelada";
+function parseHoras(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const text = String(value).replace(",", ".").trim();
+  const match = text.match(/(\d+(\.\d+)?)/);
+  return match ? Number(match[1]) || 0 : 0;
+}
+
+function parseDateOnly(value) {
+  if (!value) return null;
+
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+
+  if (parts.length === 3) {
+    const [ano, mes, dia] = parts.map(Number);
+    const date = new Date(ano, mes - 1, dia);
+    date.setHours(0, 0, 0, 0);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function formatDateSafe(value) {
+  if (!value) return "-";
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return String(value);
+}
+
+// hasCompletedCalls e hasCompletedWorkload removidos — verificavam campos que não
+// existem na tabela treinamentos e nunca retornavam true (código morto)
+
+function normalizeStatusCode(status) {
+  const key = String(status || "").trim().toLowerCase();
+
+  if (["concluido", "concluído", "concluida", "concluída", "finalizado", "finalizada"].includes(key)) {
+    return "concluido";
+  }
+
+  if (["em_andamento", "em andamento", "andamento", "ativo", "ativa"].includes(key)) {
+    return "em_andamento";
+  }
+
+  if (["cancelada", "cancelado"].includes(key)) {
+    return "cancelada";
+  }
+
+  return "planejado";
+}
+
+function getStatusCode(item) {
+  const current = normalizeStatusCode(item?.status);
+
+  if (current === "cancelada" || current === "concluido") {
+    return current;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const dataInicio = parseDateOnly(item?.data_inicio || item?.data);
+  const dataFim = parseDateOnly(
+    item?.data_fim || item?.data_termino || item?.fim || item?.data_final
+  );
+
+  if (dataFim && dataFim.getTime() < today.getTime()) {
+    return "concluido";
+  }
+
+  if (dataInicio && dataInicio.getTime() <= today.getTime()) {
+    return "em_andamento";
+  }
+
+  return current;
+}
+
+function statusLabel(statusOrItem) {
+  const code =
+    statusOrItem && typeof statusOrItem === "object"
+      ? getStatusCode(statusOrItem)
+      : normalizeStatusCode(statusOrItem);
+
+  if (code === "concluido") return "Concluída";
+  if (code === "em_andamento") return "Em andamento";
+  if (code === "cancelada") return "Cancelada";
   return "Planejada";
 }
 
-function parseModalidade(descricao, modalidade) {
-  if (modalidade === "presencial") return "Presencial";
-  if (modalidade === "online") return "Online";
+function statusStyle(statusOrItem) {
+  const label = statusLabel(statusOrItem);
+  return statusStyleFromLabel(label);
+}
+
+// Delega pro theme.js — mesma paleta usada em toda a Turma e na Auditoria,
+// uma fonte só em vez de reimplementar as mesmas cores em cada arquivo.
+function statusStyleFromLabel(label) {
+  return estiloBadgeStatus(label);
+}
+
+function parseClientes(value) {
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isGlobalUser(cliente) {
+  return parseClientes(cliente).some((item) => item.toLowerCase() === "global");
+}
+
+function temClienteEmComum(clienteA, clienteB) {
+  const listaA = parseClientes(clienteA).map((item) => item.toLowerCase());
+  const listaB = parseClientes(clienteB).map((item) => item.toLowerCase());
+
+  if (listaA.includes("global") || listaB.includes("global")) return true;
+  return listaA.some((item) => listaB.includes(item));
+}
+
+function usuarioOptionLabel(usuario) {
+  const clientes = parseClientes(usuario.cliente);
+  if (!clientes.length) return usuario.nome;
+  if (clientes.length === 1) return `${usuario.nome} • ${clientes[0]}`;
+  if (isGlobalUser(usuario.cliente)) return `${usuario.nome} • Global`;
+  return `${usuario.nome} • ${clientes.length} operações`;
+}
+
+function parseTurmaMetadata(descricao) {
   const text = String(descricao || "");
-  const match = text.match(/\[modalidade:([^\]]+)\]/i);
-  const parsed = String(match?.[1] || "").trim().toLowerCase();
-  if (parsed === "presencial") return "Presencial";
-  if (parsed === "online") return "Online";
-  return "-";
+  const modalidade = text.match(/\[modalidade:([^\]]+)\]/i)?.[1]?.trim() || "";
+  const sala = text.match(/\[sala:([^\]]*)\]/i)?.[1]?.trim() || "";
+  const descricaoLimpa = text
+    .replace(/\[modalidade:[^\]]+\]\s*/gi, "")
+    .replace(/\[sala:[^\]]*\]\s*/gi, "")
+    .trim();
+
+  return { modalidade, sala, descricaoLimpa };
 }
 
-function getBadgeStyleByTax(value) {
-  const number = Number(value || 0);
-  if (number >= 90) return { background: colors.successLight, color: colors.successText, border: "1px solid #86efac" };
-  if (number >= 80) return { background: colors.warningLight, color: colors.warningText, border: "1px solid #fcd34d" };
-  return { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fca5a5" };
-}
-
-function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTurmas = []) {
-  const items = [];
-
-  if (Number(kpis.pendentes || 0) > 0) {
-    items.push({
-      title: "Chamada pedindo fechamento",
-      text: `${fmt(kpis.pendentes)} registro(s) ainda precisam ser concluídos para a leitura do dia ficar mais fiel.`,
-      tone: Number(kpis.pendentes || 0) > 15 ? "danger" : "attention",
-    });
-  }
-
-  const clienteMaisSensivel = [...presencaPorCliente].sort((a, b) => Number(a.taxa_presenca || 0) - Number(b.taxa_presenca || 0))[0];
-  if (clienteMaisSensivel && Number(clienteMaisSensivel.total_turmas || 0) > 0) {
-    items.push({
-      title: "Cliente que merece olhar primeiro",
-      text: `${clienteMaisSensivel.cliente} está com ${fmt(clienteMaisSensivel.taxa_presenca)}% de presença no recorte atual.`,
-      tone: Number(clienteMaisSensivel.taxa_presenca || 0) >= 85 ? "ok" : "attention",
-    });
-  }
-
-  const turmaPendente = ultimasTurmas.find((item) => Number(item.pendentes || 0) > 0);
-  if (turmaPendente) {
-    items.push({
-      title: "Turma com pendência aberta",
-      text: `${turmaPendente.tema || "Turma sem título"} ainda tem ${fmt(turmaPendente.pendentes)} pendência(s) para fechamento.`,
-      tone: Number(turmaPendente.pendentes || 0) > 5 ? "danger" : "attention",
-    });
-  }
-
-  if (Number(oceano.jornadas || 0) > 0) {
-    items.push({
-      title: "Oceano em movimento",
-      text: `${fmt(oceano.jornadas)} jornada(s), ${fmt(oceano.acoes)} ação(ões) e ${fmt(oceano.tripulacao)} pessoa(s) já estão no fluxo do desenvolvimento.`,
-      tone: "ok",
-    });
-  }
-
-  if (!items.length) {
-    items.push({
-      title: "Leitura tranquila",
-      text: "O recorte não está apontando nenhum desvio mais sensível agora. Vale usar os filtros para aprofundar a análise.",
-      tone: "ok",
-    });
-  }
-
-  return items.slice(0, 4);
-}
-
-function buildNarrativa(kpis = {}, filters = {}) {
+function buildDescricaoComMetadata({ descricao, modalidade, sala }) {
   const partes = [];
-  const recortes = [];
-  if (filters.cliente) recortes.push(`cliente ${filters.cliente}`);
-  if (filters.instrutor) recortes.push(`instrutor ${filters.instrutor}`);
-  if (filters.supervisor) recortes.push(`supervisor ${filters.supervisor}`);
-  if (filters.status) recortes.push(`status ${normalizeStatus(filters.status)}`);
-  if (filters.modalidade) recortes.push(`modalidade ${filters.modalidade === "online" ? "Online" : "Presencial"}`);
-
-  if (recortes.length) {
-    partes.push(`Você está olhando um recorte por ${recortes.join(", ")}.`);
-  } else {
-    partes.push("Você está olhando a visão consolidada da operação.");
-  }
-
-  partes.push(`No período filtrado, a base reúne ${fmt(kpis.treinamentos || 0)} turma(s) e ${fmt(kpis.treinados || 0)} lançamento(s) de chamada.`);
-
-  if (Number(kpis.taxa_presenca || 0) > 0) {
-    partes.push(`A presença está em ${fmt(kpis.taxa_presenca)}%, com ${fmt(kpis.presentes || 0)} presença(s) confirmada(s).`);
-  } else {
-    partes.push("Ainda não há base suficiente para leitura de presença neste recorte.");
-  }
-
-  if (Number(kpis.pendentes || 0) > 0) {
-    partes.push(`Ainda há ${fmt(kpis.pendentes || 0)} pendência(s) de chamada em aberto, então esse recorte pode mudar ao longo do dia.`);
-  } else {
-    partes.push("A chamada do período está bem encaminhada, sem pendência relevante.");
-  }
-
-  return partes;
+  if (modalidade) partes.push(`[modalidade:${modalidade}]`);
+  if (sala) partes.push(`[sala:${sala}]`);
+  if (descricao) partes.push(String(descricao).trim());
+  return partes.join(" ").trim();
 }
 
-export default function DashboardPage() {
-  const [dados, setDados] = useState(null);
-  const [erro, setErro] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [drillDown, setDrillDown] = useState(null); // { turma, itens, loading }
-  const [filters, setFilters] = useState({
-    cliente: "",
-    instrutor: "",
-    supervisor: "",
-    status: "",
-    modalidade: "",
-    data_inicio: "",
-    data_fim: "",
-  });
+export default function TreinamentosPage() {
+  const [turmas, setTurmas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [usuarioLogado, setUsuarioLogado] = useState(null);
+  const [filtroPeriodoInicio, setFiltroPeriodoInicio] = useState("");
+  const [filtroPeriodoFim, setFiltroPeriodoFim] = useState("");
+  const [resumoPresenca, setResumoPresenca] = useState([]);
+  const [necessidades, setNecessidades] = useState([]);
 
   useEffect(() => {
     async function carregar() {
       try {
-        setErro("");
-        setLoading(true);
-        const params = new URLSearchParams();
-        Object.entries(filters).forEach(([key, value]) => {
-          if (value) params.set(key, value);
-        });
-        const path = params.toString() ? `/dashboard/treinamentos?${params.toString()}` : "/dashboard/treinamentos";
-        const response = await apiFetch(path);
-        setDados(response || null);
-      } catch (error) {
-        setErro(error.message || "Erro ao carregar dashboard.");
-      } finally {
-        setLoading(false);
+        const [treinamentosData, usuariosData, clientesData, resumoData, necessidadesData] = await Promise.all([
+          apiFetch("/treinamentos").catch(() => []),
+          apiFetch("/usuarios").catch(() => []),
+          apiFetch("/clientes").catch(() => []),
+          apiFetch("/presenca-resumo").catch(() => null),
+          apiFetch("/necessidades").catch(() => null),
+        ]);
+
+        setTurmas(Array.isArray(treinamentosData) ? treinamentosData : []);
+        setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+        setClientes(Array.isArray(clientesData) ? clientesData : []);
+        setResumoPresenca(Array.isArray(resumoData?.itens) ? resumoData.itens : []);
+        setNecessidades(Array.isArray(necessidadesData?.itens) ? necessidadesData.itens : []);
+        setUsuarioLogado(getStoredUser());
+      } catch {
+        setTurmas([]);
+        setUsuarios([]);
+        setClientes([]);
+        setResumoPresenca([]);
+        setNecessidades([]);
+        setUsuarioLogado(getStoredUser());
       }
     }
+
     carregar();
-  }, [filters]);
+  }, []);
 
-  async function abrirDrillDown(item) {
-    setDrillDown({ turma: item, itens: [], loading: true });
-    try {
-      const resposta = await apiFetch(`/frequencia-individual?treinamento_id=${item.id}`);
-      setDrillDown({ turma: item, itens: Array.isArray(resposta?.itens) ? resposta.itens : [], loading: false });
-    } catch (error) {
-      setDrillDown({ turma: item, itens: [], loading: false, erro: error.message });
+  // status_turma unificado (mesma função usada pela tela Presenças, via
+  // backend/src/services/presencaResolver.js) — cruzado por id de turma.
+  // Enquanto o resumo não chega, cai no cálculo local (getStatusCode) só
+  // como estado de transição do primeiro carregamento.
+  const resumoPorId = useMemo(() => {
+    return new Map(resumoPresenca.map((item) => [Number(item.id), item]));
+  }, [resumoPresenca]);
+
+  const necessidadesPorId = useMemo(() => {
+    return new Map(necessidades.map((n) => [Number(n.id), n]));
+  }, [necessidades]);
+
+  // carga por instrutor — hoje pra saber isso você teria que contar linha
+  // por linha; aqui é só um agrupamento das turmas ativas já carregadas.
+  const cargaPorInstrutor = useMemo(() => {
+    const mapa = new Map();
+    turmas.forEach((t) => {
+      const resumo = resumoPorId.get(Number(t.id));
+      const status = resumo ? resumo.status_turma : statusLabel(t);
+      if (status !== "Em andamento" && status !== "Planejada") return;
+      const nome = t.instrutor || "Sem instrutor";
+      const atual = mapa.get(nome) || { turmas: 0, horas: 0 };
+      atual.turmas += 1;
+      atual.horas += parseHoras(t.carga_horaria);
+      mapa.set(nome, atual);
+    });
+    return Array.from(mapa.entries())
+      .map(([nome, dados]) => ({ nome, ...dados }))
+      .sort((a, b) => b.turmas - a.turmas);
+  }, [turmas, resumoPorId]);
+
+  const perfilLogado = String(usuarioLogado?.perfil || "").toLowerCase();
+  const clienteLogado = usuarioLogado?.cliente || "";
+  const nomeLogado = usuarioLogado?.nome || "";
+  const usuarioEhGlobal = isGlobalUser(clienteLogado);
+
+  const clientesOptions = useMemo(() => {
+    const lista = clientes
+      .map((item) => ({ value: item.nome, label: item.nome }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+
+    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
+      return lista;
     }
-  }
 
-  const kpis = dados?.kpis || {};
-  const filtrosApi = dados?.filtros || {};
-  const presencaPorCliente = dados?.presenca_por_cliente || [];
-  const rankingInstrutores = dados?.ranking_instrutores || [];
-  const ultimasTurmas = dados?.ultimas_turmas || [];
-  const oceano = dados?.oceano || {};
+    if (perfilLogado === "instrutor" || perfilLogado === "supervisor") {
+      return lista.filter((item) => temClienteEmComum(item.value, clienteLogado));
+    }
 
-  const farois = useMemo(() => buildFarois(kpis, oceano, presencaPorCliente, ultimasTurmas), [kpis, oceano, presencaPorCliente, ultimasTurmas]);
-  const narrativa = useMemo(() => buildNarrativa(kpis, filters), [kpis, filters]);
+    return lista;
+  }, [clientes, perfilLogado, usuarioEhGlobal, clienteLogado]);
 
-  const clienteOptions = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
-  const instrutorOptions = Array.isArray(filtrosApi.instrutores) ? filtrosApi.instrutores : [];
-  const supervisorOptions = Array.isArray(filtrosApi.supervisores) ? filtrosApi.supervisores : [];
-  const statusOptions = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
-  const modalidadeOptions = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
-  const nps = dados?.nps || {};
+  const clientePadrao = useMemo(() => {
+    if (
+      (perfilLogado === "instrutor" || perfilLogado === "supervisor") &&
+      clientesOptions.length === 1
+    ) {
+      return clientesOptions[0].value;
+    }
+
+    return "";
+  }, [perfilLogado, clientesOptions]);
+
+  const instrutores = useMemo(() => {
+    const base = usuarios.filter(
+      (item) => String(item.perfil || "").toLowerCase() === "instrutor"
+    );
+
+    let filtrados = base;
+
+    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
+      filtrados = base;
+    } else if (perfilLogado === "supervisor") {
+      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
+    } else if (perfilLogado === "instrutor") {
+      filtrados = base.filter((item) => item.nome === nomeLogado);
+    }
+
+    return filtrados
+      .map((item) => ({
+        value: item.nome,
+        label: usuarioOptionLabel(item),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [usuarios, perfilLogado, usuarioEhGlobal, clienteLogado, nomeLogado]);
+
+  const supervisores = useMemo(() => {
+    const base = usuarios.filter(
+      (item) => String(item.perfil || "").toLowerCase() === "supervisor"
+    );
+
+    let filtrados = base;
+
+    if (!perfilLogado || perfilLogado === "coordenador" || usuarioEhGlobal) {
+      filtrados = base;
+    } else if (perfilLogado === "supervisor") {
+      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
+    } else if (perfilLogado === "instrutor") {
+      filtrados = base.filter((item) => temClienteEmComum(item.cliente, clienteLogado));
+    }
+
+    return filtrados
+      .map((item) => ({
+        value: item.nome,
+        label: usuarioOptionLabel(item),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [usuarios, perfilLogado, usuarioEhGlobal, clienteLogado]);
+
+  const fields = [
+    {
+      name: "tema",
+      label: "Turma / treinamento",
+      placeholder: "Tema ou nome da turma",
+    },
+    {
+      name: "cliente",
+      label: "Cliente",
+      type: "select",
+      options: clientesOptions,
+      placeholder:
+        clientesOptions.length > 0
+          ? "Selecione o cliente"
+          : "Nenhum cliente disponível",
+      defaultValue: clientePadrao,
+    },
+    {
+      name: "necessidade_id",
+      label: "Atende a necessidade (opcional)",
+      type: "select",
+      options: necessidades
+        .filter((n) => n.status_calculado !== "atendida" && n.status_calculado !== "cancelada")
+        .map((n) => ({
+          value: n.id,
+          label: `${n.cliente} — ${n.tema} (${n.horas_atendidas}h de ${n.horas_necessarias || "?"}h)`,
+        })),
+      placeholder: "Nenhuma necessidade vinculada",
+    },
+    {
+      name: "instrutor",
+      label: "Instrutor",
+      type: "select",
+      options: instrutores,
+      placeholder:
+        instrutores.length > 0
+          ? "Selecione o instrutor"
+          : "Nenhum instrutor disponível",
+      defaultValue: perfilLogado === "instrutor" ? nomeLogado : "",
+      disabled: perfilLogado === "instrutor",
+    },
+    {
+      name: "supervisor",
+      label: "Supervisor",
+      type: "select",
+      options: supervisores,
+      placeholder:
+        supervisores.length > 0
+          ? "Selecione o supervisor"
+          : "Nenhum supervisor disponível",
+      defaultValue: perfilLogado === "supervisor" ? nomeLogado : "",
+    },
+    {
+      name: "publico",
+      label: "Público",
+      placeholder: "Ex.: Operação, onboarding, reciclagem",
+    },
+    {
+      name: "carga_horaria",
+      label: "Carga horária total",
+      placeholder: "Ex.: 20h",
+    },
+    {
+      name: "participantes",
+      label: "Treinandos previstos",
+      type: "number",
+      placeholder: "Quantidade prevista",
+    },
+    {
+      name: "status",
+      label: "Status da turma",
+      type: "select",
+      options: [
+        { value: "planejado", label: "Planejada" },
+        { value: "em_andamento", label: "Em andamento" },
+        { value: "concluido", label: "Concluída" },
+        { value: "cancelada", label: "Cancelada" },
+      ],
+      placeholder: "Selecione o status",
+    },
+    {
+      name: "data_inicio",
+      label: "Data de início",
+      type: "date",
+    },
+    {
+      name: "data_fim",
+      label: "Data de fim",
+      type: "date",
+    },
+    {
+      name: "modalidade",
+      label: "Modalidade",
+      type: "select",
+      options: [
+        { value: "online", label: "Online" },
+        { value: "presencial", label: "Presencial" },
+      ],
+      placeholder: "Selecione a modalidade",
+    },
+    {
+      name: "sala",
+      label: "Sala",
+      placeholder: "Ex.: Sala 01 / Lab 02",
+    },
+    {
+      name: "descricao",
+      label: "Observações",
+      type: "textarea",
+      placeholder: "Informações complementares",
+    },
+  ];
+
+  const kpis = useMemo(() => {
+    // status unificado: usa o resumo do backend quando já carregou; cai no
+    // cálculo local (getStatusCode) só durante o instante do primeiro load.
+    function statusDaTurma(item) {
+      const resumo = resumoPorId.get(Number(item.id));
+      return resumo ? resumo.status_turma : statusLabel(item);
+    }
+
+    const total = turmas.length;
+    const planejadas = turmas.filter((item) => statusDaTurma(item) === "Planejada").length;
+    const andamento = turmas.filter((item) => statusDaTurma(item) === "Em andamento").length;
+    const concluidas = turmas.filter((item) => statusDaTurma(item) === "Concluída").length;
+
+    const treinandos = turmas.reduce(
+      (acc, item) => acc + Number(item.participantes || 0),
+      0
+    );
+
+    const confirmados = turmas.reduce((acc, item) => {
+      const resumo = resumoPorId.get(Number(item.id));
+      return acc + (resumo ? Number(resumo.treinandos_confirmados || 0) : 0);
+    }, 0);
+
+    const horas = turmas.reduce(
+      (acc, item) => acc + parseHoras(item.carga_horaria),
+      0
+    );
+
+    // carga realizada: apenas turmas concluídas
+    const horasRealizadas = turmas
+      .filter((item) => statusDaTurma(item) === "Concluída")
+      .reduce((acc, item) => acc + parseHoras(item.carga_horaria), 0);
+
+    const autoConcluidas = turmas.filter(
+      (item) =>
+        normalizeStatusCode(item.status) !== "concluido" &&
+        statusDaTurma(item) === "Concluída"
+    ).length;
+
+    // usa o status unificado (não normalizeStatusCode direto) para ser
+    // consistente com a exibição: turmas auto-concluídas por data não devem
+    // aparecer como atrasadas
+    const atrasadas = turmas.filter((item) => {
+      const dataFim = parseDateOnly(item?.data_fim || item?.data_termino || item?.fim);
+      const status = statusDaTurma(item);
+      return (
+        dataFim &&
+        dataFim.getTime() < new Date(new Date().setHours(0, 0, 0, 0)).getTime() &&
+        status !== "Concluída" &&
+        status !== "Cancelada"
+      );
+    }).length;
+
+    const alertas = [];
+
+    if (planejadas > 0) {
+      alertas.push(`${planejadas} turma(s) ainda estão planejadas.`);
+    }
+
+    if (andamento > 0) {
+      alertas.push(`${andamento} turma(s) estão em andamento.`);
+    }
+
+    if (autoConcluidas > 0) {
+      alertas.push(
+        `${autoConcluidas} turma(s) aparecem como concluídas automaticamente por prazo encerrado ou chamadas cumpridas.`
+      );
+    }
+
+    if (atrasadas > 0) {
+      alertas.push(
+        `${atrasadas} turma(s) estavam com status desatualizado e foram tratadas como concluídas na visualização.`
+      );
+    }
+
+    if (!alertas.length) {
+      alertas.push("Base organizada, sem pendências críticas no momento.");
+    }
+
+    return {
+      total,
+      planejadas,
+      andamento,
+      concluidas,
+      treinandos,
+      confirmados,
+      horas,
+      alertas,
+      autoConcluidas,
+      atrasadas,
+      horasRealizadas,
+    };
+  }, [turmas, resumoPorId]);
+
+  const columns = [
+    {
+      key: "tema",
+      label: "Turma",
+      render: (item) => {
+        const necessidade = item.necessidade_id ? necessidadesPorId.get(Number(item.necessidade_id)) : null;
+        return (
+          <div>
+            <div style={titleCell}>{item.tema || item.titulo || "-"}</div>
+            <div style={subCell}>
+              {(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}
+            </div>
+            {necessidade && (
+              <div style={{ marginTop: 4, display: "inline-block", fontSize: 10.5, fontWeight: 700, color: chart.purple, background: "#EDE9FE", borderRadius: 999, padding: "2px 8px" }}>
+                🎯 atende: {necessidade.tema}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (item) => {
+        const resumo = resumoPorId.get(Number(item.id));
+        const label = resumo ? resumo.status_turma : statusLabel(item);
+        return <span style={statusStyleFromLabel(label)}>{label}</span>;
+      },
+    },
+    {
+      key: "periodo",
+      label: "Período",
+      render: (item) => (
+        <span style={plainCell}>
+          {formatDateSafe(item.data_inicio || item.data)}
+          {item.data_fim ? ` até ${formatDateSafe(item.data_fim)}` : ""}
+        </span>
+      ),
+    },
+    {
+      key: "participantes",
+      label: "Treinandos previstos",
+      render: (item) => (
+        <strong style={scoreBlue}>{fmt(item.participantes || 0)}</strong>
+      ),
+    },
+    {
+      key: "confirmados",
+      label: "Treinandos confirmados",
+      render: (item) => {
+        const resumo = resumoPorId.get(Number(item.id));
+        if (!resumo) return <span style={plainCell}>—</span>;
+        return <strong style={scoreGreen}>{fmt(resumo.treinandos_confirmados || 0)}</strong>;
+      },
+    },
+    {
+      key: "carga_horaria",
+      label: "Carga horária",
+      render: (item) => (
+        <strong style={scoreGreen}>{item.carga_horaria || "-"}</strong>
+      ),
+    },
+    {
+      key: "modalidade",
+      label: "Modalidade",
+      render: (item) => {
+        const meta = parseTurmaMetadata(item.descricao);
+        return (
+          <span style={plainCell}>
+            {meta.modalidade
+              ? meta.modalidade === "presencial"
+                ? "Presencial"
+                : "Online"
+              : "-"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "sala",
+      label: "Sala",
+      render: (item) => {
+        const meta = parseTurmaMetadata(item.descricao);
+        return <span style={plainCell}>{meta.sala || "-"}</span>;
+      },
+    },
+    {
+      key: "supervisor",
+      label: "Supervisor",
+      render: (item) => <span style={plainCell}>{item.supervisor || "-"}</span>,
+    },
+    {
+      key: "acoes",
+      label: "Ações",
+      render: (item) => {
+        const statusCod = getStatusCode(item);
+        const atrasada =
+          statusCod !== "concluido" &&
+          statusCod !== "cancelada" &&
+          (() => {
+            const df = parseDateOnly(item.data_fim);
+            const hoje = new Date(); hoje.setHours(0,0,0,0);
+            return df && df.getTime() < hoje.getTime();
+          })();
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {atrasada && (
+              <span style={{ fontSize: 11, fontWeight: 500, color: "#b91c1c", background: "#fee2e2", borderRadius: 999, padding: "2px 8px", alignSelf: "flex-start" }}>
+                Prazo vencido
+              </span>
+            )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                style={btnAcao}
+                onClick={() => { window.location.href = `/turma/${item.id}`; }}
+              >
+                Gestão da turma
+              </button>
+              <button
+                style={btnSecundario}
+                onClick={() => { window.location.href = `/turma/${item.id}/cronograma`; }}
+              >
+                Cronograma
+              </button>
+            </div>
+          </div>
+        );
+      },
+    },
+  ];
+
+  // filtro de período aplicado sobre a listagem
+  const filtrarPorPeriodo = useMemo(() => {
+    if (!filtroPeriodoInicio && !filtroPeriodoFim) return null;
+    return (item) => {
+      const inicio = parseDateOnly(item.data_inicio || item.data);
+      const fim = parseDateOnly(item.data_fim);
+      const filtroI = filtroPeriodoInicio ? parseDateOnly(filtroPeriodoInicio) : null;
+      const filtroF = filtroPeriodoFim ? parseDateOnly(filtroPeriodoFim) : null;
+      if (filtroI && inicio && inicio.getTime() < filtroI.getTime()) return false;
+      if (filtroF && (fim ? fim.getTime() > filtroF.getTime() : inicio && inicio.getTime() > filtroF.getTime())) return false;
+      return true;
+    };
+  }, [filtroPeriodoInicio, filtroPeriodoFim]);
 
   return (
-    <PortalShell
-      title="Dashboard"
-      subtitle="Uma leitura analítica para comparar os KPIs, identificar prioridades e entender melhor o que o número está dizendo."
-    >
-      {loading ? (
-        <div style={loadingBox}>Carregando o dashboard...</div>
-      ) : erro ? (
-        <div style={errorBox}>{erro}</div>
-      ) : (
-        <div style={{ display: "grid", gap: 18 }}>
-          <section style={heroWrap}>
-            <div style={heroMain}>
-              <div style={heroBadge}>Painel analítico</div>
-              <h2 style={heroTitle}>Filtre, compare e encontre com mais clareza onde a gestão precisa agir.</h2>
-              <p style={heroText}>
-                Aqui a ideia é sair da visão geral e entrar no detalhe certo: cliente, instrutor, modalidade, período e status.
-              </p>
-            </div>
+    <CrudPageV2
+      endpoint="/treinamentos"
+      fields={fields}
+      columns={columns}
+      filterFn={filtrarPorPeriodo}
+      recordsTitle="Base de turmas"
+      recordsSubtitle="Visão consolidada das turmas cadastradas no portal."
+      allowedCreateRoles={["coordenador", "supervisor", "instrutor"]}
+      allowedEditRoles={["coordenador", "supervisor", "instrutor"]}
+      allowedDeleteRoles={["coordenador"]}
+      transformRecordToForm={(baseForm, record) => {
+        const meta = parseTurmaMetadata(record?.descricao);
+        return {
+          ...baseForm,
+          modalidade: meta.modalidade || "",
+          sala: meta.sala || "",
+          descricao: meta.descricaoLimpa || "",
+          status: getStatusCode(record),
+        };
+      }}
+      transformFormToPayload={(payload, form) => {
+        const descricao = buildDescricaoComMetadata({
+          descricao: form.descricao,
+          modalidade: form.modalidade,
+          sala: form.sala,
+        });
 
-            <div style={heroMiniGrid}>
-              <div style={heroMiniCard}>
-                <strong>{fmt(kpis.treinamentos || 0)}</strong>
-                <span>turmas no recorte</span>
-              </div>
-              <div style={heroMiniCard}>
-                <strong>{fmt(kpis.taxa_presenca || 0)}%</strong>
-                <span>presença consolidada</span>
-              </div>
-              <div style={heroMiniCard}>
-                <strong>{fmt(kpis.taxa_execucao_diaria || 0)}%</strong>
-                <span>execução do recorte</span>
+        const basePayload = {
+          ...payload,
+          cliente: form.cliente || payload.cliente || clientePadrao || "",
+          instrutor:
+            perfilLogado === "instrutor"
+              ? nomeLogado
+              : form.instrutor || payload.instrutor || "",
+          supervisor:
+            perfilLogado === "supervisor"
+              ? nomeLogado
+              : form.supervisor || payload.supervisor || "",
+          descricao,
+        };
+
+        // respeita o status escolhido pelo usuário sem sobrescrever via getStatusCode
+        // getStatusCode é usado apenas para leitura/exibição, não para persistência
+        return {
+          ...basePayload,
+          status: form.status || payload.status || "planejado",
+        };
+      }}
+      extraHeaderContent={
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500 }}>Período:</span>
+          <input
+            type="date"
+            value={filtroPeriodoInicio}
+            onChange={(e) => setFiltroPeriodoInicio(e.target.value)}
+            style={{ fontSize: 13, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+          />
+          <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>até</span>
+          <input
+            type="date"
+            value={filtroPeriodoFim}
+            onChange={(e) => setFiltroPeriodoFim(e.target.value)}
+            style={{ fontSize: 13, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+          />
+          {(filtroPeriodoInicio || filtroPeriodoFim) && (
+            <button
+              onClick={() => { setFiltroPeriodoInicio(""); setFiltroPeriodoFim(""); }}
+              style={{ fontSize: 12, padding: "5px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+            >
+              Limpar
+            </button>
+          )}
+        </div>
+      }
+      hero={
+        <div style={{ display: "grid", gap: 14 }}>
+          <PageHero
+            eyebrow="Planejamento e execução"
+            title="Gestão de Turmas"
+            subtitle="Execução operacional das turmas com período de formação e controle de chamada diária."
+          />
+
+          {cargaPorInstrutor.length > 0 && (
+            <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: "#fff", padding: "14px 18px" }}>
+              <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 700, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".04em" }}>
+                Carga por instrutor (turmas ativas ou planejadas)
+              </p>
+              <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+                {cargaPorInstrutor.map((i) => (
+                  <div key={i.nome} style={{ minWidth: 140 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: colors.textPrimary }}>{i.nome}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.textSecondary }}>{i.turmas} turma(s) · {i.horas}h</p>
+                  </div>
+                ))}
               </div>
             </div>
-          </section>
+          )}
+
+          <div style={heroGrid}>
+            <StatCard
+              title="Turmas"
+              value={fmt(kpis.total)}
+              subtitle="Base total"
+              accent={chart.blue}
+            />
+            <StatCard
+              title="Planejadas"
+              value={fmt(kpis.planejadas)}
+              subtitle="Aguardando execução"
+              accent={colors.primary}
+            />
+            <StatCard
+              title="Em andamento"
+              value={fmt(kpis.andamento)}
+              subtitle="Turmas ativas"
+              accent={colors.warning}
+            />
+            <StatCard
+              title="Concluídas"
+              value={fmt(kpis.concluidas)}
+              subtitle="Ações finalizadas"
+              accent={colors.success}
+            />
+          </div>
+
+          <div style={heroGrid}>
+            <StatCard
+              title="Treinandos previstos"
+              value={fmt(kpis.treinandos)}
+              subtitle="Capacidade da base"
+              accent={chart.cyan}
+            />
+            <StatCard
+              title="Treinandos confirmados"
+              value={fmt(kpis.confirmados)}
+              subtitle="Com chamada registrada"
+              accent={colors.success}
+            />
+            <StatCard
+              title="Carga realizada"
+              value={`${fmt(kpis.horasRealizadas)}h`}
+              subtitle={`de ${fmt(kpis.horas)}h planejadas`}
+              accent={chart.purple}
+            />
+            <StatCard
+              title="Taxa de conclusão"
+              value={kpis.total > 0 ? `${Math.round((kpis.concluidas / kpis.total) * 100)}%` : "—"}
+              subtitle="Concluídas / total"
+              accent={chart.teal}
+            />
+            <StatCard
+              title="Atrasadas"
+              value={fmt(kpis.atrasadas)}
+              subtitle="Data vencida sem conclusão"
+              accent={kpis.atrasadas > 0 ? colors.danger : colors.neutral}
+            />
+          </div>
 
           <SectionCard
-            title="Filtros do painel"
-            subtitle="Escolha o recorte que faz mais sentido para a sua leitura e refine a análise sem perder contexto."
-            action={
-              <button
-                style={buttonSecondary}
-                onClick={() =>
-                  setFilters({
-                    cliente: "",
-                    instrutor: "",
-                    supervisor: "",
-                    status: "",
-                    modalidade: "",
-                    data_inicio: "",
-                    data_fim: "",
-                  })
-                }
-              >
-                Limpar filtros
-              </button>
-            }
+            title="Leitura gerencial"
+            subtitle="Visão automática do status vencido ou chamada cumprida, reduzindo inconsistência operacional."
           >
-            <div style={filtersGrid}>
-              <label style={fieldLabel}>
-                Cliente
-                <select style={inputStyle} value={filters.cliente} onChange={(e) => setFilters((prev) => ({ ...prev, cliente: e.target.value }))}>
-                  <option value="">Todos</option>
-                  {clienteOptions.map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={fieldLabel}>
-                Instrutor
-                <select style={inputStyle} value={filters.instrutor} onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))}>
-                  <option value="">Todos</option>
-                  {instrutorOptions.map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={fieldLabel}>
-                Supervisor
-                <select style={inputStyle} value={filters.supervisor} onChange={(e) => setFilters((prev) => ({ ...prev, supervisor: e.target.value }))}>
-                  <option value="">Todos</option>
-                  {supervisorOptions.map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={fieldLabel}>
-                Status
-                <select style={inputStyle} value={filters.status} onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}>
-                  <option value="">Todos</option>
-                  {statusOptions.map((item) => (
-                    <option key={item.value} value={item.value}>{item.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={fieldLabel}>
-                Modalidade
-                <select style={inputStyle} value={filters.modalidade} onChange={(e) => setFilters((prev) => ({ ...prev, modalidade: e.target.value }))}>
-                  <option value="">Todas</option>
-                  {modalidadeOptions.map((item) => (
-                    <option key={item.value} value={item.value}>{item.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={fieldLabel}>
-                De
-                <input type="date" style={inputStyle} value={filters.data_inicio} onChange={(e) => setFilters((prev) => ({ ...prev, data_inicio: e.target.value }))} />
-              </label>
-
-              <label style={fieldLabel}>
-                Até
-                <input type="date" style={inputStyle} value={filters.data_fim} onChange={(e) => setFilters((prev) => ({ ...prev, data_fim: e.target.value }))} />
-              </label>
-            </div>
-          </SectionCard>
-
-          <div style={kpiGrid}>
-            <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Base no recorte" accent={chart.blue} />
-            <StatCard title="Previstos" value={fmt(kpis.participantes_previstos || 0)} subtitle="Capacidade cadastrada" accent={chart.cyan} />
-            <StatCard title="Confirmados" value={fmt(kpis.treinados || 0)} subtitle="Com chamada registrada" accent={colors.primary} />
-            <StatCard title="Presença" value={`${fmt(kpis.taxa_presenca || 0)}%`} subtitle="Consolidado" accent={colors.success} />
-            <StatCard title="Pendências" value={fmt(kpis.pendentes || 0)} subtitle="Ainda em aberto" accent={colors.warning} />
-            <StatCard title="Horas assistidas" value={`${fmt(kpis.horas_treinadas || 0)}h`} subtitle="Carga executada" accent={chart.cyan} />
-            <StatCard title="Execução" value={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} subtitle="Base já registrada" accent={chart.purple} />
-            {nps.total_avaliacoes > 0 && (
-              <>
-                <StatCard title="NPS médio" value={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent={chart.pink} />
-                <StatCard title="Qualidade" value={nps.media_qualidade > 0 ? fmt(nps.media_qualidade) : "—"} subtitle="Nota média qualidade" accent={chart.orange} />
-                {nps.media_prova > 0 && (
-                  <StatCard title="Prova" value={fmt(nps.media_prova)} subtitle="Nota média prova" accent={chart.teal} />
-                )}
-              </>
-            )}
-          </div>
-
-          <div style={twoColumns}>
-            <SectionCard title="Leitura gerencial" subtitle="Sinais que te ajudam a interpretar o cenário com mais rapidez.">
-              <div style={summaryList}>
-                {narrativa.map((item) => (
-                  <div key={item} style={summaryItem}>{item}</div>
-                ))}
-              </div>
-            </SectionCard>
-
-            <SectionCard title="Faróis acionáveis" subtitle="O painel resume o que mais vale sua energia agora.">
-              <div style={farolList}>
-                {farois.map((item) => (
-                  <div key={item.title} style={farolItem(item.tone)}>
-                    <div style={farolTitle}>{item.title}</div>
-                    <div style={farolText}>{item.text}</div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          </div>
-
-          <div style={twoColumns}>
-            <SectionCard title="Saúde por cliente" subtitle="Ajuda a comparar rapidamente onde a operação está mais firme e onde precisa de suporte.">
-              <div style={listGrid}>
-                {presencaPorCliente.length ? presencaPorCliente.map((item) => {
-                  const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
-                  return (
-                    <div key={item.cliente} style={listRow}>
-                      <div>
-                        <div style={rowTitle}>{item.cliente}</div>
-                        <div style={rowMeta}>{fmt(item.total_treinados)} base • {fmt(item.presentes)} presentes • {fmt(item.pendentes)} pendentes</div>
-                      </div>
-                      <div style={{ ...pill, ...badgeStyle }}>{fmt(item.taxa_presenca)}%</div>
-                    </div>
-                  );
-                }) : <div style={emptyState}>Nenhum dado por cliente apareceu nesse recorte.</div>}
-              </div>
-            </SectionCard>
-
-            <SectionCard title="Instrutores no recorte" subtitle="Uma leitura simples de produtividade e presença.">
-              <div style={listGrid}>
-                {rankingInstrutores.length ? rankingInstrutores.map((item) => {
-                  const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
-                  return (
-                    <div key={item.instrutor} style={listRow}>
-                      <div>
-                        <div style={rowTitle}>{item.instrutor}</div>
-                        <div style={rowMeta}>{fmt(item.total_turmas)} turma(s) • {fmt(item.total_treinados)} base • {fmt(item.presentes)} presentes</div>
-                      </div>
-                      <div style={{ ...pill, ...badgeStyle }}>{fmt(item.taxa_presenca)}%</div>
-                    </div>
-                  );
-                }) : <div style={emptyState}>Nenhum dado de instrutor apareceu nesse recorte.</div>}
-              </div>
-            </SectionCard>
-          </div>
-
-          <div style={twoColumns}>
-            <SectionCard title="Oceano em resumo" subtitle="Uma leitura curta para conectar o dashboard ao fluxo de desenvolvimento.">
-              <div style={oceanoGrid}>
-                <MiniStat label="Jornadas" value={fmt(oceano.jornadas || 0)} />
-                <MiniStat label="Ações" value={fmt(oceano.acoes || 0)} />
-                <MiniStat label="Sustentações" value={fmt(oceano.sustentacoes || 0)} />
-                <MiniStat label="Tripulação" value={fmt(oceano.tripulacao || 0)} />
-              </div>
-            </SectionCard>
-
-            <SectionCard title="Progresso da tripulação" subtitle="Ajuda a enxergar se o oceano está só bonito ou realmente em movimento.">
-              {(() => {
-                const prog = oceano.progresso_tripulacao || {};
-                const total = Number(oceano.tripulacao || 0);
-                const items = [
-                  { label: "Em percurso", value: Number(prog.em_percurso || 0), color: "#3b82f6" },
-                  { label: "Concluídos", value: Number(prog.concluido || 0), color: "#16a34a" },
-                  { label: "Em sustentação", value: Number(prog.em_sustentacao || 0), color: "#7c3aed" },
-                ];
-                return (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {items.map((item) => {
-                      const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
-                      return (
-                        <div key={item.label}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 5 }}>
-                            <span>{item.label}</span>
-                            <span style={{ color: item.color }}>{fmt(item.value)} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({pct}%)</span></span>
-                          </div>
-                          <div style={{ height: 8, borderRadius: 999, background: "#f1f5f9", overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${pct}%`, background: item.color, borderRadius: 999, transition: "width .4s ease" }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </SectionCard>
-          </div>
-
-          <SectionCard title="Turmas recentes" subtitle="As últimas turmas.">
-            {ultimasTurmas.length ? (
-              <div style={{ overflowX: "auto" }}>
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Turma</th>
-                      <th style={th}>Cliente</th>
-                      <th style={th}>Instrutor</th>
-                      <th style={th}>Modalidade</th>
-                      <th style={th}>Status</th>
-                      <th style={th}>Data</th>
-                      <th style={th}>Base</th>
-                      <th style={th}>Presença</th>
-                      <th style={th}>Presentes</th>
-                      <th style={th}>Pendentes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ultimasTurmas.map((item) => (
-                      <tr key={item.id} onClick={() => abrirDrillDown(item)} style={{ cursor: "pointer" }} title="Clique para ver a frequência por pessoa">
-                        <td style={td}>{item.tema || "-"}</td>
-                        <td style={td}>{item.cliente || "-"}</td>
-                        <td style={td}>{item.instrutor || "-"}</td>
-                        <td style={td}>{parseModalidade(item.descricao, item.modalidade)}</td>
-                        <td style={td}>{normalizeStatus(item.status_canonico || item.status)}</td>
-                        <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
-                        <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
-                        <td style={td}>
-                          {item.taxa_presenca > 0
-                            ? <span style={{ ...getBadgeStyleByTax(item.taxa_presenca), padding: "3px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700 }}>{item.taxa_presenca}%</span>
-                            : <span style={{ color: "#94a3b8" }}>—</span>}
-                        </td>
-                        <td style={td}>{fmt(item.presentes || 0)}</td>
-                        <td style={td}>{fmt(item.pendentes || 0)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div style={emptyState}>Não apareceu nenhuma turma nesse recorte.</div>
-            )}
-          </SectionCard>
-        </div>
-      )}
-
-      {drillDown && (
-        <div
-          onClick={() => setDrillDown(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 520, width: "100%", maxHeight: "80vh", overflowY: "auto" }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-              <div>
-                <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Frequência por pessoa</p>
-                <p style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 800, color: "#0f172a" }}>{drillDown.turma?.tema || "Turma"}</p>
-              </div>
-              <button onClick={() => setDrillDown(null)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: "#64748b" }}>✕</button>
-            </div>
-
-            {drillDown.loading && <p style={{ fontSize: 13, color: "#64748b" }}>Carregando...</p>}
-            {drillDown.erro && <p style={{ fontSize: 13, color: "#b91c1c" }}>{drillDown.erro}</p>}
-            {!drillDown.loading && !drillDown.erro && drillDown.itens.length === 0 && (
-              <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem dados de frequência individual para esta turma ainda.</p>
-            )}
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {drillDown.itens.map((pessoa, idx) => (
-                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: "1px solid #eef2f7" }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{pessoa.treinando_nome}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{pessoa.presentes} presentes · {pessoa.ausentes} ausentes · {pessoa.justificados} justificados</p>
-                  </div>
-                  <span style={{
-                    fontSize: 12, fontWeight: 700, borderRadius: 999, padding: "4px 10px",
-                    background: pessoa.frequencia_percentual >= 90 ? colors.successLight : pessoa.frequencia_percentual >= 75 ? colors.warningLight : colors.dangerLight,
-                    color: pessoa.frequencia_percentual >= 90 ? colors.successText : pessoa.frequencia_percentual >= 75 ? colors.warningText : colors.dangerText,
-                  }}>
-                    {pessoa.frequencia_percentual}%
-                  </span>
+            <div style={alertGrid}>
+              {kpis.alertas.map((item, index) => (
+                <div key={index} style={alertItem}>
+                  {item}
                 </div>
               ))}
             </div>
-          </div>
+          </SectionCard>
         </div>
-      )}
-    </PortalShell>
+      }
+    />
   );
 }
 
-function MiniStat({ label, value }) {
-  return (
-    <div style={miniStatCard}>
-      <div style={miniStatLabel}>{label}</div>
-      <div style={miniStatValue}>{value}</div>
-    </div>
-  );
-}
+const heroGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
 
-const loadingBox = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, color: "#475569", fontWeight: 700 };
-const errorBox = { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 18, padding: 16, fontWeight: 700 };
-const heroWrap = { display: "grid", gridTemplateColumns: "1.45fr .9fr", gap: 16 };
-const heroMain = { background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)", borderRadius: 24, padding: 24, color: "#ffffff", boxShadow: "0 14px 30px rgba(29, 78, 216, 0.18)" };
-const heroBadge = { display: "inline-block", padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,.14)", fontSize: 12, fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase" };
-const heroTitle = { fontSize: 30, lineHeight: 1.15, margin: "12px 0 10px" };
-const heroText = { color: "#dbeafe", lineHeight: 1.7, margin: 0 };
-const heroMiniGrid = { display: "grid", gap: 12 };
-const heroMiniCard = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, display: "grid", gap: 4, boxShadow: "0 10px 24px rgba(15,23,42,.05)" };
-const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 };
-const fieldLabel = { display: "grid", gap: 6, color: "#334155", fontSize: 13, fontWeight: 700 };
-const inputStyle = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 12, padding: "10px 12px", background: "#fff", color: "#0f172a" };
-const buttonSecondary = { border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
-const kpiGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
-const twoColumns = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
-const summaryList = { display: "grid", gap: 10 };
-const summaryItem = { padding: "14px 16px", borderRadius: 16, background: "#f8fafc", border: "1px solid #e2e8f0", color: "#334155", lineHeight: 1.6 };
-const farolList = { display: "grid", gap: 10 };
-function farolItem(tone) {
-  const map = {
-    ok: { background: "#f0fdf4", border: "1px solid #bbf7d0" },
-    attention: { background: "#fffbeb", border: "1px solid #fde68a" },
-    danger: { background: "#fff1f2", border: "1px solid #fecaca" },
-  };
-  return { padding: "14px 16px", borderRadius: 16, ...(map[tone] || map.ok) };
-}
-const farolTitle = { fontWeight: 900, color: "#0f172a", marginBottom: 4 };
-const farolText = { color: "#475569", lineHeight: 1.55 };
-const listGrid = { display: "grid", gap: 10 };
-const listRow = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff" };
-const rowTitle = { fontWeight: 900, color: "#0f172a" };
-const rowMeta = { marginTop: 4, color: "#64748b", fontSize: 13, lineHeight: 1.45 };
-const pill = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "6px 10px", borderRadius: 999, fontWeight: 800, fontSize: 12, whiteSpace: "nowrap" };
-const oceanoGrid = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 };
-const miniStatCard = { borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", padding: 14 };
-const miniStatLabel = { fontSize: 11, color: "#64748b", textTransform: "uppercase", fontWeight: 800 };
-const miniStatValue = { marginTop: 6, fontSize: 22, fontWeight: 900, color: "#0f172a" };
-const table = { width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 860 };
-const th = { textAlign: "left", padding: "12px 14px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" };
-const td = { padding: "12px 14px", borderBottom: "1px solid #eef2f7", color: "#334155", fontSize: 14 };
-const emptyState = { padding: 18, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", color: "#64748b" };
+const alertGrid = {
+  display: "grid",
+  gap: 10,
+};
+
+const alertItem = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 14,
+  color: "#334155",
+  lineHeight: 1.5,
+  fontWeight: 600,
+};
+
+const titleCell = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const subCell = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 12,
+};
+
+const plainCell = {
+  color: "#334155",
+};
+
+const scoreBlue = {
+  color: "#2563eb",
+};
+
+const scoreGreen = {
+  color: "#16a34a",
+};
+
+const btnAcao = {
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  borderRadius: 8,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const btnSecundario = {
+  border: "1px solid #ddd6fe",
+  background: "#f5f3ff",
+  color: "#7c3aed",
+  borderRadius: 8,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
