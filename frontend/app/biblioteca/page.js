@@ -110,6 +110,7 @@ export default function BibliotecaPage() {
   const [uploadLink, setUploadLink] = useState("");
   const [uploadErro, setUploadErro] = useState("");
   const [uploadSucesso, setUploadSucesso] = useState("");
+  const [filtroCliente, setFiltroCliente] = useState("Todos");
 
   useEffect(() => {
     async function carregar() {
@@ -221,10 +222,16 @@ export default function BibliotecaPage() {
     },
   ];
 
+  const clientesBiblioteca = useMemo(() => {
+    const nomes = new Set(biblioteca.map((b) => b.cliente).filter(Boolean));
+    return ["Todos", ...Array.from(nomes)];
+  }, [biblioteca]);
+
   return (
     <CrudPageV2
       endpoint="/biblioteca"
       fields={fields}
+      filterFn={(item) => filtroCliente === "Todos" || item.cliente === filtroCliente}
       allowedCreateRoles={["coordenador", "supervisor"]}
       allowedEditRoles={["coordenador", "supervisor"]}
       allowedDeleteRoles={["coordenador", "supervisor"]}
@@ -245,6 +252,26 @@ export default function BibliotecaPage() {
             title="Biblioteca"
             subtitle="Central de materiais de apoio, conteúdos de treinamento e arquivos publicados no portal."
           />
+
+          {clientesBiblioteca.length > 1 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {clientesBiblioteca.map((c) => (
+                <span
+                  key={c}
+                  onClick={() => setFiltroCliente(c)}
+                  style={{
+                    padding: "6px 13px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    background: filtroCliente === c ? colors.navy : "#fff",
+                    color: filtroCliente === c ? "#fff" : colors.textSecondary,
+                    border: `1px solid ${filtroCliente === c ? colors.navy : colors.border}`,
+                  }}
+                >
+                  {c}
+                </span>
+              ))}
+            </div>
+          )}
+
           <div style={heroGrid}>
             <StatCard title="Materiais" value={fmt(stats.total)} accent={chart.blue} />
             <StatCard title="Publicados" value={fmt(stats.publicados)} accent={colors.success} />
