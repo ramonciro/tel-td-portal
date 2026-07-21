@@ -9,12 +9,20 @@ import { colors, chart } from "../../lib/theme";
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState([]);
+  const [resumoPresenca, setResumoPresenca] = useState([]);
+  const [necessidades, setNecessidades] = useState([]);
 
   useEffect(() => {
     async function carregar() {
       try {
-        const data = await apiFetch("/clientes").catch(() => []);
+        const [data, resumoData, necessidadesData] = await Promise.all([
+          apiFetch("/clientes").catch(() => []),
+          apiFetch("/presenca-resumo").catch(() => null),
+          apiFetch("/necessidades").catch(() => null),
+        ]);
         setClientes(Array.isArray(data) ? data : []);
+        setResumoPresenca(Array.isArray(resumoData?.itens) ? resumoData.itens : []);
+        setNecessidades(Array.isArray(necessidadesData?.itens) ? necessidadesData.itens : []);
       } catch {
         setClientes([]);
       }
@@ -22,6 +30,21 @@ export default function ClientesPage() {
 
     carregar();
   }, []);
+
+  // saúde por cliente — turmas ativas, presença média e necessidades em
+  // aberto, tudo já existente em outras telas, só nunca cruzado aqui.
+  function saudeDoCliente(nomeCliente) {
+    const turmas = resumoPresenca.filter((t) => t.cliente === nomeCliente);
+    const ativas = turmas.filter((t) => t.status_turma === "Em andamento").length;
+    const comTaxa = turmas.filter((t) => t.total_realizado > 0);
+    const presencaMedia = comTaxa.length
+      ? Math.round(comTaxa.reduce((acc, t) => acc + Number(t.taxa_presenca_pessoas ?? t.taxa_presenca ?? 0), 0) / comTaxa.length)
+      : null;
+    const necessidadesAbertas = necessidades.filter(
+      (n) => n.cliente === nomeCliente && (n.status_calculado === "aberta" || n.status_calculado === "atrasada")
+    ).length;
+    return { turmasAtivas: ativas, totalTurmas: turmas.length, presencaMedia, necessidadesAbertas };
+  }
 
   const fields = [
     {
@@ -88,6 +111,33 @@ export default function ClientesPage() {
       render: (item) => (
         <span style={descricaoCell}>{item.observacoes || "-"}</span>
       ),
+    },
+    {
+      key: "saude",
+      label: "Saúde da operação",
+      render: (item) => {
+        const s = saudeDoCliente(item.nome);
+        if (s.totalTurmas === 0 && s.necessidadesAbertas === 0) {
+          return <span style={{ fontSize: 12, color: colors.textMuted }}>Sem turmas registradas</span>;
+        }
+        return (
+          <div style={{ display: "flex", gap: 12, fontSize: 12 }}>
+            <span style={{ color: colors.textSecondary }}>
+              <strong style={{ color: colors.textPrimary }}>{s.turmasAtivas}</strong> ativas
+            </span>
+            {s.presencaMedia != null && (
+              <span style={{ color: s.presencaMedia >= 85 ? colors.successText : s.presencaMedia >= 75 ? colors.warningText : colors.dangerText, fontWeight: 700 }}>
+                {s.presencaMedia}% presença
+              </span>
+            )}
+            {s.necessidadesAbertas > 0 && (
+              <span style={{ color: chart.purple, fontWeight: 700 }}>
+                🎯 {s.necessidadesAbertas} necessidade(s)
+              </span>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
