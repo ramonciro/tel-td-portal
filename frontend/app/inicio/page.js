@@ -2,17 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
-import { apiFetch } from "../../services/api";
+import { apiFetch, getStoredUser } from "../../services/api";
 import { colors, chart, corDoCliente, radius } from "../../lib/theme";
-
-function getStoredUser() {
-  if (typeof window === "undefined") return null;
-  try {
-    return JSON.parse(localStorage.getItem("usuario") || "null");
-  } catch {
-    return null;
-  }
-}
 
 // Tiles de atalho por papel — cada papel vê só as ações que fazem sentido
 // pra ele, com o número que importa já embutido, não só um ícone bonito.
