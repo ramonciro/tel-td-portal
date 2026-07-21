@@ -23,17 +23,59 @@ function normalizarListaClientes(valor) {
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState([]);
   const [clientes, setClientes] = useState([]);
+  const [vinculos, setVinculos] = useState(new Map());
 
   useEffect(() => {
     async function carregar() {
       try {
-        const [usuariosData, clientesData] = await Promise.all([
+        const [usuariosData, clientesData, treinamentosData] = await Promise.all([
           apiFetch("/usuarios").catch(() => []),
           apiFetch("/clientes").catch(() => []),
+          apiFetch("/treinamentos").catch(() => []),
         ]);
 
-        setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+        const listaUsuarios = Array.isArray(usuariosData) ? usuariosData : [];
+        setUsuarios(listaUsuarios);
         setClientes(Array.isArray(clientesData) ? clientesData : []);
+
+        const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
+        const mapa = new Map();
+
+        // instrutor: vínculo = turmas onde ele é o instrutor (já temos o dado, sem custo extra)
+        listaUsuarios
+          .filter((u) => String(u.perfil).toLowerCase() === "instrutor")
+          .forEach((u) => {
+            const nome = String(u.nome || "").trim().toLowerCase();
+            const turmasDoInstrutor = listaTreinamentos.filter(
+              (t) => String(t.instrutor || "").trim().toLowerCase() === nome
+            );
+            if (turmasDoInstrutor.length) {
+              mapa.set(u.id, turmasDoInstrutor.map((t) => t.tema).slice(0, 2).join(", ") + (turmasDoInstrutor.length > 2 ? ` +${turmasDoInstrutor.length - 2}` : ""));
+            }
+          });
+
+        // treinando: vínculo = turma onde o nome dele aparece no roster
+        // (mesma lógica já usada na Início — bounded pelo nº de turmas)
+        const treinandos = listaUsuarios.filter((u) => String(u.perfil).toLowerCase() === "treinando");
+        if (treinandos.length && listaTreinamentos.length) {
+          await Promise.all(
+            listaTreinamentos.map(async (t) => {
+              try {
+                const participantes = await apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []);
+                const nomes = (Array.isArray(participantes) ? participantes : []).map((p) => String(p.nome || "").trim().toLowerCase());
+                treinandos.forEach((u) => {
+                  if (nomes.includes(String(u.nome || "").trim().toLowerCase()) && !mapa.has(u.id)) {
+                    mapa.set(u.id, t.tema);
+                  }
+                });
+              } catch {
+                // segue sem esse vínculo específico
+              }
+            })
+          );
+        }
+
+        setVinculos(mapa);
       } catch {
         setUsuarios([]);
         setClientes([]);
@@ -133,6 +175,18 @@ export default function UsuariosPage() {
       render: (item) => <span style={badgePerfil(item.perfil)}>{item.perfil || "-"}</span>,
     },
     {
+      key: "vinculo",
+      label: "Vínculo",
+      render: (item) => {
+        const v = vinculos.get(item.id);
+        return v ? (
+          <span style={{ fontSize: 12, color: colors.textSecondary }}>{v}</span>
+        ) : (
+          <span style={{ fontSize: 12, color: colors.textMuted }}>—</span>
+        );
+      },
+    },
+    {
       key: "cliente",
       label: "Operações",
       render: (item) => {
@@ -153,10 +207,10 @@ export default function UsuariosPage() {
     },
     {
       key: "ativo",
-      label: "Ativo",
+      label: "Status",
       render: (item) => (
         <span style={badgeStatus(String(item.ativo) === "1")}>
-          {String(item.ativo) === "1" ? "Sim" : "Não"}
+          {String(item.ativo) === "1" ? "✓ Ativa" : "Inativa"}
         </span>
       ),
     },
