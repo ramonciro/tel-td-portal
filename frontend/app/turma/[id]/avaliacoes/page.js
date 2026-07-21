@@ -3,17 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import TurmaTabs from "../../../../components/TurmaTabs";
-import { apiFetch } from "../../../../services/api";
+import { apiFetch, getStoredUser } from "../../../../services/api";
 import { colors, radius, corDoCliente } from "../../../../lib/theme";
 
-function getStoredUser() {
-  if (typeof window === "undefined") return null;
-  try {
-    return JSON.parse(localStorage.getItem("usuario") || "null");
-  } catch {
-    return null;
-  }
-}
 
 export default function AvaliacoesTurmaPage() {
   const params = useParams();
