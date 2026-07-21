@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import CrudPageV2 from "../../components/CrudPageV2";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
+import PageHero from "../../components/PageHero";
 import { apiFetch, getStoredUser } from "../../services/api";
 import { colors, chart, estiloBadgeStatus } from "../../lib/theme";
 
@@ -217,6 +218,29 @@ export default function TreinamentosPage() {
   const resumoPorId = useMemo(() => {
     return new Map(resumoPresenca.map((item) => [Number(item.id), item]));
   }, [resumoPresenca]);
+
+  const necessidadesPorId = useMemo(() => {
+    return new Map(necessidades.map((n) => [Number(n.id), n]));
+  }, [necessidades]);
+
+  // carga por instrutor — hoje pra saber isso você teria que contar linha
+  // por linha; aqui é só um agrupamento das turmas ativas já carregadas.
+  const cargaPorInstrutor = useMemo(() => {
+    const mapa = new Map();
+    turmas.forEach((t) => {
+      const resumo = resumoPorId.get(Number(t.id));
+      const status = resumo ? resumo.status_turma : statusLabel(t);
+      if (status !== "Em andamento" && status !== "Planejada") return;
+      const nome = t.instrutor || "Sem instrutor";
+      const atual = mapa.get(nome) || { turmas: 0, horas: 0 };
+      atual.turmas += 1;
+      atual.horas += parseHoras(t.carga_horaria);
+      mapa.set(nome, atual);
+    });
+    return Array.from(mapa.entries())
+      .map(([nome, dados]) => ({ nome, ...dados }))
+      .sort((a, b) => b.turmas - a.turmas);
+  }, [turmas, resumoPorId]);
 
   const perfilLogado = String(usuarioLogado?.perfil || "").toLowerCase();
   const clienteLogado = usuarioLogado?.cliente || "";
@@ -507,14 +531,22 @@ export default function TreinamentosPage() {
     {
       key: "tema",
       label: "Turma",
-      render: (item) => (
-        <div>
-          <div style={titleCell}>{item.tema || item.titulo || "-"}</div>
-          <div style={subCell}>
-            {(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}
+      render: (item) => {
+        const necessidade = item.necessidade_id ? necessidadesPorId.get(Number(item.necessidade_id)) : null;
+        return (
+          <div>
+            <div style={titleCell}>{item.tema || item.titulo || "-"}</div>
+            <div style={subCell}>
+              {(item.cliente || "Sem cliente") + " • " + (item.instrutor || "Sem instrutor")}
+            </div>
+            {necessidade && (
+              <div style={{ marginTop: 4, display: "inline-block", fontSize: 10.5, fontWeight: 700, color: chart.purple, background: "#EDE9FE", borderRadius: 999, padding: "2px 8px" }}>
+                🎯 atende: {necessidade.tema}
+              </div>
+            )}
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       key: "status",
@@ -643,8 +675,6 @@ export default function TreinamentosPage() {
 
   return (
     <CrudPageV2
-      title="Gestão de Turmas"
-      subtitle="Execução operacional das turmas com período de formação e controle de chamada diária."
       endpoint="/treinamentos"
       fields={fields}
       columns={columns}
@@ -720,6 +750,28 @@ export default function TreinamentosPage() {
       }
       hero={
         <div style={{ display: "grid", gap: 14 }}>
+          <PageHero
+            eyebrow="Planejamento e execução"
+            title="Gestão de Turmas"
+            subtitle="Execução operacional das turmas com período de formação e controle de chamada diária."
+          />
+
+          {cargaPorInstrutor.length > 0 && (
+            <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: "#fff", padding: "14px 18px" }}>
+              <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 700, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".04em" }}>
+                Carga por instrutor (turmas ativas ou planejadas)
+              </p>
+              <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+                {cargaPorInstrutor.map((i) => (
+                  <div key={i.nome} style={{ minWidth: 140 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: colors.textPrimary }}>{i.nome}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.textSecondary }}>{i.turmas} turma(s) · {i.horas}h</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={heroGrid}>
             <StatCard
               title="Turmas"
