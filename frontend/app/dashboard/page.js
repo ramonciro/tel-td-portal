@@ -223,7 +223,7 @@ export default function DashboardPage() {
           <PageHero
             eyebrow="Painel analítico"
             title="Filtre, compare e encontre com mais clareza onde a gestão precisa agir."
-            subtitle="Aqui a ideia é sair da visão geral e entrar no detalhe certo: cliente, instrutor, modalidade, período e status."
+            subtitle="Aqui a ideia é sair da visão geral."
             stats={[
               { label: "turmas no recorte", value: fmt(kpis.treinamentos || 0) },
               { label: "presença consolidada", value: `${fmt(kpis.taxa_presenca || 0)}%` },
