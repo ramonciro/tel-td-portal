@@ -308,6 +308,41 @@ app.delete(
   }
 );
 
+async function validarNecessidadeTurma(req, res, next) {
+  const necessidadeId = Number(req.body?.necessidade_id);
+  if (!Number.isInteger(necessidadeId) || necessidadeId <= 0) {
+    return res.status(400).json({
+      ok: false,
+      message: "A necessidade de treinamento é obrigatória para criar ou atualizar uma turma.",
+    });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, cliente, tema, status FROM necessidades_treinamento WHERE id = ? LIMIT 1`,
+      [necessidadeId]
+    );
+
+    if (!rows.length) {
+      return res.status(400).json({ ok: false, message: "A necessidade selecionada não foi encontrada." });
+    }
+
+    if (String(rows[0].status || "").toLowerCase() === "cancelada") {
+      return res.status(400).json({ ok: false, message: "Não é possível vincular uma turma a uma necessidade cancelada." });
+    }
+
+    req.treinamentoNecessidade = rows[0];
+    return next();
+  } catch (error) {
+    console.error("Erro ao validar necessidade da turma:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Não foi possível validar a necessidade da turma.",
+      error: error.message,
+    });
+  }
+}
+
 app.use(
   "/api/treinamentos",
   createCrudRouter({
@@ -333,8 +368,8 @@ app.use(
     ],
     orderBy: "id DESC",
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor"), validarNecessidadeTurma],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor"), validarNecessidadeTurma],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
     auditoria: {
       entidade: "treinamento",
@@ -371,7 +406,8 @@ app.get(
           data_inicio,
           data_fim,
           turma,
-          supervisor
+          supervisor,
+          necessidade_id
         FROM treinamentos
         WHERE id = ?
         LIMIT 1
