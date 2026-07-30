@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, getStoredUser, hasSomeRole } from "../../services/api";
 import { colors } from "../../lib/theme";
+import PortalShell from "../../components/PortalShell";
 
 const EMPTY_FORM = {
   tema: "",
@@ -440,7 +441,6 @@ export default function TreinamentosPage() {
     const errors = {};
     if (!form.tema.trim()) errors.tema = "Informe o nome da turma.";
     if (!form.cliente) errors.cliente = "Selecione o cliente.";
-    if (!form.necessidade_id) errors.necessidade_id = "A necessidade é obrigatória para criar a turma.";
     if (!form.instrutor) errors.instrutor = "Selecione o instrutor.";
     if (!form.data_inicio) errors.data_inicio = "Informe a data de início.";
     if (!form.data_fim) errors.data_fim = "Informe a data de fim.";
@@ -456,7 +456,7 @@ export default function TreinamentosPage() {
     try {
       setSaving(true); setError(""); setSuccess("");
       const payload = {
-        tema: form.tema.trim(), cliente: form.cliente, necessidade_id: Number(form.necessidade_id), instrutor: isInstructor ? nomeLogado : form.instrutor,
+        tema: form.tema.trim(), cliente: form.cliente, necessidade_id: form.necessidade_id ? Number(form.necessidade_id) : null, instrutor: isInstructor ? nomeLogado : form.instrutor,
         supervisor: perfil === "supervisor" ? nomeLogado : form.supervisor, publico: form.publico, carga_horaria: form.carga_horaria,
         participantes: Number(form.participantes || 0), participantes_previstos: Number(form.participantes || 0), status: form.status || "planejado",
         data_inicio: form.data_inicio, data_fim: form.data_fim, data: form.data_inicio, descricao: buildDescricao(form),
@@ -483,7 +483,8 @@ export default function TreinamentosPage() {
   }
 
   return (
-    <main style={page}>
+    <PortalShell title="Treinamentos" subtitle="Planeje, acompanhe e organize as formações em um só lugar.">
+      <main style={page}>
       <section style={hero}>
         <div style={{ minWidth: 0 }}>
           <div style={eyebrow}>PORTAL T&D · OPERAÇÃO</div>
@@ -535,12 +536,12 @@ export default function TreinamentosPage() {
       </section>
 
       {modalOpen && (
-        <Modal title={editingId ? "Editar turma" : "Criar nova turma"} subtitle="Preencha os dados essenciais. A necessidade vinculada é obrigatória." onClose={() => !saving && setModalOpen(false)}>
+        <Modal title={editingId ? "Editar turma" : "Criar nova turma"} subtitle="Preencha os dados essenciais. A necessidade pode ser vinculada agora ou posteriormente." onClose={() => !saving && setModalOpen(false)}>
           <form onSubmit={save}>
-            <div style={requiredNotice}><span style={noticeIcon}>🎯</span><div><strong>Necessidade de treinamento</strong><span>Esta turma precisa estar vinculada a uma necessidade para entrar no planejamento.</span></div></div>
+            <div style={optionalNotice}><span style={noticeIcon}>🎯</span><div><strong>Necessidade de treinamento <span style={{ fontWeight: 500, color: colors.textMuted }}>(opcional)</span></strong><span>Se houver uma necessidade formal, você pode vinculá-la agora. A turma também pode ser criada sem esse vínculo.</span></div></div>
             <div style={formGrid}>
-              <Field label="Necessidade" required error={formErrors.necessidade_id} hint="A necessidade define o motivo e a demanda que esta turma atende.">
-                <Select value={form.necessidade_id} onChange={(e) => setField("necessidade_id", e.target.value)} options={necessidadesDisponiveis.map((n) => ({ value: String(n.id), label: `${n.cliente} — ${n.tema} · ${n.horas_atendidas || 0}h / ${n.horas_necessarias || "?"}h` }))} placeholder="Selecione a necessidade que esta turma atende" />
+              <Field label="Necessidade (opcional)" hint="Você pode vincular uma necessidade agora ou deixar para depois.">
+                <Select value={form.necessidade_id} onChange={(e) => setField("necessidade_id", e.target.value)} options={necessidadesDisponiveis.map((n) => ({ value: String(n.id), label: `${n.cliente} — ${n.tema} · ${n.horas_atendidas || 0}h / ${n.horas_necessarias || "?"}h` }))} placeholder="Nenhuma necessidade selecionada" />
               </Field>
               <Field label="Turma / treinamento" required error={formErrors.tema}><Input value={form.tema} onChange={(e) => setField("tema", e.target.value)} placeholder="Ex.: Reciclagem de Crédito" /></Field>
               <Field label="Cliente" required error={formErrors.cliente}><Select value={form.cliente} onChange={(e) => setField("cliente", e.target.value)} options={clientesOptions.map((x) => ({ value: x, label: x }))} placeholder="Selecione o cliente" /></Field>
@@ -556,11 +557,12 @@ export default function TreinamentosPage() {
               <Field label="Status"><Select value={form.status} onChange={(e) => setField("status", e.target.value)} options={Object.entries(STATUS).map(([value, x]) => ({ value, label: x.label }))} placeholder="Selecione o status" /></Field>
               <Field label="Observações"><textarea value={form.descricao} onChange={(e) => setField("descricao", e.target.value)} placeholder="Informações complementares" style={{ ...inputStyle, minHeight: 92, resize: "vertical" }} /></Field>
             </div>
-            <div style={modalFooter}><span style={requiredFooter}>* Campos obrigatórios</span><div style={{ display: "flex", gap: 10 }}><button type="button" disabled={saving} style={secondaryButton} onClick={() => setModalOpen(false)}>Cancelar</button><button type="submit" disabled={saving} style={createButton}>{saving ? "Salvando..." : editingId ? "Salvar alterações" : "Criar turma"}</button></div></div>
+            <div style={modalFooter}><span style={requiredFooter}>A necessidade de treinamento é opcional.</span><div style={{ display: "flex", gap: 10 }}><button type="button" disabled={saving} style={secondaryButton} onClick={() => setModalOpen(false)}>Cancelar</button><button type="submit" disabled={saving} style={createButton}>{saving ? "Salvando..." : editingId ? "Salvar alterações" : "Criar turma"}</button></div></div>
           </form>
         </Modal>
       )}
-    </main>
+      </main>
+    </PortalShell>
   );
 }
 
@@ -624,6 +626,7 @@ const modalTitle = { margin: "3px 0 0", fontSize: 21, color: "#0f172a" };
 const modalSubtitle = { margin: "4px 0 0", fontSize: 12, color: "#64748b" };
 const closeButton = { width: 34, height: 34, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontSize: 22, lineHeight: 1, color: "#64748b", cursor: "pointer" };
 const requiredNotice = { display: "flex", gap: 11, margin: "18px 24px 0", padding: "12px 13px", borderRadius: 13, background: "#f5f3ff", border: "1px solid #ddd6fe", color: "#4c1d95" };
+const optionalNotice = { ...requiredNotice, background: '#f8fafc', border: `1px solid ${colors.border}` };
 const noticeIcon = { width: 32, height: 32, borderRadius: 10, display: "grid", placeItems: "center", background: "#ede9fe", flexShrink: 0 };
 const formGrid = { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 14, padding: 24 };
 const fieldWrap = { display: "grid", gap: 6, minWidth: 0 };
