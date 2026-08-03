@@ -1,60 +1,119 @@
-const express = require('express');
-const router = express.Router();
-const bcrypt = require('bcryptjs'); // ou 'bcrypt', dependendo do seu package.json
-const pool = require('../lib/db'); // ajuste o caminho do seu pool de banco de dados
-const jwt = require('jsonwebtoken'); // Para a próxima correção de tokens
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import pool from "../db.js";
 
-// 1. Endpoint Seguro de Login
-router.post('/login', async (req, res) => {
-    const { email, senha } = req.body;
+// Trava de segurança: Sem fallback. O servidor Vercel/Railway DEVE ter a variável.
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error("🚨 ALERTA CRÍTICO: JWT_SECRET não configurado.");
+    throw new Error("Erro interno de configuração.");
+  }
+  return secret;
+};
 
-    try {
-        const [users] = await pool.query('SELECT * FROM usuarios WHERE email = ? AND ativo = 1', [email]);
-        
-        if (users.length === 0) {
-            return res.status(401).json({ error: 'Usuário não encontrado ou inativo.' });
-        }
+export async function login(req, res) {
+  try {
+    const { email, senha } = req.body || {};
 
-        const user = users[0];
-
-        // Compara a senha enviada em texto plano com o Hash armazenado no banco
-        const senhaValida = await bcrypt.compare(String(senha), String(user.senha));
-
-        if (!senhaValida) {
-            return res.status(401).json({ error: 'Credenciais inválidas.' });
-        }
-
-        // Lógica de geração de token (preparando para a correção do JWT)
-        const token = jwt.sign(
-            { id: user.id, perfil: user.perfil }, 
-            process.env.JWT_SECRET || 'fallback-rotacionar-urgente', 
-            { expiresIn: '8h' }
-        );
-
-        res.json({ token, user: { id: user.id, nome: user.nome, perfil: user.perfil } });
-
-    } catch (error) {
-        console.error('Erro no login:', error);
-        res.status(500).json({ error: 'Erro interno no servidor.' });
+    if (!email || !senha) {
+      return res.status(400).json({ ok: false, message: "Informe e-mail e senha" });
     }
-});
 
-// 2. Endpoint Seguro de Alteração de Senha
-router.post('/alterar-senha', async (req, res) => {
-    const { idUsuario, novaSenha } = req.body;
+    const [rows] = await pool.query(
+      `SELECT id, nome, email, senha, perfil, cliente, ativo, troca_senha_obrigatoria
+       FROM usuarios
+       WHERE email = ?
+       LIMIT 1`,
+      [email]
+    );
 
-    try {
-        // Gera o Hash da nova senha com 12 salt rounds (Padrão ouro de segurança)
-        const salt = await bcrypt.genSalt(12);
-        const senhaCriptografada = await bcrypt.hash(String(novaSenha), salt);
-
-        await pool.query('UPDATE usuarios SET senha = ?, precisa_trocar_senha = 0 WHERE id = ?', [senhaCriptografada, idUsuario]);
-
-        res.json({ message: 'Senha atualizada com segurança!' });
-    } catch (error) {
-        console.error('Erro ao alterar senha:', error);
-        res.status(500).json({ error: 'Erro ao processar a troca de senha.' });
+    const user = rows[0];
+    if (!user) {
+      return res.status(401).json({ ok: false, message: "Usuário ou senha inválidos" });
     }
-});
 
-module.exports = router;
+    if (Number(user.ativo) === 0) {
+      return res.status(403).json({ ok: false, message: "Usuário inativo" });
+    }
+
+    // Correção: Validação segura usando bcrypt
+    const senhaOk = await bcrypt.compare(senha, user.senha);
+    if (!senhaOk) {
+      return res.status(401).json({ ok: false, message: "Usuário ou senha inválidos" });
+    }
+
+    const secret = getJwtSecret();
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        perfil: user.perfil
+      },
+      secret,
+      { expiresIn: "12h" }
+    );
+
+    return res.json({
+      ok: true,
+      token,
+      user: {
+        id: user.id,
+        nome: user.nome,
+        email: user.email,
+        perfil: user.perfil,
+        cliente: user.cliente || "",
+        ativo: !!user.ativo,
+        troca_senha_obrigatoria: !!user.troca_senha_obrigatoria
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: "Erro ao realizar login", error: error.message });
+  }
+}
+
+export async function alterarSenhaPrimeiroAcesso(req, res) {
+  try {
+    const { email, senha_atual, nova_senha } = req.body || {};
+
+    if (!email || !senha_atual || !nova_senha) {
+      return res.status(400).json({ ok: false, message: "Preencha e-mail, senha atual e nova senha" });
+    }
+
+    if (String(nova_senha).length < 6) {
+      return res.status(400).json({ ok: false, message: "A nova senha deve ter pelo menos 6 caracteres" });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, email, senha, troca_senha_obrigatoria
+       FROM usuarios
+       WHERE email = ?
+       LIMIT 1`,
+      [email]
+    );
+
+    const user = rows[0];
+    if (!user) {
+      return res.status(404).json({ ok: false, message: "Usuário não encontrado" });
+    }
+
+    const senhaOk = await bcrypt.compare(senha_atual, user.senha || "");
+    if (!senhaOk) {
+      return res.status(401).json({ ok: false, message: "Senha atual inválida" });
+    }
+
+    // Correção: 12 salt rounds conforme especificação técnica
+    const novaHash = await bcrypt.hash(nova_senha, 12);
+
+    await pool.query(
+      `UPDATE usuarios
+       SET senha = ?, troca_senha_obrigatoria = 0
+       WHERE id = ?`,
+      [novaHash, user.id]
+    );
+
+    return res.json({ ok: true, message: "Senha alterada com sucesso" });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: "Erro ao alterar senha", error: error.message });
+  }
+}
