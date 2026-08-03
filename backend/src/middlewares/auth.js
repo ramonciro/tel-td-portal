@@ -1,69 +1,53 @@
-const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 
-const SECRET = process.env.JWT_SECRET || "teltd-access-secret";
+// 1. Função auxiliar para buscar o Segredo de forma rigorosa
+const getSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error("🚨 ALERTA CRÍTICO: Variável JWT_SECRET não definida no ambiente!");
+    throw new Error("Erro interno de configuração de segurança. Acesso bloqueado.");
+  }
+  return secret;
+};
 
-function toBase64Url(value) {
-  return Buffer.from(value)
-    .toString("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-}
-
-function fromBase64Url(value) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const pad = normalized.length % 4;
-  const padded = pad ? normalized + "=".repeat(4 - pad) : normalized;
-  return Buffer.from(padded, "base64").toString();
-}
-
+// 2. Assinatura usando a biblioteca oficial
 function signToken(payload, expiresInSeconds = 60 * 60 * 12) {
-  const data = {
-    ...payload,
-    exp: Math.floor(Date.now() / 1000) + expiresInSeconds,
-  };
-
-  const encodedPayload = toBase64Url(JSON.stringify(data));
-  const signature = crypto
-    .createHmac("sha256", SECRET)
-    .update(encodedPayload)
-    .digest("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  return `${encodedPayload}.${signature}`;
+  const secret = getSecret();
+  // jsonwebtoken aceita o tempo em segundos passando um número
+  return jwt.sign(payload, secret, { expiresIn: expiresInSeconds });
 }
 
-function verifyToken(token) {
-  if (!token || !token.includes(".")) {
-    throw new Error("Token inválido");
+// 3. Middleware de proteção das rotas
+function authRequired(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : "";
+
+    if (!token) {
+      return res.status(401).json({
+        ok: false,
+        message: "Token ausente",
+      });
+    }
+
+    const secret = getSecret();
+    // jwt.verify já verifica assinatura e expiração automaticamente
+    const decoded = jwt.verify(token, secret);
+    req.user = decoded;
+
+    return next();
+  } catch (error) {
+    return res.status(401).json({
+      ok: false,
+      message: "Token inválido ou expirado",
+      error: error.message,
+    });
   }
-
-  const [encodedPayload, signature] = token.split(".");
-
-  const expectedSignature = crypto
-    .createHmac("sha256", SECRET)
-    .update(encodedPayload)
-    .digest("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  if (signature !== expectedSignature) {
-    throw new Error("Assinatura inválida");
-  }
-
-  const payload = JSON.parse(fromBase64Url(encodedPayload));
-
-  if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) {
-    throw new Error("Token expirado");
-  }
-
-  return payload;
 }
 
-
+// 4. Regras de Negócio (Mantidas Intactas)
 function hasOceanAccess(user) {
   const perfil = String(user?.perfil || "").trim().toLowerCase();
   const allowedPerfis = ["coordenador", "superintendente"];
@@ -89,33 +73,6 @@ function authorizeOceanAccess(req, res, next) {
     return res.status(500).json({
       ok: false,
       message: "Erro ao validar acesso ao Oceano do Desenvolvimento",
-      error: error.message,
-    });
-  }
-}
-
-function authRequired(req, res, next) {
-  try {
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : "";
-
-    if (!token) {
-      return res.status(401).json({
-        ok: false,
-        message: "Token ausente",
-      });
-    }
-
-    const decoded = verifyToken(token);
-    req.user = decoded;
-
-    return next();
-  } catch (error) {
-    return res.status(401).json({
-      ok: false,
-      message: "Token inválido ou expirado",
       error: error.message,
     });
   }
@@ -156,7 +113,6 @@ function authorizeRoles(...allowedRoles) {
 
 module.exports = {
   signToken,
-  verifyToken,
   authRequired,
   authorizeRoles,
   hasOceanAccess,
