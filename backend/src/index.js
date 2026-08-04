@@ -7,6 +7,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
+const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
 
 const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
@@ -810,6 +811,17 @@ app.use("/api/jornada-participantes", authRequired, authorizeOceanAccess, jornad
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+async function iniciarAplicacao() {
+  try {
+    await runMigrations();
+
+    app.listen(PORT, () => {
+      console.log(`Servidor rodando na porta ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Erro crítico ao iniciar o servidor:", error);
+    process.exit(1);
+  }
+}
+
+iniciarAplicacao();
