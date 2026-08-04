@@ -6,7 +6,7 @@ import PortalShell from "../../../components/PortalShell";
 import SectionCard from "../../../components/SectionCard";
 import { apiFetch } from "../../../services/api";
 
-export default function NovaTurmaPage() {
+export default function NovaTurmaInstrutorPage() {
   const router = useRouter();
 
   const [submitting, setSubmitting] = useState(false);
@@ -14,13 +14,14 @@ export default function NovaTurmaPage() {
   const [sucesso, setSucesso] = useState("");
 
   const [formData, setFormData] = useState({
-    nome: "",
-    codigo: "",
-    curso: "",
-    turno: "Noturno",
-    dataInicio: "",
-    dataFim: "",
-    observacoes: ""
+    tema: "",
+    cliente: "",
+    instrutor: "",
+    publico: "",
+    carga_horaria: "20h",
+    data_inicio: "",
+    data_fim: "",
+    modalidade: "Presencial"
   });
 
   function handleChange(e) {
@@ -35,7 +36,8 @@ export default function NovaTurmaPage() {
     setSucesso("");
 
     try {
-      await apiFetch("/api/turmas", {
+      // Endpoint correto do backend para treinamentos / turmas
+      await apiFetch("/api/treinamentos", {
         method: "POST",
         body: JSON.stringify(formData)
       });
@@ -47,7 +49,7 @@ export default function NovaTurmaPage() {
 
     } catch (err) {
       console.error("Erro ao criar turma:", err);
-      setErro(err.message || "Erro ao cadastrar nova turma. Verifique os dados.");
+      setErro(err.message || "Erro ao cadastrar nova turma. Verifique os campos.");
     } finally {
       setSubmitting(false);
     }
@@ -56,7 +58,7 @@ export default function NovaTurmaPage() {
   return (
     <PortalShell 
       title="Cadastrar Nova Turma" 
-      subtitle="Preencha as informações básicas para abrir uma nova turma de ensino técnico."
+      subtitle="Preencha as informações básicas para abrir uma nova turma pelo painel do instrutor."
     >
       <form onSubmit={handleSubmit} style={{ display: "grid", gap: 20, maxWidth: 800 }}>
         
@@ -72,20 +74,20 @@ export default function NovaTurmaPage() {
           </div>
         )}
 
-        <SectionCard title="Informações Gerais da Turma">
+        <SectionCard title="Informações do Treinamento">
           <div style={{ display: "grid", gap: 16 }}>
             
             <div>
               <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
-                Nome da Turma *
+                Tema / Nome do Treinamento *
               </label>
               <input
                 type="text"
                 required
-                name="nome"
-                value={formData.nome}
+                name="tema"
+                value={formData.tema}
                 onChange={handleChange}
-                placeholder="Ex: Técnico em Refrigeração - Turma A"
+                placeholder="Ex: Reciclagem de Crédito ou Excel Avançado"
                 style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
               />
             </div>
@@ -93,56 +95,69 @@ export default function NovaTurmaPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
                 <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
-                  Código / Identificador *
+                  Cliente *
                 </label>
                 <input
                   type="text"
                   required
-                  name="codigo"
-                  value={formData.codigo}
+                  name="cliente"
+                  value={formData.cliente}
                   onChange={handleChange}
-                  placeholder="Ex: REF-2026-1"
+                  placeholder="Ex: Agibank, Claro..."
                   style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
                 />
               </div>
 
               <div>
                 <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
-                  Turno *
+                  Instrutor Responsável *
                 </label>
-                <select
-                  name="turno"
-                  value={formData.turno}
+                <input
+                  type="text"
+                  required
+                  name="instrutor"
+                  value={formData.instrutor}
                   onChange={handleChange}
-                  style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14, background: "#fff" }}
-                >
-                  <option value="Matutino">Matutino</option>
-                  <option value="Vespertino">Vespertino</option>
-                  <option value="Noturno">Noturno</option>
-                  <option value="Integral">Integral</option>
-                </select>
+                  placeholder="Seu nome"
+                  style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
+                />
               </div>
             </div>
 
-            <div>
-              <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
-                Curso Vinculado *
-              </label>
-              <input
-                type="text"
-                required
-                name="curso"
-                value={formData.curso}
-                onChange={handleChange}
-                placeholder="Ex: Técnico em Refrigeração e Climatização"
-                style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
-              />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
+                  Público-alvo
+                </label>
+                <input
+                  type="text"
+                  name="publico"
+                  value={formData.publico}
+                  onChange={handleChange}
+                  placeholder="Ex: Operação, Onboarding..."
+                  style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
+                  Carga Horária
+                </label>
+                <input
+                  type="text"
+                  name="carga_horaria"
+                  value={formData.carga_horaria}
+                  onChange={handleChange}
+                  placeholder="Ex: 20h"
+                  style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
+                />
+              </div>
             </div>
 
           </div>
         </SectionCard>
 
-        <SectionCard title="Cronograma e Observações">
+        <SectionCard title="Cronograma e Modalidade">
           <div style={{ display: "grid", gap: 16 }}>
             
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -153,8 +168,8 @@ export default function NovaTurmaPage() {
                 <input
                   type="date"
                   required
-                  name="dataInicio"
-                  value={formData.dataInicio}
+                  name="data_inicio"
+                  value={formData.data_inicio}
                   onChange={handleChange}
                   style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
                 />
@@ -162,12 +177,13 @@ export default function NovaTurmaPage() {
 
               <div>
                 <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
-                  Data de Término (Previsão)
+                  Data de Fim *
                 </label>
                 <input
                   type="date"
-                  name="dataFim"
-                  value={formData.dataFim}
+                  required
+                  name="data_fim"
+                  value={formData.data_fim}
                   onChange={handleChange}
                   style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
                 />
@@ -176,16 +192,18 @@ export default function NovaTurmaPage() {
 
             <div>
               <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
-                Observações / Informações Adicionais
+                Modalidade
               </label>
-              <textarea
-                rows={3}
-                name="observacoes"
-                value={formData.observacoes}
+              <select
+                name="modalidade"
+                value={formData.modalidade}
                 onChange={handleChange}
-                placeholder="Detalhes sobre a sala, laboratório ou orientações gerais..."
-                style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
-              />
+                style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14, background: "#fff" }}
+              >
+                <option value="Presencial">Presencial</option>
+                <option value="Online">Online</option>
+                <option value="Híbrido">Híbrido</option>
+              </select>
             </div>
 
           </div>
