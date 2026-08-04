@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import PortalShell from "../../../../components/PortalShell";
-import SectionCard from "../../../../components/SectionCard";
-import { apiFetch } from "../../../../services/api";
+import PortalShell from "@/components/PortalShell";
+import SectionCard from "@/components/SectionCard";
+import { apiFetch } from "@/services/api";
 
 export default function DiarioClassePage() {
   const params = useParams();
@@ -16,11 +16,10 @@ export default function DiarioClassePage() {
   const [turma, setTurma] = useState(null);
   const [participantes, setParticipantes] = useState([]);
   
-  // Estado do Diário
   const [conteudoMinistrado, setConteudoMinistrado] = useState("");
   const [observacoes, setObservacoes] = useState("");
-  const [presencas, setPresencas] = useState({}); // { [usuarioId]: true/false }
-  const [avaliacoes, setAvaliacoes] = useState({}); // { [usuarioId]: { nota: "", feedback: "" } }
+  const [presencas, setPresencas] = useState({});
+  const [avaliacoes, setAvaliacoes] = useState({});
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
 
@@ -35,14 +34,12 @@ export default function DiarioClassePage() {
       setLoading(true);
       setErro("");
       
-      // Busca os dados da turma e seus participantes/alunos matriculados
       const dadosTurma = await apiFetch(`/api/turmas/${turmaId}`);
       setTurma(dadosTurma);
 
       const listaAlunos = dadosTurma?.participantes || dadosTurma?.alunos || [];
       setParticipantes(listaAlunos);
 
-      // Inicializa todas as presenças como presentes (true) por padrão
       const presInicial = {};
       const avInicial = {};
       listaAlunos.forEach(aluno => {
@@ -103,7 +100,7 @@ export default function DiarioClassePage() {
 
       setSucesso("Diário de classe registrado e feedback pedagógico salvo com sucesso!");
       setTimeout(() => {
-        router.push(`/presencas`); // Retorna para a gestão de turmas
+        router.push(`/presencas`);
       }, 2000);
 
     } catch (err) {
@@ -141,7 +138,6 @@ export default function DiarioClassePage() {
           </div>
         )}
 
-        {/* Bloco 1: Conteúdo Ministrado */}
         <SectionCard title="Conteúdo e Ocorrências da Aula">
           <div style={{ display: "grid", gap: 16 }}>
             <div>
@@ -173,7 +169,6 @@ export default function DiarioClassePage() {
           </div>
         </SectionCard>
 
-        {/* Bloco 2: Chamada e Avaliação Individual */}
         <SectionCard title="Frequência e Desempenho dos Alunos">
           {participantes.length === 0 ? (
             <p style={{ color: "#64748b", fontStyle: "italic" }}>Nenhum aluno matriculado encontrado nesta turma.</p>
@@ -188,7 +183,6 @@ export default function DiarioClassePage() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                       <strong style={{ fontSize: 15, color: "#0f172a" }}>{nome}</strong>
                       
-                      {/* Botões de Frequência */}
                       <div style={{ display: "flex", gap: 8 }}>
                         <button
                           type="button"
@@ -225,7 +219,6 @@ export default function DiarioClassePage() {
                       </div>
                     </div>
 
-                    {/* Campos de Feedback/Nota */}
                     <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12, alignItems: "center" }}>
                       <div>
                         <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4, color: "#475569" }}>
@@ -262,7 +255,6 @@ export default function DiarioClassePage() {
           )}
         </SectionCard>
 
-        {/* Botão de Ação Final */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 10 }}>
           <button
             type="button"
