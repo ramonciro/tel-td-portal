@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import PortalShell from "../../../../components/PortalShell";
-import SectionCard from "../../../../components/SectionCard";
-import { apiFetch } from "../../../../services/api";
+import PortalShell from "@/components/PortalShell";
+import SectionCard from "@/components/SectionCard";
+import { apiFetch } from "@/services/api";
 
 export default function NovaTurmaPage() {
   const router = useRouter();
