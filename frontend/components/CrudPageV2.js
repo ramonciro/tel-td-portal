@@ -4,21 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "./PortalShell";
 import SectionCard from "./SectionCard";
 import { apiFetch, getStoredUser, hasSomeRole } from "../services/api";
-import { colors, radius } from "../lib/theme";
-
-function FormWrapper({ modal, onClose, children }) {
-  if (!modal) return children;
-  return (
-    <div
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(11,18,32,0.55)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "40px 20px", zIndex: 60 }}
-    >
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 640 }}>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function normalizeInitialValue(field) {
   if (field.type === "multiselect") return [];
@@ -125,14 +110,10 @@ export default function CrudPageV2({
   onDataLoad = null,
   extraHeaderContent = null,
   extraContent = null,
-  formMode = "inline",
-  recordsMode = "table",
-  renderRecordCard = null,
 }) {
   const [records, setRecords] = useState([]);
   const [form, setForm] = useState(buildInitialForm(fields));
   const [editingId, setEditingId] = useState(null);
-  const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
