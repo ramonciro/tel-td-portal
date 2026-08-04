@@ -1,157 +1,234 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
-import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
-import { colors, radius, estiloBadgeStatus } from "../../lib/theme";
-import { formatDateBR } from "../../lib/date";
 
-export default function PainelInstrutorPage() {
+export default function InstrutorTurmasPage() {
   const [turmas, setTurmas] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState("");
+  const [modalAberto, setModalAberto] = useState(false);
+
+  // Estados do formulário alinhados com o seu endpoint de treinamentos
+  const [formData, setFormData] = useState({
+    tema: "",
+    cliente: "",
+    instrutor: "",
+    publico: "",
+    carga_horaria: "20h",
+    data_inicio: "",
+    data_fim: "",
+    modalidade: "Presencial"
+  });
 
   useEffect(() => {
-    carregarTurmasDoInstrutor();
+    carregarTurmas();
   }, []);
 
-  async function carregarTurmasDoInstrutor() {
+  async function carregarTurmas() {
     try {
-      setLoading(true);
-      // Busca as turmas filtradas pelo instrutor logado (o backend identifica via token/sessão)
-      const resposta = await apiFetch("/presenca-resumo");
-      const itens = Array.isArray(resposta?.itens) ? resposta.itens : [];
-      setTurmas(itens);
-      setErro("");
+      const data = await apiFetch("/api/treinamentos");
+      setTurmas(data || []);
     } catch (err) {
-      setErro(err.message || "Erro ao carregar turmas do instrutor.");
+      console.error("Erro ao carregar turmas:", err);
     } finally {
       setLoading(false);
     }
   }
 
-  function irParaCriarTurma() {
-    window.location.href = "/instrutor/nova-turma";
-  }
-
-  function abrirDiario(turmaId, aulaId) {
-    if (aulaId) {
-      window.location.href = `/instrutor/turma/${turmaId}/diario?aula_id=${aulaId}`;
-    } else {
-      window.location.href = `/turma/${turmaId}`;
+  async function handleCriarTurma(e) {
+    e.preventDefault();
+    try {
+      await apiFetch("/api/treinamentos", {
+        method: "POST",
+        body: JSON.stringify(formData)
+      });
+      setModalAberto(false);
+      carregarTurmas();
+      // Reset form
+      setFormData({
+        tema: "",
+        cliente: "",
+        instrutor: "",
+        publico: "",
+        carga_horaria: "20h",
+        data_inicio: "",
+        data_fim: "",
+        modalidade: "Presencial"
+      });
+    } catch (err) {
+      alert("Erro ao criar turma: " + (err.message || "Verifique os dados"));
     }
   }
 
   return (
-    <PortalShell>
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <span style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: colors.primary, background: "#eff6ff", padding: "4px 10px", borderRadius: 999 }}>
-              Área do Instrutor
-            </span>
-            <h1 style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 800, color: colors.textPrimary }}>
-              Minhas Turmas & Gestão Autônoma
-            </h1>
-            <p style={{ margin: "4px 0 0", fontSize: 14, color: colors.textSecondary }}>
-              Crie turmas, gerencie cronogramas e registre o diário de classe com percepção pedagógica.
-            </p>
-          </div>
-          <button
-            onClick={irParaCriarTurma}
-            style={{
-              background: colors.primary,
-              color: "#fff",
-              border: "none",
-              borderRadius: radius.md,
-              padding: "12px 20px",
-              fontWeight: 800,
-              fontSize: 14,
-              cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(37,99,235,0.2)"
-            }}
-          >
-            + Criar Nova Turma
-          </button>
-        </div>
-
-        {erro && (
-          <div style={{ padding: 14, borderRadius: radius.md, background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 13 }}>
-            {erro}
-          </div>
-        )}
-
-        {loading ? (
-          <div style={{ padding: 30, textAlign: "center", color: colors.textSecondary, fontWeight: 600 }}>
-            Carregando painel do instrutor...
-          </div>
-        ) : (
-          <SectionCard title="Turmas sob sua responsabilidade" subtitle="Acompanhe o andamento e acesse rapidamente o diário de classe.">
-            {turmas.length === 0 ? (
-              <div style={{ padding: 20, textAlign: "center", color: colors.textMuted, fontSize: 14 }}>
-                Nenhuma turma cadastrada. Clique em "+ Criar Nova Turma" para começar.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14, marginTop: 10 }}>
-                {turmas.map((item) => (
-                  <div key={item.id} style={{ border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: 16, background: colors.surface, display: "grid", gap: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.02)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={estiloBadgeStatus(item.status_turma)}>{item.status_turma}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: colors.textSecondary }}>
-                        {item.treinandos_previstos || 0} treinandos
-                      </span>
-                    </div>
-
-                    <div style={{ fontSize: 18, fontWeight: 800, color: colors.textPrimary }}>
-                      {item.tema || "Turma sem tema"}
-                    </div>
-
-                    <div style={{ fontSize: 13, color: colors.textSecondary }}>
-                      Cliente: <strong>{item.cliente || "-"}</strong> · Período: {formatDateBR(item.data_inicio)}
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                      <button
-                        onClick={() => abrirDiario(item.id, item.proxima_aula_id)}
-                        style={{
-                          flex: 1,
-                          background: "#eff6ff",
-                          color: "#1d4ed8",
-                          border: "1px solid #bfdbfe",
-                          borderRadius: radius.sm,
-                          padding: "10px",
-                          fontWeight: 700,
-                          fontSize: 13,
-                          cursor: "pointer"
-                        }}
-                      >
-                        Abrir Diário / Chamada
-                      </button>
-                      <button
-                        onClick={() => window.location.href = `/turma/${item.id}`}
-                        style={{
-                          background: colors.surfaceMuted,
-                          color: colors.textPrimary,
-                          border: `1px solid ${colors.border}`,
-                          borderRadius: radius.sm,
-                          padding: "10px 14px",
-                          fontWeight: 700,
-                          fontSize: 13,
-                          cursor: "pointer"
-                        }}
-                      >
-                        Gerir
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </SectionCard>
-        )}
+    <PortalShell 
+      title="Painel do Instrutor - Gestão de Turmas" 
+      subtitle="Acompanhe e abra novas turmas diretamente alinhadas ao portal de treinamentos."
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1e293b" }}>Suas Turmas Ativas</h3>
+        <button
+          onClick={() => setModalAberto(true)}
+          style={{ padding: "10px 18px", borderRadius: 8, background: "#2563eb", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer" }}
+        >
+          + Nova Turma
+        </button>
       </div>
+
+      <SectionCard title="Lista de Turmas Cadastradas">
+        {loading ? (
+          <p style={{ padding: 20, color: "#64748b" }}>Carregando turmas...</p>
+        ) : turmas.length === 0 ? (
+          <p style={{ padding: 20, color: "#64748b" }}>Nenhuma turma cadastrada no momento.</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 14 }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e2e8f0", color: "#475569" }}>
+                  <th style={{ padding: 12 }}>Tema</th>
+                  <th style={{ padding: 12 }}>Cliente</th>
+                  <th style={{ padding: 12 }}>Público</th>
+                  <th style={{ padding: 12 }}>Início</th>
+                  <th style={{ padding: 12 }}>Fim</th>
+                </tr>
+              </thead>
+              <tbody>
+                {turmas.map((t, index) => (
+                  <tr key={index} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: 12, fontWeight: 600, color: "#1e293b" }}>{t.tema}</td>
+                    <td style={{ padding: 12, color: "#475569" }}>{t.cliente}</td>
+                    <td style={{ padding: 12, color: "#475569" }}>{t.publico}</td>
+                    <td style={{ padding: 12, color: "#475569" }}>{t.data_inicio}</td>
+                    <td style={{ padding: 12, color: "#475569" }}>{t.data_fim}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Modal igual ao seu print de treinamentos */}
+      {modalAberto && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+          background: "rgba(0,0,0,0.5)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000
+        }}>
+          <div style={{ background: "#fff", padding: 30, borderRadius: 16, width: "100%", maxWidth: 600, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: "#1e293b" }}>Criar nova turma</h3>
+              <button 
+                onClick={() => setModalAberto(false)}
+                style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", fontWeight: 700, color: "#64748b" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCriarTurma} style={{ display: "grid", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#334155" }}>Tema / Treinamento *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.tema}
+                  onChange={e => setFormData({...formData, tema: e.target.value})}
+                  placeholder="Ex: Reciclagem de Crédito"
+                  style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#334155" }}>Cliente *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.cliente}
+                    onChange={e => setFormData({...formData, cliente: e.target.value})}
+                    placeholder="Ex: Agibank"
+                    style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#334155" }}>Instrutor *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.instrutor}
+                    onChange={e => setFormData({...formData, instrutor: e.target.value})}
+                    placeholder="Nome do instrutor"
+                    style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#334155" }}>Público</label>
+                  <input
+                    type="text"
+                    value={formData.publico}
+                    onChange={e => setFormData({...formData, publico: e.target.value})}
+                    placeholder="Ex: Operação"
+                    style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#334155" }}>Carga Horária</label>
+                  <input
+                    type="text"
+                    value={formData.carga_horaria}
+                    onChange={e => setFormData({...formData, carga_horaria: e.target.value})}
+                    style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#334155" }}>Data de Início *</label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.data_inicio}
+                    onChange={e => setFormData({...formData, data_inicio: e.target.value})}
+                    style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#334155" }}>Data de Fim *</label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.data_fim}
+                    onChange={e => setFormData({...formData, data_fim: e.target.value})}
+                    style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setModalAberto(false)}
+                  style={{ padding: "10px 16px", borderRadius: 8, background: "#e2e8f0", border: "none", fontWeight: 600, cursor: "pointer" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: "10px 20px", borderRadius: 8, background: "#2563eb", color: "#fff", border: "none", fontWeight: 600, cursor: "pointer" }}
+                >
+                  Salvar Turma
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </PortalShell>
   );
 }
