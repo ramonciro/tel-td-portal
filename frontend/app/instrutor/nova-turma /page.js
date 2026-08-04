@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import PortalShell from "../../../../components/PortalShell";
-import SectionCard from "../../../../components/SectionCard";
-import { apiFetch } from "../../../../services/api";
+import PortalShell from "../../../components/PortalShell";
+import SectionCard from "../../../components/SectionCard";
+import { apiFetch } from "../../../services/api";
 import { colors, radius } from "../../../lib/theme";
 
 export default function CriarTurmaInstrutorPage() {
