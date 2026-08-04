@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import PortalShell from "@/components/PortalShell";
-import SectionCard from "@/components/SectionCard";
-import { apiFetch } from "@/services/api";
+import PortalShell from "../../../../../components/PortalShell";
+import SectionCard from "../../../../../components/SectionCard";
+import { apiFetch } from "../../../../../services/api";
 
 export default function DiarioClassePage() {
   const params = useParams();
