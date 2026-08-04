@@ -7,7 +7,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
-const { runMigrations } = require("./database/migrate");
+const { runMigrations } = require("../database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
 
 const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
