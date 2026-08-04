@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import PortalShell from "../../../components/PortalShell";
 import SectionCard from "../../../components/SectionCard";
 import { apiFetch } from "../../../services/api";
-import { colors, radius } from "../../../lib/theme";
 
 export default function CriarTurmaInstrutorPage() {
+  const router = useRouter();
   const [form, setForm] = useState({
     tema: "",
     cliente: "",
@@ -30,7 +31,6 @@ export default function CriarTurmaInstrutorPage() {
       setErro("");
       setSucesso("");
 
-      // Formata descrição com metadados estruturados (modalidade e sala)
       const descricaoFormatada = `[modalidade:${form.modalidade}] [sala:${form.sala}] Turma cadastrada autonomamente pelo instrutor.`;
 
       const payload = {
@@ -44,14 +44,14 @@ export default function CriarTurmaInstrutorPage() {
         descricao: descricaoFormatada
       };
 
-      const novaTurma = await apiFetch("/treinamentos", {
+      const novaTurma = await apiFetch("/api/treinamentos", {
         method: "POST",
         body: JSON.stringify(payload)
       });
 
       setSucesso("Turma criada com sucesso! Redirecionando...");
       setTimeout(() => {
-        window.location.href = `/turma/${novaTurma?.id || ""}`;
+        router.push(`/turma/${novaTurma?.id || ""}`);
       }, 1200);
     } catch (err) {
       setErro(err.message || "Erro ao criar turma.");
@@ -61,27 +61,11 @@ export default function CriarTurmaInstrutorPage() {
   }
 
   return (
-    <PortalShell>
-      <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 800, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: colors.textPrimary }}>
-              Criar Nova Turma
-            </h1>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: colors.textSecondary }}>
-              Cadastre as informações da turma para iniciar a gestão e o cronograma.
-            </p>
-          </div>
-          <button
-            onClick={() => window.location.href = "/instrutor"}
-            style={{ background: colors.surfaceMuted, border: `1px solid ${colors.border}`, padding: "8px 14px", borderRadius: radius.sm, fontWeight: 700, cursor: "pointer", fontSize: 13 }}
-          >
-            ← Voltar
-          </button>
-        </div>
-
-        {erro && <div style={{ padding: 12, borderRadius: radius.md, background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 13 }}>{erro}</div>}
-        {sucesso && <div style={{ padding: 12, borderRadius: radius.md, background: "#f0fdf4", color: "#166534", fontWeight: 700, fontSize: 13 }}>{sucesso}</div>}
+    <PortalShell title="Criar Nova Turma" subtitle="Cadastre as informações da turma para iniciar a gestão e o cronograma.">
+      <div style={{ maxWidth: 800, margin: "0 auto" }}>
+        
+        {erro && <div style={{ padding: 12, borderRadius: 12, background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: 13, marginBottom: 16 }}>{erro}</div>}
+        {sucesso && <div style={{ padding: 12, borderRadius: 12, background: "#f0fdf4", color: "#166534", fontWeight: 700, fontSize: 13, marginBottom: 16 }}>{sucesso}</div>}
 
         <SectionCard title="Dados da Turma">
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: 14 }}>
@@ -192,15 +176,22 @@ export default function CriarTurmaInstrutorPage() {
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={() => router.push("/instrutor")}
+                style={{ background: "#e2e8f0", border: "none", padding: "12px 20px", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+              >
+                Cancelar
+              </button>
               <button
                 type="submit"
                 disabled={salvando}
                 style={{
-                  background: colors.primary,
+                  background: "#2563eb",
                   color: "#fff",
                   border: "none",
-                  borderRadius: radius.sm,
+                  borderRadius: 10,
                   padding: "12px 24px",
                   fontWeight: 800,
                   fontSize: 14,
@@ -217,5 +208,5 @@ export default function CriarTurmaInstrutorPage() {
   );
 }
 
-const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 14, background: "#fff" };
-const labelStyle = { display: "block", fontSize: 13, fontWeight: 700, color: colors.textSecondary, marginBottom: 6 };
+const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14, background: "#fff" };
+const labelStyle = { display: "block", fontSize: 13, fontWeight: 700, color: "#475569", marginBottom: 6 };
