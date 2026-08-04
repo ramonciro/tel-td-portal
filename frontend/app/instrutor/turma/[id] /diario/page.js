@@ -1,165 +1,259 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
-import PortalShell from "../../components/PortalShell";
-import SectionCard from "../../components/SectionCard";
-import { apiFetch } from "../../services/api";
-import { formatDateBR } from "../../lib/date";
-import { colors, radius } from "../../lib/theme";
+import { useState, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
+import PortalShell from "../../../../components/PortalShell";
+import SectionCard from "../../../../components/SectionCard";
+import { apiFetch } from "../../../../services/api";
 
-export default function DiarioClasseInstrutorPage() {
+export default function DiarioClassePage() {
   const params = useParams();
-  const searchParams = useSearchParams();
-  const turmaId = params?.id;
-  const aulaId = searchParams.get("aula_id");
-
-  const [aula, setAula] = useState(null);
-  const [participantes, setParticipantes] = useState([]);
-  const [presencas, setPresencas] = useState({});
-  
-  // Novos campos de percepção e feedback
-  const [percepcao, setPercepcao] = useState({
-    clima: "bom",
-    dificuldades: "",
-    observacoes: "",
-    gerandoFeedback: false,
-    feedbackGerado: ""
-  });
+  const router = useRouter();
+  const turmaId = params.id;
 
   const [loading, setLoading] = useState(true);
-  const [salvando, setSalvando] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [turma, setTurma] = useState(null);
+  const [participantes, setParticipantes] = useState([]);
+  
+  // Estado do Diário
+  const [conteudoMinistrado, setConteudoMinistrado] = useState("");
+  const [observacoes, setObservacoes] = useState("");
+  const [presencas, setPresencas] = useState({}); // { [usuarioId]: true/false }
+  const [avaliacoes, setAvaliacoes] = useState({}); // { [usuarioId]: { nota: "", feedback: "" } }
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
 
   useEffect(() => {
-    if (turmaId && aulaId) {
-      carregarDadosAula();
+    if (turmaId) {
+      carregarDadosTurma();
     }
-  }, [turmaId, aulaId]);
+  }, [turmaId]);
 
-  async function carregarDadosAula() {
+  async function carregarDadosTurma() {
     try {
       setLoading(true);
-      const [dadosAula, dadosParticipantes, dadosPresencas] = await Promise.all([
-        apiFetch(`/turma-aulas/${aulaId}`).catch(() => null),
-        apiFetch(`/treinamentos/${turmaId}/participantes`).catch(() => []),
-        apiFetch(`/presencas?turma_aula_id=${aulaId}`).catch(() => [])
-      ]);
-
-      setAula(dadosAula);
-      setParticipantes(Array.isArray(dadosParticipantes) ? dadosParticipantes : []);
+      setErro("");
       
-      // Mapear presenças existentes se houver
-      const mapa = {};
-      if (Array.isArray(dadosPresencas)) {
-        dadosPresencas.forEach(p => {
-          mapa[p.participante_id] = p.status; // 'presente', 'ausente', 'justificado'
-        });
-      }
-      setPresencas(mapa);
+      // Busca os dados da turma e seus participantes/alunos matriculados
+      const dadosTurma = await apiFetch(`/api/turmas/${turmaId}`);
+      setTurma(dadosTurma);
+
+      const listaAlunos = dadosTurma?.participantes || dadosTurma?.alunos || [];
+      setParticipantes(listaAlunos);
+
+      // Inicializa todas as presenças como presentes (true) por padrão
+      const presInicial = {};
+      const avInicial = {};
+      listaAlunos.forEach(aluno => {
+        const id = aluno.id || aluno.usuarioId;
+        presInicial[id] = true;
+        avInicial[id] = { nota: "", feedback: "" };
+      });
+      setPresencas(presInicial);
+      setAvaliacoes(avInicial);
+
     } catch (err) {
-      setErro(err.message || "Erro ao carregar dados do diário de classe.");
+      console.error("Erro ao carregar turma:", err);
+      setErro("Não foi possível carregar os dados desta turma.");
     } finally {
       setLoading(false);
     }
   }
 
-  function mudarStatus(participanteId, status) {
-    setPresencas(prev => ({ ...prev, [participanteId]: status }));
+  function handlePresencaChange(usuarioId, status) {
+    setPresencas(prev => ({ ...prev, [usuarioId]: status }));
   }
 
-  async function salvarDiario() {
-    try {
-      setSalvando(true);
-      setErro("");
-      
-      // 1. Salvar chamada
-      const listaPresencas = Object.entries(presencas).map(([participante_id, status]) => ({
-        participante_id,
-        status
-      }));
+  function handleAvaliacaoChange(usuarioId, campo, valor) {
+    setAvaliacoes(prev => ({
+      ...prev,
+      [usuarioId]: {
+        ...prev[usuarioId],
+        [campo]: valor
+      }
+    }));
+  }
 
-      await apiFetch(`/presencas`, {
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSubmitting(true);
+    setErro("");
+    setSucesso("");
+
+    try {
+      const payload = {
+        conteudoMinistrado,
+        observacoes,
+        chamada: Object.keys(presencas).map(usuarioId => ({
+          usuarioId,
+          presente: presencas[usuarioId]
+        })),
+        desempenho: Object.keys(avaliacoes).map(usuarioId => ({
+          usuarioId,
+          nota: avaliacoes[usuarioId].nota ? Number(avaliacoes[usuarioId].nota) : null,
+          feedback: avaliacoes[usuarioId].feedback || ""
+        }))
+      };
+
+      await apiFetch(`/api/turmas/${turmaId}/diario`, {
         method: "POST",
-        body: JSON.stringify({
-          turma_aula_id: aulaId,
-          presencas: listaPresencas,
-          percepcao_aula: percepcao
-        })
+        body: JSON.stringify(payload)
       });
 
-      setSucesso("Chamada e percepção da turma salvas com sucesso!");
-    } catch (err) {
-      setErro(err.message || "Erro ao salvar diário de classe.");
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  async function gerarFeedbackProcesso() {
-    try {
-      setPercepcao(prev => ({ ...prev, gerandoFeedback: true }));
-      // Simulação de chamada para IA gerar um feedback analítico do processo com base nas observações
+      setSucesso("Diário de classe registrado e feedback pedagógico salvo com sucesso!");
       setTimeout(() => {
-        const resumoGerado = `Análise da Aula: Clima ${percepcao.clima}. Dificuldades relatadas: "${percepcao.dificuldades || 'Nenhuma registrada'}". Recomenda-se reforço prático no próximo encontro para consolidar o aprendizado.`;
-        setPercepcao(prev => ({ ...prev, feedbackGerado: resumoGerado, gerandoFeedback: false }));
-      }, 1000);
+        router.push(`/presencas`); // Retorna para a gestão de turmas
+      }, 2000);
+
     } catch (err) {
-      setPercepcao(prev => ({ ...prev, gerandoFeedback: false }));
+      console.error("Erro ao salvar diário:", err);
+      setErro(err.message || "Erro ao salvar o diário de classe. Verifique os campos.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
   if (loading) {
-    return <PortalShell><p style={{ padding: 20 }}>Carregando diário de classe...</p></PortalShell>;
+    return (
+      <PortalShell title="Diário de Classe" subtitle="Carregando informações da turma...">
+        <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>Carregando...</div>
+      </PortalShell>
+    );
   }
 
   return (
-    <PortalShell>
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: colors.textPrimary }}>
-            Diário de Classe & Percepção da Turma
-          </h1>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: colors.textSecondary }}>
-            {aula?.titulo ? `Aula: ${aula.titulo}` : "Lançamento de presença e avaliação pedagógica"} {aula?.data_aula ? `· Data: ${formatDateBR(aula.data_aula)}` : ""}
-          </p>
-        </div>
+    <PortalShell 
+      title={`Diário de Classe: ${turma?.nome || "Turma"}`} 
+      subtitle="Registro diário de conteúdo, chamada de frequência e feedback pedagógico individual."
+    >
+      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 20, maxWidth: 1000 }}>
+        
+        {erro && (
+          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", padding: 16, borderRadius: 12, fontWeight: 600 }}>
+            {erro}
+          </div>
+        )}
 
-        {erro && <div style={alertBox(colors.dangerLight, colors.dangerText)}>{erro}</div>}
-        {sucesso && <div style={alertBox(colors.successLight, colors.successText)}>{sucesso}</div>}
+        {sucesso && (
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", padding: 16, borderRadius: 12, fontWeight: 600 }}>
+            {sucesso}
+          </div>
+        )}
 
-        <SectionCard title="Lista de Chamada">
+        {/* Bloco 1: Conteúdo Ministrado */}
+        <SectionCard title="Conteúdo e Ocorrências da Aula">
+          <div style={{ display: "grid", gap: 16 }}>
+            <div>
+              <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
+                Conteúdo Ministrado / Tópicos Abordados *
+              </label>
+              <textarea
+                required
+                rows={4}
+                value={conteudoMinistrado}
+                onChange={e => setConteudoMinistrado(e.target.value)}
+                placeholder="Descreva detalhadamente o que foi ensinado nesta aula..."
+                style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontWeight: 700, marginBottom: 6, color: "#1e293b" }}>
+                Observações Gerais da Turma
+              </label>
+              <textarea
+                rows={2}
+                value={observacoes}
+                onChange={e => setObservacoes(e.target.value)}
+                placeholder="Ocorrências, engajamento, avisos importantes..."
+                style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}
+              />
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Bloco 2: Chamada e Avaliação Individual */}
+        <SectionCard title="Frequência e Desempenho dos Alunos">
           {participantes.length === 0 ? (
-            <p style={{ fontSize: 13, color: colors.textMuted }}>Nenhum treinado vinculado a esta turma.</p>
+            <p style={{ color: "#64748b", fontStyle: "italic" }}>Nenhum aluno matriculado encontrado nesta turma.</p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {participantes.map(p => {
-                const statusAtual = presencas[p.id] || "presente";
+            <div style={{ display: "grid", gap: 16 }}>
+              {participantes.map(aluno => {
+                const id = aluno.id || aluno.usuarioId;
+                const nome = aluno.nome || aluno.usuarioNome || "Aluno";
+
                 return (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", border: `1px solid ${colors.border}`, borderRadius: radius.md, background: colors.surface }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>{p.nome}</span>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {["presente", "ausente", "justificado"].map(st => (
+                  <div key={id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, display: "grid", gap: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <strong style={{ fontSize: 15, color: "#0f172a" }}>{nome}</strong>
+                      
+                      {/* Botões de Frequência */}
+                      <div style={{ display: "flex", gap: 8 }}>
                         <button
-                          key={st}
                           type="button"
-                          onClick={() => mudarStatus(p.id, st)}
+                          onClick={() => handlePresencaChange(id, true)}
                           style={{
-                            padding: "6px 12px",
-                            borderRadius: radius.sm,
-                            border: "none",
-                            fontSize: 12,
+                            padding: "6px 14px",
+                            borderRadius: 8,
                             fontWeight: 700,
+                            fontSize: 12,
                             cursor: "pointer",
-                            background: statusAtual === st ? colors.primary : colors.surfaceMuted,
-                            color: statusAtual === st ? "#fff" : colors.textSecondary,
-                            textTransform: "capitalize"
+                            border: "1px solid #cbd5e1",
+                            background: presencas[id] === true ? "#16a34a" : "#fff",
+                            color: presencas[id] === true ? "#fff" : "#475569"
                           }}
                         >
-                          {st}
+                          Presente
                         </button>
-                      ))}
+                        <button
+                          type="button"
+                          onClick={() => handlePresencaChange(id, false)}
+                          style={{
+                            padding: "6px 14px",
+                            borderRadius: 8,
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            border: "1px solid #cbd5e1",
+                            background: presencas[id] === false ? "#dc2626" : "#fff",
+                            color: presencas[id] === false ? "#fff" : "#475569"
+                          }}
+                        >
+                          Ausente
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Campos de Feedback/Nota */}
+                    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12, alignItems: "center" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4, color: "#475569" }}>
+                          Nota / Conceito
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="10"
+                          placeholder="Ex: 8.5"
+                          value={avaliacoes[id]?.nota || ""}
+                          onChange={e => handleAvaliacaoChange(id, "nota", e.target.value)}
+                          style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 13 }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4, color: "#475569" }}>
+                          Feedback Pedagógico Individual
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Comentário sobre o desempenho do aluno nesta aula..."
+                          value={avaliacoes[id]?.feedback || ""}
+                          onChange={e => handleAvaliacaoChange(id, "feedback", e.target.value)}
+                          style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 13 }}
+                        />
+                      </div>
                     </div>
                   </div>
                 );
@@ -168,69 +262,25 @@ export default function DiarioClasseInstrutorPage() {
           )}
         </SectionCard>
 
-        <SectionCard title="Percepção do Instrutor & Feedback do Processo">
-          <div style={{ display: "grid", gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Clima / Engajamento da Turma</label>
-              <select 
-                value={percepcao.clima} 
-                onChange={e => setPercepcao({...percepcao, clima: e.target.value})}
-                style={inputStyle}
-              >
-                <option value="excelente">Excelente - Participativa e engajada</option>
-                <option value="bom">Bom - Turma receptiva e atenta</option>
-                <option value="neutro">Neutro - Participação dentro da média</option>
-                <option value="baixo">Baixo engajamento / Desmotivada</option>
-                <option value="dificuldade">Alta dificuldade técnica / Resistência</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={labelStyle}>Dificuldades ou Pontos de Atenção Identificados</label>
-              <textarea 
-                rows={2}
-                placeholder="Ex: Alunos com dúvida na ferramenta X, tempo curto para o exercício..."
-                value={percepcao.dificuldades}
-                onChange={e => setPercepcao({...percepcao, dificuldades: e.target.value})}
-                style={{ ...inputStyle, width: "100%", fontFamily: "inherit" }}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <button 
-                type="button"
-                onClick={gerarFeedbackProcesso}
-                disabled={percepcao.gerandoFeedback}
-                style={{ height: 36, padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, background: colors.surfaceMuted, color: colors.textPrimary, fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-              >
-                {percepcao.gerandoFeedback ? "Gerando resumo..." : "🤖 Gerar Feedback do Processo (IA)"}
-              </button>
-            </div>
-
-            {percepcao.feedbackGerado && (
-              <div style={{ padding: 12, borderRadius: radius.md, background: "#eff6ff", border: "1px solid #bfdbfe", fontSize: 13, color: "#1e40af" }}>
-                <strong>Resumo e Feedback do Processo:</strong>
-                <p style={{ margin: "4px 0 0" }}>{percepcao.feedbackGerado}</p>
-              </div>
-            )}
-          </div>
-        </SectionCard>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        {/* Botão de Ação Final */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 10 }}>
           <button
             type="button"
-            onClick={salvarDiario}
-            disabled={salvando}
-            style={{ height: 40, padding: "0 24px", borderRadius: radius.sm, border: "none", background: colors.primary, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+            onClick={() => router.back()}
+            style={{ padding: "12px 20px", borderRadius: 10, background: "#e2e8f0", color: "#334155", fontWeight: 700, border: "none", cursor: "pointer" }}
           >
-            {salvando ? "Salvando diário..." : "Salvar Diário e Percepção"}
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            style={{ padding: "12px 24px", borderRadius: 10, background: "#2563eb", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", opacity: submitting ? 0.7 : 1 }}
+          >
+            {submitting ? "Salvando Diário..." : "Salvar Diário de Classe"}
           </button>
         </div>
-      </div>
+
+      </form>
     </PortalShell>
   );
 }
-
-const inputStyle = { width: "100%", padding: "9px 12px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 13, background: "#fff" };
-const labelStyle = { display: "block", fontSize: 13, fontWeight: 700, color: colors.textSecondary, marginBottom: 6 };
-const alertBox = (bg, col) => ({ padding: 12, borderRadius: radius.md, background: bg, color: col, fontSize: 13, fontWeight: 700 });
