@@ -7,7 +7,6 @@ import { clearSession, getStoredUser, hasSomeRole, hasOceanAccess } from "../ser
 
 const menuItems = [
   { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/instrutor", label: "Painel do Instrutor", icon: "👨‍🏫", roles: ["instrutor", "coordenador"] }, // <--- Adicionado aqui
   { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor"] },
   { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "🌊", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
   { href: "/necessidades", label: "Necessidades", icon: "🎯", roles: ["coordenador", "supervisor", "superintendente"] },
