@@ -322,18 +322,18 @@ export default function DashboardPage() {
 
           {/* Grid de KPIs / Métricas com Indicador de Meta de Presença */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-            <MetricaCard valor={fmt(kpis.treinamentos || 0)} label="Turmas no Recorte" cor={chart.blue} pct={100} />
+            <MetricaCard valor={fmt(kpis.treinamentos || 0)} label="Turmas no Recorte" cor={chart.blue} pct={100} icon="📊" />
             <MetricaCard 
               valor={`${fmt(kpis.taxa_presenca || 0)}%`} 
               label={`Presença Consolidada (Meta: ${META_PRESENCA_SLA}%)`} 
               cor={Number(kpis.taxa_presenca || 0) >= META_PRESENCA_SLA ? colors.success : colors.warning} 
               pct={Number(kpis.taxa_presenca || 0)} 
-             " 
+              icon="🎯" 
             />
-            <MetricaCard valor={fmt(kpis.pendentes || 0)} label="Pendências em Aberto" cor={colors.warning} pct={Math.min(Number(kpis.pendentes || 0) * 10, 100)} />
-            <MetricaCard valor={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} label="Taxa de Execução" cor={chart.purple} pct={Number(kpis.taxa_execucao_diaria || 0)} />
+            <MetricaCard valor={fmt(kpis.pendentes || 0)} label="Pendências em Aberto" cor={colors.warning} pct={Math.min(Number(kpis.pendentes || 0) * 10, 100)} icon="⚠️" />
+            <MetricaCard valor={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} label="Taxa de Execução" cor={chart.purple} pct={Number(kpis.taxa_execucao_diaria || 0)} icon="⚡" />
             {nps.total_avaliacoes > 0 && (
-              <MetricaCard valor={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} label={`NPS Médio (${fmt(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} pct={75} />
+              <MetricaCard valor={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} label={`NPS Médio (${fmt(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} pct={75} icon="⭐" />
             )}
           </div>
 
