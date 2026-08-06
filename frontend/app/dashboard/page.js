@@ -30,14 +30,14 @@ function parseModalidade(descricao, modalidade) {
   const parsed = String(match?.[1] || "").trim().toLowerCase();
   if (parsed === "presencial") return "Presencial";
   if (parsed === "online") return "Online";
-  return "-";
+  return "Presencial";
 }
 
 function getBadgeStyleByTax(value) {
   const number = Number(value || 0);
-  if (number >= 90) return { background: colors.successLight, color: colors.successText };
-  if (number >= 80) return { background: colors.warningLight, color: colors.warningText };
-  return { background: colors.dangerLight, color: colors.dangerText };
+  if (number >= 90) return { background: colors.successLight, color: colors.successText, border: `1px solid rgba(16, 185, 129, 0.2)` };
+  if (number >= 80) return { background: colors.warningLight, color: colors.warningText, border: `1px solid rgba(245, 158, 11, 0.2)` };
+  return { background: colors.dangerLight, color: colors.dangerText, border: `1px solid rgba(239, 68, 68, 0.2)` };
 }
 
 export default function DashboardPage() {
@@ -144,45 +144,46 @@ export default function DashboardPage() {
 
   return (
     <PortalShell>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "-24px -24px 0" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 0, margin: "-24px -24px 0", background: "#F8FAFC", minHeight: "100vh" }}>
 
-        {/* Pulso operacional no topo, alinhado ao padrão da página Início */}
+        {/* Pulso operacional superior estilo SaaS */}
         {ultimasTurmas.length > 0 && (
-          <div style={{ background: colors.navySoft, padding: "12px 24px", display: "flex", alignItems: "center", gap: 16, overflowX: "auto" }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: "#8B93A7", textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap", flexShrink: 0 }}>
-              Pulso do painel
+          <div style={{ background: "#0F172A", padding: "10px 24px", display: "flex", alignItems: "center", gap: 16, overflowX: "auto", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: ".1em", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#38BDF8", display: "inline-block" }} /> Live Pulse
             </span>
             {ultimasTurmas.slice(0, 8).map((t) => {
               const status = normalizeStatus(t.status_canonico || t.status);
-              const dotColor = status === "Planejada" ? colors.warning : status === "Em andamento" || status === "Concluída" ? colors.success : "#465065";
+              const dotColor = status === "Planejada" ? colors.warning : status === "Em andamento" || status === "Concluída" ? colors.success : "#64748B";
               return (
-                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#DCE0EA", whiteSpace: "nowrap", flexShrink: 0 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
-                  {t.tema} · {t.cliente} — {status}
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#E2E8F0", whiteSpace: "nowrap", flexShrink: 0, background: "rgba(255,255,255,0.04)", padding: "3px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+                  <strong style={{ fontWeight: 600 }}>{t.tema}</strong> <span style={{ color: "#94A3B8" }}>({t.cliente})</span>
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* Cabeçalho da página */}
-        <div style={{ padding: "26px 24px 4px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        {/* Header Principal da Página */}
+        <div style={{ padding: "28px 24px 16px", background: "#fff", borderBottom: `1px solid ${colors.border}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
             <div>
-              <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: colors.textPrimary, letterSpacing: "-.01em" }}>
-                Visão consolidada, {primeiroNome}.
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ background: "rgba(56, 189, 248, 0.1)", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>Workspace Analytics</span>
+                <span style={{ fontSize: 12, color: colors.textMuted }}>• Atualizado em tempo real</span>
+              </div>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>
+                Dashboard Executivo
               </h1>
-              <p style={{ margin: "6px 0 20px", fontSize: 13.5, color: colors.textSecondary }}>
-                Filtre, compare e analise os indicadores de desempenho e presença da operação.
-              </p>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 10 }}>
               <button
                 onClick={exportarParaCSV}
                 style={{
-                  border: `1px solid ${colors.border}`, background: "#fff", color: colors.textPrimary,
-                  borderRadius: radius.sm, padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13,
-                  display: "inline-flex", alignItems: "center", gap: 6
+                  border: `1px solid ${colors.border}`, background: "#fff", color: "#0F172A",
+                  borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 12.5,
+                  display: "inline-flex", alignItems: "center", gap: 6, boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
                 }}
               >
                 📥 Exportar CSV
@@ -190,25 +191,24 @@ export default function DashboardPage() {
               <button
                 onClick={() => setFilters({ cliente: "", instrutor: "", supervisor: "", status: "", modalidade: "", data_inicio: "", data_fim: "" })}
                 style={{
-                  border: `1px solid ${colors.border}`, background: "#fff", color: colors.textSecondary,
-                  borderRadius: radius.sm, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 13
+                  border: `1px solid ${colors.border}`, background: "#F1F5F9", color: "#475569",
+                  borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 12.5
                 }}
               >
-                Limpar filtros
+                Limpar Filtros
               </button>
             </div>
           </div>
 
           {erro && (
-            <div style={{ background: colors.dangerLight, color: colors.dangerText, borderRadius: radius.sm, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>
+            <div style={{ background: colors.dangerLight, color: colors.dangerText, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginTop: 16 }}>
               {erro}
             </div>
           )}
 
-          {/* Bloco de Filtros em Grade Harmoniosa */}
-          <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 16, padding: 18, marginBottom: 24 }}>
-            <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: colors.textPrimary }}>Filtros do painel</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+          {/* Painel de Filtros Avançados (Estilo Toolbar SaaS) */}
+          <div style={{ background: "#F8FAFC", border: `1px solid ${colors.border}`, borderRadius: 12, padding: 14, marginTop: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
               <label style={fieldLabel}>
                 Cliente
                 <select style={inputStyle} value={filters.cliente} onChange={(e) => setFilters((prev) => ({ ...prev, cliente: e.target.value }))}>
@@ -262,160 +262,184 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Bloco de Métricas Principais (Estilo Início) */}
-        <div style={{ padding: "0 24px 18px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-          <Metrica valor={fmt(kpis.treinamentos || 0)} label="Turmas no recorte" cor={chart.blue} pct={100} />
-          <Metrica valor={`${fmt(kpis.taxa_presenca || 0)}%`} label="Presença consolidada" cor={colors.success} pct={Number(kpis.taxa_presenca || 0)} />
-          <Metrica valor={fmt(kpis.pendentes || 0)} label="Pendências em aberto" cor={colors.warning} pct={Math.min(Number(kpis.pendentes || 0) * 10, 100)} />
-          <Metrica valor={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} label="Taxa de execução" cor={chart.purple} pct={Number(kpis.taxa_execucao_diaria || 0)} />
-          {nps.total_avaliacoes > 0 && (
-            <Metrica valor={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} label={`NPS médio (${fmt(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} pct={75} />
-          )}
-        </div>
+        {/* Conteúdo Principal com espaçamento limpo */}
+        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20 }}>
 
-        {/* Seções de Desempenho por Cliente e Instrutor */}
-        <div style={{ padding: "8px 24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
-          {/* Clientes */}
-          <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 16, padding: 20 }}>
-            <h3 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800, color: colors.textPrimary }}>Saúde por cliente</h3>
-            <p style={{ margin: "0 0 16px", fontSize: 12, color: colors.textMuted }}>Comparativo de presença por conta.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {presencaPorCliente.length ? presencaPorCliente.map((item) => {
-                const badge = getBadgeStyleByTax(item.taxa_presenca);
-                const corCli = corDoCliente(item.cliente);
-                return (
-                  <div key={item.cliente} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colors.border}` }}>
-                    <div>
-                      <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 10.5, fontWeight: 700, background: corCli.bg, color: corCli.text }}>{item.cliente}</span>
-                      <p style={{ margin: "4px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{fmt(item.total_treinados)} base · {fmt(item.presentes)} presentes</p>
+          {/* Grid de KPIs / Métricas principais (Estilo Bento Grid SaaS) */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
+            <MetricaCard valor={fmt(kpis.treinamentos || 0)} label="Turmas no Recorte" cor={chart.blue} pct={100} icon="📊" />
+            <MetricaCard valor={`${fmt(kpis.taxa_presenca || 0)}%`} label="Presença Consolidada" cor={colors.success} pct={Number(kpis.taxa_presenca || 0)} icon="🎯" />
+            <MetricaCard valor={fmt(kpis.pendentes || 0)} label="Pendências em Aberto" cor={colors.warning} pct={Math.min(Number(kpis.pendentes || 0) * 10, 100)} icon="⚠️" />
+            <MetricaCard valor={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} label="Taxa de Execução" cor={chart.purple} pct={Number(kpis.taxa_execucao_diaria || 0)} icon="⚡" />
+            {nps.total_avaliacoes > 0 && (
+              <MetricaCard valor={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} label={`NPS Médio (${fmt(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} pct={75} icon="⭐" />
+            )}
+          </div>
+
+          {/* Seção Dividida: Saúde por Cliente & Ranking de Instrutores */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
+            
+            {/* Card Clientes */}
+            <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Saúde por Cliente</h3>
+                  <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textMuted }}>Volume e taxa de presença corporativa</p>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: colors.textMuted, background: "#F1F5F9", padding: "3px 8px", borderRadius: 6 }}>Top Contas</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {presencaPorCliente.length ? presencaPorCliente.map((item) => {
+                  const badge = getBadgeStyleByTax(item.taxa_presenca);
+                  const corCli = corDoCliente(item.cliente);
+                  return (
+                    <div key={item.cliente} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#FAFAFA", border: `1px solid ${colors.border}` }}>
+                      <div>
+                        <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCli.bg, color: corCli.text }}>{item.cliente}</span>
+                        <p style={{ margin: "4px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{fmt(item.total_treinados)} base • {fmt(item.presentes)} presentes</p>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 8, ...badge }}>
+                        {fmt(item.taxa_presenca)}%
+                      </span>
                     </div>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, ...badge }}>
-                      {fmt(item.taxa_presenca)}%
-                    </span>
-                  </div>
-                );
-              }) : <p style={{ fontSize: 13, color: colors.textMuted }}>Nenhum dado por cliente no recorte.</p>}
+                  );
+                }) : <p style={{ fontSize: 13, color: colors.textMuted, padding: "12px 0" }}>Nenhum dado por cliente no recorte.</p>}
+              </div>
             </div>
-          </div>
 
-          {/* Instrutores */}
-          <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 16, padding: 20 }}>
-            <h3 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800, color: colors.textPrimary }}>Instrutores no recorte</h3>
-            <p style={{ margin: "0 0 16px", fontSize: 12, color: colors.textMuted }}>Produtividade e presença média.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {rankingInstrutores.length ? rankingInstrutores.map((item) => {
-                const badge = getBadgeStyleByTax(item.taxa_presenca);
-                return (
-                  <div key={item.instrutor} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colors.border}` }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: colors.textPrimary }}>{item.instrutor}</p>
-                      <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{fmt(item.total_turmas)} turma(s) · {fmt(item.total_treinados)} base</p>
+            {/* Card Instrutores */}
+            <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Performance de Instrutores</h3>
+                  <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textMuted }}>Efetividade em campo e turmas ministradas</p>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: colors.textMuted, background: "#F1F5F9", padding: "3px 8px", borderRadius: 6 }}>Ranking</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {rankingInstrutores.length ? rankingInstrutores.map((item) => {
+                  const badge = getBadgeStyleByTax(item.taxa_presenca);
+                  return (
+                    <div key={item.instrutor} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#FAFAFA", border: `1px solid ${colors.border}` }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{item.instrutor}</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{fmt(item.total_turmas)} turma(s) • {fmt(item.total_treinados)} base</p>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 8, ...badge }}>
+                        {fmt(item.taxa_presenca)}%
+                      </span>
                     </div>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, ...badge }}>
-                      {fmt(item.taxa_presenca)}%
-                    </span>
-                  </div>
-                );
-              }) : <p style={{ fontSize: 13, color: colors.textMuted }}>Nenhum dado de instrutor no recorte.</p>}
+                  );
+                }) : <p style={{ fontSize: 13, color: colors.textMuted, padding: "12px 0" }}>Nenhum dado de instrutor no recorte.</p>}
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Tabela de Turmas Recentes */}
-        <div style={{ padding: "8px 24px 40px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: colors.textPrimary }}>Turmas recentes</h2>
-              <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.textMuted }}>Clique em uma linha para detalhar a frequência individual.</p>
-            </div>
           </div>
 
-          {loading && <p style={{ fontSize: 13, color: colors.textSecondary }}>Carregando turmas...</p>}
-          {!loading && ultimasTurmas.length === 0 && (
-            <p style={{ fontSize: 13, color: colors.textMuted }}>Nenhuma turma encontrada com os filtros atuais.</p>
-          )}
-
-          {ultimasTurmas.length > 0 && (
-            <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 16, overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
-                <thead>
-                  <tr style={{ background: colors.navySoft }}>
-                    <th style={th}>Turma</th>
-                    <th style={th}>Cliente</th>
-                    <th style={th}>Instrutor</th>
-                    <th style={th}>Modalidade</th>
-                    <th style={th}>Status</th>
-                    <th style={th}>Data</th>
-                    <th style={th}>Base</th>
-                    <th style={th}>Presença</th>
-                    <th style={th}>Pendências</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ultimasTurmas.map((item) => {
-                    const corCli = corDoCliente(item.cliente);
-                    const statusName = normalizeStatus(item.status_canonico || item.status);
-                    return (
-                      <tr key={item.id} onClick={() => abrirDrillDown(item)} style={{ cursor: "pointer", borderBottom: `1px solid ${colors.border}` }} title="Clique para ver a frequência">
-                        <td style={td}><strong style={{ color: colors.textPrimary }}>{item.tema || "-"}</strong></td>
-                        <td style={td}><span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 10.5, fontWeight: 700, background: corCli.bg, color: corCli.text }}>{item.cliente || "-"}</span></td>
-                        <td style={td}>{item.instrutor || "-"}</td>
-                        <td style={td}>{parseModalidade(item.descricao, item.modalidade)}</td>
-                        <td style={td}>{statusName}</td>
-                        <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
-                        <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
-                        <td style={td}>
-                          {item.taxa_presenca > 0 ? (
-                            <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, ...getBadgeStyleByTax(item.taxa_presenca) }}>
-                              {item.taxa_presenca}%
-                            </span>
-                          ) : "—"}
-                        </td>
-                        <td style={td}>{fmt(item.pendentes || 0)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {/* Tabela de Turmas Recentes com design refinado */}
+          <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Turmas Recentes & Ativas</h3>
+                <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textMuted }}>Clique em qualquer linha para abrir o painel de frequência individual detalhado.</p>
+              </div>
             </div>
-          )}
+
+            {loading && <p style={{ fontSize: 13, color: colors.textSecondary, padding: "20px 0" }}>Carregando dados da tabela...</p>}
+            {!loading && ultimasTurmas.length === 0 && (
+              <p style={{ fontSize: 13, color: colors.textMuted, padding: "20px 0" }}>Nenhuma turma encontrada com os filtros atuais.</p>
+            )}
+
+            {ultimasTurmas.length > 0 && (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 850 }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC", borderBottom: `1px solid ${colors.border}` }}>
+                      <th style={th}>Tema / Turma</th>
+                      <th style={th}>Cliente</th>
+                      <th style={th}>Instrutor</th>
+                      <th style={th}>Modalidade</th>
+                      <th style={th}>Status</th>
+                      <th style={th}>Data</th>
+                      <th style={th}>Base</th>
+                      <th style={th}>Presença</th>
+                      <th style={th}>Pendências</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ultimasTurmas.map((item) => {
+                      const corCli = corDoCliente(item.cliente);
+                      const statusName = normalizeStatus(item.status_canonico || item.status);
+                      return (
+                        <tr 
+                          key={item.id} 
+                          onClick={() => abrirDrillDown(item)} 
+                          style={{ cursor: "pointer", borderBottom: `1px solid ${colors.border}`, transition: "background 0.1s" }} 
+                          onMouseEnter={(e) => e.currentTarget.style.background = "#F8FAFC"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                          title="Clique para inspecionar frequência"
+                        >
+                          <td style={td}><strong style={{ color: "#0F172A", fontWeight: 600 }}>{item.tema || "-"}</strong></td>
+                          <td style={td}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCli.bg, color: corCli.text }}>{item.cliente || "-"}</span></td>
+                          <td style={td}>{item.instrutor || "-"}</td>
+                          <td style={td}><span style={{ fontSize: 11.5, color: colors.textSecondary, background: "#F1F5F9", padding: "2px 6px", borderRadius: 4 }}>{parseModalidade(item.descricao, item.modalidade)}</span></td>
+                          <td style={td}><span style={{ fontSize: 12, fontWeight: 600 }}>{statusName}</span></td>
+                          <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
+                          <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
+                          <td style={td}>
+                            {item.taxa_presenca > 0 ? (
+                              <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11.5, fontWeight: 700, ...getBadgeStyleByTax(item.taxa_presenca) }}>
+                                {item.taxa_presenca}%
+                              </span>
+                            ) : "—"}
+                          </td>
+                          <td style={td}><span style={{ fontWeight: item.pendentes > 0 ? 700 : 400, color: item.pendentes > 0 ? colors.warningText : colors.textSecondary }}>{fmt(item.pendentes || 0)}</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
         </div>
 
       </div>
 
-      {/* Modal de Drill-down de Frequência Individual */}
+      {/* Modal de Drill-down Estilo Drawer / Pop-up Moderno */}
       {drillDown && (
         <div
           onClick={() => setDrillDown(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 520, width: "100%", maxHeight: "80vh", overflowY: "auto", border: `1px solid ${colors.border}` }}
+            style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 540, width: "100%", maxHeight: "82vh", overflowY: "auto", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)" }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, borderBottom: `1px solid ${colors.border}`, paddingBottom: 12 }}>
               <div>
-                <p style={{ margin: 0, fontSize: 12, color: colors.textMuted }}>Frequência por pessoa</p>
-                <p style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 800, color: colors.textPrimary }}>{drillDown.turma?.tema || "Turma"}</p>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: "#0284C7", background: "rgba(56, 189, 248, 0.1)", padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>Detalhes da Turma</span>
+                <p style={{ margin: "6px 0 0", fontSize: 17, fontWeight: 800, color: "#0F172A" }}>{drillDown.turma?.tema || "Turma Selecionada"}</p>
               </div>
-              <button onClick={() => setDrillDown(null)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: colors.textSecondary }}>✕</button>
+              <button onClick={() => setDrillDown(null)} style={{ border: "none", background: "#F1F5F9", width: 28, height: 28, borderRadius: "50%", fontSize: 14, cursor: "pointer", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
             </div>
 
-            {drillDown.loading && <p style={{ fontSize: 13, color: colors.textSecondary }}>Carregando dados individuais...</p>}
-            {drillDown.erro && <p style={{ fontSize: 13, color: colors.dangerText }}>{drillDown.erro}</p>}
+            {drillDown.loading && <p style={{ fontSize: 13, color: colors.textSecondary, padding: "20px 0", textAlign: "center" }}>Carregando dados individuais de frequência...</p>}
+            {drillDown.erro && <p style={{ fontSize: 13, color: colors.dangerText, padding: "10px 0" }}>{drillDown.erro}</p>}
             {!drillDown.loading && !drillDown.erro && drillDown.itens.length === 0 && (
-              <p style={{ fontSize: 13, color: colors.textMuted }}>Sem registros de frequência individual para esta turma.</p>
+              <p style={{ fontSize: 13, color: colors.textMuted, padding: "20px 0", textAlign: "center" }}>Sem registros individuais encontrados para esta turma.</p>
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {drillDown.itens.map((pessoa, idx) => (
-                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colors.border}` }}>
+                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: "#F8FAFC", border: `1px solid ${colors.border}` }}>
                   <div>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>{pessoa.treinando_nome}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: colors.textMuted }}>{pessoa.presentes} presentes · {pessoa.ausentes} ausentes</p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#0F172A" }}>{pessoa.treinando_nome}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: colors.textMuted }}>{pessoa.presentes} presentes • {pessoa.ausentes} ausentes</p>
                   </div>
                   <span style={{
-                    fontSize: 12, fontWeight: 700, borderRadius: 999, padding: "4px 10px",
+                    fontSize: 12, fontWeight: 700, borderRadius: 8, padding: "4px 10px",
                     ...getBadgeStyleByTax(pessoa.frequencia_percentual)
                   }}>
                     {pessoa.frequencia_percentual}%
@@ -430,19 +454,24 @@ export default function DashboardPage() {
   );
 }
 
-function Metrica({ valor, label, cor, pct }) {
+function MetricaCard({ valor, label, cor, pct, icon }) {
   return (
-    <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 16, padding: 16 }}>
-      <p style={{ margin: 0, fontSize: 24, fontWeight: 800, color: colors.textPrimary, letterSpacing: "-.01em" }}>{valor}</p>
-      <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{label}</p>
-      <div style={{ height: 4, borderRadius: 999, background: colors.border, marginTop: 10, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: cor }} />
+    <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.02)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+          <p style={{ margin: 0, fontSize: 11.5, fontWeight: 600, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</p>
+          <span style={{ fontSize: 16 }}>{icon}</span>
+        </div>
+        <p style={{ margin: 0, fontSize: 26, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>{valor}</p>
+      </div>
+      <div style={{ height: 4, borderRadius: 999, background: "#F1F5F9", marginTop: 14, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: cor, borderRadius: 999 }} />
       </div>
     </div>
   );
 }
 
-const fieldLabel = { display: "grid", gap: 4, color: colors.textSecondary, fontSize: 11.5, fontWeight: 700 };
-const inputStyle = { width: "100%", border: `1px solid ${colors.border}`, borderRadius: 9, padding: "8px 10px", background: "#fff", color: colors.textPrimary, fontSize: 12.5 };
-const th = { textAlign: "left", padding: "12px 14px", fontSize: 11.5, textTransform: "uppercase", letterSpacing: ".04em", color: colors.textSecondary, borderBottom: `1px solid ${colors.border}` };
-const td = { padding: "12px 14px", color: colors.textSecondary, fontSize: 13 };
+const fieldLabel = { display: "grid", gap: 3, color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" };
+const inputStyle = { width: "100%", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "7px 10px", background: "#fff", color: "#0F172A", fontSize: 12, outline: "none" };
+const th = { textAlign: "left", padding: "12px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: colors.textSecondary, fontWeight: 700 };
+const td = { padding: "12px 14px", color: colors.textSecondary, fontSize: 12.5 };
