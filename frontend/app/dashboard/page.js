@@ -190,7 +190,7 @@ export default function DashboardPage() {
     }
   }
 
-  // Função de exportação para CSV das turmas presentes no recorte atual
+  // Função completa para exportação do CSV com codificação correta para Excel (UTF-8 com BOM)
   function exportarParaCSV() {
     const turmasParaExportar = dados?.ultimas_turmas || [];
     if (turmasParaExportar.length === 0) {
@@ -213,10 +213,11 @@ export default function DashboardPage() {
       item.pendentes || 0
     ]);
 
-    const csvContent = "data:text/csv;charset=utf-8," + [cabecalho.join(";"), ...linhas.map(e => e.join(";"))].join("\n");
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = "\uFEFF" + [cabecalho.join(";"), ...linhas.map(e => e.join(";"))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", `relatorio_dashboard_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -265,9 +266,9 @@ export default function DashboardPage() {
             title="Filtros do painel"
             subtitle="Escolha o recorte que faz mais sentido para a sua leitura e refine a análise sem perder contexto."
             action={
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
-                  style={buttonSecondary}
+                  style={buttonActionPrimary}
                   onClick={exportarParaCSV}
                 >
                   📥 Exportar CSV
@@ -471,7 +472,7 @@ export default function DashboardPage() {
             </SectionCard>
           </div>
 
-          <SectionCard title="Turmas recentes" subtitle="As últimas turmas.">
+          <SectionCard title="Turmas recentes" subtitle="As últimas turmas com base nos filtros aplicados. Clique em uma linha para detalhar a frequência.">
             {ultimasTurmas.length ? (
               <div style={{ overflowX: "auto" }}>
                 <table style={table}>
@@ -579,6 +580,7 @@ const errorBox = { background: "#fef2f2", border: "1px solid #fecaca", color: "#
 const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 };
 const fieldLabel = { display: "grid", gap: 6, color: "#334155", fontSize: 13, fontWeight: 700 };
 const inputStyle = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 12, padding: "10px 12px", background: "#fff", color: "#0f172a" };
+const buttonActionPrimary = { border: `1px solid ${colors.primary}`, background: colors.primary, color: "#fff", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
 const buttonSecondary = { border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
 const kpiGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
 const twoColumns = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
