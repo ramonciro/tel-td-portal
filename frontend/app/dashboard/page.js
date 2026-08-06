@@ -127,7 +127,7 @@ export default function DashboardPage() {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
-  const [drillDown, setDrillDown] = useState(null); // { turma, itens, loading }
+  const [drillDown, setDrillDown] = useState(null);
   const [alertas, setAlertas] = useState({ turmasCriticas: [], necessidadesAtrasadas: [], chamadasPendentes: [] });
   const [filters, setFilters] = useState({
     cliente: "",
@@ -139,9 +139,6 @@ export default function DashboardPage() {
     data_fim: "",
   });
 
-  // alertas: carregados uma vez, independente dos filtros do KPI abaixo —
-  // "o que precisa de atenção hoje" não deveria mudar conforme você filtra
-  // a tabela.
   useEffect(() => {
     async function carregarAlertas() {
       try {
@@ -157,9 +154,7 @@ export default function DashboardPage() {
           necessidadesAtrasadas: necessidades.filter((n) => n.status_calculado === "atrasada"),
           chamadasPendentes: turmas.filter((t) => t.status_turma === "Chamada pendente"),
         });
-      } catch {
-        // alertas são um complemento — se falhar, o resto do dashboard segue normal
-      }
+      } catch {}
     }
     carregarAlertas();
   }, []);
@@ -193,6 +188,39 @@ export default function DashboardPage() {
     } catch (error) {
       setDrillDown({ turma: item, itens: [], loading: false, erro: error.message });
     }
+  }
+
+  // Função de exportação para CSV das turmas presentes no recorte atual
+  function exportarParaCSV() {
+    const turmasParaExportar = dados?.ultimas_turmas || [];
+    if (turmasParaExportar.length === 0) {
+      alert("Não há dados de turmas disponíveis para exportar com os filtros atuais.");
+      return;
+    }
+
+    const cabecalho = ["ID", "Turma", "Cliente", "Instrutor", "Modalidade", "Status", "Data", "Base", "Presenca (%)", "Presentes", "Pendentes"];
+    const linhas = turmasParaExportar.map(item => [
+      item.id,
+      `"${(item.tema || "").replace(/"/g, '""')}"`,
+      `"${(item.cliente || "").replace(/"/g, '""')}"`,
+      `"${(item.instrutor || "").replace(/"/g, '""')}"`,
+      parseModalidade(item.descricao, item.modalidade),
+      normalizeStatus(item.status_canonico || item.status),
+      formatDate(item.data || item.data_inicio),
+      item.base_ativa || item.treinados || 0,
+      item.taxa_presenca || 0,
+      item.presentes || 0,
+      item.pendentes || 0
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [cabecalho.join(";"), ...linhas.map(e => e.join(";"))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `relatorio_dashboard_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   const kpis = dados?.kpis || {};
@@ -237,22 +265,30 @@ export default function DashboardPage() {
             title="Filtros do painel"
             subtitle="Escolha o recorte que faz mais sentido para a sua leitura e refine a análise sem perder contexto."
             action={
-              <button
-                style={buttonSecondary}
-                onClick={() =>
-                  setFilters({
-                    cliente: "",
-                    instrutor: "",
-                    supervisor: "",
-                    status: "",
-                    modalidade: "",
-                    data_inicio: "",
-                    data_fim: "",
-                  })
-                }
-              >
-                Limpar filtros
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  style={buttonSecondary}
+                  onClick={exportarParaCSV}
+                >
+                  📥 Exportar CSV
+                </button>
+                <button
+                  style={buttonSecondary}
+                  onClick={() =>
+                    setFilters({
+                      cliente: "",
+                      instrutor: "",
+                      supervisor: "",
+                      status: "",
+                      modalidade: "",
+                      data_inicio: "",
+                      data_fim: "",
+                    })
+                  }
+                >
+                  Limpar filtros
+                </button>
+              </div>
             }
           >
             <div style={filtersGrid}>
@@ -540,13 +576,6 @@ function MiniStat({ label, value }) {
 
 const loadingBox = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, color: "#475569", fontWeight: 700 };
 const errorBox = { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 18, padding: 16, fontWeight: 700 };
-const heroWrap = { display: "grid", gridTemplateColumns: "1.45fr .9fr", gap: 16 };
-const heroMain = { background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)", borderRadius: 24, padding: 24, color: "#ffffff", boxShadow: "0 14px 30px rgba(29, 78, 216, 0.18)" };
-const heroBadge = { display: "inline-block", padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,.14)", fontSize: 12, fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase" };
-const heroTitle = { fontSize: 30, lineHeight: 1.15, margin: "12px 0 10px" };
-const heroText = { color: "#dbeafe", lineHeight: 1.7, margin: 0 };
-const heroMiniGrid = { display: "grid", gap: 12 };
-const heroMiniCard = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, display: "grid", gap: 4, boxShadow: "0 10px 24px rgba(15,23,42,.05)" };
 const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 };
 const fieldLabel = { display: "grid", gap: 6, color: "#334155", fontSize: 13, fontWeight: 700 };
 const inputStyle = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 12, padding: "10px 12px", background: "#fff", color: "#0f172a" };
@@ -580,12 +609,6 @@ const th = { textAlign: "left", padding: "12px 14px", fontSize: 12, textTransfor
 const td = { padding: "12px 14px", borderBottom: "1px solid #eef2f7", color: "#334155", fontSize: 14 };
 const emptyState = { padding: 18, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", color: "#64748b" };
 
-// ---------------------------------------------------------------------------
-// Bloco de alertas — "o que precisa de atenção hoje", antes de qualquer
-// filtro. A ideia é que o Dashboard avise, em vez de esperar você perguntar.
-// As 3 fontes já existiam espalhadas no sistema (presenca-resumo e
-// necessidades) — isso só junta num único lugar de leitura rápida.
-// ---------------------------------------------------------------------------
 function AlertasDashboard({ alertas, onAbrirTurma }) {
   const cards = [
     {
