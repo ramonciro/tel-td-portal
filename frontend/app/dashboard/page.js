@@ -144,11 +144,11 @@ export default function DashboardPage() {
 
   return (
     <PortalShell>
-      <div style={{ display: "flex", flexDirection: "column", gap: 0, margin: "-24px -24px 0", background: "#F8FAFC", minHeight: "100vh" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 0, margin: "-24px -24px 0", background: "#F8FAFC", minHeight: "100vh", overflowX: "hidden", width: "calc(100% + 48px)" }}>
 
         {/* Pulso operacional superior estilo SaaS */}
         {ultimasTurmas.length > 0 && (
-          <div style={{ background: "#0F172A", padding: "10px 24px", display: "flex", alignItems: "center", gap: 16, overflowX: "auto", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ background: "#0F172A", padding: "10px 24px", display: "flex", alignItems: "center", gap: 16, overflowX: "auto", borderBottom: "1px solid rgba(255,255,255,0.08)", width: "100%", boxSizing: "border-box" }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: ".1em", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#38BDF8", display: "inline-block" }} /> Live Pulse
             </span>
@@ -166,7 +166,7 @@ export default function DashboardPage() {
         )}
 
         {/* Header Principal da Página */}
-        <div style={{ padding: "28px 24px 16px", background: "#fff", borderBottom: `1px solid ${colors.border}` }}>
+        <div style={{ padding: "28px 24px 16px", background: "#fff", borderBottom: `1px solid ${colors.border}`, width: "100%", boxSizing: "border-box" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -174,7 +174,7 @@ export default function DashboardPage() {
                 <span style={{ fontSize: 12, color: colors.textMuted }}>• Atualizado em tempo real</span>
               </div>
               <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>
-                Dashboard Executivo
+                Dashboard Executivo, {primeiroNome}.
               </h1>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -263,7 +263,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Conteúdo Principal com espaçamento limpo */}
-        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20, width: "100%", boxSizing: "border-box" }}>
 
           {/* Grid de KPIs / Métricas principais (Estilo Bento Grid SaaS) */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
@@ -472,6 +472,6 @@ function MetricaCard({ valor, label, cor, pct, icon }) {
 }
 
 const fieldLabel = { display: "grid", gap: 3, color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" };
-const inputStyle = { width: "100%", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "7px 10px", background: "#fff", color: "#0F172A", fontSize: 12, outline: "none" };
+const inputStyle = { width: "100%", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "7px 10px", background: "#fff", color: "#0F172A", fontSize: 12, outline: "none", boxSizing: "border-box" };
 const th = { textAlign: "left", padding: "12px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: colors.textSecondary, fontWeight: 700 };
 const td = { padding: "12px 14px", color: colors.textSecondary, fontSize: 12.5 };
