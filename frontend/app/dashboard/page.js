@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import { apiFetch, getStoredUser } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
-import { colors, chart, corDoCliente, radius } from "../../lib/theme";
+import { colors, chart, corDoCliente } from "../../lib/theme";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -99,19 +99,27 @@ export default function DashboardPage() {
       return;
     }
 
-    const cabecalho = ["ID", "Turma", "Cliente", "Instrutor", "Modalidade", "Status", "Data", "Base", "Presenca (%)", "Presentes", "Pendentes"];
+    // Expandido com todas as colunas operacionais detalhadas solicitadas
+    const cabecalho = [
+      "ID", "Tema / Turma", "Cliente", "Instrutor", "Supervisor", 
+      "Modalidade", "Status", "Data", "Base Ativa / Treinados", 
+      "Presentes", "Ausentes", "Pendentes", "Taxa de Presença (%)"
+    ];
+
     const linhas = turmasParaExportar.map(item => [
       item.id,
       `"${(item.tema || "").replace(/"/g, '""')}"`,
       `"${(item.cliente || "").replace(/"/g, '""')}"`,
       `"${(item.instrutor || "").replace(/"/g, '""')}"`,
+      `"${(item.supervisor || "").replace(/"/g, '""')}"`,
       parseModalidade(item.descricao, item.modalidade),
       normalizeStatus(item.status_canonico || item.status),
       formatDate(item.data || item.data_inicio),
       item.base_ativa || item.treinados || 0,
-      item.taxa_presenca || 0,
       item.presentes || 0,
-      item.pendentes || 0
+      item.ausentes || 0,
+      item.pendentes || 0,
+      item.taxa_presenca || 0
     ]);
 
     const csvContent = "\uFEFF" + [cabecalho.join(";"), ...linhas.map(e => e.join(";"))].join("\n");
@@ -119,7 +127,7 @@ export default function DashboardPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `relatorio_dashboard_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `relatorio_executivo_treinamentos_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -170,7 +178,7 @@ export default function DashboardPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ background: "rgba(56, 189, 248, 0.1)", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>Analítico - Espaço de Trabalho</span>
+                <span style={{ background: "rgba(56, 189, 248, 0.1)", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>Workspace Analytics</span>
                 <span style={{ fontSize: 12, color: colors.textMuted }}>• Atualizado em tempo real</span>
               </div>
               <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>
@@ -186,7 +194,7 @@ export default function DashboardPage() {
                   display: "inline-flex", alignItems: "center", gap: 6, boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
                 }}
               >
-                📥 Exportar CSV
+                📥 Exportar Relatório Completo (CSV)
               </button>
               <button
                 onClick={() => setFilters({ cliente: "", instrutor: "", supervisor: "", status: "", modalidade: "", data_inicio: "", data_fim: "" })}
@@ -206,7 +214,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Painel de Filtros Avançados (Estilo Toolbar SaaS) */}
+          {/* Painel de Filtros Avançados */}
           <div style={{ background: "#F8FAFC", border: `1px solid ${colors.border}`, borderRadius: 12, padding: 14, marginTop: 20 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
               <label style={fieldLabel}>
@@ -262,17 +270,17 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Conteúdo Principal com espaçamento limpo */}
+        {/* Conteúdo Principal */}
         <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20, width: "100%", boxSizing: "border-box" }}>
 
-          {/* Grid de KPIs / Métricas principais (Estilo Bento Grid SaaS) */}
+          {/* Grid de KPIs / Métricas principais */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
             <MetricaCard valor={fmt(kpis.treinamentos || 0)} label="Turmas no Recorte" cor={chart.blue} pct={100} icon="📊" />
-            <MetricaCard valor={`${fmt(kpis.taxa_presenca || 0)}%`} label="Presença Consolidada" cor={colors.success} pct={Number(kpis.taxa_presenca || 0)} icon="🎯" />
-            <MetricaCard valor={fmt(kpis.pendentes || 0)} label="Pendências em Aberto" cor={colors.warning} pct={Math.min(Number(kpis.pendentes || 0) * 10, 100)} icon="⚠️" />
-            <MetricaCard valor={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} label="Taxa de Execução" cor={chart.purple} pct={Number(kpis.taxa_execucao_diaria || 0)} icon="⚡" />
+            <MetricaCard valor={`${fmt(kpis.taxa_presenca || 0)}%`} label="Presença Consolidada" cor={colors.success} pct={Number(kpis.taxa_presenca || 0)} />
+            <MetricaCard valor={fmt(kpis.pendentes || 0)} label="Pendências em Aberto" cor={colors.warning} pct={Math.min(Number(kpis.pendentes || 0) * 10, 100)} />
+            <MetricaCard valor={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} label="Taxa de Execução" cor={chart.purple} pct={Number(kpis.taxa_execucao_diaria || 0)} />
             {nps.total_avaliacoes > 0 && (
-              <MetricaCard valor={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} label={`NPS Médio (${fmt(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} pct={75} icon="⭐" />
+              <MetricaCard valor={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} label={`NPS Médio (${fmt(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} pct={75} />
             )}
           </div>
 
@@ -336,11 +344,11 @@ export default function DashboardPage() {
 
           </div>
 
-          {/* Tabela de Turmas Recentes com design refinado */}
+          {/* Tabela de Turmas Recentes & Detalhadas (Com Supervisor, Presentes e Ausentes visíveis) */}
           <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Turmas Recentes & Ativas</h3>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Turmas Recentes & Ativas (Visão Completa)</h3>
                 <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textMuted }}>Clique em qualquer linha para abrir o painel de frequência individual detalhado.</p>
               </div>
             </div>
@@ -352,16 +360,18 @@ export default function DashboardPage() {
 
             {ultimasTurmas.length > 0 && (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 850 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 960 }}>
                   <thead>
                     <tr style={{ background: "#F8FAFC", borderBottom: `1px solid ${colors.border}` }}>
                       <th style={th}>Tema / Turma</th>
                       <th style={th}>Cliente</th>
                       <th style={th}>Instrutor</th>
+                      <th style={th}>Supervisor</th>
                       <th style={th}>Modalidade</th>
                       <th style={th}>Status</th>
                       <th style={th}>Data</th>
                       <th style={th}>Base</th>
+                      <th style={th}>Pres./Aus.</th>
                       <th style={th}>Presença</th>
                       <th style={th}>Pendências</th>
                     </tr>
@@ -382,10 +392,16 @@ export default function DashboardPage() {
                           <td style={td}><strong style={{ color: "#0F172A", fontWeight: 600 }}>{item.tema || "-"}</strong></td>
                           <td style={td}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCli.bg, color: corCli.text }}>{item.cliente || "-"}</span></td>
                           <td style={td}>{item.instrutor || "-"}</td>
+                          <td style={td}><span style={{ color: colors.textSecondary, fontSize: 12 }}>{item.supervisor || "—"}</span></td>
                           <td style={td}><span style={{ fontSize: 11.5, color: colors.textSecondary, background: "#F1F5F9", padding: "2px 6px", borderRadius: 4 }}>{parseModalidade(item.descricao, item.modalidade)}</span></td>
                           <td style={td}><span style={{ fontSize: 12, fontWeight: 600 }}>{statusName}</span></td>
                           <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
                           <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
+                          <td style={td}>
+                            <span style={{ fontSize: 11.5, color: colors.textSecondary }}>
+                              <strong style={{ color: colors.successText }}>{fmt(item.presentes || 0)}</strong> / <span style={{ color: colors.dangerText }}>{fmt(item.ausentes || 0)}</span>
+                            </span>
+                          </td>
                           <td style={td}>
                             {item.taxa_presenca > 0 ? (
                               <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11.5, fontWeight: 700, ...getBadgeStyleByTax(item.taxa_presenca) }}>
@@ -407,7 +423,7 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* Modal de Drill-down Estilo Drawer / Pop-up Moderno */}
+      {/* Modal de Drill-down Detalhado */}
       {drillDown && (
         <div
           onClick={() => setDrillDown(null)}
@@ -421,6 +437,7 @@ export default function DashboardPage() {
               <div>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: "#0284C7", background: "rgba(56, 189, 248, 0.1)", padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>Detalhes da Turma</span>
                 <p style={{ margin: "6px 0 0", fontSize: 17, fontWeight: 800, color: "#0F172A" }}>{drillDown.turma?.tema || "Turma Selecionada"}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.textMuted }}>Instrutor: {drillDown.turma?.instrutor || "—"} | Cliente: {drillDown.turma?.cliente || "—"}</p>
               </div>
               <button onClick={() => setDrillDown(null)} style={{ border: "none", background: "#F1F5F9", width: 28, height: 28, borderRadius: "50%", fontSize: 14, cursor: "pointer", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
             </div>
