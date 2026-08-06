@@ -8,57 +8,57 @@ import { colors, chart, corDoCliente } from "../../lib/theme";
 
 const META_PRESENCA_SLA = 85;
 
-function fmt(n) {
+function formatarNumero(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function formatDate(value) {
-  if (!value) return "-";
+function formatarData(valor) {
+  if (!valor) return "-";
   try {
-    const dataStr = String(value).split("T")[0];
+    const dataStr = String(valor).split("T")[0];
     const partes = dataStr.split("-");
     if (partes.length === 3) {
       return `${partes[2]}/${partes[1]}/${partes[0]}`;
     }
-    return value;
+    return valor;
   } catch {
     return value;
   }
 }
 
-function normalizeStatus(status) {
-  const key = String(status || "").toLowerCase();
-  if (key.includes("concl")) return "Concluída";
-  if (key.includes("andamento")) return "Em andamento";
-  if (key.includes("cancel")) return "Cancelada";
+function normalizarStatus(status) {
+  const chave = String(status || "").toLowerCase();
+  if (chave.includes("concl")) return "Concluída";
+  if (chave.includes("andamento")) return "Em andamento";
+  if (chave.includes("cancel")) return "Cancelada";
   return "Planejada";
 }
 
-function parseModalidade(descricao, modalidade) {
+function analisarModalidade(descricao, modalidade) {
   if (modalidade === "presencial") return "Presencial";
   if (modalidade === "online") return "Online";
-  const text = String(descricao || "");
-  const match = text.match(/\[modalidade:([^\]]+)\]/i);
-  const parsed = String(match?.[1] || "").trim().toLowerCase();
-  if (parsed === "presencial") return "Presencial";
-  if (parsed === "online") return "Online";
+  const texto = String(descricao || "");
+  const correspondencia = texto.match(/\[modalidade:([^\]]+)\]/i);
+  const extraido = String(correspondencia?.[1] || "").trim().toLowerCase();
+  if (extraido === "presencial") return "Presencial";
+  if (extraido === "online") return "Online";
   return "Presencial";
 }
 
-function getBadgeStyleByTax(value) {
-  const number = Number(value || 0);
-  if (number >= META_PRESENCA_SLA) return { background: colors.successLight, color: colors.successText, border: `1px solid rgba(16, 185, 129, 0.2)` };
-  if (number >= 75) return { background: colors.warningLight, color: colors.warningText, border: `1px solid rgba(245, 158, 11, 0.2)` };
+function obterEstiloSeloPorTaxa(valor) {
+  const numero = Number(valor || 0);
+  if (numero >= META_PRESENCA_SLA) return { background: colors.successLight, color: colors.successText, border: `1px solid rgba(16, 185, 129, 0.2)` };
+  if (numero >= 75) return { background: colors.warningLight, color: colors.warningText, border: `1px solid rgba(245, 158, 11, 0.2)` };
   return { background: colors.dangerLight, color: colors.dangerText, border: `1px solid rgba(239, 68, 68, 0.2)` };
 }
 
-export default function DashboardPage() {
+export default function PaginaDashboard() {
   const [usuario, setUsuario] = useState(null);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [drillDown, setDrillDown] = useState(null);
-  const [filters, setFilters] = useState({
+  const [carregando, setCarregando] = useState(true);
+  const [detalhesTurma, setDetalhesTurma] = useState(null);
+  const [filtros, setFiltros] = useState({
     cliente: "",
     instrutor: "",
     supervisor: "",
@@ -78,57 +78,57 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    async function carregar() {
+    async function carregarDados() {
       try {
         setErro("");
-        setLoading(true);
-        const params = new URLSearchParams();
-        Object.entries(filters).forEach(([key, value]) => {
-          if (value) params.set(key, value);
+        setCarregando(true);
+        const parametros = new URLSearchParams();
+        Object.entries(filtros).forEach(([chave, valor]) => {
+          if (valor) parametros.set(chave, valor);
         });
-        const path = params.toString() ? `/dashboard/treinamentos?${params.toString()}` : "/dashboard/treinamentos";
-        const response = await apiFetch(path);
-        setDados(response || {});
-      } catch (error) {
-        setErro(error.message || "Erro ao carregar dashboard.");
+        const caminho = parametros.toString() ? `/dashboard/treinamentos?${parametros.toString()}` : "/dashboard/treinamentos";
+        const resposta = await apiFetch(caminho);
+        setDados(resposta || {});
+      } catch (erroApi) {
+        setErro(erroApi.message || "Erro ao carregar dashboard.");
       } finally {
-        setLoading(false);
+        setCarregando(false);
       }
     }
-    carregar();
-  }, [filters]);
+    carregarDados();
+  }, [filtros]);
 
   function aplicarAtalhoPeriodo(tipo) {
     const hoje = new Date();
-    const formatDateStr = (d) => d.toISOString().slice(0, 10);
+    const formatarDataStr = (d) => d.toISOString().slice(0, 10);
     
     let inicio = "";
-    let fim = formatDateStr(hoje);
+    let fim = formatarDataStr(hoje);
 
     if (tipo === "hoje") {
-      inicio = formatDateStr(hoje);
+      inicio = formatarDataStr(hoje);
     } else if (tipo === "semana") {
       const primeiroDia = new Date(hoje);
       primeiroDia.setDate(hoje.getDate() - hoje.getDay());
-      inicio = formatDateStr(primeiroDia);
+      inicio = formatarDataStr(primeiroDia);
     } else if (tipo === "mes") {
       const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      inicio = formatDateStr(primeiroDiaMes);
+      inicio = formatarDataStr(primeiroDiaMes);
     } else if (tipo === "limpar") {
-      setFilters(prev => ({ ...prev, data_inicio: "", data_fim: "" }));
+      setFiltros(anterior => ({ ...anterior, data_inicio: "", data_fim: "" }));
       return;
     }
 
-    setFilters(prev => ({ ...prev, data_inicio: inicio, data_fim: fim }));
+    setFiltros(anterior => ({ ...anterior, data_inicio: inicio, data_fim: fim }));
   }
 
-  async function abrirDrillDown(item) {
-    setDrillDown({ turma: item, itens: [], loading: true });
+  async function abrirDetalhesTurma(item) {
+    setDetalhesTurma({ turma: item, itens: [], carregando: true });
     try {
       const resposta = await apiFetch(`/frequencia-individual?treinamento_id=${item.id}`);
-      setDrillDown({ turma: item, itens: Array.isArray(resposta?.itens) ? resposta.itens : [], loading: false });
-    } catch (error) {
-      setDrillDown({ turma: item, itens: [], loading: false, erro: error.message });
+      setDetalhesTurma({ turma: item, itens: Array.isArray(resposta?.itens) ? resposta.itens : [], carregando: false });
+    } catch (erroDetalhe) {
+      setDetalhesTurma({ turma: item, itens: [], carregando: false, erro: erroDetalhe.message });
     }
   }
 
@@ -145,9 +145,9 @@ export default function DashboardPage() {
       "Cliente": item.cliente || "-",
       "Instrutor": item.instrutor || "-",
       "Supervisor": item.supervisor || "-",
-      "Modalidade": parseModalidade(item.descricao, item.modalidade),
-      "Status": normalizeStatus(item.status_canonico || item.status),
-      "Data": formatDate(item.data || item.data_inicio),
+      "Modalidade": analisarModalidade(item.descricao, item.modalidade),
+      "Status": normalizarStatus(item.status_canonico || item.status),
+      "Data": formatarData(item.data || item.data_inicio),
       "Base Ativa / Treinados": Number(item.base_ativa || item.treinados || 0),
       "Presentes": Number(item.presentes || 0),
       "Ausentes": Number(item.ausentes || 0),
@@ -155,11 +155,11 @@ export default function DashboardPage() {
       "Taxa de Presença (%)": Number(item.taxa_presenca || 0)
     }));
 
-    const worksheet = XLSX.utils.json_to_sheet(dadosFormatados);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório Executivo");
+    const planilha = XLSX.utils.json_to_sheet(dadosFormatados);
+    const livroTrabalho = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(livroTrabalho, planilha, "Relatório Executivo");
 
-    worksheet["!cols"] = [
+    planilha["!cols"] = [
       { wch: 6 },  // ID
       { wch: 30 }, // Tema / Turma
       { wch: 15 }, // Cliente
@@ -175,7 +175,7 @@ export default function DashboardPage() {
       { wch: 20 }, // Taxa de Presença
     ];
 
-    XLSX.writeFile(workbook, `relatorio_executivo_treinamentos_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(livroTrabalho, `relatorio_executivo_treinamentos_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
   const kpis = dados?.kpis || {};
@@ -185,20 +185,20 @@ export default function DashboardPage() {
   const ultimasTurmas = Array.isArray(dados?.ultimas_turmas) ? dados.ultimas_turmas : [];
   const nps = dados?.nps || {};
 
-  const clienteOptions = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
-  const statusOptions = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
-  const modalidadeOptions = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
+  const opcoesCliente = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
+  const opcoesStatus = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
+  const opcoesModalidade = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
 
-  const instrutorOptions = useMemo(() => {
-    const list = new Set();
-    ultimasTurmas.forEach(t => { if (t.instrutor) list.add(t.instrutor); });
-    return Array.from(list).sort();
+  const opcoesInstrutor = useMemo(() => {
+    const lista = new Set();
+    ultimasTurmas.forEach(t => { if (t.instrutor) lista.add(t.instrutor); });
+    return Array.from(lista).sort();
   }, [ultimasTurmas]);
 
-  const supervisorOptions = useMemo(() => {
-    const list = new Set();
-    ultimasTurmas.forEach(t => { if (t.supervisor) list.add(t.supervisor); });
-    return Array.from(list).sort();
+  const opcoesSupervisor = useMemo(() => {
+    const lista = new Set();
+    ultimasTurmas.forEach(t => { if (t.supervisor) lista.add(t.supervisor); });
+    return Array.from(lista).sort();
   }, [ultimasTurmas]);
 
   const primeiroNome = String(usuario?.nome || "Coordenador").split(" ")[0];
@@ -212,13 +212,13 @@ export default function DashboardPage() {
             <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: ".1em", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#38BDF8", display: "inline-block" }} /> Live Pulse
             </span>
-            {ultimasTurmas.slice(0, 8).map((t, idx) => {
-              const status = normalizeStatus(t.status_canonico || t.status);
-              const dotColor = status === "Planejada" ? colors.warning : status === "Em andamento" || status === "Concluída" ? colors.success : "#64748B";
+            {ultimasTurmas.slice(0, 8).map((turmaItem, indice) => {
+              const statusTurma = normalizarStatus(turmaItem.status_canonico || turmaItem.status);
+              const corPonto = statusTurma === "Planejada" ? colors.warning : statusTurma === "Em andamento" || statusTurma === "Concluída" ? colors.success : "#64748B";
               return (
-                <div key={t.id || idx} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#E2E8F0", whiteSpace: "nowrap", flexShrink: 0, background: "rgba(255,255,255,0.04)", padding: "3px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
-                  <strong style={{ fontWeight: 600 }}>{t.tema || "Turma"}</strong> <span style={{ color: "#94A3B8" }}>({t.cliente || "Geral"})</span>
+                <div key={turmaItem.id || indice} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#E2E8F0", whiteSpace: "nowrap", flexShrink: 0, background: "rgba(255,255,255,0.04)", padding: "3px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: corPonto, flexShrink: 0 }} />
+                  <strong style={{ fontWeight: 600 }}>{turmaItem.tema || "Turma"}</strong> <span style={{ color: "#94A3B8" }}>({turmaItem.cliente || "Geral"})</span>
                 </div>
               );
             })}
@@ -248,7 +248,7 @@ export default function DashboardPage() {
                 📊 Exportar Relatório em Excel (.xlsx)
               </button>
               <button
-                onClick={() => setFilters({ cliente: "", instrutor: "", supervisor: "", status: "", modalidade: "", data_inicio: "", data_fim: "" })}
+                onClick={() => setFiltros({ cliente: "", instrutor: "", supervisor: "", status: "", modalidade: "", data_inicio: "", data_fim: "" })}
                 style={{
                   border: `1px solid ${colors.border}`, background: "#F1F5F9", color: "#475569",
                   borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 12.5
@@ -269,62 +269,62 @@ export default function DashboardPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".05em" }}>Filtros & Períodos Rápidos</span>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => aplicarAtalhoPeriodo("hoje")} style={badgeBtnStyle}>Hoje</button>
-                <button onClick={() => aplicarAtalhoPeriodo("semana")} style={badgeBtnStyle}>Esta Semana</button>
-                <button onClick={() => aplicarAtalhoPeriodo("mes")} style={badgeBtnStyle}>Este Mês</button>
-                <button onClick={() => aplicarAtalhoPeriodo("limpar")} style={{ ...badgeBtnStyle, background: "#E2E8F0", color: "#334155" }}>Todas as Datas</button>
+                <button onClick={() => aplicarAtalhoPeriodo("hoje")} style={estiloBotaoSelo}>Hoje</button>
+                <button onClick={() => aplicarAtalhoPeriodo("semana")} style={estiloBotaoSelo}>Esta Semana</button>
+                <button onClick={() => aplicarAtalhoPeriodo("mes")} style={estiloBotaoSelo}>Este Mês</button>
+                <button onClick={() => aplicarAtalhoPeriodo("limpar")} style={{ ...estiloBotaoSelo, background: "#E2E8F0", color: "#334155" }}>Todas as Datas</button>
               </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
-              <label style={fieldLabel}>
+              <label style={estiloRotuloCampo}>
                 Cliente
-                <select style={inputStyle} value={filters.cliente} onChange={(e) => setFilters((prev) => ({ ...prev, cliente: e.target.value }))}>
+                <select style={estiloEntrada} value={filtros.cliente} onChange={(e) => setFiltros((anterior) => ({ ...anterior, cliente: e.target.value }))}>
                   <option value="">Todos</option>
-                  {clienteOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                  {opcoesCliente.map((opcaoItem) => <option key={opcaoItem} value={opcaoItem}>{opcaoItem}</option>)}
                 </select>
               </label>
 
-              <label style={fieldLabel}>
+              <label style={estiloRotuloCampo}>
                 Instrutor (Cascata)
-                <select style={inputStyle} value={filters.instrutor} onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))}>
+                <select style={estiloEntrada} value={filtros.instrutor} onChange={(e) => setFiltros((anterior) => ({ ...anterior, instrutor: e.target.value }))}>
                   <option value="">Todos</option>
-                  {instrutorOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                  {opcoesInstrutor.map((opcaoItem) => <option key={opcaoItem} value={opcaoItem}>{opcaoItem}</option>)}
                 </select>
               </label>
 
-              <label style={fieldLabel}>
+              <label style={estiloRotuloCampo}>
                 Supervisor (Cascata)
-                <select style={inputStyle} value={filters.supervisor} onChange={(e) => setFilters((prev) => ({ ...prev, supervisor: e.target.value }))}>
+                <select style={estiloEntrada} value={filtros.supervisor} onChange={(e) => setFiltros((anterior) => ({ ...anterior, supervisor: e.target.value }))}>
                   <option value="">Todos</option>
-                  {supervisorOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                  {opcoesSupervisor.map((opcaoItem) => <option key={opcaoItem} value={opcaoItem}>{opcaoItem}</option>)}
                 </select>
               </label>
 
-              <label style={fieldLabel}>
+              <label style={estiloRotuloCampo}>
                 Status
-                <select style={inputStyle} value={filters.status} onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}>
+                <select style={estiloEntrada} value={filtros.status} onChange={(e) => setFiltros((anterior) => ({ ...anterior, status: e.target.value }))}>
                   <option value="">Todos</option>
-                  {statusOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  {opcoesStatus.map((opcaoItem) => <option key={opcaoItem.value} value={opcaoItem.value}>{opcaoItem.label}</option>)}
                 </select>
               </label>
 
-              <label style={fieldLabel}>
+              <label style={estiloRotuloCampo}>
                 Modalidade
-                <select style={inputStyle} value={filters.modalidade} onChange={(e) => setFilters((prev) => ({ ...prev, modalidade: e.target.value }))}>
+                <select style={estiloEntrada} value={filtros.modalidade} onChange={(e) => setFiltros((anterior) => ({ ...anterior, modalidade: e.target.value }))}>
                   <option value="">Todas</option>
-                  {modalidadeOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  {opcoesModalidade.map((opcaoItem) => <option key={opcaoItem.value} value={opcaoItem.value}>{opcaoItem.label}</option>)}
                 </select>
               </label>
 
-              <label style={fieldLabel}>
+              <label style={estiloRotuloCampo}>
                 Data inicial
-                <input type="date" style={inputStyle} value={filters.data_inicio} onChange={(e) => setFilters((prev) => ({ ...prev, data_inicio: e.target.value }))} />
+                <input type="date" style={estiloEntrada} value={filtros.data_inicio} onChange={(e) => setFiltros((anterior) => ({ ...anterior, data_inicio: e.target.value }))} />
               </label>
 
-              <label style={fieldLabel}>
+              <label style={estiloRotuloCampo}>
                 Data final
-                <input type="date" style={inputStyle} value={filters.data_fim} onChange={(e) => setFilters((prev) => ({ ...prev, data_fim: e.target.value }))} />
+                <input type="date" style={estiloEntrada} value={filtros.data_fim} onChange={(e) => setFiltros((anterior) => ({ ...anterior, data_fim: e.target.value }))} />
               </label>
             </div>
           </div>
@@ -333,18 +333,18 @@ export default function DashboardPage() {
         <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20, width: "100%", boxSizing: "border-box" }}>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-            <MetricaCard valor={fmt(kpis.treinamentos || 0)} label="Turmas no Recorte" cor={chart.blue} pct={100} icon="📊" />
-            <MetricaCard 
-              valor={`${fmt(kpis.taxa_presenca || 0)}%`} 
-              label={`Presença Consolidada (Meta: ${META_PRESENCA_SLA}%)`} 
+            <CartaoMetrica valor={formatarNumero(kpis.treinamentos || 0)} rotulo="Turmas no Recorte" cor={chart.blue} porcentagem={100} icone="📊" />
+            <CartaoMetrica 
+              valor={`${formatarNumero(kpis.taxa_presenca || 0)}%`} 
+              rotulo={`Presença Consolidada (Meta: ${META_PRESENCA_SLA}%)`} 
               cor={Number(kpis.taxa_presenca || 0) >= META_PRESENCA_SLA ? colors.success : colors.warning} 
-              pct={Number(kpis.taxa_presenca || 0)} 
-              icon="🎯" 
+              porcentagem={Number(kpis.taxa_presenca || 0)} 
+              icone="🎯" 
             />
-            <MetricaCard valor={fmt(kpis.pendentes || 0)} label="Pendências em Aberto" cor={colors.warning} pct={Math.min(Number(kpis.pendentes || 0) * 10, 100)} icon="⚠️" />
-            <MetricaCard valor={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} label="Taxa de Execução" cor={chart.purple} pct={Number(kpis.taxa_execucao_diaria || 0)} icon="⚡" />
+            <CartaoMetrica valor={formatarNumero(kpis.pendentes || 0)} rotulo="Pendências em Aberto" cor={colors.warning} porcentagem={Math.min(Number(kpis.pendentes || 0) * 10, 100)} icone="⚠️" />
+            <CartaoMetrica valor={`${formatarNumero(kpis.taxa_execucao_diaria || 0)}%`} rotulo="Taxa de Execução" cor={chart.purple} porcentagem={Number(kpis.taxa_execucao_diaria || 0)} icone="⚡" />
             {Number(nps.total_avaliacoes || 0) > 0 && (
-              <MetricaCard valor={Number(nps.media_nps || 0) > 0 ? fmt(nps.media_nps) : "—"} label={`NPS Médio (${fmt(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} pct={75} icon="⭐" />
+              <CartaoMetrica valor={Number(nps.media_nps || 0) > 0 ? formatarNumero(nps.media_nps) : "—"} rotulo={`NPS Médio (${formatarNumero(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} porcentagem={75} icone="⭐" />
             )}
           </div>
 
@@ -359,17 +359,17 @@ export default function DashboardPage() {
                 <span style={{ fontSize: 11, fontWeight: 600, color: colors.textMuted, background: "#F1F5F9", padding: "3px 8px", borderRadius: 6 }}>Top Contas</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {presencaPorCliente.length ? presencaPorCliente.map((item) => {
-                  const badge = getBadgeStyleByTax(item.taxa_presenca);
-                  const corCli = corDoCliente(item.cliente);
+                {presencaPorCliente.length ? presencaPorCliente.map((clienteItem) => {
+                  const selo = obterEstiloSeloPorTaxa(clienteItem.taxa_presenca);
+                  const corCliente = corDoCliente(clienteItem.cliente);
                   return (
-                    <div key={item.cliente} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#FAFAFA", border: `1px solid ${colors.border}` }}>
+                    <div key={clienteItem.cliente} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#FAFAFA", border: `1px solid ${colors.border}` }}>
                       <div>
-                        <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCli.bg, color: corCli.text }}>{item.cliente}</span>
-                        <p style={{ margin: "4px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{fmt(item.total_treinados)} base • {fmt(item.presentes)} presentes</p>
+                        <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCliente.bg, color: corCliente.text }}>{clienteItem.cliente}</span>
+                        <p style={{ margin: "4px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{formatarNumero(clienteItem.total_treinados)} base • {formatarNumero(clienteItem.presentes)} presentes</p>
                       </div>
-                      <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 8, ...badge }}>
-                        {fmt(item.taxa_presenca)}%
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 8, ...selo }}>
+                        {formatarNumero(clienteItem.taxa_presenca)}%
                       </span>
                     </div>
                   );
@@ -386,16 +386,16 @@ export default function DashboardPage() {
                 <span style={{ fontSize: 11, fontWeight: 600, color: colors.textMuted, background: "#F1F5F9", padding: "3px 8px", borderRadius: 6 }}>Ranking</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {rankingInstrutores.length ? rankingInstrutores.map((item) => {
-                  const badge = getBadgeStyleByTax(item.taxa_presenca);
+                {rankingInstrutores.length ? rankingInstrutores.map((instrutorItem) => {
+                  const selo = obterEstiloSeloPorTaxa(instrutorItem.taxa_presenca);
                   return (
-                    <div key={item.instrutor} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#FAFAFA", border: `1px solid ${colors.border}` }}>
+                    <div key={instrutorItem.instrutor} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#FAFAFA", border: `1px solid ${colors.border}` }}>
                       <div>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{item.instrutor}</p>
-                        <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{fmt(item.total_turmas)} turma(s) • {fmt(item.total_treinados)} base</p>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{instrutorItem.instrutor}</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{formatarNumero(instrutorItem.total_turmas)} turma(s) • {formatarNumero(instrutorItem.total_treinados)} base</p>
                       </div>
-                      <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 8, ...badge }}>
-                        {fmt(item.taxa_presenca)}%
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 8, ...selo }}>
+                        {formatarNumero(instrutorItem.taxa_presenca)}%
                       </span>
                     </div>
                   );
@@ -413,8 +413,8 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {loading && <p style={{ fontSize: 13, color: colors.textSecondary, padding: "20px 0" }}>Carregando dados da tabela...</p>}
-            {!loading && ultimasTurmas.length === 0 && (
+            {carregando && <p style={{ fontSize: 13, color: colors.textSecondary, padding: "20px 0" }}>Carregando dados da tabela...</p>}
+            {!carregando && ultimasTurmas.length === 0 && (
               <p style={{ fontSize: 13, color: colors.textMuted, padding: "20px 0" }}>Nenhuma turma encontrada com os filtros atuais.</p>
             )}
 
@@ -423,53 +423,53 @@ export default function DashboardPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 960 }}>
                   <thead>
                     <tr style={{ background: "#F8FAFC", borderBottom: `1px solid ${colors.border}` }}>
-                      <th style={th}>Tema / Turma</th>
-                      <th style={th}>Cliente</th>
-                      <th style={th}>Instrutor</th>
-                      <th style={th}>Supervisor</th>
-                      <th style={th}>Modalidade</th>
-                      <th style={th}>Status</th>
-                      <th style={th}>Data</th>
-                      <th style={th}>Base</th>
-                      <th style={th}>Pres./Aus.</th>
-                      <th style={th}>Presença</th>
-                      <th style={th}>Pendências</th>
+                      <th style={estiloCabecalhoTabela}>Tema / Turma</th>
+                      <th style={estiloCabecalhoTabela}>Cliente</th>
+                      <th style={estiloCabecalhoTabela}>Instrutor</th>
+                      <th style={estiloCabecalhoTabela}>Supervisor</th>
+                      <th style={estiloCabecalhoTabela}>Modalidade</th>
+                      <th style={estiloCabecalhoTabela}>Status</th>
+                      <th style={estiloCabecalhoTabela}>Data</th>
+                      <th style={estiloCabecalhoTabela}>Base</th>
+                      <th style={estiloCabecalhoTabela}>Pres./Aus.</th>
+                      <th style={estiloCabecalhoTabela}>Presença</th>
+                      <th style={estiloCabecalhoTabela}>Pendências</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {ultimasTurmas.map((item, idx) => {
-                      const corCli = corDoCliente(item.cliente);
-                      const statusName = normalizeStatus(item.status_canonico || item.status);
+                    {ultimasTurmas.map((turmaItem, indice) => {
+                      const corCliente = corDoCliente(turmaItem.cliente);
+                      const nomeStatus = normalizarStatus(turmaItem.status_canonico || turmaItem.status);
                       return (
                         <tr 
-                          key={item.id || idx} 
-                          onClick={() => abrirDrillDown(item)} 
+                          key={turmaItem.id || indice} 
+                          onClick={() => abrirDetalhesTurma(turmaItem)} 
                           style={{ cursor: "pointer", borderBottom: `1px solid ${colors.border}`, transition: "background 0.1s" }} 
                           onMouseEnter={(e) => e.currentTarget.style.background = "#F8FAFC"}
                           onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                           title="Clique para inspecionar frequência"
                         >
-                          <td style={td}><strong style={{ color: "#0F172A", fontWeight: 600 }}>{item.tema || "-"}</strong></td>
-                          <td style={td}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCli.bg, color: corCli.text }}>{item.cliente || "-"}</span></td>
-                          <td style={td}>{item.instrutor || "-"}</td>
-                          <td style={td}><span style={{ color: colors.textSecondary, fontSize: 12 }}>{item.supervisor || "—"}</span></td>
-                          <td style={td}><span style={{ fontSize: 11.5, color: colors.textSecondary, background: "#F1F5F9", padding: "2px 6px", borderRadius: 4 }}>{parseModalidade(item.descricao, item.modalidade)}</span></td>
-                          <td style={td}><span style={{ fontSize: 12, fontWeight: 600 }}>{statusName}</span></td>
-                          <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
-                          <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
-                          <td style={td}>
+                          <td style={estiloCelulaTabela}><strong style={{ color: "#0F172A", fontWeight: 600 }}>{turmaItem.tema || "-"}</strong></td>
+                          <td style={estiloCelulaTabela}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCliente.bg, color: corCliente.text }}>{turmaItem.cliente || "-"}</span></td>
+                          <td style={estiloCelulaTabela}>{turmaItem.instrutor || "-"}</td>
+                          <td style={estiloCelulaTabela}><span style={{ color: colors.textSecondary, fontSize: 12 }}>{turmaItem.supervisor || "—"}</span></td>
+                          <td style={estiloCelulaTabela}><span style={{ fontSize: 11.5, color: colors.textSecondary, background: "#F1F5F9", padding: "2px 6px", borderRadius: 4 }}>{analisarModalidade(turmaItem.descricao, turmaItem.modalidade)}</span></td>
+                          <td style={estiloCelulaTabela}><span style={{ fontSize: 12, fontWeight: 600 }}>{nomeStatus}</span></td>
+                          <td style={estiloCelulaTabela}>{formatarData(turmaItem.data || turmaItem.data_inicio)}</td>
+                          <td style={estiloCelulaTabela}>{formatarNumero(turmaItem.base_ativa || turmaItem.treinados || 0)}</td>
+                          <td style={estiloCelulaTabela}>
                             <span style={{ fontSize: 11.5, color: colors.textSecondary }}>
-                              <strong style={{ color: colors.successText }}>{fmt(item.presentes || 0)}</strong> / <span style={{ color: colors.dangerText }}>{fmt(item.ausentes || 0)}</span>
+                              <strong style={{ color: colors.successText }}>{formatarNumero(turmaItem.presentes || 0)}</strong> / <span style={{ color: colors.dangerText }}>{formatarNumero(turmaItem.ausentes || 0)}</span>
                             </span>
                           </td>
-                          <td style={td}>
-                            {Number(item.taxa_presenca || 0) > 0 ? (
-                              <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11.5, fontWeight: 700, ...getBadgeStyleByTax(item.taxa_presenca) }}>
-                                {item.taxa_presenca}%
+                          <td style={estiloCelulaTabela}>
+                            {Number(turmaItem.taxa_presenca || 0) > 0 ? (
+                              <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11.5, fontWeight: 700, ...obterEstiloSeloPorTaxa(turmaItem.taxa_presenca) }}>
+                                {turmaItem.taxa_presenca}%
                               </span>
                             ) : "—"}
                           </td>
-                          <td style={td}><span style={{ fontWeight: Number(item.pendentes || 0) > 0 ? 700 : 400, color: Number(item.pendentes || 0) > 0 ? colors.warningText : colors.textSecondary }}>{fmt(item.pendentes || 0)}</span></td>
+                          <td style={estiloCelulaTabela}><span style={{ fontWeight: Number(turmaItem.pendentes || 0) > 0 ? 700 : 400, color: Number(turmaItem.pendentes || 0) > 0 ? colors.warningText : colors.textSecondary }}>{formatarNumero(turmaItem.pendentes || 0)}</span></td>
                         </tr>
                       );
                     })}
@@ -483,9 +483,9 @@ export default function DashboardPage() {
 
       </div>
 
-      {drillDown && (
+      {detalhesTurma && (
         <div
-          onClick={() => setDrillDown(null)}
+          onClick={() => setDetalhesTurma(null)}
           style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
         >
           <div
@@ -495,28 +495,28 @@ export default function DashboardPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, borderBottom: `1px solid ${colors.border}`, paddingBottom: 12 }}>
               <div>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: "#0284C7", background: "rgba(56, 189, 248, 0.1)", padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>Detalhes da Turma</span>
-                <p style={{ margin: "6px 0 0", fontSize: 17, fontWeight: 800, color: "#0F172A" }}>{drillDown.turma?.tema || "Turma Selecionada"}</p>
-                <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.textMuted }}>Instrutor: {drillDown.turma?.instrutor || "—"} | Cliente: {drillDown.turma?.cliente || "—"}</p>
+                <p style={{ margin: "6px 0 0", fontSize: 17, fontWeight: 800, color: "#0F172A" }}>{detalhesTurma.turma?.tema || "Turma Selecionada"}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.textMuted }}>Instrutor: {detalhesTurma.turma?.instrutor || "—"} | Cliente: {detalhesTurma.turma?.cliente || "—"}</p>
               </div>
-              <button onClick={() => setDrillDown(null)} style={{ border: "none", background: "#F1F5F9", width: 28, height: 28, borderRadius: "50%", fontSize: 14, cursor: "pointer", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              <button onClick={() => setDetalhesTurma(null)} style={{ border: "none", background: "#F1F5F9", width: 28, height: 28, borderRadius: "50%", fontSize: 14, cursor: "pointer", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
             </div>
 
-            {drillDown.loading && <p style={{ fontSize: 13, color: colors.textSecondary, padding: "20px 0", textAlign: "center" }}>Carregando dados individuais de frequência...</p>}
-            {drillDown.erro && <p style={{ fontSize: 13, color: colors.dangerText, padding: "10px 0" }}>{drillDown.erro}</p>}
-            {!drillDown.loading && !drillDown.erro && drillDown.itens.length === 0 && (
+            {detalhesTurma.carregando && <p style={{ fontSize: 13, color: colors.textSecondary, padding: "20px 0", textAlign: "center" }}>Carregando dados individuais de frequência...</p>}
+            {detalhesTurma.erro && <p style={{ fontSize: 13, color: colors.dangerText, padding: "10px 0" }}>{detalhesTurma.erro}</p>}
+            {!detalhesTurma.carregando && !detalhesTurma.erro && detalhesTurma.itens.length === 0 && (
               <p style={{ fontSize: 13, color: colors.textMuted, padding: "20px 0", textAlign: "center" }}>Sem registros individuais encontrados para esta turma.</p>
             )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {drillDown.itens.map((pessoa, idx) => (
-                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: "#F8FAFC", border: `1px solid ${colors.border}` }}>
+              {detalhesTurma.itens.map((pessoa, indice) => (
+                <div key={indice} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: "#F8FAFC", border: `1px solid ${colors.border}` }}>
                   <div>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#0F172A" }}>{pessoa.treinando_nome || "Colaborador"}</p>
                     <p style={{ margin: "2px 0 0", fontSize: 11, color: colors.textMuted }}>{pessoa.presentes || 0} presentes • {pessoa.ausentes || 0} ausentes</p>
                   </div>
                   <span style={{
                     fontSize: 12, fontWeight: 700, borderRadius: 8, padding: "4px 10px",
-                    ...getBadgeStyleByTax(pessoa.frequencia_percentual)
+                    ...obterEstiloSeloPorTaxa(pessoa.frequencia_percentual)
                   }}>
                     {pessoa.frequencia_percentual || 0}%
                   </span>
@@ -530,25 +530,25 @@ export default function DashboardPage() {
   );
 }
 
-function MetricaCard({ valor, label, cor, pct, icon }) {
+function CartaoMetrica({ valor, rotulo, cor, porcentagem, icone }) {
   return (
     <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.02)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-          <p style={{ margin: 0, fontSize: 11.5, fontWeight: 600, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</p>
-          <span style={{ fontSize: 16 }}>{icon}</span>
+          <p style={{ margin: 0, fontSize: 11.5, fontWeight: 600, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".04em" }}>{rotulo}</p>
+          <span style={{ fontSize: 16 }}>{icone}</span>
         </div>
         <p style={{ margin: 0, fontSize: 26, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>{valor}</p>
       </div>
       <div style={{ height: 4, borderRadius: 999, background: "#F1F5F9", marginTop: 14, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${Math.min(Number(pct || 0), 100)}%`, background: cor, borderRadius: 999 }} />
+        <div style={{ height: "100%", width: `${Math.min(Number(porcentagem || 0), 100)}%`, background: cor, borderRadius: 999 }} />
       </div>
     </div>
   );
 }
 
-const fieldLabel = { display: "grid", gap: 3, color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" };
-const inputStyle = { width: "100%", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "7px 10px", background: "#fff", color: "#0F172A", fontSize: 12, outline: "none", boxSizing: "border-box" };
-const badgeBtnStyle = { border: `1px solid ${colors.border}`, background: "#fff", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6, cursor: "pointer" };
-const th = { textAlign: "left", padding: "12px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: colors.textSecondary, fontWeight: 700 };
-const td = { padding: "12px 14px", color: colors.textSecondary, fontSize: 12.5 };
+const estiloRotuloCampo = { display: "grid", gap: 3, color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" };
+const estiloEntrada = { width: "100%", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "7px 10px", background: "#fff", color: "#0F172A", fontSize: 12, outline: "none", boxSizing: "border-box" };
+const estiloBotaoSelo = { border: `1px solid ${colors.border}`, background: "#fff", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6, cursor: "pointer" };
+const estiloCabecalhoTabela = { textAlign: "left", padding: "12px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: colors.textSecondary, fontWeight: 700 };
+const estiloCelulaTabela = { padding: "12px 14px", color: colors.textSecondary, fontSize: 12.5 };
