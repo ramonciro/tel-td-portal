@@ -6,6 +6,8 @@ import { apiFetch, getStoredUser } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
 import { colors, chart, corDoCliente } from "../../lib/theme";
 
+const META_PRESENCA_SLA = 85; // Meta padrão corporativa de T&D
+
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
@@ -35,8 +37,8 @@ function parseModalidade(descricao, modalidade) {
 
 function getBadgeStyleByTax(value) {
   const number = Number(value || 0);
-  if (number >= 90) return { background: colors.successLight, color: colors.successText, border: `1px solid rgba(16, 185, 129, 0.2)` };
-  if (number >= 80) return { background: colors.warningLight, color: colors.warningText, border: `1px solid rgba(245, 158, 11, 0.2)` };
+  if (number >= META_PRESENCA_SLA) return { background: colors.successLight, color: colors.successText, border: `1px solid rgba(16, 185, 129, 0.2)` };
+  if (number >= 75) return { background: colors.warningLight, color: colors.warningText, border: `1px solid rgba(245, 158, 11, 0.2)` };
   return { background: colors.dangerLight, color: colors.dangerText, border: `1px solid rgba(239, 68, 68, 0.2)` };
 }
 
@@ -82,6 +84,31 @@ export default function DashboardPage() {
     carregar();
   }, [filters]);
 
+  // Atalhos rápidos de período
+  function aplicarAtalhoPeriodo(tipo) {
+    const hoje = new Date();
+    const formatDateStr = (d) => d.toISOString().slice(0, 10);
+    
+    let inicio = "";
+    let fim = formatDateStr(hoje);
+
+    if (tipo === "hoje") {
+      inicio = formatDateStr(hoje);
+    } else if (tipo === "semana") {
+      const primeiroDia = new Date(hoje);
+      primeiroDia.setDate(hoje.getDate() - hoje.getDay());
+      inicio = formatDateStr(primeiroDia);
+    } else if (tipo === "mes") {
+      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      inicio = formatDateStr(primeiroDiaMes);
+    } else if (tipo === "limpar") {
+      setFilters(prev => ({ ...prev, data_inicio: "", data_fim: "" }));
+      return;
+    }
+
+    setFilters(prev => ({ ...prev, data_inicio: inicio, data_fim: fim }));
+  }
+
   async function abrirDrillDown(item) {
     setDrillDown({ turma: item, itens: [], loading: true });
     try {
@@ -99,7 +126,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // Expandido com todas as colunas operacionais detalhadas solicitadas
     const cabecalho = [
       "ID", "Tema / Turma", "Cliente", "Instrutor", "Supervisor", 
       "Modalidade", "Status", "Data", "Base Ativa / Treinados", 
@@ -143,10 +169,21 @@ export default function DashboardPage() {
   const nps = dados?.nps || {};
 
   const clienteOptions = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
-  const instrutorOptions = Array.isArray(filtrosApi.instrutores) ? filtrosApi.instrutores : [];
-  const supervisorOptions = Array.isArray(filtrosApi.supervisores) ? filtrosApi.supervisores : [];
   const statusOptions = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
   const modalidadeOptions = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
+
+  // Filtros em Cascata Dinâmicos para Instrutores e Supervisores baseados na seleção atual
+  const instrutorOptions = useMemo(() => {
+    const list = new Set();
+    ultimasTurmas.forEach(t => { if (t.instrutor) list.add(t.instrutor); });
+    return Array.from(list).sort();
+  }, [ultimasTurmas]);
+
+  const supervisorOptions = useMemo(() => {
+    const list = new Set();
+    ultimasTurmas.forEach(t => { if (t.supervisor) list.add(t.supervisor); });
+    return Array.from(list).sort();
+  }, [ultimasTurmas]);
 
   const primeiroNome = String(usuario?.nome || "").split(" ")[0] || "";
 
@@ -179,7 +216,7 @@ export default function DashboardPage() {
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <span style={{ background: "rgba(56, 189, 248, 0.1)", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>Workspace Analytics</span>
-                <span style={{ fontSize: 12, color: colors.textMuted }}>• Atualizado em tempo real</span>
+                <span style={{ fontSize: 12, color: colors.textMuted }}>• Meta corporativa SLA: {META_PRESENCA_SLA}%</span>
               </div>
               <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>
                 Dashboard Executivo, {primeiroNome}.
@@ -214,8 +251,18 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Painel de Filtros Avançados */}
+          {/* Painel de Filtros Avançados & Atalhos Rápidos */}
           <div style={{ background: "#F8FAFC", border: `1px solid ${colors.border}`, borderRadius: 12, padding: 14, marginTop: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".05em" }}>Filtros & Períodos Rápidos</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => aplicarAtalhoPeriodo("hoje")} style={badgeBtnStyle}>Hoje</button>
+                <button onClick={() => aplicarAtalhoPeriodo("semana")} style={badgeBtnStyle}>Esta Semana</button>
+                <button onClick={() => aplicarAtalhoPeriodo("mes")} style={badgeBtnStyle}>Este Mês</button>
+                <button onClick={() => aplicarAtalhoPeriodo("limpar")} style={{ ...badgeBtnStyle, background: "#E2E8F0", color: "#334155" }}>Todas as Datas</button>
+              </div>
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
               <label style={fieldLabel}>
                 Cliente
@@ -226,7 +273,7 @@ export default function DashboardPage() {
               </label>
 
               <label style={fieldLabel}>
-                Instrutor
+                Instrutor (Cascata)
                 <select style={inputStyle} value={filters.instrutor} onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))}>
                   <option value="">Todos</option>
                   {instrutorOptions.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -234,7 +281,7 @@ export default function DashboardPage() {
               </label>
 
               <label style={fieldLabel}>
-                Supervisor
+                Supervisor (Cascata)
                 <select style={inputStyle} value={filters.supervisor} onChange={(e) => setFilters((prev) => ({ ...prev, supervisor: e.target.value }))}>
                   <option value="">Todos</option>
                   {supervisorOptions.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -273,10 +320,16 @@ export default function DashboardPage() {
         {/* Conteúdo Principal */}
         <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20, width: "100%", boxSizing: "border-box" }}>
 
-          {/* Grid de KPIs / Métricas principais */}
+          {/* Grid de KPIs / Métricas com Indicador de Meta de Presença */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-            <MetricaCard valor={fmt(kpis.treinamentos || 0)} label="Turmas no Recorte" cor={chart.blue} pct={100} icon="📊" />
-            <MetricaCard valor={`${fmt(kpis.taxa_presenca || 0)}%`} label="Presença Consolidada" cor={colors.success} pct={Number(kpis.taxa_presenca || 0)} />
+            <MetricaCard valor={fmt(kpis.treinamentos || 0)} label="Turmas no Recorte" cor={chart.blue} pct={100} />
+            <MetricaCard 
+              valor={`${fmt(kpis.taxa_presenca || 0)}%`} 
+              label={`Presença Consolidada (Meta: ${META_PRESENCA_SLA}%)`} 
+              cor={Number(kpis.taxa_presenca || 0) >= META_PRESENCA_SLA ? colors.success : colors.warning} 
+              pct={Number(kpis.taxa_presenca || 0)} 
+             " 
+            />
             <MetricaCard valor={fmt(kpis.pendentes || 0)} label="Pendências em Aberto" cor={colors.warning} pct={Math.min(Number(kpis.pendentes || 0) * 10, 100)} />
             <MetricaCard valor={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} label="Taxa de Execução" cor={chart.purple} pct={Number(kpis.taxa_execucao_diaria || 0)} />
             {nps.total_avaliacoes > 0 && (
@@ -344,7 +397,7 @@ export default function DashboardPage() {
 
           </div>
 
-          {/* Tabela de Turmas Recentes & Detalhadas (Com Supervisor, Presentes e Ausentes visíveis) */}
+          {/* Tabela de Turmas Recentes & Ativas */}
           <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
@@ -490,5 +543,6 @@ function MetricaCard({ valor, label, cor, pct, icon }) {
 
 const fieldLabel = { display: "grid", gap: 3, color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" };
 const inputStyle = { width: "100%", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "7px 10px", background: "#fff", color: "#0F172A", fontSize: 12, outline: "none", boxSizing: "border-box" };
+const badgeBtnStyle = { border: `1px solid ${colors.border}`, background: "#fff", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6, cursor: "pointer" };
 const th = { textAlign: "left", padding: "12px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: colors.textSecondary, fontWeight: 700 };
 const td = { padding: "12px 14px", color: colors.textSecondary, fontSize: 12.5 };
