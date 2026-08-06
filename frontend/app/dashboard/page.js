@@ -229,7 +229,7 @@ export default function PaginaDashboard() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ background: "rgba(56, 189, 248, 0.1)", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>Workspace Analytics</span>
+                <span style={{ background: "rgba(56, 189, 248, 0.1)", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>Analítico - Espaço de Trabalho</span>
                 <span style={{ fontSize: 12, color: colors.textMuted }}>• Meta corporativa SLA: {META_PRESENCA_SLA}%</span>
               </div>
               <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>
