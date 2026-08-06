@@ -190,7 +190,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Função completa para exportação do CSV com codificação correta para Excel (UTF-8 com BOM)
   function exportarParaCSV() {
     const turmasParaExportar = dados?.ultimas_turmas || [];
     if (turmasParaExportar.length === 0) {
@@ -266,11 +265,8 @@ export default function DashboardPage() {
             title="Filtros do painel"
             subtitle="Escolha o recorte que faz mais sentido para a sua leitura e refine a análise sem perder contexto."
             action={
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  style={buttonActionPrimary}
-                  onClick={exportarParaCSV}
-                >
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button style={buttonActionPrimary} onClick={exportarParaCSV}>
                   📥 Exportar CSV
                 </button>
                 <button
@@ -577,11 +573,11 @@ function MiniStat({ label, value }) {
 
 const loadingBox = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, color: "#475569", fontWeight: 700 };
 const errorBox = { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 18, padding: 16, fontWeight: 700 };
-const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 };
+const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 };
 const fieldLabel = { display: "grid", gap: 6, color: "#334155", fontSize: 13, fontWeight: 700 };
 const inputStyle = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 12, padding: "10px 12px", background: "#fff", color: "#0f172a" };
-const buttonActionPrimary = { border: `1px solid ${colors.primary}`, background: colors.primary, color: "#fff", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
-const buttonSecondary = { border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
+const buttonActionPrimary = { border: `1px solid ${colors.primary}`, background: colors.primary, color: "#fff", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
+const buttonSecondary = { border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
 const kpiGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
 const twoColumns = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
 const summaryList = { display: "grid", gap: 10 };
