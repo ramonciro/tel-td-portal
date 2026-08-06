@@ -526,7 +526,6 @@ const coachingInitial = {
   data_fim: "",
 };
 
-
 const participantInitial = {
   id: null,
   jornada_id: "",
@@ -626,7 +625,8 @@ export default function MapaDesenvolvimentoPage() {
     } finally {
       setLoading(false);
     }
-}
+  }
+
   async function saveJornada(event) {
     event.preventDefault();
     setSaving(true);
@@ -1232,6 +1232,7 @@ export default function MapaDesenvolvimentoPage() {
       String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR")
     );
   }, [acoesEnriquecidas]);
+
   return (
     <PortalShell
       title="Oceano do Desenvolvimento"
@@ -2139,7 +2140,10 @@ export default function MapaDesenvolvimentoPage() {
                         type="date"
                         value={acaoForm.data_fim}
                         onChange={(e) =>
-                          setAcaoForm((prev) => ({ ...prev, data_fim: e.target.value }))
+                          setAcaoForm((prev) => ({
+                            ...prev,
+                            data_fim: e.target.value,
+                          }))
                         }
                         style={compactInputStyle()}
                       />
@@ -3140,8 +3144,6 @@ const miniExecutiveValue = {
   marginTop: 8,
 };
 
-
-
 const tripulacaoGrid = {
   display: "grid",
   gap: 16,
@@ -3218,71 +3220,73 @@ const crewListMeta = {
 
 const crewPillRow = {
   display: "flex",
-  gap: 10,
+  gap: 8,
   flexWrap: "wrap",
 };
 
 const crewPill = {
-  minWidth: 160,
-  borderRadius: 999,
-  border: "1px solid #dbeafe",
-  background: "linear-gradient(180deg, #ffffff 0%, #f5faff 100%)",
-  padding: "10px 14px",
-  boxShadow: "0 8px 18px rgba(15,23,42,.04)",
+  borderRadius: 14,
+  border: "1px solid #e2e8f0",
+  background: "#f8fafc",
+  padding: "8px 12px",
+  display: "grid",
+  gap: 2,
 };
 
 const crewPillName = {
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 800,
   color: "#0f172a",
 };
 
 const crewPillMeta = {
-  fontSize: 11,
+  fontSize: 10,
   color: "#64748b",
-  marginTop: 2,
 };
 
 const timelineWrap = {
   display: "grid",
   gap: 8,
+  paddingTop: 8,
+  borderTop: "1px dashed #e2e8f0",
 };
 
 const timelineLabel = {
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 900,
-  color: "#475569",
+  color: "#64748b",
   textTransform: "uppercase",
-  letterSpacing: ".05em",
+  letterSpacing: ".04em",
 };
 
 const timelineItems = {
-  display: "grid",
+  display: "flex",
   gap: 8,
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  flexWrap: "wrap",
 };
 
 const timelineItem = {
-  borderRadius: 18,
-  border: "1px solid #dce8f7",
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  padding: 14,
-  boxShadow: "0 8px 20px rgba(15,23,42,.035)",
+  borderRadius: 14,
+  border: "1px solid #dbeafe",
+  background: "#f0f6ff",
+  padding: "8px 12px",
+  display: "grid",
+  gap: 2,
 };
 
 const timelineItemTitle = {
-  fontSize: 14,
+  fontSize: 13,
   fontWeight: 800,
-  color: "#0f172a",
+  color: "#1e3a8a",
 };
 
 const timelineItemMeta = {
-  marginTop: 4,
-  fontSize: 12,
-  color: "#64748b",
+  fontSize: 11,
+  color: "#475569",
 };
 
 const timelineEmpty = {
-  color: "#64748b",
-  fontSize: 13,
+  fontSize: 12,
+  color: "#94a3b8",
+  fontStyle: "italic",
 };
