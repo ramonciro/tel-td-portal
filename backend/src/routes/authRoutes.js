@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../lib/db");
-const bcrypt = require("bcrypt");
 const { signToken } = require("../middlewares/auth");
 
 router.post("/login", async (req, res) => {
@@ -27,25 +26,7 @@ router.post("/login", async (req, res) => {
       return res.status(403).json({ message: "Usuário inativo" });
     }
 
-    let senhaValida = false;
-
-    // 1. Tenta validar via bcrypt (caso a senha já tenha sido convertida em hash)
-    try {
-      senhaValida = await bcrypt.compare(senha, user.senha);
-    } catch (e) {
-      senhaValida = false;
-    }
-
-    // 2. Fallback de compatibilidade: se não validou por bcrypt, testa texto plano
-    // e atualiza automaticamente para hash seguro para as próximas vezes.
-    if (!senhaValida && String(user.senha) === String(senha)) {
-      senhaValida = true;
-      const saltRounds = 10;
-      const novoHash = await bcrypt.hash(senha, saltRounds);
-      await pool.query("UPDATE usuarios SET senha = ? WHERE id = ?", [novoHash, user.id]);
-    }
-
-    if (!senhaValida) {
+    if (String(user.senha) !== String(senha)) {
       return res.status(401).json({ message: "Senha incorreta" });
     }
 
@@ -87,12 +68,9 @@ router.post("/alterar-senha", async (req, res) => {
       return res.status(400).json({ message: "Informe e-mail e nova senha" });
     }
 
-    const saltRounds = 10;
-    const senhaHash = await bcrypt.hash(novaSenha, saltRounds);
-
     await pool.query(
       "UPDATE usuarios SET senha = ?, troca_senha_obrigatoria = 0 WHERE email = ?",
-      [senhaHash, email]
+      [novaSenha, email]
     );
 
     return res.json({ message: "Senha alterada com sucesso" });
