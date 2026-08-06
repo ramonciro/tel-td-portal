@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import PortalShell from "../../components/PortalShell";
 import { apiFetch, getStoredUser } from "../../services/api";
 import { colors, chart, corDoCliente } from "../../lib/theme";
@@ -131,94 +132,50 @@ export default function DashboardPage() {
     }
   }
 
- import * as XLSX from "xlsx";
+  function exportarParaExcel() {
+    const turmasParaExportar = dados?.ultimas_turmas || [];
+    if (turmasParaExportar.length === 0) {
+      alert("Não há dados de turmas disponíveis para exportar com os filtros atuais.");
+      return;
+    }
 
-<button
-  onClick={exportarParaExcel}
-  style={{
-    border: `1px solid ${colors.border}`, background: "#fff", color: "#0F172A",
-    borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 12.5,
-    display: "inline-flex", alignItems: "center", gap: 6, boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-  }}
->
-  📊 Exportar Relatório em Excel (.xlsx)
-</button>
+    const dadosFormatados = turmasParaExportar.map(item => ({
+      "ID": item.id || "",
+      "Tema / Turma": item.tema || "-",
+      "Cliente": item.cliente || "-",
+      "Instrutor": item.instrutor || "-",
+      "Supervisor": item.supervisor || "-",
+      "Modalidade": parseModalidade(item.descricao, item.modalidade),
+      "Status": normalizeStatus(item.status_canonico || item.status),
+      "Data": formatDate(item.data || item.data_inicio),
+      "Base Ativa / Treinados": Number(item.base_ativa || item.treinados || 0),
+      "Presentes": Number(item.presentes || 0),
+      "Ausentes": Number(item.ausentes || 0),
+      "Pendentes": Number(item.pendentes || 0),
+      "Taxa de Presença (%)": Number(item.taxa_presenca || 0)
+    }));
 
-  // Mapeamento dos dados para o formato de planilha
-  const dadosFormatados = turmasParaExportar.map(item => ({
-    "ID": item.id || "",
-    "Tema / Turma": item.tema || "-",
-    "Cliente": item.cliente || "-",
-    "Instrutor": item.instrutor || "-",
-    "Supervisor": item.supervisor || "-",
-    "Modalidade": parseModalidade(item.descricao, item.modalidade),
-    "Status": normalizeStatus(item.status_canonico || item.status),
-    "Data": formatDate(item.data || item.data_inicio),
-    "Base Ativa / Treinados": Number(item.base_ativa || item.treinados || 0),
-    "Presentes": Number(item.presentes || 0),
-    "Ausentes": Number(item.ausentes || 0),
-    "Pendentes": Number(item.pendentes || 0),
-    "Taxa de Presença (%)": Number(item.taxa_presenca || 0)
-  }));
+    const worksheet = XLSX.utils.json_to_sheet(dadosFormatados);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório Executivo");
 
-  // Criação da Planilha e do Workbook
-  const worksheet = XLSX.utils.json_to_sheet(dadosFormatados);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório Executivo");
-
-  // Ajuste automático opcional para largura das colunas
-  const colWidths = [
-    { wch: 6 },  // ID
-    { wch: 30 }, // Tema / Turma
-    { wch: 15 }, // Cliente
-    { wch: 20 }, // Instrutor
-    { wch: 20 }, // Supervisor
-    { wch: 12 }, // Modalidade
-    { wch: 15 }, // Status
-    { wch: 12 }, // Data
-    { wch: 18 }, // Base Ativa
-    { wch: 12 }, // Presentes
-    { wch: 12 }, // Ausentes
-    { wch: 12 }, // Pendentes
-    { wch: 20 }, // Taxa de Presença
-  ];
-  worksheet["!cols"] = colWidths;
-
-  // Disparar o download do arquivo .xlsx
-  XLSX.writeFile(workbook, `relatorio_executivo_treinamentos_${new Date().toISOString().slice(0, 10)}.xlsx`);
-}
-
-    const cabecalho = [
-      "ID", "Tema / Turma", "Cliente", "Instrutor", "Supervisor", 
-      "Modalidade", "Status", "Data", "Base Ativa / Treinados", 
-      "Presentes", "Ausentes", "Pendentes", "Taxa de Presença (%)"
+    worksheet["!cols"] = [
+      { wch: 6 },  // ID
+      { wch: 30 }, // Tema / Turma
+      { wch: 15 }, // Cliente
+      { wch: 20 }, // Instrutor
+      { wch: 20 }, // Supervisor
+      { wch: 12 }, // Modalidade
+      { wch: 15 }, // Status
+      { wch: 12 }, // Data
+      { wch: 18 }, // Base Ativa
+      { wch: 12 }, // Presentes
+      { wch: 12 }, // Ausentes
+      { wch: 12 }, // Pendentes
+      { wch: 20 }, // Taxa de Presença
     ];
 
-    const linhas = turmasParaExportar.map(item => [
-      item.id || "",
-      `"${String(item.tema || "").replace(/"/g, '""')}"`,
-      `"${String(item.cliente || "").replace(/"/g, '""')}"`,
-      `"${String(item.instrutor || "").replace(/"/g, '""')}"`,
-      `"${String(item.supervisor || "").replace(/"/g, '""')}"`,
-      parseModalidade(item.descricao, item.modalidade),
-      normalizeStatus(item.status_canonico || item.status),
-      formatDate(item.data || item.data_inicio),
-      item.base_ativa || item.treinados || 0,
-      item.presentes || 0,
-      item.ausentes || 0,
-      item.pendentes || 0,
-      item.taxa_presenca || 0
-    ]);
-
-    const csvContent = "\uFEFF" + [cabecalho.join(";"), ...linhas.map(e => e.join(";"))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `relatorio_executivo_treinamentos_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    XLSX.writeFile(workbook, `relatorio_executivo_treinamentos_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
   const kpis = dados?.kpis || {};
@@ -281,14 +238,14 @@ export default function DashboardPage() {
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button
-                onClick={exportarParaCSV}
+                onClick={exportarParaExcel}
                 style={{
                   border: `1px solid ${colors.border}`, background: "#fff", color: "#0F172A",
                   borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 12.5,
                   display: "inline-flex", alignItems: "center", gap: 6, boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
                 }}
               >
-                📥 Exportar Relatório Completo (CSV)
+                📊 Exportar Relatório em Excel (.xlsx)
               </button>
               <button
                 onClick={() => setFilters({ cliente: "", instrutor: "", supervisor: "", status: "", modalidade: "", data_inicio: "", data_fim: "" })}
