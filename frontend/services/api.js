@@ -8,6 +8,17 @@ export function getToken() {
   return localStorage.getItem("token") || "";
 }
 
+// Funções para gerenciar o ambiente/cliente selecionado no navegador
+export function getSelectedClient() {
+  if (typeof window === "undefined") return "dasa";
+  return localStorage.getItem("client_id") || "dasa";
+}
+
+export function setSelectedClient(clientCode) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("client_id", clientCode);
+}
+
 export function getStoredUser() {
   if (typeof window === "undefined") return null;
 
@@ -50,78 +61,58 @@ export function hasSomeRole(user, allowedRoles = []) {
     .map(normalizeRole)
     .filter(Boolean);
 
-  const allowed = allowedRoles.map(normalizeRole).filter(Boolean);
-
-  return allowed.some((role) => userRoles.includes(role));
+  const normalizedAllowed = allowedRoles.map(normalizeRole);
+  return userRoles.some((r) => normalizedAllowed.includes(r));
 }
 
+// Função central de requisição atualizada para enviar o ambiente atual (X-Client-ID)
 export async function apiFetch(path, options = {}) {
   const url = `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
   const token = getToken();
-
-  const isFormData =
-    typeof FormData !== "undefined" && options.body instanceof FormData;
+  const currentClient = getSelectedClient(); // Envia o ambiente selecionado (dasa, sebrae, cemig, igua)
 
   const headers = {
+    "Content-Type": "application/json",
+    "X-Client-ID": currentClient,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
 
-  if (!isFormData && !headers["Content-Type"]) {
-    headers["Content-Type"] = "application/json";
-  }
-
   let response;
-
   try {
-    response = await fetch(url, {
-      ...options,
-      headers,
-      body: options.body,
-    });
-  } catch (error) {
-    throw new Error(
-      "Falha de conexão com a API. Verifique a URL da API, CORS ou indisponibilidade do servidor."
-    );
-  }
-
-  const contentType = response.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
-
-  let data;
-  try {
-    data = isJson ? await response.json() : await response.text();
+    response = await fetch(url, { ...options, headers });
   } catch {
-    data = null;
+    throw new Error("Falha de conexão com a API.");
   }
+
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {}
 
   if (!response.ok) {
-    const message =
-      (isJson && (data?.message || data?.error)) ||
-      (typeof data === "string" && data) ||
-      `Erro ${response.status}`;
-
-    if (response.status === 401) {
-      clearSession();
+    let message = `Erro ${response.status}`;
+    if (data && typeof data === "object") {
+      message = data.message || data.error || message;
     }
-
     throw new Error(message);
   }
 
   return data;
 }
 
-export default API_URL;
-
-
 export async function apiDownload(path, filenameFallback = "arquivo.xlsx") {
   const url = `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
   const token = getToken();
+  const currentClient = getSelectedClient();
 
   let response;
   try {
     response = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {
+        "X-Client-ID": currentClient,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     });
   } catch {
     throw new Error("Falha de conexão com a API durante o download.");
@@ -154,9 +145,11 @@ export async function apiDownload(path, filenameFallback = "arquivo.xlsx") {
     anchor.download = filename;
     document.body.appendChild(anchor);
     anchor.click();
-    anchor.remove();
+    document.body.removeChild(anchor);
     window.URL.revokeObjectURL(href);
   }
 
   return true;
 }
+
+export default API_URL;
