@@ -1,7 +1,7 @@
 CREATE DATABASE IF NOT EXISTS teltd;
 USE teltd;
 
--- Tabela de Clientes/Ambientes
+-- Tabela de Clientes / Ambientes Isolados
 CREATE TABLE IF NOT EXISTS clientes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     codigo VARCHAR(50) UNIQUE NOT NULL, -- 'dasa', 'sebrae', 'cemig', 'igua'
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS clientes (
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Inserção dos ambientes solicitados
+-- Inserção oficial dos quatro ambientes solicitados
 INSERT INTO clientes (codigo, nome) VALUES 
 ('dasa', 'Dasa'),
 ('sebrae', 'Sebrae'),
@@ -18,8 +18,6 @@ INSERT INTO clientes (codigo, nome) VALUES
 ('igua', 'Iguá')
 ON DUPLICATE KEY UPDATE nome = VALUES(nome);
 
--- Exemplo de associação na tabela de turmas (ou tabela principal do seu sistema)
--- Adicione a coluna cliente_id caso ainda não exista:
+-- Adiciona a coluna de vínculo nas tabelas do sistema (Exemplo: turmas e treinamentos)
 ALTER TABLE turmas ADD COLUMN IF NOT EXISTS cliente_id INT;
--- (Opcional, se usar chave estrangeira):
--- ALTER TABLE turmas ADD CONSTRAINT fk_turmas_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id);
+ALTER TABLE treinamentos ADD COLUMN IF NOT EXISTS cliente_id INT;
