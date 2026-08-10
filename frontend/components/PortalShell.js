@@ -14,520 +14,165 @@ const menuItems = [
   { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/presencas", label: "Gestão de Turmas", icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
-  { href: "/usuarios", label: "Gestão de Usuários", icon: "👥", roles: ["coordenador", "supervisor"] },
-  { href: "/auditoria", label: "Auditoria", icon: "🛡️", roles: ["coordenador", "superintendente"] },
+  { href: "/avaliacoes", label: "Avaliações", icon: "📝", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/mural", label: "Mural", icon: "📢", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/auditoria", label: "Auditoria", icon: "🛡️", roles: ["coordenador"] },
 ];
-// Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
-// ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
-// Frequência Individual, Avaliações, Responder Avaliação,
-// Resultados das Avaliações, NPS, Responder NPS.
-// As páginas em si continuam existindo (/avaliacoes segue como biblioteca de
-// provas, /responder-avaliacao e /responder-nps continuam sendo os links
-// que a aba da turma usa) — só saíram da navegação principal.
 
-function isRouteActive(pathname, href) {
-  if (!pathname) return false;
-  if (pathname === href) return true;
-  return pathname.startsWith(`${href}/`);
-}
-
-export default function PortalShell({
-  title,
-  subtitle,
-  children,
-  topRight,
-}) {
-  const pathname = usePathname();
+export default function PortalShell({ children, title, subtitle }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const [user, setUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [user, setUser] = useState(undefined);
+  const [ambienteAtual, setAmbienteAtual] = useState("dasa");
 
   useEffect(() => {
-    function handleResize() {
-      const mobile = window.innerWidth <= 900;
-      setIsMobile(mobile);
-
-      if (!mobile) {
-        setMobileMenuOpen(false);
-      }
+    const storedUser = getStoredUser();
+    if (!storedUser) {
+      router.push("/login");
+      return;
     }
+    setUser(storedUser);
 
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+    if (typeof window !== "undefined") {
+      const salvo = localStorage.getItem("client_id") || "dasa";
+      setAmbienteAtual(salvo);
+    }
+  }, [router]);
 
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
+  const handleMudarAmbiente = (e) => {
+    const novoAmbiente = e.target.value;
+    setAmbienteAtual(novoAmbiente);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("client_id", novoAmbiente);
+      window.location.reload(); // Recarrega para aplicar o escopo do novo tenant
+    }
+  };
 
-  useEffect(() => {
-    setUser(getStoredUser());
-  }, []);
+  const handleLogout = () => {
+    clearSession();
+    router.push("/login");
+  };
 
-  const allowedMenuItems = useMemo(() => {
+  const filteredMenuItems = useMemo(() => {
     if (!user) return [];
     return menuItems.filter((item) => {
       const roleOk = hasSomeRole(user, item.roles);
       if (!roleOk) return false;
-      if (item.requiresOceanAccess) return hasOceanAccess(user);
+      if (item.requiresOceanAccess && !hasOceanAccess(user)) return false;
       return true;
     });
   }, [user]);
 
-  const currentItem = useMemo(() => {
-    return menuItems.find(
-      (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
-    );
-  }, [pathname]);
-
-  const currentAllowed = useMemo(() => {
-    if (!currentItem) return true;
-    if (!user) return false;
-    const roleOk = hasSomeRole(user, currentItem.roles);
-    if (!roleOk) return false;
-    if (currentItem.requiresOceanAccess) return hasOceanAccess(user);
-    return true;
-  }, [currentItem, user]);
-
-  function handleLogout() {
-    clearSession();
-    router.push("/login");
-  }
-
-  const shellStyle = useMemo(
-    () => ({
-      minHeight: "100vh",
-      display: "grid",
-      gridTemplateColumns: isMobile ? "1fr" : "268px minmax(0, 1fr)",
-      background:
-        "radial-gradient(circle at top right, rgba(59,130,246,0.08), transparent 28%), linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%)",
-    }),
-    [isMobile]
-  );
-
-  if (user === undefined) return null;
-  if (!user) return null;
-
-  if (!currentAllowed) {
-    return (
-      <div style={{ padding: 24 }}>
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: 20,
-            padding: 24,
-            border: "1px solid #e2e8f0",
-          }}
-        >
-          <div
-            style={{
-              display: "inline-block",
-              background: "#fef2f2",
-              color: "#b91c1c",
-              padding: "6px 12px",
-              borderRadius: 999,
-              fontWeight: 700,
-              marginBottom: 16,
-            }}
-          >
-            Acesso restrito
-          </div>
-          <h2 style={{ marginTop: 0 }}>Você não tem permissão para acessar esta área.</h2>
-          <p style={{ color: "#64748b" }}>
-            Fale com a coordenação responsável para revisar o perfil e a liberação específica desta área.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div style={shellStyle}>
-      {isMobile ? (
-        <>
-          <header style={mobileTopbar}>
-            <div style={mobileBrandWrap}>
-              <img src="/logo-td.png" alt="Portal T&D" style={mobileLogo} />
-              <div style={{ minWidth: 0 }}>
-                <div style={mobileBrandTitle}>Portal T&amp;D</div>
-                <div style={mobileBrandSubtitle}>Treinamento e Desenvolvimento</div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen((prev) => !prev)}
-              style={mobileMenuButton}
-            >
-              {mobileMenuOpen ? "Fechar" : "Menu"}
-            </button>
-          </header>
-
-          {mobileMenuOpen ? (
-            <div style={mobileDrawer}>
-              <nav style={mobileNav}>
-                {allowedMenuItems.map((item) => {
-                  const active = isRouteActive(pathname, item.href);
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      style={{
-                        ...mobileNavItem,
-                        ...(active ? mobileNavItemActive : {}),
-                      }}
-                    >
-                      <span style={mobileNavIcon}>{item.icon}</span>
-                      <span style={mobileNavLabel}>{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
-
-              <div style={mobileFooterBlock}>
-                <div style={mobileEnvCard}>
-                  <span style={envLabel}>Ambiente</span>
-                  <strong style={envValue}>Gestão Executiva de T&amp;D</strong>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  style={logoutButtonMobile}
-                >
-                  Sair do portal
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </>
-      ) : (
-        <aside style={sidebar}>
-          <div style={brandBox}>
-            <img src="/logo-td.png" alt="Portal T&D" style={logo} />
-
-            <div style={{ minWidth: 0 }}>
-              <div style={brandTitle}>Portal T&amp;D</div>
-              <div style={brandSubtitle}>Treinamento e Desenvolvimento</div>
-            </div>
-          </div>
-
-          <nav style={nav}>
-            {allowedMenuItems.map((item) => {
-              const active = isRouteActive(pathname, item.href);
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  style={{
-                    ...navItem,
-                    ...(active ? navItemActive : {}),
-                  }}
-                >
-                  <span style={navIcon}>{item.icon}</span>
-                  <span style={navLabel}>{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div style={sidebarFooter}>
-            <div style={envCard}>
-              <span style={envLabel}>Ambiente</span>
-              <strong style={envValue}>Gestão Executiva de T&amp;D</strong>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              style={logoutButton}
-            >
-              Sair do portal
-            </button>
-          </div>
-        </aside>
-      )}
-
-      <main style={main}>
-        <div style={headerCard}>
-          <div>
-            <div style={pageTitle}>{title}</div>
-            {subtitle ? <div style={pageSubtitle}>{subtitle}</div> : null}
-          </div>
-
-          {topRight ? <div>{topRight}</div> : null}
+    <div style={shellContainer}>
+      {/* Sidebar para Desktop */}
+      <aside style={desktopSidebar}>
+        <div style={brandArea}>
+          <div style={brandBadge}>Tel T&D</div>
+          <div style={brandTitle}>Portal de Treinamento</div>
         </div>
 
-        <div style={content}>{children}</div>
+        {/* Seletor de Ambiente Multi-tenant */}
+        <div style={clientSelectorBox}>
+          <label style={clientLabel}>AMBIENTE / CLIENTE:</label>
+          <select value={ambienteAtual} onChange={handleMudarAmbiente} style={clientSelect}>
+            <option value="dasa" style={{ color: "#000" }}>Dasa</option>
+            <option value="sebrae" style={{ color: "#000" }}>Sebrae</option>
+            <option value="cemig" style={{ color: "#000" }}>Cemig</option>
+            <option value="igua" style={{ color: "#000" }}>Iguá</option>
+          </select>
+        </div>
+
+        <nav style={navMenu}>
+          {filteredMenuItems.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link key={item.href} href={item.href} style={{ ...navItem, ...(isActive ? navItemActive : {}) }}>
+                <span style={{ fontSize: 18 }}>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div style={sidebarFooter}>
+          <div style={userInfo}>
+            <div style={userName}>{user?.nome || "Usuário"}</div>
+            <div style={userRole}>{user?.perfil || "Colaborador"}</div>
+          </div>
+          <button onClick={handleLogout} style={logoutButton}>Sair</button>
+        </div>
+      </aside>
+
+      {/* Conteúdo Principal */}
+      <main style={mainContent}>
+        {/* Cabeçalho Mobile */}
+        <header style={mobileHeader}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>Portal T&D</div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Ambiente: {ambienteAtual.toUpperCase()}</div>
+          </div>
+          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={mobileMenuBtn}>
+            {mobileMenuOpen ? "✕ Fechar" : "☰ Menu"}
+          </button>
+        </header>
+
+        {mobileMenuOpen && (
+          <div style={mobileDropdown}>
+            <div style={{ padding: "10px 0" }}>
+              <label style={{ fontSize: 10, color: "#94a3b8", display: "block", marginBottom: 4 }}>TROCAR AMBIENTE:</label>
+              <select value={ambienteAtual} onChange={handleMudarAmbiente} style={{ ...clientSelect, width: "100%" }}>
+                <option value="dasa" style={{ color: "#000" }}>Dasa</option>
+                <option value="sebrae" style={{ color: "#000" }}>Sebrae</option>
+                <option value="cemig" style={{ color: "#000" }}>Cemig</option>
+                <option value="igua" style={{ color: "#000" }}>Iguá</option>
+              </select>
+            </div>
+            {filteredMenuItems.map((item) => (
+              <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)} style={mobileNavItem}>
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            ))}
+            <button onClick={handleLogout} style={{ ...logoutButton, width: "100%", marginTop: 12 }}>Sair</button>
+          </div>
+        )}
+
+        <div style={pageContentInner}>
+          {title && (
+            <div style={{ marginBottom: 24 }}>
+              <h1 style={{ fontSize: 26, fontWeight: 800, color: "#0f172a", margin: 0 }}>{title}</h1>
+              {subtitle && <p style={{ fontSize: 14, color: "#64748b", marginTop: 4 }}>{subtitle}</p>}
+            </div>
+          )}
+          {children}
+        </div>
       </main>
     </div>
   );
 }
 
-const sidebar = {
-  minHeight: "100vh",
-  background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)",
-  color: "#fff",
-  display: "flex",
-  flexDirection: "column",
-  padding: "20px 18px",
-  position: "sticky",
-  top: 0,
-  overflowY: "auto",
-};
-
-const brandBox = {
-  display: "flex",
-  alignItems: "center",
-  gap: 14,
-  marginBottom: 24,
-};
-
-const logo = {
-  width: 44,
-  height: 44,
-  borderRadius: 12,
-  objectFit: "contain",
-};
-
-const brandTitle = {
-  fontSize: 20,
-  fontWeight: 800,
-  lineHeight: 1.1,
-};
-
-const brandSubtitle = {
-  marginTop: 6,
-  color: "rgba(255,255,255,0.75)",
-  fontSize: 14,
-  lineHeight: 1.35,
-};
-
-const nav = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  overflowY: "auto",
-  paddingRight: 4,
-};
-
-const navItem = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  padding: "12px 14px",
-  borderRadius: 16,
-  color: "rgba(255,255,255,0.88)",
-  textDecoration: "none",
-  fontWeight: 700,
-  transition: "all .2s ease",
-};
-
-const navItemActive = {
-  background: "#FF6B4A",
-  color: "#fff",
-  boxShadow: "0 10px 18px rgba(255,107,74,0.35)",
-};
-
-const navIcon = {
-  width: 22,
-  textAlign: "center",
-  fontSize: 16,
-};
-
-const navLabel = {
-  lineHeight: 1.2,
-};
-
-const sidebarFooter = {
-  marginTop: "auto",
-  display: "grid",
-  gap: 12,
-  paddingTop: 18,
-};
-
-const envCard = {
-  background: "rgba(255,255,255,0.1)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 16,
-  padding: 14,
-  display: "grid",
-  gap: 4,
-};
-
-const envLabel = {
-  fontSize: 12,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-  color: "rgba(255,255,255,0.68)",
-  fontWeight: 800,
-};
-
-const envValue = {
-  fontSize: 14,
-  lineHeight: 1.35,
-};
-
-const logoutButton = {
-  border: "1px solid rgba(255,255,255,0.18)",
-  borderRadius: 14,
-  background: "rgba(255,255,255,0.08)",
-  color: "#fff",
-  padding: "12px 14px",
-  cursor: "pointer",
-  fontWeight: 800,
-};
-
-const main = {
-  padding: 18,
-  minWidth: 0,
-};
-
-const headerCard = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 22,
-  padding: 20,
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 16,
-  flexWrap: "wrap",
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
-};
-
-const pageTitle = {
-  fontSize: 28,
-  fontWeight: 800,
-  color: "#0f172a",
-  lineHeight: 1.1,
-};
-
-const pageSubtitle = {
-  marginTop: 8,
-  color: "#64748b",
-  lineHeight: 1.5,
-};
-
-const content = {
-  marginTop: 16,
-};
-
-const mobileTopbar = {
-  position: "sticky",
-  top: 0,
-  zIndex: 20,
-  background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)",
-  color: "#fff",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 10,
-  padding: "14px 16px",
-};
-
-const mobileBrandWrap = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  minWidth: 0,
-};
-
-const mobileLogo = {
-  width: 38,
-  height: 38,
-  borderRadius: 10,
-  objectFit: "contain",
-};
-
-const mobileBrandTitle = {
-  fontSize: 18,
-  fontWeight: 800,
-  lineHeight: 1.1,
-};
-
-const mobileBrandSubtitle = {
-  marginTop: 4,
-  color: "rgba(255,255,255,0.75)",
-  fontSize: 12,
-  lineHeight: 1.3,
-};
-
-const mobileMenuButton = {
-  border: "1px solid rgba(255,255,255,0.18)",
-  borderRadius: 12,
-  background: "rgba(255,255,255,0.08)",
-  color: "#fff",
-  padding: "10px 12px",
-  cursor: "pointer",
-  fontWeight: 800,
-};
-
-const mobileDrawer = {
-  background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)",
-  color: "#fff",
-  padding: "0 16px 16px",
-};
-
-const mobileNav = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  paddingTop: 8,
-};
-
-const mobileNavItem = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  padding: "12px 14px",
-  borderRadius: 14,
-  color: "rgba(255,255,255,0.88)",
-  textDecoration: "none",
-  fontWeight: 700,
-};
-
-const mobileNavItemActive = {
-  background: "#FF6B4A",
-  color: "#fff",
-};
-
-const mobileNavIcon = {
-  width: 22,
-  textAlign: "center",
-  fontSize: 16,
-};
-
-const mobileNavLabel = {
-  lineHeight: 1.2,
-};
-
-const mobileFooterBlock = {
-  display: "grid",
-  gap: 12,
-  marginTop: 14,
-};
-
-const mobileEnvCard = {
-  background: "rgba(255,255,255,0.1)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 16,
-  padding: 14,
-  display: "grid",
-  gap: 4,
-};
-
-const logoutButtonMobile = {
-  border: "1px solid rgba(255,255,255,0.18)",
-  borderRadius: 14,
-  background: "rgba(255,255,255,0.08)",
-  color: "#fff",
-  padding: "12px 14px",
-  cursor: "pointer",
-  fontWeight: 800,
-};
+// Estilos de Layout
+const shellContainer = { display: "flex", minHeight: "100vh", background: "#f8fafc", fontFamily: "sans-serif" };
+const desktopSidebar = { width: 280, background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 14px", position: "fixed", top: 0, bottom: 0, left: 0, zIndex: 50 };
+const brandArea = { padding: "0 10px 16px", borderBottom: "1px solid rgba(255,255,255,0.1)" };
+const brandBadge = { fontSize: 11, fontWeight: 900, textTransform: "uppercase", color: "#38bdf8", letterSpacing: "1px" };
+const brandTitle = { fontSize: 18, fontWeight: 800, marginTop: 4 };
+const clientSelectorBox = { padding: "12px 10px", borderBottom: "1px solid rgba(255,255,255,0.1)", marginBottom: 8 };
+const clientLabel = { fontSize: 10, color: "rgba(255,255,255,0.6)", display: "block", marginBottom: 4, fontWeight: 800 };
+const clientSelect = { width: "100%", background: "rgba(255,255,255,0.12)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "8px", fontSize: 13, fontWeight: 700, cursor: "pointer", outline: "none" };
+const navMenu = { flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, marginTop: 10 };
+const navItem = { display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 10, color: "rgba(255,255,255,0.8)", textDecoration: "none", fontWeight: 700, fontSize: 14, transition: "0.2s" };
+const navItemActive = { background: "rgba(56, 189, 248, 0.15)", color: "#38bdf8", borderLeft: "4px solid #38bdf8" };
+const sidebarFooter = { borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 };
+const userInfo = { padding: "0 6px" };
+const userName = { fontSize: 14, fontWeight: 800, color: "#fff" };
+const userRole = { fontSize: 12, color: "#94a3b8", textTransform: "capitalize" };
+const logoutButton = { background: "rgba(239, 68, 68, 0.15)", color: "#fca5a5", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: 8, padding: "8px", fontWeight: 700, cursor: "pointer", textAlign: "center" };
+const mainContent = { flex: 1, marginLeft: 280, display: "flex", flexDirection: "column" };
+const mobileHeader = { display: "none", "@media (max-width: 768px)": { display: "flex" }, background: "#0B1220", color: "#fff", padding: "14px 20px", alignItems: "center", justifyContent: "between" };
+const mobileMenuBtn = { background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", padding: "6px 10px", borderRadius: 6, fontWeight: 700 };
+const mobileDropdown = { background: "#0B1220", color: "#fff", padding: "16px", borderBottom: "1px solid rgba(255,255,255,0.1)" };
+const mobileNavItem = { display: "flex", alignItems: "center", gap: 10, padding: "10px", color: "#fff", textDecoration: "none", fontWeight: 700, fontSize: 14 };
+const pageContentInner = { padding: "32px", maxWidth: 1200, width: "100%", margin: "0 auto" };
