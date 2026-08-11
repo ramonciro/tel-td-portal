@@ -203,15 +203,24 @@ export default function GestaoTurmasPage() {
       0
     );
 
-    // taxa média ponderada: média da taxaPresenca apenas das turmas com lançamentos reais
+    // taxa média ponderada pelo número de participantes confirmados:
+    // cada turma contribui proporcionalmente ao seu volume de chamadas,
+    // evitando que turmas de 1 pessoa distorçam o indicador global.
     const turmasComDados = turmasFiltradas.filter(
       (item) => (item.presentes + item.ausentes + item.justificados) > 0
     );
+    const totalRealizado_global = turmasComDados.reduce(
+      (acc, item) =>
+        acc + Number(item.presentes || 0) + Number(item.ausentes || 0) + Number(item.justificados || 0),
+      0
+    );
     const taxaMedia =
-      turmasComDados.length > 0
+      turmasComDados.length > 0 && totalRealizado_global > 0
         ? Math.round(
-            turmasComDados.reduce((acc, item) => acc + item.taxaPresenca, 0) /
-              turmasComDados.length
+            turmasComDados.reduce(
+              (acc, item) => acc + Number(item.presentes || 0),
+              0
+            ) / totalRealizado_global * 100
           )
         : null;
 
@@ -268,10 +277,7 @@ export default function GestaoTurmasPage() {
 function calcularCHRealizada(item) {
   const carga = parseHoras(item.carga_horaria);
 
-  if (item.statusTurma === "Concluída") {
-    return carga;
-  }
-
+  // Estados que nunca têm CH realizada
   if (
     item.statusTurma === "Planejada" ||
     item.statusTurma === "Cancelada" ||
@@ -281,18 +287,26 @@ function calcularCHRealizada(item) {
     return 0;
   }
 
+  // Registros confirmados (exclui pendentes): prova de que a chamada aconteceu
+  const totalRealizado =
+    Number(item.presentes || 0) +
+    Number(item.ausentes || 0) +
+    Number(item.justificados || 0);
+
+  if (item.statusTurma === "Concluída") {
+    // BUG FIX: só considera carga completa quando há pelo menos um lançamento
+    // real. Turmas auto-concluídas (data_fim < hoje) sem nenhuma chamada
+    // registrada retornavam a carga inteira — inflando o total do relatório.
+    if (totalRealizado === 0) return 0;
+    return carga;
+  }
+
   if (item.diasPlanejados > 0) {
-    // proxy correto: proporção de lançamentos confirmados sobre a base esperada
-    // (pendentes são participantes, não aulas — não pode subtrair direto de diasPlanejados)
+    // Cronograma: proporção de lançamentos confirmados sobre a base esperada
     const baseEsperada = Number(item.baseEsperada || 0);
-    const confirmados = Number(item.presentes || 0) +
-      Number(item.ausentes || 0) +
-      Number(item.justificados || 0);
-
     const proporcaoRealizada = baseEsperada > 0
-      ? Math.min(confirmados / baseEsperada, 1)
+      ? Math.min(totalRealizado / baseEsperada, 1)
       : 0;
-
     return Number((carga * proporcaoRealizada).toFixed(1));
   }
 
@@ -300,38 +314,50 @@ function calcularCHRealizada(item) {
 }
 
 function exportarRelatorio() {
-  const dados = turmasFiltradas.map((item) => ({
-    Turma: item.tema || "-",
-    Cliente: item.cliente || "-",
-    Status: item.statusTurma || "-",
-    Inicio: fmtDate(item.data_inicio || item.data),
-    Fim: fmtDate(
-      item.data_fim ||
-      item.data_inicio ||
-      item.data
-    ),
-    Treinandos: Number(item.treinandos || 0),
-    "Carga horária":
-      item.carga_horaria || "0h",
-    "CH realizada": `${calcularCHRealizada(item)}h`,
-  }));
+  const dados = turmasFiltradas.map((item) => {
+    const totalRealizado =
+      Number(item.presentes || 0) +
+      Number(item.ausentes || 0) +
+      Number(item.justificados || 0);
 
-  const worksheet =
-    XLSX.utils.json_to_sheet(dados);
+    return {
+      // ── Identificação ──────────────────────────────────
+      Turma:             item.tema      || "-",
+      Cliente:           item.cliente   || "-",
+      Instrutor:         item.instrutor || "-",
+      Supervisor:        item.supervisor || "-",
+      Status:            item.statusTurma || "-",
 
-  const workbook =
-    XLSX.utils.book_new();
+      // ── Período ────────────────────────────────────────
+      Início:            fmtDate(item.data_inicio || item.data),
+      Fim:               fmtDate(item.data_fim || item.data_inicio || item.data),
 
-  XLSX.utils.book_append_sheet(
-    workbook,
-    worksheet,
-    "Relatório Presença"
-  );
+      // ── Capacidade ─────────────────────────────────────
+      "Treinandos previstos":    Number(item.treinandos             || 0),
+      "Treinandos confirmados":  Number(item.treinandos_confirmados || 0),
+      "Aulas planejadas":        Number(item.diasPlanejados         || 0),
 
-  XLSX.writeFile(
-    workbook,
-    "relatorio_presenca.xlsx"
-  );
+      // ── Frequência ─────────────────────────────────────
+      "Base esperada":           Number(item.baseEsperada  || 0),
+      "Total realizado":         totalRealizado,
+      Presentes:                  Number(item.presentes    || 0),
+      Ausentes:                   Number(item.ausentes     || 0),
+      Justificados:               Number(item.justificados || 0),
+      Pendentes:                  Number(item.pendentes    || 0),
+      "Taxa presença (%)": Number(item.taxaPresenca  || 0),
+      "Taxa execução (%)": Number(item.taxaExecucao  || 0),
+      "Origem frequência":        item.origemFrequencia || "-",
+
+      // ── Carga horária ───────────────────────────────────
+      "Carga horária":   item.carga_horaria        || "0h",
+      "CH realizada":    `${calcularCHRealizada(item)}h`,
+    };
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(dados);
+  const workbook  = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório Presença");
+  XLSX.writeFile(workbook, "relatorio_presenca.xlsx");
 }
 
 
