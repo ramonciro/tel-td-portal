@@ -1,280 +1,827 @@
-"use client";
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import API_URL from "../../services/api";
-import { colors, radius } from "../../lib/theme";
+const authRoutes = require("./routes/authRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
+const createCrudRouter = require("./routes/entityCrud");
+const pool = require("./lib/db");
+const importDashboardExcel = require("./scripts/importDashboardExcel");
+const { runMigrations } = require("./database/migrate");
+const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
 
-export default function LoginPage() {
-  const router = useRouter();
+const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
+const jornadasDesenvolvimentoRoutes = require("./routes/jornadasDesenvolvimentoRoutes");
+const acoesDesenvolvimentoRoutes = require("./routes/acoesDesenvolvimentoRoutes");
+const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
 
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
-  const [ambiente, setAmbiente] = useState("Comércio"); // Padrão inicial
-  const [erro, setErro] = useState("");
-  const [loading, setLoading] = useState(false);
+// FIX 1: importar a rota de jornada-participantes (estava faltando)
+const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
 
-  // Lista exatamente como pedida, apenas os nomes limpos
-  const ambientesDisponiveis = [
-    "Comércio",
-    "Dasa",
-    "Sebrae",
-    "CEMIG",
-    "FSA",
-    "Iguá"
-  ];
+const {
+  getDashboardTreinamentos,
+} = require("./controllers/dashboardTreinamentosController");
 
-  async function login(e) {
-    e.preventDefault();
-    setErro("");
-    setLoading(true);
+const {
+  listarResumoGeral,
+  obterResumoPorTreinamento,
+} = require("./controllers/presencaResumoController");
 
+const { registrarAuditoria } = require("./services/auditoria");
+const { listarAuditoriaHandler } = require("./controllers/auditoriaController");
+
+const {
+  obterMural,
+  criarPublicacaoHandler,
+  editarPublicacaoHandler,
+  excluirPublicacaoHandler,
+} = require("./controllers/muralController");
+
+const {
+  listarHandler: listarNecessidadesHandler,
+  criarHandler: criarNecessidadeHandler,
+  editarHandler: editarNecessidadeHandler,
+  excluirHandler: excluirNecessidadeHandler,
+} = require("./controllers/necessidadesController");
+
+const {
+  getParticipantesByTreinamento,
+  importarParticipantesExcel,
+  salvarChamadaParticipantes,
+  deleteParticipanteTreinamento,
+  deleteParticipantesTreinamentoBulk,
+} = require("./controllers/treinamentoParticipantesController");
+
+const {
+  getFrequenciaIndividual,
+} = require("./controllers/frequenciaIndividualController");
+
+const {
+  listMateriaisAvaliativos,
+  createMaterialAvaliativo,
+  updateMaterialAvaliativo,
+  deleteMaterialAvaliativo,
+} = require("./controllers/materiaisAvaliativosController");
+
+const {
+  listAvaliacoesTreinandos,
+  listNpsDisponivel,
+  createAvaliacaoTreinando,
+} = require("./controllers/avaliacoesTreinandosController");
+
+const {
+  listRespostasAvaliativas,
+  createRespostaAvaliativa,
+  updateRespostaAvaliativa,
+  deleteRespostaAvaliativa,
+} = require("./controllers/respostasAvaliativasController");
+
+const {
+  listTurmaAulas,
+  getTurmaAulaById,
+  createTurmaAula,
+  updateTurmaAula,
+  deleteTurmaAula,
+  gerarCronogramaTurma,
+  duplicarPlanoAulas,
+  getResumoTurmaAulas,
+} = require("./controllers/turmaAulasController");
+
+const {
+  listarPresencaAula,
+  inicializarPresencaAula,
+  salvarPresencaAula,
+  resumoPresencaAula,
+} = require("./controllers/presencaAulasController");
+
+// FIX 2 + 3: importar o controller dedicado da biblioteca
+// (resolve o upload e os campos categoria/publico/status que o createCrudRouter ignorava)
+const {
+  listBiblioteca,
+  createBiblioteca,
+  updateBiblioteca,
+  deleteBiblioteca,
+  uploadBibliotecaArquivo,
+} = require("./controllers/bibliotecaController");
+
+const app = express();
+const upload = multer({ storage: multer.memoryStorage() });
+
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.get(
+  "/api/dashboard/treinamentos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  getDashboardTreinamentos
+);
+
+// Fonte única de presença + status de turma (cronograma > legado > snapshot),
+// usada pelas páginas Presenças e Treinamentos.
+app.get(
+  "/api/presenca-resumo",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listarResumoGeral
+);
+app.get(
+  "/api/presenca-resumo/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  obterResumoPorTreinamento
+);
+
+app.get(
+  "/api/auditoria",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  listarAuditoriaHandler
+);
+
+// Mural da turma: publicações manuais + eventos derivados (avaliação
+// publicada, material adicionado, chamada concluída). Ver
+// backend/src/services/muralResolver.js.
+app.get(
+  "/api/turma-mural/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  obterMural
+);
+app.post(
+  "/api/turma-mural/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  criarPublicacaoHandler
+);
+app.put(
+  "/api/turma-mural/publicacao/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  editarPublicacaoHandler
+);
+app.delete(
+  "/api/turma-mural/publicacao/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  excluirPublicacaoHandler
+);
+
+// Fase 1 do ciclo ISO 10015: necessidade de treinamento (antes de a turma
+// existir). Ver backend/src/services/necessidadesResolver.js.
+app.get(
+  "/api/necessidades",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  listarNecessidadesHandler
+);
+app.post(
+  "/api/necessidades",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  criarNecessidadeHandler
+);
+app.put(
+  "/api/necessidades/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  editarNecessidadeHandler
+);
+app.delete(
+  "/api/necessidades/:id",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  excluirNecessidadeHandler
+);
+
+app.get("/api", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "API Tel T&D online" });
+  } catch (error) {
+    res.status(500).json({
+      status: "API online sem conexão com banco",
+      error: error.message,
+    });
+  }
+});
+
+app.use("/api/auth", authRoutes);
+
+app.use(
+  "/api/dashboard",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  dashboardRoutes
+);
+
+app.use(
+  "/api/clientes",
+  createCrudRouter({
+    table: "clientes",
+    fields: ["nome", "segmento", "status", "gestor", "descricao"],
+    orderBy: "nome ASC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
+  })
+);
+
+app.use(
+  "/api/usuarios",
+  createCrudRouter({
+    table: "usuarios",
+    fields: [
+      "nome",
+      "email",
+      "senha",
+      "perfil",
+      "cliente",
+      "ativo",
+      "troca_senha_obrigatoria",
+      "pode_acessar_oceano_desenvolvimento",
+    ],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente")],
+    auditoria: {
+      entidade: "usuario",
+      resumoCriar: (dados) => `Criou o usuário "${dados.nome || "?"}" (${dados.perfil || "sem perfil"})`,
+      resumoEditar: (antes, depois) => {
+        const alvo = antes?.nome || `#${antes?.id}`;
+        if ("senha" in depois) return `Alterou a senha do usuário "${alvo}"`;
+        if (depois.perfil && depois.perfil !== antes?.perfil) {
+          return `Mudou o perfil de "${alvo}" de "${antes?.perfil}" para "${depois.perfil}"`;
+        }
+        if ("ativo" in depois && String(depois.ativo) !== String(antes?.ativo)) {
+          return `${String(depois.ativo) === "1" ? "Reativou" : "Desativou"} o usuário "${alvo}"`;
+        }
+        return `Editou o usuário "${alvo}"`;
+      },
+      resumoExcluir: (antes) => `Excluiu o usuário "${antes?.nome || "?"}" (${antes?.perfil || "sem perfil"})`,
+    },
+  })
+);
+
+app.delete(
+  "/api/treinamentos/:id",
+  authRequired,
+  authorizeRoles("coordenador"),
+  async (req, res) => {
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, senha, ambiente }),
+      const { id } = req.params;
+
+      const [linhas] = await pool.query(`SELECT * FROM treinamentos WHERE id = ?`, [id]);
+      const antes = linhas[0] || null;
+
+      await pool.query(`DELETE FROM presenca_aulas WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM treinamento_participantes WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
+      await pool.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
+
+      registrarAuditoria({
+        usuario: req.user,
+        acao: "excluir",
+        entidade: "treinamento",
+        entidadeId: id,
+        resumo: `${req.user?.nome || "Alguém"} excluiu o treinamento "${antes?.tema || "?"}" (${antes?.cliente || "?"}) e todos os dados relacionados (presenças, aulas, avaliações, participantes)`,
+        dadosAntes: antes,
+        ip: req.ip,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Falha no login");
-      }
-
-      if (typeof window !== "undefined") {
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-        localStorage.setItem("clienteAtivo", ambiente);
-      }
-
-      if (data.user?.troca_senha_obrigatoria) {
-        router.push("/primeiro-acesso");
-      } else {
-        router.push("/inicio");
-      }
-    } catch (err) {
-      setErro(err.message || "Erro ao entrar");
-    } finally {
-      setLoading(false);
+      return res.json({
+        ok: true,
+        message: "Treinamento e dados relacionados excluídos com sucesso",
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        message: "Erro ao excluir treinamento",
+        error: error.message,
+      });
     }
   }
+);
 
-  return (
-    <div style={container}>
-      {/* Lado esquerdo restaurado com o visual original do portal */}
-      <div style={leftSide}>
-        <div style={leftContent}>
-          <div style={badge}>
-            <span style={dot} />
-            <span style={pulseText}>Portal T&D — Sistema Integrado</span>
-          </div>
-          <h1 style={leftTitle}>Suas turmas, materiais e avaliações num só lugar.</h1>
-          <p style={leftDesc}>
-            Necessidade → planejamento → execução → resultado, tudo integrado e rastreável.
-          </p>
-        </div>
-      </div>
+app.use(
+  "/api/treinamentos",
+  createCrudRouter({
+    table: "treinamentos",
+    fields: [
+      "tema",
+      "cliente",
+      "instrutor",
+      "carga_horaria",
+      "participantes",
+      "participantes_previstos",
+      "participantes_presentes",
+      "concluidos",
+      "publico",
+      "status",
+      "descricao",
+      "data",
+      "data_inicio",
+      "data_fim",
+      "turma",
+      "supervisor",
+      "necessidade_id",
+    ],
+    orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
+    auditoria: {
+      entidade: "treinamento",
+      resumoCriar: (dados) => `Criou o treinamento "${dados.tema || "?"}" (${dados.cliente || "?"})`,
+      resumoEditar: (antes, depois) => `Editou o treinamento "${antes?.tema || "?"}" (${antes?.cliente || "?"})`,
+    },
+  })
+);
 
-      {/* Lado direito com o card de login */}
-      <div style={rightSide}>
-        <form onSubmit={login} style={loginCard}>
-          <h2 style={loginTitle}>Acessar Portal</h2>
-          <p style={loginSubtitle}>Selecione o ambiente e digite suas credenciais</p>
+app.get(
+  "/api/treinamentos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-          {erro && <div style={errorBox}>{erro}</div>}
+      const [rows] = await pool.query(
+        `
+        SELECT
+          id,
+          tema,
+          cliente,
+          instrutor,
+          carga_horaria,
+          participantes,
+          participantes_previstos,
+          participantes_presentes,
+          concluidos,
+          publico,
+          status,
+          descricao,
+          data,
+          data_inicio,
+          data_fim,
+          turma,
+          supervisor,
+          necessidade_id
+        FROM treinamentos
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [id]
+      );
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div>
-              <label style={fieldLabel}>Ambiente</label>
-              <select
-                value={ambiente}
-                onChange={(e) => setAmbiente(e.target.value)}
-                style={selectInput}
-              >
-                {ambientesDisponiveis.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
+      if (!rows.length) {
+        return res.status(404).json({
+          ok: false,
+          message: "Treinamento não encontrado",
+        });
+      }
 
-            <div>
-              <label style={fieldLabel}>E-mail</label>
-              <input
-                type="email"
-                placeholder="seu.email@empresa.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                style={textInput}
-              />
-            </div>
+      return res.json(rows[0]);
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        message: "Erro ao buscar treinamento",
+        error: error.message,
+      });
+    }
+  }
+);
 
-            <div>
-              <label style={fieldLabel}>Senha</label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-                required
-                style={textInput}
-              />
-            </div>
+app.get(
+  "/api/treinamentos/:id/participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  getParticipantesByTreinamento
+);
 
-            <button type="submit" disabled={loading} style={submitButton}>
-              {loading ? "Entrando..." : "Entrar"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+app.post(
+  "/api/treinamentos/importar-participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  upload.single("arquivo"),
+  importarParticipantesExcel
+);
+
+app.post(
+  "/api/treinamentos/salvar-chamada",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  salvarChamadaParticipantes
+);
+
+app.delete(
+  "/api/treinamentos/participantes/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  deleteParticipanteTreinamento
+);
+
+app.post(
+  "/api/treinamentos/participantes/excluir-lote",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  deleteParticipantesTreinamentoBulk
+);
+
+app.get(
+  "/api/turma-aulas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listTurmaAulas
+);
+
+app.get(
+  "/api/turma-aulas/resumo/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  getResumoTurmaAulas
+);
+
+app.get(
+  "/api/turma-aulas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  getTurmaAulaById
+);
+
+app.post(
+  "/api/turma-aulas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  createTurmaAula
+);
+
+app.put(
+  "/api/turma-aulas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  updateTurmaAula
+);
+
+app.delete(
+  "/api/turma-aulas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  deleteTurmaAula
+);
+
+app.post(
+  "/api/turma-aulas/gerar-cronograma",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  gerarCronogramaTurma
+);
+
+app.post(
+  "/api/turma-aulas/duplicar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  duplicarPlanoAulas
+);
+
+app.get(
+  "/api/presenca-aulas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listarPresencaAula
+);
+
+app.post(
+  "/api/presenca-aulas/inicializar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  inicializarPresencaAula
+);
+
+app.post(
+  "/api/presenca-aulas/salvar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  salvarPresencaAula
+);
+
+app.get(
+  "/api/presenca-aulas/resumo/:turma_aula_id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  resumoPresencaAula
+);
+
+app.use(
+  "/api/presencas",
+  createCrudRouter({
+    table: "presencas",
+    fields: [
+      "treinamento_id",
+      "data_chamada",
+      "treinando_nome",
+      "presente",
+      "status",
+      "justificativa",
+    ],
+    orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    auditoria: {
+      entidade: "presenca",
+      resumoEditar: (antes, depois) =>
+        `Editou retroativamente a chamada de "${antes?.treinando_nome || "?"}" em ${antes?.data_chamada || "?"} (de "${antes?.status || "?"}" para "${depois.status || antes?.status || "?"}")`,
+      resumoExcluir: (antes) => `Excluiu o registro de chamada de "${antes?.treinando_nome || "?"}" em ${antes?.data_chamada || "?"}`,
+    },
+  })
+);
+
+app.use(
+  "/api/avaliacoes",
+  createCrudRouter({
+    table: "avaliacoes",
+    fields: [
+      "treinamento_id",
+      "titulo",
+      "nota_nps",
+      "nota_qualidade",
+      "nota_prova",
+      "observacoes",
+      "comentario",
+      "treinando_nome",
+    ],
+    orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    auditoria: {
+      entidade: "avaliacao",
+      resumoCriar: (dados) => `Lançou avaliação "${dados.titulo || "?"}" para "${dados.treinando_nome || "?"}"`,
+      resumoEditar: (antes, depois) => {
+        const mudouNota =
+          ("nota_prova" in depois && String(depois.nota_prova) !== String(antes?.nota_prova)) ||
+          ("nota_qualidade" in depois && String(depois.nota_qualidade) !== String(antes?.nota_qualidade));
+        const alvo = antes?.treinando_nome || `#${antes?.id}`;
+        return mudouNota
+          ? `Corrigiu/alterou a nota da avaliação "${antes?.titulo || "?"}" de "${alvo}"`
+          : `Editou a avaliação "${antes?.titulo || "?"}" de "${alvo}"`;
+      },
+      resumoExcluir: (antes) => `Excluiu a avaliação "${antes?.titulo || "?"}" de "${antes?.treinando_nome || "?"}"`,
+    },
+  })
+);
+
+app.get(
+  "/api/frequencia-individual",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  getFrequenciaIndividual
+);
+
+app.get(
+  "/api/avaliacoes-treinandos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listAvaliacoesTreinandos
+);
+
+app.get(
+  "/api/nps-disponivel",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listNpsDisponivel
+);
+
+app.post(
+  "/api/avaliacoes-treinandos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  createAvaliacaoTreinando
+);
+
+app.get(
+  "/api/materiais-avaliativos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  listMateriaisAvaliativos
+);
+
+app.post(
+  "/api/materiais-avaliativos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  createMaterialAvaliativo
+);
+
+app.put(
+  "/api/materiais-avaliativos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  updateMaterialAvaliativo
+);
+
+app.delete(
+  "/api/materiais-avaliativos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteMaterialAvaliativo
+);
+
+app.get(
+  "/api/respostas-avaliativas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listRespostasAvaliativas
+);
+
+app.post(
+  "/api/respostas-avaliativas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  createRespostaAvaliativa
+);
+
+app.put(
+  "/api/respostas-avaliativas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  updateRespostaAvaliativa
+);
+
+app.delete(
+  "/api/respostas-avaliativas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  deleteRespostaAvaliativa
+);
+
+// FIX 2 + 3: rotas explícitas da biblioteca usando o controller dedicado.
+// Resolve o upload (que era 404) e os campos categoria/publico/status
+// que o createCrudRouter anterior ignorava silenciosamente.
+app.get(
+  "/api/biblioteca",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listBiblioteca
+);
+
+app.post(
+  "/api/biblioteca",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  createBiblioteca
+);
+
+app.put(
+  "/api/biblioteca/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  updateBiblioteca
+);
+
+app.delete(
+  "/api/biblioteca/:id",
+  authRequired,
+  authorizeRoles("coordenador"),
+  deleteBiblioteca
+);
+
+app.post(
+  "/api/biblioteca/upload",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  upload.single("arquivo"),
+  uploadBibliotecaArquivo
+);
+
+app.use(
+  "/api/trilhas",
+  createCrudRouter({
+    table: "trilhas_aprendizagem",
+    fields: ["cliente", "titulo", "descricao", "etapas"],
+    orderBy: "id DESC",
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
+  })
+);
+
+app.get(
+  "/api/zerar-dashboard",
+  authRequired,
+  authorizeRoles("coordenador"),
+  async (req, res) => {
+    try {
+      await pool.query("SET FOREIGN_KEY_CHECKS = 0");
+
+      await pool.query("TRUNCATE TABLE avaliacoes");
+      await pool.query("TRUNCATE TABLE presenca_aulas");
+      await pool.query("TRUNCATE TABLE presencas");
+      await pool.query("TRUNCATE TABLE treinamento_participantes");
+      await pool.query("TRUNCATE TABLE turma_aulas");
+      await pool.query("TRUNCATE TABLE treinamentos");
+      await pool.query("TRUNCATE TABLE usuarios");
+      await pool.query("TRUNCATE TABLE clientes");
+
+      await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+
+      res.json({
+        ok: true,
+        message: "Base zerada com sucesso.",
+      });
+    } catch (error) {
+      try {
+        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+      } catch (_) {}
+
+      console.error("Erro ao zerar base:", error);
+      res.status(500).json({
+        ok: false,
+        message: "Erro ao zerar base.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/importar-dashboard",
+  authRequired,
+  authorizeRoles("coordenador"),
+  async (req, res) => {
+    try {
+      const truncate =
+        req.query.truncate === "1" ||
+        req.query.truncate === "true" ||
+        req.query.truncate === "sim";
+
+      if (truncate) {
+        await pool.query("SET FOREIGN_KEY_CHECKS = 0");
+        await pool.query("TRUNCATE TABLE avaliacoes");
+        await pool.query("TRUNCATE TABLE presenca_aulas");
+        await pool.query("TRUNCATE TABLE presencas");
+        await pool.query("TRUNCATE TABLE treinamento_participantes");
+        await pool.query("TRUNCATE TABLE turma_aulas");
+        await pool.query("TRUNCATE TABLE treinamentos");
+        await pool.query("TRUNCATE TABLE usuarios");
+        await pool.query("TRUNCATE TABLE clientes");
+        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+      }
+
+      const resultado = await importDashboardExcel();
+
+      res.json({
+        ok: true,
+        message: "Importação do dashboard concluída com sucesso.",
+        resumo: resultado,
+      });
+    } catch (error) {
+      try {
+        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+      } catch (_) {}
+
+      console.error("Erro ao importar dashboard:", error);
+      res.status(500).json({
+        ok: false,
+        message: "Erro ao importar dashboard.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.use("/api/jornadas-etapas", jornadasEtapasRoutes);
+app.use("/api/jornadas-desenvolvimento", authRequired, authorizeOceanAccess, jornadasDesenvolvimentoRoutes);
+app.use("/api/acoes-desenvolvimento", authRequired, authorizeOceanAccess, acoesDesenvolvimentoRoutes);
+app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlanosRoutes);
+
+// FIX 1: rota de jornada-participantes registrada junto com as rotas do Oceano
+app.use("/api/jornada-participantes", authRequired, authorizeOceanAccess, jornadaParticipantesRoutes);
+
+const PORT = process.env.PORT || 3000;
+
+async function iniciarAplicacao() {
+  try {
+    await runMigrations();
+
+    app.listen(PORT, () => {
+      console.log(`Servidor rodando na porta ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Erro crítico ao iniciar o servidor:", error);
+    process.exit(1);
+  }
 }
 
-// Estilos alinhados com o Design System original (lib/theme)
-const container = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  minHeight: "100vh",
-  background: colors.background || "#0f172a",
-};
-
-const leftSide = {
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-  padding: 64,
-  background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-  color: "#fff",
-};
-
-const leftContent = {
-  maxWidth: 480,
-};
-
-const badge = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  padding: "6px 12px",
-  background: "rgba(255,255,255,0.05)",
-  borderRadius: radius.full || 999,
-  border: "1px solid rgba(255,255,255,0.1)",
-  marginBottom: 24,
-};
-
-const dot = {
-  width: 8,
-  height: 8,
-  borderRadius: "50%",
-  background: colors.accent || "#3b82f6",
-  flexShrink: 0,
-};
-
-const pulseText = {
-  fontSize: 12.5,
-  color: "#94a3b8",
-  lineHeight: 1.5,
-};
-
-const leftTitle = {
-  fontSize: 32,
-  fontWeight: 800,
-  lineHeight: 1.25,
-  marginBottom: 16,
-};
-
-const leftDesc = {
-  fontSize: 15,
-  color: "#94a3b8",
-  lineHeight: 1.6,
-};
-
-const rightSide = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 24,
-  background: colors.surfaceMuted || "#f8fafc",
-};
-
-const loginCard = {
-  width: "100%",
-  maxWidth: 360,
-  display: "flex",
-  flexDirection: "column",
-  background: "#fff",
-  border: `1px solid ${colors.border || "#e2e8f0"}`,
-  borderRadius: radius.lg || 12,
-  padding: 32,
-  boxShadow: "0 18px 36px rgba(15,23,42,.06)",
-};
-
-const loginTitle = {
-  margin: 0,
-  fontSize: 20,
-  fontWeight: 800,
-  color: colors.textPrimary || "#0f172a",
-};
-
-const loginSubtitle = {
-  margin: "4px 0 20px",
-  fontSize: 13,
-  color: colors.textSecondary || "#64748b",
-};
-
-const fieldLabel = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#334155",
-  marginBottom: 6,
-};
-
-const textInput = {
-  width: "100%",
-  padding: "10px 14px",
-  fontSize: 14,
-  borderRadius: 8,
-  border: "1px solid #cbd5e1",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const selectInput = {
-  width: "100%",
-  padding: "10px 14px",
-  fontSize: 14,
-  borderRadius: 8,
-  border: "1px solid #cbd5e1",
-  background: "#fff",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const submitButton = {
-  width: "100%",
-  padding: "12px",
-  marginTop: 8,
-  fontSize: 14,
-  fontWeight: 700,
-  color: "#fff",
-  background: colors.primary || "#2563eb",
-  border: "none",
-  borderRadius: 8,
-  cursor: "pointer",
-  transition: "background 0.2s",
-};
-
-const errorBox = {
-  padding: "10px 14px",
-  marginBottom: 16,
-  fontSize: 13,
-  color: "#dc2626",
-  background: "#ffeeec",
-  borderRadius: 8,
-  border: "1px solid #fecaca",
-};
+iniciarAplicacao();
