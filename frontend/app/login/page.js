@@ -10,16 +10,17 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [ambiente, setAmbiente] = useState("Comércio"); // Padrão Comércio
+  const [ambiente, setAmbiente] = useState("Comércio"); // Padrão inicial
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Lista de ambientes disponíveis para escolha no login
+  // Lista exatamente como pedida, apenas os nomes limpos
   const ambientesDisponiveis = [
     "Comércio",
     "Dasa",
     "Sebrae",
-    "Cemig",
+    "CEMIG",
+    "FSA",
     "Iguá"
   ];
 
@@ -44,7 +45,6 @@ export default function LoginPage() {
       if (typeof window !== "undefined") {
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
-        // Armazena o tenant ativo para as requisições subsequentes da API
         localStorage.setItem("clienteAtivo", ambiente);
       }
 
@@ -62,30 +62,31 @@ export default function LoginPage() {
 
   return (
     <div style={container}>
+      {/* Lado esquerdo restaurado com o visual original do portal */}
       <div style={leftSide}>
         <div style={leftContent}>
           <div style={badge}>
             <span style={dot} />
-            <span style={pulseText}>Portal T&D 2.0 — Multi-Tenant Ativo</span>
+            <span style={pulseText}>Portal T&D — Sistema Integrado</span>
           </div>
           <h1 style={leftTitle}>Suas turmas, materiais e avaliações num só lugar.</h1>
           <p style={leftDesc}>
-            Necessidade → planejamento → execução → resultado, tudo isolado e rastreável por ambiente corporativo.
+            Necessidade → planejamento → execução → resultado, tudo integrado e rastreável.
           </p>
         </div>
       </div>
 
+      {/* Lado direito com o card de login */}
       <div style={rightSide}>
         <form onSubmit={login} style={loginCard}>
           <h2 style={loginTitle}>Acessar Portal</h2>
-          <p style={loginSubtitle}>Selecione seu ambiente e insira suas credenciais</p>
+          <p style={loginSubtitle}>Selecione o ambiente e digite suas credenciais</p>
 
           {erro && <div style={errorBox}>{erro}</div>}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* Seletor de Ambiente */}
             <div>
-              <label style={fieldLabel}>Ambiente / Cliente</label>
+              <label style={fieldLabel}>Ambiente</label>
               <select
                 value={ambiente}
                 onChange={(e) => setAmbiente(e.target.value)}
@@ -93,14 +94,14 @@ export default function LoginPage() {
               >
                 {ambientesDisponiveis.map((item) => (
                   <option key={item} value={item}>
-                    {item} {item === "Comércio" ? "(Padrão com dados)" : "(Novo ambiente isolado)"}
+                    {item}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label style={fieldLabel}>E-mail corporativo</label>
+              <label style={fieldLabel}>E-mail</label>
               <input
                 type="email"
                 placeholder="seu.email@empresa.com"
@@ -124,7 +125,7 @@ export default function LoginPage() {
             </div>
 
             <button type="submit" disabled={loading} style={submitButton}>
-              {loading ? "Entrando..." : "Entrar no Portal"}
+              {loading ? "Entrando..." : "Entrar"}
             </button>
           </div>
         </form>
@@ -133,12 +134,12 @@ export default function LoginPage() {
   );
 }
 
-// Estilos mantidos com o design system atual
+// Estilos alinhados com o Design System original (lib/theme)
 const container = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   minHeight: "100vh",
-  background: "#0f172a",
+  background: colors.background || "#0f172a",
 };
 
 const leftSide = {
@@ -160,7 +161,7 @@ const badge = {
   gap: 8,
   padding: "6px 12px",
   background: "rgba(255,255,255,0.05)",
-  borderRadius: radius.full,
+  borderRadius: radius.full || 999,
   border: "1px solid rgba(255,255,255,0.1)",
   marginBottom: 24,
 };
@@ -197,16 +198,16 @@ const rightSide = {
   alignItems: "center",
   justifyContent: "center",
   padding: 24,
-  background: "#f8fafc",
+  background: colors.surfaceMuted || "#f8fafc",
 };
 
 const loginCard = {
   width: "100%",
-  maxWidth: 380,
+  maxWidth: 360,
   display: "flex",
   flexDirection: "column",
   background: "#fff",
-  border: `1px solid #e2e8f0`,
+  border: `1px solid ${colors.border || "#e2e8f0"}`,
   borderRadius: radius.lg || 12,
   padding: 32,
   boxShadow: "0 18px 36px rgba(15,23,42,.06)",
@@ -216,13 +217,13 @@ const loginTitle = {
   margin: 0,
   fontSize: 20,
   fontWeight: 800,
-  color: "#0f172a",
+  color: colors.textPrimary || "#0f172a",
 };
 
 const loginSubtitle = {
   margin: "4px 0 20px",
   fontSize: 13,
-  color: "#64748b",
+  color: colors.textSecondary || "#64748b",
 };
 
 const fieldLabel = {
@@ -261,7 +262,7 @@ const submitButton = {
   fontSize: 14,
   fontWeight: 700,
   color: "#fff",
-  background: "#2563eb",
+  background: colors.primary || "#2563eb",
   border: "none",
   borderRadius: 8,
   cursor: "pointer",
