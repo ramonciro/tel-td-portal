@@ -48,6 +48,7 @@ const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
+  createParticipanteTreinamento,   // FIX: estava exportada no controller mas nunca importada
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
 } = require("./controllers/treinamentoParticipantesController");
@@ -404,6 +405,16 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   getParticipantesByTreinamento
+);
+
+// FIX: rota POST que o frontend chama ao adicionar participante manualmente.
+// A função createParticipanteTreinamento existia no controller e no module.exports,
+// mas nunca havia sido importada nem registrada — causando Erro 404 na tela de participantes.
+app.post(
+  "/api/treinamentos/:id/participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  createParticipanteTreinamento
 );
 
 app.post(
