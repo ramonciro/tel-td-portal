@@ -7,6 +7,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
+const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
 
 const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
@@ -47,6 +48,7 @@ const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
+  createParticipanteTreinamento,   // FIX: estava exportada no controller mas nunca importada
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
 } = require("./controllers/treinamentoParticipantesController");
@@ -403,6 +405,16 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   getParticipantesByTreinamento
+);
+
+// FIX: rota POST que o frontend chama ao adicionar participante manualmente.
+// A função createParticipanteTreinamento existia no controller e no module.exports,
+// mas nunca havia sido importada nem registrada — causando Erro 404 na tela de participantes.
+app.post(
+  "/api/treinamentos/:id/participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  createParticipanteTreinamento
 );
 
 app.post(
@@ -810,6 +822,17 @@ app.use("/api/jornada-participantes", authRequired, authorizeOceanAccess, jornad
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+async function iniciarAplicacao() {
+  try {
+    await runMigrations();
+
+    app.listen(PORT, () => {
+      console.log(`Servidor rodando na porta ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Erro crítico ao iniciar o servidor:", error);
+    process.exit(1);
+  }
+}
+
+iniciarAplicacao();
