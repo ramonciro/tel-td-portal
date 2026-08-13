@@ -1,19 +1,19 @@
 "use client";
 
-import { colors, radius } from "../lib/theme";
+import { colors } from "../lib/theme";
 
 const ABAS = [
-  { key: "mural", label: "Mural", href: (id) => `/turma/${id}/mural` },
-  { key: "visao", label: "Visão geral", href: (id) => `/turma/${id}` },
-  { key: "cronograma", label: "Cronograma", href: (id) => `/turma/${id}/cronograma` },
-  { key: "participantes", label: "Pessoas", href: (id) => `/turma/${id}/participantes` },
-  { key: "avaliacoes", label: "Avaliações", href: (id) => `/turma/${id}/avaliacoes` },
-  { key: "nps", label: "NPS", href: (id) => `/turma/${id}/nps` },
+  { key: "mural",        label: "Mural",       href: (id) => `/turma/${id}/mural`        },
+  { key: "visao",        label: "Visão geral",  href: (id) => `/turma/${id}`              },
+  { key: "cronograma",   label: "Cronograma",   href: (id) => `/turma/${id}/cronograma`   },
+  { key: "participantes",label: "Pessoas",      href: (id) => `/turma/${id}/participantes`},
+  { key: "avaliacoes",   label: "Avaliações",   href: (id) => `/turma/${id}/avaliacoes`   },
+  { key: "nps",          label: "NPS",          href: (id) => `/turma/${id}/nps`          },
 ];
 
 export default function TurmaTabs({ id, ativa }) {
   return (
-    <div style={{ display: "flex", gap: 4, borderBottom: `0.5px solid ${colors.border}`, marginBottom: 18, overflowX: "auto" }}>
+    <div style={wrap}>
       {ABAS.map((aba) => {
         const isAtiva = aba.key === ativa;
         return (
@@ -21,13 +21,12 @@ export default function TurmaTabs({ id, ativa }) {
             key={aba.key}
             href={aba.href(id)}
             style={{
-              padding: "10px 14px",
-              fontSize: 13,
-              fontWeight: isAtiva ? 700 : 500,
-              color: isAtiva ? colors.primary : colors.textSecondary,
-              borderBottom: isAtiva ? `2px solid ${colors.primary}` : "2px solid transparent",
-              textDecoration: "none",
-              whiteSpace: "nowrap",
+              ...tab,
+              color:        isAtiva ? colors.accent       : colors.textSecondary,
+              fontWeight:   isAtiva ? 800                 : 500,
+              borderBottom: isAtiva
+                ? `2.5px solid ${colors.accent}`
+                : "2.5px solid transparent",
             }}
           >
             {aba.label}
@@ -37,3 +36,20 @@ export default function TurmaTabs({ id, ativa }) {
     </div>
   );
 }
+
+const wrap = {
+  display:        "flex",
+  gap:            2,
+  borderBottom:   `1.5px solid #e9eef4`,
+  marginBottom:   18,
+  overflowX:      "auto",
+  scrollbarWidth: "none",          // Firefox
+};
+
+const tab = {
+  padding:        "10px 14px",
+  fontSize:       13,
+  textDecoration: "none",
+  whiteSpace:     "nowrap",
+  transition:     "color .15s",
+};
