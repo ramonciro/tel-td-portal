@@ -71,8 +71,13 @@ export async function apiFetch(path, options = {}) {
   const token = getToken();
   const currentClient = getSelectedClient(); // Envia o ambiente selecionado (dasa, sebrae, cemig, igua)
 
+  // FIX: quando o body é FormData (upload de arquivo), NÃO definir Content-Type.
+  // O browser precisa calculá-lo automaticamente para incluir o boundary multipart.
+  // Forçar "application/json" aqui sobrescreve o boundary e causa Erro 400 no multer.
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+
   const headers = {
-    "Content-Type": "application/json",
+    ...(!isFormData && { "Content-Type": "application/json" }),
     "X-Client-ID": currentClient,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
