@@ -1,41 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import TurmaTabs from "../../../../components/TurmaTabs";
-import { apiFetch, getStoredUser } from "../../../../services/api";
-import { colors, radius, corDoCliente } from "../../../../lib/theme";
-
+import { useEffect, useState }             from "react";
+import { useParams }                       from "next/navigation";
+import TurmaPageShell                      from "../../../../components/TurmaPageShell";
+import { apiFetch, getStoredUser }         from "../../../../services/api";
+import { colors, chart }                   from "../../../../lib/theme";
 
 export default function AvaliacoesTurmaPage() {
-  const params = useParams();
-  const id = params?.id;
+  const { id } = useParams() || {};
 
-  const [treinamento, setTreinamento] = useState(null);
-  const [avaliacoes, setAvaliacoes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState("");
-  const [usuario, setUsuario] = useState(null);
+  const [treinamento,   setTreinamento]   = useState(null);
+  const [avaliacoes,    setAvaliacoes]    = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [erro,          setErro]          = useState("");
+  const [usuario,       setUsuario]       = useState(null);
 
-  const [editandoId, setEditandoId] = useState(null);
-  const [notaEdicao, setNotaEdicao] = useState("");
+  const [editandoId,    setEditandoId]    = useState(null);
+  const [notaEdicao,    setNotaEdicao]    = useState("");
 
-  const [novoTitulo, setNovoTitulo] = useState("");
+  const [novoTitulo,    setNovoTitulo]    = useState("");
   const [novoTreinando, setNovoTreinando] = useState("");
-  const [criando, setCriando] = useState(false);
+  const [criando,       setCriando]       = useState(false);
 
   useEffect(() => {
     setUsuario(getStoredUser());
     carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function carregar() {
     if (!id) return;
     try {
       setLoading(true);
+      // FIX: antes buscava /treinamentos (todos) e filtrava no frontend.
+      // Agora usa o endpoint específico /treinamentos/${id} — mais eficiente
+      // e sem risco de confundir dados de turmas diferentes.
       const [treinamentoData, avaliacoesData] = await Promise.all([
-        apiFetch(`/treinamentos`).then((lista) => (Array.isArray(lista) ? lista.find((t) => String(t.id) === String(id)) : null)).catch(() => null),
+        apiFetch(`/treinamentos/${id}`).catch(() => null),
         apiFetch("/avaliacoes").catch(() => []),
       ]);
       setTreinamento(treinamentoData || null);
@@ -44,8 +44,8 @@ export default function AvaliacoesTurmaPage() {
       );
       setAvaliacoes(daTurma);
       setErro("");
-    } catch (error) {
-      setErro(error.message || "Erro ao carregar avaliações.");
+    } catch (e) {
+      setErro(e.message || "Erro ao carregar avaliações.");
     } finally {
       setLoading(false);
     }
@@ -63,11 +63,10 @@ export default function AvaliacoesTurmaPage() {
           treinando_nome: novoTreinando.trim(),
         }),
       });
-      setNovoTitulo("");
-      setNovoTreinando("");
+      setNovoTitulo(""); setNovoTreinando("");
       await carregar();
-    } catch (error) {
-      setErro(error.message || "Erro ao lançar avaliação.");
+    } catch (e) {
+      setErro(e.message || "Erro ao lançar avaliação.");
     } finally {
       setCriando(false);
     }
@@ -81,144 +80,170 @@ export default function AvaliacoesTurmaPage() {
       });
       setEditandoId(null);
       await carregar();
-    } catch (error) {
-      setErro(error.message || "Erro ao salvar nota.");
-    }
+    } catch (e) { setErro(e.message || "Erro ao salvar nota."); }
   }
 
-  async function excluirAvaliacao(avaliacaoId) {
+  async function excluir(avaliacaoId) {
     if (!window.confirm("Excluir esta avaliação?")) return;
     try {
       await apiFetch(`/avaliacoes/${avaliacaoId}`, { method: "DELETE" });
       await carregar();
-    } catch (error) {
-      setErro(error.message || "Erro ao excluir avaliação.");
-    }
+    } catch (e) { setErro(e.message || "Erro ao excluir."); }
   }
 
-  const cor = corDoCliente(treinamento?.cliente);
   const ehTreinando = usuario?.perfil === "treinando";
-  const mediaTurma = avaliacoes.length
+  const media       = avaliacoes.length
     ? (avaliacoes.reduce((acc, a) => acc + Number(a.nota_prova || 0), 0) / avaliacoes.length).toFixed(1)
-    : "-";
-  const pendentesCorrigir = avaliacoes.filter((a) => a.nota_prova === null || a.nota_prova === undefined).length;
+    : null;
+  const pendentes   = avaliacoes.filter((a) => a.nota_prova == null).length;
 
   return (
-    <div style={{ minHeight: "100vh", background: colors.surfaceMuted, padding: 24 }}>
-      <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ background: cor.bg, borderRadius: radius.md, padding: "16px 20px" }}>
-          <p style={{ margin: "0 0 4px", fontSize: 12, color: cor.text, fontWeight: 600 }}>{treinamento?.cliente || "—"}</p>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: colors.textPrimary }}>
-            {treinamento?.tema || (loading ? "Carregando..." : "Turma")}
-          </h1>
+    <TurmaPageShell id={id} treinamento={treinamento} loading={loading} abaAtiva="avaliacoes">
+
+      {erro && <div style={errorBox}>{erro}</div>}
+
+      {ehTreinando ? (
+        <div style={cta}>
+          <p style={{ margin: "0 0 12px", fontSize: 14, color: "#334155" }}>
+            Você tem avaliações pendentes desta turma para responder.
+          </p>
+          <a href={`/responder-avaliacao?treinamento_id=${id}`} style={linkBtn}>
+            Responder avaliação
+          </a>
         </div>
-
-        <TurmaTabs id={id} ativa="avaliacoes" />
-
-        {erro && (
-          <div style={{ background: colors.dangerLight, color: colors.dangerText, borderRadius: radius.sm, padding: "10px 14px", fontSize: 13, marginBottom: 12 }}>
-            {erro}
+      ) : (
+        <>
+          {/* KPIs */}
+          <div style={kpiRow}>
+            <div style={kpiCard}>
+              <span style={kpiLabel}>Média da turma</span>
+              <span style={{ ...kpiValue, color: media ? colors.primary : "#94a3b8" }}>
+                {media ?? "—"}
+              </span>
+            </div>
+            <div style={kpiCard}>
+              <span style={kpiLabel}>Aguardando correção</span>
+              <span style={{ ...kpiValue, color: pendentes > 0 ? colors.warning : colors.success }}>
+                {pendentes}
+              </span>
+            </div>
+            <div style={kpiCard}>
+              <span style={kpiLabel}>Total lançado</span>
+              <span style={{ ...kpiValue, color: "#334155" }}>{avaliacoes.length}</span>
+            </div>
           </div>
-        )}
 
-        {ehTreinando ? (
-          <div style={{ borderRadius: radius.md, border: `0.5px solid ${colors.border}`, padding: 20, textAlign: "center" }}>
-            <p style={{ fontSize: 14, color: colors.textPrimary, margin: "0 0 12px" }}>
-              Você tem avaliações pendentes desta turma para responder.
+          {/* Formulário de lançamento */}
+          <div style={formCard}>
+            <div style={formTitle}>Lançar nova avaliação</div>
+            <div style={formRow}>
+              <input
+                value={novoTitulo}
+                onChange={(e) => setNovoTitulo(e.target.value)}
+                placeholder="Título (ex: Avaliação final)"
+                style={{ ...inputBase, flex: "2 1 200px" }}
+              />
+              <input
+                value={novoTreinando}
+                onChange={(e) => setNovoTreinando(e.target.value)}
+                placeholder="Nome do treinando"
+                style={{ ...inputBase, flex: "1 1 160px" }}
+              />
+              <button
+                onClick={criarAvaliacao}
+                disabled={criando || !novoTitulo.trim() || !novoTreinando.trim()}
+                style={{
+                  ...btnLancar,
+                  opacity: (!novoTitulo.trim() || !novoTreinando.trim()) ? .5 : 1,
+                  cursor:  (!novoTitulo.trim() || !novoTreinando.trim()) ? "default" : "pointer",
+                }}
+              >
+                {criando ? "Lançando…" : "Lançar"}
+              </button>
+            </div>
+            <p style={formHint}>
+              Para provas com questões, use a{" "}
+              <a href="/avaliacoes" style={{ color: colors.primary }}>biblioteca de avaliações</a>.
             </p>
-            <a
-              href={`/responder-avaliacao?treinamento_id=${id}`}
-              style={{ display: "inline-block", padding: "10px 18px", borderRadius: radius.sm, background: colors.primary, color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none" }}
-            >
-              Responder avaliação
-            </a>
           </div>
-        ) : (
-          <>
-            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-              <div style={{ flex: 1, borderRadius: radius.md, border: `0.5px solid ${colors.border}`, padding: "12px 16px" }}>
-                <p style={{ margin: 0, fontSize: 12, color: colors.textSecondary }}>Média da turma</p>
-                <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: colors.primary }}>{mediaTurma}</p>
-              </div>
-              <div style={{ flex: 1, borderRadius: radius.md, border: `0.5px solid ${colors.border}`, padding: "12px 16px" }}>
-                <p style={{ margin: 0, fontSize: 12, color: colors.textSecondary }}>Aguardando correção</p>
-                <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: pendentesCorrigir > 0 ? colors.warning : colors.success }}>{pendentesCorrigir}</p>
-              </div>
-            </div>
 
-            <div style={{ borderRadius: radius.md, border: `0.5px solid ${colors.border}`, padding: 16, marginBottom: 16 }}>
-              <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: colors.textPrimary }}>Lançar nova avaliação</p>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <input
-                  value={novoTitulo}
-                  onChange={(e) => setNovoTitulo(e.target.value)}
-                  placeholder="Título (ex: Avaliação final)"
-                  style={{ flex: "2 1 200px", padding: "8px 10px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 13 }}
-                />
-                <input
-                  value={novoTreinando}
-                  onChange={(e) => setNovoTreinando(e.target.value)}
-                  placeholder="Nome do treinando"
-                  style={{ flex: "1 1 160px", padding: "8px 10px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 13 }}
-                />
-                <button
-                  onClick={criarAvaliacao}
-                  disabled={criando || !novoTitulo.trim() || !novoTreinando.trim()}
-                  style={{ padding: "0 16px", borderRadius: radius.sm, border: "none", background: colors.primary, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                >
-                  {criando ? "Lançando..." : "Lançar"}
-                </button>
-              </div>
-              <p style={{ margin: "8px 0 0", fontSize: 11, color: colors.textMuted }}>
-                Para criar provas com questões, use a <a href="/avaliacoes" style={{ color: colors.primary }}>biblioteca de avaliações</a>.
-              </p>
-            </div>
-
-            {loading && <p style={{ fontSize: 13, color: colors.textSecondary }}>Carregando...</p>}
-            {!loading && avaliacoes.length === 0 && (
-              <p style={{ fontSize: 13, color: colors.textMuted }}>Nenhuma avaliação lançada para esta turma ainda.</p>
-            )}
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {avaliacoes.map((a) => (
-                <div key={a.id} style={{ borderRadius: radius.md, border: `0.5px solid ${colors.border}`, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>{a.titulo || "Avaliação"}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.textSecondary }}>{a.treinando_nome || "-"}</p>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    {editandoId === a.id ? (
-                      <>
-                        <input
-                          type="number"
-                          value={notaEdicao}
-                          onChange={(e) => setNotaEdicao(e.target.value)}
-                          style={{ width: 60, padding: "6px 8px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 13 }}
-                        />
-                        <button onClick={() => salvarNota(a.id)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: colors.primary, border: "none", borderRadius: radius.sm, padding: "6px 12px", cursor: "pointer" }}>Salvar</button>
-                        <button onClick={() => setEditandoId(null)} style={{ fontSize: 12, color: colors.textSecondary, background: "none", border: "none", cursor: "pointer" }}>Cancelar</button>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ fontSize: 16, fontWeight: 800, color: a.nota_prova != null ? colors.textPrimary : colors.textMuted }}>
-                          {a.nota_prova != null ? Number(a.nota_prova).toFixed(1) : "—"}
-                        </span>
-                        <button
-                          onClick={() => { setEditandoId(a.id); setNotaEdicao(a.nota_prova ?? ""); }}
-                          style={{ fontSize: 12, color: colors.primary, background: "none", border: "none", cursor: "pointer" }}
-                        >
-                          {a.nota_prova != null ? "corrigir" : "lançar nota"}
-                        </button>
-                        <button onClick={() => excluirAvaliacao(a.id)} style={{ fontSize: 12, color: colors.dangerText, background: "none", border: "none", cursor: "pointer" }}>excluir</button>
-                      </>
-                    )}
-                  </div>
+          {/* Lista */}
+          {loading && <p style={hint}>Carregando…</p>}
+          {!loading && avaliacoes.length === 0 && (
+            <div style={emptyState}>Nenhuma avaliação lançada para esta turma ainda.</div>
+          )}
+          <div style={lista}>
+            {avaliacoes.map((a) => (
+              <div key={a.id} style={avaliacaoItem}>
+                <div style={avaliacaoInfo}>
+                  <span style={avaliacaoTitulo}>{a.titulo || "Avaliação"}</span>
+                  <span style={avaliacaoTreinando}>{a.treinando_nome || "—"}</span>
                 </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+                <div style={avaliacaoAcoes}>
+                  {editandoId === a.id ? (
+                    <>
+                      <input
+                        type="number"
+                        value={notaEdicao}
+                        onChange={(e) => setNotaEdicao(e.target.value)}
+                        style={{ ...inputBase, width: 70, textAlign: "center" }}
+                        autoFocus
+                      />
+                      <button onClick={() => salvarNota(a.id)} style={btnSalvarNota}>Salvar</button>
+                      <button onClick={() => setEditandoId(null)} style={btnCancelar}>Cancelar</button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{
+                        fontSize: 20, fontWeight: 800,
+                        color: a.nota_prova != null ? "#0f172a" : "#94a3b8",
+                        minWidth: 36, textAlign: "right",
+                      }}>
+                        {a.nota_prova != null ? Number(a.nota_prova).toFixed(1) : "—"}
+                      </span>
+                      <button
+                        onClick={() => { setEditandoId(a.id); setNotaEdicao(a.nota_prova ?? ""); }}
+                        style={btnLink}
+                      >
+                        {a.nota_prova != null ? "corrigir" : "lançar nota"}
+                      </button>
+                      <button onClick={() => excluir(a.id)} style={{ ...btnLink, color: colors.dangerText }}>
+                        excluir
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </TurmaPageShell>
   );
 }
+
+/* ── Estilos ── */
+const errorBox = { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 14 };
+const cta = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, padding: 20, textAlign: "center" };
+const linkBtn = { display: "inline-block", padding: "10px 20px", borderRadius: 10, background: colors.accent, color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none" };
+const kpiRow = { display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" };
+const kpiCard = { flex: "1 1 140px", background: "#fff", border: "1px solid #e9eef4", borderRadius: 12, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 4 };
+const kpiLabel = { fontSize: 12, color: "#94a3b8", fontWeight: 600 };
+const kpiValue = { fontSize: 26, fontWeight: 800, lineHeight: 1 };
+const formCard = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, padding: 16, marginBottom: 14 };
+const formTitle = { fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 10 };
+const formRow = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" };
+const inputBase = { padding: "8px 10px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13, color: "#334155", outline: "none", height: 38, boxSizing: "border-box" };
+const btnLancar = { height: 38, padding: "0 18px", borderRadius: 10, border: "none", background: colors.accent, color: "#fff", fontWeight: 700, fontSize: 13 };
+const formHint = { margin: "8px 0 0", fontSize: 11, color: "#94a3b8" };
+const hint = { fontSize: 13, color: "#94a3b8" };
+const emptyState = { textAlign: "center", padding: "24px 16px", color: "#94a3b8", fontSize: 13, border: "1px dashed #e2e8f0", borderRadius: 12, marginBottom: 8 };
+const lista = { display: "flex", flexDirection: "column", gap: 8 };
+const avaliacaoItem = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fff", border: "1px solid #e9eef4", borderRadius: 12, padding: "12px 16px", flexWrap: "wrap" };
+const avaliacaoInfo = { display: "flex", flexDirection: "column", gap: 2 };
+const avaliacaoTitulo = { fontSize: 14, fontWeight: 700, color: "#0f172a" };
+const avaliacaoTreinando = { fontSize: 12, color: "#64748b" };
+const avaliacaoAcoes = { display: "flex", alignItems: "center", gap: 10 };
+const btnSalvarNota = { background: colors.accent, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
+const btnCancelar = { background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 12 };
+const btnLink = { background: "none", border: "none", color: colors.primary, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 };
