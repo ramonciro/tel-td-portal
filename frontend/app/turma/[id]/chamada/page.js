@@ -1,50 +1,108 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
-import { apiFetch } from "../../../../services/api";
-import { formatDateBR } from "../../../../lib/date";
+import { useParams, useSearchParams }    from "next/navigation";
+import TurmaPageShell                    from "../../../../components/TurmaPageShell";
+import { apiFetch }                      from "../../../../services/api";
+import { formatDateBR }                  from "../../../../lib/date";
+import { colors }                        from "../../../../lib/theme";
 
-function formatDate(value) {
-  return formatDateBR(value);
+/* ═══════════════════════════════════════════════
+   CONSTANTES
+═══════════════════════════════════════════════ */
+const STATUS_VALIDOS = ["presente", "ausente", "justificado", "pendente"];
+
+function normalizeStatus(v) {
+  const t = String(v || "").toLowerCase().trim();
+  return STATUS_VALIDOS.includes(t) ? t : "pendente";
 }
 
-function normalizeStatus(value) {
-  const text = String(value || "").toLowerCase().trim();
-  if (["presente", "ausente", "justificado", "pendente"].includes(text)) {
-    return text;
-  }
-  return "pendente";
+/* Ordem de exibição: pendentes primeiro, depois ausentes, justificados, presentes */
+const ORDEM_STATUS = { pendente: 0, ausente: 1, justificado: 2, presente: 3 };
+
+const STATUS_CONFIG = {
+  presente:   { label: "Presente",   bg: colors.successLight, cor: colors.successText, borda: "#86efac" },
+  ausente:    { label: "Ausente",    bg: colors.dangerLight,  cor: colors.dangerText,  borda: "#fca5a5" },
+  justificado:{ label: "Justificado",bg: colors.warningLight, cor: colors.warningText, borda: "#fcd34d" },
+  pendente:   { label: "Pendente",   bg: "#f1f5f9",           cor: "#94a3b8",          borda: "#e2e8f0" },
+};
+
+/* ═══════════════════════════════════════════════
+   SUB-COMPONENTES
+═══════════════════════════════════════════════ */
+function StatusBtn({ status, ativo, onClick }) {
+  const cfg    = STATUS_CONFIG[status];
+  const isAtivo = ativo === status;
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding:      "7px 14px",
+        borderRadius: 999,
+        border:       `1.5px solid ${isAtivo ? cfg.borda : "#e2e8f0"}`,
+        background:   isAtivo ? cfg.bg   : "#fff",
+        color:        isAtivo ? cfg.cor  : "#94a3b8",
+        fontWeight:   isAtivo ? 800      : 600,
+        fontSize:     13,
+        cursor:       "pointer",
+        whiteSpace:   "nowrap",
+        transition:   "all .12s",
+      }}
+    >
+      {cfg.label}
+    </button>
+  );
 }
 
+function ProgressBar({ total, pendentes }) {
+  const pct = total > 0 ? Math.round((total - pendentes) / total * 100) : 0;
+  const cor  = pct === 100 ? colors.success : pct >= 50 ? "#f59e0b" : colors.primary;
+  return (
+    <div style={progressWrap}>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+          <span style={progressLabel}>
+            {pendentes === 0
+              ? "✓ Chamada completa"
+              : `${pendentes} pendente${pendentes !== 1 ? "s" : ""} restante${pendentes !== 1 ? "s" : ""}`}
+          </span>
+          <span style={{ ...progressLabel, fontWeight: 800, color: cor }}>{pct}%</span>
+        </div>
+        <div style={progressTrack}>
+          <div style={{ ...progressFill, width: `${pct}%`, background: cor }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   PÁGINA PRINCIPAL
+═══════════════════════════════════════════════ */
 export default function ChamadaTurmaPage() {
-  const params = useParams();
+  const params       = useParams();
   const searchParams = useSearchParams();
-  const id = params?.id;
-  const turmaAulaId = searchParams.get("turma_aula_id");
+  const id           = params?.id;
+  const turmaAulaId  = searchParams.get("turma_aula_id");
+  const dataAula     = searchParams.get("data_aula");
 
   const [treinamento, setTreinamento] = useState(null);
-  const [aula, setAula] = useState(null);
-  const [registros, setRegistros] = useState([]);
-  const [selecionados, setSelecionados] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState("");
-  const [sucesso, setSucesso] = useState("");
-  const [busca, setBusca] = useState("");
+  const [aula,        setAula]        = useState(null);
+  const [registros,   setRegistros]   = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [salvando,    setSalvando]    = useState(false);
+  const [erro,        setErro]        = useState("");
+  const [sucesso,     setSucesso]     = useState("");
+  const [busca,       setBusca]       = useState("");
+  const [filtroStatus,setFiltroStatus]= useState("todos");
 
-  useEffect(() => {
-    carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, turmaAulaId]);
+  useEffect(() => { carregar(); }, [id, turmaAulaId]);
 
+  /* ── carregamento ── */
   async function carregar() {
+    if (!id || !turmaAulaId) return;
     try {
-      if (!id || !turmaAulaId) return;
-
-      setLoading(true);
-      setErro("");
-      setSucesso("");
+      setLoading(true); setErro(""); setSucesso("");
 
       const [dadosTreinamento, listaAulas] = await Promise.all([
         apiFetch(`/treinamentos/${id}`),
@@ -52,13 +110,11 @@ export default function ChamadaTurmaPage() {
       ]);
 
       setTreinamento(dadosTreinamento || null);
+      setAula((Array.isArray(listaAulas) ? listaAulas : [])
+        .find((a) => String(a.id) === String(turmaAulaId)) || null);
 
-      const aulaAtual = (Array.isArray(listaAulas) ? listaAulas : []).find(
-        (item) => String(item.id) === String(turmaAulaId)
-      );
-      setAula(aulaAtual || null);
-
-      await apiFetch(`/presenca-aulas/inicializar`, {
+      /* Inicializar registros (cria pendentes se não existirem) */
+      await apiFetch("/presenca-aulas/inicializar", {
         method: "POST",
         body: JSON.stringify({ turma_aula_id: Number(turmaAulaId) }),
       }).catch(() => null);
@@ -68,123 +124,62 @@ export default function ChamadaTurmaPage() {
       ).catch(() => []);
 
       setRegistros(Array.isArray(lista) ? lista : []);
-      setSelecionados({});
     } catch (err) {
-      setErro(err.message || "Erro ao carregar a chamada da turma.");
+      setErro(err.message || "Erro ao carregar a chamada.");
     } finally {
       setLoading(false);
     }
   }
 
-  const registrosFiltrados = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
-    if (!termo) return registros;
-
-    return registros.filter((item) =>
-      String(item.treinando_nome || "").toLowerCase().includes(termo)
-    );
-  }, [registros, busca]);
-
-  const resumo = useMemo(() => {
-    const total = registros.length;
-    const presentes = registros.filter(
-      (item) => normalizeStatus(item.status) === "presente"
-    ).length;
-    const ausentes = registros.filter(
-      (item) => normalizeStatus(item.status) === "ausente"
-    ).length;
-    const justificados = registros.filter(
-      (item) => normalizeStatus(item.status) === "justificado"
-    ).length;
-    const pendentes = registros.filter(
-      (item) => normalizeStatus(item.status) === "pendente"
-    ).length;
-
-    return { total, presentes, ausentes, justificados, pendentes };
-  }, [registros]);
-
-  const totalSelecionados = useMemo(
-    () => Object.values(selecionados).filter(Boolean).length,
-    [selecionados]
-  );
-
-  const todosFiltradosSelecionados = useMemo(() => {
-    if (!registrosFiltrados.length) return false;
-
-    return registrosFiltrados.every(
-      (item) => selecionados[item.id || item.treinando_nome]
-    );
-  }, [registrosFiltrados, selecionados]);
-
-  function atualizarRegistro(chave, campo, valor) {
+  /* ── mutações locais ── */
+  function setStatus(chave, novoStatus) {
+    setSucesso("");
     setRegistros((prev) =>
-      prev.map((item) =>
-        (item.id || item.treinando_nome) === chave
-          ? { ...item, [campo]: valor }
-          : item
+      prev.map((r) =>
+        chave === (r.id || r.treinando_nome)
+          ? { ...r, status: novoStatus,
+              justificativa: novoStatus !== "justificado" ? r.justificativa : r.justificativa }
+          : r
       )
     );
   }
 
-  function alternarSelecao(chave) {
-    setSelecionados((prev) => ({ ...prev, [chave]: !prev[chave] }));
-  }
-
-  function alternarSelecaoTodosFiltrados() {
-    const marcar = !todosFiltradosSelecionados;
-
-    setSelecionados((prev) => {
-      const next = { ...prev };
-      registrosFiltrados.forEach((item) => {
-        next[item.id || item.treinando_nome] = marcar;
-      });
-      return next;
-    });
-  }
-
-  function limparSelecao() {
-    setSelecionados({});
-  }
-
-  function aplicarStatusSelecionados(status) {
-    const statusNormalizado = normalizeStatus(status);
-
+  function setJustificativa(chave, valor) {
     setRegistros((prev) =>
-      prev.map((item) => {
-        const chave = item.id || item.treinando_nome;
-        if (!selecionados[chave]) return item;
-
-        return {
-          ...item,
-          status: statusNormalizado,
-          justificativa:
-            statusNormalizado === "justificado"
-              ? item.justificativa || ""
-              : item.justificativa,
-        };
-      })
+      prev.map((r) =>
+        chave === (r.id || r.treinando_nome) ? { ...r, justificativa: valor } : r
+      )
     );
   }
 
+  /* ── ações em massa ── */
+  function marcarTodos(status, apenasVisiveis = false) {
+    const alvo = apenasVisiveis ? registrosFiltrados : registros;
+    const chaves = new Set(alvo.map((r) => r.id || r.treinando_nome));
+    setSucesso("");
+    setRegistros((prev) =>
+      prev.map((r) =>
+        chaves.has(r.id || r.treinando_nome) ? { ...r, status } : r
+      )
+    );
+  }
+
+  /* ── salvar ── */
   async function salvar() {
     try {
-      setSalvando(true);
-      setErro("");
-      setSucesso("");
-
-      await apiFetch(`/presenca-aulas/salvar`, {
+      setSalvando(true); setErro(""); setSucesso("");
+      await apiFetch("/presenca-aulas/salvar", {
         method: "POST",
         body: JSON.stringify({
           turma_aula_id: Number(turmaAulaId),
-          registros: registros.map((item) => ({
-            treinando_nome: item.treinando_nome,
-            status: normalizeStatus(item.status),
-            justificativa: item.justificativa || null,
+          registros: registros.map((r) => ({
+            treinando_nome: r.treinando_nome,
+            status:         normalizeStatus(r.status),
+            justificativa:  r.justificativa || null,
           })),
         }),
       });
-
-      setSucesso("Chamada da turma salva com sucesso.");
+      setSucesso("Chamada salva com sucesso.");
       await carregar();
     } catch (err) {
       setErro(err.message || "Erro ao salvar a chamada.");
@@ -193,506 +188,307 @@ export default function ChamadaTurmaPage() {
     }
   }
 
-  function voltar() {
-    window.location.href = `/turma/${id}?turma_aula_id=${turmaAulaId}`;
-  }
+  /* ── KPIs (live) ── */
+  const resumo = useMemo(() => {
+    const total       = registros.length;
+    const presentes   = registros.filter((r) => normalizeStatus(r.status) === "presente").length;
+    const ausentes    = registros.filter((r) => normalizeStatus(r.status) === "ausente").length;
+    const justificados= registros.filter((r) => normalizeStatus(r.status) === "justificado").length;
+    const pendentes   = registros.filter((r) => normalizeStatus(r.status) === "pendente").length;
+    return { total, presentes, ausentes, justificados, pendentes };
+  }, [registros]);
 
+  /* ── lista filtrada + ordenada ── */
+  const registrosFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    return registros
+      .filter((r) => {
+        const okBusca = !termo || String(r.treinando_nome || "").toLowerCase().includes(termo);
+        const okStatus = filtroStatus === "todos" || normalizeStatus(r.status) === filtroStatus;
+        return okBusca && okStatus;
+      })
+      .sort((a, b) => {
+        const oa = ORDEM_STATUS[normalizeStatus(a.status)] ?? 99;
+        const ob = ORDEM_STATUS[normalizeStatus(b.status)] ?? 99;
+        if (oa !== ob) return oa - ob;
+        return String(a.treinando_nome || "").localeCompare(String(b.treinando_nome || ""), "pt-BR");
+      });
+  }, [registros, busca, filtroStatus]);
+
+  /* ── guard: sem params ── */
   if (!id || !turmaAulaId) {
     return (
-      <div style={loadingWrap}>
-        Selecione uma aula para lançar a chamada.
-      </div>
+      <TurmaPageShell id={id} treinamento={null} loading={false} abaAtiva="cronograma">
+        <div style={emptyState}>
+          Nenhuma aula selecionada. Acesse pelo cronograma e clique em "Abrir chamada".
+        </div>
+      </TurmaPageShell>
     );
   }
 
-  if (loading) {
-    return <div style={loadingWrap}>Carregando chamada da turma...</div>;
-  }
-
   return (
-    <div style={page}>
-      <div style={topBar}>
-        <button style={btnVoltar} onClick={voltar}>
-          ← Voltar para gestão da turma
-        </button>
-      </div>
+    <TurmaPageShell id={id} treinamento={treinamento} loading={loading} abaAtiva="cronograma">
 
-      <div style={hero}>
-        <div style={heroBadge}>Chamada da turma</div>
-        <h1 style={heroTitle}>{treinamento?.tema || "Turma"}</h1>
-        <p style={heroSubtitle}>
-          Lançamento da presença por aula, com atualização imediata dos
-          indicadores da turma.
-        </p>
-
-        <div style={heroGrid}>
-          <InfoCard label="Cliente" value={treinamento?.cliente || "-"} />
-          <InfoCard
-            label="Instrutor"
-            value={aula?.instrutor_responsavel || treinamento?.instrutor || "-"}
-          />
-          <InfoCard label="Aula" value={aula?.titulo || "-"} />
-          <InfoCard label="Data" value={formatDate(aula?.data_aula)} />
+      {/* ── Faixa de contexto da aula ── */}
+      {aula && (
+        <div style={aulaStrip}>
+          <div style={aulaStripLeft}>
+            <span style={aulaBadge}>Chamada</span>
+            <span style={aulaTitulo}>{aula.titulo || `Aula ${aula.dia_numero || ""}`}</span>
+            <span style={aulaMeta}>
+              {formatDateBR(aula.data_aula)}
+              {(aula.instrutor_responsavel || treinamento?.instrutor) &&
+                ` · ${aula.instrutor_responsavel || treinamento?.instrutor}`}
+            </span>
+          </div>
+          <button style={btnSalvar} onClick={salvar} disabled={salvando}>
+            {salvando ? "Salvando…" : "Salvar chamada"}
+          </button>
         </div>
-      </div>
+      )}
 
-      {erro ? <div style={errorBox}>{erro}</div> : null}
-      {sucesso ? <div style={successBox}>{sucesso}</div> : null}
+      {/* Feedback */}
+      {erro    && <div style={errorBox}>{erro}</div>}
+      {sucesso && <div style={successBox}>{sucesso}</div>}
 
-      <div style={statsGrid}>
-        <StatCard title="Total" value={resumo.total} />
-        <StatCard title="Presentes" value={resumo.presentes} />
-        <StatCard title="Ausentes" value={resumo.ausentes} />
-        <StatCard title="Justificados" value={resumo.justificados} />
-        <StatCard title="Pendentes" value={resumo.pendentes} />
-      </div>
+      {loading ? (
+        <div style={loadingBox}>Carregando lista de presença…</div>
+      ) : (
+        <>
+          {/* ── Barra de progresso ── */}
+          <ProgressBar total={resumo.total} pendentes={resumo.pendentes} />
 
-      <div style={sectionCard}>
-        <div style={toolbar}>
-          <div>
-            <h2 style={sectionTitle}>Lista de chamada</h2>
-            <p style={sectionSubtitle}>
-              Atualize o status de cada treinando e salve a aula selecionada.
-            </p>
+          {/* ── KPI chips (live) ── */}
+          <div style={kpiRow}>
+            {[
+              { label: "Total",       value: resumo.total,        cor: "#334155" },
+              { label: "Presentes",   value: resumo.presentes,    cor: colors.successText  },
+              { label: "Ausentes",    value: resumo.ausentes,     cor: colors.dangerText   },
+              { label: "Justificados",value: resumo.justificados, cor: colors.warningText  },
+              { label: "Pendentes",   value: resumo.pendentes,
+                cor: resumo.pendentes > 0 ? colors.primary : "#94a3b8" },
+            ].map(({ label, value, cor }) => (
+              <div key={label} style={kpiChip}>
+                <span style={{ fontSize: 22, fontWeight: 900, color: cor, lineHeight: 1 }}>{value}</span>
+                <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>{label}</span>
+              </div>
+            ))}
           </div>
 
-          <div style={toolbarActions}>
-            <input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar treinando"
-              style={field}
-            />
-
-            <button style={btnPrimary} onClick={salvar} disabled={salvando}>
-              {salvando ? "Salvando..." : "Salvar chamada"}
-            </button>
+          {/* ── Ações em massa ── */}
+          <div style={massaBar}>
+            <div style={massaLabel}>Marcar todos como:</div>
+            <div style={massaBtns}>
+              <button style={btnMassa("presente")}
+                onClick={() => marcarTodos("presente")}>✓ Todos presentes</button>
+              <button style={btnMassa("ausente")}
+                onClick={() => marcarTodos("ausente")}>✗ Todos ausentes</button>
+              {registrosFiltrados.length < registros.length && (
+                <button style={btnMassaGhost}
+                  onClick={() => marcarTodos("presente", true)}>
+                  ✓ Exibidos como presentes
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        <div style={bulkBar}>
-          <label style={checkWrap}>
-            <input
-              type="checkbox"
-              checked={todosFiltradosSelecionados}
-              onChange={alternarSelecaoTodosFiltrados}
-            />
-            <span>Selecionar todos os exibidos</span>
-          </label>
-
-          <div style={bulkInfo}>{totalSelecionados} selecionado(s)</div>
-
-          <div style={bulkActions}>
-            <button
-              style={btnGhost}
-              onClick={() => aplicarStatusSelecionados("presente")}
-              disabled={!totalSelecionados}
-            >
-              Presente
-            </button>
-
-            <button
-              style={btnGhost}
-              onClick={() => aplicarStatusSelecionados("ausente")}
-              disabled={!totalSelecionados}
-            >
-              Ausente
-            </button>
-
-            <button
-              style={btnGhost}
-              onClick={() => aplicarStatusSelecionados("justificado")}
-              disabled={!totalSelecionados}
-            >
-              Justificado
-            </button>
-
-            <button
-              style={btnGhost}
-              onClick={() => aplicarStatusSelecionados("pendente")}
-              disabled={!totalSelecionados}
-            >
-              Pendente
-            </button>
-
-            <button
-              style={btnGhostDanger}
-              onClick={limparSelecao}
-              disabled={!totalSelecionados}
-            >
-              Limpar seleção
-            </button>
-          </div>
-        </div>
-
-        <div style={{ overflowX: "auto" }}>
-          <table style={table}>
-            <thead>
-              <tr>
-                <th style={thSmall}></th>
-                <th style={th}>Treinando</th>
-                <th style={th}>Status</th>
-                <th style={th}>Justificativa</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {registrosFiltrados.map((item) => {
-                const chave = item.id || item.treinando_nome;
-
+          {/* ── Filtros ── */}
+          <div style={filtroBar}>
+            {/* Pills de status */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[
+                { key: "todos",       label: `Todos (${resumo.total})`             },
+                { key: "pendente",    label: `Pendentes (${resumo.pendentes})`      },
+                { key: "presente",    label: `Presentes (${resumo.presentes})`      },
+                { key: "ausente",     label: `Ausentes (${resumo.ausentes})`        },
+                { key: "justificado", label: `Justif. (${resumo.justificados})`     },
+              ].map(({ key, label }) => {
+                const ativo = filtroStatus === key;
+                const cfg   = STATUS_CONFIG[key] || { bg: "#f1f5f9", cor: "#64748b", borda: "#e2e8f0" };
                 return (
-                  <tr key={chave}>
-                    <td style={tdSmall}>
-                      <input
-                        type="checkbox"
-                        checked={!!selecionados[chave]}
-                        onChange={() => alternarSelecao(chave)}
-                      />
-                    </td>
-
-                    <td style={td}>{item.treinando_nome}</td>
-
-                    <td style={td}>
-                      <select
-                        style={select}
-                        value={normalizeStatus(item.status)}
-                        onChange={(e) =>
-                          atualizarRegistro(chave, "status", e.target.value)
-                        }
-                      >
-                        <option value="pendente">Pendente</option>
-                        <option value="presente">Presente</option>
-                        <option value="ausente">Ausente</option>
-                        <option value="justificado">Justificado</option>
-                      </select>
-                    </td>
-
-                    <td style={td}>
-                      <input
-                        style={field}
-                        value={item.justificativa || ""}
-                        onChange={(e) =>
-                          atualizarRegistro(
-                            chave,
-                            "justificativa",
-                            e.target.value
-                          )
-                        }
-                        placeholder="Observação / justificativa"
-                      />
-                    </td>
-                  </tr>
+                  <button
+                    key={key}
+                    onClick={() => setFiltroStatus(key)}
+                    style={{
+                      padding: "5px 12px", borderRadius: 999, fontSize: 12, fontWeight: ativo ? 800 : 600,
+                      cursor: "pointer", whiteSpace: "nowrap",
+                      border:     `1.5px solid ${ativo ? cfg.borda || colors.accent : "#e2e8f0"}`,
+                      background: ativo ? (cfg.bg || colors.accent) : "#fff",
+                      color:      ativo ? (cfg.cor || "#fff")        : "#64748b",
+                    }}
+                  >
+                    {label}
+                  </button>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+            </div>
+
+            {/* Busca */}
+            <div style={{ position: "relative", flex: 1, maxWidth: 260 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8"
+                strokeWidth="2.2" strokeLinecap="round"
+                style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}>
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              <input
+                value={busca} onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar treinando…"
+                style={searchInput}
+              />
+            </div>
+
+            <span style={{ fontSize: 13, color: "#94a3b8", marginLeft: "auto", whiteSpace: "nowrap" }}>
+              {registrosFiltrados.length} de {registros.length}
+            </span>
+          </div>
+
+          {/* ── Lista de chamada ── */}
+          <div style={listaWrap}>
+            {registrosFiltrados.length === 0 ? (
+              <div style={emptyState}>
+                {busca ? "Nenhum treinando encontrado para a busca." : "Nenhum registro nesta aula."}
+              </div>
+            ) : (
+              registrosFiltrados.map((item, idx) => {
+                const chave       = item.id || item.treinando_nome;
+                const status      = normalizeStatus(item.status);
+                const cfg         = STATUS_CONFIG[status];
+                const ehJustif    = status === "justificado";
+                const ehPendente  = status === "pendente";
+
+                return (
+                  <div
+                    key={chave}
+                    style={{
+                      ...linhaBase,
+                      background: ehPendente
+                        ? "#f8fafc"
+                        : cfg.bg,
+                      borderLeft: `3px solid ${ehPendente ? "#e2e8f0" : cfg.borda}`,
+                    }}
+                  >
+                    {/* Número + nome */}
+                    <div style={linhaNome}>
+                      <span style={linhaNumero}>{idx + 1}</span>
+                      <span style={{ fontWeight: ehPendente ? 500 : 700, color: "#0f172a", fontSize: 14 }}>
+                        {item.treinando_nome}
+                      </span>
+                    </div>
+
+                    {/* Botões de status */}
+                    <div style={linhaBtns}>
+                      <StatusBtn status="presente"    ativo={status} onClick={() => setStatus(chave, "presente")}    />
+                      <StatusBtn status="ausente"     ativo={status} onClick={() => setStatus(chave, "ausente")}     />
+                      <StatusBtn status="justificado" ativo={status} onClick={() => setStatus(chave, "justificado")} />
+                    </div>
+
+                    {/* Justificativa (só quando justificado) */}
+                    {ehJustif && (
+                      <input
+                        value={item.justificativa || ""}
+                        onChange={(e) => setJustificativa(chave, e.target.value)}
+                        placeholder="Justificativa (obrigatório)"
+                        style={justifInput}
+                      />
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* ── Salvar (rodapé) ── */}
+          {registros.length > 0 && (
+            <div style={rodapeBar}>
+              {resumo.pendentes > 0 && (
+                <span style={{ fontSize: 13, color: colors.warningText, fontWeight: 600 }}>
+                  ⚠ {resumo.pendentes} pendente{resumo.pendentes !== 1 ? "s" : ""} — a chamada pode ser salva parcialmente.
+                </span>
+              )}
+              <button style={{ ...btnSalvar, marginLeft: "auto" }} onClick={salvar} disabled={salvando}>
+                {salvando ? "Salvando…" : "Salvar chamada"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </TurmaPageShell>
   );
 }
 
-function InfoCard({ label, value }) {
-  return (
-    <div style={infoCard}>
-      <div style={infoLabel}>{label}</div>
-      <div style={infoValue}>{value}</div>
-    </div>
-  );
+/* ── Estilos ── */
+const aulaStrip = {
+  display: "flex", justifyContent: "space-between", alignItems: "center",
+  background: "#fff", border: "1px solid #e9eef4", borderRadius: 14,
+  padding: "12px 16px", marginBottom: 14, gap: 12, flexWrap: "wrap",
+};
+const aulaStripLeft = { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" };
+const aulaBadge  = { background: "rgba(11,18,32,.08)", color: "#0B1220", borderRadius: 999,
+  padding: "3px 10px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em" };
+const aulaTitulo = { fontSize: 15, fontWeight: 800, color: "#0f172a" };
+const aulaMeta   = { fontSize: 13, color: "#64748b" };
+
+const btnSalvar  = {
+  background: colors.accent, color: "#fff", border: 0,
+  borderRadius: 10, padding: "9px 20px", cursor: "pointer",
+  fontWeight: 800, fontSize: 14, flexShrink: 0,
+  boxShadow: `0 4px 14px rgba(255,107,74,.3)`,
+};
+
+const progressWrap  = { display: "flex", alignItems: "center", gap: 14, marginBottom: 14 };
+const progressLabel = { fontSize: 13, color: "#64748b", fontWeight: 600 };
+const progressTrack = { height: 8, background: "#f1f5f9", borderRadius: 999, overflow: "hidden" };
+const progressFill  = { height: "100%", borderRadius: 999, transition: "width .3s ease" };
+
+const kpiRow  = { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 };
+const kpiChip = { display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+  background: "#fff", border: "1px solid #e9eef4", borderRadius: 12, padding: "10px 18px" };
+
+const massaBar   = { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+  background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 12,
+  padding: "10px 14px", marginBottom: 12 };
+const massaLabel = { fontSize: 12, fontWeight: 700, color: "#0369a1", whiteSpace: "nowrap" };
+const massaBtns  = { display: "flex", gap: 8, flexWrap: "wrap" };
+
+function btnMassa(status) {
+  const cfg = STATUS_CONFIG[status];
+  return {
+    padding: "7px 14px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
+    border: `1.5px solid ${cfg.borda}`, background: cfg.bg, color: cfg.cor,
+  };
 }
-
-function StatCard({ title, value }) {
-  return (
-    <div style={statCard}>
-      <div style={statTitle}>{title}</div>
-      <div style={statValue}>{value}</div>
-    </div>
-  );
-}
-
-const page = {
-  minHeight: "100vh",
-  background: "#f8fafc",
-  padding: 24,
+const btnMassaGhost = {
+  padding: "7px 14px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 600,
+  border: "1.5px solid #e2e8f0", background: "#fff", color: "#64748b",
 };
 
-const loadingWrap = {
-  minHeight: "100vh",
-  display: "grid",
-  placeItems: "center",
-  color: "#334155",
-  fontWeight: 700,
-  background: "#f8fafc",
-};
+const filtroBar  = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap",
+  marginBottom: 12, background: "#fff", border: "1px solid #e9eef4",
+  borderRadius: 14, padding: "10px 12px" };
+const searchInput = { height: 34, paddingLeft: 32, paddingRight: 10, width: "100%",
+  borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc",
+  fontSize: 13, color: "#334155", outline: "none", boxSizing: "border-box" };
 
-const topBar = {
-  marginBottom: 14,
-};
+const listaWrap = { display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 };
 
-const btnVoltar = {
-  background: "#ffffff",
-  border: "1px solid #cbd5e1",
-  color: "#0f172a",
-  borderRadius: 10,
-  padding: "10px 14px",
-  cursor: "pointer",
-  fontWeight: 700,
-};
+const linhaBase  = { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+  borderRadius: 12, padding: "10px 14px", transition: "background .15s" };
+const linhaNome  = { display: "flex", alignItems: "center", gap: 8, flex: "1 1 200px", minWidth: 0 };
+const linhaNumero= { fontSize: 11, fontWeight: 700, color: "#cbd5e1",
+  minWidth: 22, textAlign: "right", flexShrink: 0 };
+const linhaBtns  = { display: "flex", gap: 6, flexShrink: 0 };
 
-const hero = {
-  background: "linear-gradient(135deg, #0B1220 0%, #161D2E 100%)",
-  borderRadius: 22,
-  padding: 24,
-  color: "#fff",
-  boxShadow: "0 18px 36px rgba(11,18,32,.22)",
-};
+const justifInput = { flex: "1 1 200px", height: 34, borderRadius: 8, border: "1px solid #fcd34d",
+  background: "#fefce8", padding: "0 10px", fontSize: 13, color: "#334155", outline: "none" };
 
-const heroBadge = {
-  display: "inline-block",
-  width: "fit-content",
-  background: "rgba(255,255,255,.14)",
-  padding: "6px 10px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-  marginBottom: 10,
-};
+const rodapeBar  = { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+  background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, padding: "12px 16px", marginTop: 8 };
 
-const heroTitle = {
-  margin: 0,
-  fontSize: 34,
-  lineHeight: 1.05,
-};
-
-const heroSubtitle = {
-  margin: "8px 0 0",
-  color: "rgba(255,255,255,.84)",
-  lineHeight: 1.6,
-};
-
-const heroGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
-  marginTop: 18,
-};
-
-const infoCard = {
-  background: "rgba(255,255,255,.12)",
-  border: "1px solid rgba(255,255,255,.16)",
-  borderRadius: 18,
-  padding: 16,
-};
-
-const infoLabel = {
-  fontSize: 12,
-  textTransform: "uppercase",
-  letterSpacing: ".03em",
-  opacity: 0.8,
-  fontWeight: 800,
-};
-
-const infoValue = {
-  marginTop: 6,
-  fontSize: 18,
-  fontWeight: 800,
-  lineHeight: 1.3,
-};
-
-const errorBox = {
-  marginTop: 16,
-  background: "#fef2f2",
-  color: "#b91c1c",
-  border: "1px solid #fecaca",
-  borderRadius: 14,
-  padding: 14,
-  fontWeight: 700,
-};
-
-const successBox = {
-  marginTop: 16,
-  background: "#ecfdf5",
-  color: "#166534",
-  border: "1px solid #bbf7d0",
-  borderRadius: 14,
-  padding: 14,
-  fontWeight: 700,
-};
-
-const statsGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-  marginTop: 18,
-};
-
-const statCard = {
-  background: "#fff",
-  border: "1px solid #dbe4f0",
-  borderRadius: 18,
-  padding: 16,
-  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
-};
-
-const statTitle = {
-  color: "#64748b",
-  fontWeight: 700,
-  fontSize: 14,
-};
-
-const statValue = {
-  color: "#0f172a",
-  fontWeight: 900,
-  fontSize: 28,
-  marginTop: 4,
-};
-
-const sectionCard = {
-  background: "#fff",
-  border: "1px solid #dbe4f0",
-  borderRadius: 24,
-  padding: 20,
-  marginTop: 18,
-  boxShadow: "0 12px 28px rgba(15,23,42,.04)",
-};
-
-const toolbar = {
-  display: "flex",
-  gap: 12,
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  flexWrap: "wrap",
-};
-
-const sectionTitle = {
-  margin: 0,
-  fontSize: 28,
-  color: "#0f172a",
-};
-
-const sectionSubtitle = {
-  margin: "6px 0 0",
-  color: "#64748b",
-};
-
-const toolbarActions = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-  alignItems: "center",
-};
-
-const bulkBar = {
-  marginTop: 16,
-  marginBottom: 16,
-  padding: 14,
-  borderRadius: 16,
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  display: "flex",
-  gap: 12,
-  justifyContent: "space-between",
-  alignItems: "center",
-  flexWrap: "wrap",
-};
-
-const checkWrap = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  fontWeight: 700,
-  color: "#1e3a8a",
-};
-
-const bulkInfo = {
-  color: "#334155",
-  fontWeight: 700,
-};
-
-const bulkActions = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const btnPrimary = {
-  background: "linear-gradient(135deg, #FF6B4A 0%, #E5502F 100%)",
-  color: "#fff",
-  border: 0,
-  borderRadius: 12,
-  padding: "11px 16px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const btnGhost = {
-  background: "#fff",
-  color: "#1d4ed8",
-  border: "1px solid #bfdbfe",
-  borderRadius: 10,
-  padding: "9px 12px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const btnGhostDanger = {
-  background: "#fff",
-  color: "#b91c1c",
-  border: "1px solid #fecaca",
-  borderRadius: 10,
-  padding: "9px 12px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const table = {
-  width: "100%",
-  borderCollapse: "collapse",
-  minWidth: 740,
-};
-
-const th = {
-  textAlign: "left",
-  padding: "12px 14px",
-  fontSize: 13,
-  color: "#475569",
-  borderBottom: "1px solid #e2e8f0",
-};
-
-const thSmall = {
-  ...th,
-  width: 42,
-};
-
-const td = {
-  padding: "12px 14px",
-  borderBottom: "1px solid #edf2f7",
-  color: "#0f172a",
-  verticalAlign: "top",
-};
-
-const tdSmall = {
-  ...td,
-  width: 42,
-};
-
-const field = {
-  width: "100%",
-  minWidth: 220,
-  borderRadius: 12,
-  border: "1px solid #cbd5e1",
-  background: "#fff",
-  padding: "10px 12px",
-  outline: "none",
-};
-
-const select = {
-  width: 180,
-  borderRadius: 12,
-  border: "1px solid #cbd5e1",
-  background: "#fff",
-  padding: "10px 12px",
-  outline: "none",
-};
+const emptyState = { textAlign: "center", padding: "32px 16px", color: "#94a3b8",
+  fontSize: 14, border: "1px dashed #e2e8f0", borderRadius: 12, background: "#fafafa" };
+const loadingBox = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14,
+  padding: 16, color: "#64748b", fontSize: 13 };
+const errorBox   = { background: colors.dangerLight,  color: colors.dangerText,
+  border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 12 };
+const successBox = { background: colors.successLight, color: colors.successText,
+  border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 12 };
