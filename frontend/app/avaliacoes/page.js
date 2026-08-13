@@ -1,1073 +1,782 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import CrudPageV2 from "../../components/CrudPageV2";
-import SectionCard from "../../components/SectionCard";
-import StatCard from "../../components/StatCard";
-import { apiFetch } from "../../services/api";
+import PortalShell   from "../../components/PortalShell";
+import PageHero      from "../../components/PageHero";
+import StatCard      from "../../components/StatCard";
+import { apiFetch, getStoredUser } from "../../services/api";
+import { colors, chart }           from "../../lib/theme";
 
-function fmt(n) {
-  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
-}
-
-function avg(arr, field) {
-  if (!arr.length) return 0;
-  const total = arr.reduce((acc, item) => acc + Number(item?.[field] || 0), 0);
-  return total / arr.length;
-}
-
-function getNotaFinal(item) {
+/* ═══════════════════════════════════════════════
+   CLASSIFICAÇÃO
+═══════════════════════════════════════════════ */
+function notaFinal(item) {
   const prova = Number(item?.nota_prova || 0);
-  const qualidade = Number(item?.nota_qualidade || 0);
-  return prova > 0 ? prova : qualidade;
+  const qual  = Number(item?.nota_qualidade || 0);
+  return prova > 0 ? prova : qual;
 }
 
-function classificarResultado(item) {
-  const nota = getNotaFinal(item);
-
-  if (nota >= 8) return "Aprovado";
-  if (nota >= 6) return "Atenção";
+function classificar(item) {
+  const n = notaFinal(item);
+  if (n === 0)  return "pendente";
+  if (n >= 8)   return "Aprovado";
+  if (n >= 6)   return "Atenção";
   return "Reforço";
 }
 
-function badgeClassificacao(label) {
-  const base = {
-    display: "inline-block",
-    padding: "5px 9px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 11,
-  };
+const CLASSIF_STYLE = {
+  pendente: { background: "#f1f5f9", color: "#64748b" },
+  Aprovado: { background: colors.successLight, color: colors.successText },
+  Atenção:  { background: colors.warningLight, color: colors.warningText },
+  Reforço:  { background: colors.dangerLight,  color: colors.dangerText  },
+};
 
-  if (label === "Aprovado") {
-    return { ...base, background: "#dcfce7", color: "#166534" };
-  }
+const ORDEM_CLASSIF = { Reforço: 0, Atenção: 1, pendente: 2, Aprovado: 3 };
 
-  if (label === "Atenção") {
-    return { ...base, background: "#fff7ed", color: "#c2410c" };
-  }
-
-  return { ...base, background: "#fee2e2", color: "#b91c1c" };
+/* ═══════════════════════════════════════════════
+   UTILITÁRIOS
+═══════════════════════════════════════════════ */
+function fmt(n) { return new Intl.NumberFormat("pt-BR").format(Number(n || 0)); }
+function avg(arr, key) {
+  const com = arr.filter((i) => Number(i?.[key] || 0) > 0);
+  if (!com.length) return null;
+  return (com.reduce((s, i) => s + Number(i[key]), 0) / com.length).toFixed(1);
 }
 
-function acaoRecomendada(item) {
-  const status = classificarResultado(item);
-
-  if (status === "Aprovado") return "Manter evolução";
-  if (status === "Atenção") return "Acompanhar desempenho";
-  return "Aplicar reforço";
+function isInstrutor(user) {
+  const p = String(user?.perfil || user?.role || "").toLowerCase();
+  return p === "instrutor";
 }
 
-function createBlankQuestion() {
-  return {
-    enunciado: "",
-    alternativa_a: "",
-    alternativa_b: "",
-    alternativa_c: "",
-    alternativa_d: "",
-    correta: "A",
-    peso: 1,
-  };
+function nomeInstrutor(user) {
+  return (user?.nome || user?.name || "").trim();
 }
 
-export default function AvaliacoesPage() {
-  const [treinamentos, setTreinamentos] = useState([]);
-  const [avaliacoes, setAvaliacoes] = useState([]);
-  const [participantesMap, setParticipantesMap] = useState({});
-  const [materiais, setMateriais] = useState([]);
-
-  const [materialForm, setMaterialForm] = useState({
-    treinamento_id: "",
-    titulo: "",
-    tipo: "prova",
-    link_arquivo: "",
-    descricao: "",
-    nota_maxima: "",
-    data_aplicacao: "",
-  });
-
-  const [questoes, setQuestoes] = useState([createBlankQuestion()]);
-  const [editingMaterialId, setEditingMaterialId] = useState(null);
-  const [materialErro, setMaterialErro] = useState("");
-  const [materialSucesso, setMaterialSucesso] = useState("");
-  const [loadingMateriais, setLoadingMateriais] = useState(false);
-
-  useEffect(() => {
-    async function carregar() {
-      try {
-        const [treinamentosData, avaliacoesData] = await Promise.all([
-          apiFetch("/treinamentos").catch(() => []),
-          apiFetch("/avaliacoes").catch(() => []),
-        ]);
-
-        const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
-        setTreinamentos(listaTreinamentos);
-        setAvaliacoes(Array.isArray(avaliacoesData) ? avaliacoesData : []);
-
-        const participantesObj = {};
-
-        await Promise.all(
-          listaTreinamentos.map(async (t) => {
-            try {
-              const participantes = await apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []);
-              participantesObj[String(t.id)] = Array.isArray(participantes) ? participantes : [];
-            } catch {
-              participantesObj[String(t.id)] = [];
-            }
-          })
-        );
-
-        setParticipantesMap(participantesObj);
-      } catch {
-        setTreinamentos([]);
-        setAvaliacoes([]);
-        setParticipantesMap({});
-      }
-    }
-
-    carregar();
-    carregarMateriais();
-  }, []);
-
-  async function carregarMateriais() {
-    try {
-      setLoadingMateriais(true);
-      const materiaisData = await apiFetch("/materiais-avaliativos").catch(() => []);
-      setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
-    } finally {
-      setLoadingMateriais(false);
-    }
-  }
-
-  const treinamentoOptions = useMemo(() => {
-    return treinamentos.map((item) => ({
-      value: item.id,
-      label: `${item.tema || item.titulo || "Treinamento"}${
-        item.cliente ? ` - ${item.cliente}` : ""
-      }`,
-    }));
-  }, [treinamentos]);
-
-  const materialOptions = useMemo(() => {
-    return materiais.map((item) => ({
-      value: item.titulo,
-      label: `${item.titulo} • ${item.tipo || "material"}${
-        item.nota_maxima ? ` • nota máx. ${item.nota_maxima}` : ""
-      }`,
-    }));
-  }, [materiais]);
-
-  const participanteOptionsPorTreinamento = useMemo(() => {
-    const mapa = {};
-
-    treinamentos.forEach((treinamento) => {
-      const participantes = participantesMap[String(treinamento.id)] || [];
-
-      mapa[String(treinamento.id)] = participantes.map((p) => ({
-        value: p.nome,
-        label: p.nome,
-      }));
-    });
-
-    return mapa;
-  }, [participantesMap, treinamentos]);
-
-  const fields = useMemo(
-    () => [
-      {
-        name: "treinamento_id",
-        label: "Turma / treinamento",
-        type: "select",
-        options: treinamentoOptions,
-        placeholder: "Selecione a turma",
-      },
-      {
-        name: "titulo",
-        label: "Prova / simulado aplicado",
-        type: "select",
-        options: materialOptions,
-        placeholder: "Selecione o material (opcional)",
-      },
-      {
-        name: "treinando_nome",
-        label: "Treinando",
-        type: "dependent-select",
-        dependsOn: "treinamento_id",
-        optionsMap: participanteOptionsPorTreinamento,
-        placeholder: "Selecione o treinando",
-      },
-      {
-        name: "nota_nps",
-        label: "Satisfação (NPS)",
-        type: "number",
-        placeholder: "0 a 10",
-        min: 0,
-        max: 10,
-        step: 0.1,
-      },
-      {
-        name: "nota_qualidade",
-        label: "Qualidade / aproveitamento",
-        type: "number",
-        placeholder: "0 a 10",
-        min: 0,
-        max: 10,
-        step: 0.1,
-      },
-      {
-        name: "nota_prova",
-        label: "Nota da prova / simulado",
-        type: "number",
-        placeholder: "0 a 10",
-        min: 0,
-        max: 10,
-        step: 0.1,
-      },
-      {
-        name: "comentario",
-        label: "Comentário / feedback",
-        type: "textarea",
-        placeholder: "Comentários sobre desempenho, reforço ou evolução",
-      },
-    ],
-    [treinamentoOptions, participanteOptionsPorTreinamento, materialOptions]
+/* ═══════════════════════════════════════════════
+   SUB-COMPONENTES
+═══════════════════════════════════════════════ */
+function Badge({ label }) {
+  return (
+    <span style={{ ...pill, ...CLASSIF_STYLE[label] || CLASSIF_STYLE.pendente }}>
+      {label}
+    </span>
   );
+}
 
-  const kpis = useMemo(() => {
-    const totalAvaliacoes = avaliacoes.length;
-    const mediaNps = avg(avaliacoes, "nota_nps").toFixed(1);
-    const mediaQualidade = avg(avaliacoes, "nota_qualidade").toFixed(1);
-    const mediaProva = avg(avaliacoes, "nota_prova").toFixed(1);
+function InlineForm({ treinandoNome, treinamentoId, avaliacaoExistente, onSalvo, onCancelar }) {
+  const [form, setForm] = useState({
+    nota_prova:     String(avaliacaoExistente?.nota_prova     ?? ""),
+    nota_qualidade: String(avaliacaoExistente?.nota_qualidade ?? ""),
+    nota_nps:       String(avaliacaoExistente?.nota_nps       ?? ""),
+    comentario:     avaliacaoExistente?.comentario || "",
+  });
+  const [salvando, setSalvando] = useState(false);
+  const [erro,     setErro]     = useState("");
 
-    const aprovados = avaliacoes.filter(
-      (item) => classificarResultado(item) === "Aprovado"
-    ).length;
+  function campo(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
 
-    const atencao = avaliacoes.filter(
-      (item) => classificarResultado(item) === "Atenção"
-    ).length;
-
-    const reforco = avaliacoes.filter(
-      (item) => classificarResultado(item) === "Reforço"
-    ).length;
-
-    const provas = materiais.filter((m) => String(m.tipo).toLowerCase() === "prova").length;
-    const simulados = materiais.filter((m) => String(m.tipo).toLowerCase() === "simulado").length;
-
-    return {
-      totalAvaliacoes,
-      mediaNps,
-      mediaQualidade,
-      mediaProva,
-      aprovados,
-      atencao,
-      reforco,
-      provas,
-      simulados,
-      materiaisAtivos: materiais.length,
-    };
-  }, [avaliacoes, materiais]);
-
-  const columns = [
-    {
-      key: "treinando_nome",
-      label: "Treinando",
-      render: (item) => {
-        const treinamento = treinamentos.find(
-          (t) => String(t.id) === String(item.treinamento_id)
-        );
-
-        return (
-          <div>
-            <div style={titleCell}>{item.treinando_nome || "-"}</div>
-            <div style={subCell}>
-              {(treinamento?.tema || "Treinamento") +
-                " • " +
-                (treinamento?.cliente || "Sem cliente")}
-            </div>
-            {item.titulo ? <div style={miniTag}>{item.titulo}</div> : null}
-          </div>
-        );
-      },
-    },
-    {
-      key: "nota_nps",
-      label: "NPS",
-      render: (item) => <strong style={scoreBlue}>{item.nota_nps ?? "-"}</strong>,
-    },
-    {
-      key: "nota_qualidade",
-      label: "Qualidade",
-      render: (item) => <strong style={scoreGreen}>{item.nota_qualidade ?? "-"}</strong>,
-    },
-    {
-      key: "nota_prova",
-      label: "Prova",
-      render: (item) => <strong style={scorePurple}>{item.nota_prova ?? "-"}</strong>,
-    },
-    {
-      key: "classificacao",
-      label: "Status",
-      render: (item) => {
-        const label = classificarResultado(item);
-        return <span style={badgeClassificacao(label)}>{label}</span>;
-      },
-    },
-    {
-      key: "comentario",
-      label: "Ação recomendada",
-      render: (item) => <span style={obsCell}>{acaoRecomendada(item)}</span>,
-    },
-  ];
-
-  function handleMaterialField(name, value) {
-    setMaterialForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  }
-
-  function atualizarQuestao(index, field, value) {
-    setQuestoes((prev) =>
-      prev.map((q, i) => (i === index ? { ...q, [field]: value } : q))
-    );
-  }
-
-  function adicionarQuestao() {
-    setQuestoes((prev) => [...prev, createBlankQuestion()]);
-  }
-
-  function removerQuestao(index) {
-    setQuestoes((prev) => {
-      if (prev.length === 1) return prev;
-      return prev.filter((_, i) => i !== index);
-    });
-  }
-
-  function limparMaterialForm() {
-    setEditingMaterialId(null);
-    setMaterialErro("");
-    setMaterialSucesso("");
-    setMaterialForm({
-      treinamento_id: "",
-      titulo: "",
-      tipo: "prova",
-      link_arquivo: "",
-      descricao: "",
-      nota_maxima: "",
-      data_aplicacao: "",
-    });
-    setQuestoes([createBlankQuestion()]);
-  }
-
-  function editarMaterial(item) {
-    setEditingMaterialId(item.id);
-    setMaterialErro("");
-    setMaterialSucesso("");
-    setMaterialForm({
-      treinamento_id: item.treinamento_id || "",
-      titulo: item.titulo || "",
-      tipo: item.tipo || "prova",
-      link_arquivo: item.link_arquivo || "",
-      descricao: item.descricao || "",
-      nota_maxima: item.nota_maxima || "",
-      data_aplicacao: item.data_aplicacao ? String(item.data_aplicacao).slice(0, 10) : "",
-    });
-
+  async function salvar() {
     try {
-      const parsed = item.questoes_json ? JSON.parse(item.questoes_json) : [];
-      setQuestoes(Array.isArray(parsed) && parsed.length ? parsed : [createBlankQuestion()]);
-    } catch {
-      setQuestoes([createBlankQuestion()]);
-    }
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  async function salvarMaterial() {
-    try {
-      setMaterialErro("");
-      setMaterialSucesso("");
-
-      if (!materialForm.treinamento_id || !materialForm.titulo || !materialForm.tipo) {
-        setMaterialErro("Preencha turma, título e tipo do material.");
-        return;
-      }
-
-      const questoesValidas = questoes.filter(
-        (q) =>
-          q.enunciado &&
-          q.alternativa_a &&
-          q.alternativa_b &&
-          q.alternativa_c &&
-          q.alternativa_d &&
-          q.correta
-      );
-
+      setSalvando(true); setErro("");
       const payload = {
-        ...materialForm,
-        nota_maxima: materialForm.nota_maxima || 0,
-        questoes_json: JSON.stringify(questoesValidas),
+        treinamento_id: Number(treinamentoId),
+        treinando_nome: treinandoNome,
+        nota_prova:      form.nota_prova     !== "" ? Number(form.nota_prova)     : null,
+        nota_qualidade:  form.nota_qualidade !== "" ? Number(form.nota_qualidade) : null,
+        nota_nps:        form.nota_nps       !== "" ? Number(form.nota_nps)       : null,
+        comentario:      form.comentario     || null,
       };
-
-      const url = editingMaterialId
-        ? `/materiais-avaliativos/${editingMaterialId}`
-        : "/materiais-avaliativos";
-
-      const method = editingMaterialId ? "PUT" : "POST";
-
-      await apiFetch(url, {
-        method,
-        body: JSON.stringify(payload),
-      });
-
-      await carregarMateriais();
-
-      setMaterialSucesso(
-        editingMaterialId
-          ? "Material avaliativo atualizado com sucesso."
-          : "Material avaliativo criado com sucesso."
-      );
-
-      limparMaterialForm();
-    } catch (error) {
-      setMaterialErro(error.message || "Erro ao salvar material avaliativo.");
-    }
-  }
-
-  async function excluirMaterial(id) {
-    const confirmar = window.confirm("Deseja realmente excluir este material?");
-    if (!confirmar) return;
-
-    try {
-      setMaterialErro("");
-      setMaterialSucesso("");
-
-      await apiFetch(`/materiais-avaliativos/${id}`, {
-        method: "DELETE",
-      });
-
-      await carregarMateriais();
-
-      setMaterialSucesso("Material avaliativo excluído com sucesso.");
-
-      if (editingMaterialId === id) {
-        limparMaterialForm();
+      if (avaliacaoExistente?.id) {
+        await apiFetch(`/avaliacoes/${avaliacaoExistente.id}`, {
+          method: "PUT", body: JSON.stringify(payload),
+        });
+      } else {
+        await apiFetch("/avaliacoes", {
+          method: "POST", body: JSON.stringify(payload),
+        });
       }
-    } catch (error) {
-      setMaterialErro(error.message || "Erro ao excluir material.");
+      onSalvo();
+    } catch (e) {
+      setErro(e.message || "Erro ao salvar.");
+    } finally {
+      setSalvando(false);
     }
   }
 
   return (
-    <CrudPageV2
-      title="Gestão de Avaliações"
-      subtitle="Resultados por treinando, provas e simulados em formato operacional."
-      endpoint="/avaliacoes"
-      fields={fields}
-      columns={columns}
-      recordsTitle="Base de avaliações individuais"
-      recordsSubtitle="Resultado por treinando, turma e material aplicado."
-      hero={
-        <div style={{ display: "grid", gap: 14 }}>
-          <div style={heroGrid}>
-            <StatCard title="Avaliações" value={fmt(kpis.totalAvaliacoes)} subtitle="Registros lançados" accent="#dc2626" />
-            <StatCard title="NPS médio" value={kpis.mediaNps} subtitle="Percepção do treinamento" accent="#2563eb" />
-            <StatCard title="Qualidade média" value={kpis.mediaQualidade} subtitle="Aproveitamento geral" accent="#059669" />
-            <StatCard title="Média prova" value={kpis.mediaProva} subtitle="Provas e simulados" accent="#7c3aed" />
-          </div>
-
-          <div style={heroGrid}>
-            <StatCard title="Aprovados" value={fmt(kpis.aprovados)} subtitle="Nota final ≥ 8" accent="#16a34a" />
-            <StatCard title="Atenção" value={fmt(kpis.atencao)} subtitle="Nota entre 6 e 7,9" accent="#f59e0b" />
-            <StatCard title="Reforço" value={fmt(kpis.reforco)} subtitle="Nota abaixo de 6" accent="#b91c1c" />
-            <StatCard
-              title="Materiais"
-              value={loadingMateriais ? "..." : fmt(kpis.materiaisAtivos)}
-              subtitle={`${fmt(kpis.provas)} prova(s) • ${fmt(kpis.simulados)} simulado(s)`}
-              accent="#0f766e"
-            />
-          </div>
-
-          <SectionCard
-            title="Montagem de provas e simulados"
-            subtitle="Cadastre materiais avaliativos por turma e monte as questões diretamente no portal."
-          >
-            {materialErro ? <div style={errorBoxInline}>{materialErro}</div> : null}
-            {materialSucesso ? <div style={successBoxInline}>{materialSucesso}</div> : null}
-
-            <div style={materialGrid}>
-              <div style={materialPanel}>
-                <div style={materialHeader}>
-                  <h3 style={materialTitle}>
-                    {editingMaterialId ? "Editar material" : "Novo material avaliativo"}
-                  </h3>
-                  {editingMaterialId ? (
-                    <button type="button" style={btnSecondary} onClick={limparMaterialForm}>
-                      Cancelar edição
-                    </button>
-                  ) : null}
-                </div>
-
-                <div style={formGridMaterial}>
-                  <div style={fieldWrap}>
-                    <label style={label}>Turma</label>
-                    <select
-                      style={input}
-                      value={materialForm.treinamento_id}
-                      onChange={(e) => handleMaterialField("treinamento_id", e.target.value)}
-                    >
-                      <option value="">Selecione a turma</option>
-                      {treinamentoOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={fieldWrap}>
-                    <label style={label}>Título</label>
-                    <input
-                      style={input}
-                      value={materialForm.titulo}
-                      onChange={(e) => handleMaterialField("titulo", e.target.value)}
-                      placeholder="Ex.: Simulado Mercantil"
-                    />
-                  </div>
-
-                  <div style={fieldWrap}>
-                    <label style={label}>Tipo</label>
-                    <select
-                      style={input}
-                      value={materialForm.tipo}
-                      onChange={(e) => handleMaterialField("tipo", e.target.value)}
-                    >
-                      <option value="prova">Prova</option>
-                      <option value="simulado">Simulado</option>
-                    </select>
-                  </div>
-
-                  <div style={fieldWrap}>
-                    <label style={label}>Nota máxima</label>
-                    <input
-                      style={input}
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={materialForm.nota_maxima}
-                      onChange={(e) => handleMaterialField("nota_maxima", e.target.value)}
-                      placeholder="Ex.: 10"
-                    />
-                  </div>
-
-                  <div style={fieldWrap}>
-                    <label style={label}>Data de aplicação</label>
-                    <input
-                      style={input}
-                      type="date"
-                      value={materialForm.data_aplicacao}
-                      onChange={(e) => handleMaterialField("data_aplicacao", e.target.value)}
-                    />
-                  </div>
-
-                  <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
-                    <label style={label}>Link do arquivo</label>
-                    <input
-                      style={input}
-                      value={materialForm.link_arquivo}
-                      onChange={(e) => handleMaterialField("link_arquivo", e.target.value)}
-                      placeholder="Opcional: link do PDF, Forms ou arquivo de apoio"
-                    />
-                  </div>
-
-                  <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
-                    <label style={label}>Descrição</label>
-                    <textarea
-                      style={textarea}
-                      rows={3}
-                      value={materialForm.descricao}
-                      onChange={(e) => handleMaterialField("descricao", e.target.value)}
-                      placeholder="Orientações ou descrição do material"
-                    />
-                  </div>
-                </div>
-
-                <div style={questionsHeader}>
-                  <h4 style={questionsTitle}>Questões da prova / simulado</h4>
-                  <button type="button" style={btnSecondary} onClick={adicionarQuestao}>
-                    Adicionar questão
-                  </button>
-                </div>
-
-                <div style={questionsGrid}>
-                  {questoes.map((questao, index) => (
-                    <div key={index} style={questionCard}>
-                      <div style={questionHeader}>
-                        <strong>Questão {index + 1}</strong>
-                        {questoes.length > 1 ? (
-                          <button
-                            type="button"
-                            style={btnSmallDelete}
-                            onClick={() => removerQuestao(index)}
-                          >
-                            Remover
-                          </button>
-                        ) : null}
-                      </div>
-
-                      <div style={{ ...fieldWrap, marginTop: 10 }}>
-                        <label style={label}>Enunciado</label>
-                        <textarea
-                          style={textarea}
-                          rows={2}
-                          value={questao.enunciado}
-                          onChange={(e) => atualizarQuestao(index, "enunciado", e.target.value)}
-                          placeholder="Digite a pergunta"
-                        />
-                      </div>
-
-                      <div style={formGridMaterial}>
-                        <div style={fieldWrap}>
-                          <label style={label}>Alternativa A</label>
-                          <input
-                            style={input}
-                            value={questao.alternativa_a}
-                            onChange={(e) => atualizarQuestao(index, "alternativa_a", e.target.value)}
-                          />
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Alternativa B</label>
-                          <input
-                            style={input}
-                            value={questao.alternativa_b}
-                            onChange={(e) => atualizarQuestao(index, "alternativa_b", e.target.value)}
-                          />
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Alternativa C</label>
-                          <input
-                            style={input}
-                            value={questao.alternativa_c}
-                            onChange={(e) => atualizarQuestao(index, "alternativa_c", e.target.value)}
-                          />
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Alternativa D</label>
-                          <input
-                            style={input}
-                            value={questao.alternativa_d}
-                            onChange={(e) => atualizarQuestao(index, "alternativa_d", e.target.value)}
-                          />
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Resposta correta</label>
-                          <select
-                            style={input}
-                            value={questao.correta}
-                            onChange={(e) => atualizarQuestao(index, "correta", e.target.value)}
-                          >
-                            <option value="A">A</option>
-                            <option value="B">B</option>
-                            <option value="C">C</option>
-                            <option value="D">D</option>
-                          </select>
-                        </div>
-
-                        <div style={fieldWrap}>
-                          <label style={label}>Peso</label>
-                          <input
-                            style={input}
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={questao.peso}
-                            onChange={(e) => atualizarQuestao(index, "peso", e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={actionsRowInline}>
-                  <button type="button" style={btnPrimary} onClick={salvarMaterial}>
-                    {editingMaterialId ? "Atualizar material" : "Salvar material"}
-                  </button>
-                  <button type="button" style={btnSecondary} onClick={limparMaterialForm}>
-                    Limpar
-                  </button>
-                </div>
-              </div>
-
-              <div style={materialPanel}>
-                <h3 style={materialTitle}>Materiais cadastrados</h3>
-
-                <div style={listGrid}>
-                  {materiais.length ? (
-                    materiais.map((item) => {
-                      const treinamento = treinamentos.find(
-                        (t) => String(t.id) === String(item.treinamento_id)
-                      );
-
-                      let totalQuestoes = 0;
-                      try {
-                        const parsed = item.questoes_json ? JSON.parse(item.questoes_json) : [];
-                        totalQuestoes = Array.isArray(parsed) ? parsed.length : 0;
-                      } catch {
-                        totalQuestoes = 0;
-                      }
-
-                      return (
-                        <div key={item.id} style={listItem}>
-                          <div style={itemHeader}>
-                            <div style={itemTitle}>{item.titulo}</div>
-                            <div style={miniTagBlue}>{item.tipo || "material"}</div>
-                          </div>
-
-                          <div style={itemMeta}>
-                            {treinamento?.tema || `Turma #${item.treinamento_id}`}
-                          </div>
-
-                          <div style={itemSubMeta}>
-                            Nota máxima: {item.nota_maxima ?? 0} •{" "}
-                            {item.data_aplicacao
-                              ? `Aplicação: ${String(item.data_aplicacao).slice(0, 10)}`
-                              : "Sem data"}
-                          </div>
-
-                          <div style={itemSubMeta}>
-                            {totalQuestoes} questão(ões) cadastradas
-                          </div>
-
-                          {item.link_arquivo ? (
-                            <div style={{ marginTop: 8 }}>
-                              <a
-                                href={item.link_arquivo}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={linkStyle}
-                              >
-                                Abrir arquivo / link
-                              </a>
-                            </div>
-                          ) : null}
-
-                          <div style={materialCardActions}>
-                            <button type="button" style={btnSmallEdit} onClick={() => editarMaterial(item)}>
-                              Editar
-                            </button>
-                            <button type="button" style={btnSmallDelete} onClick={() => excluirMaterial(item.id)}>
-                              Excluir
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div style={emptyText}>Nenhum material avaliativo cadastrado.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </SectionCard>
+    <div style={inlineFormWrap}>
+      {erro && <div style={errSmall}>{erro}</div>}
+      <div style={inlineFormRow}>
+        <MiniField label="Nota prova">
+          <input type="number" min="0" max="10" step="0.1"
+            value={form.nota_prova} onChange={campo("nota_prova")} style={miniInput} />
+        </MiniField>
+        <MiniField label="Qualidade">
+          <input type="number" min="0" max="10" step="0.1"
+            value={form.nota_qualidade} onChange={campo("nota_qualidade")} style={miniInput} />
+        </MiniField>
+        <MiniField label="NPS">
+          <input type="number" min="0" max="10" step="0.1"
+            value={form.nota_nps} onChange={campo("nota_nps")} style={miniInput} />
+        </MiniField>
+        <MiniField label="Comentário" wide>
+          <input value={form.comentario} onChange={campo("comentario")}
+            placeholder="Observação ou feedback" style={{ ...miniInput, width: "100%" }} />
+        </MiniField>
+        <div style={{ display: "flex", gap: 6, alignSelf: "flex-end" }}>
+          <button style={btnSalvarInline} onClick={salvar} disabled={salvando}>
+            {salvando ? "Salvando…" : "Salvar"}
+          </button>
+          <button style={btnCancelarInline} onClick={onCancelar}>Cancelar</button>
         </div>
-      }
-    />
+      </div>
+    </div>
   );
 }
 
-const heroGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-  gap: 10,
-};
+function MiniField({ label, children, wide = false }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: wide ? "1 1 180px" : "0 0 90px" }}>
+      <span style={miniLabel}>{label}</span>
+      {children}
+    </div>
+  );
+}
 
-const listGrid = {
-  display: "grid",
-  gap: 10,
-};
+/* ═══════════════════════════════════════════════
+   CARD DE TURMA
+═══════════════════════════════════════════════ */
+function TurmaAvaliacaoCard({ turma, avaliacoesDaTurma, usuario, onAvaliacaoSalva }) {
+  const [expandido,   setExpandido]   = useState(false);
+  const [participantes, setParticipantes] = useState(null); // null = não carregado
+  const [carregando,  setCarregando]  = useState(false);
+  const [editandoId,  setEditandoId]  = useState(null); // treinando_nome em edição
+  const ehCoordenador = !isInstrutor(usuario);
 
-const listItem = {
-  background: "#f8fafc",
-  padding: 12,
-  borderRadius: 14,
-  border: "1px solid #e2e8f0",
-};
+  /* Kpis da turma (só das avaliações já existentes) */
+  const kpi = useMemo(() => {
+    const aprovados = avaliacoesDaTurma.filter((a) => classificar(a) === "Aprovado").length;
+    const atencao   = avaliacoesDaTurma.filter((a) => classificar(a) === "Atenção").length;
+    const reforco   = avaliacoesDaTurma.filter((a) => classificar(a) === "Reforço").length;
+    return { total: avaliacoesDaTurma.length, aprovados, atencao, reforco };
+  }, [avaliacoesDaTurma]);
 
-const itemHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 10,
-  alignItems: "center",
-};
+  /* Carregar participantes ao expandir */
+  async function expandir() {
+    if (expandido) { setExpandido(false); return; }
+    setExpandido(true);
+    if (participantes !== null) return;
+    try {
+      setCarregando(true);
+      const lista = await apiFetch(`/treinamentos/${turma.id}/participantes`).catch(() => []);
+      setParticipantes(Array.isArray(lista) ? lista : []);
+    } finally {
+      setCarregando(false);
+    }
+  }
 
-const itemTitle = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
+  /* Mesclar participantes + avaliações */
+  const listaCompleta = useMemo(() => {
+    if (!participantes) return [];
+    const avalMap = {};
+    avaliacoesDaTurma.forEach((a) => {
+      const chave = String(a.treinando_nome || "").trim().toLowerCase();
+      avalMap[chave] = a;
+    });
+    return participantes
+      .map((p) => {
+        const chave = String(p.nome || "").trim().toLowerCase();
+        const aval  = avalMap[chave] || null;
+        return { nome: p.nome, avaliacao: aval, classif: aval ? classificar(aval) : "pendente" };
+      })
+      .sort((a, b) => (ORDEM_CLASSIF[a.classif] ?? 99) - (ORDEM_CLASSIF[b.classif] ?? 99));
+  }, [participantes, avaliacoesDaTurma]);
 
-const itemMeta = {
-  marginTop: 5,
-  color: "#475569",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
+  const pendentes = listaCompleta.filter((t) => !t.avaliacao).length;
+  const reforco   = listaCompleta.filter((t) => t.classif === "Reforço").length;
+  const temAlerta = pendentes > 0 || reforco > 0;
 
-const itemSubMeta = {
-  marginTop: 6,
-  color: "#64748b",
-  fontSize: 12,
-};
+  return (
+    <div style={{ ...turmaCard, borderLeft: `4px solid ${temAlerta ? colors.danger : colors.success}` }}>
 
-const emptyText = {
-  color: "#64748b",
-};
+      {/* Cabeçalho clicável */}
+      <div style={turmaCardHeader} onClick={expandir} role="button" tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && expandir()}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={turmaNome}>{turma.tema || "Turma"}</div>
+          <div style={turmaMeta}>
+            {[turma.cliente, turma.instrutor].filter(Boolean).join(" · ")}
+          </div>
+        </div>
 
-const titleCell = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
+        <div style={turmaKpis}>
+          <KpiChip label="avaliados" value={kpi.total}    cor="#334155" />
+          <KpiChip label="aprovados" value={kpi.aprovados} cor={colors.successText} />
+          {kpi.atencao > 0 && <KpiChip label="atenção"  value={kpi.atencao} cor={colors.warningText} />}
+          {kpi.reforco > 0 && <KpiChip label="reforço"  value={kpi.reforco} cor={colors.dangerText}  />}
+        </div>
 
-const subCell = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 12,
-  lineHeight: 1.35,
-};
+        <span style={chevron}>{expandido ? "▲" : "▼"}</span>
+      </div>
 
-const miniTag = {
-  marginTop: 8,
-  display: "inline-block",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-};
+      {/* Alerta de pendentes / reforço */}
+      {temAlerta && (
+        <div style={alertaStrip}>
+          {pendentes > 0 && (
+            <span>⚠️ {pendentes} treinando{pendentes !== 1 ? "s" : ""} sem avaliação</span>
+          )}
+          {reforco > 0 && (
+            <span style={{ marginLeft: 12 }}>
+              🔴 {reforco} em situação de reforço
+            </span>
+          )}
+        </div>
+      )}
 
-const scoreBlue = {
-  color: "#1d4ed8",
-  fontWeight: 800,
-};
+      {/* Lista de treinandos (expandida) */}
+      {expandido && (
+        <div style={listaWrap}>
+          {carregando && <p style={hint}>Carregando treinandos…</p>}
 
-const scoreGreen = {
-  color: "#15803d",
-  fontWeight: 800,
-};
+          {!carregando && listaCompleta.length === 0 && (
+            <p style={hint}>Nenhum participante importado para esta turma.</p>
+          )}
 
-const scorePurple = {
-  color: "#7c3aed",
-  fontWeight: 800,
-};
+          {!carregando && listaCompleta.map((item) => {
+            const emEdicao = editandoId === item.nome;
+            const a        = item.avaliacao;
 
-const obsCell = {
-  color: "#334155",
-  fontWeight: 600,
-};
+            return (
+              <div key={item.nome} style={{
+                ...treinandoRow,
+                background: item.classif === "Reforço" ? colors.dangerLight : item.classif === "pendente" ? "#f8fafc" : "#fff",
+              }}>
+                <div style={treinandoInfo}>
+                  <span style={treinandoNome}>{item.nome}</span>
+                  <Badge label={item.classif} />
+                </div>
 
-const materialGrid = {
-  display: "grid",
-  gridTemplateColumns: "1.3fr 1fr",
-  gap: 14,
-};
+                {a && !emEdicao && (
+                  <div style={notasRow}>
+                    {a.nota_prova     != null && <NotaChip label="P" value={a.nota_prova}     />}
+                    {a.nota_qualidade != null && <NotaChip label="Q" value={a.nota_qualidade} />}
+                    {a.nota_nps       != null && <NotaChip label="N" value={a.nota_nps}       />}
+                    {a.comentario && (
+                      <span style={comentarioTxt} title={a.comentario}>
+                        💬 {a.comentario.length > 40 ? a.comentario.slice(0, 40) + "…" : a.comentario}
+                      </span>
+                    )}
+                  </div>
+                )}
 
-const materialPanel = {
-  background: "#fff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 16,
-  padding: 14,
-};
+                <div style={treinandoAcoes}>
+                  {emEdicao ? null : (
+                    <button
+                      style={a ? btnEditar : btnLancar}
+                      onClick={() => setEditandoId(item.nome)}
+                    >
+                      {a ? "Editar" : "Lançar nota"}
+                    </button>
+                  )}
+                  {item.classif === "Reforço" && !emEdicao && (
+                    <span style={reforcoTag}>Reforço necessário</span>
+                  )}
+                </div>
 
-const materialHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 10,
-  alignItems: "center",
-  marginBottom: 12,
-  flexWrap: "wrap",
-};
+                {emEdicao && (
+                  <InlineForm
+                    treinandoNome={item.nome}
+                    treinamentoId={turma.id}
+                    avaliacaoExistente={a}
+                    onSalvo={async () => {
+                      setEditandoId(null);
+                      await onAvaliacaoSalva();
+                    }}
+                    onCancelar={() => setEditandoId(null)}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
-const materialTitle = {
-  margin: 0,
-  color: "#0f172a",
-  fontSize: 16,
-};
+function KpiChip({ label, value, cor }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+      <span style={{ fontSize: 17, fontWeight: 800, color: cor, lineHeight: 1 }}>{value}</span>
+      <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>{label}</span>
+    </div>
+  );
+}
 
-const formGridMaterial = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
-};
+function NotaChip({ label, value }) {
+  const n = Number(value || 0);
+  const cor = n >= 8 ? colors.successText : n >= 6 ? colors.warningText : colors.dangerText;
+  const bg  = n >= 8 ? colors.successLight : n >= 6 ? colors.warningLight : colors.dangerLight;
+  return (
+    <span style={{ fontSize: 13, fontWeight: 800, color: cor, background: bg,
+      borderRadius: 6, padding: "2px 7px", display: "inline-flex", alignItems: "center", gap: 3 }}>
+      <span style={{ fontSize: 10, opacity: .7 }}>{label}</span>{Number(value).toFixed(1)}
+    </span>
+  );
+}
 
-const fieldWrap = {
-  display: "grid",
-  gap: 6,
-};
+/* ═══════════════════════════════════════════════
+   BUILDER DE PROVAS (somente coordenador)
+═══════════════════════════════════════════════ */
+function BuilderProvas({ treinamentos, onSalvo }) {
+  const [aberto, setAberto] = useState(false);
+  const [materiais, setMateriais] = useState([]);
+  const [form, setForm] = useState({ treinamento_id: "", titulo: "", tipo: "prova",
+    link_arquivo: "", descricao: "", nota_maxima: "", data_aplicacao: "" });
+  const [questoes, setQuestoes] = useState([novaQuestao()]);
+  const [editId, setEditId] = useState(null);
+  const [erro,   setErro]   = useState("");
+  const [ok,     setOk]     = useState("");
 
-const label = {
-  fontWeight: 800,
-  color: "#0f172a",
-  fontSize: 14,
-};
+  useEffect(() => { if (aberto) carregar(); }, [aberto]);
 
-const input = {
-  width: "100%",
-  height: 42,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  fontSize: 14,
-  color: "#0f172a",
-  outline: "none",
-  background: "#ffffff",
-  boxSizing: "border-box",
-};
+  async function carregar() {
+    const d = await apiFetch("/materiais-avaliativos").catch(() => []);
+    setMateriais(Array.isArray(d) ? d : []);
+  }
 
-const textarea = {
-  width: "100%",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "10px 12px",
-  fontSize: 14,
-  color: "#0f172a",
-  outline: "none",
-  background: "#ffffff",
-  resize: "vertical",
-  boxSizing: "border-box",
-  minHeight: 76,
-};
+  function novaQuestao() {
+    return { enunciado: "", alternativa_a: "", alternativa_b: "",
+      alternativa_c: "", alternativa_d: "", correta: "A", peso: 1 };
+  }
 
-const questionsHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 10,
-  marginTop: 18,
-  marginBottom: 12,
-  flexWrap: "wrap",
-};
+  function campo(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
 
-const questionsTitle = {
-  margin: 0,
-  color: "#0f172a",
-  fontSize: 15,
-};
+  function updQ(i, k, v) {
+    setQuestoes((p) => p.map((q, idx) => idx === i ? { ...q, [k]: v } : q));
+  }
 
-const questionsGrid = {
-  display: "grid",
-  gap: 12,
-};
+  function limpar() {
+    setEditId(null); setErro(""); setOk("");
+    setForm({ treinamento_id: "", titulo: "", tipo: "prova",
+      link_arquivo: "", descricao: "", nota_maxima: "", data_aplicacao: "" });
+    setQuestoes([novaQuestao()]);
+  }
 
-const questionCard = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-};
+  async function salvar() {
+    try {
+      setErro(""); setOk("");
+      if (!form.treinamento_id || !form.titulo) {
+        setErro("Turma e título são obrigatórios."); return;
+      }
+      const payload = { ...form, nota_maxima: form.nota_maxima || 0,
+        questoes_json: JSON.stringify(questoes.filter((q) => q.enunciado)) };
+      const url = editId ? `/materiais-avaliativos/${editId}` : "/materiais-avaliativos";
+      await apiFetch(url, { method: editId ? "PUT" : "POST", body: JSON.stringify(payload) });
+      setOk(editId ? "Material atualizado." : "Material salvo.");
+      limpar(); carregar(); onSalvo?.();
+    } catch (e) { setErro(e.message || "Erro ao salvar."); }
+  }
 
-const questionHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 10,
-  flexWrap: "wrap",
-};
+  async function excluir(id) {
+    if (!window.confirm("Excluir este material?")) return;
+    await apiFetch(`/materiais-avaliativos/${id}`, { method: "DELETE" });
+    carregar();
+  }
 
-const actionsRowInline = {
-  display: "flex",
-  gap: 8,
-  marginTop: 14,
-  flexWrap: "wrap",
-};
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button style={btnBuilder} onClick={() => setAberto((v) => !v)}>
+        {aberto ? "▲ Fechar builder de provas e simulados" : "▼ Provas e simulados (biblioteca de materiais)"}
+      </button>
 
-const btnPrimary = {
-  border: "none",
-  borderRadius: 10,
-  padding: "10px 16px",
-  background: "#2563eb",
-  color: "#ffffff",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 14,
-};
+      {aberto && (
+        <div style={builderWrap}>
+          {erro && <div style={errorBox}>{erro}</div>}
+          {ok  && <div style={successBox}>{ok}</div>}
 
-const btnSecondary = {
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  padding: "10px 16px",
-  background: "#ffffff",
-  color: "#334155",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 14,
-};
+          <div style={builderGrid}>
+            {/* Formulário */}
+            <div>
+              <div style={builderSecTitle}>{editId ? "Editar material" : "Novo material avaliativo"}</div>
+              <div style={bGrid}>
+                <BField label="Turma" full>
+                  <select value={form.treinamento_id} onChange={campo("treinamento_id")} style={bInput}>
+                    <option value="">Selecione a turma…</option>
+                    {treinamentos.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.tema || "Turma"} · {t.cliente || "—"}
+                      </option>
+                    ))}
+                  </select>
+                </BField>
+                <BField label="Título"><input value={form.titulo} onChange={campo("titulo")} style={bInput} /></BField>
+                <BField label="Tipo">
+                  <select value={form.tipo} onChange={campo("tipo")} style={bInput}>
+                    <option value="prova">Prova</option>
+                    <option value="simulado">Simulado</option>
+                  </select>
+                </BField>
+                <BField label="Nota máx."><input type="number" value={form.nota_maxima} onChange={campo("nota_maxima")} style={bInput} /></BField>
+                <BField label="Aplicação"><input type="date" value={form.data_aplicacao} onChange={campo("data_aplicacao")} style={bInput} /></BField>
+                <BField label="Link" full><input value={form.link_arquivo} onChange={campo("link_arquivo")} placeholder="URL do arquivo (opcional)" style={bInput} /></BField>
+                <BField label="Descrição" full>
+                  <textarea value={form.descricao} onChange={campo("descricao")} rows={2}
+                    style={{ ...bInput, height: "auto", padding: "8px 10px" }} />
+                </BField>
+              </div>
 
-const miniTagBlue = {
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 800,
-};
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "14px 0 8px" }}>
+                <span style={builderSecTitle}>Questões</span>
+                <button style={btnAddQ} onClick={() => setQuestoes((p) => [...p, novaQuestao()])}>+ Questão</button>
+              </div>
+              {questoes.map((q, i) => (
+                <div key={i} style={questaoCard}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b" }}>Questão {i + 1}</span>
+                    {questoes.length > 1 && (
+                      <button style={btnRemQ} onClick={() => setQuestoes((p) => p.filter((_, j) => j !== i))}>Remover</button>
+                    )}
+                  </div>
+                  <textarea value={q.enunciado} onChange={(e) => updQ(i, "enunciado", e.target.value)}
+                    placeholder="Enunciado" rows={2} style={{ ...bInput, height: "auto", padding: "8px 10px", marginBottom: 8 }} />
+                  <div style={bGrid}>
+                    {["a","b","c","d"].map((l) => (
+                      <BField key={l} label={`Alt. ${l.toUpperCase()}`}>
+                        <input value={q[`alternativa_${l}`]}
+                          onChange={(e) => updQ(i, `alternativa_${l}`, e.target.value)} style={bInput} />
+                      </BField>
+                    ))}
+                    <BField label="Correta">
+                      <select value={q.correta} onChange={(e) => updQ(i, "correta", e.target.value)} style={bInput}>
+                        {["A","B","C","D"].map((l) => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </BField>
+                    <BField label="Peso">
+                      <input type="number" min="1" value={q.peso}
+                        onChange={(e) => updQ(i, "peso", e.target.value)} style={bInput} />
+                    </BField>
+                  </div>
+                </div>
+              ))}
 
-const materialCardActions = {
-  display: "flex",
-  gap: 8,
-  marginTop: 10,
-  flexWrap: "wrap",
-};
+              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                <button style={btnCoral} onClick={salvar}>{editId ? "Atualizar" : "Salvar material"}</button>
+                <button style={btnGhost} onClick={limpar}>Limpar</button>
+              </div>
+            </div>
 
-const btnSmallEdit = {
-  border: "none",
-  borderRadius: 10,
-  padding: "8px 12px",
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 13,
-};
+            {/* Lista de materiais */}
+            <div>
+              <div style={builderSecTitle}>Materiais cadastrados ({materiais.length})</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                {materiais.length === 0 && <p style={hint}>Nenhum material ainda.</p>}
+                {materiais.map((m) => {
+                  const t = treinamentos.find((tr) => String(tr.id) === String(m.treinamento_id));
+                  let nQ = 0;
+                  try { nQ = JSON.parse(m.questoes_json || "[]").length; } catch { nQ = 0; }
+                  return (
+                    <div key={m.id} style={materialItem}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{m.titulo}</span>
+                        <span style={{ fontSize: 11, background: "#dbeafe", color: "#1d4ed8",
+                          borderRadius: 999, padding: "2px 8px", fontWeight: 700 }}>{m.tipo}</span>
+                      </div>
+                      <span style={{ fontSize: 12, color: "#64748b" }}>
+                        {t?.tema || `Turma #${m.treinamento_id}`} · {nQ} questão(ões) · nota máx. {m.nota_maxima ?? 0}
+                      </span>
+                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                        <button style={btnEditar} onClick={() => {
+                          setEditId(m.id);
+                          setForm({ treinamento_id: m.treinamento_id || "",
+                            titulo: m.titulo || "", tipo: m.tipo || "prova",
+                            link_arquivo: m.link_arquivo || "", descricao: m.descricao || "",
+                            nota_maxima: m.nota_maxima || "", data_aplicacao: m.data_aplicacao ? String(m.data_aplicacao).slice(0,10) : "" });
+                          try { const p = JSON.parse(m.questoes_json || "[]");
+                            setQuestoes(p.length ? p : [novaQuestao()]); } catch { setQuestoes([novaQuestao()]); }
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}>Editar</button>
+                        <button style={btnExcluir} onClick={() => excluir(m.id)}>Excluir</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-const btnSmallDelete = {
-  border: "none",
-  borderRadius: 10,
-  padding: "8px 12px",
-  background: "#fee2e2",
-  color: "#b91c1c",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 13,
-};
+function BField({ label, children, full = false }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: full ? "1 / -1" : "auto" }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{label}</span>
+      {children}
+    </div>
+  );
+}
 
-const errorBoxInline = {
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
-  marginBottom: 12,
-};
+/* ═══════════════════════════════════════════════
+   PÁGINA PRINCIPAL
+═══════════════════════════════════════════════ */
+export default function AvaliacoesPage() {
+  const [usuario,      setUsuario]      = useState(null);
+  const [treinamentos, setTreinamentos] = useState([]);
+  const [avaliacoes,   setAvaliacoes]   = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [erro,         setErro]         = useState("");
+  const [busca,        setBusca]        = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
 
-const successBoxInline = {
-  background: "#f0fdf4",
-  border: "1px solid #bbf7d0",
-  color: "#166534",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
-  marginBottom: 12,
-};
+  const usuario_eh_instrutor = usuario ? isInstrutor(usuario) : false;
 
-const linkStyle = {
-  color: "#2563eb",
-  fontWeight: 700,
-  textDecoration: "none",
-};
+  useEffect(() => {
+    const u = getStoredUser();
+    setUsuario(u);
+    carregar(u);
+  }, []);
+
+  async function carregar(u) {
+    try {
+      setLoading(true); setErro("");
+      const [treinamentosData, avaliacoesData] = await Promise.all([
+        apiFetch("/treinamentos").catch(() => []),
+        apiFetch("/avaliacoes").catch(() => []),
+      ]);
+      setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+      setAvaliacoes(Array.isArray(avaliacoesData)   ? avaliacoesData   : []);
+    } catch (e) {
+      setErro(e.message || "Erro ao carregar avaliações.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /* Filtrar turmas por instrutor se necessário */
+  const turmasFiltradas = useMemo(() => {
+    let lista = [...treinamentos];
+
+    if (usuario_eh_instrutor) {
+      const nomeUser = nomeInstrutor(usuario).toLowerCase();
+      lista = lista.filter(
+        (t) => String(t.instrutor || "").toLowerCase().includes(nomeUser)
+      );
+    }
+
+    if (busca.trim()) {
+      const t = busca.toLowerCase();
+      lista = lista.filter((tr) =>
+        [tr.tema, tr.cliente, tr.instrutor].join(" ").toLowerCase().includes(t)
+      );
+    }
+
+    return lista;
+  }, [treinamentos, usuario, usuario_eh_instrutor, busca]);
+
+  /* Avaliações por turma */
+  const avaliacoesPorTurma = useMemo(() => {
+    const mapa = {};
+    avaliacoes.forEach((a) => {
+      const k = String(a.treinamento_id);
+      if (!mapa[k]) mapa[k] = [];
+      mapa[k].push(a);
+    });
+    return mapa;
+  }, [avaliacoes]);
+
+  /* KPIs globais (da visão do usuário) */
+  const kpi = useMemo(() => {
+    const ids  = new Set(turmasFiltradas.map((t) => String(t.id)));
+    const avals = avaliacoes.filter((a) => ids.has(String(a.treinamento_id)));
+    const aprovados = avals.filter((a) => classificar(a) === "Aprovado").length;
+    const atencao   = avals.filter((a) => classificar(a) === "Atenção").length;
+    const reforco   = avals.filter((a) => classificar(a) === "Reforço").length;
+    return {
+      total:    avals.length,
+      aprovados, atencao, reforco,
+      mediaProv: avg(avals, "nota_prova"),
+      mediaQual: avg(avals, "nota_qualidade"),
+      mediaNps:  avg(avals, "nota_nps"),
+    };
+  }, [turmasFiltradas, avaliacoes]);
+
+  /* Filtro de status sobre turmas */
+  const turmasVisiveis = useMemo(() => {
+    if (filtroStatus === "todos") return turmasFiltradas;
+    return turmasFiltradas.filter((t) => {
+      const avals = avaliacoesPorTurma[String(t.id)] || [];
+      if (filtroStatus === "pendentes") {
+        // turmas que têm ao menos uma avaliação pendente (só saberemos ao expandir,
+        // mas filtramos as que têm zero avaliações como proxy conservador)
+        return avals.length === 0;
+      }
+      if (filtroStatus === "reforco") return avals.some((a) => classificar(a) === "Reforço");
+      return true;
+    });
+  }, [turmasFiltradas, filtroStatus, avaliacoesPorTurma]);
+
+  const heroTitle    = usuario_eh_instrutor ? "Minhas Turmas — Avaliações" : "Gestão de Avaliações";
+  const heroSubtitle = usuario_eh_instrutor
+    ? "Acompanhe e lance avaliações dos seus treinandos."
+    : "Resultados por treinando agrupados por turma. Lançamento inline, alertas de reforço e pendentes.";
+
+  return (
+    <PortalShell>
+      <div style={{ marginBottom: 20 }}>
+        <PageHero eyebrow="Avaliações" title={heroTitle} subtitle={heroSubtitle} />
+      </div>
+
+      {loading && <div style={loadingBox}>Carregando avaliações…</div>}
+      {erro    && <div style={errorBox}>{erro}</div>}
+
+      {!loading && (
+        <>
+          {/* ── KPIs ── */}
+          <div style={kpiGrid}>
+            <StatCard title="Avaliações" value={fmt(kpi.total)}
+              subtitle={`${turmasFiltradas.length} turma${turmasFiltradas.length !== 1 ? "s" : ""}`}
+              accent={chart.blue} />
+            <StatCard title="Aprovados"  value={fmt(kpi.aprovados)} subtitle="nota ≥ 8" accent={colors.success} />
+            <StatCard title="Atenção"    value={fmt(kpi.atencao)}   subtitle="nota 6–7,9" accent={colors.warning} />
+            <StatCard title="Reforço"    value={fmt(kpi.reforco)}   subtitle="nota < 6"
+              accent={kpi.reforco > 0 ? colors.danger : colors.neutral} />
+            {kpi.mediaProv && (
+              <StatCard title="Média prova" value={kpi.mediaProv} subtitle="nota de prova" accent={chart.purple} />
+            )}
+          </div>
+
+          {/* ── Builder de provas (coordenador) ── */}
+          {!usuario_eh_instrutor && (
+            <BuilderProvas treinamentos={treinamentos} onSalvo={() => carregar(usuario)} />
+          )}
+
+          {/* ── Barra de filtros ── */}
+          <div style={filterBar}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[
+                { key: "todos",    label: "Todas as turmas"  },
+                { key: "pendentes",label: "Sem avaliação"   },
+                { key: "reforco",  label: "Com reforço"     },
+              ].map(({ key, label }) => (
+                <button key={key}
+                  onClick={() => setFiltroStatus(key)}
+                  style={{
+                    ...pillBtn,
+                    background: filtroStatus === key ? colors.accent : "#fff",
+                    color:      filtroStatus === key ? "#fff"         : "#475569",
+                    border:     `1.5px solid ${filtroStatus === key ? colors.accent : "#e2e8f0"}`,
+                    fontWeight: filtroStatus === key ? 800 : 600,
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ position: "relative", flex: 1, maxWidth: 280 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8"
+                strokeWidth="2.2" strokeLinecap="round"
+                style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}>
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              <input
+                value={busca} onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar turma ou instrutor…"
+                style={{ ...searchInput, paddingLeft: 32 }}
+              />
+            </div>
+
+            <span style={{ fontSize: 13, color: "#94a3b8", marginLeft: "auto" }}>
+              {turmasVisiveis.length} turma{turmasVisiveis.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {/* ── Cards de turma ── */}
+          {turmasVisiveis.length === 0 ? (
+            <div style={emptyState}>
+              <div style={{ fontSize: 28, marginBottom: 6 }}>📋</div>
+              <p style={{ margin: 0, color: "#94a3b8", fontSize: 14 }}>
+                {busca
+                  ? "Nenhuma turma encontrada para a busca."
+                  : usuario_eh_instrutor
+                    ? "Você não tem turmas atribuídas com avaliações."
+                    : "Nenhuma turma disponível."}
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {turmasVisiveis.map((turma) => (
+                <TurmaAvaliacaoCard
+                  key={turma.id}
+                  turma={turma}
+                  avaliacoesDaTurma={avaliacoesPorTurma[String(turma.id)] || []}
+                  usuario={usuario}
+                  onAvaliacaoSalva={() => carregar(usuario)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </PortalShell>
+  );
+}
+
+/* ── Estilos ── */
+const kpiGrid  = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 16 };
+const filterBar = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14, background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, padding: "12px 14px" };
+const pillBtn  = { height: 34, padding: "0 14px", borderRadius: 999, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" };
+const searchInput = { height: 36, width: "100%", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#334155", outline: "none", paddingRight: 10, boxSizing: "border-box" };
+
+const turmaCard       = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 8px rgba(15,23,42,.04)" };
+const turmaCardHeader = { display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", cursor: "pointer", userSelect: "none" };
+const turmaNome       = { fontSize: 15, fontWeight: 800, color: "#0f172a" };
+const turmaMeta       = { fontSize: 12, color: "#64748b", marginTop: 2 };
+const turmaKpis       = { display: "flex", gap: 16, marginLeft: "auto" };
+const chevron         = { fontSize: 12, color: "#94a3b8", flexShrink: 0 };
+
+const alertaStrip = { background: "#fff7ed", borderTop: "1px solid #fed7aa", padding: "7px 16px", fontSize: 12, fontWeight: 600, color: "#c2410c" };
+
+const listaWrap = { borderTop: "1px solid #f1f5f9" };
+const treinandoRow = { display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 16px", borderBottom: "1px solid #f8fafc", flexWrap: "wrap" };
+const treinandoInfo = { display: "flex", alignItems: "center", gap: 8, minWidth: 200, flex: "1 1 200px" };
+const treinandoNome = { fontSize: 13, fontWeight: 700, color: "#0f172a" };
+const notasRow = { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", flex: "1 1 auto" };
+const treinandoAcoes = { display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" };
+
+const reforcoTag = { fontSize: 11, fontWeight: 700, color: colors.dangerText, background: colors.dangerLight, borderRadius: 999, padding: "3px 8px" };
+const comentarioTxt = { fontSize: 11, color: "#94a3b8", fontStyle: "italic" };
+const pill = { display: "inline-block", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 700 };
+
+const inlineFormWrap = { width: "100%", background: "#f8fbff", border: "1px solid #dbeafe", borderRadius: 10, padding: "12px 14px", marginTop: 8 };
+const inlineFormRow  = { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" };
+const miniInput  = { height: 34, borderRadius: 8, border: "1px solid #e2e8f0", padding: "0 8px", fontSize: 13, color: "#334155", outline: "none", width: 80, boxSizing: "border-box" };
+const miniLabel  = { fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase" };
+const errSmall   = { fontSize: 12, color: colors.dangerText, fontWeight: 600, marginBottom: 8 };
+
+const btnLancar       = { background: colors.accent,       color: "#fff",         border: 0, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
+const btnEditar       = { background: "#dbeafe",            color: "#1d4ed8",      border: 0, borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
+const btnExcluir      = { background: colors.dangerLight,   color: colors.dangerText, border: 0, borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
+const btnSalvarInline = { background: colors.accent,        color: "#fff",         border: 0, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
+const btnCancelarInline = { background: "#f1f5f9",          color: "#64748b",      border: 0, borderRadius: 8, padding: "7px 10px", cursor: "pointer", fontSize: 12 };
+
+const btnBuilder = { width: "100%", background: "#f8fafc", border: "1px dashed #e2e8f0", borderRadius: 12, padding: "10px 16px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#334155", textAlign: "left", marginBottom: 2 };
+const builderWrap = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, padding: 18, marginBottom: 16 };
+const builderGrid = { display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 18 };
+const builderSecTitle = { fontSize: 14, fontWeight: 800, color: "#0f172a", marginBottom: 8, display: "block" };
+const bGrid  = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 };
+const bInput = { height: 36, borderRadius: 9, border: "1px solid #e2e8f0", padding: "0 10px", fontSize: 13, color: "#334155", outline: "none", width: "100%", boxSizing: "border-box" };
+const questaoCard = { background: "#f8fafc", border: "1px solid #e9eef4", borderRadius: 12, padding: 12, marginBottom: 8 };
+const materialItem = { background: "#f8fafc", border: "1px solid #e9eef4", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 4 };
+const btnAddQ  = { background: colors.accent, color: "#fff", border: 0, borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
+const btnRemQ  = { background: colors.dangerLight, color: colors.dangerText, border: 0, borderRadius: 8, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 };
+const btnCoral = { background: colors.accent, color: "#fff", border: 0, borderRadius: 10, padding: "9px 18px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
+const btnGhost = { background: "#f8fafc", color: "#64748b", border: "1px solid #e9eef4", borderRadius: 10, padding: "9px 14px", cursor: "pointer", fontSize: 13 };
+
+const loadingBox = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 16, color: "#64748b" };
+const errorBox   = { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fecaca", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 12 };
+const successBox = { background: colors.successLight, color: colors.successText, border: "1px solid #bbf7d0", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 12 };
+const emptyState = { textAlign: "center", padding: "36px 16px", border: "1px dashed #e2e8f0", borderRadius: 14, background: "#fafafa" };
+const hint       = { fontSize: 13, color: "#94a3b8", padding: "8px 16px" };
