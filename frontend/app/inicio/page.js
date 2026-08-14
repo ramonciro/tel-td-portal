@@ -75,21 +75,29 @@ export default function InicioPage() {
         const nome = String(u?.nome || "").trim().toLowerCase();
         minhasTurmas = listaTreinamentos.filter((t) => String(t.instrutor || "").trim().toLowerCase() === nome);
       } else if (u?.perfil === "treinando") {
+        // FIX #3: antes fazia Promise.all de N requisições simultâneas (N = total de turmas),
+        // causando timeouts e dados vazios. Agora processa em batches de 10.
         const nome = String(u?.nome || "").trim().toLowerCase();
-        const verificacoes = await Promise.all(
-          listaTreinamentos.map(async (t) => {
-            try {
-              const participantes = await apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []);
-              const pertence = (Array.isArray(participantes) ? participantes : []).some(
-                (p) => String(p.nome || "").trim().toLowerCase() === nome
-              );
-              return pertence ? t : null;
-            } catch {
-              return null;
-            }
-          })
-        );
-        minhasTurmas = verificacoes.filter(Boolean);
+        const BATCH = 10;
+        const verificadas = [];
+        for (let i = 0; i < listaTreinamentos.length; i += BATCH) {
+          const lote = listaTreinamentos.slice(i, i + BATCH);
+          const resultados = await Promise.all(
+            lote.map(async (t) => {
+              try {
+                const participantes = await apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []);
+                const pertence = (Array.isArray(participantes) ? participantes : []).some(
+                  (p) => String(p.nome || "").trim().toLowerCase() === nome
+                );
+                return pertence ? t : null;
+              } catch {
+                return null;
+              }
+            })
+          );
+          verificadas.push(...resultados.filter(Boolean));
+        }
+        minhasTurmas = verificadas;
       }
 
       setTurmas(minhasTurmas);
@@ -129,9 +137,15 @@ export default function InicioPage() {
   const dados = useMemo(() => {
     const pendentes = turmasComResumo.filter((t) => t.resumo?.status_turma === "Chamada pendente").length;
     const turmasAtivas = turmasComResumo.filter((t) => t.resumo?.status_turma === "Em andamento").length;
-    const comTaxa = turmasComResumo.filter((t) => t.resumo && t.resumo.taxa_presenca_pessoas != null && t.resumo.total_realizado > 0);
+    // FIX #1: campo correto é taxa_presenca (não taxa_presenca_pessoas — inexistente)
+    // FIX #2: total lançado = presentes + ausentes + justificados (não total_realizado — inexistente)
+    const comTaxa = turmasComResumo.filter((t) => {
+      if (!t.resumo) return false;
+      const totalLancado = Number(t.resumo.presentes || 0) + Number(t.resumo.ausentes || 0) + Number(t.resumo.justificados || 0);
+      return totalLancado > 0 && Number(t.resumo.taxa_presenca || 0) > 0;
+    });
     const presencaMedia = comTaxa.length
-      ? Math.round(comTaxa.reduce((acc, t) => acc + Number(t.resumo.taxa_presenca_pessoas || t.resumo.taxa_presenca || 0), 0) / comTaxa.length)
+      ? Math.round(comTaxa.reduce((acc, t) => acc + Number(t.resumo.taxa_presenca || 0), 0) / comTaxa.length)
       : null;
     const instrutores = new Set(turmasComResumo.map((t) => t.instrutor).filter(Boolean)).size;
     const necessidadesAbertas = necessidades.filter((n) => n.status_calculado === "aberta" || n.status_calculado === "atrasada").length;
@@ -256,7 +270,8 @@ export default function InicioPage() {
             {turmasFiltradas.map((t) => {
               const cor = corDoCliente(t.cliente);
               const status = t.resumo?.status_turma || "—";
-              const taxa = t.resumo?.taxa_presenca_pessoas ?? t.resumo?.taxa_presenca ?? null;
+              // FIX #1: campo correto é taxa_presenca (taxa_presenca_pessoas não existe)
+              const taxa = t.resumo?.taxa_presenca ?? null;
               const corStatus = status === "Chamada pendente" ? colors.warning : status === "Em andamento" ? colors.success : status === "Concluída" ? colors.success : colors.textMuted;
               return (
                 <a key={t.id} href={`/turma/${t.id}/mural`} style={{ textDecoration: "none", background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 16, display: "block" }}>
