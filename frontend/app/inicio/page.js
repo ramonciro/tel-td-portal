@@ -7,7 +7,9 @@ import { colors, chart, corDoCliente, radius } from "../../lib/theme";
 
 // Tiles de atalho por papel — cada papel vê só as ações que fazem sentido
 // pra ele, com o número que importa já embutido, não só um ícone bonito.
-function tilesPorPapel(papel, dados) {
+function tilesPorPapel(papelRaw, dados) {
+  // FIX: normalizar para minúsculas — banco pode armazenar "Coordenador" (C maiúsculo)
+  const papel = String(papelRaw || "").toLowerCase().trim();
   const pendentes = dados.pendentes;
   const base = [
     { icon: "📚", label: "Minhas turmas", sub: `${dados.turmasAtivas} ativa(s)`, href: "/presencas", color: chart.cyan },
@@ -60,7 +62,8 @@ export default function InicioPage() {
       const [treinamentosData, resumoData, necessidadesData] = await Promise.all([
         apiFetch("/treinamentos").catch(() => []),
         apiFetch("/presenca-resumo").catch(() => null),
-        u?.perfil === "coordenador" || u?.perfil === "supervisor"
+        // FIX: case-insensitive — banco pode guardar "Coordenador" (C maiúsculo)
+        ["coordenador","supervisor"].includes(String(u?.perfil || "").toLowerCase().trim())
           ? apiFetch("/necessidades").catch(() => null)
           : Promise.resolve(null),
       ]);
@@ -71,10 +74,11 @@ export default function InicioPage() {
       // instrutor: só as turmas dele. treinando: turmas onde o nome dele
       // aparece no roster. coordenador/supervisor: todas.
       let minhasTurmas = listaTreinamentos;
-      if (u?.perfil === "instrutor") {
+      const perfilNorm = String(u?.perfil || "").toLowerCase().trim();
+      if (perfilNorm === "instrutor") {
         const nome = String(u?.nome || "").trim().toLowerCase();
         minhasTurmas = listaTreinamentos.filter((t) => String(t.instrutor || "").trim().toLowerCase() === nome);
-      } else if (u?.perfil === "treinando") {
+      } else if (perfilNorm === "treinando") {
         // FIX #3: antes fazia Promise.all de N requisições simultâneas (N = total de turmas),
         // causando timeouts e dados vazios. Agora processa em batches de 10.
         const nome = String(u?.nome || "").trim().toLowerCase();
@@ -157,6 +161,7 @@ export default function InicioPage() {
   if (usuario === undefined) return null;
 
   const primeiroNome = String(usuario?.nome || "").split(" ")[0] || "";
+  // FIX: passa o perfil raw — normalização acontece dentro de tilesPorPapel
   const tiles = tilesPorPapel(usuario?.perfil, dados);
 
   return (
@@ -221,7 +226,8 @@ export default function InicioPage() {
           <Metrica valor={dados.presencaMedia != null ? `${dados.presencaMedia}%` : "—"} label="Presença média" cor={colors.success} pct={dados.presencaMedia || 0} />
           <Metrica valor={dados.turmasAtivas} label="Turmas em andamento" cor={colors.accent} pct={Math.min(dados.turmasAtivas * 15, 100)} />
           <Metrica valor={dados.instrutores} label="Instrutores em campo" cor={chart.cyan} pct={Math.min(dados.instrutores * 20, 100)} />
-          {(usuario?.perfil === "coordenador" || usuario?.perfil === "supervisor") ? (
+          {/* FIX: case-insensitive */}
+          {(["coordenador","supervisor"].includes(String(usuario?.perfil || "").toLowerCase().trim())) ? (
             <Metrica valor={dados.necessidadesEmAtendimento} label="Necessidades em atendimento" cor={chart.purple} pct={Math.min(dados.necessidadesEmAtendimento * 20, 100)} />
           ) : (
             <Metrica valor={turmasComResumo.length} label="Total de turmas" cor={chart.purple} pct={Math.min(turmasComResumo.length * 15, 100)} />
