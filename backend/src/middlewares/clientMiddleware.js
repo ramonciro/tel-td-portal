@@ -1,32 +1,65 @@
-const db = require('../config/database'); // Ajuste o caminho se necessário para sua conexão
+/**
+ * clientMiddleware.js
+ *
+ * Sprint 1 — Fix:
+ *   - Import estava apontando para '../config/database' (inexistente).
+ *     Corrigido para '../db' (pool real do sistema).
+ *   - Middleware nunca era aplicado no index.js.
+ *     Agora é registrado globalmente antes das rotas protegidas.
+ *
+ * Responsabilidade:
+ *   Lê o empresa_id do usuário autenticado (via JWT em req.user)
+ *   e o disponibiliza em req.empresaId para todas as queries subsequentes.
+ *   Também valida que o ambiente (cliente selecionado no login) existe e está ativo.
+ */
 
-const clientMiddleware = async (req, res, next) => {
-  // Pega o código do ambiente enviado pelo frontend via header ou query param (padrão: 'dasa')
-  const clientCode = req.headers['x-client-id'] || req.query.cliente || 'dasa';
+import pool from "../db.js";
 
+export async function clientMiddleware(req, res, next) {
   try {
-    const [rows] = await db.query(
-      'SELECT id, codigo, nome FROM clientes WHERE codigo = ? AND ativo = 1', 
-      [clientCode]
-    );
-    
-    if (!rows || rows.length === 0) {
-      // Fallback de segurança caso o cliente enviado não exista
-      req.clienteId = 1;
-      req.clienteCodigo = 'dasa';
-    } else {
-      req.clienteId = rows[0].id;
-      req.clienteCodigo = rows[0].codigo;
+    // Rotas públicas (login, health check) não têm req.user — pula o filtro
+    if (!req.user) return next();
+
+    const empresaId = req.user?.empresa_id ?? null;
+
+    if (!empresaId) {
+      // Usuário sem empresa_id no token — usuário legado ou super-admin
+      // Permite o acesso mas sem filtro de tenant
+      req.empresaId = null;
+      return next();
     }
 
-    next();
-  } catch (error) {
-    console.error("Erro no middleware de cliente:", error);
-    // Fallback em caso de falha no banco
-    req.clienteId = 1;
-    req.clienteCodigo = 'dasa';
-    next();
-  }
-};
+    // Valida que a empresa existe e está ativa no banco
+    const [rows] = await pool.query(
+      "SELECT id, nome, ativo FROM empresas WHERE id = ? LIMIT 1",
+      [empresaId]
+    );
 
-module.exports = clientMiddleware;
+    const empresa = rows[0];
+
+    if (!empresa) {
+      return res.status(403).json({
+        ok: false,
+        message: "Ambiente não encontrado. Faça login novamente.",
+      });
+    }
+
+    if (!empresa.ativo) {
+      return res.status(403).json({
+        ok: false,
+        message: `O ambiente "${empresa.nome}" está inativo. Entre em contato com o administrador.`,
+      });
+    }
+
+    // Disponibiliza para todos os handlers downstream
+    req.empresaId   = empresa.id;
+    req.empresaNome = empresa.nome;
+
+    return next();
+  } catch (error) {
+    console.error("[clientMiddleware] Erro ao verificar empresa:", error.message);
+    // Não bloqueia em caso de erro de DB — loga e continua
+    req.empresaId = null;
+    return next();
+  }
+}
