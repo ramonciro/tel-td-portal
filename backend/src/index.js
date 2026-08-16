@@ -10,8 +10,7 @@ const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
 // Sprint 1: middleware de isolamento multi-tenant
-const { clientMiddleware } = require("./middlewares/clientMiddleware");
-// Sprint 1: middleware de isolamento multi-tenant
+// Sprint 1: middleware de isolamento multi-tenant (import único)
 const { clientMiddleware } = require("./middlewares/clientMiddleware");
 
 const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
