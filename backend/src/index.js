@@ -9,6 +9,10 @@ const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
+// Sprint 1: middleware de isolamento multi-tenant
+const { clientMiddleware } = require("./middlewares/clientMiddleware");
+// Sprint 1: middleware de isolamento multi-tenant
+const { clientMiddleware } = require("./middlewares/clientMiddleware");
 
 const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
 const jornadasDesenvolvimentoRoutes = require("./routes/jornadasDesenvolvimentoRoutes");
@@ -111,6 +115,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Sprint 1: clientMiddleware aplicado globalmente — popula req.empresaId
+// via empresa_id do JWT para todas as rotas protegidas
+app.use(clientMiddleware);
 
 app.get(
   "/api/dashboard/treinamentos",
@@ -223,6 +230,7 @@ app.use(
     table: "clientes",
     fields: ["nome", "segmento", "status", "gestor", "descricao"],
     orderBy: "nome ASC",
+    multiTenant: true, // Sprint 1
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
@@ -243,7 +251,9 @@ app.use(
       "ativo",
       "troca_senha_obrigatoria",
       "pode_acessar_oceano_desenvolvimento",
+      "empresa_id",
     ],
+    multiTenant: true, // Sprint 1
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
@@ -313,6 +323,7 @@ app.delete(
 app.use(
   "/api/treinamentos",
   createCrudRouter({
+    multiTenant: true, // Sprint 1
     table: "treinamentos",
     fields: [
       "tema",
@@ -719,6 +730,7 @@ app.use(
   "/api/trilhas",
   createCrudRouter({
     table: "trilhas_aprendizagem",
+    multiTenant: true, // Sprint 1
     fields: ["cliente", "titulo", "descricao", "etapas"],
     orderBy: "id DESC",
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
@@ -728,7 +740,8 @@ app.use(
   })
 );
 
-app.get(
+// Sprint 1: convertido de GET para POST — TRUNCATE nunca pode ser GET
+app.post(
   "/api/zerar-dashboard",
   authRequired,
   authorizeRoles("coordenador"),
@@ -766,7 +779,8 @@ app.get(
   }
 );
 
-app.get(
+// Sprint 1: convertido de GET para POST
+app.post(
   "/api/importar-dashboard",
   authRequired,
   authorizeRoles("coordenador"),
@@ -812,7 +826,8 @@ app.get(
   }
 );
 
-app.use("/api/jornadas-etapas", jornadasEtapasRoutes);
+// Sprint 1: authRequired adicionado — esta rota estava sem proteção
+app.use("/api/jornadas-etapas", authRequired, jornadasEtapasRoutes);
 app.use("/api/jornadas-desenvolvimento", authRequired, authorizeOceanAccess, jornadasDesenvolvimentoRoutes);
 app.use("/api/acoes-desenvolvimento", authRequired, authorizeOceanAccess, acoesDesenvolvimentoRoutes);
 app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlanosRoutes);
