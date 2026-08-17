@@ -392,7 +392,9 @@ async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fi
 
   // fonte 1: legado (presencas) — usada quando origem_frequencia é
   // 'legado' ou 'presencas' (turmas sem cronograma, ou cronograma vazio)
-  const whereLegado = [...whereBase, "DAYOFWEEK(p.data_chamada) <> 1"];
+  // Sprint 2 FIX: data_chamada IS NULL excluía registros do legado silenciosamente.
+  // NULL é tratado como válido; só exclui domingos com data definida.
+  const whereLegado = [...whereBase, "(p.data_chamada IS NULL OR DAYOFWEEK(p.data_chamada) <> 1)"];
   const paramsLegado = [...paramsBase];
   if (inicio) { whereLegado.push("DATE(p.data_chamada) >= ?"); paramsLegado.push(inicio); }
   if (fim) { whereLegado.push("DATE(p.data_chamada) <= ?"); paramsLegado.push(fim); }
