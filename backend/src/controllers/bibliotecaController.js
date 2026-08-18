@@ -24,7 +24,7 @@ async function listBiblioteca(req, res) {
         link_arquivo,
         descricao,
         created_at
-      FROM biblioteca_conteudos
+      FROM biblioteca
       ORDER BY id DESC
     `);
 
@@ -60,7 +60,7 @@ async function createBiblioteca(req, res) {
 
     const [result] = await pool.query(
       `
-      INSERT INTO biblioteca_conteudos
+      INSERT INTO biblioteca
       (
         titulo,
         tipo,
@@ -121,7 +121,7 @@ async function updateBiblioteca(req, res) {
 
     await pool.query(
       `
-      UPDATE biblioteca_conteudos
+      UPDATE biblioteca
       SET
         titulo = ?,
         tipo = ?,
@@ -161,7 +161,7 @@ async function deleteBiblioteca(req, res) {
     const { id } = req.params;
 
     const [rows] = await pool.query(
-      `SELECT link_arquivo FROM biblioteca_conteudos WHERE id = ? LIMIT 1`,
+      `SELECT link_arquivo FROM biblioteca WHERE id = ? LIMIT 1`,
       [id]
     );
 
@@ -178,7 +178,7 @@ async function deleteBiblioteca(req, res) {
       }
     }
 
-    await pool.query(`DELETE FROM biblioteca_conteudos WHERE id = ?`, [id]);
+    await pool.query(`DELETE FROM biblioteca WHERE id = ?`, [id]);
 
     return res.json({ ok: true });
   } catch (error) {
