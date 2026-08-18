@@ -45,12 +45,12 @@ function saudeDoCliente(nomeCliente, resumoPresenca, necessidades) {
    MODAL CRIAR / EDITAR
 ═══════════════════════════════════════════════ */
 function emptyForm() {
-  return { nome: "", status: "ativo", supervisor: "", observacoes: "" };
+  return { nome: "", segmento: "", status: "ativo", gestor: "", descricao: "" };
 }
 
 function ModalCliente({ modo, cliente, onSalvar, onFechar }) {
   const [form,     setForm]     = useState(() =>
-    modo === "editar" && cliente ? { ...emptyForm(), ...cliente } : emptyForm()
+    modo === "editar" && cliente ? { ...emptyForm(), ...cliente, gestor: cliente.gestor || "", descricao: cliente.descricao || "" } : emptyForm()
   );
   const [salvando, setSalvando] = useState(false);
   const [erro,     setErro]     = useState("");
@@ -61,7 +61,7 @@ function ModalCliente({ modo, cliente, onSalvar, onFechar }) {
     try {
       setSalvando(true); setErro("");
       if (!form.nome.trim()) throw new Error("Nome da operação é obrigatório.");
-      const payload = { nome: form.nome.trim(), status: form.status, supervisor: form.supervisor || null, observacoes: form.observacoes || null };
+      const payload = { nome: form.nome.trim(), segmento: form.segmento || null, status: form.status, gestor: form.gestor || null, descricao: form.descricao || null };
       if (modo === "editar") {
         await apiFetch(`/clientes/${cliente.id}`, { method: "PUT", body: JSON.stringify(payload) });
       } else {
@@ -95,10 +95,10 @@ function ModalCliente({ modo, cliente, onSalvar, onFechar }) {
             </select>
           </MField>
           <MField label="Gestor / referência">
-            <input value={form.supervisor} onChange={campo("supervisor")} style={mInput} placeholder="Responsável pela operação" />
+            <input value={form.gestor} onChange={campo("gestor")} style={mInput} placeholder="Responsável pela operação" />
           </MField>
           <MField label="Observações" full>
-            <textarea value={form.observacoes} onChange={campo("observacoes")} rows={3}
+            <textarea value={form.descricao} onChange={campo("descricao")} rows={3}
               style={{ ...mInput, height: "auto", padding: "8px 10px", resize: "vertical" }} placeholder="Contexto resumido da operação" />
           </MField>
         </div>
@@ -135,7 +135,7 @@ function ClienteCard({ item, saude, onEditar, onExcluir }) {
       <div style={cardHead}>
         <div>
           <div style={cardNome}>{item.nome}</div>
-          {item.supervisor && <div style={cardGestor}>{item.supervisor}</div>}
+          {(item.gestor || item.supervisor) && <div style={cardGestor}>{item.gestor || item.supervisor}</div>}
         </div>
         <span style={{
           ...statusBadge,
@@ -233,7 +233,7 @@ export default function ClientesPage() {
   const kpis = useMemo(() => {
     const ativos  = clientes.filter((c) => normStatus(c.status) === "ativo").length;
     return { total: clientes.length, ativos, inativos: clientes.length - ativos,
-             comGestor: clientes.filter((c) => c.supervisor).length };
+             comGestor: clientes.filter((c) => c.gestor).length };
   }, [clientes]);
 
   const listaFiltrada = useMemo(() => {
