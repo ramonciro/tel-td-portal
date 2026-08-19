@@ -1,1024 +1,632 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import PortalShell from "../../components/PortalShell";
-import SectionCard from "../../components/SectionCard";
-import StatCard from "../../components/StatCard";
-import { apiFetch } from "../../services/api";
-import { colors, chart } from "../../lib/theme";
+import PageHero    from "../../components/PageHero";
+import { apiFetch, getStoredUser } from "../../services/api";
+import { colors } from "../../lib/theme";
 
-function fmt(n) {
-  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
+/* ─── utils ──────────────────────────────────────────────────────────────────── */
+function normalize(v) { return String(v || "").trim().toLowerCase(); }
+
+function tipoLabel(tipo) {
+  return { conteudo: "Conteúdo", turma: "Turma", avaliacao: "Avaliação", pratica: "Prática" }[tipo] || tipo;
 }
 
-function normalize(value) {
-  return String(value || "").trim().toLowerCase();
+function tipoCor(tipo) {
+  return {
+    conteudo:  { bg: "#dbeafe", text: "#1d4ed8" },
+    turma:     { bg: "#dcfce7", text: "#166534" },
+    avaliacao: { bg: "#fef3c7", text: "#92400e" },
+    pratica:   { bg: "#fce7f3", text: "#9d174d" },
+  }[tipo] || { bg: "#f3f4f6", text: "#374151" };
 }
 
-function parseEtapas(value) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item || "").trim())
-      .filter(Boolean);
-  }
-
-  if (!value) return [];
-
-  return String(value)
-    .split(/\n|,|;|\|/g)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function inferAudience(item) {
-  const haystack = [item?.titulo, item?.descricao, ...(Array.isArray(item?.etapas) ? item.etapas : [])]
-    .join(" ")
-    .toLowerCase();
-
-  const audiences = [];
-  if (haystack.includes("instrutor")) audiences.push("Instrutores");
-  if (haystack.includes("supervisor")) audiences.push("Supervisores");
-  if (haystack.includes("coordena") || haystack.includes("lideran")) audiences.push("Coordenação");
-
-  if (!audiences.length) return ["Instrutores", "Supervisores"];
-  return [...new Set(audiences)];
-}
-
-function getStatus(item) {
-  const etapas = parseEtapas(item?.etapas);
-  if (!etapas.length) return "Em estruturação";
+function statusDaTrilha(etapas) {
+  if (!etapas?.length) return "Em estruturação";
   if (etapas.length >= 5) return "Estruturada";
   return "Ativa";
 }
 
-function statusTone(status) {
-  const base = {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 11,
-    whiteSpace: "nowrap",
-  };
-
-  if (status === "Estruturada") {
-    return { ...base, background: "#dcfce7", color: "#166534" };
-  }
-  if (status === "Ativa") {
-    return { ...base, background: "#dbeafe", color: "#1d4ed8" };
-  }
-  return { ...base, background: "#ffedd5", color: "#9a3412" };
+function statusCor(status) {
+  if (status === "Estruturada") return { bg: "#dcfce7", text: "#166534" };
+  if (status === "Ativa")       return { bg: "#dbeafe", text: "#1d4ed8" };
+  return                               { bg: "#ffedd5", text: "#9a3412" };
 }
 
-function estimateHours(etapas) {
-  return etapas.length * 2;
-}
+const TIPOS_ETAPA = ["conteudo", "turma", "avaliacao", "pratica"];
 
-const initialForm = {
-  cliente: "",
-  titulo: "",
-  descricao: "",
-  etapasText: "",
-};
+const etapaVazia = () => ({ titulo: "", descricao: "", tipo: "conteudo", turma_id: "" });
 
+/* ─── componente principal ──────────────────────────────────────────────────── */
 export default function TrilhasPage() {
-  const [trilhas, setTrilhas] = useState([]);
-  const [usuarios, setUsuarios] = useState([]);
-  const [activeTab, setActiveTab] = useState("catalogo");
-  const [search, setSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState("todos");
-  const [audienceFilter, setAudienceFilter] = useState("todos");
-  const [form, setForm] = useState(initialForm);
-  const [editingId, setEditingId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const user = getStoredUser();
+  const perfil = normalize(user?.perfil);
+  const isGestor = ["coordenador", "supervisor"].includes(perfil);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const [trilhas,       setTrilhas]       = useState([]);
+  const [progresso,     setProgresso]     = useState({});   // { [trilha_id]: { percentual, concluidas, total } }
+  const [treinamentos,  setTreinamentos]  = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [saving,        setSaving]        = useState(false);
+  const [error,         setError]         = useState("");
+  const [success,       setSuccess]       = useState("");
 
-  async function loadData() {
+  // View state
+  const [activeTab,     setActiveTab]     = useState("catalogo");  // 'catalogo' | 'editor'
+  const [searchTerm,    setSearchTerm]    = useState("");
+  const [filterCliente, setFilterCliente] = useState("todos");
+
+  // Form state
+  const [editingId,     setEditingId]     = useState(null);
+  const [form,          setForm]          = useState({ cliente: "", titulo: "", descricao: "" });
+  const [etapas,        setEtapas]        = useState([etapaVazia()]);
+
+  // Detail modal
+  const [detalhe,       setDetalhe]       = useState(null);  // trilha em foco
+
+  /* ─── load ──────────────────────────────────────────────────────────────── */
+  const load = useCallback(async () => {
     try {
       setLoading(true);
-      setError("");
-      const [trilhasData, usuariosData] = await Promise.all([
+      const [tData, trData] = await Promise.all([
         apiFetch("/trilhas").catch(() => []),
-        apiFetch("/usuarios").catch(() => []),
+        isGestor ? apiFetch("/treinamentos").catch(() => []) : Promise.resolve([]),
       ]);
-      setTrilhas(Array.isArray(trilhasData) ? trilhasData : []);
-      setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+      setTrilhas(Array.isArray(tData) ? tData : []);
+      setTreinamentos(Array.isArray(trData) ? trData : []);
+
+      // Carrega progresso para treinandos/instrutores
+      if (!isGestor) {
+        const ids = (Array.isArray(tData) ? tData : []).map((t) => t.id);
+        const progResults = await Promise.allSettled(
+          ids.map((id) => apiFetch(`/trilhas/${id}/progresso`))
+        );
+        const progMap = {};
+        ids.forEach((id, i) => {
+          if (progResults[i].status === "fulfilled") {
+            progMap[id] = progResults[i].value;
+          }
+        });
+        setProgresso(progMap);
+      }
     } catch (err) {
       setError(err.message || "Erro ao carregar trilhas.");
-      setTrilhas([]);
-      setUsuarios([]);
     } finally {
       setLoading(false);
     }
-  }
+  }, [isGestor]);
 
-  const trilhasEnriquecidas = useMemo(() => {
-    return trilhas.map((item) => {
-      const etapas = parseEtapas(item.etapas);
-      const audiences = inferAudience({ ...item, etapas });
-      return {
-        ...item,
-        etapas,
-        audiences,
-        status: getStatus({ ...item, etapas }),
-        horasEstimadas: estimateHours(etapas),
-      };
-    });
+  useEffect(() => { load(); }, [load]);
+
+  /* ─── derived ───────────────────────────────────────────────────────────── */
+  const clients = useMemo(() => {
+    const vals = [...new Set(trilhas.map((t) => t.cliente || "GLOBAL"))].sort();
+    return vals;
   }, [trilhas]);
 
-  const colaboradores = useMemo(() => {
-    const base = usuarios.filter((item) => {
-      const perfil = normalize(item?.perfil);
-      return ["instrutor", "supervisor", "coordenador"].includes(perfil);
+  const filtradas = useMemo(() => {
+    const term = normalize(searchTerm);
+    return trilhas.filter((t) => {
+      const matchCliente = filterCliente === "todos" || (t.cliente || "GLOBAL") === filterCliente;
+      const matchSearch  = !term || [t.titulo, t.descricao, t.cliente]
+        .concat((t.etapas || []).map((e) => e.titulo))
+        .join(" ").toLowerCase().includes(term);
+      return matchCliente && matchSearch;
     });
+  }, [trilhas, filterCliente, searchTerm]);
 
-    return {
-      instrutores: base.filter((item) => normalize(item.perfil) === "instrutor"),
-      supervisores: base.filter((item) => normalize(item.perfil) === "supervisor"),
-      coordenadores: base.filter((item) => normalize(item.perfil) === "coordenador"),
-      total: base,
-    };
-  }, [usuarios]);
+  const kpis = useMemo(() => ({
+    total:          trilhas.length,
+    estruturadas:   trilhas.filter((t) => statusDaTrilha(t.etapas) === "Estruturada").length,
+    emEstruturacao: trilhas.filter((t) => statusDaTrilha(t.etapas) === "Em estruturação").length,
+    totalEtapas:    trilhas.reduce((acc, t) => acc + (t.etapas?.length || 0), 0),
+  }), [trilhas]);
 
-  const clients = useMemo(() => {
-    const values = [...new Set(trilhasEnriquecidas.map((item) => item.cliente || "GLOBAL"))].sort();
-    return values;
-  }, [trilhasEnriquecidas]);
-
-  const audienceOptions = ["Instrutores", "Supervisores", "Coordenação"];
-
-  const filteredTrilhas = useMemo(() => {
-    const term = normalize(search);
-
-    return trilhasEnriquecidas.filter((item) => {
-      const matchesClient = clientFilter === "todos" || (item.cliente || "GLOBAL") === clientFilter;
-      const matchesAudience =
-        audienceFilter === "todos" || item.audiences.includes(audienceFilter);
-      const matchesSearch =
-        !term ||
-        [item.titulo, item.descricao, item.cliente, ...item.etapas, ...item.audiences]
-          .join(" ")
-          .toLowerCase()
-          .includes(term);
-
-      return matchesClient && matchesAudience && matchesSearch;
-    });
-  }, [trilhasEnriquecidas, clientFilter, audienceFilter, search]);
-
-  const kpis = useMemo(() => {
-    const total = trilhasEnriquecidas.length;
-    const estruturadas = trilhasEnriquecidas.filter((item) => item.status === "Estruturada").length;
-    const ativas = trilhasEnriquecidas.filter((item) => item.status === "Ativa").length;
-    const emEstruturacao = trilhasEnriquecidas.filter((item) => item.status === "Em estruturação").length;
-    const horasEstimadas = trilhasEnriquecidas.reduce((acc, item) => acc + item.horasEstimadas, 0);
-    const publicosCobertos = new Set(trilhasEnriquecidas.flatMap((item) => item.audiences)).size;
-
-    return {
-      total,
-      estruturadas,
-      ativas,
-      emEstruturacao,
-      horasEstimadas,
-      publicosCobertos,
-    };
-  }, [trilhasEnriquecidas]);
-
-  const publicoRows = useMemo(() => {
-    const config = [
-      {
-        label: "Instrutores",
-        usuarios: colaboradores.instrutores,
-        hint: "Trilhas voltadas à condução de sala, didática, materiais e gestão de turma.",
-      },
-      {
-        label: "Supervisores",
-        usuarios: colaboradores.supervisores,
-        hint: "Trilhas voltadas à gestão de instrutores, indicadores e acompanhamento operacional.",
-      },
-      {
-        label: "Coordenação",
-        usuarios: colaboradores.coordenadores,
-        hint: "Acompanhamento gerencial, coaching e leitura executiva da operação.",
-      },
-    ];
-
-    return config.map((item) => {
-      const trilhasRelacionadas = trilhasEnriquecidas.filter((trilha) => trilha.audiences.includes(item.label));
-      return {
-        ...item,
-        trilhasRelacionadas,
-        horas: trilhasRelacionadas.reduce((acc, trilha) => acc + trilha.horasEstimadas, 0),
-      };
-    });
-  }, [colaboradores, trilhasEnriquecidas]);
-
-  const topAlerts = useMemo(() => {
-    const messages = [];
-    if (!colaboradores.instrutores.length) {
-      messages.push("Nenhum instrutor cadastrado no portal para vinculação de trilhas.");
+  /* ─── form helpers ──────────────────────────────────────────────────────── */
+  function abrirEditor(trilha = null) {
+    if (trilha) {
+      setEditingId(trilha.id);
+      setForm({ cliente: trilha.cliente || "", titulo: trilha.titulo || "", descricao: trilha.descricao || "" });
+      setEtapas(trilha.etapas?.length ? trilha.etapas.map((e) => ({ ...e })) : [etapaVazia()]);
+    } else {
+      setEditingId(null);
+      setForm({ cliente: "", titulo: "", descricao: "" });
+      setEtapas([etapaVazia()]);
     }
-    if (!colaboradores.supervisores.length) {
-      messages.push("Nenhum supervisor cadastrado no portal para acompanhar trilhas.");
-    }
-    if (kpis.emEstruturacao > 0) {
-      messages.push(`${kpis.emEstruturacao} trilha(s) ainda estão em estruturação e pedem complemento de etapas.`);
-    }
-    if (!messages.length) {
-      messages.push("Base pronta para estruturar trilhas por público e evoluir a governança interna.");
-    }
-    return messages;
-  }, [colaboradores, kpis]);
+    setActiveTab("editor");
+    setError("");
+    setSuccess("");
+  }
 
-  function resetForm() {
-    setForm(initialForm);
+  function fecharEditor() {
+    setActiveTab("catalogo");
     setEditingId(null);
+    setError("");
+    setSuccess("");
   }
 
-  function startEdit(item) {
-    setEditingId(item.id);
-    setForm({
-      cliente: item.cliente || "",
-      titulo: item.titulo || "",
-      descricao: item.descricao || "",
-      etapasText: item.etapas.join("\n"),
+  function addEtapa() { setEtapas((prev) => [...prev, etapaVazia()]); }
+
+  function removeEtapa(idx) {
+    setEtapas((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function moveEtapa(idx, dir) {
+    setEtapas((prev) => {
+      const next = [...prev];
+      const swap = idx + dir;
+      if (swap < 0 || swap >= next.length) return next;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  function updateEtapa(idx, field, value) {
+    setEtapas((prev) => prev.map((e, i) => i === idx ? { ...e, [field]: value } : e));
+  }
 
+  /* ─── save ──────────────────────────────────────────────────────────────── */
+  async function handleSave() {
+    if (!form.titulo.trim()) { setError("Título é obrigatório."); return; }
+    const etapasValidas = etapas.filter((e) => e.titulo.trim());
+    if (!etapasValidas.length) { setError("Adicione pelo menos uma etapa com título."); return; }
+
+    setSaving(true);
+    setError("");
     try {
-      setSaving(true);
-      setError("");
-      setSuccess("");
-
-      const payload = {
-        cliente: form.cliente.trim(),
-        titulo: form.titulo.trim(),
-        descricao: form.descricao.trim(),
-        etapas: parseEtapas(form.etapasText),
-      };
-
-      if (!payload.cliente || !payload.titulo) {
-        throw new Error("Preencha cliente e título da trilha.");
-      }
-
+      const body = { ...form, etapas: etapasValidas.map((e, i) => ({ ...e, ordem: i })) };
       if (editingId) {
-        await apiFetch(`/trilhas/${editingId}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        });
-        setSuccess("Trilha atualizada com sucesso.");
+        await apiFetch(`/trilhas/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
+        setSuccess("Trilha atualizada.");
       } else {
-        await apiFetch("/trilhas", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        setSuccess("Trilha cadastrada com sucesso.");
+        await apiFetch("/trilhas", { method: "POST", body: JSON.stringify(body) });
+        setSuccess("Trilha criada.");
       }
-
-      resetForm();
-      await loadData();
+      await load();
+      fecharEditor();
     } catch (err) {
-      setError(err.message || "Erro ao salvar trilha.");
+      setError(err.message || "Erro ao salvar.");
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete(id) {
-    const confirmed = window.confirm("Deseja excluir esta trilha?");
-    if (!confirmed) return;
-
+    if (!window.confirm("Excluir esta trilha e todas as suas etapas?")) return;
     try {
-      setError("");
-      setSuccess("");
       await apiFetch(`/trilhas/${id}`, { method: "DELETE" });
-      setSuccess("Trilha excluída com sucesso.");
-      await loadData();
+      await load();
+      if (detalhe?.id === id) setDetalhe(null);
     } catch (err) {
-      setError(err.message || "Erro ao excluir trilha.");
+      setError(err.message || "Erro ao excluir.");
     }
   }
 
+  /* ─── progresso (treinando) ─────────────────────────────────────────────── */
+  async function handleConcluirEtapa(trilhaId, etapaId, concluido) {
+    try {
+      await apiFetch(`/trilhas/${trilhaId}/etapas/${etapaId}/concluir`, {
+        method: "POST",
+        body: JSON.stringify({ concluido }),
+      });
+      const updated = await apiFetch(`/trilhas/${trilhaId}/progresso`);
+      setProgresso((prev) => ({ ...prev, [trilhaId]: updated }));
+      if (detalhe?.id === trilhaId) {
+        setDetalhe((prev) => ({
+          ...prev,
+          etapas: (prev.etapas || []).map((e) =>
+            e.id === etapaId ? { ...e, concluido, concluido_em: concluido ? new Date().toISOString() : null } : e
+          ),
+        }));
+      }
+    } catch (err) {
+      setError(err.message || "Erro ao marcar etapa.");
+    }
+  }
+
+  /* ─── abrir detalhe ─────────────────────────────────────────────────────── */
+  async function abrirDetalhe(trilha) {
+    try {
+      const full = await apiFetch(`/trilhas/${trilha.id}`);
+      if (!isGestor) {
+        const prog = await apiFetch(`/trilhas/${trilha.id}/progresso`);
+        const progMap = {};
+        (prog.etapas || []).forEach((e) => { progMap[e.id] = e; });
+        full.etapas = (full.etapas || []).map((e) => ({
+          ...e,
+          concluido:    progMap[e.id]?.concluido ?? false,
+          concluido_em: progMap[e.id]?.concluido_em ?? null,
+        }));
+        setProgresso((prev) => ({ ...prev, [trilha.id]: prog }));
+      }
+      setDetalhe(full);
+    } catch {
+      setDetalhe(trilha);
+    }
+  }
+
+  /* ─── render ────────────────────────────────────────────────────────────── */
   return (
     <PortalShell>
-      <div style={pageGrid}>
-        {error ? <div style={errorBox}>{error}</div> : null}
-        {success ? <div style={successBox}>{success}</div> : null}
+      <div style={page}>
+        <PageHero
+          title="Trilhas de Aprendizagem"
+          subtitle="Jornadas estruturadas de desenvolvimento — etapas, progresso e conclusão"
+          icon="🧭"
+        />
 
-        <section style={exclusiveHero}>
-          <div style={heroHeaderRow}>
-            <div>
-              <div style={eyebrow}>Trilhas de desenvolvimento</div>
-              <h2 style={heroTitle}>Catálogo com visão por público, cobertura e prontidão de uso</h2>
-              <p style={heroText}>
-                Estruture as jornadas internas do portal para instrutores, supervisores e coordenação,
-                mantendo uma leitura próxima ao padrão atual, mas com um visual mais nobre e gerencial.
-              </p>
-            </div>
-
-            <div style={miniPanel}>
-              <div style={miniPanelLabel}>Públicos priorizados</div>
-              <div style={miniPanelValue}>Instrutores • Supervisores • Coordenação</div>
-              <div style={miniPanelSub}>Com base nos usuários já cadastrados no portal</div>
-            </div>
-          </div>
-
-          <div style={statsGrid}>
-            <StatCard title="Trilhas" value={fmt(kpis.total)} subtitle="Base cadastrada" accent={chart.blue} />
-            <StatCard title="Estruturadas" value={fmt(kpis.estruturadas)} subtitle="Com maior maturidade" accent={colors.success} />
-            <StatCard title="Ativas" value={fmt(kpis.ativas)} subtitle="Em uso e evolução" accent={chart.teal} />
-            <StatCard title="Em estruturação" value={fmt(kpis.emEstruturacao)} subtitle="Pedem complemento" accent={colors.warning} />
-            <StatCard title="Públicos cobertos" value={fmt(kpis.publicosCobertos)} subtitle="Perfis atendidos" accent={chart.purple} />
-            <StatCard title="Horas estimadas" value={fmt(kpis.horasEstimadas)} subtitle="Carga sugerida do catálogo" accent={chart.cyan} />
-          </div>
-        </section>
-
-        <div style={tabRow}>
+        {/* KPIs */}
+        <div style={kpiRow}>
           {[
-            ["catalogo", "Catálogo de trilhas"],
-            ["publicos", "Acompanhamento por público"],
-            ["cadastro", editingId ? "Editar trilha" : "Nova trilha"],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setActiveTab(id)}
-              style={{ ...tabButton, ...(activeTab === id ? tabButtonActive : {}) }}
-            >
-              {label}
-            </button>
+            { label: "Trilhas", value: kpis.total },
+            { label: "Estruturadas", value: kpis.estruturadas },
+            { label: "Em estruturação", value: kpis.emEstruturacao },
+            { label: "Total de etapas", value: kpis.totalEtapas },
+          ].map(({ label, value }) => (
+            <div key={label} style={kpiCard}>
+              <div style={kpiValue}>{value}</div>
+              <div style={kpiLabel}>{label}</div>
+            </div>
           ))}
         </div>
 
-        {activeTab === "catalogo" ? (
-          <>
-            <SectionCard
-              title="Filtros e leitura rápida"
-              subtitle="Use os filtros para ajustar o catálogo por cliente, público e busca textual."
-            >
-              <div style={filterGrid}>
-                <div style={fieldWrap}>
-                  <label style={label}>Busca</label>
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Buscar trilha, cliente ou etapa"
-                    style={input}
-                  />
-                </div>
-                <div style={fieldWrap}>
-                  <label style={label}>Cliente</label>
-                  <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={input}>
-                    <option value="todos">Todos</option>
-                    {clients.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </select>
-                </div>
-                <div style={fieldWrap}>
-                  <label style={label}>Público</label>
-                  <select value={audienceFilter} onChange={(e) => setAudienceFilter(e.target.value)} style={input}>
-                    <option value="todos">Todos</option>
-                    {audienceOptions.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </SectionCard>
+        {/* Feedback */}
+        {error   && <div style={alertErr}>{error}</div>}
+        {success && <div style={alertOk}>{success}</div>}
 
-            <div style={twoCol}>
-              <SectionCard title="Leitura gerencial" subtitle="Pontos rápidos para alinhar evolução e cobertura do catálogo.">
-                <div style={alertList}>
-                  {topAlerts.map((item, index) => (
-                    <div key={index} style={alertItem}>{item}</div>
-                  ))}
-                </div>
-              </SectionCard>
+        {/* Tabs */}
+        {isGestor && (
+          <div style={tabBar}>
+            <button style={tab(activeTab === "catalogo")} onClick={() => setActiveTab("catalogo")}>Catálogo</button>
+            <button style={tab(activeTab === "editor")}   onClick={() => abrirEditor()}>
+              {editingId ? "✏️ Editando" : "+ Nova Trilha"}
+            </button>
+          </div>
+        )}
 
-              <SectionCard title="Cobertura por público" subtitle="Leitura resumida do volume de trilhas aplicáveis por perfil.">
-                <div style={miniList}>
-                  {publicoRows.map((item) => (
-                    <div key={item.label} style={miniListItem}>
-                      <div style={miniListTop}>
-                        <strong>{item.label}</strong>
-                        <span>{fmt(item.trilhasRelacionadas.length)} trilha(s)</span>
-                      </div>
-                      <div style={miniMuted}>{fmt(item.usuarios.length)} usuário(s) no portal • {fmt(item.horas)}h estimadas</div>
-                    </div>
-                  ))}
-                </div>
-              </SectionCard>
+        {/* ── CATÁLOGO ─────────────────────────────────────────────────────── */}
+        {activeTab === "catalogo" && (
+          <div>
+            {/* Filtros */}
+            <div style={filterRow}>
+              <input
+                style={search}
+                placeholder="Buscar trilha…"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <select style={sel} value={filterCliente} onChange={(e) => setFilterCliente(e.target.value)}>
+                <option value="todos">Todos os clientes</option>
+                {clients.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
 
-            <SectionCard
-              title="Catálogo de trilhas"
-              subtitle={loading ? "Carregando base..." : `${fmt(filteredTrilhas.length)} registro(s) encontrado(s)`}
-            >
-              {loading ? (
-                <div style={emptyState}>Carregando trilhas...</div>
-              ) : filteredTrilhas.length ? (
-                <div style={catalogGrid}>
-                  {filteredTrilhas.map((item) => (
-                    <article key={item.id} style={catalogCard}>
-                      <div style={cardTopRow}>
-                        <span style={statusTone(item.status)}>{item.status}</span>
-                        <span style={hoursBadge}>{fmt(item.horasEstimadas)}h estimadas</span>
+            {loading ? (
+              <div style={empty}>Carregando trilhas…</div>
+            ) : filtradas.length === 0 ? (
+              <div style={empty}>
+                {isGestor ? "Nenhuma trilha cadastrada. Clique em \"+ Nova Trilha\" para começar." : "Nenhuma trilha disponível."}
+              </div>
+            ) : (
+              <div style={grid}>
+                {filtradas.map((t) => {
+                  const etapas = t.etapas || [];
+                  const status = statusDaTrilha(etapas);
+                  const sCor   = statusCor(status);
+                  const prog   = progresso[t.id];
+                  const pct    = prog?.percentual ?? null;
+
+                  return (
+                    <div key={t.id} style={card}>
+                      <div style={cardTop}>
+                        <div style={{ flex: 1 }}>
+                          <div style={cardTitulo}>{t.titulo}</div>
+                          {t.cliente && <div style={cardCliente}>{t.cliente}</div>}
+                        </div>
+                        <span style={{ ...badge, background: sCor.bg, color: sCor.text }}>{status}</span>
                       </div>
 
-                      <div style={cardTitle}>{item.titulo || "Sem título"}</div>
-                      <div style={cardMeta}>{item.cliente || "GLOBAL"}</div>
-                      <p style={cardText}>{item.descricao || "Sem descrição cadastrada."}</p>
+                      {t.descricao && <div style={cardDesc}>{t.descricao}</div>}
 
-                      <div style={chipWrap}>
-                        {item.audiences.map((audience) => (
-                          <span key={audience} style={audienceChip}>{audience}</span>
-                        ))}
+                      {/* Progresso bar (treinandos) */}
+                      {pct !== null && (
+                        <div style={progRow}>
+                          <div style={progBar}>
+                            <div style={{ ...progFill, width: `${pct}%` }} />
+                          </div>
+                          <span style={progPct}>{pct}%</span>
+                        </div>
+                      )}
+
+                      {/* Etapas chips */}
+                      {etapas.length > 0 && (
+                        <div style={etapasRow}>
+                          {etapas.slice(0, 4).map((e, i) => {
+                            const tc = tipoCor(e.tipo);
+                            return (
+                              <span key={i} style={{ ...tipoChip, background: tc.bg, color: tc.text }}>
+                                {i + 1}. {e.titulo.length > 22 ? e.titulo.slice(0, 22) + "…" : e.titulo}
+                              </span>
+                            );
+                          })}
+                          {etapas.length > 4 && (
+                            <span style={{ ...tipoChip, background: "#f3f4f6", color: "#6b7280" }}>
+                              +{etapas.length - 4}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      <div style={cardActions}>
+                        <button style={btnSecundary} onClick={() => abrirDetalhe(t)}>
+                          {isGestor ? "Ver detalhes" : "Abrir trilha"}
+                        </button>
+                        {isGestor && (
+                          <>
+                            <button style={btnPrimary} onClick={() => abrirEditor(t)}>Editar</button>
+                            <button style={btnDanger}  onClick={() => handleDelete(t.id)}>Excluir</button>
+                          </>
+                        )}
                       </div>
-
-                      <div style={stepsTitle}>Etapas da trilha</div>
-                      <div style={stepsWrap}>
-                        {item.etapas.length ? item.etapas.slice(0, 6).map((step, index) => (
-                          <div key={`${item.id}-${index}`} style={stepItem}>{index + 1}. {step}</div>
-                        )) : <div style={emptySteps}>Cadastre as etapas para estruturar a jornada.</div>}
-                        {item.etapas.length > 6 ? <div style={moreSteps}>+ {item.etapas.length - 6} etapa(s)</div> : null}
-                      </div>
-
-                      <div style={actionsRow}>
-                        <button type="button" onClick={() => { startEdit(item); setActiveTab("cadastro"); }} style={secondaryButton}>Editar</button>
-                        <button type="button" onClick={() => handleDelete(item.id)} style={dangerButton}>Excluir</button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div style={emptyState}>Nenhuma trilha encontrada para os filtros selecionados.</div>
-              )}
-            </SectionCard>
-          </>
-        ) : null}
-
-        {activeTab === "publicos" ? (
-          <SectionCard
-            title="Acompanhamento por público"
-            subtitle="Leitura separada para instrutores, supervisores e coordenação, já alinhada ao uso real do portal."
-          >
-            <div style={publicGrid}>
-              {publicoRows.map((item) => (
-                <div key={item.label} style={publicCard}>
-                  <div style={publicHeader}>
-                    <div>
-                      <div style={publicTitle}>{item.label}</div>
-                      <div style={publicSub}>{item.hint}</div>
                     </div>
-                    <span style={publicBadge}>{fmt(item.usuarios.length)} usuário(s)</span>
-                  </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-                  <div style={publicStatsRow}>
-                    <div style={publicStatBox}>
-                      <strong>{fmt(item.trilhasRelacionadas.length)}</strong>
-                      <span>Trilhas relacionadas</span>
-                    </div>
-                    <div style={publicStatBox}>
-                      <strong>{fmt(item.horas)}</strong>
-                      <span>Horas estimadas</span>
-                    </div>
-                  </div>
+        {/* ── EDITOR ──────────────────────────────────────────────────────── */}
+        {activeTab === "editor" && isGestor && (
+          <div style={editorWrap}>
+            <div style={editorHeader}>
+              <h2 style={editorTitle}>{editingId ? "Editar Trilha" : "Nova Trilha"}</h2>
+              <button style={btnSecundary} onClick={fecharEditor}>← Voltar ao catálogo</button>
+            </div>
 
-                  <div style={subsectionTitle}>Trilhas sugeridas</div>
-                  <div style={stackList}>
-                    {item.trilhasRelacionadas.length ? item.trilhasRelacionadas.map((trilha) => (
-                      <div key={trilha.id} style={stackItem}>
-                        <div style={stackMain}>{trilha.titulo}</div>
-                        <div style={stackSub}>{trilha.cliente || "GLOBAL"} • {trilha.etapas.length} etapa(s)</div>
-                      </div>
-                    )) : <div style={emptySteps}>Nenhuma trilha vinculada por leitura textual até o momento.</div>}
+            <div style={formGrid}>
+              <div style={fieldFull}>
+                <label style={lbl}>Título da trilha *</label>
+                <input style={input} value={form.titulo}
+                  onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+                  placeholder="Ex.: Trilha de Onboarding Operacional" />
+              </div>
+              <div>
+                <label style={lbl}>Cliente / Operação</label>
+                <input style={input} value={form.cliente}
+                  onChange={(e) => setForm({ ...form, cliente: e.target.value })}
+                  placeholder="Ex.: Agibank" />
+              </div>
+              <div style={fieldFull}>
+                <label style={lbl}>Descrição</label>
+                <textarea style={{ ...input, minHeight: 72 }} value={form.descricao}
+                  onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+                  placeholder="Objetivo da trilha, público-alvo e competências desenvolvidas…" />
+              </div>
+            </div>
+
+            {/* Etapas */}
+            <div style={etapasEditor}>
+              <div style={etapasEditorHeader}>
+                <h3 style={etapasEditorTitle}>Etapas ({etapas.length})</h3>
+                <button style={btnPrimary} onClick={addEtapa}>+ Adicionar etapa</button>
+              </div>
+
+              {etapas.map((e, idx) => (
+                <div key={idx} style={etapaCard}>
+                  <div style={etapaCardTop}>
+                    <span style={etapaNum}>{idx + 1}</span>
+                    <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr auto", gap: 12 }}>
+                      <input style={inputSm} placeholder="Título da etapa *"
+                        value={e.titulo} onChange={(ev) => updateEtapa(idx, "titulo", ev.target.value)} />
+                      <select style={selSm} value={e.tipo}
+                        onChange={(ev) => updateEtapa(idx, "tipo", ev.target.value)}>
+                        {TIPOS_ETAPA.map((t) => <option key={t} value={t}>{tipoLabel(t)}</option>)}
+                      </select>
+                    </div>
+                    <div style={etapaControls}>
+                      <button style={iconBtn} onClick={() => moveEtapa(idx, -1)} disabled={idx === 0} title="Mover para cima">↑</button>
+                      <button style={iconBtn} onClick={() => moveEtapa(idx, 1)} disabled={idx === etapas.length - 1} title="Mover para baixo">↓</button>
+                      <button style={{ ...iconBtn, color: colors.danger || "#ef4444" }} onClick={() => removeEtapa(idx)} title="Remover etapa">✕</button>
+                    </div>
                   </div>
+                  <textarea style={{ ...inputSm, minHeight: 52 }}
+                    placeholder="Descrição da etapa (opcional)"
+                    value={e.descricao || ""}
+                    onChange={(ev) => updateEtapa(idx, "descricao", ev.target.value)} />
+                  {e.tipo === "turma" && (
+                    <select style={selSm} value={e.turma_id || ""}
+                      onChange={(ev) => updateEtapa(idx, "turma_id", ev.target.value)}>
+                      <option value="">— Vincular turma (opcional) —</option>
+                      {treinamentos.map((t) => (
+                        <option key={t.id} value={t.id}>{t.tema} ({t.cliente || "?"})</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               ))}
             </div>
-          </SectionCard>
-        ) : null}
 
-        {activeTab === "cadastro" ? (
-          <SectionCard
-            title={editingId ? "Editar trilha" : "Cadastrar nova trilha"}
-            subtitle="Cadastro simples, mantendo a base atual e já preparando o catálogo para a expansão das páginas."
-          >
-            <form onSubmit={handleSubmit} style={formGrid}>
-              <div style={fieldWrap}>
-                <label style={label}>Cliente</label>
-                <input value={form.cliente} onChange={(e) => setForm((prev) => ({ ...prev, cliente: e.target.value }))} style={input} placeholder="Ex.: SAFRA, CREA, DASA ou GLOBAL" />
-              </div>
-              <div style={fieldWrap}>
-                <label style={label}>Título da trilha</label>
-                <input value={form.titulo} onChange={(e) => setForm((prev) => ({ ...prev, titulo: e.target.value }))} style={input} placeholder="Ex.: Trilha de Formação de Instrutores" />
-              </div>
-              <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
-                <label style={label}>Descrição</label>
-                <textarea value={form.descricao} onChange={(e) => setForm((prev) => ({ ...prev, descricao: e.target.value }))} style={textarea} placeholder="Objetivo, aplicação e público esperado da trilha" />
-              </div>
-              <div style={{ ...fieldWrap, gridColumn: "1 / -1" }}>
-                <label style={label}>Etapas da trilha</label>
-                <textarea value={form.etapasText} onChange={(e) => setForm((prev) => ({ ...prev, etapasText: e.target.value }))} style={textareaLarge} placeholder={"Liste uma etapa por linha\nEx.: Didática para adultos\nGestão de turma\nFeedback estruturado"} />
-              </div>
-
-              <div style={formActions}>
-                <button type="submit" style={primaryButton} disabled={saving}>
-                  {saving ? "Salvando..." : editingId ? "Atualizar trilha" : "Salvar trilha"}
-                </button>
-                <button type="button" style={secondaryButton} onClick={resetForm}>
-                  Limpar
-                </button>
-              </div>
-            </form>
-          </SectionCard>
-        ) : null}
+            <div style={editorFooter}>
+              <button style={btnSecundary} onClick={fecharEditor}>Cancelar</button>
+              <button style={btnSave} onClick={handleSave} disabled={saving}>
+                {saving ? "Salvando…" : editingId ? "Salvar alterações" : "Criar trilha"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* ── MODAL DETALHE ──────────────────────────────────────────────── */}
+      {detalhe && (
+        <div style={overlay} onClick={() => setDetalhe(null)}>
+          <div style={modal} onClick={(ev) => ev.stopPropagation()}>
+            <div style={modalHeader}>
+              <div>
+                <h2 style={modalTitulo}>{detalhe.titulo}</h2>
+                {detalhe.cliente && <div style={cardCliente}>{detalhe.cliente}</div>}
+              </div>
+              <button style={modalClose} onClick={() => setDetalhe(null)}>✕</button>
+            </div>
+
+            {detalhe.descricao && <p style={modalDesc}>{detalhe.descricao}</p>}
+
+            {/* Progresso geral */}
+            {progresso[detalhe.id] && (
+              <div style={modalProgresso}>
+                <div style={progRow}>
+                  <div style={progBar}>
+                    <div style={{ ...progFill, width: `${progresso[detalhe.id].percentual}%` }} />
+                  </div>
+                  <span style={progPct}>{progresso[detalhe.id].percentual}%</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                  {progresso[detalhe.id].concluidas} de {progresso[detalhe.id].total} etapas concluídas
+                </div>
+              </div>
+            )}
+
+            {/* Etapas */}
+            <div style={modalEtapas}>
+              {(detalhe.etapas || []).length === 0 ? (
+                <div style={empty}>Nenhuma etapa cadastrada.</div>
+              ) : (
+                (detalhe.etapas || []).map((e, idx) => {
+                  const tc        = tipoCor(e.tipo);
+                  const concluido = !!e.concluido;
+                  return (
+                    <div key={e.id || idx} style={{ ...etapaItem, opacity: concluido ? 0.7 : 1 }}>
+                      <div style={etapaItemTop}>
+                        <span style={etapaNumSm}>{idx + 1}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, color: concluido ? "#6b7280" : "#0B1220",
+                            textDecoration: concluido ? "line-through" : "none", fontSize: 14 }}>
+                            {e.titulo}
+                          </div>
+                          {e.descricao && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{e.descricao}</div>}
+                        </div>
+                        <span style={{ ...tipoChip, background: tc.bg, color: tc.text }}>{tipoLabel(e.tipo)}</span>
+                        {!isGestor && (
+                          <button
+                            style={{ ...btnMinitoggle, background: concluido ? "#dcfce7" : "#f3f4f6",
+                              color: concluido ? "#166534" : "#374151" }}
+                            onClick={() => handleConcluirEtapa(detalhe.id, e.id, !concluido)}>
+                            {concluido ? "✓ Concluída" : "Marcar"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {isGestor && (
+              <div style={modalFooter}>
+                <button style={btnPrimary} onClick={() => { setDetalhe(null); abrirEditor(detalhe); }}>
+                  Editar trilha
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </PortalShell>
   );
 }
 
-const pageGrid = {
-  display: "grid",
-  gap: 14,
-};
+/* ─── styles ──────────────────────────────────────────────────────────────── */
+const page       = { padding: "28px 32px", maxWidth: 1200, margin: "0 auto" };
+const kpiRow     = { display: "flex", gap: 16, margin: "24px 0" };
+const kpiCard    = { flex: 1, background: "#fff", borderRadius: 12, padding: "18px 20px",
+                     boxShadow: "0 1px 4px rgba(0,0,0,.06)", textAlign: "center" };
+const kpiValue   = { fontSize: 32, fontWeight: 900, color: "#0B1220" };
+const kpiLabel   = { fontSize: 12, color: "#6b7280", marginTop: 4, fontWeight: 600 };
+const alertErr   = { background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca",
+                     borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 14 };
+const alertOk    = { background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0",
+                     borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 14 };
+const tabBar     = { display: "flex", gap: 8, marginBottom: 24 };
+const tab        = (active) => ({
+  padding: "10px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14,
+  background: active ? "#0B1220" : "#f3f4f6", color: active ? "#fff" : "#374151",
+});
+const filterRow  = { display: "flex", gap: 12, marginBottom: 20 };
+const search     = { flex: 1, padding: "10px 14px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14 };
+const sel        = { padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, background: "#fff" };
+const empty      = { textAlign: "center", color: "#9ca3af", padding: "48px 0", fontSize: 14 };
+const grid       = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 20 };
+const card       = { background: "#fff", borderRadius: 14, padding: 20,
+                     boxShadow: "0 1px 4px rgba(0,0,0,.06)", border: "1px solid #f3f4f6" };
+const cardTop    = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 };
+const cardTitulo = { fontWeight: 800, fontSize: 15, color: "#0B1220" };
+const cardCliente = { fontSize: 12, color: "#FF6B4A", fontWeight: 600, marginTop: 2 };
+const cardDesc   = { fontSize: 13, color: "#6b7280", marginBottom: 12, lineHeight: 1.5 };
+const badge      = { fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 999, whiteSpace: "nowrap" };
+const etapasRow  = { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 };
+const tipoChip   = { fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6 };
+const cardActions = { display: "flex", gap: 8, marginTop: 12 };
+const progRow    = { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 };
+const progBar    = { flex: 1, height: 6, background: "#f3f4f6", borderRadius: 999 };
+const progFill   = { height: "100%", background: "#FF6B4A", borderRadius: 999, transition: "width .3s" };
+const progPct    = { fontSize: 12, fontWeight: 700, color: "#374151", minWidth: 36 };
 
-const exclusiveHero = {
-  background: "linear-gradient(135deg, #0B1220 0%, #161D2E 100%)",
-  borderRadius: 24,
-  padding: 22,
-  color: "#ffffff",
-  boxShadow: "0 16px 32px rgba(11,18,32,.22)",
-};
+// Editor
+const editorWrap    = { background: "#fff", borderRadius: 14, padding: 28, boxShadow: "0 1px 4px rgba(0,0,0,.08)" };
+const editorHeader  = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 };
+const editorTitle   = { fontSize: 20, fontWeight: 900, color: "#0B1220", margin: 0 };
+const formGrid      = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 28 };
+const fieldFull     = { gridColumn: "1 / -1" };
+const lbl           = { display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6 };
+const input         = { width: "100%", padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8,
+                        fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+const inputSm       = { width: "100%", padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 8,
+                        fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+const selSm         = { padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13,
+                        background: "#fff", width: "100%" };
+const etapasEditor       = { marginBottom: 24 };
+const etapasEditorHeader = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 };
+const etapasEditorTitle  = { fontSize: 15, fontWeight: 800, color: "#0B1220", margin: 0 };
+const etapaCard     = { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14,
+                        marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 };
+const etapaCardTop  = { display: "flex", alignItems: "center", gap: 10 };
+const etapaControls = { display: "flex", gap: 4 };
+const etapaNum      = { width: 28, height: 28, background: "#0B1220", color: "#fff", borderRadius: 999,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 12, fontWeight: 900, flexShrink: 0 };
+const iconBtn       = { padding: "4px 8px", border: "1px solid #e5e7eb", borderRadius: 6, cursor: "pointer",
+                        background: "#fff", fontSize: 14, lineHeight: 1 };
+const editorFooter  = { display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 16,
+                        borderTop: "1px solid #f3f4f6" };
 
-const heroHeaderRow = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) minmax(240px, 320px)",
-  gap: 16,
-  alignItems: "start",
-};
+// Modal
+const overlay    = { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 9000,
+                     display: "flex", alignItems: "center", justifyContent: "center", padding: 24 };
+const modal      = { background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 640,
+                     maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.2)" };
+const modalHeader = { display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+                      marginBottom: 16, gap: 16 };
+const modalTitulo = { fontSize: 20, fontWeight: 900, color: "#0B1220", margin: 0 };
+const modalDesc   = { color: "#6b7280", fontSize: 14, lineHeight: 1.6, marginBottom: 16 };
+const modalClose  = { background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#9ca3af", padding: 4 };
+const modalProgresso = { background: "#f9fafb", borderRadius: 10, padding: "12px 16px", marginBottom: 16 };
+const modalEtapas = { display: "flex", flexDirection: "column", gap: 8 };
+const etapaItem   = { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 };
+const etapaItemTop = { display: "flex", alignItems: "center", gap: 10 };
+const etapaNumSm  = { width: 24, height: 24, background: "#0B1220", color: "#fff", borderRadius: 999,
+                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, flexShrink: 0 };
+const btnMinitoggle = { padding: "4px 10px", border: "none", borderRadius: 6, cursor: "pointer",
+                        fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" };
+const modalFooter = { display: "flex", justifyContent: "flex-end", marginTop: 20, paddingTop: 16,
+                      borderTop: "1px solid #f3f4f6" };
 
-const eyebrow = {
-  display: "inline-flex",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "rgba(255,255,255,0.16)",
-  fontWeight: 800,
-  fontSize: 11,
-  letterSpacing: ".04em",
-  textTransform: "uppercase",
-};
-
-const heroTitle = {
-  margin: "12px 0 8px",
-  fontSize: 28,
-  lineHeight: 1.1,
-};
-
-const heroText = {
-  margin: 0,
-  color: "rgba(255,255,255,0.9)",
-  lineHeight: 1.55,
-  maxWidth: 760,
-};
-
-const miniPanel = {
-  background: "rgba(255,255,255,0.12)",
-  border: "1px solid rgba(255,255,255,0.18)",
-  borderRadius: 20,
-  padding: 16,
-  backdropFilter: "blur(10px)",
-};
-
-const miniPanelLabel = {
-  fontSize: 11,
-  textTransform: "uppercase",
-  letterSpacing: ".05em",
-  opacity: 0.85,
-  fontWeight: 800,
-};
-
-const miniPanelValue = {
-  marginTop: 8,
-  fontSize: 18,
-  lineHeight: 1.25,
-  fontWeight: 900,
-};
-
-const miniPanelSub = {
-  marginTop: 8,
-  fontSize: 13,
-  color: "rgba(255,255,255,0.82)",
-  lineHeight: 1.45,
-};
-
-const heroBadge = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "10px 14px",
-  borderRadius: 999,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  fontSize: 12,
-};
-
-const statsGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-  gap: 10,
-  marginTop: 18,
-};
-
-const tabRow = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 10,
-};
-
-const tabButton = {
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#334155",
-  borderRadius: 999,
-  padding: "10px 14px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const tabButtonActive = {
-  background: "#1d4ed8",
-  color: "#ffffff",
-  borderColor: "#1d4ed8",
-  boxShadow: "0 10px 20px rgba(37,99,235,0.18)",
-};
-
-const filterGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-  gap: 12,
-};
-
-const fieldWrap = {
-  display: "grid",
-  gap: 6,
-};
-
-const label = {
-  fontSize: 13,
-  fontWeight: 800,
-  color: "#334155",
-};
-
-const input = {
-  width: "100%",
-  borderRadius: 12,
-  border: "1px solid #cbd5e1",
-  padding: "12px 14px",
-  fontSize: 14,
-  outline: "none",
-  background: "#ffffff",
-};
-
-const textarea = {
-  ...input,
-  minHeight: 96,
-  resize: "vertical",
-};
-
-const textareaLarge = {
-  ...textarea,
-  minHeight: 160,
-};
-
-const twoCol = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-  gap: 14,
-};
-
-const alertList = {
-  display: "grid",
-  gap: 10,
-};
-
-const alertItem = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-  color: "#334155",
-  lineHeight: 1.45,
-};
-
-const miniList = {
-  display: "grid",
-  gap: 10,
-};
-
-const miniListItem = {
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-};
-
-const miniListTop = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 10,
-  fontSize: 14,
-  color: "#0f172a",
-};
-
-const miniMuted = {
-  marginTop: 4,
-  color: "#64748b",
-  fontSize: 13,
-};
-
-const catalogGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))",
-  gap: 12,
-};
-
-const catalogCard = {
-  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
-  border: "1px solid #dbe4f0",
-  borderRadius: 20,
-  padding: 16,
-  display: "grid",
-  gap: 12,
-  boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
-};
-
-const cardTopRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const hoursBadge = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 999,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  padding: "6px 10px",
-  fontWeight: 800,
-  fontSize: 11,
-};
-
-const cardTitle = {
-  fontSize: 18,
-  lineHeight: 1.2,
-  fontWeight: 900,
-  color: "#0f172a",
-};
-
-const cardMeta = {
-  fontSize: 13,
-  color: "#64748b",
-  fontWeight: 700,
-};
-
-const cardText = {
-  margin: 0,
-  color: "#475569",
-  lineHeight: 1.5,
-  fontSize: 14,
-};
-
-const chipWrap = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 8,
-};
-
-const audienceChip = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "#f1f5f9",
-  color: "#334155",
-  fontWeight: 800,
-  fontSize: 12,
-};
-
-const stepsTitle = {
-  fontSize: 13,
-  fontWeight: 900,
-  color: "#0f172a",
-};
-
-const stepsWrap = {
-  display: "grid",
-  gap: 8,
-};
-
-const stepItem = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: "10px 12px",
-  fontSize: 13,
-  color: "#334155",
-};
-
-const moreSteps = {
-  fontSize: 12,
-  fontWeight: 800,
-  color: "#1d4ed8",
-};
-
-const emptySteps = {
-  color: "#64748b",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
-
-const actionsRow = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
-const primaryButton = {
-  border: 0,
-  background: "#1d4ed8",
-  color: "#ffffff",
-  borderRadius: 12,
-  padding: "12px 16px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const secondaryButton = {
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#334155",
-  borderRadius: 12,
-  padding: "12px 16px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const dangerButton = {
-  border: "1px solid #fecaca",
-  background: "#fff1f2",
-  color: "#be123c",
-  borderRadius: 12,
-  padding: "12px 16px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const publicGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-  gap: 12,
-};
-
-const publicCard = {
-  background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
-  border: "1px solid #dbe4f0",
-  borderRadius: 20,
-  padding: 16,
-  display: "grid",
-  gap: 14,
-};
-
-const publicHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 10,
-  alignItems: "start",
-};
-
-const publicTitle = {
-  fontSize: 18,
-  fontWeight: 900,
-  color: "#0f172a",
-};
-
-const publicSub = {
-  marginTop: 4,
-  fontSize: 13,
-  color: "#64748b",
-  lineHeight: 1.45,
-};
-
-const publicBadge = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 999,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  padding: "6px 10px",
-  fontWeight: 800,
-  fontSize: 12,
-};
-
-const publicStatsRow = {
-  display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 10,
-};
-
-const publicStatBox = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 12,
-  display: "grid",
-  gap: 4,
-};
-
-const subsectionTitle = {
-  fontSize: 13,
-  fontWeight: 900,
-  color: "#0f172a",
-};
-
-const stackList = {
-  display: "grid",
-  gap: 8,
-};
-
-const stackItem = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: 10,
-};
-
-const stackMain = {
-  fontWeight: 800,
-  color: "#0f172a",
-  fontSize: 13,
-};
-
-const stackSub = {
-  marginTop: 3,
-  color: "#64748b",
-  fontSize: 12,
-};
-
-const formGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
-};
-
-const formActions = {
-  gridColumn: "1 / -1",
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
-const errorBox = {
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
-  padding: 14,
-  borderRadius: 14,
-  fontWeight: 700,
-};
-
-const successBox = {
-  background: "#ecfdf5",
-  border: "1px solid #bbf7d0",
-  color: "#166534",
-  padding: 14,
-  borderRadius: 14,
-  fontWeight: 700,
-};
-
-const emptyState = {
-  padding: 22,
-  borderRadius: 16,
-  background: "#f8fafc",
-  border: "1px dashed #cbd5e1",
-  color: "#64748b",
-  textAlign: "center",
-};
+// Buttons
+const btnPrimary  = { padding: "9px 18px", background: "#FF6B4A", color: "#fff", border: "none",
+                      borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
+const btnSecundary = { padding: "9px 18px", background: "#f3f4f6", color: "#374151", border: "none",
+                       borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
+const btnDanger   = { padding: "9px 18px", background: "#fef2f2", color: "#dc2626", border: "none",
+                      borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
+const btnSave     = { padding: "10px 24px", background: "#0B1220", color: "#fff", border: "none",
+                      borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 800 };
