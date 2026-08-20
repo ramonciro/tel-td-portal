@@ -1,37 +1,40 @@
 /**
  * clientMiddleware.js
  *
- * Sprint 1 — Fix:
- *   - Import estava apontando para '../config/database' (inexistente).
- *     Corrigido para '../db' (pool real do sistema).
- *   - Middleware nunca era aplicado no index.js.
- *     Agora é registrado globalmente antes das rotas protegidas.
+ * Sprint 1 (fix aplicado no Sprint 3):
+ *   - REESCRITO de ESM (import/export) para CJS (require/module.exports).
+ *     O package.json não tem "type":"module", então o Node roda em CJS.
+ *     A versão ESM anterior causava SyntaxError ao ser carregada via require()
+ *     no index.js, tornando o middleware inoperante em produção.
+ *
+ *   - Import corrigido: '../db.js' → '../lib/db' (pool real do sistema).
  *
  * Responsabilidade:
- *   Lê o empresa_id do usuário autenticado (via JWT em req.user)
- *   e o disponibiliza em req.empresaId para todas as queries subsequentes.
- *   Também valida que o ambiente (cliente selecionado no login) existe e está ativo.
+ *   Lê o empresa_id do JWT (populado pelo authController no login) e
+ *   disponibiliza req.empresaId para todos os handlers downstream.
+ *   O entityCrud e os controllers dedicados usam req.empresaId para
+ *   filtrar automaticamente dados por tenant.
  */
 
-import pool from "../db.js";
+const pool = require('../lib/db');
 
-export async function clientMiddleware(req, res, next) {
+async function clientMiddleware(req, res, next) {
   try {
-    // Rotas públicas (login, health check) não têm req.user — pula o filtro
+    // Rotas públicas (login, health, reset-senha) chegam sem req.user — passa direto
     if (!req.user) return next();
 
-    const empresaId = req.user?.empresa_id ?? null;
+    const empresaId = req.user.empresa_id ?? null;
 
     if (!empresaId) {
-      // Usuário sem empresa_id no token — usuário legado ou super-admin
-      // Permite o acesso mas sem filtro de tenant
-      req.empresaId = null;
+      // Usuário legado sem empresa_id no token (super-admin ou cadastro antigo)
+      // Permite acesso sem filtro de tenant
+      req.empresaId   = null;
+      req.empresaNome = null;
       return next();
     }
 
-    // Valida que a empresa existe e está ativa no banco
     const [rows] = await pool.query(
-      "SELECT id, nome, ativo FROM empresas WHERE id = ? LIMIT 1",
+      'SELECT id, nome, ativo FROM empresas WHERE id = ? LIMIT 1',
       [empresaId]
     );
 
@@ -40,7 +43,7 @@ export async function clientMiddleware(req, res, next) {
     if (!empresa) {
       return res.status(403).json({
         ok: false,
-        message: "Ambiente não encontrado. Faça login novamente.",
+        message: 'Ambiente não encontrado. Faça login novamente.',
       });
     }
 
@@ -51,15 +54,17 @@ export async function clientMiddleware(req, res, next) {
       });
     }
 
-    // Disponibiliza para todos os handlers downstream
     req.empresaId   = empresa.id;
     req.empresaNome = empresa.nome;
 
     return next();
   } catch (error) {
-    console.error("[clientMiddleware] Erro ao verificar empresa:", error.message);
-    // Não bloqueia em caso de erro de DB — loga e continua
-    req.empresaId = null;
+    console.error('[clientMiddleware] Erro ao verificar empresa:', error.message);
+    // Não bloqueia em erro de DB — loga e continua sem filtro de tenant
+    req.empresaId   = null;
+    req.empresaNome = null;
     return next();
   }
 }
+
+module.exports = { clientMiddleware };
