@@ -1,106 +1,130 @@
-# Sprint 3 — LMS Core
-**Data:** Agosto 2026 | **Sobre:** Portal T&D — tel-td-portal-main
+# Sprint 4 — SaaS Foundation
+**Data:** Agosto 2026 | **Base:** tel-td-portal-main_backup_3 + Sprint 3
 
 ---
 
-## ⚠️ Fix Crítico incluído: clientMiddleware.js (bloqueante do Sprint 1)
+## 🔥 Hotfix incluído: login "Erro ao realizar login"
 
-O `clientMiddleware.js` do backup_3 usava sintaxe ESM (`import/export`) num projeto
-que roda em CommonJS puro (sem `"type":"module"` no `package.json`). Isso causava
-`SyntaxError` ao ser carregado via `require()` no `index.js`, tornando o isolamento
-multi-tenant **inoperante em produção** mesmo com o Sprint 1 aplicado.
+**Causa raiz:** O `authRoutes.js` do Sprint 3 substituiu `SELECT *` por uma lista explícita
+de colunas que incluía `empresa_id`. Se a migration do Sprint 1 ainda não foi aplicada
+no banco, a coluna `empresa_id` não existe e o MySQL lança:
+```
+Unknown column 'empresa_id' in 'field list'
+```
+Isso resulta no 500 "Erro ao realizar login".
 
-Este Sprint entrega a versão reescrita em CJS.
+**Fix aplicado:** `authRoutes.js` voltou a usar `SELECT *` (como o original), tornando
+o login resiliente a migrations pendentes. `empresa_id` e `super_admin` são acessados
+com fallback (`?? null`, `|| 0`) e nunca causam erro se a coluna não existir.
 
 ---
 
 ## Arquivos entregues
 
+### Database
+
+| Arquivo | O que faz |
+|---|---|
+| `database/migrations/sprint4_saas_foundation.sql` | Estende `empresas` + cria `planos` + flag `super_admin` em `usuarios` |
+
 ### Backend
 
-| Arquivo | O que é |
-|---|---|
-| `backend/src/middlewares/clientMiddleware.js` | ✅ REESCRITO — CJS (fix crítico) |
-| `backend/src/controllers/trilhasRelacionaisController.js` | 🆕 Controller CJS dedicado para trilhas |
-| `backend/src/controllers/certificadosController.js` | 🆕 Emissão e listagem de certificados |
-| `backend/src/routes/authRoutes.js` | 🔄 Adicionadas rotas `/esqueci-senha` e `/redefinir-senha` |
-| `backend/src/index.js` | 🔄 Rotas de trilhas substituídas + certificados + minhas-turmas inline |
+| Arquivo | Tipo | O que é |
+|---|---|---|
+| `backend/src/middlewares/auth.js` | 🔄 Atualizado | `authorizeRoles` passa `super_admin` em qualquer rota; novo `requireSuperAdmin` |
+| `backend/src/routes/authRoutes.js` | 🔥 Hotfix + 🔄 | SELECT * + super_admin no JWT |
+| `backend/src/controllers/adminController.js` | 🆕 | CRUD completo de tenants para super_admin |
+| `backend/src/index.js` | 🔄 | Rotas `/api/admin/*` registradas |
 
 ### Frontend
 
-| Arquivo | O que é |
-|---|---|
-| `frontend/app/trilhas/page.js` | 🔄 REDESIGN — etapas relacionais, progresso, modal detalhe |
-| `frontend/app/minhas-turmas/page.js` | 🆕 Self-service do treinando: turmas, frequência, emitir cert |
-| `frontend/app/certificados/page.js` | 🆕 Listagem + emissão + impressão de certificados |
-| `frontend/components/PortalShell.js` | 🔄 Menu: "Minhas Turmas" e "Certificados" adicionados |
-
-### Database
-
-| Arquivo | O que é |
-|---|---|
-| `database/migrations/sprint3_lms_core.sql` | 🆕 4 novas tabelas (ver abaixo) |
+| Arquivo | Tipo | O que é |
+|---|---|---|
+| `frontend/app/admin/page.js` | 🆕 | Painel super-admin — todos os tenants, stats, toggle ativo |
+| `frontend/app/admin/nova-empresa/page.js` | 🆕 | Wizard 3 passos: dados + admin + revisão |
+| `frontend/app/admin/empresa/[id]/page.js` | 🆕 | Detalhes do tenant: uso, usuários, edição, danger zone |
+| `frontend/components/PortalShell.js` | 🔄 | Menu `super_admin` + nome do tenant no rodapé do sidebar |
 
 ---
 
 ## Como aplicar
 
-### 1. Executar a migration
+### 1. Substituir arquivos
+Copiar cada arquivo para o caminho equivalente em `tel-td-portal-main/`.
+
+### 2. Executar as migrations (na ordem)
 ```sql
--- No MySQL do Railway ou local:
+-- Se ainda não aplicou o Sprint 1:
+SOURCE database/migrations/sprint1_multi_tenant.sql;
+
+-- Sprint 3 (se ainda não aplicado):
 SOURCE database/migrations/sprint3_lms_core.sql;
+
+-- Sprint 4 (novo):
+SOURCE database/migrations/sprint4_saas_foundation.sql;
 ```
 
-Tabelas criadas:
-- `trilha_etapas` — etapas relacionais (substitui campo JSON)
-- `trilha_progresso` — progresso por participante/etapa
-- `certificados` — registro de certificados emitidos
-- `password_reset_tokens` — tokens de redefinição de senha (1h de validade)
-
-### 2. Substituir os arquivos no projeto
-Copiar cada arquivo desta pasta para o caminho equivalente no projeto.
-Todos os caminhos são relativos à raiz `tel-td-portal-main/`.
-
-### 3. Reiniciar o servidor (Railway)
-O `index.js` foi alterado — necessário redeploy.
-
----
-
-## Notas importantes
-
-### Trilhas: migração de dados existentes
-O campo `etapas` em `trilhas_aprendizagem` ainda existe na tabela.
-Se houver trilhas com etapas salvas no formato JSON antigo, rodar
-este script **após** aplicar a migration:
-
+### 3. Criar o primeiro super_admin
+Após aplicar a migration, execute no MySQL:
 ```sql
--- Migração manual de etapas antigas (JSON → trilha_etapas)
--- Rodar apenas se houver dados legados no campo trilhas_aprendizagem.etapas
--- Verificar primeiro:
-SELECT id, titulo, etapas FROM trilhas_aprendizagem WHERE etapas IS NOT NULL AND etapas != '';
+-- Substitua pelos dados reais
+UPDATE usuarios
+SET super_admin = 1, perfil = 'super_admin'
+WHERE email = 'seu_email@tel.com.br';
 ```
 
-Se houver dados, a migração precisa ser feita manualmente ou via script Node.
-Consulte a equipe antes de executar.
+O usuário com `super_admin = 1` fará login normalmente — o sistema detecta
+o flag e retorna `perfil: 'super_admin'` no token automaticamente.
 
-### Reset de senha — sem email por enquanto
-O endpoint `/api/auth/esqueci-senha` retorna o token direto na resposta
-(ambiente interno). Para Sprint 4, configurar SMTP (nodemailer) e remover
-o token da resposta, enviando apenas o link por email.
-
-### Minhas Turmas — match por email
-O endpoint `/api/minhas-turmas` para treinandos busca por `email` na tabela
-`treinamento_participantes`. Se os registros existentes não tiverem email
-preenchido, o match cai por nome (`LOWER(tp.nome) = LOWER(req.user.nome)`).
-Recomenda-se preencher o campo email nos participantes.
+### 4. Redeploy Railway
+Os arquivos `auth.js`, `authRoutes.js`, `adminController.js` e `index.js`
+foram alterados — necessário redeploy.
 
 ---
 
-## Status do roadmap após este Sprint
+## Arquitetura do super_admin
+
+```
+Login normal
+  └─ SELECT * FROM usuarios
+       └─ super_admin = 1?
+            ├─ SIM → perfil = 'super_admin', empresa_id = null no JWT
+            └─ NÃO → perfil normal, empresa_id do tenant
+
+authorizeRoles('coordenador', 'instrutor', ...)
+  └─ perfil === 'super_admin'? → passa direto (sem verificar roles)
+
+requireSuperAdmin (rotas /api/admin/*)
+  └─ perfil !== 'super_admin'? → 403 imediato
+
+clientMiddleware
+  └─ empresa_id = null? → sem filtro de tenant (super_admin vê tudo)
+```
+
+---
+
+## Planos criados pela migration
+
+| Plano | Slug | Usuários | Turmas |
+|---|---|---|---|
+| Básico | `basico` | 30 | 50 |
+| Profissional | `profissional` | 100 | 300 |
+| Enterprise | `enterprise` | ∞ | ∞ |
+
+Para alterar limites a qualquer momento:
+```sql
+UPDATE planos SET limite_usuarios = 200, limite_turmas = 500
+WHERE slug = 'profissional';
+```
+
+---
+
+## Status do roadmap
 
 | Sprint | Status |
 |---|---|
-| Sprint 1 — Segurança (clientMiddleware + empresa_id) | ✅ (fix CJS incluído aqui) |
-| Sprint 2 — Consistência (biblioteca, freq-individual, evolucao) | ✅ |
-| Sprint 3 — LMS Core | ✅ Entregue |
-| Sprint 4 — SaaS Foundation | ⏳ Próximo |
+| Sprint 1 — Segurança (clientMiddleware + empresa_id) | ✅ (fix CJS no Sprint 3) |
+| Sprint 2 — Consistência (biblioteca, freq-individual) | ✅ |
+| Sprint 3 — LMS Core (trilhas, certs, minhas-turmas, reset senha) | ✅ |
+| Sprint 4 — SaaS Foundation | ✅ Entregue |
+| Sprint 5 — Analytics / IA / Integrações | ⏳ |
