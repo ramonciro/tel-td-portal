@@ -82,9 +82,6 @@ function authorizeRoles(...allowedRoles) {
   return (req, res, next) => {
     try {
       const perfil = String(req.user?.perfil || "").toLowerCase();
-      const normalizedAllowed = allowedRoles.map((r) =>
-        String(r).toLowerCase()
-      );
 
       if (!perfil) {
         return res.status(401).json({
@@ -92,6 +89,15 @@ function authorizeRoles(...allowedRoles) {
           message: "Perfil não identificado",
         });
       }
+
+      // Sprint 4: super_admin tem acesso irrestrito a qualquer rota
+      if (perfil === "super_admin") {
+        return next();
+      }
+
+      const normalizedAllowed = allowedRoles.map((r) =>
+        String(r).toLowerCase()
+      );
 
       if (!normalizedAllowed.includes(perfil)) {
         return res.status(403).json({
@@ -111,10 +117,20 @@ function authorizeRoles(...allowedRoles) {
   };
 }
 
+// Sprint 4: middleware exclusivo para rotas de super-admin
+function requireSuperAdmin(req, res, next) {
+  const perfil = String(req.user?.perfil || "").toLowerCase();
+  if (perfil !== "super_admin") {
+    return res.status(403).json({ ok: false, message: "Acesso restrito ao super-administrador." });
+  }
+  return next();
+}
+
 module.exports = {
   signToken,
   authRequired,
   authorizeRoles,
   hasOceanAccess,
   authorizeOceanAccess,
+  requireSuperAdmin,
 };
