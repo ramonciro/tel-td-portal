@@ -21,6 +21,23 @@ const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
 // FIX 1: importar a rota de jornada-participantes (estava faltando)
 const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
 
+// Sprint 3: Trilhas relacionais, Certificados
+const {
+  listTrilhas,
+  getTrilha,
+  createTrilha,
+  updateTrilha,
+  deleteTrilha,
+  getProgresso,
+  marcarEtapaConcluida,
+} = require("./controllers/trilhasRelacionaisController");
+
+const {
+  listCertificados,
+  emitirCertificado,
+  verificarCertificado,
+} = require("./controllers/certificadosController");
+
 const {
   getDashboardTreinamentos,
 } = require("./controllers/dashboardTreinamentosController");
@@ -725,18 +742,49 @@ app.post(
   uploadBibliotecaArquivo
 );
 
-app.use(
+// Sprint 3: Trilhas relacionais — rotas dedicadas (substituem entityCrud)
+// Etapas agora são registros em trilha_etapas, não mais JSON em trilhas_aprendizagem.etapas
+app.get(
   "/api/trilhas",
-  createCrudRouter({
-    table: "trilhas_aprendizagem",
-    multiTenant: true, // Sprint 1
-    fields: ["cliente", "titulo", "descricao", "etapas"],
-    orderBy: "id DESC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
-  })
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listTrilhas
+);
+app.get(
+  "/api/trilhas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  getTrilha
+);
+app.post(
+  "/api/trilhas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  createTrilha
+);
+app.put(
+  "/api/trilhas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  updateTrilha
+);
+app.delete(
+  "/api/trilhas/:id",
+  authRequired,
+  authorizeRoles("coordenador"),
+  deleteTrilha
+);
+app.get(
+  "/api/trilhas/:id/progresso",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  getProgresso
+);
+app.post(
+  "/api/trilhas/:id/etapas/:etapaId/concluir",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  marcarEtapaConcluida
 );
 
 // Sprint 1: convertido de GET para POST — TRUNCATE nunca pode ser GET
@@ -821,6 +869,93 @@ app.post(
         message: "Erro ao importar dashboard.",
         error: error.message,
       });
+    }
+  }
+);
+
+// Sprint 3: Certificados
+app.get(
+  "/api/certificados",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listCertificados
+);
+app.get(
+  "/api/certificados/verificar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  verificarCertificado
+);
+app.post(
+  "/api/certificados/emitir",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  emitirCertificado
+);
+
+// Sprint 3: Minhas Turmas — self-service do treinando
+// Retorna treinamentos em que o usuário logado está inscrito (match por email)
+app.get(
+  "/api/minhas-turmas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  async (req, res) => {
+    try {
+      const userEmail = req.user?.email;
+      const userName  = req.user?.nome;
+      const perfil    = String(req.user?.perfil || "").toLowerCase().trim();
+      const empresaId = req.empresaId ?? null;
+
+      let rows;
+
+      if (["coordenador", "supervisor"].includes(perfil)) {
+        // Gestores veem todas as turmas do tenant
+        const tenantWhere = empresaId ? "WHERE t.empresa_id = ?" : "";
+        const params = empresaId ? [empresaId] : [];
+        [rows] = await pool.query(
+          `SELECT t.*, COUNT(tp.id) AS total_participantes
+           FROM treinamentos t
+           LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+           ${tenantWhere}
+           GROUP BY t.id
+           ORDER BY t.id DESC`,
+          params
+        );
+      } else {
+        // Instrutores: turmas onde são instrutores
+        // Treinandos: turmas onde estão inscritos como participantes
+        if (perfil === "instrutor") {
+          [rows] = await pool.query(
+            `SELECT t.*, COUNT(tp.id) AS total_participantes
+             FROM treinamentos t
+             LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+             WHERE LOWER(t.instrutor) = LOWER(?)
+               ${empresaId ? "AND t.empresa_id = ?" : ""}
+             GROUP BY t.id
+             ORDER BY t.id DESC`,
+            empresaId ? [userName, empresaId] : [userName]
+          );
+        } else {
+          // Treinando: por email (prioritário) ou por nome
+          [rows] = await pool.query(
+            `SELECT DISTINCT t.*, tp.status AS status_participante
+             FROM treinamentos t
+             JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+             WHERE (
+               (tp.email IS NOT NULL AND tp.email != '' AND LOWER(tp.email) = LOWER(?))
+               OR LOWER(tp.nome) = LOWER(?)
+             )
+             ${empresaId ? "AND t.empresa_id = ?" : ""}
+             ORDER BY t.id DESC`,
+            empresaId ? [userEmail, userName, empresaId] : [userEmail, userName]
+          );
+        }
+      }
+
+      return res.json(rows || []);
+    } catch (error) {
+      console.error("[minhas-turmas]", error.message);
+      return res.status(500).json({ ok: false, message: "Erro ao buscar turmas", error: error.message });
     }
   }
 );
