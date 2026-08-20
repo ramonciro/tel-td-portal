@@ -6,17 +6,20 @@ import { useEffect, useMemo, useState } from "react";
 import { clearSession, getStoredUser, hasSomeRole, hasOceanAccess } from "../services/api";
 
 const menuItems = [
-  { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor"] },
+  { href: "/inicio",        label: "Início",                 icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/dashboard",     label: "Dashboard",              icon: "📊", roles: ["coordenador", "supervisor"] },
   { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "🌊", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
-  { href: "/necessidades", label: "Necessidades", icon: "🎯", roles: ["coordenador", "supervisor", "superintendente"] },
-  { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/presencas", label: "Gestão de Turmas", icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
-  { href: "/usuarios", label: "Gestão de Usuários", icon: "👥", roles: ["coordenador", "supervisor"] },
-  { href: "/auditoria", label: "Auditoria", icon: "🛡️", roles: ["coordenador", "superintendente"] },
+  { href: "/necessidades",  label: "Necessidades",           icon: "🎯", roles: ["coordenador", "supervisor", "superintendente"] },
+  { href: "/trilhas",       label: "Trilhas",                icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/treinamentos",  label: "Treinamentos",           icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/presencas",     label: "Gestão de Turmas",       icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
+  // Sprint 3: self-service do treinando
+  { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "🎒", roles: ["instrutor", "treinando"] },
+  { href: "/certificados",  label: "Certificados",           icon: "🏆", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/biblioteca",    label: "Biblioteca",             icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/clientes",      label: "Clientes",               icon: "🏢", roles: ["coordenador", "supervisor"] },
+  { href: "/usuarios",      label: "Gestão de Usuários",     icon: "👥", roles: ["coordenador", "supervisor"] },
+  { href: "/auditoria",     label: "Auditoria",              icon: "🛡️", roles: ["coordenador", "superintendente"] },
 ];
 // Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
 // ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
