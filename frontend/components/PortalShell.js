@@ -6,6 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { clearSession, getStoredUser, hasSomeRole, hasOceanAccess } from "../services/api";
 
 const menuItems = [
+  // Sprint 4: Super Admin — menu exclusivo
+  { href: "/admin",         label: "Painel Super Admin",     icon: "⚙️", roles: ["super_admin"] },
+  // Menu operacional
   { href: "/inicio",        label: "Início",                 icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/dashboard",     label: "Dashboard",              icon: "📊", roles: ["coordenador", "supervisor"] },
   { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "🌊", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
@@ -13,7 +16,6 @@ const menuItems = [
   { href: "/trilhas",       label: "Trilhas",                icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/treinamentos",  label: "Treinamentos",           icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/presencas",     label: "Gestão de Turmas",       icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
-  // Sprint 3: self-service do treinando
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "🎒", roles: ["instrutor", "treinando"] },
   { href: "/certificados",  label: "Certificados",           icon: "🏆", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/biblioteca",    label: "Biblioteca",             icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
@@ -241,8 +243,21 @@ export default function PortalShell({
 
           <div style={sidebarFooter}>
             <div style={envCard}>
-              <span style={envLabel}>Ambiente</span>
-              <strong style={envValue}>Gestão Executiva de T&amp;D</strong>
+              {user?.perfil === "super_admin" ? (
+                <>
+                  <span style={{ ...envLabel, color: "#f59e0b" }}>Super Admin</span>
+                  <strong style={{ ...envValue, color: "#fbbf24" }}>Tel Centro de Contatos</strong>
+                </>
+              ) : (
+                <>
+                  <span style={envLabel}>
+                    {user?.nome ? user.nome.split(" ")[0] : "Usuário"}
+                  </span>
+                  <strong style={envValue}>
+                    {user?.cliente || "Portal T&D"}
+                  </strong>
+                </>
+              )}
             </div>
 
             <button
