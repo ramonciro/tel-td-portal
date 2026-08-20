@@ -8,7 +8,18 @@ const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
-const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
+const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } = require("./middlewares/auth");
+
+// Sprint 4: Admin (super_admin)
+const {
+  getGlobalStats,
+  listEmpresas,
+  getEmpresa,
+  createEmpresa,
+  updateEmpresa,
+  toggleAtivo,
+  listPlanos,
+} = require("./controllers/adminController");
 // Sprint 1: middleware de isolamento multi-tenant
 // Sprint 1: middleware de isolamento multi-tenant (import único)
 const { clientMiddleware } = require("./middlewares/clientMiddleware");
@@ -959,6 +970,20 @@ app.get(
     }
   }
 );
+
+// ─── Sprint 4: Admin / Super-Admin ───────────────────────────────────────────
+// Todas as rotas /api/admin/* exigem autenticação + perfil super_admin.
+// requireSuperAdmin retorna 403 imediatamente para qualquer outro perfil.
+
+app.get(  "/api/admin/stats",                  authRequired, requireSuperAdmin, getGlobalStats);
+app.get(  "/api/admin/planos",                 authRequired, requireSuperAdmin, listPlanos);
+app.get(  "/api/admin/empresas",               authRequired, requireSuperAdmin, listEmpresas);
+app.get(  "/api/admin/empresas/:id",           authRequired, requireSuperAdmin, getEmpresa);
+app.post( "/api/admin/empresas",               authRequired, requireSuperAdmin, createEmpresa);
+app.put(  "/api/admin/empresas/:id",           authRequired, requireSuperAdmin, updateEmpresa);
+app.post( "/api/admin/empresas/:id/toggle-ativo", authRequired, requireSuperAdmin, toggleAtivo);
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Sprint 1: authRequired adicionado — esta rota estava sem proteção
 app.use("/api/jornadas-etapas", authRequired, jornadasEtapasRoutes);
