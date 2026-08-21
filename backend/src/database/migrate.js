@@ -1,5 +1,129 @@
 // src/database/migrate.js
+const fs = require("fs");
+const path = require("path");
 const pool = require("../lib/db");
+
+/**
+ * Divide um arquivo SQL em statements simples.
+ * Os arquivos atuais do projeto usam SQL delimitado por ';' e não possuem
+ * procedures/triggers que exijam um parser completo.
+ */
+function splitSqlStatements(sql) {
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*--.*$/gm, "")
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Alguns Sprints foram escritos para execução manual e podem encontrar uma
+ * coluna, índice, tabela ou constraint que já exista no banco. Esses erros
+ * são seguros de ignorar durante uma migration idempotente.
+ */
+function isSafeAlreadyAppliedError(error) {
+  const safeCodes = new Set([
+    "ER_DUP_FIELDNAME",        // coluna já existe
+    "ER_DUP_KEYNAME",          // índice já existe
+    "ER_DUP_KEY",              // chave já existe
+    "ER_DUP_ENTRY",             // INSERT IGNORE/registro já existente
+    "ER_TABLE_EXISTS_ERROR",    // tabela já existe
+    "ER_FK_DUP_NAME",           // constraint já existe
+  ]);
+
+  if (safeCodes.has(error?.code)) return true;
+
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("duplicate column") ||
+    message.includes("duplicate key name") ||
+    message.includes("duplicate constraint") ||
+    message.includes("already exists")
+  );
+}
+
+async function ensureMigrationTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      migration VARCHAR(255) NOT NULL UNIQUE,
+      executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+async function hasMigration(migration) {
+  const [rows] = await pool.query(
+    "SELECT id FROM schema_migrations WHERE migration = ? LIMIT 1",
+    [migration]
+  );
+  return rows.length > 0;
+}
+
+async function executeSqlMigration(fileName) {
+  const migrationPath = path.resolve(
+    __dirname,
+    "../../../database/migrations",
+    fileName
+  );
+
+  if (!fs.existsSync(migrationPath)) {
+    throw new Error(`Arquivo de migration não encontrado: ${migrationPath}`);
+  }
+
+  if (await hasMigration(fileName)) {
+    console.log(`⏭️  Migration já aplicada: ${fileName}`);
+    return;
+  }
+
+  console.log(`▶️  Aplicando migration: ${fileName}`);
+
+  const sql = fs.readFileSync(migrationPath, "utf8");
+  const statements = splitSqlStatements(sql);
+
+  for (const statement of statements) {
+    try {
+      await pool.query(statement);
+    } catch (error) {
+      if (isSafeAlreadyAppliedError(error)) {
+        console.warn(
+          `⚠️  Ignorando alteração já existente em ${fileName}: ${error.message}`
+        );
+        continue;
+      }
+
+      throw new Error(
+        `Falha na migration ${fileName}: ${error.message}\nSQL: ${statement.slice(0, 500)}`
+      );
+    }
+  }
+
+  await pool.query(
+    "INSERT INTO schema_migrations (migration) VALUES (?)",
+    [fileName]
+  );
+
+  console.log(`✅ Migration concluída: ${fileName}`);
+}
+
+async function runSqlMigrations() {
+  await ensureMigrationTable();
+
+  // Pré-requis legado do Sprint 1. Ele existe separado dos Sprints e cria
+  // necessidades_treinamento, tabela usada pelo Sprint 1.
+  const migrations = [
+    "2026-07-18_necessidades_treinamento.sql",
+    "sprint1_multi_tenant.sql",
+    "sprint2_fix_biblioteca.sql",
+    "sprint3_lms_core.sql",
+    "sprint4_saas_foundation.sql",
+  ];
+
+  for (const migration of migrations) {
+    await executeSqlMigration(migration);
+  }
+}
 
 async function runMigrations() {
   try {
@@ -146,6 +270,10 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
+
+    // Sprints SQL versionados — executados uma única vez e registrados em
+    // schema_migrations para que novos deploys do Railway sejam seguros.
+    await runSqlMigrations();
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
