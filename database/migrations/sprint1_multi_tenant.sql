@@ -1,159 +1,125 @@
 -- ============================================================
--- MIGRATION: Sprint 1 — Multi-tenancy Foundation
+-- MIGRATION: Sprint 1 — Multi-tenancy Foundation (MySQL 5.x compatível)
 -- Arquivo: database/migrations/sprint1_multi_tenant.sql
--- Executar: uma única vez em produção, em manutenção
--- ============================================================
--- 
--- O que faz:
---   1. Cria tabela `empresas` como entidade canônica de tenant
---   2. Adiciona empresa_id nas 9 tabelas centrais que não tinham
---   3. Cria empresa padrão e migra registros existentes para ela
---   4. Adiciona índices para performance das queries filtradas
---   5. NÃO adiciona FK obrigatória nas tabelas de dados (para
---      não quebrar registros legados) — FK fica como opcional (NULL)
 --
--- IMPORTANTE: Testar em ambiente de homologação antes de produção.
+-- CORREÇÃO: versão anterior usava ADD COLUMN IF NOT EXISTS e
+-- CREATE INDEX IF NOT EXISTS que não existem no MySQL 5.x do Railway.
+-- Esta versão usa stored procedures auxiliares para simular IF NOT EXISTS.
+-- Pode ser executada múltiplas vezes com segurança.
 -- ============================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ─── 1. Tabela canônica de tenants ───────────────────────────────────────────
--- Unifica 'empresas' (usada por usuarios) e 'clientes' (ambiente de login).
--- O campo `codigo` é o identificador de URL/ambiente (ex: 'dasa', 'sebrae').
+-- ─── Stored procedures auxiliares ─────────────────────────────────────────────
 
+DROP PROCEDURE IF EXISTS _add_col;
+DELIMITER $$
+CREATE PROCEDURE _add_col(IN p_table VARCHAR(100), IN p_col VARCHAR(100), IN p_def VARCHAR(500))
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col
+  ) THEN
+    SET @_s = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+    PREPARE _st FROM @_s; EXECUTE _st; DEALLOCATE PREPARE _st;
+  END IF;
+END $$
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS _add_idx;
+DELIMITER $$
+CREATE PROCEDURE _add_idx(IN p_table VARCHAR(100), IN p_idx VARCHAR(100), IN p_def TEXT)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_idx
+  ) THEN
+    SET @_s = CONCAT('ALTER TABLE `', p_table, '` ADD ', p_def);
+    PREPARE _st FROM @_s; EXECUTE _st; DEALLOCATE PREPARE _st;
+  END IF;
+END $$
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS _safe_col;
+DELIMITER $$
+CREATE PROCEDURE _safe_col(IN p_table VARCHAR(100), IN p_col VARCHAR(100), IN p_def VARCHAR(500))
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table
+  ) THEN
+    CALL _add_col(p_table, p_col, p_def);
+  END IF;
+END $$
+DELIMITER ;
+
+-- ─── 1. Tabela canônica de tenants ────────────────────────────────────────────
+-- CREATE TABLE suporta IF NOT EXISTS normalmente no MySQL 5.x
 CREATE TABLE IF NOT EXISTS empresas (
-  id          INT AUTO_INCREMENT PRIMARY KEY,
-  codigo      VARCHAR(50)  UNIQUE NOT NULL,
-  nome        VARCHAR(150) NOT NULL,
-  ativo       BOOLEAN      DEFAULT TRUE,
-  plano       VARCHAR(50)  DEFAULT 'basico',   -- 'basico' | 'profissional' | 'enterprise'
-  max_usuarios INT         DEFAULT 50,
-  criado_em   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-  atualizado_em TIMESTAMP  DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  id        INT AUTO_INCREMENT PRIMARY KEY,
+  nome      VARCHAR(150) NOT NULL,
+  ativo     TINYINT(1)   DEFAULT 1,
+  criado_em TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 
--- Empresa padrão para registros existentes (migração sem perda de dados)
-INSERT INTO empresas (id, codigo, nome, ativo)
-VALUES (1, 'padrao', 'Tel Centro de Contatos', TRUE)
+-- Empresa padrão: todos os registros existentes ficam aqui
+INSERT INTO empresas (id, nome, ativo)
+VALUES (1, 'Tel Centro de Contatos', 1)
 ON DUPLICATE KEY UPDATE nome = VALUES(nome);
 
--- ─── 2. usuarios — garante que empresa_id existe e aponta para empresas ──────
--- A coluna pode já existir (de migrate anterior) — usa IF NOT EXISTS
-
-ALTER TABLE usuarios
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL DEFAULT 1,
-  ADD CONSTRAINT IF NOT EXISTS fk_usuarios_empresa
-    FOREIGN KEY (empresa_id) REFERENCES empresas(id) ON DELETE SET NULL;
-
--- Migrar registros sem empresa_id para a empresa padrão
+-- ─── 2. usuarios ──────────────────────────────────────────────────────────────
+CALL _add_col('usuarios', 'empresa_id', 'INT NULL DEFAULT 1');
 UPDATE usuarios SET empresa_id = 1 WHERE empresa_id IS NULL;
+CALL _add_idx('usuarios', 'idx_usuarios_empresa', 'INDEX idx_usuarios_empresa (empresa_id)');
 
--- ─── 3. treinamentos ─────────────────────────────────────────────────────────
-ALTER TABLE treinamentos
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL DEFAULT 1;
-
+-- ─── 3. treinamentos ──────────────────────────────────────────────────────────
+CALL _add_col('treinamentos', 'empresa_id', 'INT NULL DEFAULT 1');
 UPDATE treinamentos SET empresa_id = 1 WHERE empresa_id IS NULL;
+CALL _add_idx('treinamentos', 'idx_treinamentos_empresa', 'INDEX idx_treinamentos_empresa (empresa_id)');
 
-CREATE INDEX IF NOT EXISTS idx_treinamentos_empresa
-  ON treinamentos (empresa_id);
+-- ─── 4. necessidades_treinamento ──────────────────────────────────────────────
+CALL _safe_col('necessidades_treinamento', 'empresa_id', 'INT NULL DEFAULT 1');
+CALL _add_idx('necessidades_treinamento', 'idx_necessidades_empresa', 'INDEX idx_necessidades_empresa (empresa_id)');
 
--- ─── 4. necessidades ─────────────────────────────────────────────────────────
-ALTER TABLE necessidades_treinamento
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL DEFAULT 1;
+-- ─── 5. trilhas_aprendizagem ──────────────────────────────────────────────────
+CALL _safe_col('trilhas_aprendizagem', 'empresa_id', 'INT NULL DEFAULT 1');
+CALL _add_idx('trilhas_aprendizagem', 'idx_trilhas_empresa', 'INDEX idx_trilhas_empresa (empresa_id)');
 
-UPDATE necessidades_treinamento SET empresa_id = 1 WHERE empresa_id IS NULL;
+-- ─── 6. clientes ──────────────────────────────────────────────────────────────
+CALL _safe_col('clientes', 'empresa_id', 'INT NULL DEFAULT 1');
+CALL _add_idx('clientes', 'idx_clientes_empresa', 'INDEX idx_clientes_empresa (empresa_id)');
 
-CREATE INDEX IF NOT EXISTS idx_necessidades_empresa
-  ON necessidades_treinamento (empresa_id);
+-- ─── 7. tabelas opcionais (existem dependendo do schema legado) ───────────────
+CALL _safe_col('avaliacoes',           'empresa_id', 'INT NULL DEFAULT 1');
+CALL _safe_col('materiais_avaliativos','empresa_id', 'INT NULL DEFAULT 1');
+CALL _safe_col('auditoria_log',        'empresa_id', 'INT NULL DEFAULT 1');
+CALL _safe_col('biblioteca',           'empresa_id', 'INT NULL DEFAULT 1');
+CALL _safe_col('presencas',            'empresa_id', 'INT NULL DEFAULT 1');
+CALL _safe_col('presenca_aulas',       'empresa_id', 'INT NULL DEFAULT 1');
+CALL _safe_col('turma_aulas',          'empresa_id', 'INT NULL DEFAULT 1');
 
--- ─── 5. trilhas_aprendizagem ─────────────────────────────────────────────────
-ALTER TABLE trilhas_aprendizagem
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL DEFAULT 1;
+-- Índices opcionais
+CALL _add_idx('avaliacoes', 'idx_avaliacoes_empresa',
+  'INDEX idx_avaliacoes_empresa (empresa_id)');
 
-UPDATE trilhas_aprendizagem SET empresa_id = 1 WHERE empresa_id IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_trilhas_empresa
-  ON trilhas_aprendizagem (empresa_id);
-
--- ─── 6. clientes (operações/contas comerciais por empresa) ───────────────────
--- Nota: 'clientes' aqui são as operações (Dasa, Cemig etc.), não os tenants.
--- Cada tenant tem suas próprias operações.
-ALTER TABLE clientes
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL DEFAULT 1;
-
-UPDATE clientes SET empresa_id = 1 WHERE empresa_id IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_clientes_empresa
-  ON clientes (empresa_id);
-
--- ─── 7. biblioteca ───────────────────────────────────────────────────────────
-ALTER TABLE biblioteca
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL DEFAULT 1;
-
-UPDATE biblioteca SET empresa_id = 1 WHERE empresa_id IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_biblioteca_empresa
-  ON biblioteca (empresa_id);
-
--- ─── 8. avaliacoes ───────────────────────────────────────────────────────────
--- (derivada de treinamentos — pode ser filtrada via JOIN, mas índice direto
---  evita N+1 quando consultada de forma independente)
-ALTER TABLE avaliacoes
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL DEFAULT 1;
-
-UPDATE avaliacoes SET empresa_id = 1 WHERE empresa_id IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_avaliacoes_empresa
-  ON avaliacoes (empresa_id);
-
--- ─── 9. materiais_avaliativos ─────────────────────────────────────────────────
-ALTER TABLE materiais_avaliativos
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL DEFAULT 1;
-
+-- UPDATE registros existentes — migra tudo para empresa padrão (id=1)
+UPDATE avaliacoes            SET empresa_id = 1 WHERE empresa_id IS NULL;
 UPDATE materiais_avaliativos SET empresa_id = 1 WHERE empresa_id IS NULL;
 
-CREATE INDEX IF NOT EXISTS idx_materiais_empresa
-  ON materiais_avaliativos (empresa_id);
-
--- ─── 10. auditoria_log — empresa_id para particionamento de logs ─────────────
-ALTER TABLE auditoria_log
-  ADD COLUMN IF NOT EXISTS empresa_id INT NULL;
-
-UPDATE auditoria_log SET empresa_id = 1 WHERE empresa_id IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_auditoria_empresa
-  ON auditoria_log (empresa_id);
-
--- ─── Verificação final ────────────────────────────────────────────────────────
--- Execute este SELECT para confirmar que as colunas foram criadas:
-SELECT
-  table_name,
-  COUNT(*) AS total_registros
-FROM information_schema.columns c
-JOIN (
-  SELECT table_name, COUNT(*) AS total_registros
-  FROM (
-    SELECT 'treinamentos'          AS table_name UNION ALL
-    SELECT 'usuarios'              AS table_name UNION ALL
-    SELECT 'necessidades_treinamento' AS table_name UNION ALL
-    SELECT 'trilhas_aprendizagem'  AS table_name UNION ALL
-    SELECT 'clientes'              AS table_name UNION ALL
-    SELECT 'biblioteca'            AS table_name UNION ALL
-    SELECT 'avaliacoes'            AS table_name UNION ALL
-    SELECT 'materiais_avaliativos' AS table_name UNION ALL
-    SELECT 'auditoria_log'         AS table_name
-  ) t
-  GROUP BY table_name
-) tabelas USING (table_name)
-WHERE c.column_name = 'empresa_id'
-  AND c.table_schema = DATABASE()
-GROUP BY c.table_name
-ORDER BY c.table_name;
+-- ─── Limpeza ──────────────────────────────────────────────────────────────────
+DROP PROCEDURE IF EXISTS _add_col;
+DROP PROCEDURE IF EXISTS _add_idx;
+DROP PROCEDURE IF EXISTS _safe_col;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- ─── Rollback (caso necessário) ───────────────────────────────────────────────
--- Para reverter: remova as colunas empresa_id e drope os índices.
--- Exemplo para 'treinamentos':
---   ALTER TABLE treinamentos DROP INDEX idx_treinamentos_empresa;
---   ALTER TABLE treinamentos DROP COLUMN empresa_id;
+-- ─── Verificação final ────────────────────────────────────────────────────────
+-- Deve listar todas as tabelas que receberam empresa_id:
+SELECT
+  TABLE_NAME   AS tabela,
+  COLUMN_TYPE  AS tipo,
+  COLUMN_DEFAULT AS default_val
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND COLUMN_NAME  = 'empresa_id'
+ORDER BY TABLE_NAME;
