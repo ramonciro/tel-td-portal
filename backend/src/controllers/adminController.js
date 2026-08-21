@@ -184,11 +184,17 @@ async function createEmpresa(req, res) {
       return res.status(400).json({ ok: false, message: 'nome, admin_nome e admin_email são obrigatórios.' });
     }
 
-    // Busca limites do plano
-    const [planoRows] = await conn.query(
-      'SELECT * FROM planos WHERE slug = ? LIMIT 1', [plano]
-    );
-    const planoData = planoRows[0] || { limite_usuarios: 50, limite_turmas: 100 };
+    // Busca limites do plano (com fallback se tabela não existe)
+    let planoData = { limite_usuarios: 50, limite_turmas: 100 };
+    try {
+      const [planoRows] = await conn.query('SELECT * FROM planos WHERE slug = ? LIMIT 1', [plano]);
+      if (planoRows[0]) planoData = planoRows[0];
+    } catch (_) {
+      // Tabela planos pendente — usa defaults do plano selecionado
+      const defaults = { basico: [30, 50], profissional: [100, 300], enterprise: [9999, 9999] };
+      const d = defaults[plano] || [50, 100];
+      planoData = { limite_usuarios: d[0], limite_turmas: d[1] };
+    }
 
     // Cria empresa
     const [empResult] = await conn.query(
@@ -330,12 +336,22 @@ async function toggleAtivo(req, res) {
 }
 
 /* ─── GET /api/admin/planos ─────────────────────────────────────────────── */
+// Fallback hardcoded: retornado se a tabela planos ainda não foi criada
+// (Sprint 4 migration pendente). O wizard de criação de tenant funciona
+// mesmo sem a migration aplicada.
+const PLANOS_PADRAO = [
+  { id: 1, slug: 'basico',       nome: 'Básico',       limite_usuarios: 30,   limite_turmas: 50,   limite_storage_mb: 512,   descricao: 'Até 30 usuários e 50 turmas' },
+  { id: 2, slug: 'profissional', nome: 'Profissional', limite_usuarios: 100,  limite_turmas: 300,  limite_storage_mb: 2048,  descricao: 'Até 100 usuários e 300 turmas' },
+  { id: 3, slug: 'enterprise',   nome: 'Enterprise',   limite_usuarios: 9999, limite_turmas: 9999, limite_storage_mb: 10240, descricao: 'Sem limites operacionais' },
+];
+
 async function listPlanos(req, res) {
   try {
     const [rows] = await pool.query('SELECT * FROM planos WHERE ativo = 1 ORDER BY limite_usuarios ASC');
-    return res.json(rows);
-  } catch (error) {
-    return res.status(500).json({ ok: false, message: 'Erro ao listar planos', error: error.message });
+    return res.json(rows.length ? rows : PLANOS_PADRAO);
+  } catch (_) {
+    // Tabela não existe ainda — retorna planos padrão em memória
+    return res.json(PLANOS_PADRAO);
   }
 }
 
