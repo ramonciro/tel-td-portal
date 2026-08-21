@@ -1,67 +1,65 @@
-# Hotfix v2 — Migrations compatíveis com MySQL 5.x (Railway)
-**Problema raiz:** ADD COLUMN IF NOT EXISTS e CREATE INDEX IF NOT EXISTS
-não existem no MySQL 5.x do Railway. Todas as migrations anteriores
-usavam essa sintaxe e falhavam silenciosamente.
+# Hotfix v3 — MySQL 5.x sem DELIMITER (Railway compatível)
+
+## Por que esta versão?
+
+O Railway Query Editor **não suporta DELIMITER $$**, portanto stored
+procedures nunca foram criadas nas versões anteriores. Os blocos
+`$$...$$` foram ignorados silenciosamente e as migrações não rodaram.
+
+Esta versão usa apenas `SET @sql = IF(...) + PREPARE/EXECUTE` — sintaxe
+padrão MySQL que funciona em qualquer cliente, incluindo o Railway.
 
 ---
 
-## Arquivos incluídos
+## Sequência de aplicação (Railway Query Editor)
 
-| Arquivo | Status |
-|---|---|
-| `database/migrations/sprint1_multi_tenant.sql` | ✅ Reescrito — MySQL 5.x |
-| `database/migrations/sprint3_lms_core.sql` | ✅ Já era compatível (só CREATE TABLE IF NOT EXISTS) |
-| `database/migrations/sprint4_saas_foundation.sql` | ✅ Reescrito — MySQL 5.x |
-| `backend/src/controllers/adminController.js` | ✅ createEmpresa resiliente |
-| `frontend/components/PortalShell.js` | ✅ Redirect super_admin robusto |
+### 0. Diagnóstico (opcional mas recomendado)
+Execute `database/migrations/diagnostico.sql` para ver o estado atual do banco.
+Não altera nada — só lê.
 
----
-
-## Sequência obrigatória de execução
-
-Execute **na ordem** no Query Editor do Railway:
-
-### 1. Sprint 1 (multi-tenant — empresa_id em todas as tabelas)
+### 1. Sprint 1 (empresa_id em todas as tabelas)
 ```
 database/migrations/sprint1_multi_tenant.sql
 ```
-Após executar, verifique o SELECT no final — deve listar todas as tabelas
-que receberam empresa_id (usuarios, treinamentos, clientes, etc.)
+Ao final exibe SELECT mostrando todas as tabelas que receberam empresa_id.
 
-### 2. Sprint 3 (LMS — trilha_etapas, certificados, password_reset_tokens)
+### 2. Sprint 3 (novas tabelas LMS)
 ```
 database/migrations/sprint3_lms_core.sql
 ```
-Cria 4 novas tabelas. Sem alterações em tabelas existentes.
+Cria: trilha_etapas, trilha_progresso, certificados, password_reset_tokens
 
-### 3. Sprint 4 (SaaS — planos, colunas extras em empresas, super_admin)
+### 3. Sprint 4 (planos + colunas SaaS em empresas + super_admin)
 ```
 database/migrations/sprint4_saas_foundation.sql
 ```
-Adiciona colunas em empresas, cria tabela planos, adiciona super_admin em usuarios.
+Ao final exibe SELECT de verificação.
 
 ---
 
-## Após rodar as migrations
+## Após migrations — promover super_admin
 
 ```sql
--- Promover usuário a super_admin:
 UPDATE usuarios
 SET super_admin = 1, perfil = 'super_admin'
 WHERE email = 'seu@email.com';
 ```
 
-Depois: **Logout → Login** para gerar novo token.
+Depois: **logout → login** para gerar novo token.
 
 ---
 
-## Por que as stored procedures?
+## Arquivos de código
 
-MySQL 5.x não suporta:
-- ALTER TABLE ... ADD COLUMN IF NOT EXISTS
-- CREATE INDEX IF NOT EXISTS
-- ADD CONSTRAINT IF NOT EXISTS
+| Arquivo | Mudança |
+|---|---|
+| `backend/src/controllers/adminController.js` | Todas as queries com try/catch individual — funciona mesmo sem migrations |
+| `frontend/components/PortalShell.js` | Redirect super_admin robusto |
 
-A solução: stored procedure `_add_col` que consulta
-information_schema antes de executar o ALTER TABLE.
-Pode ser executada quantas vezes quiser sem duplicar colunas.
+---
+
+## O adminController agora é bulletproof
+
+Cada query de coluna opcional (`empresa_id`, `super_admin`, `certificados`, `planos`)
+tem `try/catch` individual e retorna `0` ou array vazio se a coluna/tabela não existe.
+`createEmpresa` tem dois caminhos: com `empresa_id` e sem (fallback automático).
