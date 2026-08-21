@@ -72,15 +72,32 @@ export default function PortalShell({
     setUser(getStoredUser());
   }, []);
 
+  // Sprint 4: super_admin não opera em rotas normais — redireciona para /admin.
+  // Checamos tanto o estado React quanto o localStorage diretamente para cobrir
+  // o caso de o estado ainda não ter sido hidratado (race condition no mount).
+  useEffect(() => {
+    const storedUser = getStoredUser();
+    const perfil = storedUser?.perfil || user?.perfil || "";
+    if (perfil === "super_admin" && !pathname.startsWith("/admin")) {
+      router.replace("/admin");
+    }
+  }, [user, pathname]);
+
+  const isSuperAdmin = user?.perfil === "super_admin";
+
   const allowedMenuItems = useMemo(() => {
     if (!user) return [];
+    // super_admin vê apenas os itens do próprio menu (/admin)
+    if (isSuperAdmin) {
+      return menuItems.filter((item) => item.roles.includes("super_admin"));
+    }
     return menuItems.filter((item) => {
       const roleOk = hasSomeRole(user, item.roles);
       if (!roleOk) return false;
       if (item.requiresOceanAccess) return hasOceanAccess(user);
       return true;
     });
-  }, [user]);
+  }, [user, isSuperAdmin]);
 
   const currentItem = useMemo(() => {
     return menuItems.find(
@@ -91,11 +108,13 @@ export default function PortalShell({
   const currentAllowed = useMemo(() => {
     if (!currentItem) return true;
     if (!user) return false;
+    // super_admin tem acesso irrestrito no frontend
+    if (isSuperAdmin) return true;
     const roleOk = hasSomeRole(user, currentItem.roles);
     if (!roleOk) return false;
     if (currentItem.requiresOceanAccess) return hasOceanAccess(user);
     return true;
-  }, [currentItem, user]);
+  }, [currentItem, user, isSuperAdmin]);
 
   function handleLogout() {
     clearSession();
