@@ -33,16 +33,20 @@ async function getEmpresaStats(empresaId) {
   const [[{ total_turmas }]] = await pool.query(
     'SELECT COUNT(*) AS total_turmas FROM treinamentos WHERE empresa_id = ?', [empresaId]
   );
-  const [[{ total_certificados }]] = await pool.query(
-    'SELECT COUNT(*) AS total_certificados FROM certificados WHERE empresa_id = ?', [empresaId]
-  );
+  let total_certificados = 0;
+  try {
+    const [[{ tc }]] = await pool.query(
+      'SELECT COUNT(*) AS tc FROM certificados WHERE empresa_id = ?', [empresaId]
+    );
+    total_certificados = Number(tc || 0);
+  } catch (_) { /* Sprint 3 migration pendente */ }
   const [[{ total_presencas }]] = await pool.query(
     'SELECT COUNT(*) AS total_presencas FROM presencas WHERE empresa_id = ?', [empresaId]
   );
   return {
     total_usuarios:    Number(total_usuarios    || 0),
     total_turmas:      Number(total_turmas      || 0),
-    total_certificados:Number(total_certificados|| 0),
+    total_certificados: total_certificados,
     total_presencas:   Number(total_presencas   || 0),
   };
 }
@@ -57,14 +61,16 @@ async function getGlobalStats(req, res) {
       "SELECT COUNT(*) AS total_empresas FROM empresas"
     );
     const [[{ total_usuarios }]] = await pool.query(
-      "SELECT COUNT(*) AS total_usuarios FROM usuarios WHERE super_admin = 0"
+      "SELECT COUNT(*) AS total_usuarios FROM usuarios"
     );
     const [[{ total_turmas }]] = await pool.query(
       "SELECT COUNT(*) AS total_turmas FROM treinamentos"
     );
-    const [[{ total_certificados }]] = await pool.query(
-      "SELECT COUNT(*) AS total_certificados FROM certificados"
-    );
+    let total_certificados = 0;
+    try {
+      const [[{ tc }]] = await pool.query("SELECT COUNT(*) AS tc FROM certificados");
+      total_certificados = Number(tc || 0);
+    } catch (_) { /* Sprint 3 migration pendente */ }
     const [porPlano] = await pool.query(
       "SELECT plano, COUNT(*) AS qtd FROM empresas GROUP BY plano ORDER BY qtd DESC"
     );
@@ -74,7 +80,7 @@ async function getGlobalStats(req, res) {
       total_empresas:    Number(total_empresas    || 0),
       total_usuarios:    Number(total_usuarios    || 0),
       total_turmas:      Number(total_turmas      || 0),
-      total_certificados:Number(total_certificados|| 0),
+      total_certificados: total_certificados,
       distribuicao_planos: porPlano,
     });
   } catch (error) {
@@ -84,22 +90,49 @@ async function getGlobalStats(req, res) {
 }
 
 /* ─── GET /api/admin/empresas ───────────────────────────────────────────── */
+// Contagens em queries separadas com fallback 0 para tabelas opcionais
+// (certificados só existe após Sprint 3 migration; super_admin após Sprint 4).
 async function listEmpresas(req, res) {
   try {
-    const [empresas] = await pool.query(
-      `SELECT e.*,
-         (SELECT COUNT(*) FROM usuarios u WHERE u.empresa_id = e.id AND u.super_admin = 0) AS total_usuarios,
-         (SELECT COUNT(*) FROM treinamentos t WHERE t.empresa_id = e.id)                   AS total_turmas,
-         (SELECT COUNT(*) FROM certificados c WHERE c.empresa_id = e.id)                   AS total_certificados
-       FROM empresas e
-       ORDER BY e.ativo DESC, e.nome ASC`
+    const [empresas] = await pool.query('SELECT * FROM empresas ORDER BY nome ASC');
+
+    // Usuários por empresa
+    const [uRows] = await pool.query(
+      'SELECT empresa_id, COUNT(*) AS qtd FROM usuarios WHERE empresa_id IS NOT NULL GROUP BY empresa_id'
     );
-    return res.json(empresas);
+    const uMap = {};
+    uRows.forEach((r) => { uMap[r.empresa_id] = Number(r.qtd); });
+
+    // Turmas por empresa
+    const [tRows] = await pool.query(
+      'SELECT empresa_id, COUNT(*) AS qtd FROM treinamentos WHERE empresa_id IS NOT NULL GROUP BY empresa_id'
+    );
+    const tMap = {};
+    tRows.forEach((r) => { tMap[r.empresa_id] = Number(r.qtd); });
+
+    // Certificados por empresa — tabela criada no Sprint 3, pode não existir
+    const cMap = {};
+    try {
+      const [cRows] = await pool.query(
+        'SELECT empresa_id, COUNT(*) AS qtd FROM certificados WHERE empresa_id IS NOT NULL GROUP BY empresa_id'
+      );
+      cRows.forEach((r) => { cMap[r.empresa_id] = Number(r.qtd); });
+    } catch (_) { /* Sprint 3 migration pendente — ignora silenciosamente */ }
+
+    const result = empresas.map((e) => ({
+      ...e,
+      total_usuarios:     uMap[e.id] || 0,
+      total_turmas:       tMap[e.id] || 0,
+      total_certificados: cMap[e.id] || 0,
+    }));
+
+    return res.json(result);
   } catch (error) {
     console.error('[admin] listEmpresas:', error.message);
     return res.status(500).json({ ok: false, message: 'Erro ao listar empresas', error: error.message });
   }
 }
+
 
 /* ─── GET /api/admin/empresas/:id ──────────────────────────────────────── */
 async function getEmpresa(req, res) {
@@ -117,7 +150,7 @@ async function getEmpresa(req, res) {
     // Usuários administradores do tenant
     const [admins] = await pool.query(
       `SELECT id, nome, email, perfil, ativo, criado_em
-       FROM usuarios WHERE empresa_id = ? AND super_admin = 0
+       FROM usuarios WHERE empresa_id = ?
        ORDER BY perfil DESC, nome ASC`,
       [id]
     );
