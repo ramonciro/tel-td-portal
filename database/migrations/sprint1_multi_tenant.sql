@@ -1,60 +1,14 @@
--- ============================================================
--- MIGRATION: Sprint 1 — Multi-tenancy Foundation (MySQL 5.x compatível)
--- Arquivo: database/migrations/sprint1_multi_tenant.sql
---
--- CORREÇÃO: versão anterior usava ADD COLUMN IF NOT EXISTS e
--- CREATE INDEX IF NOT EXISTS que não existem no MySQL 5.x do Railway.
--- Esta versão usa stored procedures auxiliares para simular IF NOT EXISTS.
--- Pode ser executada múltiplas vezes com segurança.
--- ============================================================
+-- ================================================================
+-- Sprint 1 — Multi-tenancy (MySQL 5.x, sem DELIMITER, sem procedures)
+-- ================================================================
+-- Usa: SET @sql = IF(...) + PREPARE/EXECUTE
+-- Compatível com Railway Query Editor e qualquer cliente MySQL.
+-- Pode ser executado múltiplas vezes sem erro.
+-- ================================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ─── Stored procedures auxiliares ─────────────────────────────────────────────
-
-DROP PROCEDURE IF EXISTS _add_col;
-DELIMITER $$
-CREATE PROCEDURE _add_col(IN p_table VARCHAR(100), IN p_col VARCHAR(100), IN p_def VARCHAR(500))
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col
-  ) THEN
-    SET @_s = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
-    PREPARE _st FROM @_s; EXECUTE _st; DEALLOCATE PREPARE _st;
-  END IF;
-END $$
-DELIMITER ;
-
-DROP PROCEDURE IF EXISTS _add_idx;
-DELIMITER $$
-CREATE PROCEDURE _add_idx(IN p_table VARCHAR(100), IN p_idx VARCHAR(100), IN p_def TEXT)
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.STATISTICS
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_idx
-  ) THEN
-    SET @_s = CONCAT('ALTER TABLE `', p_table, '` ADD ', p_def);
-    PREPARE _st FROM @_s; EXECUTE _st; DEALLOCATE PREPARE _st;
-  END IF;
-END $$
-DELIMITER ;
-
-DROP PROCEDURE IF EXISTS _safe_col;
-DELIMITER $$
-CREATE PROCEDURE _safe_col(IN p_table VARCHAR(100), IN p_col VARCHAR(100), IN p_def VARCHAR(500))
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.TABLES
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table
-  ) THEN
-    CALL _add_col(p_table, p_col, p_def);
-  END IF;
-END $$
-DELIMITER ;
-
--- ─── 1. Tabela canônica de tenants ────────────────────────────────────────────
--- CREATE TABLE suporta IF NOT EXISTS normalmente no MySQL 5.x
+-- ─── 1. Tabela empresas (tenants) ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS empresas (
   id        INT AUTO_INCREMENT PRIMARY KEY,
   nome      VARCHAR(150) NOT NULL,
@@ -62,63 +16,109 @@ CREATE TABLE IF NOT EXISTS empresas (
   criado_em TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 
--- Empresa padrão: todos os registros existentes ficam aqui
 INSERT INTO empresas (id, nome, ativo)
 VALUES (1, 'Tel Centro de Contatos', 1)
 ON DUPLICATE KEY UPDATE nome = VALUES(nome);
 
--- ─── 2. usuarios ──────────────────────────────────────────────────────────────
-CALL _add_col('usuarios', 'empresa_id', 'INT NULL DEFAULT 1');
+-- ─── 2. usuarios.empresa_id ────────────────────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='usuarios' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE usuarios ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''usuarios.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 UPDATE usuarios SET empresa_id = 1 WHERE empresa_id IS NULL;
-CALL _add_idx('usuarios', 'idx_usuarios_empresa', 'INDEX idx_usuarios_empresa (empresa_id)');
 
--- ─── 3. treinamentos ──────────────────────────────────────────────────────────
-CALL _add_col('treinamentos', 'empresa_id', 'INT NULL DEFAULT 1');
+-- ─── 3. treinamentos.empresa_id ────────────────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='treinamentos' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE treinamentos ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''treinamentos.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 UPDATE treinamentos SET empresa_id = 1 WHERE empresa_id IS NULL;
-CALL _add_idx('treinamentos', 'idx_treinamentos_empresa', 'INDEX idx_treinamentos_empresa (empresa_id)');
 
--- ─── 4. necessidades_treinamento ──────────────────────────────────────────────
-CALL _safe_col('necessidades_treinamento', 'empresa_id', 'INT NULL DEFAULT 1');
-CALL _add_idx('necessidades_treinamento', 'idx_necessidades_empresa', 'INDEX idx_necessidades_empresa (empresa_id)');
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='treinamentos' AND INDEX_NAME='idx_treinamentos_empresa') = 0,
+  'ALTER TABLE treinamentos ADD INDEX idx_treinamentos_empresa (empresa_id)',
+  'SELECT ''index ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
--- ─── 5. trilhas_aprendizagem ──────────────────────────────────────────────────
-CALL _safe_col('trilhas_aprendizagem', 'empresa_id', 'INT NULL DEFAULT 1');
-CALL _add_idx('trilhas_aprendizagem', 'idx_trilhas_empresa', 'INDEX idx_trilhas_empresa (empresa_id)');
+-- ─── 4. clientes.empresa_id ────────────────────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='clientes' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE clientes ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''clientes.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
+UPDATE clientes SET empresa_id = 1 WHERE empresa_id IS NULL;
 
--- ─── 6. clientes ──────────────────────────────────────────────────────────────
-CALL _safe_col('clientes', 'empresa_id', 'INT NULL DEFAULT 1');
-CALL _add_idx('clientes', 'idx_clientes_empresa', 'INDEX idx_clientes_empresa (empresa_id)');
+-- ─── 5. avaliacoes.empresa_id ──────────────────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='avaliacoes' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE avaliacoes ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''avaliacoes.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
+UPDATE avaliacoes SET empresa_id = 1 WHERE empresa_id IS NULL;
 
--- ─── 7. tabelas opcionais (existem dependendo do schema legado) ───────────────
-CALL _safe_col('avaliacoes',           'empresa_id', 'INT NULL DEFAULT 1');
-CALL _safe_col('materiais_avaliativos','empresa_id', 'INT NULL DEFAULT 1');
-CALL _safe_col('auditoria_log',        'empresa_id', 'INT NULL DEFAULT 1');
-CALL _safe_col('biblioteca',           'empresa_id', 'INT NULL DEFAULT 1');
-CALL _safe_col('presencas',            'empresa_id', 'INT NULL DEFAULT 1');
-CALL _safe_col('presenca_aulas',       'empresa_id', 'INT NULL DEFAULT 1');
-CALL _safe_col('turma_aulas',          'empresa_id', 'INT NULL DEFAULT 1');
+-- ─── 6. trilhas_aprendizagem.empresa_id ────────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='trilhas_aprendizagem' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE trilhas_aprendizagem ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''trilhas_aprendizagem.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
--- Índices opcionais
-CALL _add_idx('avaliacoes', 'idx_avaliacoes_empresa',
-  'INDEX idx_avaliacoes_empresa (empresa_id)');
+-- ─── 7. presencas.empresa_id ───────────────────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='presencas' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE presencas ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''presencas.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
--- UPDATE registros existentes — migra tudo para empresa padrão (id=1)
-UPDATE avaliacoes            SET empresa_id = 1 WHERE empresa_id IS NULL;
-UPDATE materiais_avaliativos SET empresa_id = 1 WHERE empresa_id IS NULL;
+-- ─── 8. necessidades_treinamento.empresa_id ────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='necessidades_treinamento' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE necessidades_treinamento ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''necessidades_treinamento.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
--- ─── Limpeza ──────────────────────────────────────────────────────────────────
-DROP PROCEDURE IF EXISTS _add_col;
-DROP PROCEDURE IF EXISTS _add_idx;
-DROP PROCEDURE IF EXISTS _safe_col;
+-- ─── 9. auditoria_log.empresa_id ───────────────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='auditoria_log' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE auditoria_log ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''auditoria_log.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
+
+-- ─── 10. materiais_avaliativos.empresa_id ──────────────────────────────────────
+SET @sql = IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='materiais_avaliativos' AND COLUMN_NAME='empresa_id') = 0,
+  'ALTER TABLE materiais_avaliativos ADD COLUMN empresa_id INT NULL DEFAULT 1',
+  'SELECT ''materiais_avaliativos.empresa_id ja existe'''
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- ─── Verificação final ────────────────────────────────────────────────────────
--- Deve listar todas as tabelas que receberam empresa_id:
-SELECT
-  TABLE_NAME   AS tabela,
-  COLUMN_TYPE  AS tipo,
-  COLUMN_DEFAULT AS default_val
+-- ─── Verificação ───────────────────────────────────────────────────────────────
+-- Deve retornar uma linha por tabela que recebeu empresa_id.
+-- Se alguma tabela não aparecer, rode o bloco correspondente manualmente.
+SELECT TABLE_NAME AS tabela, COLUMN_DEFAULT AS default_val
 FROM information_schema.COLUMNS
 WHERE TABLE_SCHEMA = DATABASE()
   AND COLUMN_NAME  = 'empresa_id'
