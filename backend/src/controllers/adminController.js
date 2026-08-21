@@ -163,9 +163,9 @@ async function getEmpresa(req, res) {
 }
 
 /* ─── POST /api/admin/empresas ──────────────────────────────────────────── */
-// Cria o tenant + usuário coordenador inicial em uma transação.
-// Retorna as credenciais do admin para copiar (senha temporária em texto claro,
-// exibida UMA única vez — usuário deve trocar no primeiro login).
+// Cria o tenant + primeiro coordenador em uma transação.
+// Resiliente a migrations pendentes: faz INSERT mínimo (nome + ativo)
+// e depois tenta UPDATE de cada coluna opcional individualmente.
 async function createEmpresa(req, res) {
   const conn = await pool.getConnection();
   try {
@@ -175,7 +175,6 @@ async function createEmpresa(req, res) {
       nome, codigo, plano = 'basico',
       contato_nome, contato_email, contato_telefone,
       subdomain, cor_primaria = '#FF6B4A', observacoes,
-      // Usuário admin inicial
       admin_nome, admin_email, admin_senha,
     } = req.body || {};
 
@@ -184,57 +183,62 @@ async function createEmpresa(req, res) {
       return res.status(400).json({ ok: false, message: 'nome, admin_nome e admin_email são obrigatórios.' });
     }
 
-    // Busca limites do plano (com fallback se tabela não existe)
-    let planoData = { limite_usuarios: 50, limite_turmas: 100 };
-    try {
-      const [planoRows] = await conn.query('SELECT * FROM planos WHERE slug = ? LIMIT 1', [plano]);
-      if (planoRows[0]) planoData = planoRows[0];
-    } catch (_) {
-      // Tabela planos pendente — usa defaults do plano selecionado
-      const defaults = { basico: [30, 50], profissional: [100, 300], enterprise: [9999, 9999] };
-      const d = defaults[plano] || [50, 100];
-      planoData = { limite_usuarios: d[0], limite_turmas: d[1] };
-    }
-
-    // Cria empresa
+    // 1. INSERT mínimo — apenas colunas que existem desde o início
     const [empResult] = await conn.query(
-      `INSERT INTO empresas
-         (nome, codigo, plano, limite_usuarios, limite_turmas,
-          contato_nome, contato_email, contato_telefone,
-          subdomain, cor_primaria, observacoes, ativo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      [
-        nome,
-        codigo || null,
-        plano,
-        planoData.limite_usuarios,
-        planoData.limite_turmas,
-        contato_nome || null,
-        contato_email || null,
-        contato_telefone || null,
-        subdomain || null,
-        cor_primaria,
-        observacoes || null,
-      ]
+      'INSERT INTO empresas (nome, ativo) VALUES (?, 1)',
+      [nome]
     );
     const empresaId = empResult.insertId;
 
-    // Verifica se o email do admin já existe
+    // 2. Tenta atualizar colunas opcionais do Sprint 4 (falha silenciosa se não existirem)
+    const planDefaults = { basico: [30, 50], profissional: [100, 300], enterprise: [9999, 9999] };
+    const [limU, limT] = planDefaults[plano] || [50, 100];
+
+    // Busca limites reais da tabela planos (se existir)
+    let limiteUsuarios = limU;
+    let limiteTurmas   = limT;
+    try {
+      const [plRows] = await conn.query('SELECT * FROM planos WHERE slug = ? LIMIT 1', [plano]);
+      if (plRows[0]) {
+        limiteUsuarios = plRows[0].limite_usuarios;
+        limiteTurmas   = plRows[0].limite_turmas;
+      }
+    } catch (_) { /* tabela planos pendente */ }
+
+    const opcionais = [
+      ['codigo',           codigo           || null],
+      ['plano',            plano                   ],
+      ['limite_usuarios',  limiteUsuarios          ],
+      ['limite_turmas',    limiteTurmas            ],
+      ['contato_nome',     contato_nome     || null],
+      ['contato_email',    contato_email    || null],
+      ['contato_telefone', contato_telefone || null],
+      ['subdomain',        subdomain        || null],
+      ['cor_primaria',     cor_primaria            ],
+      ['observacoes',      observacoes      || null],
+    ];
+
+    for (const [col, val] of opcionais) {
+      try {
+        await conn.query(`UPDATE empresas SET \`${col}\` = ? WHERE id = ?`, [val, empresaId]);
+      } catch (_) { /* coluna ainda não existe — ignora */ }
+    }
+
+    // 3. Verifica duplicidade de email
     const [existeEmail] = await conn.query(
       'SELECT id FROM usuarios WHERE LOWER(email) = LOWER(?) LIMIT 1', [admin_email]
     );
     if (existeEmail.length) {
       await conn.rollback(); conn.release();
-      return res.status(409).json({ ok: false, message: `E-mail "${admin_email}" já está cadastrado no sistema.` });
+      return res.status(409).json({ ok: false, message: `E-mail "${admin_email}" já cadastrado.` });
     }
 
-    // Senha: usa a fornecida ou gera temporária
-    const senhaPlain = admin_senha || gerarSenhaTemporaria();
+    // 4. Cria coordenador inicial
+    const senhaPlain = admin_senha || crypto.randomBytes(10).toString('base64').slice(0, 10).replace(/[^a-zA-Z0-9]/g, 'x');
     const senhaHash  = await bcrypt.hash(senhaPlain, 10);
 
     const [userResult] = await conn.query(
-      `INSERT INTO usuarios
-         (nome, email, senha, perfil, empresa_id, ativo, troca_senha_obrigatoria)
+      `INSERT INTO usuarios (nome, email, senha, perfil, empresa_id, ativo, troca_senha_obrigatoria)
        VALUES (?, ?, ?, 'coordenador', ?, 1, 1)`,
       [admin_nome, admin_email, senhaHash, empresaId]
     );
@@ -244,20 +248,14 @@ async function createEmpresa(req, res) {
 
     return res.status(201).json({
       ok: true,
-      empresa: {
-        id:         empresaId,
-        nome,
-        codigo:     codigo || null,
-        plano,
-        ativo:      1,
-      },
+      empresa: { id: empresaId, nome, codigo: codigo || null, plano, ativo: 1 },
       admin: {
-        id:              userResult.insertId,
-        nome:            admin_nome,
-        email:           admin_email,
-        perfil:          'coordenador',
-        senha_temporaria: senhaPlain,   // exibir UMA vez — nunca armazenar no frontend
-        aviso:           'O usuário deverá trocar a senha no primeiro acesso.',
+        id:               userResult.insertId,
+        nome:             admin_nome,
+        email:            admin_email,
+        perfil:           'coordenador',
+        senha_temporaria: senhaPlain,
+        aviso:            'O usuário deverá trocar a senha no primeiro acesso.',
       },
     });
   } catch (error) {
@@ -267,6 +265,7 @@ async function createEmpresa(req, res) {
     return res.status(500).json({ ok: false, message: 'Erro ao criar empresa', error: error.message });
   }
 }
+
 
 /* ─── PUT /api/admin/empresas/:id ───────────────────────────────────────── */
 async function updateEmpresa(req, res) {
