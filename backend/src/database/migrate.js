@@ -4,8 +4,8 @@ const path = require("path");
 const pool = require("../lib/db");
 
 /**
- * Divide um arquivo SQL em statements simples.
- * Os arquivos atuais do projeto usam SQL delimitado por ';' e não possuem
+ * Divide os arquivos SQL atuais em statements simples.
+ * As migrations do projeto usam ';' como delimitador e não possuem
  * procedures/triggers que exijam um parser completo.
  */
 function splitSqlStatements(sql) {
@@ -18,18 +18,30 @@ function splitSqlStatements(sql) {
 }
 
 /**
+ * Normaliza sintaxes de IF NOT EXISTS que podem não ser suportadas pela
+ * versão do MySQL utilizada no Railway. O runner trata a tentativa repetida
+ * como idempotente pelos códigos de erro do MySQL.
+ */
+function normalizeMigrationStatement(statement) {
+  return statement
+    .replace(/ALTER\s+TABLE\s+([`\w.]+)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+/i, "ALTER TABLE $1 ADD COLUMN ")
+    .replace(/ALTER\s+TABLE\s+([`\w.]+)\s+ADD\s+CONSTRAINT\s+IF\s+NOT\s+EXISTS\s+/i, "ALTER TABLE $1 ADD CONSTRAINT ")
+    .replace(/CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+/i, "CREATE INDEX ");
+}
+
+/**
  * Alguns Sprints foram escritos para execução manual e podem encontrar uma
  * coluna, índice, tabela ou constraint que já exista no banco. Esses erros
  * são seguros de ignorar durante uma migration idempotente.
  */
 function isSafeAlreadyAppliedError(error) {
   const safeCodes = new Set([
-    "ER_DUP_FIELDNAME",        // coluna já existe
-    "ER_DUP_KEYNAME",          // índice já existe
-    "ER_DUP_KEY",              // chave já existe
-    "ER_DUP_ENTRY",             // INSERT IGNORE/registro já existente
-    "ER_TABLE_EXISTS_ERROR",    // tabela já existe
-    "ER_FK_DUP_NAME",           // constraint já existe
+    "ER_DUP_FIELDNAME",
+    "ER_DUP_KEYNAME",
+    "ER_DUP_KEY",
+    "ER_DUP_ENTRY",
+    "ER_TABLE_EXISTS_ERROR",
+    "ER_FK_DUP_NAME",
   ]);
 
   if (safeCodes.has(error?.code)) return true;
@@ -82,7 +94,9 @@ async function executeSqlMigration(fileName) {
   const sql = fs.readFileSync(migrationPath, "utf8");
   const statements = splitSqlStatements(sql);
 
-  for (const statement of statements) {
+  for (const rawStatement of statements) {
+    const statement = normalizeMigrationStatement(rawStatement);
+
     try {
       await pool.query(statement);
     } catch (error) {
