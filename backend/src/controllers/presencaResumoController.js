@@ -1,8 +1,11 @@
 const { getResumoPresenca } = require("../services/presencaResolver");
 
+// Sprint 1 fix: passa req.empresaId para filtrar por tenant automaticamente.
+// Sem req.empresaId (super_admin ou migration pendente) → retorna tudo.
 async function listarResumoGeral(req, res) {
   try {
-    const dados = await getResumoPresenca();
+    const empresaId = req.empresaId ?? null;
+    const dados = await getResumoPresenca({ empresaId });
     return res.json({ ok: true, itens: dados });
   } catch (error) {
     return res.status(500).json({
@@ -16,7 +19,11 @@ async function listarResumoGeral(req, res) {
 async function obterResumoPorTreinamento(req, res) {
   try {
     const { treinamento_id } = req.params;
-    const dados = await getResumoPresenca({ treinamentoId: Number(treinamento_id) });
+    const empresaId = req.empresaId ?? null;
+    const dados = await getResumoPresenca({
+      treinamentoId: Number(treinamento_id),
+      empresaId,
+    });
     if (!dados.length) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
