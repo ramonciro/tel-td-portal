@@ -90,13 +90,32 @@ export default function EmpresaDetailPage() {
     if (!form.nome.trim()) { setError("Nome é obrigatório."); return; }
     setSaving(true); setError(""); setSuccess("");
     try {
-      await apiFetch(`/admin/empresas/${id}`, {
+      const saveRes = await apiFetch(`/admin/empresas/${id}`, {
         method: "PUT",
         body: JSON.stringify(form),
       });
-      // Reload com dados atualizados
+
+      if (saveRes && !saveRes.ok && saveRes.message) {
+        setError(saveRes.message); setSaving(false); return;
+      }
+
+      // Recarrega dados atualizados do servidor
       const updated = await apiFetch(`/admin/empresas/${id}`);
       setEmpresa(updated);
+
+      // CRÍTICO: atualiza form com dados salvos para que a tela
+      // reflita o estado real do banco (não apenas o estado local)
+      setForm({
+        nome:             updated.nome             || "",
+        codigo:           updated.codigo           || "",
+        plano:            updated.plano            || "basico",
+        contato_nome:     updated.contato_nome     || "",
+        contato_email:    updated.contato_email    || "",
+        contato_telefone: updated.contato_telefone || "",
+        subdomain:        updated.subdomain        || "",
+        observacoes:      updated.observacoes      || "",
+      });
+
       setSuccess("Dados atualizados com sucesso.");
       setEditMode(false);
     } catch (err) {
