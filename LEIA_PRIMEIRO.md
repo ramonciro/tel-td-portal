@@ -1,29 +1,32 @@
-# Hotfix Isolation 2 — Turmas, Dashboard e Plano
+# Hotfix Update — Save de empresa + plano
 
-## Causa raiz identificada
+## Dois bugs corrigidos
 
-| Página | Problema | Fix |
-|---|---|---|
-| Dashboard (`/inicio` + `/dashboard`) | `dashboardRoutes.js` fazia COUNTs globais sem WHERE empresa_id | ✅ Filtro por tenant adicionado |
-| Turmas / Gestão de Turmas | `presencaResolver.getResumoPresenca()` buscava todos os treinamentos sem filtro | ✅ Parâmetro empresaId adicionado |
-| Plano do tenant | Coluna `plano` nunca foi criada em `empresas` | ✅ SQL individual fornecido |
+### Bug 1 — Visual: página mostra valores antigos após salvar
+`handleSave` não atualizava o `form` state após salvar.
+O usuário via os valores antigos e achava que não havia salvo.
+Fix: após save bem-sucedido, `setForm` é chamado com os dados
+retornados pelo servidor.
 
-## Arquivos de código (substituir + redeploy backend)
+### Bug 2 — Persistência: colunas do Sprint 4 não existem
+`plano`, `codigo`, `contato_nome` etc. não foram criadas no banco
+porque as migrations anteriores usavam DELIMITER que não funciona
+no Railway. Os updates caíam no catch silencioso.
+Fix SQL: rodar as ALTER TABLE individualmente (arquivo sql incluído).
+Fix código: `updateEmpresa` agora loga cada coluna que falha nos
+logs do Railway (visível em Deployments → logs).
 
-| Arquivo | O que muda |
-|---|---|
-| `backend/src/services/presencaResolver.js` | `getResumoPresenca` aceita `{ empresaId }` e filtra `FROM treinamentos WHERE empresa_id = ?` |
-| `backend/src/controllers/presencaResumoController.js` | Passa `req.empresaId` para `getResumoPresenca` |
-| `backend/src/routes/dashboardRoutes.js` | Todos os COUNTs filtrados por `empresa_id` quando disponível |
+## Sequência
 
-## SQL (Railway Query Editor — um por vez)
+### 1. SQL no Railway (um por vez)
+Abrir `database/migrations/sprint4_colunas_empresas.sql`
+e executar cada linha individualmente.
+Se der "Duplicate column name" → pular.
 
-Execute cada ALTER TABLE do arquivo `sprint4_plano_columns.sql` individualmente.
-Se algum der "Duplicate column name" → já existe, pode pular.
+### 2. Substituir arquivos + redeploy
+- `backend/src/controllers/adminController.js`
+- `frontend/app/admin/empresa/[id]/page.js`
 
-Após adicionar a coluna plano:
-UPDATE empresas SET plano = 'basico' WHERE plano IS NULL;
-
-## Após redeploy
-
-Todos os usuários de tenant precisam de logout → login para recarregar o JWT.
+### 3. Sem necessidade de logout/login
+Só o backend mudou (adminController).
+O frontend mudou apenas o comportamento pós-save (não afeta auth).
