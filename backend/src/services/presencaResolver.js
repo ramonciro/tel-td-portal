@@ -175,15 +175,20 @@ function resolverClassificacaoTurma({ taxa, treinandosPrevistos, pendentes, stat
 
 // Função principal: monta o resumo de presença + status de TODOS os
 // treinamentos (ou de um único, se treinamentoId for passado).
-async function getResumoPresenca({ treinamentoId } = {}) {
+// Sprint 1 fix: aceita empresaId para filtrar por tenant automaticamente.
+async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
+  // WHERE dinâmico: filtro por tenant + por treinamento específico
+  const conds  = [];
+  const params = [];
+  if (treinamentoId) { conds.push("id = ?");         params.push(treinamentoId); }
+  if (empresaId)     { conds.push("empresa_id = ?"); params.push(empresaId); }
+  const whereClause = conds.length ? "WHERE " + conds.join(" AND ") : "";
+
   const [treinamentos] = await pool.query(
-    `
-    SELECT id, tema, cliente, instrutor, supervisor, status, descricao, publico,
-           data, data_inicio, data_fim, carga_horaria, participantes
-    FROM treinamentos
-    ${treinamentoId ? "WHERE id = ?" : ""}
-    `,
-    treinamentoId ? [treinamentoId] : []
+    "SELECT id, tema, cliente, instrutor, supervisor, status, descricao, publico, " +
+    "data, data_inicio, data_fim, carga_horaria, participantes " +
+    "FROM treinamentos " + whereClause,
+    params
   );
 
   const [diasPorTreinamento] = await pool.query(`
