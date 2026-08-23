@@ -1,40 +1,29 @@
-# Hotfix — Delete de empresa + isolamento de tenants
+# Hotfix Isolation 2 — Turmas, Dashboard e Plano
 
-## SQL: execute no Railway (um por vez)
+## Causa raiz identificada
 
-### 1. Criar empresa principal Tel (id=1)
-INSERT INTO empresas (id, nome, ativo) VALUES (1, 'Tel Centro de Contatos', 1)
-ON DUPLICATE KEY UPDATE nome = 'Tel Centro de Contatos';
+| Página | Problema | Fix |
+|---|---|---|
+| Dashboard (`/inicio` + `/dashboard`) | `dashboardRoutes.js` fazia COUNTs globais sem WHERE empresa_id | ✅ Filtro por tenant adicionado |
+| Turmas / Gestão de Turmas | `presencaResolver.getResumoPresenca()` buscava todos os treinamentos sem filtro | ✅ Parâmetro empresaId adicionado |
+| Plano do tenant | Coluna `plano` nunca foi criada em `empresas` | ✅ SQL individual fornecido |
 
-### 2. Vincular usuários operacionais (ids 1–29) à Tel
-UPDATE usuarios SET empresa_id = 1 WHERE id <= 29;
+## Arquivos de código (substituir + redeploy backend)
 
-### 3. Vincular usuários de teste aos tenants corretos
-UPDATE usuarios SET empresa_id = 2 WHERE id = 30;
-UPDATE usuarios SET empresa_id = 4 WHERE id = 31;
-
-### 4. Migrar dados operacionais para empresa 1
-UPDATE treinamentos SET empresa_id = 1 WHERE empresa_id IS NULL;
-UPDATE clientes SET empresa_id = 1 WHERE empresa_id IS NULL;
-UPDATE avaliacoes SET empresa_id = 1 WHERE empresa_id IS NULL;
-UPDATE presencas SET empresa_id = 1 WHERE empresa_id IS NULL;
-
-### 5. Deletar empresas de teste (se quiser)
-DELETE FROM empresas WHERE id IN (2, 4);
-UPDATE usuarios SET empresa_id = 1 WHERE id IN (30, 31);
-
----
-
-## Arquivos de código (substituir + redeploy)
-
-| Arquivo | Mudança |
+| Arquivo | O que muda |
 |---|---|
-| backend/src/controllers/adminController.js | + deleteEmpresa (seguro: bloqueia se houver turmas) |
-| backend/src/index.js | + DELETE /api/admin/empresas/:id |
-| frontend/app/admin/empresa/[id]/page.js | + botão "Excluir" na danger zone |
+| `backend/src/services/presencaResolver.js` | `getResumoPresenca` aceita `{ empresaId }` e filtra `FROM treinamentos WHERE empresa_id = ?` |
+| `backend/src/controllers/presencaResumoController.js` | Passa `req.empresaId` para `getResumoPresenca` |
+| `backend/src/routes/dashboardRoutes.js` | Todos os COUNTs filtrados por `empresa_id` quando disponível |
 
----
+## SQL (Railway Query Editor — um por vez)
 
-## Após tudo aplicado
-- Logout → Login no super_admin para novo token
-- Todos os coordenadores precisam fazer logout → login para JWT com empresa_id correto
+Execute cada ALTER TABLE do arquivo `sprint4_plano_columns.sql` individualmente.
+Se algum der "Duplicate column name" → já existe, pode pular.
+
+Após adicionar a coluna plano:
+UPDATE empresas SET plano = 'basico' WHERE plano IS NULL;
+
+## Após redeploy
+
+Todos os usuários de tenant precisam de logout → login para recarregar o JWT.
