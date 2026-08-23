@@ -273,14 +273,18 @@ async function updateEmpresa(req, res) {
       subdomain, cor_primaria, logo_url, observacoes,
     } = req.body || {};
 
-    if (!nome) return res.status(400).json({ ok: false, message: 'Nome é obrigatório.' });
+    if (!nome) {
+      return res.status(400).json({ ok: false, message: 'Nome é obrigatório.' });
+    }
 
-    // Sempre atualiza nome (coluna garantida)
+    const planoFinal   = plano || 'basico';
+    const colunasFaltantes = [];
+
+    // nome sempre salvo (coluna garantida desde o início)
     await pool.query('UPDATE empresas SET nome = ? WHERE id = ?', [nome, id]);
 
-    // Tenta atualizar colunas opcionais
-    // Plano sempre incluído — value default 'basico' evita string vazia
-    const planoFinal = plano || 'basico';
+    // Colunas do Sprint 4 — falham silenciosamente se ainda não existem no banco,
+    // mas agora logam o erro para diagnóstico nos logs do Railway.
     const opcionais = [
       ['codigo',           codigo           || null],
       ['plano',            planoFinal              ],
@@ -295,36 +299,43 @@ async function updateEmpresa(req, res) {
 
     for (const [col, val] of opcionais) {
       try {
-        await pool.query(`UPDATE empresas SET \`${col}\` = ? WHERE id = ?`, [val, id]);
-      } catch (_) {}
+        // Usa placeholder ?? para escapar o nome da coluna com segurança
+        await pool.query('UPDATE empresas SET ?? = ? WHERE id = ?', [col, val, id]);
+      } catch (colErr) {
+        console.warn(`[updateEmpresa] coluna "${col}" indisponível: ${colErr.message}`);
+        colunasFaltantes.push(col);
+      }
     }
 
-    // Atualiza limites conforme o plano
-    {
-      const planoParaLimite = planoFinal;
-      try {
-        const [pl] = await pool.query('SELECT * FROM planos WHERE slug = ? LIMIT 1', [planoParaLimite]);
-        if (pl[0]) {
-          await pool.query(
-            'UPDATE empresas SET limite_usuarios = ?, limite_turmas = ? WHERE id = ?',
-            [pl[0].limite_usuarios, pl[0].limite_turmas, id]
-          );
-        } else {
-          // Tabela planos não existe — usa defaults
-          const defs = { basico: [30,50], profissional: [100,300], enterprise: [9999,9999] };
-          const [lu, lt] = defs[planoParaLimite] || [50, 100];
-          await pool.query(
-            'UPDATE empresas SET limite_usuarios = ?, limite_turmas = ? WHERE id = ?',
-            [lu, lt, id]
-          );
-        }
-      } catch (_) {}
+    // Atualiza limites conforme plano
+    const planoDefs = { basico:[30,50], profissional:[100,300], enterprise:[9999,9999] };
+    const [defU, defT] = planoDefs[planoFinal] || [50, 100];
+    try {
+      const [plRows] = await pool.query(
+        'SELECT limite_usuarios, limite_turmas FROM planos WHERE slug = ? LIMIT 1',
+        [planoFinal]
+      );
+      const limU = plRows[0]?.limite_usuarios ?? defU;
+      const limT = plRows[0]?.limite_turmas   ?? defT;
+      await pool.query(
+        'UPDATE empresas SET limite_usuarios = ?, limite_turmas = ? WHERE id = ?',
+        [limU, limT, id]
+      );
+    } catch (limErr) {
+      console.warn('[updateEmpresa] limites não salvos:', limErr.message);
     }
 
-    return res.json({ ok: true });
+    return res.json({
+      ok: true,
+      colunas_pendentes: colunasFaltantes.length ? colunasFaltantes : undefined,
+    });
   } catch (error) {
     console.error('[admin] updateEmpresa:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao atualizar empresa', error: error.message });
+    return res.status(500).json({
+      ok: false,
+      message: 'Erro ao atualizar empresa',
+      error: error.message,
+    });
   }
 }
 
