@@ -18,6 +18,7 @@ const {
   createEmpresa,
   updateEmpresa,
   toggleAtivo,
+  deleteEmpresa,
   listPlanos,
 } = require("./controllers/adminController");
 // Sprint 1: middleware de isolamento multi-tenant
@@ -982,6 +983,7 @@ app.get(  "/api/admin/empresas/:id",           authRequired, requireSuperAdmin, 
 app.post( "/api/admin/empresas",               authRequired, requireSuperAdmin, createEmpresa);
 app.put(  "/api/admin/empresas/:id",           authRequired, requireSuperAdmin, updateEmpresa);
 app.post( "/api/admin/empresas/:id/toggle-ativo", authRequired, requireSuperAdmin, toggleAtivo);
+app.delete("/api/admin/empresas/:id",            authRequired, requireSuperAdmin, deleteEmpresa);
 
 // ─────────────────────────────────────────────────────────────────────────────
 
