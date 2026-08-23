@@ -352,5 +352,42 @@ module.exports = {
   createEmpresa,
   updateEmpresa,
   toggleAtivo,
+  deleteEmpresa,
   listPlanos,
 };
+
+/* ─── DELETE /api/admin/empresas/:id ──────────────────────────────────────── */
+// Remove o tenant E todos os usuários vinculados.
+// Segurança: bloqueia deleção se houver treinamentos associados (dados reais).
+async function deleteEmpresa(req, res) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const { id } = req.params;
+
+    // Não permite deletar empresa com treinamentos reais
+    const totalTurmas = await contarTabela('treinamentos', `WHERE empresa_id = ${Number(id)}`);
+    if (totalTurmas > 0) {
+      await conn.rollback(); conn.release();
+      return res.status(409).json({
+        ok: false,
+        message: `Esta empresa possui ${totalTurmas} turma(s) cadastrada(s). Desative-a em vez de excluir, ou remova as turmas primeiro.`,
+      });
+    }
+
+    // Remove usuários do tenant
+    await conn.query('DELETE FROM usuarios WHERE empresa_id = ?', [id]);
+
+    // Remove a empresa
+    await conn.query('DELETE FROM empresas WHERE id = ?', [id]);
+
+    await conn.commit();
+    conn.release();
+    return res.json({ ok: true });
+  } catch (error) {
+    await conn.rollback();
+    conn.release();
+    console.error('[admin] deleteEmpresa:', error.message);
+    return res.status(500).json({ ok: false, message: 'Erro ao excluir empresa', error: error.message });
+  }
+}
