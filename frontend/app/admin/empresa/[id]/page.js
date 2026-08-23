@@ -53,7 +53,8 @@ export default function EmpresaDetailPage() {
   const [planos,   setPlanos]   = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
-  const [toggling, setToggling] = useState(false);
+  const [toggling,  setToggling]  = useState(false);
+  const [deleting,  setDeleting]  = useState(false);
   const [error,    setError]    = useState("");
   const [success,  setSuccess]  = useState("");
   const [editMode, setEditMode] = useState(false);
@@ -115,6 +116,18 @@ export default function EmpresaDetailPage() {
       setError(err.message || "Erro ao alterar status.");
     } finally {
       setToggling(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm('Excluir este tenant permanentemente? Esta ação não pode ser desfeita.')) return;
+    setDeleting(true); setError(''); setSuccess('');
+    try {
+      await apiFetch(`/admin/empresas/${id}`, { method: 'DELETE' });
+      router.replace('/admin');
+    } catch (err) {
+      setError(err.message || 'Erro ao excluir empresa.');
+      setDeleting(false);
     }
   }
 
@@ -270,6 +283,23 @@ export default function EmpresaDetailPage() {
               {toggling ? "Aguarde…" : empresa.ativo ? "Desativar" : "Ativar"}
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Exclusão permanente */}
+      <div style={{ ...dangerZone, marginTop: 16, borderColor: "#fca5a5" }}>
+        <h3 style={{ ...dangerTitle, color: "#7f1d1d" }}>Exclusão permanente</h3>
+        <div style={dangerRow}>
+          <div>
+            <div style={dangerLabel}>Excluir tenant</div>
+            <div style={dangerDesc}>
+              Remove a empresa e todos os seus usuários. Bloqueado se houver turmas cadastradas.
+            </div>
+          </div>
+          <button style={{ ...btnDanger, background: "#7f1d1d" }}
+            disabled={deleting} onClick={handleDelete}>
+            {deleting ? "Excluindo…" : "Excluir"}
+          </button>
         </div>
       </div>
     </PortalShell>
