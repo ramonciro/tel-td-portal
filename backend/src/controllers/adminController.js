@@ -279,8 +279,11 @@ async function updateEmpresa(req, res) {
     await pool.query('UPDATE empresas SET nome = ? WHERE id = ?', [nome, id]);
 
     // Tenta atualizar colunas opcionais
+    // Plano sempre incluído — value default 'basico' evita string vazia
+    const planoFinal = plano || 'basico';
     const opcionais = [
       ['codigo',           codigo           || null],
+      ['plano',            planoFinal              ],
       ['contato_nome',     contato_nome     || null],
       ['contato_email',    contato_email    || null],
       ['contato_telefone', contato_telefone || null],
@@ -289,7 +292,6 @@ async function updateEmpresa(req, res) {
       ['logo_url',         logo_url         || null],
       ['observacoes',      observacoes      || null],
     ];
-    if (plano) opcionais.push(['plano', plano]);
 
     for (const [col, val] of opcionais) {
       try {
@@ -297,14 +299,23 @@ async function updateEmpresa(req, res) {
       } catch (_) {}
     }
 
-    // Atualiza limites se plano mudou
-    if (plano) {
+    // Atualiza limites conforme o plano
+    {
+      const planoParaLimite = planoFinal;
       try {
-        const [pl] = await pool.query('SELECT * FROM planos WHERE slug = ? LIMIT 1', [plano]);
+        const [pl] = await pool.query('SELECT * FROM planos WHERE slug = ? LIMIT 1', [planoParaLimite]);
         if (pl[0]) {
           await pool.query(
             'UPDATE empresas SET limite_usuarios = ?, limite_turmas = ? WHERE id = ?',
             [pl[0].limite_usuarios, pl[0].limite_turmas, id]
+          );
+        } else {
+          // Tabela planos não existe — usa defaults
+          const defs = { basico: [30,50], profissional: [100,300], enterprise: [9999,9999] };
+          const [lu, lt] = defs[planoParaLimite] || [50, 100];
+          await pool.query(
+            'UPDATE empresas SET limite_usuarios = ?, limite_turmas = ? WHERE id = ?',
+            [lu, lt, id]
           );
         }
       } catch (_) {}
