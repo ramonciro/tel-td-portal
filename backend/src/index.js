@@ -10,6 +10,11 @@ const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } = require("./middlewares/auth");
 
+// Sprint 5: Analytics
+const {
+  getResumo, getHoras, getNps, getEfetividade, getRoi,
+} = require("./controllers/analyticsController");
+
 // Sprint 4: Admin (super_admin)
 const {
   getGlobalStats,
@@ -971,6 +976,18 @@ app.get(
     }
   }
 );
+
+// ─── Sprint 5: Analytics & KPIs ─────────────────────────────────────────────
+// Acessível a coordenadores, supervisores e super_admin.
+// req.empresaId filtrado pelo clientMiddleware — super_admin recebe dados globais.
+
+app.get("/api/analytics/resumo",      authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getResumo);
+app.get("/api/analytics/horas",       authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getHoras);
+app.get("/api/analytics/nps",         authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getNps);
+app.get("/api/analytics/efetividade", authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getEfetividade);
+app.get("/api/analytics/roi",         authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getRoi);
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─── Sprint 4: Admin / Super-Admin ───────────────────────────────────────────
 // Todas as rotas /api/admin/* exigem autenticação + perfil super_admin.
