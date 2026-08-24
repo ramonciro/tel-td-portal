@@ -18,6 +18,7 @@ const menuItems = [
   { href: "/presencas",     label: "Gestão de Turmas",       icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "🎒", roles: ["instrutor", "treinando"] },
   { href: "/certificados",  label: "Certificados",           icon: "🏆", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/indicadores",  label: "Indicadores",             icon: "📊", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/biblioteca",    label: "Biblioteca",             icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/clientes",      label: "Clientes",               icon: "🏢", roles: ["coordenador", "supervisor"] },
   { href: "/usuarios",      label: "Gestão de Usuários",     icon: "👥", roles: ["coordenador", "supervisor"] },
@@ -72,13 +73,11 @@ export default function PortalShell({
     setUser(getStoredUser());
   }, []);
 
-  // Sprint 4: super_admin não opera em rotas normais — redireciona para /admin.
-  // Checamos tanto o estado React quanto o localStorage diretamente para cobrir
-  // o caso de o estado ainda não ter sido hidratado (race condition no mount).
+  // Sprint 4: super_admin não pertence a nenhuma rota operacional.
+  // Se cair em qualquer página que não seja /admin/*, redireciona.
   useEffect(() => {
-    const storedUser = getStoredUser();
-    const perfil = storedUser?.perfil || user?.perfil || "";
-    if (perfil === "super_admin" && !pathname.startsWith("/admin")) {
+    if (!user) return;
+    if (user.perfil === "super_admin" && !pathname.startsWith("/admin")) {
       router.replace("/admin");
     }
   }, [user, pathname]);
