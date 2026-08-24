@@ -1,32 +1,38 @@
-# Hotfix Update — Save de empresa + plano
+# Sprint 5 — Analytics & KPIs
 
-## Dois bugs corrigidos
+## O que foi entregue
 
-### Bug 1 — Visual: página mostra valores antigos após salvar
-`handleSave` não atualizava o `form` state após salvar.
-O usuário via os valores antigos e achava que não havia salvo.
-Fix: após save bem-sucedido, `setForm` é chamado com os dados
-retornados pelo servidor.
+### Backend
+| Arquivo | O que é |
+|---|---|
+| `backend/src/controllers/analyticsController.js` | 🆕 Motor de analytics: 5 endpoints com queries reais ao banco |
+| `backend/src/index.js` | 🔄 Rotas `/api/analytics/*` registradas |
 
-### Bug 2 — Persistência: colunas do Sprint 4 não existem
-`plano`, `codigo`, `contato_nome` etc. não foram criadas no banco
-porque as migrations anteriores usavam DELIMITER que não funciona
-no Railway. Os updates caíam no catch silencioso.
-Fix SQL: rodar as ALTER TABLE individualmente (arquivo sql incluído).
-Fix código: `updateEmpresa` agora loga cada coluna que falha nos
-logs do Railway (visível em Deployments → logs).
+### Frontend
+| Arquivo | O que é |
+|---|---|
+| `frontend/app/inicio/page.js` | 🔄 Dashboard home redesenhado com dados reais |
+| `frontend/app/indicadores/page.js` | 🆕 Página analytics completa: Horas / NPS / Efetividade / ROI |
+| `frontend/components/PortalShell.js` | 🔄 "📊 Indicadores" adicionado ao menu |
 
-## Sequência
+## Endpoints criados
 
-### 1. SQL no Railway (um por vez)
-Abrir `database/migrations/sprint4_colunas_empresas.sql`
-e executar cada linha individualmente.
-Se der "Duplicate column name" → pular.
+| Endpoint | Dados |
+|---|---|
+| `GET /api/analytics/resumo` | KPIs globais: horas, turmas, participantes, NPS, presença |
+| `GET /api/analytics/horas` | Horas por mês (12m), por cliente, por instrutor |
+| `GET /api/analytics/nps` | Score NPS, promotores/neutros/detratores, tendência, por turma |
+| `GET /api/analytics/efetividade` | Taxa aprovação, nota média, presença, por cliente |
+| `GET /api/analytics/roi` | Horas × pessoas, taxa conclusão, custo estimado |
 
-### 2. Substituir arquivos + redeploy
-- `backend/src/controllers/adminController.js`
-- `frontend/app/admin/empresa/[id]/page.js`
+## Cálculo NPS
+- Promotores: nota_nps >= 9
+- Neutros: nota_nps 7-8.9
+- Detratores: nota_nps < 7
+- Score = (promotores - detratores) / total × 100
 
-### 3. Sem necessidade de logout/login
-Só o backend mudou (adminController).
-O frontend mudou apenas o comportamento pós-save (não afeta auth).
+## Notas
+- Todos os dados filtrados por empresa_id (tenant isolation automático)
+- super_admin vê dados globais de todos os tenants
+- Custo estimado do ROI usa R$ 150/h por participante (referência indicativa)
+- Sem migration SQL necessária — lê das tabelas existentes
