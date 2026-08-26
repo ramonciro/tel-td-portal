@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import { apiFetch, getStoredUser } from "../../services/api";
-import StatCard        from "../../components/StatCard";
 import { colors, chart, corDoCliente, radius } from "../../lib/theme";
 
 // Tiles de atalho por papel — cada papel vê só as ações que fazem sentido
@@ -47,8 +46,7 @@ export default function InicioPage() {
   const [necessidades, setNecessidades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-  const [analytics, setAnalytics]           = useState(null);
-  const [filtroCliente, setFiltroCliente]   = useState("Todos");
+  const [filtroCliente, setFiltroCliente] = useState("Todos");
   const [busca, setBusca] = useState("");
 
   useEffect(() => {
@@ -61,11 +59,8 @@ export default function InicioPage() {
   async function carregar(u) {
     try {
       setLoading(true);
-      const [treinamentosData, resumoData, necessidadesData, analyticsData] = await Promise.all([
+      const [treinamentosData, resumoData, necessidadesData] = await Promise.all([
         apiFetch("/treinamentos").catch(() => []),
-        (["coordenador","supervisor"].includes(String(u?.perfil || "").toLowerCase().trim()))
-          ? apiFetch("/analytics/resumo").catch(() => null)
-          : Promise.resolve(null),
         apiFetch("/presenca-resumo").catch(() => null),
         // FIX: case-insensitive — banco pode guardar "Coordenador" (C maiúsculo)
         ["coordenador","supervisor"].includes(String(u?.perfil || "").toLowerCase().trim())
@@ -112,7 +107,6 @@ export default function InicioPage() {
       setTurmas(minhasTurmas);
       setResumo(listaResumo);
       setNecessidades(Array.isArray(necessidadesData?.itens) ? necessidadesData.itens : []);
-      if (analyticsData) setAnalytics(analyticsData);
       setErro("");
     } catch (error) {
       setErro(error.message || "Erro ao carregar sua home.");
@@ -202,33 +196,6 @@ export default function InicioPage() {
               ? `${dados.pendentes} turma(s) com chamada pendente hoje. O resto está em dia.`
               : "Nenhuma chamada pendente hoje — tudo em dia."}
           </p>
-
-          {/* ── Analytics KPI strip — só para gestores ─────────────────────── */}
-          {analytics && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
-              <StatCard
-                title="Horas treinadas"
-                value={analytics.horas_total != null ? `${Number(analytics.horas_total).toLocaleString("pt-BR")}h` : "—"}
-                subtitle={`de ${analytics.horas_previstas != null ? Number(analytics.horas_previstas).toLocaleString("pt-BR") : "—"}h previstas`}
-                accent={colors.accent}
-              />
-              <StatCard
-                title="Turmas"
-                value={analytics.turmas_total != null ? String(analytics.turmas_total) : "—"}
-                subtitle={`${analytics.turmas_concluidas ?? 0} concluídas`}
-              />
-              <StatCard
-                title="Participantes únicos"
-                value={analytics.participantes_unicos != null ? String(analytics.participantes_unicos) : "—"}
-              />
-              <StatCard
-                title="NPS médio"
-                value={analytics.nps_score != null ? String(analytics.nps_score) : "—"}
-                subtitle={analytics.taxa_presenca != null ? `${analytics.taxa_presenca}% presença` : "sem dados"}
-                accent={analytics.nps_score >= 50 ? colors.success : analytics.nps_score >= 0 ? colors.warning : colors.danger}
-              />
-            </div>
-          )}
 
           {erro && (
             <div style={{ background: colors.dangerLight, color: colors.dangerText, borderRadius: radius.sm, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>
