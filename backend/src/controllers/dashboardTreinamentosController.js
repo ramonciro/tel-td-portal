@@ -1,5 +1,6 @@
 const pool = require("../lib/db");
 const { getResumoPresenca } = require("../services/presencaResolver");
+const { getResumoHoras, getHorasPorInstrutorMes } = require("../services/horasResolver");
 
 function parseHorasTexto(valor) {
   if (valor === null || valor === undefined || valor === "") return 0;
@@ -10,6 +11,17 @@ function parseHorasTexto(valor) {
 
 function n(value) {
   return Number(value || 0);
+}
+
+function round1(value) {
+  return Math.round(n(value) * 10) / 10;
+}
+
+// percentual com 1 casa decimal; 0 quando o denominador é 0 (mesma
+// convenção das taxas já existentes neste arquivo, ex.: taxaPresenca)
+function pct(numerador, denominador) {
+  if (!denominador) return 0;
+  return round1((n(numerador) / n(denominador)) * 100);
 }
 
 function parseModalidadeFromDescricao(descricao) {
@@ -218,12 +230,40 @@ async function getDashboardTreinamentos(req, res) {
       console.warn("[dashboard] resumo de presença indisponível:", err.message);
     }
 
+    // horas previstas/realizadas, dias praticados e HC previsto/realizado —
+    // fonte única vinda do cronograma (turma_aulas) quando existir, com
+    // fallback seguro para treinamentos.carga_horaria (ver horasResolver.js)
+    let horasPorId = new Map();
+    try {
+      const resumoHoras = await getResumoHoras();
+      horasPorId = new Map(resumoHoras.map((item) => [Number(item.id), item]));
+    } catch (err) {
+      console.warn("[dashboard] resumo de horas indisponível:", err.message);
+    }
+
+    // realizado por instrutor x mês — usa a data de cada aula (não a data
+    // da turma), então turmas que atravessam dois meses são atribuídas ao
+    // mês correto em vez de tudo cair no mês de início
+    let realizadoInstrutorMes = [];
+    try {
+      const porMes = await getHorasPorInstrutorMes({
+        dataInicio: query.data_inicio || undefined,
+        dataFim: query.data_fim || undefined,
+      });
+      realizadoInstrutorMes = query.instrutor
+        ? porMes.filter((item) => item.instrutor === query.instrutor)
+        : porMes;
+    } catch (err) {
+      console.warn("[dashboard] horas por instrutor/mês indisponível:", err.message);
+    }
+
     // enriquece cada turma com a presença resolvida de forma única (fim das
     // três fórmulas divergentes que existiam entre KPI geral / cliente / instrutor,
     // e agora também com o cronograma como fonte de maior prioridade)
     const enriched = filteredRows.map((row) => ({
       ...row,
       presenca: resolvePresenca(resumoPresencaPorId.get(Number(row.id))),
+      horas: horasPorId.get(Number(row.id)) || null,
     }));
 
     const totalTreinamentos = enriched.length;
@@ -237,12 +277,30 @@ async function getDashboardTreinamentos(req, res) {
 
     // horas ministradas: soma de carga das turmas com participantes registrados
     // (carga × presentes inflava multi-sessão: 10 pessoas × 12 aulas = 120 "presentes")
+    // MANTIDO por compatibilidade com o frontend atual — mas este cálculo
+    // não distingue previsto de realizado e ignora o cronograma diário.
+    // Para números exatos, usar os campos horas_previstas/horas_realizadas
+    // abaixo (vindos de horasResolver.js).
     const horasMinistradas = enriched.reduce(
       (acc, item) => acc + (item.presenca.baseParticipantes > 0 ? parseHorasTexto(item.carga_horaria) : 0),
       0
     );
     const horasTreinadas = horasMinistradas; // alias mantido por compatibilidade
     const cargaHorariaTotal = enriched.reduce((acc, item) => acc + parseHorasTexto(item.carga_horaria), 0);
+
+    // ---------------------------------------------------------------------
+    // Métricas exatas do coordenador: horas previstas x realizadas, dias
+    // praticados, HC previsto x realizado — vindas de horasResolver.js
+    // (cronograma turma_aulas quando existir; fallback seguro sem inventar
+    // números quando a turma não tem cronograma detalhado).
+    // ---------------------------------------------------------------------
+    const totalHorasPrevistas = round1(enriched.reduce((acc, item) => acc + n(item.horas?.horas_previstas), 0));
+    const totalHorasRealizadas = round1(enriched.reduce((acc, item) => acc + n(item.horas?.horas_realizadas), 0));
+    const totalDiasPrevistos = enriched.reduce((acc, item) => acc + (item.horas?.dias_previstos || 0), 0);
+    const totalDiasPraticados = enriched.reduce((acc, item) => acc + (item.horas?.dias_praticados || 0), 0);
+    const totalHcPrevisto = enriched.reduce((acc, item) => acc + n(item.horas?.hc_previsto), 0);
+    const totalHcRealizado = enriched.reduce((acc, item) => acc + n(item.horas?.hc_realizado), 0);
+    const turmasSemCronograma = enriched.filter((item) => item.horas && !item.horas.usa_cronograma).length;
 
     // taxa de presença: presentes / (presentes + ausentes) — justificado e
     // pendente não contam contra a taxa (mesma regra da Frequência Individual)
@@ -296,7 +354,10 @@ async function getDashboardTreinamentos(req, res) {
       const p = row.presenca;
 
       if (!byCliente.has(cliente)) {
-        byCliente.set(cliente, { cliente, total_turmas: 0, total_treinados: 0, presentes: 0, pendentes: 0, ausentes: 0, justificados: 0 });
+        byCliente.set(cliente, {
+          cliente, total_turmas: 0, total_treinados: 0, presentes: 0, pendentes: 0, ausentes: 0, justificados: 0,
+          horas_previstas: 0, horas_realizadas: 0, hc_previsto: 0, hc_realizado: 0,
+        });
       }
       const c = byCliente.get(cliente);
       c.total_turmas += 1;
@@ -305,15 +366,29 @@ async function getDashboardTreinamentos(req, res) {
       c.pendentes += p.diasPendente;
       c.ausentes += p.diasAusente;
       c.justificados += p.diasJustificado;
+      c.horas_previstas = round1(c.horas_previstas + n(row.horas?.horas_previstas));
+      c.horas_realizadas = round1(c.horas_realizadas + n(row.horas?.horas_realizadas));
+      c.hc_previsto += n(row.horas?.hc_previsto);
+      c.hc_realizado += n(row.horas?.hc_realizado);
 
       if (!byInstrutor.has(instrutor)) {
-        byInstrutor.set(instrutor, { instrutor, total_turmas: 0, total_treinados: 0, presentes: 0, ausentes: 0 });
+        byInstrutor.set(instrutor, {
+          instrutor, total_turmas: 0, total_treinados: 0, presentes: 0, ausentes: 0,
+          horas_previstas: 0, horas_realizadas: 0, dias_previstos: 0, dias_praticados: 0,
+          hc_previsto: 0, hc_realizado: 0,
+        });
       }
       const i = byInstrutor.get(instrutor);
       i.total_turmas += 1;
       i.total_treinados += p.baseParticipantes;
       i.presentes += p.diasPresente;
       i.ausentes += p.diasAusente;
+      i.horas_previstas = round1(i.horas_previstas + n(row.horas?.horas_previstas));
+      i.horas_realizadas = round1(i.horas_realizadas + n(row.horas?.horas_realizadas));
+      i.dias_previstos += row.horas?.dias_previstos || 0;
+      i.dias_praticados += row.horas?.dias_praticados || 0;
+      i.hc_previsto += n(row.horas?.hc_previsto);
+      i.hc_realizado += n(row.horas?.hc_realizado);
     }
 
     // taxa_presenca por cliente/instrutor agora usa a MESMA regra do KPI geral
@@ -323,6 +398,8 @@ async function getDashboardTreinamentos(req, res) {
       .map((item) => ({
         ...item,
         taxa_presenca: item.presentes + item.ausentes > 0 ? Math.round((item.presentes / (item.presentes + item.ausentes)) * 100) : 0,
+        aderencia_horas: pct(item.horas_realizadas, item.horas_previstas),
+        taxa_hc: pct(item.hc_realizado, item.hc_previsto),
       }))
       .sort((a, b) => b.total_turmas - a.total_turmas || b.total_treinados - a.total_treinados)
       .slice(0, 10);
@@ -331,9 +408,46 @@ async function getDashboardTreinamentos(req, res) {
       .map((item) => ({
         ...item,
         taxa_presenca: item.presentes + item.ausentes > 0 ? Math.round((item.presentes / (item.presentes + item.ausentes)) * 100) : 0,
+        aderencia_horas: pct(item.horas_realizadas, item.horas_previstas),
+        taxa_hc: pct(item.hc_realizado, item.hc_previsto),
       }))
       .sort((a, b) => b.total_turmas - a.total_turmas || b.total_treinados - a.total_treinados)
       .slice(0, 10);
+
+    // ---------------------------------------------------------------------
+    // Temas realizados: visão por tema de treinamento (pedido explícito do
+    // coordenador) — quantas turmas por tema, em que status, e horas/HC
+    // previstos x realizados por tema.
+    // ---------------------------------------------------------------------
+    const byTema = new Map();
+    for (const row of enriched) {
+      const tema = row.tema || "Sem tema";
+      if (!byTema.has(tema)) {
+        byTema.set(tema, {
+          tema, total_turmas: 0, concluidas: 0, em_andamento: 0, planejadas: 0, canceladas: 0,
+          horas_previstas: 0, horas_realizadas: 0, hc_previsto: 0, hc_realizado: 0,
+        });
+      }
+      const item = byTema.get(tema);
+      item.total_turmas += 1;
+      const statusNorm = normalizeStatus(row.status);
+      if (statusNorm === "concluido") item.concluidas += 1;
+      else if (statusNorm === "em_andamento") item.em_andamento += 1;
+      else if (statusNorm === "cancelado") item.canceladas += 1;
+      else item.planejadas += 1;
+      item.horas_previstas = round1(item.horas_previstas + n(row.horas?.horas_previstas));
+      item.horas_realizadas = round1(item.horas_realizadas + n(row.horas?.horas_realizadas));
+      item.hc_previsto += n(row.horas?.hc_previsto);
+      item.hc_realizado += n(row.horas?.hc_realizado);
+    }
+
+    const temasRealizados = Array.from(byTema.values())
+      .map((item) => ({
+        ...item,
+        aderencia_horas: pct(item.horas_realizadas, item.horas_previstas),
+        taxa_hc: pct(item.hc_realizado, item.hc_previsto),
+      }))
+      .sort((a, b) => b.total_turmas - a.total_turmas);
 
     // NPS e avaliações por turma
     let npsData = { media_nps: 0, media_qualidade: 0, media_prova: 0, total_avaliacoes: 0 };
@@ -399,6 +513,7 @@ async function getDashboardTreinamentos(req, res) {
 
     const ultimasTurmas = enriched.slice(0, 8).map((item) => {
       const p = item.presenca;
+      const h = item.horas;
       const resumo = resumoPresencaPorId.get(Number(item.id));
       return {
         ...item,
@@ -411,6 +526,13 @@ async function getDashboardTreinamentos(req, res) {
         // cru do banco, sem nunca considerar se data_fim já tinha passado.
         // Agora usa a mesma fonte de status das telas Treinamentos/Presenças.
         status_canonico: resumo ? resumo.status_turma : normalizeStatus(item.status),
+        horas_previstas: n(h?.horas_previstas),
+        horas_realizadas: n(h?.horas_realizadas),
+        dias_previstos: h?.dias_previstos ?? null,
+        dias_praticados: h?.dias_praticados ?? null,
+        hc_previsto: n(h?.hc_previsto),
+        hc_realizado: n(h?.hc_realizado),
+        usa_cronograma: h ? h.usa_cronograma : false,
       };
     });
 
@@ -433,6 +555,16 @@ async function getDashboardTreinamentos(req, res) {
         horas_treinadas: n(horasTreinadas),
         horas_ministradas: n(horasMinistradas),
         carga_horaria_total: n(cargaHorariaTotal),
+        // --- métricas exatas (horasResolver.js) pedidas pelo coordenador ---
+        horas_previstas: totalHorasPrevistas,
+        horas_realizadas: totalHorasRealizadas,
+        dias_previstos: totalDiasPrevistos,
+        dias_praticados: totalDiasPraticados,
+        hc_previsto: totalHcPrevisto,
+        hc_realizado: totalHcRealizado,
+        aderencia_horas: pct(totalHorasRealizadas, totalHorasPrevistas),
+        taxa_hc: pct(totalHcRealizado, totalHcPrevisto),
+        turmas_sem_cronograma: turmasSemCronograma,
         clientes_ativos: Array.from(clientesSet).filter((item) => item && item !== "Sem cliente").length,
         clientes_com_treinamento: Array.from(clientesSet).filter((item) => item && item !== "Sem cliente").length,
         gap_previstos_vs_treinados: gapPrevistosVsTreinados,
@@ -456,6 +588,8 @@ async function getDashboardTreinamentos(req, res) {
       },
       presenca_por_cliente: presencaPorCliente,
       ranking_instrutores: rankingInstrutores,
+      temas_realizados: temasRealizados,
+      realizado_instrutor_mes: realizadoInstrutorMes,
       ultimas_turmas: ultimasTurmas,
       oceano,
       nps: npsData,
