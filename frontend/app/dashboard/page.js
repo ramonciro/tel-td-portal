@@ -1,64 +1,135 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import PortalShell from "../../components/PortalShell";
-import { apiFetch, getStoredUser } from "../../services/api";
-import { colors, chart, corDoCliente } from "../../lib/theme";
+import PageHero from "../../components/PageHero";
+import SectionCard from "../../components/SectionCard";
+import StatCard from "../../components/StatCard";
+import { apiFetch } from "../../services/api";
+import { formatDateBR } from "../../lib/date";
+import { colors, chart } from "../../lib/theme";
 
-const META_PRESENCA_SLA = 85;
-
-function formatarNumero(n) {
+function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function formatarData(valor) {
-  if (!valor) return "-";
-  try {
-    const dataStr = String(valor).split("T")[0];
-    const partes = dataStr.split("-");
-    if (partes.length === 3) {
-      return `${partes[2]}/${partes[1]}/${partes[0]}`;
-    }
-    return valor;
-  } catch {
-    return value;
-  }
+function formatDate(value) {
+  return formatDateBR(value, "-");
 }
 
-function normalizarStatus(status) {
-  const chave = String(status || "").toLowerCase();
-  if (chave.includes("concl")) return "Concluída";
-  if (chave.includes("andamento")) return "Em andamento";
-  if (chave.includes("cancel")) return "Cancelada";
+function normalizeStatus(status) {
+  const key = String(status || "").toLowerCase();
+  if (key.includes("concl")) return "Concluída";
+  if (key.includes("andamento")) return "Em andamento";
+  if (key.includes("cancel")) return "Cancelada";
   return "Planejada";
 }
 
-function analisarModalidade(descricao, modalidade) {
+function parseModalidade(descricao, modalidade) {
   if (modalidade === "presencial") return "Presencial";
   if (modalidade === "online") return "Online";
-  const texto = String(descricao || "");
-  const correspondencia = texto.match(/\[modalidade:([^\]]+)\]/i);
-  const extraido = String(correspondencia?.[1] || "").trim().toLowerCase();
-  if (extraido === "presencial") return "Presencial";
-  if (extraido === "online") return "Online";
-  return "Presencial";
+  const text = String(descricao || "");
+  const match = text.match(/\[modalidade:([^\]]+)\]/i);
+  const parsed = String(match?.[1] || "").trim().toLowerCase();
+  if (parsed === "presencial") return "Presencial";
+  if (parsed === "online") return "Online";
+  return "-";
 }
 
-function obterEstiloSeloPorTaxa(valor) {
-  const numero = Number(valor || 0);
-  if (numero >= META_PRESENCA_SLA) return { background: colors.successLight, color: colors.successText, border: `1px solid rgba(16, 185, 129, 0.2)` };
-  if (numero >= 75) return { background: colors.warningLight, color: colors.warningText, border: `1px solid rgba(245, 158, 11, 0.2)` };
-  return { background: colors.dangerLight, color: colors.dangerText, border: `1px solid rgba(239, 68, 68, 0.2)` };
+function getBadgeStyleByTax(value) {
+  const number = Number(value || 0);
+  if (number >= 90) return { background: colors.successLight, color: colors.successText, border: "1px solid #86efac" };
+  if (number >= 80) return { background: colors.warningLight, color: colors.warningText, border: "1px solid #fcd34d" };
+  return { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fca5a5" };
 }
 
-export default function PaginaDashboard() {
-  const [usuario, setUsuario] = useState(null);
+function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTurmas = []) {
+  const items = [];
+
+  if (Number(kpis.pendentes || 0) > 0) {
+    items.push({
+      title: "Chamada pedindo fechamento",
+      text: `${fmt(kpis.pendentes)} registro(s) ainda precisam ser concluídos para a leitura do dia ficar mais fiel.`,
+      tone: Number(kpis.pendentes || 0) > 15 ? "danger" : "attention",
+    });
+  }
+
+  const clienteMaisSensivel = [...presencaPorCliente].sort((a, b) => Number(a.taxa_presenca || 0) - Number(b.taxa_presenca || 0))[0];
+  if (clienteMaisSensivel && Number(clienteMaisSensivel.total_turmas || 0) > 0) {
+    items.push({
+      title: "Cliente que merece olhar primeiro",
+      text: `${clienteMaisSensivel.cliente} está com ${fmt(clienteMaisSensivel.taxa_presenca)}% de presença no recorte atual.`,
+      tone: Number(clienteMaisSensivel.taxa_presenca || 0) >= 85 ? "ok" : "attention",
+    });
+  }
+
+  const turmaPendente = ultimasTurmas.find((item) => Number(item.pendentes || 0) > 0);
+  if (turmaPendente) {
+    items.push({
+      title: "Turma com pendência aberta",
+      text: `${turmaPendente.tema || "Turma sem título"} ainda tem ${fmt(turmaPendente.pendentes)} pendência(s) para fechamento.`,
+      tone: Number(turmaPendente.pendentes || 0) > 5 ? "danger" : "attention",
+    });
+  }
+
+  if (Number(oceano.jornadas || 0) > 0) {
+    items.push({
+      title: "Oceano em movimento",
+      text: `${fmt(oceano.jornadas)} jornada(s), ${fmt(oceano.acoes)} ação(ões) e ${fmt(oceano.tripulacao)} pessoa(s) já estão no fluxo do desenvolvimento.`,
+      tone: "ok",
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      title: "Leitura tranquila",
+      text: "O recorte não está apontando nenhum desvio mais sensível agora. Vale usar os filtros para aprofundar a análise.",
+      tone: "ok",
+    });
+  }
+
+  return items.slice(0, 4);
+}
+
+function buildNarrativa(kpis = {}, filters = {}) {
+  const partes = [];
+  const recortes = [];
+  if (filters.cliente) recortes.push(`cliente ${filters.cliente}`);
+  if (filters.instrutor) recortes.push(`instrutor ${filters.instrutor}`);
+  if (filters.supervisor) recortes.push(`supervisor ${filters.supervisor}`);
+  if (filters.status) recortes.push(`status ${normalizeStatus(filters.status)}`);
+  if (filters.modalidade) recortes.push(`modalidade ${filters.modalidade === "online" ? "Online" : "Presencial"}`);
+
+  if (recortes.length) {
+    partes.push(`Você está olhando um recorte por ${recortes.join(", ")}.`);
+  } else {
+    partes.push("Você está olhando a visão consolidada da operação.");
+  }
+
+  partes.push(`No período filtrado, a base reúne ${fmt(kpis.treinamentos || 0)} turma(s) e ${fmt(kpis.treinados || 0)} lançamento(s) de chamada.`);
+
+  if (Number(kpis.taxa_presenca || 0) > 0) {
+    partes.push(`A presença está em ${fmt(kpis.taxa_presenca)}%, com ${fmt(kpis.presentes || 0)} presença(s) confirmada(s).`);
+  } else {
+    partes.push("Ainda não há base suficiente para leitura de presença neste recorte.");
+  }
+
+  if (Number(kpis.pendentes || 0) > 0) {
+    partes.push(`Ainda há ${fmt(kpis.pendentes || 0)} pendência(s) de chamada em aberto, então esse recorte pode mudar ao longo do dia.`);
+  } else {
+    partes.push("A chamada do período está bem encaminhada, sem pendência relevante.");
+  }
+
+  return partes;
+}
+
+export default function DashboardPage() {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
-  const [carregando, setCarregando] = useState(true);
-  const [detalhesTurma, setDetalhesTurma] = useState(null);
-  const [filtros, setFiltros] = useState({
+  const [loading, setLoading] = useState(true);
+  const [drillDown, setDrillDown] = useState(null); // { turma, itens, loading }
+  const [alertas, setAlertas] = useState({ turmasCriticas: [], necessidadesAtrasadas: [], chamadasPendentes: [] });
+  const [filters, setFilters] = useState({
     cliente: "",
     instrutor: "",
     supervisor: "",
@@ -68,457 +139,389 @@ export default function PaginaDashboard() {
     data_fim: "",
   });
 
+  // alertas: carregados uma vez, independente dos filtros do KPI abaixo —
+  // "o que precisa de atenção hoje" não deveria mudar conforme você filtra
+  // a tabela.
   useEffect(() => {
-    try {
-      const u = getStoredUser();
-      setUsuario(u || {});
-    } catch {
-      setUsuario({});
+    async function carregarAlertas() {
+      try {
+        const [resumoData, necessidadesData] = await Promise.all([
+          apiFetch("/presenca-resumo").catch(() => null),
+          apiFetch("/necessidades").catch(() => null),
+        ]);
+        const turmas = Array.isArray(resumoData?.itens) ? resumoData.itens : [];
+        const necessidades = Array.isArray(necessidadesData?.itens) ? necessidadesData.itens : [];
+
+        setAlertas({
+          turmasCriticas: turmas.filter((t) => t.classificacao === "Crítico" && t.status_turma !== "Sem treinandos"),
+          necessidadesAtrasadas: necessidades.filter((n) => n.status_calculado === "atrasada"),
+          chamadasPendentes: turmas.filter((t) => t.status_turma === "Chamada pendente"),
+        });
+      } catch {
+        // alertas são um complemento — se falhar, o resto do dashboard segue normal
+      }
     }
+    carregarAlertas();
   }, []);
 
   useEffect(() => {
-    async function carregarDados() {
+    async function carregar() {
       try {
         setErro("");
-        setCarregando(true);
-        const parametros = new URLSearchParams();
-        Object.entries(filtros).forEach(([chave, valor]) => {
-          if (valor) parametros.set(chave, valor);
+        setLoading(true);
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value) params.set(key, value);
         });
-        const caminho = parametros.toString() ? `/dashboard/treinamentos?${parametros.toString()}` : "/dashboard/treinamentos";
-        const resposta = await apiFetch(caminho);
-        setDados(resposta || {});
-      } catch (erroApi) {
-        setErro(erroApi.message || "Erro ao carregar dashboard.");
+        const path = params.toString() ? `/dashboard/treinamentos?${params.toString()}` : "/dashboard/treinamentos";
+        const response = await apiFetch(path);
+        setDados(response || null);
+      } catch (error) {
+        setErro(error.message || "Erro ao carregar dashboard.");
       } finally {
-        setCarregando(false);
+        setLoading(false);
       }
     }
-    carregarDados();
-  }, [filtros]);
+    carregar();
+  }, [filters]);
 
-  function aplicarAtalhoPeriodo(tipo) {
-    const hoje = new Date();
-    const formatarDataStr = (d) => d.toISOString().slice(0, 10);
-    
-    let inicio = "";
-    let fim = formatarDataStr(hoje);
-
-    if (tipo === "hoje") {
-      inicio = formatarDataStr(hoje);
-    } else if (tipo === "semana") {
-      const primeiroDia = new Date(hoje);
-      primeiroDia.setDate(hoje.getDate() - hoje.getDay());
-      inicio = formatarDataStr(primeiroDia);
-    } else if (tipo === "mes") {
-      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      inicio = formatarDataStr(primeiroDiaMes);
-    } else if (tipo === "limpar") {
-      setFiltros(anterior => ({ ...anterior, data_inicio: "", data_fim: "" }));
-      return;
-    }
-
-    setFiltros(anterior => ({ ...anterior, data_inicio: inicio, data_fim: fim }));
-  }
-
-  async function abrirDetalhesTurma(item) {
-    setDetalhesTurma({ turma: item, itens: [], carregando: true });
+  async function abrirDrillDown(item) {
+    setDrillDown({ turma: item, itens: [], loading: true });
     try {
       const resposta = await apiFetch(`/frequencia-individual?treinamento_id=${item.id}`);
-      setDetalhesTurma({ turma: item, itens: Array.isArray(resposta?.itens) ? resposta.itens : [], carregando: false });
-    } catch (erroDetalhe) {
-      setDetalhesTurma({ turma: item, itens: [], carregando: false, erro: erroDetalhe.message });
+      setDrillDown({ turma: item, itens: Array.isArray(resposta?.itens) ? resposta.itens : [], loading: false });
+    } catch (error) {
+      setDrillDown({ turma: item, itens: [], loading: false, erro: error.message });
     }
-  }
-
-  function exportarParaExcel() {
-    const turmasParaExportar = dados?.ultimas_turmas || [];
-    if (turmasParaExportar.length === 0) {
-      alert("Não há dados de turmas disponíveis para exportar com os filtros atuais.");
-      return;
-    }
-
-    const dadosFormatados = turmasParaExportar.map(item => ({
-      "ID": item.id || "",
-      "Tema / Turma": item.tema || "-",
-      "Cliente": item.cliente || "-",
-      "Instrutor": item.instrutor || "-",
-      "Supervisor": item.supervisor || "-",
-      "Modalidade": analisarModalidade(item.descricao, item.modalidade),
-      "Status": normalizarStatus(item.status_canonico || item.status),
-      "Data": formatarData(item.data || item.data_inicio),
-      "Base Ativa / Treinados": Number(item.base_ativa || item.treinados || 0),
-      "Presentes": Number(item.presentes || 0),
-      "Ausentes": Number(item.ausentes || 0),
-      "Pendentes": Number(item.pendentes || 0),
-      "Taxa de Presença (%)": Number(item.taxa_presenca || 0)
-    }));
-
-    const planilha = XLSX.utils.json_to_sheet(dadosFormatados);
-    const livroTrabalho = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(livroTrabalho, planilha, "Relatório Executivo");
-
-    planilha["!cols"] = [
-      { wch: 6 },  // ID
-      { wch: 30 }, // Tema / Turma
-      { wch: 15 }, // Cliente
-      { wch: 20 }, // Instrutor
-      { wch: 20 }, // Supervisor
-      { wch: 12 }, // Modalidade
-      { wch: 15 }, // Status
-      { wch: 12 }, // Data
-      { wch: 18 }, // Base Ativa
-      { wch: 12 }, // Presentes
-      { wch: 12 }, // Ausentes
-      { wch: 12 }, // Pendentes
-      { wch: 20 }, // Taxa de Presença
-    ];
-
-    XLSX.writeFile(livroTrabalho, `relatorio_executivo_treinamentos_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
   const kpis = dados?.kpis || {};
   const filtrosApi = dados?.filtros || {};
-  const presencaPorCliente = Array.isArray(dados?.presenca_por_cliente) ? dados.presenca_por_cliente : [];
-  const rankingInstrutores = Array.isArray(dados?.ranking_instrutores) ? dados.ranking_instrutores : [];
-  const ultimasTurmas = Array.isArray(dados?.ultimas_turmas) ? dados.ultimas_turmas : [];
+  const presencaPorCliente = dados?.presenca_por_cliente || [];
+  const rankingInstrutores = dados?.ranking_instrutores || [];
+  const ultimasTurmas = dados?.ultimas_turmas || [];
+  const oceano = dados?.oceano || {};
+
+  const farois = useMemo(() => buildFarois(kpis, oceano, presencaPorCliente, ultimasTurmas), [kpis, oceano, presencaPorCliente, ultimasTurmas]);
+  const narrativa = useMemo(() => buildNarrativa(kpis, filters), [kpis, filters]);
+
+  const clienteOptions = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
+  const instrutorOptions = Array.isArray(filtrosApi.instrutores) ? filtrosApi.instrutores : [];
+  const supervisorOptions = Array.isArray(filtrosApi.supervisores) ? filtrosApi.supervisores : [];
+  const statusOptions = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
+  const modalidadeOptions = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
   const nps = dados?.nps || {};
-
-  const opcoesCliente = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
-  const opcoesStatus = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
-  const opcoesModalidade = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
-
-  const opcoesInstrutor = useMemo(() => {
-    const lista = new Set();
-    ultimasTurmas.forEach(t => { if (t.instrutor) lista.add(t.instrutor); });
-    return Array.from(lista).sort();
-  }, [ultimasTurmas]);
-
-  const opcoesSupervisor = useMemo(() => {
-    const lista = new Set();
-    ultimasTurmas.forEach(t => { if (t.supervisor) lista.add(t.supervisor); });
-    return Array.from(lista).sort();
-  }, [ultimasTurmas]);
-
-  const primeiroNome = String(usuario?.nome || "Coordenador").split(" ")[0];
 
   return (
     <PortalShell>
-      <div style={{ display: "flex", flexDirection: "column", gap: 0, margin: "-24px -24px 0", background: "#F8FAFC", minHeight: "100vh", overflowX: "hidden", width: "calc(100% + 48px)" }}>
+      {loading ? (
+        <div style={loadingBox}>Carregando o dashboard...</div>
+      ) : erro ? (
+        <div style={errorBox}>{erro}</div>
+      ) : (
+        <div style={{ display: "grid", gap: 18 }}>
+          <PageHero
+            eyebrow="Painel analítico"
+            title="Filtre, compare e encontre com mais clareza onde a gestão precisa agir."
+            subtitle="Aqui a ideia é sair da visão geral."
+            stats={[
+              { label: "turmas no recorte", value: fmt(kpis.treinamentos || 0) },
+              { label: "presença consolidada", value: `${fmt(kpis.taxa_presenca || 0)}%` },
+              { label: "execução do recorte", value: `${fmt(kpis.taxa_execucao_diaria || 0)}%` },
+            ]}
+          />
 
-        {ultimasTurmas.length > 0 && (
-          <div style={{ background: "#0F172A", padding: "10px 24px", display: "flex", alignItems: "center", gap: 16, overflowX: "auto", borderBottom: "1px solid rgba(255,255,255,0.08)", width: "100%", boxSizing: "border-box" }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: ".1em", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#38BDF8", display: "inline-block" }} /> Live Pulse
-            </span>
-            {ultimasTurmas.slice(0, 8).map((turmaItem, indice) => {
-              const statusTurma = normalizarStatus(turmaItem.status_canonico || turmaItem.status);
-              const corPonto = statusTurma === "Planejada" ? colors.warning : statusTurma === "Em andamento" || statusTurma === "Concluída" ? colors.success : "#64748B";
-              return (
-                <div key={turmaItem.id || indice} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#E2E8F0", whiteSpace: "nowrap", flexShrink: 0, background: "rgba(255,255,255,0.04)", padding: "3px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: corPonto, flexShrink: 0 }} />
-                  <strong style={{ fontWeight: 600 }}>{turmaItem.tema || "Turma"}</strong> <span style={{ color: "#94A3B8" }}>({turmaItem.cliente || "Geral"})</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
+          <AlertasDashboard alertas={alertas} onAbrirTurma={abrirDrillDown} />
 
-        <div style={{ padding: "28px 24px 16px", background: "#fff", borderBottom: `1px solid ${colors.border}`, width: "100%", boxSizing: "border-box" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ background: "rgba(56, 189, 248, 0.1)", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>Analítico - Espaço de Trabalho</span>
-                <span style={{ fontSize: 12, color: colors.textMuted }}>• Meta corporativa SLA: {META_PRESENCA_SLA}%</span>
-              </div>
-              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>
-                Dashboard Executivo, {primeiroNome}.
-              </h1>
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
+          <SectionCard
+            title="Filtros do painel"
+            subtitle="Escolha o recorte que faz mais sentido para a sua leitura e refine a análise sem perder contexto."
+            action={
               <button
-                onClick={exportarParaExcel}
-                style={{
-                  border: `1px solid ${colors.border}`, background: "#fff", color: "#0F172A",
-                  borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 12.5,
-                  display: "inline-flex", alignItems: "center", gap: 6, boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-                }}
+                style={buttonSecondary}
+                onClick={() =>
+                  setFilters({
+                    cliente: "",
+                    instrutor: "",
+                    supervisor: "",
+                    status: "",
+                    modalidade: "",
+                    data_inicio: "",
+                    data_fim: "",
+                  })
+                }
               >
-                📊 Exportar Relatório em Excel (.xlsx)
+                Limpar filtros
               </button>
-              <button
-                onClick={() => setFiltros({ cliente: "", instrutor: "", supervisor: "", status: "", modalidade: "", data_inicio: "", data_fim: "" })}
-                style={{
-                  border: `1px solid ${colors.border}`, background: "#F1F5F9", color: "#475569",
-                  borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 12.5
-                }}
-              >
-                Limpar Filtros
-              </button>
-            </div>
-          </div>
-
-          {erro && (
-            <div style={{ background: colors.dangerLight, color: colors.dangerText, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginTop: 16 }}>
-              {erro}
-            </div>
-          )}
-
-          <div style={{ background: "#F8FAFC", border: `1px solid ${colors.border}`, borderRadius: 12, padding: 14, marginTop: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".05em" }}>Filtros & Períodos Rápidos</span>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => aplicarAtalhoPeriodo("hoje")} style={estiloBotaoSelo}>Hoje</button>
-                <button onClick={() => aplicarAtalhoPeriodo("semana")} style={estiloBotaoSelo}>Esta Semana</button>
-                <button onClick={() => aplicarAtalhoPeriodo("mes")} style={estiloBotaoSelo}>Este Mês</button>
-                <button onClick={() => aplicarAtalhoPeriodo("limpar")} style={{ ...estiloBotaoSelo, background: "#E2E8F0", color: "#334155" }}>Todas as Datas</button>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
-              <label style={estiloRotuloCampo}>
+            }
+          >
+            <div style={filtersGrid}>
+              <label style={fieldLabel}>
                 Cliente
-                <select style={estiloEntrada} value={filtros.cliente} onChange={(e) => setFiltros((anterior) => ({ ...anterior, cliente: e.target.value }))}>
+                <select style={inputStyle} value={filters.cliente} onChange={(e) => setFilters((prev) => ({ ...prev, cliente: e.target.value }))}>
                   <option value="">Todos</option>
-                  {opcoesCliente.map((opcaoItem) => <option key={opcaoItem} value={opcaoItem}>{opcaoItem}</option>)}
+                  {clienteOptions.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
                 </select>
               </label>
 
-              <label style={estiloRotuloCampo}>
-                Instrutor (Cascata)
-                <select style={estiloEntrada} value={filtros.instrutor} onChange={(e) => setFiltros((anterior) => ({ ...anterior, instrutor: e.target.value }))}>
+              <label style={fieldLabel}>
+                Instrutor
+                <select style={inputStyle} value={filters.instrutor} onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))}>
                   <option value="">Todos</option>
-                  {opcoesInstrutor.map((opcaoItem) => <option key={opcaoItem} value={opcaoItem}>{opcaoItem}</option>)}
+                  {instrutorOptions.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
                 </select>
               </label>
 
-              <label style={estiloRotuloCampo}>
-                Supervisor (Cascata)
-                <select style={estiloEntrada} value={filtros.supervisor} onChange={(e) => setFiltros((anterior) => ({ ...anterior, supervisor: e.target.value }))}>
+              <label style={fieldLabel}>
+                Supervisor
+                <select style={inputStyle} value={filters.supervisor} onChange={(e) => setFilters((prev) => ({ ...prev, supervisor: e.target.value }))}>
                   <option value="">Todos</option>
-                  {opcoesSupervisor.map((opcaoItem) => <option key={opcaoItem} value={opcaoItem}>{opcaoItem}</option>)}
+                  {supervisorOptions.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
                 </select>
               </label>
 
-              <label style={estiloRotuloCampo}>
+              <label style={fieldLabel}>
                 Status
-                <select style={estiloEntrada} value={filtros.status} onChange={(e) => setFiltros((anterior) => ({ ...anterior, status: e.target.value }))}>
+                <select style={inputStyle} value={filters.status} onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}>
                   <option value="">Todos</option>
-                  {opcoesStatus.map((opcaoItem) => <option key={opcaoItem.value} value={opcaoItem.value}>{opcaoItem.label}</option>)}
+                  {statusOptions.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
                 </select>
               </label>
 
-              <label style={estiloRotuloCampo}>
+              <label style={fieldLabel}>
                 Modalidade
-                <select style={estiloEntrada} value={filtros.modalidade} onChange={(e) => setFiltros((anterior) => ({ ...anterior, modalidade: e.target.value }))}>
+                <select style={inputStyle} value={filters.modalidade} onChange={(e) => setFilters((prev) => ({ ...prev, modalidade: e.target.value }))}>
                   <option value="">Todas</option>
-                  {opcoesModalidade.map((opcaoItem) => <option key={opcaoItem.value} value={opcaoItem.value}>{opcaoItem.label}</option>)}
+                  {modalidadeOptions.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
                 </select>
               </label>
 
-              <label style={estiloRotuloCampo}>
-                Data inicial
-                <input type="date" style={estiloEntrada} value={filtros.data_inicio} onChange={(e) => setFiltros((anterior) => ({ ...anterior, data_inicio: e.target.value }))} />
+              <label style={fieldLabel}>
+                De
+                <input type="date" style={inputStyle} value={filters.data_inicio} onChange={(e) => setFilters((prev) => ({ ...prev, data_inicio: e.target.value }))} />
               </label>
 
-              <label style={estiloRotuloCampo}>
-                Data final
-                <input type="date" style={estiloEntrada} value={filtros.data_fim} onChange={(e) => setFiltros((anterior) => ({ ...anterior, data_fim: e.target.value }))} />
+              <label style={fieldLabel}>
+                Até
+                <input type="date" style={inputStyle} value={filters.data_fim} onChange={(e) => setFilters((prev) => ({ ...prev, data_fim: e.target.value }))} />
               </label>
             </div>
-          </div>
-        </div>
+          </SectionCard>
 
-        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20, width: "100%", boxSizing: "border-box" }}>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-            <CartaoMetrica valor={formatarNumero(kpis.treinamentos || 0)} rotulo="Turmas no Recorte" cor={chart.blue} porcentagem={100} icone="📊" />
-            <CartaoMetrica 
-              valor={`${formatarNumero(kpis.taxa_presenca || 0)}%`} 
-              rotulo={`Presença Consolidada (Meta: ${META_PRESENCA_SLA}%)`} 
-              cor={Number(kpis.taxa_presenca || 0) >= META_PRESENCA_SLA ? colors.success : colors.warning} 
-              porcentagem={Number(kpis.taxa_presenca || 0)} 
-              icone="🎯" 
-            />
-            <CartaoMetrica valor={formatarNumero(kpis.pendentes || 0)} rotulo="Pendências em Aberto" cor={colors.warning} porcentagem={Math.min(Number(kpis.pendentes || 0) * 10, 100)} icone="⚠️" />
-            <CartaoMetrica valor={`${formatarNumero(kpis.taxa_execucao_diaria || 0)}%`} rotulo="Taxa de Execução" cor={chart.purple} porcentagem={Number(kpis.taxa_execucao_diaria || 0)} icone="⚡" />
-            {Number(nps.total_avaliacoes || 0) > 0 && (
-              <CartaoMetrica valor={Number(nps.media_nps || 0) > 0 ? formatarNumero(nps.media_nps) : "—"} rotulo={`NPS Médio (${formatarNumero(nps.total_avaliacoes)} avaliações)`} cor={chart.pink} porcentagem={75} icone="⭐" />
+          <div style={kpiGrid}>
+            <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Base no recorte" accent={chart.blue} />
+            <StatCard title="Previstos" value={fmt(kpis.participantes_previstos || 0)} subtitle="Capacidade cadastrada" accent={chart.cyan} />
+            <StatCard title="Confirmados" value={fmt(kpis.treinados || 0)} subtitle="Com chamada registrada" accent={colors.primary} />
+            <StatCard title="Presença" value={`${fmt(kpis.taxa_presenca || 0)}%`} subtitle="Consolidado" accent={colors.success} />
+            <StatCard title="Pendências" value={fmt(kpis.pendentes || 0)} subtitle="Ainda em aberto" accent={colors.warning} />
+            <StatCard title="Execução" value={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} subtitle="Base já registrada" accent={chart.purple} />
+            <StatCard title="Horas previstas" value={`${fmt(kpis.horas_previstas || 0)}h`} subtitle="Cronograma planejado" accent={chart.cyan} />
+            <StatCard title="Horas realizadas" value={`${fmt(kpis.horas_realizadas || 0)}h`} subtitle={`Aderência ${fmt(kpis.aderencia_horas || 0)}%`} accent={colors.primary} />
+            <StatCard title="Dias praticados" value={`${fmt(kpis.dias_praticados || 0)}/${fmt(kpis.dias_previstos || 0)}`} subtitle="Praticados / previstos" accent={chart.teal} />
+            <StatCard title="HC previsto" value={fmt(kpis.hc_previsto || 0)} subtitle="Headcount planejado" accent={chart.orange} />
+            <StatCard title="HC realizado" value={fmt(kpis.hc_realizado || 0)} subtitle={`Taxa ${fmt(kpis.taxa_hc || 0)}%`} accent={colors.success} />
+            {nps.total_avaliacoes > 0 && (
+              <>
+                <StatCard title="NPS médio" value={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent={chart.pink} />
+                <StatCard title="Qualidade" value={nps.media_qualidade > 0 ? fmt(nps.media_qualidade) : "—"} subtitle="Nota média qualidade" accent={chart.orange} />
+                {nps.media_prova > 0 && (
+                  <StatCard title="Prova" value={fmt(nps.media_prova)} subtitle="Nota média prova" accent={chart.teal} />
+                )}
+              </>
             )}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
-            
-            <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Saúde por Cliente</h3>
-                  <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textMuted }}>Volume e taxa de presença corporativa</p>
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 600, color: colors.textMuted, background: "#F1F5F9", padding: "3px 8px", borderRadius: 6 }}>Top Contas</span>
+          <div style={twoColumns}>
+            <SectionCard title="Leitura gerencial" subtitle="Sinais que te ajudam a interpretar o cenário com mais rapidez.">
+              <div style={summaryList}>
+                {narrativa.map((item) => (
+                  <div key={item} style={summaryItem}>{item}</div>
+                ))}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {presencaPorCliente.length ? presencaPorCliente.map((clienteItem) => {
-                  const selo = obterEstiloSeloPorTaxa(clienteItem.taxa_presenca);
-                  const corCliente = corDoCliente(clienteItem.cliente);
-                  return (
-                    <div key={clienteItem.cliente} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#FAFAFA", border: `1px solid ${colors.border}` }}>
-                      <div>
-                        <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCliente.bg, color: corCliente.text }}>{clienteItem.cliente}</span>
-                        <p style={{ margin: "4px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{formatarNumero(clienteItem.total_treinados)} base • {formatarNumero(clienteItem.presentes)} presentes</p>
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 8, ...selo }}>
-                        {formatarNumero(clienteItem.taxa_presenca)}%
-                      </span>
-                    </div>
-                  );
-                }) : <p style={{ fontSize: 13, color: colors.textMuted, padding: "12px 0" }}>Nenhum dado por cliente no recorte.</p>}
-              </div>
-            </div>
+            </SectionCard>
 
-            <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Performance de Instrutores</h3>
-                  <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textMuted }}>Efetividade em campo e turmas ministradas</p>
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 600, color: colors.textMuted, background: "#F1F5F9", padding: "3px 8px", borderRadius: 6 }}>Ranking</span>
+            <SectionCard title="Faróis acionáveis" subtitle="O painel resume o que mais vale sua energia agora.">
+              <div style={farolList}>
+                {farois.map((item) => (
+                  <div key={item.title} style={farolItem(item.tone)}>
+                    <div style={farolTitle}>{item.title}</div>
+                    <div style={farolText}>{item.text}</div>
+                  </div>
+                ))}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {rankingInstrutores.length ? rankingInstrutores.map((instrutorItem) => {
-                  const selo = obterEstiloSeloPorTaxa(instrutorItem.taxa_presenca);
-                  return (
-                    <div key={instrutorItem.instrutor} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#FAFAFA", border: `1px solid ${colors.border}` }}>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{instrutorItem.instrutor}</p>
-                        <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textSecondary }}>{formatarNumero(instrutorItem.total_turmas)} turma(s) • {formatarNumero(instrutorItem.total_treinados)} base</p>
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 8, ...selo }}>
-                        {formatarNumero(instrutorItem.taxa_presenca)}%
-                      </span>
-                    </div>
-                  );
-                }) : <p style={{ fontSize: 13, color: colors.textMuted, padding: "12px 0" }}>Nenhum dado de instrutor no recorte.</p>}
-              </div>
-            </div>
-
+            </SectionCard>
           </div>
 
-          <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Turmas Recentes & Ativas (Visão Completa)</h3>
-                <p style={{ margin: "2px 0 0", fontSize: 11.5, color: colors.textMuted }}>Clique em qualquer linha para abrir o painel de frequência individual detalhado.</p>
+          <div style={twoColumns}>
+            <SectionCard title="Saúde por cliente" subtitle="Ajuda a comparar rapidamente onde a operação está mais firme e onde precisa de suporte.">
+              <div style={listGrid}>
+                {presencaPorCliente.length ? presencaPorCliente.map((item) => {
+                  const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
+                  return (
+                    <div key={item.cliente} style={listRow}>
+                      <div>
+                        <div style={rowTitle}>{item.cliente}</div>
+                        <div style={rowMeta}>{fmt(item.total_treinados)} base • {fmt(item.presentes)} presentes • {fmt(item.pendentes)} pendentes</div>
+                      </div>
+                      <div style={{ ...pill, ...badgeStyle }}>{fmt(item.taxa_presenca)}%</div>
+                    </div>
+                  );
+                }) : <div style={emptyState}>Nenhum dado por cliente apareceu nesse recorte.</div>}
               </div>
-            </div>
+            </SectionCard>
 
-            {carregando && <p style={{ fontSize: 13, color: colors.textSecondary, padding: "20px 0" }}>Carregando dados da tabela...</p>}
-            {!carregando && ultimasTurmas.length === 0 && (
-              <p style={{ fontSize: 13, color: colors.textMuted, padding: "20px 0" }}>Nenhuma turma encontrada com os filtros atuais.</p>
-            )}
+            <SectionCard title="Instrutores no recorte" subtitle="Uma leitura simples de produtividade e presença.">
+              <div style={listGrid}>
+                {rankingInstrutores.length ? rankingInstrutores.map((item) => {
+                  const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
+                  return (
+                    <div key={item.instrutor} style={listRow}>
+                      <div>
+                        <div style={rowTitle}>{item.instrutor}</div>
+                        <div style={rowMeta}>{fmt(item.total_turmas)} turma(s) • {fmt(item.total_treinados)} base • {fmt(item.presentes)} presentes</div>
+                      </div>
+                      <div style={{ ...pill, ...badgeStyle }}>{fmt(item.taxa_presenca)}%</div>
+                    </div>
+                  );
+                }) : <div style={emptyState}>Nenhum dado de instrutor apareceu nesse recorte.</div>}
+              </div>
+            </SectionCard>
+          </div>
 
-            {ultimasTurmas.length > 0 && (
+          <div style={twoColumns}>
+            <SectionCard title="Oceano em resumo" subtitle="Uma leitura curta para conectar o dashboard ao fluxo de desenvolvimento.">
+              <div style={oceanoGrid}>
+                <MiniStat label="Jornadas" value={fmt(oceano.jornadas || 0)} />
+                <MiniStat label="Ações" value={fmt(oceano.acoes || 0)} />
+                <MiniStat label="Sustentações" value={fmt(oceano.sustentacoes || 0)} />
+                <MiniStat label="Tripulação" value={fmt(oceano.tripulacao || 0)} />
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Progresso da tripulação" subtitle="Ajuda a enxergar se o oceano está só bonito ou realmente em movimento.">
+              {(() => {
+                const prog = oceano.progresso_tripulacao || {};
+                const total = Number(oceano.tripulacao || 0);
+                const items = [
+                  { label: "Em percurso", value: Number(prog.em_percurso || 0), color: "#3b82f6" },
+                  { label: "Concluídos", value: Number(prog.concluido || 0), color: "#16a34a" },
+                  { label: "Em sustentação", value: Number(prog.em_sustentacao || 0), color: "#7c3aed" },
+                ];
+                return (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {items.map((item) => {
+                      const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                      return (
+                        <div key={item.label}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 5 }}>
+                            <span>{item.label}</span>
+                            <span style={{ color: item.color }}>{fmt(item.value)} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({pct}%)</span></span>
+                          </div>
+                          <div style={{ height: 8, borderRadius: 999, background: "#f1f5f9", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${pct}%`, background: item.color, borderRadius: 999, transition: "width .4s ease" }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </SectionCard>
+          </div>
+
+          <SectionCard title="Turmas recentes" subtitle="As últimas turmas.">
+            {ultimasTurmas.length ? (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 960 }}>
+                <table style={table}>
                   <thead>
-                    <tr style={{ background: "#F8FAFC", borderBottom: `1px solid ${colors.border}` }}>
-                      <th style={estiloCabecalhoTabela}>Tema / Turma</th>
-                      <th style={estiloCabecalhoTabela}>Cliente</th>
-                      <th style={estiloCabecalhoTabela}>Instrutor</th>
-                      <th style={estiloCabecalhoTabela}>Supervisor</th>
-                      <th style={estiloCabecalhoTabela}>Modalidade</th>
-                      <th style={estiloCabecalhoTabela}>Status</th>
-                      <th style={estiloCabecalhoTabela}>Data</th>
-                      <th style={estiloCabecalhoTabela}>Base</th>
-                      <th style={estiloCabecalhoTabela}>Pres./Aus.</th>
-                      <th style={estiloCabecalhoTabela}>Presença</th>
-                      <th style={estiloCabecalhoTabela}>Pendências</th>
+                    <tr>
+                      <th style={th}>Turma</th>
+                      <th style={th}>Cliente</th>
+                      <th style={th}>Instrutor</th>
+                      <th style={th}>Modalidade</th>
+                      <th style={th}>Status</th>
+                      <th style={th}>Data</th>
+                      <th style={th}>Base</th>
+                      <th style={th}>Presença</th>
+                      <th style={th}>Presentes</th>
+                      <th style={th}>Pendentes</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {ultimasTurmas.map((turmaItem, indice) => {
-                      const corCliente = corDoCliente(turmaItem.cliente);
-                      const nomeStatus = normalizarStatus(turmaItem.status_canonico || turmaItem.status);
-                      return (
-                        <tr 
-                          key={turmaItem.id || indice} 
-                          onClick={() => abrirDetalhesTurma(turmaItem)} 
-                          style={{ cursor: "pointer", borderBottom: `1px solid ${colors.border}`, transition: "background 0.1s" }} 
-                          onMouseEnter={(e) => e.currentTarget.style.background = "#F8FAFC"}
-                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                          title="Clique para inspecionar frequência"
-                        >
-                          <td style={estiloCelulaTabela}><strong style={{ color: "#0F172A", fontWeight: 600 }}>{turmaItem.tema || "-"}</strong></td>
-                          <td style={estiloCelulaTabela}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: corCliente.bg, color: corCliente.text }}>{turmaItem.cliente || "-"}</span></td>
-                          <td style={estiloCelulaTabela}>{turmaItem.instrutor || "-"}</td>
-                          <td style={estiloCelulaTabela}><span style={{ color: colors.textSecondary, fontSize: 12 }}>{turmaItem.supervisor || "—"}</span></td>
-                          <td style={estiloCelulaTabela}><span style={{ fontSize: 11.5, color: colors.textSecondary, background: "#F1F5F9", padding: "2px 6px", borderRadius: 4 }}>{analisarModalidade(turmaItem.descricao, turmaItem.modalidade)}</span></td>
-                          <td style={estiloCelulaTabela}><span style={{ fontSize: 12, fontWeight: 600 }}>{nomeStatus}</span></td>
-                          <td style={estiloCelulaTabela}>{formatarData(turmaItem.data || turmaItem.data_inicio)}</td>
-                          <td style={estiloCelulaTabela}>{formatarNumero(turmaItem.base_ativa || turmaItem.treinados || 0)}</td>
-                          <td style={estiloCelulaTabela}>
-                            <span style={{ fontSize: 11.5, color: colors.textSecondary }}>
-                              <strong style={{ color: colors.successText }}>{formatarNumero(turmaItem.presentes || 0)}</strong> / <span style={{ color: colors.dangerText }}>{formatarNumero(turmaItem.ausentes || 0)}</span>
-                            </span>
-                          </td>
-                          <td style={estiloCelulaTabela}>
-                            {Number(turmaItem.taxa_presenca || 0) > 0 ? (
-                              <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11.5, fontWeight: 700, ...obterEstiloSeloPorTaxa(turmaItem.taxa_presenca) }}>
-                                {turmaItem.taxa_presenca}%
-                              </span>
-                            ) : "—"}
-                          </td>
-                          <td style={estiloCelulaTabela}><span style={{ fontWeight: Number(turmaItem.pendentes || 0) > 0 ? 700 : 400, color: Number(turmaItem.pendentes || 0) > 0 ? colors.warningText : colors.textSecondary }}>{formatarNumero(turmaItem.pendentes || 0)}</span></td>
-                        </tr>
-                      );
-                    })}
+                    {ultimasTurmas.map((item) => (
+                      <tr key={item.id} onClick={() => abrirDrillDown(item)} style={{ cursor: "pointer" }} title="Clique para ver a frequência por pessoa">
+                        <td style={td}>{item.tema || "-"}</td>
+                        <td style={td}>{item.cliente || "-"}</td>
+                        <td style={td}>{item.instrutor || "-"}</td>
+                        <td style={td}>{parseModalidade(item.descricao, item.modalidade)}</td>
+                        <td style={td}>{normalizeStatus(item.status_canonico || item.status)}</td>
+                        <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
+                        <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
+                        <td style={td}>
+                          {item.taxa_presenca > 0
+                            ? <span style={{ ...getBadgeStyleByTax(item.taxa_presenca), padding: "3px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700 }}>{item.taxa_presenca}%</span>
+                            : <span style={{ color: "#94a3b8" }}>—</span>}
+                        </td>
+                        <td style={td}>{fmt(item.presentes || 0)}</td>
+                        <td style={td}>{fmt(item.pendentes || 0)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
+            ) : (
+              <div style={emptyState}>Não apareceu nenhuma turma nesse recorte.</div>
             )}
-          </div>
-
+          </SectionCard>
         </div>
+      )}
 
-      </div>
-
-      {detalhesTurma && (
+      {drillDown && (
         <div
-          onClick={() => setDetalhesTurma(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
+          onClick={() => setDrillDown(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 540, width: "100%", maxHeight: "82vh", overflowY: "auto", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)" }}
+            style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 520, width: "100%", maxHeight: "80vh", overflowY: "auto" }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, borderBottom: `1px solid ${colors.border}`, paddingBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
               <div>
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: "#0284C7", background: "rgba(56, 189, 248, 0.1)", padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>Detalhes da Turma</span>
-                <p style={{ margin: "6px 0 0", fontSize: 17, fontWeight: 800, color: "#0F172A" }}>{detalhesTurma.turma?.tema || "Turma Selecionada"}</p>
-                <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.textMuted }}>Instrutor: {detalhesTurma.turma?.instrutor || "—"} | Cliente: {detalhesTurma.turma?.cliente || "—"}</p>
+                <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Frequência por pessoa</p>
+                <p style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 800, color: "#0f172a" }}>{drillDown.turma?.tema || "Turma"}</p>
               </div>
-              <button onClick={() => setDetalhesTurma(null)} style={{ border: "none", background: "#F1F5F9", width: 28, height: 28, borderRadius: "50%", fontSize: 14, cursor: "pointer", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              <button onClick={() => setDrillDown(null)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: "#64748b" }}>✕</button>
             </div>
 
-            {detalhesTurma.carregando && <p style={{ fontSize: 13, color: colors.textSecondary, padding: "20px 0", textAlign: "center" }}>Carregando dados individuais de frequência...</p>}
-            {detalhesTurma.erro && <p style={{ fontSize: 13, color: colors.dangerText, padding: "10px 0" }}>{detalhesTurma.erro}</p>}
-            {!detalhesTurma.carregando && !detalhesTurma.erro && detalhesTurma.itens.length === 0 && (
-              <p style={{ fontSize: 13, color: colors.textMuted, padding: "20px 0", textAlign: "center" }}>Sem registros individuais encontrados para esta turma.</p>
+            {drillDown.loading && <p style={{ fontSize: 13, color: "#64748b" }}>Carregando...</p>}
+            {drillDown.erro && <p style={{ fontSize: 13, color: "#b91c1c" }}>{drillDown.erro}</p>}
+            {!drillDown.loading && !drillDown.erro && drillDown.itens.length === 0 && (
+              <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem dados de frequência individual para esta turma ainda.</p>
             )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {detalhesTurma.itens.map((pessoa, indice) => (
-                <div key={indice} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: "#F8FAFC", border: `1px solid ${colors.border}` }}>
+              {drillDown.itens.map((pessoa, idx) => (
+                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: "1px solid #eef2f7" }}>
                   <div>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#0F172A" }}>{pessoa.treinando_nome || "Colaborador"}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: colors.textMuted }}>{pessoa.presentes || 0} presentes • {pessoa.ausentes || 0} ausentes</p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{pessoa.treinando_nome}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{pessoa.presentes} presentes · {pessoa.ausentes} ausentes · {pessoa.justificados} justificados</p>
                   </div>
                   <span style={{
-                    fontSize: 12, fontWeight: 700, borderRadius: 8, padding: "4px 10px",
-                    ...obterEstiloSeloPorTaxa(pessoa.frequencia_percentual)
+                    fontSize: 12, fontWeight: 700, borderRadius: 999, padding: "4px 10px",
+                    background: pessoa.frequencia_percentual >= 90 ? colors.successLight : pessoa.frequencia_percentual >= 75 ? colors.warningLight : colors.dangerLight,
+                    color: pessoa.frequencia_percentual >= 90 ? colors.successText : pessoa.frequencia_percentual >= 75 ? colors.warningText : colors.dangerText,
                   }}>
-                    {pessoa.frequencia_percentual || 0}%
+                    {pessoa.frequencia_percentual}%
                   </span>
                 </div>
               ))}
@@ -530,25 +533,146 @@ export default function PaginaDashboard() {
   );
 }
 
-function CartaoMetrica({ valor, rotulo, cor, porcentagem, icone }) {
+function MiniStat({ label, value }) {
   return (
-    <div style={{ background: "#fff", border: `1px solid ${colors.border}`, borderRadius: 14, padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.02)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-          <p style={{ margin: 0, fontSize: 11.5, fontWeight: 600, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: ".04em" }}>{rotulo}</p>
-          <span style={{ fontSize: 16 }}>{icone}</span>
-        </div>
-        <p style={{ margin: 0, fontSize: 26, fontWeight: 800, color: "#0F172A", letterSpacing: "-.02em" }}>{valor}</p>
-      </div>
-      <div style={{ height: 4, borderRadius: 999, background: "#F1F5F9", marginTop: 14, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${Math.min(Number(porcentagem || 0), 100)}%`, background: cor, borderRadius: 999 }} />
-      </div>
+    <div style={miniStatCard}>
+      <div style={miniStatLabel}>{label}</div>
+      <div style={miniStatValue}>{value}</div>
     </div>
   );
 }
 
-const estiloRotuloCampo = { display: "grid", gap: 3, color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" };
-const estiloEntrada = { width: "100%", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "7px 10px", background: "#fff", color: "#0F172A", fontSize: 12, outline: "none", boxSizing: "border-box" };
-const estiloBotaoSelo = { border: `1px solid ${colors.border}`, background: "#fff", color: "#0284C7", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6, cursor: "pointer" };
-const estiloCabecalhoTabela = { textAlign: "left", padding: "12px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: colors.textSecondary, fontWeight: 700 };
-const estiloCelulaTabela = { padding: "12px 14px", color: colors.textSecondary, fontSize: 12.5 };
+const loadingBox = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, color: "#475569", fontWeight: 700 };
+const errorBox = { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 18, padding: 16, fontWeight: 700 };
+const heroWrap = { display: "grid", gridTemplateColumns: "1.45fr .9fr", gap: 16 };
+const heroMain = { background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)", borderRadius: 24, padding: 24, color: "#ffffff", boxShadow: "0 14px 30px rgba(29, 78, 216, 0.18)" };
+const heroBadge = { display: "inline-block", padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,.14)", fontSize: 12, fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase" };
+const heroTitle = { fontSize: 30, lineHeight: 1.15, margin: "12px 0 10px" };
+const heroText = { color: "#dbeafe", lineHeight: 1.7, margin: 0 };
+const heroMiniGrid = { display: "grid", gap: 12 };
+const heroMiniCard = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, display: "grid", gap: 4, boxShadow: "0 10px 24px rgba(15,23,42,.05)" };
+const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 };
+const fieldLabel = { display: "grid", gap: 6, color: "#334155", fontSize: 13, fontWeight: 700 };
+const inputStyle = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 12, padding: "10px 12px", background: "#fff", color: "#0f172a" };
+const buttonSecondary = { border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
+const kpiGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
+const twoColumns = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
+const summaryList = { display: "grid", gap: 10 };
+const summaryItem = { padding: "14px 16px", borderRadius: 16, background: "#f8fafc", border: "1px solid #e2e8f0", color: "#334155", lineHeight: 1.6 };
+const farolList = { display: "grid", gap: 10 };
+function farolItem(tone) {
+  const map = {
+    ok: { background: "#f0fdf4", border: "1px solid #bbf7d0" },
+    attention: { background: "#fffbeb", border: "1px solid #fde68a" },
+    danger: { background: "#fff1f2", border: "1px solid #fecaca" },
+  };
+  return { padding: "14px 16px", borderRadius: 16, ...(map[tone] || map.ok) };
+}
+const farolTitle = { fontWeight: 900, color: "#0f172a", marginBottom: 4 };
+const farolText = { color: "#475569", lineHeight: 1.55 };
+const listGrid = { display: "grid", gap: 10 };
+const listRow = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff" };
+const rowTitle = { fontWeight: 900, color: "#0f172a" };
+const rowMeta = { marginTop: 4, color: "#64748b", fontSize: 13, lineHeight: 1.45 };
+const pill = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "6px 10px", borderRadius: 999, fontWeight: 800, fontSize: 12, whiteSpace: "nowrap" };
+const oceanoGrid = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 };
+const miniStatCard = { borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", padding: 14 };
+const miniStatLabel = { fontSize: 11, color: "#64748b", textTransform: "uppercase", fontWeight: 800 };
+const miniStatValue = { marginTop: 6, fontSize: 22, fontWeight: 900, color: "#0f172a" };
+const table = { width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 860 };
+const th = { textAlign: "left", padding: "12px 14px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" };
+const td = { padding: "12px 14px", borderBottom: "1px solid #eef2f7", color: "#334155", fontSize: 14 };
+const emptyState = { padding: 18, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", color: "#64748b" };
+
+// ---------------------------------------------------------------------------
+// Bloco de alertas — "o que precisa de atenção hoje", antes de qualquer
+// filtro. A ideia é que o Dashboard avise, em vez de esperar você perguntar.
+// As 3 fontes já existiam espalhadas no sistema (presenca-resumo e
+// necessidades) — isso só junta num único lugar de leitura rápida.
+// ---------------------------------------------------------------------------
+function AlertasDashboard({ alertas, onAbrirTurma }) {
+  const cards = [
+    {
+      key: "criticas",
+      label: "Turmas críticas",
+      cor: colors.danger,
+      corFundo: colors.dangerLight,
+      itens: alertas.turmasCriticas,
+      render: (t) => (
+        <span key={t.id} onClick={() => onAbrirTurma(t)} style={alertaItemLink}>
+          {t.tema} · {t.cliente} — {t.taxa_presenca}%
+        </span>
+      ),
+      href: null,
+    },
+    {
+      key: "pendentes",
+      label: "Chamadas pendentes",
+      cor: colors.warning,
+      corFundo: colors.warningLight,
+      itens: alertas.chamadasPendentes,
+      render: (t) => (
+        <a key={t.id} href="/presencas" style={alertaItemLink}>
+          {t.tema} · {t.cliente}
+        </a>
+      ),
+      href: "/presencas",
+    },
+    {
+      key: "necessidades",
+      label: "Necessidades atrasadas",
+      cor: chart.purple,
+      corFundo: "#EDE9FE",
+      itens: alertas.necessidadesAtrasadas,
+      render: (n) => (
+        <a key={n.id} href="/necessidades" style={alertaItemLink}>
+          {n.tema} · {n.cliente}
+        </a>
+      ),
+      href: "/necessidades",
+    },
+  ];
+
+  const algumAlerta = cards.some((c) => c.itens.length > 0);
+
+  if (!algumAlerta) {
+    return (
+      <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 18 }}>✅</span>
+        <span style={{ fontSize: 13.5, color: colors.successText, fontWeight: 600 }}>Nada precisando de atenção imediata agora — todos os indicadores estão dentro do esperado.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+      {cards.filter((c) => c.itens.length > 0).map((c) => (
+        <div key={c.key} style={{ borderRadius: 16, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${c.cor}`, background: "#fff", padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: c.cor }}>{c.itens.length}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: colors.textPrimary }}>{c.label}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {c.itens.slice(0, 3).map(c.render)}
+          </div>
+          {c.itens.length > 3 && c.href && (
+            <a href={c.href} style={{ display: "inline-block", marginTop: 6, fontSize: 11.5, color: c.cor, fontWeight: 700, textDecoration: "none" }}>
+              +{c.itens.length - 3} outra(s) →
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const alertaItemLink = {
+  display: "block",
+  fontSize: 12,
+  color: "#475569",
+  textDecoration: "none",
+  cursor: "pointer",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
