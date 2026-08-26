@@ -6,23 +6,18 @@ import { useEffect, useMemo, useState } from "react";
 import { clearSession, getStoredUser, hasSomeRole, hasOceanAccess } from "../services/api";
 
 const menuItems = [
-  // Sprint 4: Super Admin — menu exclusivo
-  { href: "/admin",         label: "Painel Super Admin",     icon: "⚙️", roles: ["super_admin"] },
-  // Menu operacional
-  { href: "/inicio",        label: "Início",                 icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/dashboard",     label: "Dashboard",              icon: "📊", roles: ["coordenador", "supervisor"] },
+  { href: "/inicio", label: "Início", icon: "🏠", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/dashboard", label: "Dashboard", icon: "📊", roles: ["coordenador", "supervisor"] },
+  { href: "/capacidade", label: "Capacidade", icon: "📐", roles: ["coordenador", "supervisor"] },
   { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "🌊", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
-  { href: "/necessidades",  label: "Necessidades",           icon: "🎯", roles: ["coordenador", "supervisor", "superintendente"] },
-  { href: "/trilhas",       label: "Trilhas",                icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/treinamentos",  label: "Treinamentos",           icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/presencas",     label: "Gestão de Turmas",       icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "🎒", roles: ["instrutor", "treinando"] },
-  { href: "/certificados",  label: "Certificados",           icon: "🏆", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/indicadores",  label: "Indicadores",             icon: "📊", roles: ["coordenador", "supervisor", "superintendente"] },
-  { href: "/biblioteca",    label: "Biblioteca",             icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/clientes",      label: "Clientes",               icon: "🏢", roles: ["coordenador", "supervisor"] },
-  { href: "/usuarios",      label: "Gestão de Usuários",     icon: "👥", roles: ["coordenador", "supervisor"] },
-  { href: "/auditoria",     label: "Auditoria",              icon: "🛡️", roles: ["coordenador", "superintendente"] },
+  { href: "/necessidades", label: "Necessidades", icon: "🎯", roles: ["coordenador", "supervisor", "superintendente"] },
+  { href: "/trilhas", label: "Trilhas", icon: "🧭", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/treinamentos", label: "Treinamentos", icon: "🎓", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/presencas", label: "Gestão de Turmas", icon: "🗂️", roles: ["coordenador", "supervisor", "instrutor"] },
+  { href: "/biblioteca", label: "Biblioteca", icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/clientes", label: "Clientes", icon: "🏢", roles: ["coordenador", "supervisor"] },
+  { href: "/usuarios", label: "Gestão de Usuários", icon: "👥", roles: ["coordenador", "supervisor"] },
+  { href: "/auditoria", label: "Auditoria", icon: "🛡️", roles: ["coordenador", "superintendente"] },
 ];
 // Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
 // ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
@@ -73,30 +68,15 @@ export default function PortalShell({
     setUser(getStoredUser());
   }, []);
 
-  // Sprint 4: super_admin não pertence a nenhuma rota operacional.
-  // Se cair em qualquer página que não seja /admin/*, redireciona.
-  useEffect(() => {
-    if (!user) return;
-    if (user.perfil === "super_admin" && !pathname.startsWith("/admin")) {
-      router.replace("/admin");
-    }
-  }, [user, pathname]);
-
-  const isSuperAdmin = user?.perfil === "super_admin";
-
   const allowedMenuItems = useMemo(() => {
     if (!user) return [];
-    // super_admin vê apenas os itens do próprio menu (/admin)
-    if (isSuperAdmin) {
-      return menuItems.filter((item) => item.roles.includes("super_admin"));
-    }
     return menuItems.filter((item) => {
       const roleOk = hasSomeRole(user, item.roles);
       if (!roleOk) return false;
       if (item.requiresOceanAccess) return hasOceanAccess(user);
       return true;
     });
-  }, [user, isSuperAdmin]);
+  }, [user]);
 
   const currentItem = useMemo(() => {
     return menuItems.find(
@@ -107,13 +87,11 @@ export default function PortalShell({
   const currentAllowed = useMemo(() => {
     if (!currentItem) return true;
     if (!user) return false;
-    // super_admin tem acesso irrestrito no frontend
-    if (isSuperAdmin) return true;
     const roleOk = hasSomeRole(user, currentItem.roles);
     if (!roleOk) return false;
     if (currentItem.requiresOceanAccess) return hasOceanAccess(user);
     return true;
-  }, [currentItem, user, isSuperAdmin]);
+  }, [currentItem, user]);
 
   function handleLogout() {
     clearSession();
@@ -261,21 +239,8 @@ export default function PortalShell({
 
           <div style={sidebarFooter}>
             <div style={envCard}>
-              {user?.perfil === "super_admin" ? (
-                <>
-                  <span style={{ ...envLabel, color: "#f59e0b" }}>Super Admin</span>
-                  <strong style={{ ...envValue, color: "#fbbf24" }}>Tel Centro de Contatos</strong>
-                </>
-              ) : (
-                <>
-                  <span style={envLabel}>
-                    {user?.nome ? user.nome.split(" ")[0] : "Usuário"}
-                  </span>
-                  <strong style={envValue}>
-                    {user?.cliente || "Portal T&D"}
-                  </strong>
-                </>
-              )}
+              <span style={envLabel}>Ambiente</span>
+              <strong style={envValue}>Gestão Executiva de T&amp;D</strong>
             </div>
 
             <button
