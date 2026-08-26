@@ -23,9 +23,10 @@ function tenantWhere(empresaId, alias = 't') {
 }
 
 // Status de turmas concluídas (variações encontradas no banco)
-const STATUS_CONCLUIDO = `LOWER(TRIM(status)) IN ('concluído','concluido','encerrado','concluída','concluida')`;
-const STATUS_ANDAMENTO = `LOWER(TRIM(status)) IN ('em andamento','andamento','ativo','ativa','em execução')`;
-const STATUS_PLANEJADO = `LOWER(TRIM(status)) IN ('planejado','planejada','agendado','a iniciar')`;
+// LIKE evita problemas de charset/acento no MySQL do Railway
+const STATUS_CONCLUIDO = "(LOWER(TRIM(status)) LIKE '%conclui%' OR LOWER(TRIM(status)) = 'encerrado')";
+const STATUS_ANDAMENTO = "(LOWER(TRIM(status)) LIKE '%andamento%' OR LOWER(TRIM(status)) IN ('ativo','ativa'))";
+const STATUS_PLANEJADO = "(LOWER(TRIM(status)) LIKE '%planej%' OR LOWER(TRIM(status)) = 'agendado')";
 
 // Fallback seguro para SUM de inteiros
 function asInt(v) { return Number(v || 0); }
@@ -49,8 +50,9 @@ async function getResumo(req, res) {
       turmasTotal += asInt(r.total);
     });
 
+    // LIKE para evitar problemas de acento — conta linhas com status 'conclui*'
     const concluidas = statusRows
-      .filter((r) => STATUS_CONCLUIDO.includes(r.status?.toLowerCase()?.trim()))
+      .filter((r) => String(r.status || '').toLowerCase().trim().includes('conclui'))
       .reduce((s, r) => s + asInt(r.total), 0);
 
     // Horas treinadas (apenas turmas concluídas)
