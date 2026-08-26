@@ -15,6 +15,7 @@
 - **Modelo de capacidade híbrido (novo)**: `backend/src/services/capacidadeResolver.js` + tabelas `capacidade_regra_padrao` (regra automática: dias úteis do mês × horas/HC por dia, configurável) e `capacidade_instrutor_mensal` (override manual por instrutor+ano+mês, que tem prioridade sobre o automático quando existir).
 - `/api/dashboard/treinamentos` agora expõe, além das métricas de presença já existentes: `horas_previstas`, `horas_realizadas`, `dias_previstos`, `dias_praticados`, `hc_previsto`, `hc_realizado`, `aderencia_horas`, `taxa_hc`, além de `temas_realizados` (por tema de treinamento) e `realizado_instrutor_mes` (capacidade x realizado por instrutor e mês).
 - Dashboard (frontend) atualizado com cards de Horas previstas/realizadas, Dias praticados, HC previsto/realizado.
+- **Página `/capacidade` (novo)**: visão do coordenador com Capacidade x Realizado por instrutor/mês, ranking de realizado por instrutor, evolução dos últimos 6 meses, painel de configuração da regra automática padrão e painel de ajuste manual (override) por instrutor+ano+mês, além de tabela detalhada. Acessível pelo menu lateral (item "Capacidade", papéis coordenador/supervisor). Construída reaproveitando 100% do design system existente do portal (`lib/theme.js`, `PortalShell`, `PageHero`, `SectionCard`, `KpiStrip`, `ProgressStat`, `Charts.js`) para preservar a identidade visual e as cores do portal.
 
 ## Endpoints novos
 - `GET /api/dashboard/treinamentos` — (atualizado) inclui métricas exatas de horas/dias/HC, temas realizados e realizado por instrutor x mês.
@@ -31,8 +32,8 @@
 ## Pendências conhecidas
 - Corrigir `carga_horaria: 4` fixo em `backend/src/scripts/importDashboardExcel.js` (bug confirmado, mas o import não é mais recorrente — dado já foi importado uma vez e a operação atual é via cadastro manual de turmas no portal).
 - Corrigir conflação em `necessidadesResolver.js` (`horasAtendidas` contando treinamentos ainda não executados).
-- Construir página `/capacidade` no frontend (Capacidade x Realizado, Realizado Instrutor x Mês, Capacidade Instrutor x Mês) — endpoints já prontos e testados, falta a tela.
 - Testar em produção (Railway/Vercel) — validado até aqui apenas em ambiente local (MariaDB `teltd_dev`).
+- Confirmação visual/interativa da página `/capacidade` em sessão autenticada real no navegador (build e rota já validados, falta o "olho humano" ver os gráficos renderizados com dados reais).
 
 ## Deploy
 - Backend: Railway (Express + MySQL).

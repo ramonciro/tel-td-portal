@@ -1,117 +1,85 @@
-# Como aplicar este pacote no seu ambiente de teste
+# Pacote: Página /capacidade (Capacidade x Realizado)
 
-Este zip contém **apenas os arquivos que foram criados ou alterados** para
-corrigir os cálculos de horas/dias/HC e implementar o modelo de capacidade
-híbrido. Nada mais do projeto foi tocado.
+Este pacote contém os arquivos **novos/alterados** para adicionar a página
+`/capacidade` ao portal, conforme solicitado ("pode seguir com os demais
+ajustes... Dou liberdade para ajustar layout dentro dos parâmetros do
+portal, mantendo as cores do portal").
 
-## 1) Arquivos NOVOS (basta copiar para o mesmo caminho no seu projeto)
+Este pacote é a **continuação** do pacote anterior
+(`entrega_calculos_TD_2026-08-26.zip`). Os arquivos de backend
+(`horasResolver.js`, `capacidadeResolver.js`, `capacidadeController.js`,
+rotas em `index.js`) **já foram entregues e validados** no pacote anterior
+— não estão repetidos aqui.
 
-```
-backend/src/services/horasResolver.js
-backend/src/services/capacidadeResolver.js
-backend/src/controllers/capacidadeController.js
-database/migrations/2026-08-26_turmas_aulas_participantes.sql
-database/migrations/2026-08-26_capacidade_instrutor.sql
-```
-
-Copie esses 5 arquivos para as mesmas pastas no seu repositório (criando as
-pastas se não existirem). Não sobrescrevem nada, pois não existiam antes.
-
-## 2) Arquivos MODIFICADOS (cuidado: não sobrescreva direto se você tiver
-   mudanças locais próprias nesses mesmos arquivos)
+## O que tem aqui
 
 ```
-backend/src/index.js
-backend/src/controllers/dashboardTreinamentosController.js
-frontend/app/dashboard/page.js
+frontend/
+  app/
+    capacidade/
+      page.js            <- NOVO: a página em si
+  components/
+    PortalShell.js        <- ALTERADO: adiciona o item "Capacidade" no menu lateral
+README.md                 <- ALTERADO: documentação atualizada
+_diffs/
+  PortalShell.js.diff      <- diff exato da alteração no PortalShell (é só 1 linha nova)
 ```
 
-Para esses 3, incluí também o **diff exato** (o que mudou, linha a linha) na
-pasta `_diffs/`, para você conseguir revisar e aplicar manualmente caso já
-tenha feito outras alterações nesses arquivos desde a última sincronização:
+## Como aplicar no seu ambiente
 
-```
-_diffs/index.js.diff
-_diffs/dashboardTreinamentosController.js.diff
-_diffs/dashboard_page.js.diff
-```
+1. Copie `frontend/app/capacidade/page.js` para o mesmo caminho no seu
+   projeto (pasta nova, não existia antes).
+2. Abra `_diffs/PortalShell.js.diff` para ver a única mudança necessária
+   no seu `frontend/components/PortalShell.js` (adiciona uma linha no
+   array `menuItems`, logo depois do item "Dashboard"):
+   ```js
+   { href: "/capacidade", label: "Capacidade", icon: "📐", roles: ["coordenador", "supervisor"] },
+   ```
+   Ou simplesmente substitua o arquivo completo (`frontend/components/PortalShell.js`
+   incluído aqui) se preferir.
+3. Rode `npm run build` na pasta `frontend/` para confirmar que compila.
+4. Reinicie o frontend e acesse `/capacidade` logado como coordenador
+   ou supervisor (o item vai aparecer no menu lateral com o ícone 📐).
 
-Se seus arquivos atuais são idênticos aos da última entrega (ou seja, você
-não editou nada por conta própria neles), pode simplesmente **substituir
-pelos arquivos completos** que estão nas pastas `backend/` e `frontend/`
-deste zip.
+## O que a página mostra
 
-## 3) Rodar as migrations no banco de teste
+- **Filtros**: ano, mês, instrutor.
+- **Resumo (KpiStrip)**: horas realizadas, capacidade total, ocupação
+  geral, quantidade de instrutores no recorte.
+- **Capacidade x Realizado — Instrutor x Mês**: barra de progresso por
+  instrutor (horas realizadas / capacidade do mês), indicando quando a
+  capacidade veio de ajuste manual ("· ajuste manual").
+- **Realizado por instrutor**: ranking em gráfico de barras horizontais.
+- **Evolução — últimos 6 meses**: gráfico de linha comparando horas
+  realizadas x capacidade mês a mês.
+- **Painel "⚙️ Regra automática"** (botão no topo): permite ajustar a
+  regra padrão de capacidade (horas/dia, HC/dia, se conta domingo).
+- **Painel "+ Ajustar capacidade manual"** (botão no topo): permite
+  cadastrar/remover um override manual de capacidade para um instrutor
+  em um mês específico (tem prioridade sobre o cálculo automático).
+- **Tabela detalhada**: todas as colunas (previsto, realizado, dias,
+  capacidade, origem, ocupação, saldo) por instrutor.
 
-**IMPORTANTE**: antes de testar, aplique as 2 migrations no banco MySQL do
-ambiente de teste. Elas são idempotentes (`CREATE TABLE IF NOT EXISTS`),
-então é seguro rodar mesmo que algumas tabelas já existam:
+## Importante sobre o visual
 
-```bash
-mysql -h SEU_HOST -u SEU_USER -p SEU_BANCO < database/migrations/2026-08-26_turmas_aulas_participantes.sql
-mysql -h SEU_HOST -u SEU_USER -p SEU_BANCO < database/migrations/2026-08-26_capacidade_instrutor.sql
-```
+A página foi construída **reaproveitando 100% dos componentes e cores já
+existentes no portal** (`lib/theme.js`, `PortalShell`, `PageHero`,
+`SectionCard`, `KpiStrip`, `ProgressStat`, gráficos de `Charts.js`) —
+não foi criado nenhum componente visual novo do zero. Isso significa que
+a página segue a mesma identidade visual (navy + coral) das demais telas
+do portal, como pedido.
 
-Essas migrations criam:
-- `turma_aulas`, `presenca_aulas`, `treinamento_participantes` — já eram
-  usadas pelo código existente (cronograma, chamada por aula, roster), mas
-  não havia migration commitada para elas. **Se essas tabelas já existirem
-  no seu banco de teste, nada é alterado.**
-- `capacidade_regra_padrao` (regra automática, já vem com 1 linha padrão:
-  6h/dia, 30 HC/dia, domingo não conta) e `capacidade_instrutor_mensal`
-  (overrides manuais) — 100% novas.
+## Verificação já feita aqui no sandbox
 
-## 4) Reiniciar os serviços
+- ✅ `npm run build` completou com sucesso, rota `/capacidade` compilada
+  sem erros (5.92 kB).
+- ✅ A rota responde HTTP 200 com o HTML correto (confirmado via curl).
+- ⚠️ **Não foi possível confirmar visualmente** com navegador automatizado
+  porque a página exige login (mesma trava de autenticação das outras
+  telas do portal) — isso é esperado e não é um defeito. Por favor,
+  entre no portal com seu usuário coordenador/supervisor e acesse
+  `/capacidade` pelo menu lateral para conferir visualmente.
 
-Depois de copiar os arquivos e rodar as migrations:
+## Se encontrar algo estranho
 
-```bash
-# backend
-pm2 restart teltd-backend   # ou o processo equivalente no seu ambiente
-
-# frontend
-pm2 restart teltd-frontend
-```
-
-## 5) O que testar
-
-- `GET /api/dashboard/treinamentos` — agora deve trazer, dentro de `kpis`:
-  `horas_previstas`, `horas_realizadas`, `dias_previstos`, `dias_praticados`,
-  `hc_previsto`, `hc_realizado`, `aderencia_horas`, `taxa_hc`. Também
-  aparecem os blocos novos `temas_realizados` e `realizado_instrutor_mes`
-  na resposta.
-- Tela **Dashboard** (frontend) — deve mostrar os novos cards: "Horas
-  previstas", "Horas realizadas", "Dias praticados", "HC previsto", "HC
-  realizado".
-- Novos endpoints de capacidade (perfil coordenador/supervisor):
-  - `GET /api/capacidade?ano=2026&mes=6`
-  - `GET /api/capacidade/regra`
-  - `PUT /api/capacidade/regra` (perfil coordenador)
-  - `GET /api/capacidade/overrides`
-  - `POST /api/capacidade/overrides` (perfil coordenador) — body:
-    `{"instrutor":"Nome","ano":2026,"mes":6,"horas_capacidade":100,"hc_capacidade":300}`
-  - `DELETE /api/capacidade/overrides/:id` (perfil coordenador)
-  - `GET /api/capacidade/instrutores`
-
-  **Atenção**: os nomes dos campos no body do POST são em `snake_case`
-  (`horas_capacidade`, `hc_capacidade`), não `camelCase`.
-
-## O que NÃO está neste pacote (ainda pendente)
-
-- Página visual `/capacidade` no frontend (os endpoints já existem e foram
-  testados, mas a tela ainda não foi construída).
-- Correção do `carga_horaria: 4` fixo no importador de Excel
-  (`importDashboardExcel.js`) — de baixa prioridade porque esse import não
-  é mais recorrente no fluxo atual.
-- Correção do cálculo de `horasAtendidas` em `necessidadesResolver.js`.
-
-## Validação já feita antes deste envio
-
-Testei todos os endpoints via `curl` com JWT real contra dados semeados
-localmente (3 turmas de teste com cronograma e chamada detalhados) e os
-números bateram exatamente com o esperado:
-- 60h previstas / 49,5h realizadas / 11 dias previstos / 9 praticados /
-  HC 60 previsto / 55 realizado (agregado das 3 turmas de teste).
-- Override manual de capacidade testado end-to-end: criado → confirmado
-  com prioridade sobre o cálculo automático → removido → voltou ao
-  automático corretamente.
+Me avise o que apareceu (print de tela ajuda bastante) e eu corrijo.
