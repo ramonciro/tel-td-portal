@@ -7,7 +7,28 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
-const { authRequired, authorizeRoles, authorizeOceanAccess } = require("./middlewares/auth");
+const { runMigrations } = require("./database/migrate");
+const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } = require("./middlewares/auth");
+
+// Sprint 5: Analytics
+const {
+  getResumo, getHoras, getNps, getEfetividade, getRoi,
+} = require("./controllers/analyticsController");
+
+// Sprint 4: Admin (super_admin)
+const {
+  getGlobalStats,
+  listEmpresas,
+  getEmpresa,
+  createEmpresa,
+  updateEmpresa,
+  toggleAtivo,
+  deleteEmpresa,
+  listPlanos,
+} = require("./controllers/adminController");
+// Sprint 1: middleware de isolamento multi-tenant
+// Sprint 1: middleware de isolamento multi-tenant (import único)
+const { clientMiddleware } = require("./middlewares/clientMiddleware");
 
 const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
 const jornadasDesenvolvimentoRoutes = require("./routes/jornadasDesenvolvimentoRoutes");
@@ -17,19 +38,26 @@ const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
 // FIX 1: importar a rota de jornada-participantes (estava faltando)
 const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
 
+// Sprint 3: Trilhas relacionais, Certificados
+const {
+  listTrilhas,
+  getTrilha,
+  createTrilha,
+  updateTrilha,
+  deleteTrilha,
+  getProgresso,
+  marcarEtapaConcluida,
+} = require("./controllers/trilhasRelacionaisController");
+
+const {
+  listCertificados,
+  emitirCertificado,
+  verificarCertificado,
+} = require("./controllers/certificadosController");
+
 const {
   getDashboardTreinamentos,
 } = require("./controllers/dashboardTreinamentosController");
-
-const {
-  getCapacidade,
-  getRegra,
-  putRegra,
-  getOverrides,
-  postOverride,
-  deleteOverride,
-  getInstrutores,
-} = require("./controllers/capacidadeController");
 
 const {
   listarResumoGeral,
@@ -57,6 +85,7 @@ const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   salvarChamadaParticipantes,
+  createParticipanteTreinamento,   // FIX: estava exportada no controller mas nunca importada
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
 } = require("./controllers/treinamentoParticipantesController");
@@ -119,58 +148,15 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Sprint 1: clientMiddleware aplicado globalmente — popula req.empresaId
+// via empresa_id do JWT para todas as rotas protegidas
+app.use(clientMiddleware);
 
 app.get(
   "/api/dashboard/treinamentos",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   getDashboardTreinamentos
-);
-
-// Capacidade x Realizado — visão de capacity planning do coordenador
-// (capacidade automática por dias úteis, com override manual opcional
-// por instrutor + mês).
-app.get(
-  "/api/capacidade",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  getCapacidade
-);
-app.get(
-  "/api/capacidade/regra",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  getRegra
-);
-app.put(
-  "/api/capacidade/regra",
-  authRequired,
-  authorizeRoles("coordenador"),
-  putRegra
-);
-app.get(
-  "/api/capacidade/overrides",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  getOverrides
-);
-app.post(
-  "/api/capacidade/overrides",
-  authRequired,
-  authorizeRoles("coordenador"),
-  postOverride
-);
-app.delete(
-  "/api/capacidade/overrides/:id",
-  authRequired,
-  authorizeRoles("coordenador"),
-  deleteOverride
-);
-app.get(
-  "/api/capacidade/instrutores",
-  authRequired,
-  authorizeRoles("coordenador", "supervisor"),
-  getInstrutores
 );
 
 // Fonte única de presença + status de turma (cronograma > legado > snapshot),
@@ -277,6 +263,7 @@ app.use(
     table: "clientes",
     fields: ["nome", "segmento", "status", "gestor", "descricao"],
     orderBy: "nome ASC",
+    multiTenant: true, // Sprint 1
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
@@ -297,7 +284,9 @@ app.use(
       "ativo",
       "troca_senha_obrigatoria",
       "pode_acessar_oceano_desenvolvimento",
+      "empresa_id",
     ],
+    multiTenant: true, // Sprint 1
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
@@ -367,6 +356,7 @@ app.delete(
 app.use(
   "/api/treinamentos",
   createCrudRouter({
+    multiTenant: true, // Sprint 1
     table: "treinamentos",
     fields: [
       "tema",
@@ -396,18 +386,6 @@ app.use(
       entidade: "treinamento",
       resumoCriar: (dados) => `Criou o treinamento "${dados.tema || "?"}" (${dados.cliente || "?"})`,
       resumoEditar: (antes, depois) => `Editou o treinamento "${antes?.tema || "?"}" (${antes?.cliente || "?"})`,
-    },
-    // FIX: "necessidade_id" é opcional (coluna INT NULL) e "carga_horaria"
-    // é DECIMAL — mas o formulário sempre manda string ("" quando vazio,
-    // ou texto livre como "20h"). Sem isso o MySQL rejeitava o INSERT e o
-    // instrutor não conseguia criar a turma mesmo deixando o campo em branco.
-    fieldTypes: {
-      necessidade_id: "int",
-      carga_horaria: "decimal",
-      participantes: "int",
-      participantes_previstos: "int",
-      participantes_presentes: "int",
-      concluidos: "int",
     },
   })
 );
@@ -439,7 +417,8 @@ app.get(
           data_inicio,
           data_fim,
           turma,
-          supervisor
+          supervisor,
+          necessidade_id
         FROM treinamentos
         WHERE id = ?
         LIMIT 1
@@ -470,6 +449,16 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   getParticipantesByTreinamento
+);
+
+// FIX: rota POST que o frontend chama ao adicionar participante manualmente.
+// A função createParticipanteTreinamento existia no controller e no module.exports,
+// mas nunca havia sido importada nem registrada — causando Erro 404 na tela de participantes.
+app.post(
+  "/api/treinamentos/:id/participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  createParticipanteTreinamento
 );
 
 app.post(
@@ -770,20 +759,53 @@ app.post(
   uploadBibliotecaArquivo
 );
 
-app.use(
+// Sprint 3: Trilhas relacionais — rotas dedicadas (substituem entityCrud)
+// Etapas agora são registros em trilha_etapas, não mais JSON em trilhas_aprendizagem.etapas
+app.get(
   "/api/trilhas",
-  createCrudRouter({
-    table: "trilhas_aprendizagem",
-    fields: ["cliente", "titulo", "descricao", "etapas"],
-    orderBy: "id DESC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
-    deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
-  })
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listTrilhas
+);
+app.get(
+  "/api/trilhas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  getTrilha
+);
+app.post(
+  "/api/trilhas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  createTrilha
+);
+app.put(
+  "/api/trilhas/:id",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  updateTrilha
+);
+app.delete(
+  "/api/trilhas/:id",
+  authRequired,
+  authorizeRoles("coordenador"),
+  deleteTrilha
+);
+app.get(
+  "/api/trilhas/:id/progresso",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  getProgresso
+);
+app.post(
+  "/api/trilhas/:id/etapas/:etapaId/concluir",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  marcarEtapaConcluida
 );
 
-app.get(
+// Sprint 1: convertido de GET para POST — TRUNCATE nunca pode ser GET
+app.post(
   "/api/zerar-dashboard",
   authRequired,
   authorizeRoles("coordenador"),
@@ -821,7 +843,8 @@ app.get(
   }
 );
 
-app.get(
+// Sprint 1: convertido de GET para POST
+app.post(
   "/api/importar-dashboard",
   authRequired,
   authorizeRoles("coordenador"),
@@ -867,7 +890,122 @@ app.get(
   }
 );
 
-app.use("/api/jornadas-etapas", jornadasEtapasRoutes);
+// Sprint 3: Certificados
+app.get(
+  "/api/certificados",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listCertificados
+);
+app.get(
+  "/api/certificados/verificar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  verificarCertificado
+);
+app.post(
+  "/api/certificados/emitir",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  emitirCertificado
+);
+
+// Sprint 3: Minhas Turmas — self-service do treinando
+// Retorna treinamentos em que o usuário logado está inscrito (match por email)
+app.get(
+  "/api/minhas-turmas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  async (req, res) => {
+    try {
+      const userEmail = req.user?.email;
+      const userName  = req.user?.nome;
+      const perfil    = String(req.user?.perfil || "").toLowerCase().trim();
+      const empresaId = req.empresaId ?? null;
+
+      let rows;
+
+      if (["coordenador", "supervisor"].includes(perfil)) {
+        // Gestores veem todas as turmas do tenant
+        const tenantWhere = empresaId ? "WHERE t.empresa_id = ?" : "";
+        const params = empresaId ? [empresaId] : [];
+        [rows] = await pool.query(
+          `SELECT t.*, COUNT(tp.id) AS total_participantes
+           FROM treinamentos t
+           LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+           ${tenantWhere}
+           GROUP BY t.id
+           ORDER BY t.id DESC`,
+          params
+        );
+      } else {
+        // Instrutores: turmas onde são instrutores
+        // Treinandos: turmas onde estão inscritos como participantes
+        if (perfil === "instrutor") {
+          [rows] = await pool.query(
+            `SELECT t.*, COUNT(tp.id) AS total_participantes
+             FROM treinamentos t
+             LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+             WHERE LOWER(t.instrutor) = LOWER(?)
+               ${empresaId ? "AND t.empresa_id = ?" : ""}
+             GROUP BY t.id
+             ORDER BY t.id DESC`,
+            empresaId ? [userName, empresaId] : [userName]
+          );
+        } else {
+          // Treinando: por email (prioritário) ou por nome
+          [rows] = await pool.query(
+            `SELECT DISTINCT t.*, tp.status AS status_participante
+             FROM treinamentos t
+             JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+             WHERE (
+               (tp.email IS NOT NULL AND tp.email != '' AND LOWER(tp.email) = LOWER(?))
+               OR LOWER(tp.nome) = LOWER(?)
+             )
+             ${empresaId ? "AND t.empresa_id = ?" : ""}
+             ORDER BY t.id DESC`,
+            empresaId ? [userEmail, userName, empresaId] : [userEmail, userName]
+          );
+        }
+      }
+
+      return res.json(rows || []);
+    } catch (error) {
+      console.error("[minhas-turmas]", error.message);
+      return res.status(500).json({ ok: false, message: "Erro ao buscar turmas", error: error.message });
+    }
+  }
+);
+
+// ─── Sprint 5: Analytics & KPIs ─────────────────────────────────────────────
+// Acessível a coordenadores, supervisores e super_admin.
+// req.empresaId filtrado pelo clientMiddleware — super_admin recebe dados globais.
+
+app.get("/api/analytics/resumo",      authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getResumo);
+app.get("/api/analytics/horas",       authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getHoras);
+app.get("/api/analytics/nps",         authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getNps);
+app.get("/api/analytics/efetividade", authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getEfetividade);
+app.get("/api/analytics/roi",         authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getRoi);
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Sprint 4: Admin / Super-Admin ───────────────────────────────────────────
+// Todas as rotas /api/admin/* exigem autenticação + perfil super_admin.
+// requireSuperAdmin retorna 403 imediatamente para qualquer outro perfil.
+
+app.get(  "/api/admin/stats",                  authRequired, requireSuperAdmin, getGlobalStats);
+app.get(  "/api/admin/planos",                 authRequired, requireSuperAdmin, listPlanos);
+app.get(  "/api/admin/empresas",               authRequired, requireSuperAdmin, listEmpresas);
+app.get(  "/api/admin/empresas/:id",           authRequired, requireSuperAdmin, getEmpresa);
+app.post( "/api/admin/empresas",               authRequired, requireSuperAdmin, createEmpresa);
+app.put(  "/api/admin/empresas/:id",           authRequired, requireSuperAdmin, updateEmpresa);
+app.post( "/api/admin/empresas/:id/toggle-ativo", authRequired, requireSuperAdmin, toggleAtivo);
+app.delete("/api/admin/empresas/:id",            authRequired, requireSuperAdmin, deleteEmpresa);
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Sprint 1: authRequired adicionado — esta rota estava sem proteção
+app.use("/api/jornadas-etapas", authRequired, jornadasEtapasRoutes);
 app.use("/api/jornadas-desenvolvimento", authRequired, authorizeOceanAccess, jornadasDesenvolvimentoRoutes);
 app.use("/api/acoes-desenvolvimento", authRequired, authorizeOceanAccess, acoesDesenvolvimentoRoutes);
 app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlanosRoutes);
@@ -877,6 +1015,17 @@ app.use("/api/jornada-participantes", authRequired, authorizeOceanAccess, jornad
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+async function iniciarAplicacao() {
+  try {
+    await runMigrations();
+
+    app.listen(PORT, () => {
+      console.log(`Servidor rodando na porta ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Erro crítico ao iniciar o servidor:", error);
+    process.exit(1);
+  }
+}
+
+iniciarAplicacao();
