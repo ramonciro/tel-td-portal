@@ -1,0 +1,7 @@
+CREATE TABLE rs_sites (
+  id         INT PRIMARY KEY AUTO_INCREMENT,
+  empresa_id INT NOT NULL,
+  nome       VARCHAR(100) NOT NULL,
+  ativo      TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
