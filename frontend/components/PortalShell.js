@@ -23,6 +23,10 @@ const menuItems = [
   { href: "/clientes",      label: "Clientes",               icon: "🏢", roles: ["coordenador", "supervisor"] },
   { href: "/usuarios",      label: "Gestão de Usuários",     icon: "👥", roles: ["coordenador", "supervisor"] },
   { href: "/auditoria",     label: "Auditoria",              icon: "🛡️", roles: ["coordenador", "superintendente"] },
+  // Módulo R&S — Recrutamento & Seleção
+  { href: "/rs",           label: "Dashboard R&S",       icon: "📊", roles: ["coordenador_rs", "gestor_rs"] },
+  { href: "/rs/rps",       label: "Requisições",          icon: "👥", roles: ["coordenador_rs", "gestor_rs"] },
+  { href: "/rs/relatorio", label: "Relatório Mensal",     icon: "📈", roles: ["coordenador_rs", "gestor_rs"] },
 ];
 // Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
 // ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
@@ -79,6 +83,11 @@ export default function PortalShell({
     if (!user) return;
     if (user.perfil === "super_admin" && !pathname.startsWith("/admin")) {
       router.replace("/admin");
+    }
+    // Módulo R&S: redireciona para a área correta se tentar acessar T&D
+    const rsPerfiles = ["coordenador_rs", "gestor_rs"];
+    if (rsPerfiles.includes(user.perfil) && !pathname.startsWith("/rs")) {
+      router.replace("/rs/rps");
     }
   }, [user, pathname]);
 
