@@ -39,7 +39,10 @@ export default function LoginPage() {
       if (data.user?.troca_senha_obrigatoria) {
         router.push("/primeiro-acesso");
       } else {
-        router.push("/inicio");
+        // Usuários de R&S vão direto para o módulo R&S
+        const perfil = (data.user?.perfil || "").toLowerCase().trim();
+        const rsPerfiles = ["coordenador_rs", "gestor_rs"];
+        router.push(rsPerfiles.includes(perfil) ? "/rs/rps" : "/inicio");
       }
     } catch (err) {
       setErro(err.message || "Erro ao entrar");
