@@ -1,173 +1,174 @@
-# Sprint R&S 1 — Instruções Completas de Instalação
+# Módulo R&S — Entrega Final
+**Baseado no código real do projeto (tel-td-portal-main)**
 
-## Estrutura do zip
+---
+
+## O que mudou em relação às entregas anteriores
+
+Após análise do código-fonte completo, as entregas anteriores foram corrigidas:
+
+| Item anterior         | Situação real              | Ação                                      |
+|-----------------------|----------------------------|-------------------------------------------|
+| `rsMiddleware.js`     | Desnecessário              | Removido — `authorizeRoles` já bloqueia   |
+| `perfilUtils.js`      | Desnecessário              | Removido — `hasSomeRole` já existe no projeto |
+| Tema dark (navy)      | Inconsistente com o portal | Corrigido — usa tema claro + `colors` de `theme.js` |
+| Export manual com fetch | Desnecessário            | Corrigido — usa `apiDownload` já existente |
+| `npm install xlsx`    | Já instalado               | `xlsx: ^0.18.5` já está no `package.json` |
+| Layout standalone     | Inconsistente              | Corrigido — todas as páginas usam `PortalShell` |
+| Migrations duplicadas | Já estão no projeto        | Não incluídas nesta entrega               |
+
+---
+
+## Estrutura dos arquivos
 
 ```
-sprint_rs1/
-├── migrations/
-│   ├── 01_create_rs_sites.sql
-│   ├── 02_create_rs_produtos.sql
-│   ├── 03_create_rps.sql
-│   ├── 04_seeds_rs_sites.sql       ← ajustar empresa_id antes de rodar
-│   └── 05_alter_usuarios_perfil.sql ← ler aviso antes de rodar
-│
+modulo_rs_final/
 ├── backend/
 │   └── src/
-│       ├── controllers/
-│       │   └── rsController.js     → copiar para backend/src/controllers/
-│       └── middleware/
-│           └── rsMiddleware.js     → copiar para backend/src/middleware/
-│
-└── frontend/
-    ├── lib/
-    │   └── perfilUtils.js          → copiar para frontend/lib/
-    ├── app/rs/rps/
-    │   └── page.js                 → copiar para frontend/app/rs/rps/
-    └── patches/
-        ├── PATCH_index_backend.js  → instruções para index.js
-        ├── PATCH_sidebar.js        → instruções para o sidebar
-        └── PATCH_login_redirect.js → instruções para o login
+│       └── controllers/
+│           └── rsController.js          ← substituir o existente (se já foi criado)
+│                                          ou adicionar novo
+├── frontend/
+│   ├── components/
+│   │   └── PortalShell.js              ← substituir o existente
+│   ├── app/
+│   │   ├── login/
+│   │   │   └── page.js                 ← substituir o existente
+│   │   └── rs/
+│   │       ├── page.js                 ← novo (Dashboard)
+│   │       ├── rps/
+│   │       │   └── page.js             ← novo (Listagem)
+│   │       └── relatorio/
+│   │           └── page.js             ← novo (Relatório)
+└── patches/
+    └── PATCH_index_rs_routes.js        ← trecho a inserir no index.js
 ```
 
 ---
 
-## Passo 1 — Migrations (Railway Query Editor — UMA por vez)
+## Passo 1 — Backend: rsController.js
 
-### 01, 02, 03: Criar tabelas
-Rodar em ordem. Cada um cria uma tabela nova, sem risco.
-
-### 04: Seeds de sites
+Copiar para:
 ```
-⚠️ ANTES de rodar: abrir o arquivo e trocar empresa_id = 1
-pelo ID real da Tel na tabela empresas/clientes.
+backend/src/controllers/rsController.js
 ```
 
-### 05: Alterar ENUM de perfil
-```
-⚠️ ANTES de rodar:
-1. No Railway Query Editor, executar:
-   SHOW CREATE TABLE usuarios;
-
-2. No resultado, localizar a linha do campo 'perfil' e copiar
-   todos os valores atuais do ENUM.
-
-3. Abrir o arquivo 05_alter_usuarios_perfil.sql e garantir
-   que o ALTER TABLE lista TODOS os valores existentes
-   + os dois novos: 'coordenador_rs', 'gestor_rs'
-
-   Se omitir um valor existente, usuários com aquele perfil
-   ficarão com o campo inválido.
-```
+Se o arquivo já existia de uma entrega anterior, substituir integralmente.
 
 ---
 
-## Passo 2 — Backend: copiar arquivos
+## Passo 2 — Backend: patch no index.js
 
-```
-rsController.js  →  backend/src/controllers/rsController.js
-rsMiddleware.js  →  backend/src/middleware/rsMiddleware.js
-```
+Abrir `patches/PATCH_index_rs_routes.js`.
 
----
-
-## Passo 3 — Backend: patch no index.js
-
-Abrir o arquivo `patches/PATCH_index_backend.js` e:
-
-**3a.** Adicionar os dois imports no topo do index.js:
+**2a.** Adicionar o import no topo do `backend/src/index.js`, junto com os outros requires:
 ```js
-const rsController                     = require('./controllers/rsController');
-const { rsAccessRequired, bloquearRS } = require('./middleware/rsMiddleware');
+const {
+  listar: listarRPs, criar: criarRP, detalhe: detalheRP,
+  editar: editarRP, excluir: excluirRP,
+  getSites: getRSSites, getProdutos: getRSProdutos,
+  getDashboard: getRSDashboard, getRelatorio: getRSRelatorio,
+  exportar: exportarRS,
+} = require("./controllers/rsController");
 ```
 
-**3b.** Adicionar `bloquearRS` nas rotas sensíveis de T&D.
-Ver exemplos comentados no arquivo de patch.
-
-**3c.** Registrar as 7 rotas novas do R&S antes do `app.listen`.
+**2b.** Adicionar o bloco de rotas **ANTES de `async function iniciarAplicacao()`**:
+Copiar as 10 linhas de `app.get/post/put/delete` do arquivo de patch.
 
 ---
 
-## Passo 4 — Frontend: copiar arquivos
+## Passo 3 — Frontend: PortalShell.js
 
-```
-perfilUtils.js  →  frontend/lib/perfilUtils.js
-page.js         →  frontend/app/rs/rps/page.js
-                   (criar as pastas rs/ e rps/ se não existirem)
-```
+Substituir `frontend/components/PortalShell.js` pelo arquivo desta entrega.
 
----
-
-## Passo 5 — Frontend: patch no sidebar
-
-Abrir `patches/PATCH_sidebar.js` e seguir as instruções:
-
-1. Importar `podeAcessarRS` e `podeAcessarTD` do perfilUtils
-2. Envolver itens do T&D com `{verTD && (...)}`
-3. Adicionar seção R&S envolta com `{verRS && (...)}`
-
-Usuários de R&S veem apenas o menu R&S.
-super_admin vê os dois menus separados por um divisor.
+O que mudou:
+- 3 itens R&S adicionados ao array `menuItems` (roles: `coordenador_rs`, `gestor_rs`)
+- Redirect automático: se RS user tentar acessar rota fora de `/rs/*`, vai para `/rs/rps`
 
 ---
 
-## Passo 6 — Frontend: patch no login
+## Passo 4 — Frontend: login/page.js
 
-Abrir `patches/PATCH_login_redirect.js` e seguir as instruções:
+Substituir `frontend/app/login/page.js` pelo arquivo desta entrega.
 
-Localizar o `router.push('/inicio')` que ocorre após login bem-sucedido
-e substituir pela função `getRedirectPosLogin(user.perfil)`.
+O que mudou: após login bem-sucedido, verifica o perfil:
+- `coordenador_rs` ou `gestor_rs` → `/rs/rps`
+- Todos os outros → `/inicio` (comportamento original mantido)
 
-Resultado pós-login:
-- `coordenador_rs` / `gestor_rs` → `/rs/rps`
-- Todos os outros perfis → `/inicio`
+---
+
+## Passo 5 — Frontend: páginas R&S
+
+Criar as pastas e copiar os arquivos:
+
+```
+frontend/app/rs/page.js           → Dashboard R&S
+frontend/app/rs/rps/page.js       → Listagem de RPs
+frontend/app/rs/relatorio/page.js → Relatório mensal
+```
+
+As pastas `rs/`, `rs/rps/` e `rs/relatorio/` devem ser criadas se não existirem.
+
+---
+
+## Passo 6 — Banco de dados
+
+As migrations já estão no projeto em `database/migrations/`:
+- `01_create_rs_sites.sql`
+- `02_create_rs_produtos.sql`
+- `03_create_rps.sql`
+- `04_seeds_rs_sites.sql` ← ajustar `empresa_id` antes de rodar
+- `05_alter_usuarios_perfil.sql` ← ler o aviso interno antes de rodar
+
+Se ainda não foram rodadas no Railway, rodar agora uma por vez.
 
 ---
 
 ## Passo 7 — Criar usuários de R&S
 
-No portal (página /usuarios), criar os usuários do time de R&S
-com os novos perfis:
+Na página `/usuarios`, criar os usuários do time com os novos perfis:
 
-| Perfil         | Pode fazer                              |
-|----------------|-----------------------------------------|
-| coordenador_rs | Criar, editar, excluir RPs + relatórios |
-| gestor_rs      | Somente visualizar RPs e relatórios     |
+| Perfil         | O que pode fazer                            |
+|----------------|---------------------------------------------|
+| coordenador_rs | Criar, editar, excluir RPs + ver relatório |
+| gestor_rs      | Somente visualizar RPs e relatório          |
 
 ---
 
-## Passo 8 — Checklist de validação
+## Checklist de validação
 
 ### Backend
-- [ ] Rota `/api/rs/sites` retorna a lista de sites (teste no Postman/Insomnia)
-- [ ] Rota `/api/rs/rps` com token de `coordenador_rs` retorna 200
-- [ ] Rota `/api/treinamentos` com token de `coordenador_rs` retorna 403
-- [ ] Rota `/api/rs/rps` sem token retorna 401
+- [ ] `GET /api/rs/sites` com token de `coordenador_rs` → retorna lista
+- [ ] `GET /api/treinamentos` com token de `coordenador_rs` → retorna 403 ✓
+- [ ] `POST /api/rs/rps` com token de `gestor_rs` → retorna 403 ✓
+- [ ] `GET /api/rs/rps` sem token → retorna 401 ✓
+- [ ] `GET /api/rs/exportar?mes=2026-07` → faz download do .xlsx com 3 abas ✓
 
-### Frontend — usuário coordenador_rs
-- [ ] Login redireciona para `/rs/rps` (não para `/inicio`)
-- [ ] Sidebar mostra apenas a seção R&S (sem menus de T&D)
+### Frontend — coordenador_rs
+- [ ] Login redireciona para `/rs/rps`
+- [ ] Sidebar mostra apenas: Dashboard R&S, Requisições, Relatório Mensal
 - [ ] Acesso direto a `/turmas` redireciona para `/rs/rps`
-- [ ] Botão "+ Nova RP" está visível
-- [ ] Modal abre com setor OPERACIONAL por padrão
-- [ ] Toggle para ESTRATÉGICO: Cargo aparece, campos Av. Técnica somem
+- [ ] Botão "+ Nova RP" aparece na listagem
+- [ ] Modal: toggle OPERACIONAL mostra Av. Técnica, oculta Cargo
+- [ ] Modal: toggle ESTRATÉGICO mostra Cargo e Fechamento, oculta Av. Técnica
 - [ ] Autocomplete de produto funciona ao digitar 2+ caracteres
-- [ ] Salvar cria a RP e aparece na listagem
+- [ ] Salvar cria RP e aparece na tabela
+- [ ] Linha TOTAL no rodapé soma corretamente
+- [ ] Dashboard carrega KPIs, barras de status, top produtos e sites
+- [ ] Relatório: filtro Operacional → só tabela Por Produto
+- [ ] Relatório: filtro Estratégico → só tabela Por Cargo
+- [ ] Botão Exportar faz download do arquivo `.xlsx`
 
-### Frontend — usuário gestor_rs
+### Frontend — gestor_rs
 - [ ] Login redireciona para `/rs/rps`
 - [ ] Botão "+ Nova RP" NÃO aparece
-- [ ] Botões de editar e excluir NÃO aparecem nas linhas
-
-### Frontend — super_admin
-- [ ] Sidebar mostra T&D e R&S separados por divisor
-- [ ] Consegue acessar `/turmas` normalmente
-- [ ] Consegue acessar `/rs/rps` normalmente
+- [ ] Botões ✏️ e 🗑 NÃO aparecem nas linhas
+- [ ] Consegue ver Dashboard e Relatório normalmente
 
 ---
 
-## Próximos entregáveis (Sprint R&S 2)
+## Arquivos a deletar (se foram criados em entregas anteriores)
 
-- `/api/rs/dashboard` — KPIs consolidados
-- `/api/rs/relatorio` — dados das pivot tables
-- `/rs` — Dashboard com StatCards e gráfico de status
-- `/rs/relatorio` — Relatório mensal + exportação Excel
+- `backend/src/middleware/rsMiddleware.js` → remover
+- `frontend/lib/perfilUtils.js` → remover
+- Quaisquer arquivos `PATCH_*.js` de sprints anteriores → podem ser descartados
