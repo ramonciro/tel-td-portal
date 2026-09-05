@@ -26,7 +26,8 @@ const menuItems = [
   // Módulo R&S — Recrutamento & Seleção
   { href: "/rs",           label: "Dashboard R&S",       icon: "📊", roles: ["coordenador_rs", "gestor_rs"] },
   { href: "/rs/rps",       label: "Requisições",          icon: "👥", roles: ["coordenador_rs", "gestor_rs"] },
-  { href: "/rs/relatorio", label: "Relatório Mensal",     icon: "📈", roles: ["coordenador_rs", "gestor_rs"] },
+  { href: "/rs/relatorio",      label: "Relatório Mensal",  icon: "📈", roles: ["coordenador_rs", "gestor_rs"] },
+  { href: "/rs/configuracoes", label: "Configurações R&S", icon: "⚙️", roles: ["coordenador_rs"] },
 ];
 // Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
 // ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
