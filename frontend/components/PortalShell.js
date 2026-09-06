@@ -1,10 +1,10 @@
 "use client";
-
+ 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { clearSession, getStoredUser, hasSomeRole, hasOceanAccess } from "../services/api";
-
+ 
 const menuItems = [
   // Sprint 4: Super Admin — menu exclusivo
   { href: "/admin",         label: "Painel Super Admin",     icon: "⚙️", roles: ["super_admin"] },
@@ -37,13 +37,13 @@ const menuItems = [
 // As páginas em si continuam existindo (/avaliacoes segue como biblioteca de
 // provas, /responder-avaliacao e /responder-nps continuam sendo os links
 // que a aba da turma usa) — só saíram da navegação principal.
-
+ 
 function isRouteActive(pathname, href) {
   if (!pathname) return false;
   if (pathname === href) return true;
   return pathname.startsWith(`${href}/`);
 }
-
+ 
 export default function PortalShell({
   title,
   subtitle,
@@ -55,30 +55,30 @@ export default function PortalShell({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [user, setUser] = useState(undefined);
-
+ 
   useEffect(() => {
     function handleResize() {
       const mobile = window.innerWidth <= 900;
       setIsMobile(mobile);
-
+ 
       if (!mobile) {
         setMobileMenuOpen(false);
       }
     }
-
+ 
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
+ 
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [pathname]);
-
+ 
   useEffect(() => {
     setUser(getStoredUser());
   }, []);
-
+ 
   // Sprint 4: super_admin não pertence a nenhuma rota operacional.
   // Se cair em qualquer página que não seja /admin/*, redireciona.
   useEffect(() => {
@@ -92,9 +92,9 @@ export default function PortalShell({
       router.replace("/rs/rps");
     }
   }, [user, pathname]);
-
+ 
   const isSuperAdmin = user?.perfil === "super_admin";
-
+ 
   const allowedMenuItems = useMemo(() => {
     if (!user) return [];
     // super_admin vê apenas os itens do próprio menu (/admin)
@@ -108,13 +108,13 @@ export default function PortalShell({
       return true;
     });
   }, [user, isSuperAdmin]);
-
+ 
   const currentItem = useMemo(() => {
     return menuItems.find(
       (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
     );
   }, [pathname]);
-
+ 
   const currentAllowed = useMemo(() => {
     if (!currentItem) return true;
     if (!user) return false;
@@ -125,12 +125,12 @@ export default function PortalShell({
     if (currentItem.requiresOceanAccess) return hasOceanAccess(user);
     return true;
   }, [currentItem, user, isSuperAdmin]);
-
+ 
   function handleLogout() {
     clearSession();
     router.push("/login");
   }
-
+ 
   const shellStyle = useMemo(
     () => ({
       minHeight: "100vh",
@@ -141,10 +141,10 @@ export default function PortalShell({
     }),
     [isMobile]
   );
-
+ 
   if (user === undefined) return null;
   if (!user) return null;
-
+ 
   if (!currentAllowed) {
     return (
       <div style={{ padding: 24 }}>
@@ -177,7 +177,7 @@ export default function PortalShell({
       </div>
     );
   }
-
+ 
   return (
     <div style={shellStyle}>
       {isMobile ? (
@@ -190,7 +190,7 @@ export default function PortalShell({
                 <div style={mobileBrandSubtitle}>Treinamento e Desenvolvimento</div>
               </div>
             </div>
-
+ 
             <button
               type="button"
               onClick={() => setMobileMenuOpen((prev) => !prev)}
@@ -199,13 +199,13 @@ export default function PortalShell({
               {mobileMenuOpen ? "Fechar" : "Menu"}
             </button>
           </header>
-
+ 
           {mobileMenuOpen ? (
             <div style={mobileDrawer}>
               <nav style={mobileNav}>
                 {allowedMenuItems.map((item) => {
                   const active = isRouteActive(pathname, item.href);
-
+ 
                   return (
                     <Link
                       key={item.href}
@@ -221,13 +221,13 @@ export default function PortalShell({
                   );
                 })}
               </nav>
-
+ 
               <div style={mobileFooterBlock}>
                 <div style={mobileEnvCard}>
                   <span style={envLabel}>Ambiente</span>
                   <strong style={envValue}>Gestão Executiva de T&amp;D</strong>
                 </div>
-
+ 
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -243,17 +243,17 @@ export default function PortalShell({
         <aside style={sidebar}>
           <div style={brandBox}>
             <img src="/logo-td.png" alt="Portal T&D" style={logo} />
-
+ 
             <div style={{ minWidth: 0 }}>
               <div style={brandTitle}>Portal T&amp;D</div>
               <div style={brandSubtitle}>Treinamento e Desenvolvimento</div>
             </div>
           </div>
-
+ 
           <nav style={nav}>
             {allowedMenuItems.map((item) => {
               const active = isRouteActive(pathname, item.href);
-
+ 
               return (
                 <Link
                   key={item.href}
@@ -269,7 +269,7 @@ export default function PortalShell({
               );
             })}
           </nav>
-
+ 
           <div style={sidebarFooter}>
             <div style={envCard}>
               {user?.perfil === "super_admin" ? (
@@ -288,7 +288,7 @@ export default function PortalShell({
                 </>
               )}
             </div>
-
+ 
             <button
               type="button"
               onClick={handleLogout}
@@ -299,23 +299,23 @@ export default function PortalShell({
           </div>
         </aside>
       )}
-
+ 
       <main style={main}>
         <div style={headerCard}>
           <div>
             <div style={pageTitle}>{title}</div>
             {subtitle ? <div style={pageSubtitle}>{subtitle}</div> : null}
           </div>
-
+ 
           {topRight ? <div>{topRight}</div> : null}
         </div>
-
+ 
         <div style={content}>{children}</div>
       </main>
     </div>
   );
 }
-
+ 
 const sidebar = {
   minHeight: "100vh",
   background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)",
@@ -327,34 +327,34 @@ const sidebar = {
   top: 0,
   overflowY: "auto",
 };
-
+ 
 const brandBox = {
   display: "flex",
   alignItems: "center",
   gap: 14,
   marginBottom: 24,
 };
-
+ 
 const logo = {
   width: 44,
   height: 44,
   borderRadius: 12,
   objectFit: "contain",
 };
-
+ 
 const brandTitle = {
   fontSize: 20,
   fontWeight: 800,
   lineHeight: 1.1,
 };
-
+ 
 const brandSubtitle = {
   marginTop: 6,
   color: "rgba(255,255,255,0.75)",
   fontSize: 14,
   lineHeight: 1.35,
 };
-
+ 
 const nav = {
   display: "flex",
   flexDirection: "column",
@@ -362,7 +362,7 @@ const nav = {
   overflowY: "auto",
   paddingRight: 4,
 };
-
+ 
 const navItem = {
   display: "flex",
   alignItems: "center",
@@ -374,30 +374,30 @@ const navItem = {
   fontWeight: 700,
   transition: "all .2s ease",
 };
-
+ 
 const navItemActive = {
   background: "#FF6B4A",
   color: "#fff",
   boxShadow: "0 10px 18px rgba(255,107,74,0.35)",
 };
-
+ 
 const navIcon = {
   width: 22,
   textAlign: "center",
   fontSize: 16,
 };
-
+ 
 const navLabel = {
   lineHeight: 1.2,
 };
-
+ 
 const sidebarFooter = {
   marginTop: "auto",
   display: "grid",
   gap: 12,
   paddingTop: 18,
 };
-
+ 
 const envCard = {
   background: "rgba(255,255,255,0.1)",
   border: "1px solid rgba(255,255,255,0.12)",
@@ -406,7 +406,7 @@ const envCard = {
   display: "grid",
   gap: 4,
 };
-
+ 
 const envLabel = {
   fontSize: 12,
   textTransform: "uppercase",
@@ -414,12 +414,12 @@ const envLabel = {
   color: "rgba(255,255,255,0.68)",
   fontWeight: 800,
 };
-
+ 
 const envValue = {
   fontSize: 14,
   lineHeight: 1.35,
 };
-
+ 
 const logoutButton = {
   border: "1px solid rgba(255,255,255,0.18)",
   borderRadius: 14,
@@ -429,12 +429,12 @@ const logoutButton = {
   cursor: "pointer",
   fontWeight: 800,
 };
-
+ 
 const main = {
   padding: 18,
   minWidth: 0,
 };
-
+ 
 const headerCard = {
   background: "#ffffff",
   border: "1px solid #e2e8f0",
@@ -447,24 +447,24 @@ const headerCard = {
   flexWrap: "wrap",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
 };
-
+ 
 const pageTitle = {
   fontSize: 28,
   fontWeight: 800,
   color: "#0f172a",
   lineHeight: 1.1,
 };
-
+ 
 const pageSubtitle = {
   marginTop: 8,
   color: "#64748b",
   lineHeight: 1.5,
 };
-
+ 
 const content = {
   marginTop: 16,
 };
-
+ 
 const mobileTopbar = {
   position: "sticky",
   top: 0,
@@ -477,34 +477,34 @@ const mobileTopbar = {
   gap: 10,
   padding: "14px 16px",
 };
-
+ 
 const mobileBrandWrap = {
   display: "flex",
   alignItems: "center",
   gap: 10,
   minWidth: 0,
 };
-
+ 
 const mobileLogo = {
   width: 38,
   height: 38,
   borderRadius: 10,
   objectFit: "contain",
 };
-
+ 
 const mobileBrandTitle = {
   fontSize: 18,
   fontWeight: 800,
   lineHeight: 1.1,
 };
-
+ 
 const mobileBrandSubtitle = {
   marginTop: 4,
   color: "rgba(255,255,255,0.75)",
   fontSize: 12,
   lineHeight: 1.3,
 };
-
+ 
 const mobileMenuButton = {
   border: "1px solid rgba(255,255,255,0.18)",
   borderRadius: 12,
@@ -514,20 +514,20 @@ const mobileMenuButton = {
   cursor: "pointer",
   fontWeight: 800,
 };
-
+ 
 const mobileDrawer = {
   background: "linear-gradient(180deg, #0B1220 0%, #161D2E 100%)",
   color: "#fff",
   padding: "0 16px 16px",
 };
-
+ 
 const mobileNav = {
   display: "flex",
   flexDirection: "column",
   gap: 6,
   paddingTop: 8,
 };
-
+ 
 const mobileNavItem = {
   display: "flex",
   alignItems: "center",
@@ -538,28 +538,28 @@ const mobileNavItem = {
   textDecoration: "none",
   fontWeight: 700,
 };
-
+ 
 const mobileNavItemActive = {
   background: "#FF6B4A",
   color: "#fff",
 };
-
+ 
 const mobileNavIcon = {
   width: 22,
   textAlign: "center",
   fontSize: 16,
 };
-
+ 
 const mobileNavLabel = {
   lineHeight: 1.2,
 };
-
+ 
 const mobileFooterBlock = {
   display: "grid",
   gap: 12,
   marginTop: 14,
 };
-
+ 
 const mobileEnvCard = {
   background: "rgba(255,255,255,0.1)",
   border: "1px solid rgba(255,255,255,0.12)",
@@ -568,7 +568,7 @@ const mobileEnvCard = {
   display: "grid",
   gap: 4,
 };
-
+ 
 const logoutButtonMobile = {
   border: "1px solid rgba(255,255,255,0.18)",
   borderRadius: 14,
