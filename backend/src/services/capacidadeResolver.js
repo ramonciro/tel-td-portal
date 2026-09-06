@@ -506,6 +506,142 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses, empresaId } = {})
   return { itens, total_horas: Number(total.toFixed(2)) };
 }
 
+// Horas aplicadas (realizadas) por turma individual — mesma fonte única
+// (FONTE_HORAS_SQL) usada pela tela de Capacidade, só que agrupada por
+// treinamento_id em vez de instrutor/tema/operação. Criada para a Gestão de
+// Turmas (Treinamentos) e para o Indicadores mostrarem o MESMO número de
+// "horas aplicadas" que a Capacidade já calcula — antes disso, o Indicadores
+// tinha seu próprio cálculo simplificado (soma da carga horária nominal de
+// turmas concluídas, sem olhar aula a aula), que não batia com este.
+async function getHorasAplicadasPorTreinamento({ empresaId, treinamentoId } = {}) {
+  const conditions = [];
+  const params = [];
+  if (empresaId) { conditions.push("fonte_horas.empresa_id = ?"); params.push(empresaId); }
+  if (treinamentoId) { conditions.push("fonte_horas.treinamento_id = ?"); params.push(treinamentoId); }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const [rows] = await pool.query(
+    `SELECT
+       fonte_horas.treinamento_id AS treinamento_id,
+       SUM(fonte_horas.horas_real) AS horas_aplicadas,
+       SUM(fonte_horas.horas_planejada) AS horas_planejadas
+     FROM ${FONTE_HORAS_SQL}
+     ${where}
+     GROUP BY fonte_horas.treinamento_id`,
+    params
+  );
+
+  const mapa = new Map();
+  for (const r of rows) {
+    mapa.set(Number(r.treinamento_id), {
+      horas_aplicadas: Number(Number(r.horas_aplicadas || 0).toFixed(2)),
+      horas_planejadas: Number(Number(r.horas_planejadas || 0).toFixed(2)),
+    });
+  }
+  return mapa;
+}
+
+// ---------------------------------------------------------------------------
+// Agregados de horas aplicadas para o Indicadores (aba "Horas", Resumo e
+// ROI) — mesma FONTE_HORAS_SQL da Capacidade, com o mesmo filtro de recorte
+// (cliente/operação + período) já usado nessas telas. Substituem o cálculo
+// simplificado que o Indicadores tinha antes (SUM(carga_horaria) nominal de
+// turmas concluídas, sem olhar aula a aula), que não batia com a Capacidade.
+// dataInicio/dataFim são convertidos para os meses cobertos (mesma
+// granularidade já usada em getAderenciaPorTema) — turmas de dias avulsos
+// dentro do mês seguem contadas pelo mês inteiro, igual ao resto do módulo.
+// ---------------------------------------------------------------------------
+function condicoesRecorte({ empresaId, cliente, dataInicio, dataFim }) {
+  const conditions = [];
+  const params = [];
+  if (empresaId) { conditions.push("fonte_horas.empresa_id = ?"); params.push(empresaId); }
+  if (cliente) { conditions.push("fonte_horas.cliente = ?"); params.push(cliente); }
+  if (dataInicio || dataFim) {
+    const meses = mesesNoIntervalo({ dataInicio, dataFim });
+    conditions.push(`(fonte_horas.ano, fonte_horas.mes) IN (${meses.map(() => "(?, ?)").join(",")})`);
+    params.push(...meses.flatMap((m) => [m.ano, m.mes]));
+  }
+  return { conditions, params };
+}
+
+async function getHorasAplicadasTotal({ empresaId, cliente, dataInicio, dataFim } = {}) {
+  const { conditions, params } = condicoesRecorte({ empresaId, cliente, dataInicio, dataFim });
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const [[row]] = await pool.query(
+    `SELECT COALESCE(SUM(fonte_horas.horas_real), 0) AS horas_aplicadas
+     FROM ${FONTE_HORAS_SQL}
+     ${where}`,
+    params
+  );
+  return Number(Number(row.horas_aplicadas || 0).toFixed(2));
+}
+
+async function getHorasAplicadasPorMes({ empresaId, cliente, dataInicio, dataFim } = {}) {
+  // A janela fixa dos últimos 12 meses sempre vale por cima do filtro de
+  // período escolhido na tela (mesmo comportamento de antes desta mudança).
+  const janela12 = new Set(ultimosNMeses(12).map((m) => `${m.ano}-${pad2(m.mes)}`));
+  const mesesFiltro = (dataInicio || dataFim) ? mesesNoIntervalo({ dataInicio, dataFim }) : ultimosNMeses(12);
+  const meses = mesesFiltro.filter((m) => janela12.has(`${m.ano}-${pad2(m.mes)}`));
+  if (!meses.length) return [];
+
+  const conditions = [`(fonte_horas.ano, fonte_horas.mes) IN (${meses.map(() => "(?, ?)").join(",")})`];
+  const params = [...meses.flatMap((m) => [m.ano, m.mes])];
+  if (empresaId) { conditions.push("fonte_horas.empresa_id = ?"); params.push(empresaId); }
+  if (cliente) { conditions.push("fonte_horas.cliente = ?"); params.push(cliente); }
+
+  const [rows] = await pool.query(
+    `SELECT fonte_horas.ano AS ano, fonte_horas.mes AS mes,
+            COALESCE(SUM(fonte_horas.horas_real), 0) AS horas,
+            COUNT(DISTINCT fonte_horas.treinamento_id) AS turmas
+     FROM ${FONTE_HORAS_SQL}
+     WHERE ${conditions.join(" AND ")}
+     GROUP BY fonte_horas.ano, fonte_horas.mes
+     ORDER BY fonte_horas.ano, fonte_horas.mes`,
+    params
+  );
+
+  return rows.map((r) => ({
+    ano: Number(r.ano),
+    mes: Number(r.mes),
+    horas: Number(Number(r.horas).toFixed(2)),
+    turmas: Number(r.turmas),
+  }));
+}
+
+async function getHorasAplicadasPorCliente({ empresaId, cliente, dataInicio, dataFim, limit = 10 } = {}) {
+  const { conditions, params } = condicoesRecorte({ empresaId, cliente, dataInicio, dataFim });
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const [rows] = await pool.query(
+    `SELECT COALESCE(NULLIF(fonte_horas.cliente, ''), '(sem cliente)') AS cliente,
+            COALESCE(SUM(fonte_horas.horas_real), 0) AS horas,
+            COUNT(DISTINCT fonte_horas.treinamento_id) AS turmas
+     FROM ${FONTE_HORAS_SQL}
+     ${where}
+     GROUP BY COALESCE(NULLIF(fonte_horas.cliente, ''), '(sem cliente)')
+     ORDER BY horas DESC
+     LIMIT ?`,
+    [...params, Number(limit)]
+  );
+  return rows.map((r) => ({ cliente: r.cliente, horas: Number(Number(r.horas).toFixed(2)), turmas: Number(r.turmas) }));
+}
+
+async function getHorasAplicadasPorInstrutor({ empresaId, cliente, dataInicio, dataFim, limit = 10 } = {}) {
+  const { conditions, params } = condicoesRecorte({ empresaId, cliente, dataInicio, dataFim });
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const [rows] = await pool.query(
+    `SELECT COALESCE(NULLIF(fonte_horas.instrutor, ''), '(sem instrutor)') AS instrutor,
+            COALESCE(SUM(fonte_horas.horas_real), 0) AS horas,
+            COUNT(DISTINCT fonte_horas.treinamento_id) AS turmas
+     FROM ${FONTE_HORAS_SQL}
+     ${where}
+     GROUP BY COALESCE(NULLIF(fonte_horas.instrutor, ''), '(sem instrutor)')
+     ORDER BY horas DESC
+     LIMIT ?`,
+    [...params, Number(limit)]
+  );
+  return rows.map((r) => ({ instrutor: r.instrutor, horas: Number(Number(r.horas).toFixed(2)), turmas: Number(r.turmas) }));
+}
+
 async function getAlertas(empresaId) {
   const hoje = new Date();
   const itens = await getCapacidadeVsRealizado({ ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1, empresaId });
@@ -536,6 +672,11 @@ module.exports = {
   getRanking,
   getAderenciaPorTema,
   getDistribuicaoPorOperacao,
+  getHorasAplicadasPorTreinamento,
+  getHorasAplicadasTotal,
+  getHorasAplicadasPorMes,
+  getHorasAplicadasPorCliente,
+  getHorasAplicadasPorInstrutor,
   getAlertas,
   diasUteisDoMes,
   statusOcupacao,

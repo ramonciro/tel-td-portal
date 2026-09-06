@@ -24,6 +24,7 @@
 //     com "quantidade de pessoas" na mesma métrica.
 
 const pool = require("../lib/db");
+const { getHorasAplicadasPorTreinamento } = require("./capacidadeResolver");
 
 function n(value) {
   const x = Number(value);
@@ -198,7 +199,7 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
   `);
   const mapaDias = new Map(diasPorTreinamento.map((r) => [Number(r.treinamento_id), n(r.dias_planejados)]));
 
-  const [cronMap, histMap, snapRows] = await Promise.all([
+  const [cronMap, histMap, snapRows, horasMap] = await Promise.all([
     agregarFontePresenca("presenca_aulas"),
     agregarFontePresenca("presencas"),
     // FIX: a query original somava uma coluna `status_presenca` em
@@ -220,6 +221,10 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
       Number(r.treinamento_id),
       { treinados: n(r.treinados), presentes: 0, ausentes: 0, justificados: 0, pendentes: n(r.treinados) },
     ]))),
+    // Horas aplicadas (realizadas): mesma fonte única usada pela Capacidade
+    // (aula a aula quando a turma tem cronograma, senão carga horária nominal
+    // de turma que já rodou/está rodando) — ver capacidadeResolver.js.
+    getHorasAplicadasPorTreinamento({ empresaId, treinamentoId }),
   ]);
 
   const hoje = new Date();
@@ -238,6 +243,7 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
     const cron = cronMap.get(treinamentoIdNum);
     const hist = histMap.get(treinamentoIdNum);
     const snap = snapRows.get(treinamentoIdNum);
+    const horasInfo = horasMap.get(treinamentoIdNum) || { horas_aplicadas: 0, horas_planejadas: n(t.carga_horaria) };
 
     const totalRealCronograma = cron
       ? cron.registrosPresentes + cron.registrosAusentes + cron.registrosJustificados
@@ -359,6 +365,13 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
       data_inicio: t.data_inicio,
       data_fim: t.data_fim,
       carga_horaria: t.carga_horaria,
+
+      // Horas aplicadas (realizadas): aula a aula quando a turma tem
+      // cronograma, senão carga horária nominal da turma (só quando já
+      // rodou ou está rodando) — mesma fonte que a página Capacidade.
+      horas_aplicadas: horasInfo.horas_aplicadas,
+      horas_planejadas: horasInfo.horas_planejadas,
+      origem_horas: usaCronograma ? "cronograma" : "nominal",
 
       // rótulos explícitos: previsto (cadastro) vs confirmado (chamada)
       treinandos_previstos: treinandosPrevistos,
