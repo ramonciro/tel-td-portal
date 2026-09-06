@@ -39,13 +39,13 @@
  * cronograma nunca cai no fallback), então não há risco de contar a mesma
  * turma duas vezes.
  */
- 
+
 const pool = require("../lib/db");
- 
+
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
- 
+
 // Mesma regra de "dia não letivo" já usada em turmaAulasController.js ao
 // gerar o cronograma de uma turma: domingo não conta, a menos que a regra
 // padrão diga para considerá-lo.
@@ -59,10 +59,10 @@ function diasUteisDoMes(ano, mes, considerarDomingo) {
   }
   return uteis;
 }
- 
+
 function mesesNoIntervalo({ ano, mes, dataInicio, dataFim }) {
   if (ano && mes) return [{ ano: Number(ano), mes: Number(mes) }];
- 
+
   if (dataInicio || dataFim) {
     const inicio = dataInicio ? new Date(`${dataInicio}T00:00:00Z`) : new Date(`${dataFim}T00:00:00Z`);
     const fim = dataFim ? new Date(`${dataFim}T00:00:00Z`) : new Date(`${dataInicio}T00:00:00Z`);
@@ -75,11 +75,11 @@ function mesesNoIntervalo({ ano, mes, dataInicio, dataFim }) {
     }
     return meses.length ? meses : [{ ano: inicio.getUTCFullYear(), mes: inicio.getUTCMonth() + 1 }];
   }
- 
+
   const hoje = new Date();
   return [{ ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 }];
 }
- 
+
 function ultimosNMeses(n) {
   const hoje = new Date();
   const base = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1));
@@ -91,7 +91,7 @@ function ultimosNMeses(n) {
   }
   return meses;
 }
- 
+
 function statusOcupacao(pct) {
   if (pct == null) return { status: "sem_capacidade", emoji: "—" };
   if (pct < 40) return { status: "ocioso", emoji: "⚪" };
@@ -99,16 +99,22 @@ function statusOcupacao(pct) {
   if (pct <= 120) return { status: "atencao", emoji: "🟡" };
   return { status: "sobrecarga", emoji: "🔴" };
 }
- 
+
 // ---------------------------------------------------------------------------
 // Fonte única de CH (planejada x real) — combina turma_aulas (quando existe
 // cronograma) com o fallback nominal de treinamentos (quando não existe),
 // sem depender de nenhum lançamento manual adicional.
 // ---------------------------------------------------------------------------
+// empresa_id incluído nas duas metades da união para permitir isolamento por
+// tenant nas consultas que agregam esta fonte (ver funções abaixo) — o valor
+// vem sempre de "t" (treinamentos), nunca de turma_aulas.empresa_id, pelo
+// mesmo motivo do turmaAulasController: a coluna em turma_aulas existe só
+// pra backfill e não é gravada de forma confiável em linhas novas.
 const FONTE_HORAS_SQL = `
   (
     SELECT
       t.id AS treinamento_id,
+      t.empresa_id AS empresa_id,
       TRIM(ta.instrutor_responsavel) AS instrutor,
       t.cliente AS cliente,
       t.tema AS tema,
@@ -121,11 +127,12 @@ const FONTE_HORAS_SQL = `
     FROM turma_aulas ta
     JOIN treinamentos t ON t.id = ta.treinamento_id
     WHERE ta.instrutor_responsavel IS NOT NULL AND TRIM(ta.instrutor_responsavel) <> ''
- 
+
     UNION ALL
- 
+
     SELECT
       t.id AS treinamento_id,
+      t.empresa_id AS empresa_id,
       TRIM(t.instrutor) AS instrutor,
       t.cliente AS cliente,
       t.tema AS tema,
@@ -142,7 +149,23 @@ const FONTE_HORAS_SQL = `
       AND NOT EXISTS (SELECT 1 FROM turma_aulas ta2 WHERE ta2.treinamento_id = t.id)
   ) fonte_horas
 `;
- 
+
+// Pendência conhecida (documentada, não resolvida nesta rodada): as tabelas
+// capacidade_instrutor_mensal (override manual de capacidade) e
+// capacidade_regra_padrao (regra padrão de horas/dia) não têm empresa_id —
+// são configuração única pro portal inteiro hoje. Isso não vaza dado de
+// turma/treinamento de outro tenant (isso já é filtrado via FONTE_HORAS_SQL
+// abaixo), mas significa que a regra de capacidade e os overrides por
+// instrutor ainda são compartilhados entre tenants. Corrigir isso exige
+// decidir se "capacidade padrão" deve ser por empresa (provável, quando IBM/
+// Dasa entrarem) — deixo como próximo passo, não decidido sozinho aqui.
+function tenantFonteHoras(empresaId) {
+  return empresaId ? " AND fonte_horas.empresa_id = ?" : "";
+}
+function tenantFonteHorasParam(empresaId) {
+  return empresaId ? [empresaId] : [];
+}
+
 async function getRegraPadrao() {
   const [rows] = await pool.query(
     `SELECT id, horas_dia_padrao, hc_dia_padrao, considerar_domingo, atualizado_em
@@ -151,7 +174,7 @@ async function getRegraPadrao() {
   if (rows[0]) return rows[0];
   return { id: 1, horas_dia_padrao: 6, hc_dia_padrao: 30, considerar_domingo: 0, atualizado_em: null };
 }
- 
+
 async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDomingo }) {
   await pool.query(
     `INSERT INTO capacidade_regra_padrao (id, horas_dia_padrao, hc_dia_padrao, considerar_domingo)
@@ -164,7 +187,7 @@ async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDom
   );
   return getRegraPadrao();
 }
- 
+
 async function listarOverrides({ instrutor, ano } = {}) {
   const conditions = [];
   const params = [];
@@ -179,7 +202,7 @@ async function listarOverrides({ instrutor, ano } = {}) {
   );
   return rows;
 }
- 
+
 async function salvarOverride({ instrutor, ano, mes, horasCapacidade, hcCapacidade, observacoes, criadoPor }) {
   await pool.query(
     `INSERT INTO capacidade_instrutor_mensal
@@ -193,82 +216,94 @@ async function salvarOverride({ instrutor, ano, mes, horasCapacidade, hcCapacida
     [instrutor, Number(ano), Number(mes), Number(horasCapacidade || 0), Number(hcCapacidade || 0), observacoes || null, criadoPor || null]
   );
 }
- 
+
 async function excluirOverride(id) {
   await pool.query(`DELETE FROM capacidade_instrutor_mensal WHERE id = ?`, [id]);
 }
- 
-async function listarInstrutoresConhecidos() {
-  const [rows] = await pool.query(`
+
+async function listarInstrutoresConhecidos(empresaId) {
+  const tenantTreinamentos = empresaId ? " AND empresa_id = ?" : "";
+  const tenantAulas = empresaId
+    ? " AND EXISTS (SELECT 1 FROM treinamentos t2 WHERE t2.id = turma_aulas.treinamento_id AND t2.empresa_id = ?)"
+    : "";
+  const params = empresaId ? [empresaId, empresaId] : [];
+  const [rows] = await pool.query(
+    `
     SELECT nome FROM (
-      SELECT DISTINCT TRIM(instrutor) AS nome FROM treinamentos WHERE instrutor IS NOT NULL AND TRIM(instrutor) <> ''
+      SELECT DISTINCT TRIM(instrutor) AS nome FROM treinamentos WHERE instrutor IS NOT NULL AND TRIM(instrutor) <> ''${tenantTreinamentos}
       UNION
-      SELECT DISTINCT TRIM(instrutor_responsavel) AS nome FROM turma_aulas WHERE instrutor_responsavel IS NOT NULL AND TRIM(instrutor_responsavel) <> ''
+      SELECT DISTINCT TRIM(instrutor_responsavel) AS nome FROM turma_aulas WHERE instrutor_responsavel IS NOT NULL AND TRIM(instrutor_responsavel) <> ''${tenantAulas}
     ) todos
     ORDER BY nome ASC
-  `);
+  `,
+    params
+  );
   return rows.map((r) => r.nome);
 }
- 
-async function listarOperacoesConhecidas() {
-  const [rows] = await pool.query(`
-    SELECT DISTINCT cliente FROM treinamentos
-    WHERE cliente IS NOT NULL AND TRIM(cliente) <> '' AND cliente <> 'Sem cliente'
-    ORDER BY cliente ASC
-  `);
+
+async function listarOperacoesConhecidas(empresaId) {
+  const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const params = empresaId ? [empresaId] : [];
+  const [rows] = await pool.query(
+    `SELECT DISTINCT cliente FROM treinamentos
+     WHERE cliente IS NOT NULL AND TRIM(cliente) <> '' AND cliente <> 'Sem cliente'${tenantCheck}
+     ORDER BY cliente ASC`,
+    params
+  );
   return rows.map((r) => r.cliente);
 }
- 
-async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInicio, dataFim } = {}) {
+
+async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInicio, dataFim, empresaId } = {}) {
   const meses = mesesNoIntervalo({ ano, mes, dataInicio, dataFim });
   const anos = [...new Set(meses.map((m) => m.ano))];
- 
-  const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos();
+
+  const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos(empresaId);
   if (!instrutores.length) return [];
- 
+
   const placeholdersInstrutores = instrutores.map(() => "?").join(",");
   const placeholdersMeses = meses.map(() => "(?, ?)").join(",");
   const mesesParams = meses.flatMap((m) => [m.ano, m.mes]);
   const clienteSql = cliente ? "AND fonte_horas.cliente = ?" : "";
   const clienteParams = cliente ? [cliente] : [];
- 
+
   const [horasRows] = await pool.query(
     `SELECT fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes, SUM(fonte_horas.horas_real) AS horas
      FROM ${FONTE_HORAS_SQL}
      WHERE fonte_horas.instrutor IN (${placeholdersInstrutores})
        AND (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses})
        ${clienteSql}
+       ${tenantFonteHoras(empresaId)}
      GROUP BY fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes`,
-    [...instrutores, ...mesesParams, ...clienteParams]
+    [...instrutores, ...mesesParams, ...clienteParams, ...tenantFonteHorasParam(empresaId)]
   );
- 
+
   const [overridesRows] = await pool.query(
     `SELECT instrutor, ano, mes, horas_capacidade, hc_capacidade
      FROM capacidade_instrutor_mensal
      WHERE instrutor IN (${placeholdersInstrutores}) AND ano IN (${anos.map(() => "?").join(",")})`,
     [...instrutores, ...anos]
   );
- 
+
   const regra = await getRegraPadrao();
- 
+
   const chaveMes = (a, m) => `${a}-${pad2(m)}`;
   const mapaHoras = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas)]));
   const mapaOverrides = new Map(overridesRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, r]));
- 
+
   const resultado = [];
   for (const nomeInstrutor of instrutores) {
     for (const { ano: anoRef, mes: mesRef } of meses) {
       const chave = `${nomeInstrutor}|${chaveMes(anoRef, mesRef)}`;
       const horasRealizadas = Number((mapaHoras.get(chave) || 0).toFixed(2));
- 
+
       const override = mapaOverrides.get(chave);
       const capacidadeHoras = override
         ? Number(override.horas_capacidade)
         : Number((diasUteisDoMes(anoRef, mesRef, !!regra.considerar_domingo) * Number(regra.horas_dia_padrao)).toFixed(2));
- 
+
       const ocupacaoPct = capacidadeHoras > 0 ? Number(((horasRealizadas / capacidadeHoras) * 100).toFixed(1)) : null;
       const { status, emoji } = statusOcupacao(ocupacaoPct);
- 
+
       resultado.push({
         instrutor: nomeInstrutor,
         ano: anoRef,
@@ -282,18 +317,18 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
       });
     }
   }
- 
+
   return resultado;
 }
- 
-async function getPainel({ meses: totalMeses = 3, instrutor, cliente } = {}) {
+
+async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const regra = await getRegraPadrao();
-  const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos();
- 
+  const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos(empresaId);
+
   const linhasPorMes = [];
   for (const { ano, mes } of meses) {
-    const itens = await getCapacidadeVsRealizado({ ano, mes, instrutor, cliente });
+    const itens = await getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, empresaId });
     const capacidadeNominal = itens.reduce((acc, i) => acc + i.capacidade_horas, 0);
     const hcRealizado = itens.reduce((acc, i) => acc + i.horas_realizadas, 0);
     const desvio = Number((hcRealizado - capacidadeNominal).toFixed(2));
@@ -309,7 +344,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente } = {}) {
       status_emoji: emoji,
     });
   }
- 
+
   const clienteSql = cliente ? "AND fonte_horas.cliente = ?" : "";
   const clienteParams = cliente ? [cliente] : [];
   const placeholdersMeses = meses.map(() => "(?, ?)").join(",");
@@ -317,16 +352,16 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente } = {}) {
   const [[programadoRow]] = await pool.query(
     `SELECT COALESCE(SUM(fonte_horas.horas_planejada), 0) AS total
      FROM ${FONTE_HORAS_SQL}
-     WHERE (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses}) ${clienteSql}`,
-    [...mesesParams, ...clienteParams]
+     WHERE (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses}) ${clienteSql} ${tenantFonteHoras(empresaId)}`,
+    [...mesesParams, ...clienteParams, ...tenantFonteHorasParam(empresaId)]
   );
- 
+
   const capacidadeTotalPeriodo = linhasPorMes.reduce((acc, l) => acc + l.capacidade_nominal, 0);
   const hcRealizadoPeriodo = linhasPorMes.reduce((acc, l) => acc + l.hc_realizado, 0);
   const capacidadePorInstrutorMes = instrutores.length
     ? Number((diasUteisDoMes(meses[meses.length - 1].ano, meses[meses.length - 1].mes, !!regra.considerar_domingo) * Number(regra.horas_dia_padrao)).toFixed(2))
     : 0;
- 
+
   return {
     periodo: { meses: linhasPorMes.map((l) => l.mes) },
     indicadores: {
@@ -345,14 +380,14 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente } = {}) {
     por_mes: linhasPorMes,
   };
 }
- 
-async function getCapacityConsumido({ meses: totalMeses = 3, cliente } = {}) {
+
+async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
-  const instrutores = await listarInstrutoresConhecidos();
+  const instrutores = await listarInstrutoresConhecidos(empresaId);
   const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, meses: {}, total_90d: 0, capacidade_90d: 0 }]));
- 
+
   for (const { ano, mes } of meses) {
-    const itens = await getCapacidadeVsRealizado({ ano, mes, cliente });
+    const itens = await getCapacidadeVsRealizado({ ano, mes, cliente, empresaId });
     for (const item of itens) {
       const linha = porInstrutor.get(item.instrutor);
       if (!linha) continue;
@@ -361,7 +396,7 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente } = {}) {
       linha.capacidade_90d += item.capacidade_horas;
     }
   }
- 
+
   const linhas = Array.from(porInstrutor.values())
     .map((linha) => ({
       ...linha,
@@ -371,15 +406,15 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente } = {}) {
     }))
     .filter((linha) => !cliente || linha.total_90d > 0)
     .sort((a, b) => b.total_90d - a.total_90d);
- 
+
   return { meses: meses.map((m) => `${m.ano}-${pad2(m.mes)}`), itens: linhas };
 }
- 
-async function getRanking({ meses: totalMeses = 3, cliente } = {}) {
+
+async function getRanking({ meses: totalMeses = 3, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const acumulado = new Map();
   for (const { ano, mes } of meses) {
-    const itens = await getCapacidadeVsRealizado({ ano, mes, cliente });
+    const itens = await getCapacidadeVsRealizado({ ano, mes, cliente, empresaId });
     for (const item of itens) {
       const atual = acumulado.get(item.instrutor) || { instrutor: item.instrutor, horas: 0, capacidade: 0 };
       atual.horas += item.horas_realizadas;
@@ -387,7 +422,7 @@ async function getRanking({ meses: totalMeses = 3, cliente } = {}) {
       acumulado.set(item.instrutor, atual);
     }
   }
- 
+
   return Array.from(acumulado.values())
     .filter((item) => item.horas > 0)
     .map((item) => ({
@@ -398,8 +433,8 @@ async function getRanking({ meses: totalMeses = 3, cliente } = {}) {
     .sort((a, b) => b.horas_realizadas - a.horas_realizadas)
     .map((item, index) => ({ posicao: index + 1, ...item }));
 }
- 
-async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim } = {}) {
+
+async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim, empresaId } = {}) {
   const temFiltroPeriodo = ano || mes || dataInicio || dataFim;
   const conditions = [];
   const params = [];
@@ -409,8 +444,9 @@ async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim } = 
     conditions.push(`(fonte_horas.ano, fonte_horas.mes) IN (${meses.map(() => "(?, ?)").join(",")})`);
     params.push(...meses.flatMap((m) => [m.ano, m.mes]));
   }
+  if (empresaId) { conditions.push("fonte_horas.empresa_id = ?"); params.push(empresaId); }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
- 
+
   const [rows] = await pool.query(
     `SELECT
        fonte_horas.tema AS tema,
@@ -423,7 +459,7 @@ async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim } = 
      ORDER BY hc_realizado DESC`,
     params
   );
- 
+
   return rows.map((r) => {
     const programado = Number(r.hc_programado);
     const realizado = Number(r.hc_realizado);
@@ -436,8 +472,8 @@ async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim } = 
     };
   });
 }
- 
-async function getDistribuicaoPorOperacao({ meses: totalMeses } = {}) {
+
+async function getDistribuicaoPorOperacao({ meses: totalMeses, empresaId } = {}) {
   const conditions = [];
   const params = [];
   if (totalMeses) {
@@ -445,8 +481,9 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses } = {}) {
     conditions.push(`(fonte_horas.ano, fonte_horas.mes) IN (${meses.map(() => "(?, ?)").join(",")})`);
     params.push(...meses.flatMap((m) => [m.ano, m.mes]));
   }
+  if (empresaId) { conditions.push("fonte_horas.empresa_id = ?"); params.push(empresaId); }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
- 
+
   const [rows] = await pool.query(
     `SELECT
        COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação') AS operacao,
@@ -456,7 +493,7 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses } = {}) {
      GROUP BY COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação')`,
     params
   );
- 
+
   const total = rows.reduce((acc, r) => acc + Number(r.horas), 0);
   const itens = rows
     .map((r) => ({
@@ -465,13 +502,13 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses } = {}) {
       pct_sobre_total: total > 0 ? Number(((Number(r.horas) / total) * 100).toFixed(1)) : 0,
     }))
     .sort((a, b) => b.horas - a.horas);
- 
+
   return { itens, total_horas: Number(total.toFixed(2)) };
 }
- 
-async function getAlertas() {
+
+async function getAlertas(empresaId) {
   const hoje = new Date();
-  const itens = await getCapacidadeVsRealizado({ ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 });
+  const itens = await getCapacidadeVsRealizado({ ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1, empresaId });
   const alertas = itens
     .filter((item) => item.status_ocupacao !== "saudavel")
     .map((item) => ({
@@ -481,10 +518,10 @@ async function getAlertas() {
       status_emoji: item.status_emoji,
     }))
     .sort((a, b) => (b.ocupacao_pct || 0) - (a.ocupacao_pct || 0));
- 
+
   return { itens: alertas, todos: itens };
 }
- 
+
 module.exports = {
   getRegraPadrao,
   atualizarRegraPadrao,
