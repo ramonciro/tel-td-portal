@@ -380,21 +380,32 @@ module.exports = {
 
 /* ─── DELETE /api/admin/empresas/:id ──────────────────────────────────────── */
 // Remove o tenant E todos os usuários vinculados.
-// Segurança: bloqueia deleção se houver treinamentos associados (dados reais).
+// Segurança: bloqueia deleção se houver dados reais associados em qualquer
+// módulo (não só treinamentos) — evita órfãos em Biblioteca, Oceano do
+// Desenvolvimento, Certificados e R&S.
 async function deleteEmpresa(req, res) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     const { id } = req.params;
 
-    // Não permite deletar empresa com treinamentos reais
-    const totalTurmas = await contarTabela('treinamentos', `WHERE empresa_id = ${Number(id)}`);
-    if (totalTurmas > 0) {
-      await conn.rollback(); conn.release();
-      return res.status(409).json({
-        ok: false,
-        message: `Esta empresa possui ${totalTurmas} turma(s) cadastrada(s). Desative-a em vez de excluir, ou remova as turmas primeiro.`,
-      });
+    const verificacoes = [
+      { tabela: 'treinamentos',             label: 'turma(s) cadastrada(s)' },
+      { tabela: 'biblioteca',               label: 'material(is) na Biblioteca' },
+      { tabela: 'jornadas_desenvolvimento', label: 'registro(s) no Oceano do Desenvolvimento' },
+      { tabela: 'certificados',             label: 'certificado(s) emitido(s)' },
+      { tabela: 'rps',                      label: 'requisição(ões) de R&S' },
+    ];
+
+    for (const { tabela, label } of verificacoes) {
+      const total = await contarTabela(tabela, `WHERE empresa_id = ${Number(id)}`);
+      if (total > 0) {
+        await conn.rollback(); conn.release();
+        return res.status(409).json({
+          ok: false,
+          message: `Esta empresa possui ${total} ${label}. Desative-a em vez de excluir, ou remova esses registros primeiro.`,
+        });
+      }
     }
 
     // Remove usuários do tenant
