@@ -16,7 +16,7 @@ const menuItems = [
   // Menu operacional
   { href: "/inicio",        label: "Início",                 icon: "home", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/dashboard",     label: "Dashboard",              icon: "chart", roles: ["coordenador", "supervisor"] },
-  { href: "/mapa-desenvolvimento", label: "Oceano do Desenvolvimento", icon: "waves", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
+  { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "map", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
   { href: "/necessidades",  label: "Necessidades",           icon: "target", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/trilhas",       label: "Trilhas",                icon: "compass", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/treinamentos",  label: "Treinamentos",           icon: "cap", roles: ["coordenador", "supervisor", "instrutor"] },
