@@ -56,7 +56,7 @@ async function registrarAuditoria({
   }
 }
 
-async function listarAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim, limite = 200 } = {}) {
+async function listarAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim, limite = 200, empresaId } = {}) {
   const condicoes = [];
   const valores = [];
 
@@ -79,6 +79,14 @@ async function listarAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim,
   if (dataFim) {
     condicoes.push("criado_em <= ?");
     valores.push(dataFim);
+  }
+  // Isolamento por tenant: auditoria_log não tem empresa_id própria — o log é
+  // vinculado ao usuário que executou a ação. Sem este filtro, qualquer
+  // coordenador/superintendente (rota não é super_admin-only) via a trilha de
+  // auditoria completa de TODAS as empresas.
+  if (empresaId) {
+    condicoes.push("usuario_id IN (SELECT id FROM usuarios WHERE empresa_id = ?)");
+    valores.push(empresaId);
   }
 
   const where = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";

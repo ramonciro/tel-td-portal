@@ -126,8 +126,13 @@ async function getEventosChamadas(treinamentoId) {
   }
 }
 
-async function getMuralTurma(treinamentoId) {
-  const [treinamentoRows] = await pool.query(`SELECT * FROM treinamentos WHERE id = ?`, [treinamentoId]);
+async function getMuralTurma(treinamentoId, empresaId) {
+  // Isolamento por tenant: sem este filtro, qualquer usuário autenticado
+  // conseguia ver o mural completo (avisos, avaliações, materiais, chamadas)
+  // de uma turma de outra empresa só sabendo/incrementando o treinamento_id.
+  const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const params = empresaId ? [treinamentoId, empresaId] : [treinamentoId];
+  const [treinamentoRows] = await pool.query(`SELECT * FROM treinamentos WHERE id = ?${tenantCheck}`, params);
   const treinamento = treinamentoRows[0] || null;
   if (!treinamento) return null;
 
@@ -149,7 +154,19 @@ async function getMuralTurma(treinamentoId) {
   return { treinamento, feed };
 }
 
-async function criarPublicacao({ treinamentoId, autor, titulo, conteudo, fixado }) {
+// empresaId (quando informado) exige que o treinamento de destino pertença
+// ao tenant do autor — sem isso, dava para publicar um aviso na turma de
+// outra empresa apenas informando o treinamento_id.
+async function criarPublicacao({ treinamentoId, autor, titulo, conteudo, fixado, empresaId }) {
+  if (empresaId) {
+    const [tr] = await pool.query(`SELECT id FROM treinamentos WHERE id = ? AND empresa_id = ?`, [treinamentoId, empresaId]);
+    if (!tr.length) {
+      const err = new Error("Treinamento não encontrado");
+      err.code = "TREINAMENTO_NAO_ENCONTRADO";
+      throw err;
+    }
+  }
+
   const [result] = await pool.query(
     `INSERT INTO turma_publicacoes (treinamento_id, autor_id, autor_nome, titulo, conteudo, fixado)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -158,8 +175,15 @@ async function criarPublicacao({ treinamentoId, autor, titulo, conteudo, fixado 
   return result.insertId;
 }
 
-async function buscarPublicacao(id) {
-  const [rows] = await pool.query(`SELECT * FROM turma_publicacoes WHERE id = ?`, [id]);
+// empresaId (quando informado) restringe a publicação buscada ao tenant —
+// usado antes de editar/excluir, para impedir que um coordenador edite ou
+// apague um aviso de outra empresa só sabendo o id da publicação.
+async function buscarPublicacao(id, empresaId) {
+  const tenantJoin = empresaId
+    ? " AND EXISTS (SELECT 1 FROM treinamentos t WHERE t.id = tp.treinamento_id AND t.empresa_id = ?)"
+    : "";
+  const params = empresaId ? [id, empresaId] : [id];
+  const [rows] = await pool.query(`SELECT tp.* FROM turma_publicacoes tp WHERE tp.id = ?${tenantJoin}`, params);
   return rows[0] || null;
 }
 
