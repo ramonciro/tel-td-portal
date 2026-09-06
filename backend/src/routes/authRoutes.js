@@ -32,9 +32,13 @@ router.post("/login", async (req, res) => {
 
     // SELECT * — resiliente a migrations pendentes (empresa_id, super_admin
     // serão undefined se as colunas ainda não existirem; tratados com ??)
+    // Bugfix: era "WHERE email = ?" (sensível a maiúsculas/minúsculas) — um
+    // e-mail cadastrado com uma letra maiúscula diferente da digitada dava
+    // "Usuário não encontrado" mesmo com senha certa. "esqueci-senha" logo
+    // abaixo já usa LOWER(email) — login ficou de fora até agora.
     const [rows] = await pool.query(
-      "SELECT * FROM usuarios WHERE email = ? LIMIT 1",
-      [email]
+      "SELECT * FROM usuarios WHERE LOWER(email) = LOWER(?) LIMIT 1",
+      [String(email).trim()]
     );
 
     if (!rows.length) {
