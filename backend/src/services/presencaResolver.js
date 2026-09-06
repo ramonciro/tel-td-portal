@@ -201,16 +201,25 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
   const [cronMap, histMap, snapRows] = await Promise.all([
     agregarFontePresenca("presenca_aulas"),
     agregarFontePresenca("presencas"),
+    // FIX: a query original somava uma coluna `status_presenca` em
+    // treinamento_participantes que nunca existiu (a tabela só tem `status`,
+    // que é status de INSCRIÇÃO — "Inscrito" — não de presença) — isso
+    // derrubava o /api/presenca-resumo inteiro (não só esse fallback) com
+    // "Unknown column" toda vez que qualquer treinamento caía neste 3º nível
+    // (roster importado, mas cronograma e presenças legadas ainda vazios —
+    // ou seja, turma nova, chamada ainda não aberta). Como não existe hoje
+    // nenhum lugar que grave presença por participante nesta tabela, o único
+    // dado real e honesto que dá pra reportar aqui é a contagem de
+    // treinandos, com todos "pendentes" — o que já é semanticamente correto
+    // pra esse caso (chamada nunca lançada = todo mundo pendente).
     pool.query(`
-      SELECT treinamento_id,
-             COUNT(*) AS treinados,
-             SUM(CASE WHEN status_presenca = 'presente' THEN 1 ELSE 0 END) AS presentes,
-             SUM(CASE WHEN status_presenca = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
-             SUM(CASE WHEN status_presenca = 'justificado' THEN 1 ELSE 0 END) AS justificados,
-             SUM(CASE WHEN status_presenca IS NULL OR status_presenca = '' OR status_presenca = 'pendente' THEN 1 ELSE 0 END) AS pendentes
+      SELECT treinamento_id, COUNT(*) AS treinados
       FROM treinamento_participantes
       GROUP BY treinamento_id
-    `).then(([rows]) => new Map(rows.map((r) => [Number(r.treinamento_id), r]))),
+    `).then(([rows]) => new Map(rows.map((r) => [
+      Number(r.treinamento_id),
+      { treinados: n(r.treinados), presentes: 0, ausentes: 0, justificados: 0, pendentes: n(r.treinados) },
+    ]))),
   ]);
 
   const hoje = new Date();
