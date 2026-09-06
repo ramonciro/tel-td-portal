@@ -159,7 +159,7 @@ export default function MinhasTurmasPage() {
           </div>
           {!isGestor && (
             <div style={kpiCard}>
-              <div style={{ ...kpiValue, color: "#FF6B4A" }}>{kpis.certificados}</div>
+              <div style={{ ...kpiValue, color: colors.accent }}>{kpis.certificados}</div>
               <div style={kpiLabel}>Certificados emitidos</div>
             </div>
           )}
@@ -346,7 +346,7 @@ const certData    = { fontSize: 11, color: "#6b7280" };
 const certLink    = { marginTop: 32, textAlign: "center" };
 const btnVerTurma = { padding: "9px 16px", background: "#0B1220", color: "#fff", border: "none",
                       borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, width: "100%" };
-const btnEmitir   = { padding: "9px 16px", background: "#FF6B4A", color: "#fff", border: "none",
+const btnEmitir   = { padding: "9px 16px", background: colors.accent, color: "#fff", border: "none",
                       borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, width: "100%" };
 const btnCertLink = { background: "none", border: "1px solid #e5e7eb", borderRadius: 8, padding: "10px 20px",
                       cursor: "pointer", fontSize: 14, color: "#374151", fontWeight: 600 };
