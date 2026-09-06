@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
+import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch, apiDownload } from "../../services/api";
+import { colors, radius } from "../../lib/theme";
 import {
   formatDateBR,
   toDateInputLocal,
@@ -274,7 +276,7 @@ function sustentacaoTypeBadge(value) {
     background: "#f8fafc",
     color: "#475569",
     border: "1px solid #e2e8f0",
-    label: value || "Sustentação",
+    label: value || "Coaching",
   };
 
   return {
@@ -630,7 +632,7 @@ export default function MapaDesenvolvimentoPage() {
     // para o navegador a lista completa de usuários com dados sensíveis
     // (inclusive senha em hash) só para preencher um <select>.
     { key: "usuarios", label: "usuários", path: "/acoes-desenvolvimento/responsaveis-disponiveis", setter: setUsuarios },
-    { key: "participantes", label: "tripulação", path: "/jornada-participantes", setter: setParticipantesJornada },
+    { key: "participantes", label: "participantes", path: "/jornada-participantes", setter: setParticipantesJornada },
     // Endpoint dedicado do Oceano (não /api/treinamentos) para não depender
     // das permissões da página de Turmas — aqui basta o acesso ao Oceano do
     // Desenvolvimento (authorizeOceanAccess), já garantido pelo restante da
@@ -749,7 +751,7 @@ export default function MapaDesenvolvimentoPage() {
     setNotice("");
 
     if (!participanteForm.jornada_id) {
-      setErro("Selecione a jornada da tripulação.");
+      setErro("Selecione a jornada do participante.");
       setSaving(false);
       return;
     }
@@ -778,7 +780,7 @@ export default function MapaDesenvolvimentoPage() {
       });
 
       setParticipanteForm((prev) => ({ ...participantInitial, jornada_id: prev.jornada_id }));
-      setNotice("Tripulação vinculada com sucesso.");
+      setNotice("Participante vinculado com sucesso.");
       await loadAll();
     } catch (error) {
       setErro(extrairMensagemErro(error, "Erro ao criar participante da jornada."));
@@ -793,7 +795,7 @@ export default function MapaDesenvolvimentoPage() {
     setNotice("");
 
     if (!participanteForm.jornada_id) {
-      setErro("Selecione a jornada antes de importar a tripulação.");
+      setErro("Selecione a jornada antes de importar os participantes.");
       setSaving(false);
       return;
     }
@@ -815,10 +817,10 @@ export default function MapaDesenvolvimentoPage() {
       });
 
       setArquivoTripulacao(null);
-      setNotice(data?.message || "Tripulação importada com sucesso.");
+      setNotice(data?.message || "Participantes importados com sucesso.");
       await loadAll();
     } catch (error) {
-      setErro(extrairMensagemErro(error, "Erro ao importar tripulação."));
+      setErro(extrairMensagemErro(error, "Erro ao importar participantes."));
     } finally {
       setSaving(false);
     }
@@ -919,7 +921,7 @@ export default function MapaDesenvolvimentoPage() {
     }
 
     if (!isValidDateRange(coachingForm.data_inicio, coachingForm.data_fim)) {
-      setErro("A data fim da sustentação não pode ser menor que a data início.");
+      setErro("A data fim do coaching não pode ser menor que a data início.");
       setSaving(false);
       return;
     }
@@ -950,13 +952,13 @@ export default function MapaDesenvolvimentoPage() {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        setNotice("Sustentação atualizada com sucesso.");
+        setNotice("Coaching atualizado com sucesso.");
       } else {
         await apiFetch("/coaching-planos", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Sustentação registrada com sucesso.");
+        setNotice("Coaching registrado com sucesso.");
       }
 
       setCoachingForm(coachingInitial);
@@ -1257,7 +1259,7 @@ export default function MapaDesenvolvimentoPage() {
       const proximoPasso =
         acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido")?.tema ||
         coachingsDaJornada.find((item) => canonicalStatus(item.status) !== "concluido")?.titulo ||
-        "Estruturar os próximos trechos";
+        "Estruturar os próximos passos";
 
       return {
         ...jornada,
@@ -1326,29 +1328,6 @@ export default function MapaDesenvolvimentoPage() {
     };
   }, [filteredJornadas, filteredAcoes, filteredCoachings]);
 
-  const destaqueCards = [
-    {
-      title: "Rios monitorados",
-      value: fmtNumber(kpis.jornadas),
-      subtitle: "Jornadas em observação",
-    },
-    {
-      title: "Portos de ação",
-      value: fmtNumber(kpis.acoes),
-      subtitle: "Ações do percurso",
-    },
-    {
-      title: "Sustentações",
-      value: fmtNumber(kpis.coachings),
-      subtitle: "Coaching e mentoria",
-    },
-    {
-      title: "Tripulação",
-      value: fmtNumber(kpis.tripulacao),
-      subtitle: "Pessoas nos rios",
-    },
-  ];
-
   const acoesOptions = useMemo(() => {
     return [...acoesEnriquecidas].sort((a, b) =>
       String(a.tema || "").localeCompare(String(b.tema || ""), "pt-BR")
@@ -1356,63 +1335,18 @@ export default function MapaDesenvolvimentoPage() {
   }, [acoesEnriquecidas]);
 
   return (
-    <PortalShell
-      title="Oceano do Desenvolvimento"
-      subtitle="Visão integrada do desenvolvimento, do percurso macro às entregas que sustentam a jornada."
-    >
+    <PortalShell>
       <div style={{ display: "grid", gap: 18 }}>
-        <section style={heroWrap}>
-          <div style={heroLeft}>
-            <div style={heroEyebrow}>Oceano do Desenvolvimento</div>
-            <h2 style={heroTitle}>
-              Um território vivo de desenvolvimento, com rios, portos, sustentação e destino.
-            </h2>
-            <p style={heroText}>
-              Leia o mapa como um oceano: jornadas como rios, ações como portos
-              e coaching ou mentoria como a sustentação que mantém a rota viva.
-            </p>
-
-            <div style={tabBar}>
-              {[
-                ["geral", "Oceano"],
-                ["jornadas", "Rios"],
-                ["acoes", "Portos"],
-                ["coaching", "Sustentação"],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setActiveTab(key)}
-                  style={tabButton(activeTab === key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={heroRight}>
-            <div style={orbCard}>
-              <div style={orbHeader}>Pulso do Oceano</div>
-              <div style={orbValue}>{fmtNumber(kpis.jornadas)}</div>
-              <div style={orbSub}>rios monitorados</div>
-            </div>
-
-            <div style={signalGrid}>
-              {destaqueCards.map((item) => (
-                <div key={item.title} style={signalCard}>
-                  <div style={signalTitle}>{item.title}</div>
-                  <div style={signalValue}>{item.value}</div>
-                  <div style={signalSub}>{item.subtitle}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <SectionCard
-          title="🗺️ Cartografia do Oceano"
-          subtitle="Leitura macro do território de desenvolvimento e do volume em curso."
-          action={
+        <PageHero
+          eyebrow="Mapa de Desenvolvimento"
+          title="Jornadas, ações e coaching de desenvolvimento em um só lugar"
+          subtitle="Acompanhe jornadas por cliente, ações de desenvolvimento e coaching/mentoria, com indicadores e exportação de evidências para conformidade."
+          stats={[
+            { label: "jornadas", value: fmtNumber(kpis.jornadas) },
+            { label: "ações", value: fmtNumber(kpis.acoes) },
+            { label: "coaching e mentoria", value: fmtNumber(kpis.coachings) },
+          ]}
+          actions={
             <button
               type="button"
               style={buttonSecondaryStyle()}
@@ -1422,21 +1356,43 @@ export default function MapaDesenvolvimentoPage() {
               {exportando ? "Exportando..." : "⬇ Exportar evidência (MPT)"}
             </button>
           }
+        />
+
+        <div style={tabBar}>
+          {[
+            ["geral", "Visão geral"],
+            ["jornadas", "Jornadas"],
+            ["acoes", "Ações"],
+            ["coaching", "Coaching e mentoria"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              style={tabButton(activeTab === key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <SectionCard
+          title="Indicadores gerais"
+          subtitle="Leitura macro do desenvolvimento e do volume em curso."
         >
           <div style={kpiGrid}>
-            <StatCard title="Rios ativos" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
-            <StatCard title="Portos de ação" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
-            <StatCard title="Sustentação" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
-            <StatCard title="Tripulação" value={fmtNumber(kpis.tripulacao)} accent="#16a34a" />
+            <StatCard title="Jornadas ativas" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
+            <StatCard title="Ações" value={fmtNumber(kpis.acoes)} accent="#7c3aed" />
+            <StatCard title="Coaching e mentoria" value={fmtNumber(kpis.coachings)} accent="#ea580c" />
+            <StatCard title="Participantes" value={fmtNumber(kpis.tripulacao)} accent="#16a34a" />
             <StatCard title="Público impactado" value={fmtNumber(kpis.participantesImpactados)} accent="#b45309" />
-            <StatCard title="Horas no oceano" value={fmtHours(kpis.horasTotais)} accent="#0f766e" />
+            <StatCard title="Horas totais" value={fmtHours(kpis.horasTotais)} accent="#0f766e" />
             <StatCard title="Entregas concluídas" value={fmtNumber(kpis.concluidas)} accent="#1d4ed8" />
           </div>
         </SectionCard>
 
         <SectionCard
-          title="🔎 Leitura do território"
-          subtitle="Refine o oceano por rio, status e busca."
+          title="Filtros"
+          subtitle="Refine por jornada, cliente, status e busca."
           action={
             <button
               style={buttonSecondaryStyle()}
@@ -1445,6 +1401,7 @@ export default function MapaDesenvolvimentoPage() {
                   jornada_id: "",
                   status: "",
                   busca: "",
+                  cliente: "",
                 })
               }
             >
@@ -1534,27 +1491,8 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "geral" && (
           <div style={{ display: "grid", gap: 18 }}>
             <SectionCard
-              title="🌊 Lógica do oceano"
-              subtitle="Do macro ao destino: entenda o percurso antes de olhar o detalhe."
-            >
-              <div style={journeyGuideGrid}>
-                {[
-                  ["1. Oceano", "Define a leitura macro do desenvolvimento e do território."],
-                  ["2. Rios", "Cada jornada conduz um caminho com vários trechos."],
-                  ["3. Portos", "Ações funcionam como pontos de execução e entrega."],
-                  ["4. Sustentação", "Coaching e mentoria mantêm a rota viva após a ação."],
-                ].map(([title, text]) => (
-                  <div key={title} style={journeyGuideCard}>
-                    <div style={journeyGuideTitle}>{title}</div>
-                    <div style={journeyGuideText}>{text}</div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              title="🌊 Rios e trajetos"
-              subtitle="Leia cada jornada como um rio com portos, sustentação e próximo trecho."
+              title="Jornadas de desenvolvimento"
+              subtitle="Jornadas agrupadas por cliente, com ações, coaching/mentoria e progresso."
             >
               {loading ? (
                 emptyCard("Carregando fluxo das jornadas...")
@@ -1601,9 +1539,9 @@ export default function MapaDesenvolvimentoPage() {
                               </div>
 
                               <div style={journeyFlowSummary}>
-                                <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
-                                <MetricBox label="Sustentações" value={fmtNumber(jornada.coachingsDaJornada.length)} />
-                                <MetricBox label="Tripulação" value={fmtNumber(jornada.total_tripulantes || 0)} />
+                                <MetricBox label="Ações" value={fmtNumber(jornada.acoesDaJornada.length)} />
+                                <MetricBox label="Coaching" value={fmtNumber(jornada.coachingsDaJornada.length)} />
+                                <MetricBox label="Participantes" value={fmtNumber(jornada.total_tripulantes || 0)} />
                                 <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                                 <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                               </div>
@@ -1619,7 +1557,7 @@ export default function MapaDesenvolvimentoPage() {
                                 />
                               </div>
                               <div style={journeyFlowMeta}>
-                                Próximo trecho: {jornada.proximoPasso}
+                                Próxima etapa: {jornada.proximoPasso}
                               </div>
                             </div>
 
@@ -1649,7 +1587,7 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="⚓ Portos em movimento"
+              title="Ações em destaque"
               subtitle="Leitura executiva das ações do mapa."
             >
               {loading ? (
@@ -1718,8 +1656,8 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "jornadas" && (
           <>
             <SectionCard
-              title="🌊 Rios e ramificações"
-              subtitle="Estruture a jornada principal do oceano."
+              title="Cadastro de jornada"
+              subtitle="Estruture a jornada de desenvolvimento."
             >
               <details open style={detailsCard}>
                 <summary style={detailsSummary}>Registro de jornada</summary>
@@ -1839,8 +1777,8 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="🧭 Tripulação do rio"
-              subtitle="Vincule pessoas manualmente ou importe a tripulação da jornada por planilha."
+              title="Participantes da jornada"
+              subtitle="Vincule pessoas manualmente ou importe os participantes da jornada por planilha."
             >
               <div style={tripulacaoGrid}>
                 <details open style={detailsCard}>
@@ -1992,7 +1930,7 @@ export default function MapaDesenvolvimentoPage() {
                         disabled={saving}
                         onClick={importarTripulacao}
                       >
-                        Importar tripulação
+                        Importar participantes
                       </button>
                     </div>
                   </div>
@@ -2001,7 +1939,7 @@ export default function MapaDesenvolvimentoPage() {
 
               <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
                 {filteredJornadas.length === 0 ? (
-                  emptyCard("Selecione ou cadastre uma jornada para começar a montar a tripulação.")
+                  emptyCard("Selecione ou cadastre uma jornada para começar a vincular participantes.")
                 ) : (
                   filteredJornadas.map((jornada) => {
                     const tripulacao = participantesPorJornada[String(jornada.id)] || [];
@@ -2061,11 +1999,11 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="🚢 Linha do percurso"
-              subtitle="Leitura visual do caminho de cada rio com seus portos e sustentações."
+              title="Progresso das jornadas"
+              subtitle="Visão do andamento de cada jornada, com ações e coaching/mentoria."
             >
               {loading ? (
-                emptyCard("Carregando percurso das jornadas...")
+                emptyCard("Carregando progresso das jornadas...")
               ) : jornadasFluxo.length === 0 ? (
                 emptyCard("Nenhuma jornada encontrada para exibir o percurso.")
               ) : (
@@ -2097,9 +2035,9 @@ export default function MapaDesenvolvimentoPage() {
                         </div>
 
                         <div style={journeyFlowSummary}>
-                          <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
-                          <MetricBox label="Sustentações" value={fmtNumber(jornada.coachingsDaJornada.length)} />
-                          <MetricBox label="Tripulação" value={fmtNumber(jornada.total_tripulantes || 0)} />
+                          <MetricBox label="Ações" value={fmtNumber(jornada.acoesDaJornada.length)} />
+                          <MetricBox label="Coaching" value={fmtNumber(jornada.coachingsDaJornada.length)} />
+                          <MetricBox label="Participantes" value={fmtNumber(jornada.total_tripulantes || 0)} />
                           <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                           <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                         </div>
@@ -2116,12 +2054,12 @@ export default function MapaDesenvolvimentoPage() {
                         </div>
 
                         <div style={journeyFlowMeta}>
-                          Próximo trecho: {jornada.proximoPasso}
+                          Próxima etapa: {jornada.proximoPasso}
                         </div>
                       </div>
 
                       <div style={timelineWrap}>
-                        <div style={timelineLabel}>Portos</div>
+                        <div style={timelineLabel}>Ações</div>
                         <div style={timelineItems}>
                           {jornada.acoesDaJornada.length ? (
                             jornada.acoesDaJornada.map((acao) => (
@@ -2133,41 +2071,41 @@ export default function MapaDesenvolvimentoPage() {
                               </div>
                             ))
                           ) : (
-                            <div style={timelineEmpty}>Nenhum porto registrado.</div>
+                            <div style={timelineEmpty}>Nenhuma ação registrada.</div>
                           )}
                         </div>
                       </div>
 
                       <div style={timelineWrap}>
-                        <div style={timelineLabel}>Sustentação</div>
+                        <div style={timelineLabel}>Coaching e mentoria</div>
                         <div style={timelineItems}>
                           {jornada.coachingsDaJornada.length ? (
                             jornada.coachingsDaJornada.map((item) => (
                               <div key={`coach-${item.id}`} style={timelineItem}>
                                 <div style={timelineItemTitle}>{item.titulo}</div>
                                 <div style={timelineItemMeta}>
-                                  {item.tipo_coaching || "sustentação"} • {fmtHours(item.horas_totais || 0)}h
+                                  {item.tipo_coaching || "coaching"} • {fmtHours(item.horas_totais || 0)}h
                                 </div>
                               </div>
                             ))
                           ) : (
-                            <div style={timelineEmpty}>Nenhuma sustentação registrada.</div>
+                            <div style={timelineEmpty}>Nenhum coaching ou mentoria registrado.</div>
                           )}
                         </div>
                       </div>
 
                       <div style={timelineWrap}>
-                        <div style={timelineLabel}>Tripulação</div>
+                        <div style={timelineLabel}>Participantes</div>
                         <div style={crewPillRow}>
                           {jornada.tripulacao_preview?.length ? (
                             jornada.tripulacao_preview.map((item) => (
                               <div key={`trip-${item.id}`} style={crewPill}>
                                 <div style={crewPillName}>{item.nome}</div>
-                                <div style={crewPillMeta}>{item.turma || item.cargo || "Em percurso"}</div>
+                                <div style={crewPillMeta}>{item.turma || item.cargo || "Em andamento"}</div>
                               </div>
                             ))
                           ) : (
-                            <div style={timelineEmpty}>Nenhuma pessoa vinculada a este rio.</div>
+                            <div style={timelineEmpty}>Nenhuma pessoa vinculada a esta jornada.</div>
                           )}
                         </div>
                       </div>
@@ -2200,7 +2138,7 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "acoes" && (
           <>
             <SectionCard
-              title="⚓ Portos e ancoragens"
+              title="Cadastro de ação"
               subtitle="Cadastre ações com lançamento manual, sem vínculo com a página de turmas."
             >
               <details open style={detailsCard}>
@@ -2479,13 +2417,13 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="⚓ Portos cadastrados"
+              title="Ações cadastradas"
               subtitle="Lista das ações já registradas no mapa."
             >
               {loading ? (
-                emptyCard("Carregando portos...")
+                emptyCard("Carregando ações...")
               ) : filteredAcoes.length === 0 ? (
-                emptyCard("Nenhum porto encontrado.")
+                emptyCard("Nenhuma ação encontrada.")
               ) : (
                 <div style={cardsGrid}>
                   {filteredAcoes.map((acao) => (
@@ -2553,11 +2491,11 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "coaching" && (
           <>
             <SectionCard
-              title="🫧 Sustentação do percurso"
-              subtitle="Registre coaching e mentoria como camada de reforço e continuidade da jornada."
+              title="Cadastro de coaching e mentoria"
+              subtitle="Registre coaching e mentoria como reforço e continuidade da jornada."
             >
               <details open style={detailsCard}>
-                <summary style={detailsSummary}>Registro de sustentação</summary>
+                <summary style={detailsSummary}>Registro de coaching</summary>
 
                 <form onSubmit={saveCoaching} style={{ display: "grid", gap: 12, marginTop: 14 }}>
                   <div style={formGrid}>
@@ -2862,7 +2800,7 @@ export default function MapaDesenvolvimentoPage() {
 
                   <div style={buttonRow}>
                     <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
-                      {coachingForm.id ? "Atualizar sustentação" : "Salvar sustentação"}
+                      {coachingForm.id ? "Atualizar coaching" : "Salvar coaching"}
                     </button>
                     <button
                       type="button"
@@ -2881,13 +2819,13 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
-              title="🪸 Sustentações cadastradas"
-              subtitle="Lista de coachings e mentorias do percurso."
+              title="Coaching e mentoria cadastrados"
+              subtitle="Lista de coachings e mentorias já registrados."
             >
               {loading ? (
-                emptyCard("Carregando sustentações...")
+                emptyCard("Carregando coachings...")
               ) : filteredCoachings.length === 0 ? (
-                emptyCard("Nenhuma sustentação encontrada.")
+                emptyCard("Nenhum coaching encontrado.")
               ) : (
                 <div style={cardsGrid}>
                   {filteredCoachings.map((item) => {
@@ -2975,14 +2913,14 @@ function MiniExecutive({ label, value }) {
 
 function tabButton(active) {
   return {
-    border: active ? "1px solid rgba(255,255,255,.28)" : "1px solid transparent",
-    background: active ? "rgba(255,255,255,.18)" : "rgba(255,255,255,.08)",
-    color: "#fff",
-    borderRadius: 999,
+    border: active ? `1px solid ${colors.primary}` : `1px solid ${colors.border}`,
+    background: active ? colors.primaryLight : colors.surface,
+    color: active ? colors.primary : colors.textSecondary,
+    borderRadius: radius.pill,
     padding: "10px 14px",
-    fontWeight: 800,
+    fontWeight: 700,
+    fontSize: 13.5,
     cursor: "pointer",
-    backdropFilter: "blur(10px)",
   };
 }
 
@@ -2994,121 +2932,11 @@ const fieldSpan = {
   full: { gridColumn: "1 / -1" },
 };
 
-const heroWrap = {
-  display: "grid",
-  gridTemplateColumns: "1.4fr .9fr",
-  gap: 18,
-  alignItems: "stretch",
-  borderRadius: 28,
-  padding: 24,
-  background:
-    "radial-gradient(circle at 20% 20%, rgba(56,189,248,.22), transparent 35%), radial-gradient(circle at 80% 30%, rgba(59,130,246,.24), transparent 28%), linear-gradient(135deg, #082f49 0%, #0f172a 55%, #0f766e 120%)",
-  border: "1px solid rgba(125,211,252,.18)",
-  boxShadow: "0 22px 48px rgba(8,47,73,.35)",
-};
-
-const heroLeft = {
-  display: "grid",
-  gap: 14,
-};
-
-const heroEyebrow = {
-  fontSize: 12,
-  fontWeight: 900,
-  letterSpacing: ".12em",
-  textTransform: "uppercase",
-  color: "#7dd3fc",
-};
-
-const heroTitle = {
-  margin: 0,
-  color: "#f8fafc",
-  fontSize: 34,
-  lineHeight: 1.08,
-  maxWidth: 720,
-};
-
-const heroText = {
-  margin: 0,
-  color: "#cbd5e1",
-  lineHeight: 1.7,
-  maxWidth: 760,
-};
-
 const tabBar = {
   display: "flex",
   gap: 10,
   flexWrap: "wrap",
   marginTop: 6,
-};
-
-const heroRight = {
-  display: "grid",
-  gap: 14,
-};
-
-const orbCard = {
-  borderRadius: 22,
-  padding: 20,
-  background: "rgba(255,255,255,.08)",
-  border: "1px solid rgba(255,255,255,.12)",
-  display: "grid",
-  gap: 6,
-};
-
-const orbHeader = {
-  fontSize: 12,
-  color: "#bae6fd",
-  textTransform: "uppercase",
-  letterSpacing: ".08em",
-  fontWeight: 900,
-};
-
-const orbValue = {
-  fontSize: 54,
-  lineHeight: 1,
-  color: "#fff",
-  fontWeight: 900,
-};
-
-const orbSub = {
-  color: "#cbd5e1",
-  fontSize: 13,
-};
-
-const signalGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 12,
-};
-
-const signalCard = {
-  borderRadius: 24,
-  padding: 18,
-  background: "linear-gradient(180deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.08) 100%)",
-  border: "1px solid rgba(255,255,255,.18)",
-  boxShadow: "0 16px 30px rgba(2,8,23,.12)",
-  backdropFilter: "blur(12px)",
-};
-
-const signalTitle = {
-  fontSize: 11,
-  color: "#cbd5e1",
-  fontWeight: 800,
-  textTransform: "uppercase",
-};
-
-const signalValue = {
-  fontSize: 22,
-  fontWeight: 900,
-  color: "#fff",
-  marginTop: 4,
-};
-
-const signalSub = {
-  fontSize: 12,
-  color: "#cbd5e1",
-  marginTop: 2,
 };
 
 const kpiGrid = {
@@ -3141,34 +2969,6 @@ const successAlert = {
   borderRadius: 16,
   fontWeight: 700,
   boxShadow: "0 10px 24px rgba(22,101,52,.07)",
-};
-
-const journeyGuideGrid = {
-  display: "grid",
-  gap: 14,
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-};
-
-const journeyGuideCard = {
-  border: "1px solid #dbeafe",
-  borderRadius: 18,
-  padding: 16,
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  boxShadow: "0 10px 24px rgba(15,23,42,.04)",
-  display: "grid",
-  gap: 8,
-};
-
-const journeyGuideTitle = {
-  fontSize: 16,
-  fontWeight: 900,
-  color: "#0f172a",
-};
-
-const journeyGuideText = {
-  fontSize: 13,
-  color: "#475569",
-  lineHeight: 1.5,
 };
 
 const clienteGroupHeader = {
