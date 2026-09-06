@@ -98,7 +98,11 @@ export async function apiFetch(path, options = {}) {
   if (!response.ok) {
     let message = `Erro ${response.status}`;
     if (data && typeof data === "object") {
-      message = data.message || data.error || message;
+      // FIX: antes priorizava data.message, que no backend é sempre um texto
+      // genérico ("Erro ao emitir certificado"). O detalhe técnico real vem
+      // em data.error e nunca chegava a aparecer na tela — obrigando a abrir
+      // o DevTools toda vez para descobrir o que de fato falhou.
+      message = data.error || data.message || message;
     }
     throw new Error(message);
   }
