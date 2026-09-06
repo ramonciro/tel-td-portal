@@ -271,6 +271,7 @@ async function updateEmpresa(req, res) {
       nome, codigo, plano,
       contato_nome, contato_email, contato_telefone,
       subdomain, cor_primaria, logo_url, observacoes,
+      custo_hora_treinamento,
     } = req.body || {};
 
     if (!nome) {
@@ -295,6 +296,8 @@ async function updateEmpresa(req, res) {
       ['cor_primaria',     cor_primaria     || '#FF6B4A'],
       ['logo_url',         logo_url         || null],
       ['observacoes',      observacoes      || null],
+      ['custo_hora_treinamento', custo_hora_treinamento !== '' && custo_hora_treinamento != null
+        ? Number(custo_hora_treinamento) : null],
     ];
 
     for (const [col, val] of opcionais) {
