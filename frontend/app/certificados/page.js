@@ -65,6 +65,19 @@ export default function CertificadosPage() {
   const [showForm,   setShowForm] = useState(false);
   const [form,       setForm]     = useState({ usuario_nome: "", usuario_email: "", treinamento_id: "" });
 
+  // Lista de participantes da turma selecionada (evita digitar o nome à mão e
+  // errar a grafia — o que faz a frequência/nota saírem em branco, já que o
+  // cálculo casa por nome exato com presença/avaliação).
+  const [participantes,        setParticipantes]        = useState([]);
+  const [carregandoParticipantes, setCarregandoParticipantes] = useState(false);
+  const [nomeManual,           setNomeManual]           = useState(false);
+
+  // Preview de elegibilidade (frequência/nota) — calculado sob demanda, antes
+  // de confirmar a emissão, sem gravar nada.
+  const [preview,           setPreview]           = useState(null);
+  const [carregandoPreview, setCarregandoPreview] = useState(false);
+  const [confirmarAbaixoMinimo, setConfirmarAbaixoMinimo] = useState(false);
+
   useEffect(() => {
     async function load() {
       try {
@@ -84,9 +97,57 @@ export default function CertificadosPage() {
     load();
   }, [isGestor]);
 
+  // Ao trocar de turma, busca a lista de participantes importados (para
+  // preencher o select) e limpa qualquer preview/seleção anterior.
+  useEffect(() => {
+    setPreview(null); setConfirmarAbaixoMinimo(false);
+    setParticipantes([]); setNomeManual(false);
+    setForm((f) => ({ ...f, usuario_nome: "" }));
+    if (!form.treinamento_id) return;
+    async function carregarParticipantes() {
+      try {
+        setCarregandoParticipantes(true);
+        const lista = await apiFetch(`/treinamentos/${form.treinamento_id}/participantes`).catch(() => []);
+        setParticipantes(Array.isArray(lista) ? lista : []);
+      } finally {
+        setCarregandoParticipantes(false);
+      }
+    }
+    carregarParticipantes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.treinamento_id]);
+
+  // Qualquer troca de nome invalida o preview calculado anteriormente —
+  // evita emitir com base num número calculado pra outra pessoa.
+  useEffect(() => {
+    setPreview(null); setConfirmarAbaixoMinimo(false);
+  }, [form.usuario_nome]);
+
+  async function verificarElegibilidade() {
+    if (!form.treinamento_id || !form.usuario_nome.trim()) return;
+    try {
+      setCarregandoPreview(true); setError("");
+      const res = await apiFetch(
+        `/certificados/preview?treinamento_id=${encodeURIComponent(form.treinamento_id)}&nome=${encodeURIComponent(form.usuario_nome.trim())}`
+      );
+      setPreview(res);
+    } catch (err) {
+      setError(err.message || "Erro ao calcular elegibilidade.");
+    } finally {
+      setCarregandoPreview(false);
+    }
+  }
+
   async function handleEmitir() {
     if (!form.treinamento_id || !form.usuario_nome) {
       setError("Treinamento e nome do participante são obrigatórios."); return;
+    }
+    if (!preview) {
+      setError('Clique em "Verificar elegibilidade" antes de emitir.'); return;
+    }
+    if (preview.abaixo_do_minimo && !confirmarAbaixoMinimo) {
+      setError(`Frequência abaixo do mínimo recomendado (${preview.frequencia_minima}%). Marque a confirmação para emitir mesmo assim.`);
+      return;
     }
     setEmitindo(true); setError("");
     try {
@@ -97,6 +158,7 @@ export default function CertificadosPage() {
       setCerts((prev) => [res.certificado, ...prev]);
       setSuccess(`Certificado emitido para "${form.usuario_nome}" ✓`);
       setForm({ usuario_nome: "", usuario_email: "", treinamento_id: "" });
+      setPreview(null); setConfirmarAbaixoMinimo(false);
       setShowForm(false);
     } catch (err) {
       setError(err.message || "Erro ao emitir certificado.");
@@ -210,8 +272,31 @@ export default function CertificadosPage() {
               </div>
               <div>
                 <label style={lbl}>Nome do participante *</label>
-                <input style={inputField} placeholder="Nome completo"
-                  value={form.usuario_nome} onChange={(e) => setForm({ ...form, usuario_nome: e.target.value })} />
+                {!nomeManual ? (
+                  <select style={inputField} value={form.usuario_nome}
+                    disabled={!form.treinamento_id || carregandoParticipantes}
+                    onChange={(e) => {
+                      if (e.target.value === "__outro__") { setNomeManual(true); setForm({ ...form, usuario_nome: "" }); return; }
+                      setForm({ ...form, usuario_nome: e.target.value });
+                    }}>
+                    <option value="">
+                      {!form.treinamento_id ? "Selecione a turma primeiro" : carregandoParticipantes ? "Carregando…" : "— Selecione —"}
+                    </option>
+                    {participantes.map((p) => <option key={p.id || p.nome} value={p.nome}>{p.nome}</option>)}
+                    <option value="__outro__">Outro (digitar nome manualmente)</option>
+                  </select>
+                ) : (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input style={inputField} placeholder="Nome completo" autoFocus
+                      value={form.usuario_nome} onChange={(e) => setForm({ ...form, usuario_nome: e.target.value })} />
+                    <button type="button" style={btnLinkVoltar} onClick={() => { setNomeManual(false); setForm({ ...form, usuario_nome: "" }); }}>
+                      usar lista
+                    </button>
+                  </div>
+                )}
+                {!nomeManual && !carregandoParticipantes && form.treinamento_id && participantes.length === 0 && (
+                  <span style={hintTxt}>Esta turma não tem participantes importados — use "Outro" para digitar o nome.</span>
+                )}
               </div>
               <div>
                 <label style={lbl}>E-mail (opcional)</label>
@@ -219,6 +304,36 @@ export default function CertificadosPage() {
                   value={form.usuario_email} onChange={(e) => setForm({ ...form, usuario_email: e.target.value })} />
               </div>
             </div>
+
+            <div style={{ marginTop: 14 }}>
+              <button type="button" style={btnVerificar} onClick={verificarElegibilidade}
+                disabled={!form.treinamento_id || !form.usuario_nome.trim() || carregandoPreview}>
+                {carregandoPreview ? "Calculando…" : "Verificar elegibilidade"}
+              </button>
+
+              {preview && (
+                <div style={preview.abaixo_do_minimo ? previewBoxAlerta : previewBoxOk}>
+                  <div style={previewRow}>
+                    <span><strong>Frequência:</strong> {preview.frequencia_percentual != null ? `${preview.frequencia_percentual}%` : "sem registros"}</span>
+                    <span><strong>Nota final:</strong> {preview.nota_final != null ? preview.nota_final : "sem registros"}</span>
+                  </div>
+                  {preview.sem_registros && (
+                    <p style={previewAviso}>Não encontramos presença/avaliação para esse nome nesta turma — confira se o nome digitado bate exatamente com o cadastrado.</p>
+                  )}
+                  {preview.abaixo_do_minimo && (
+                    <>
+                      <p style={previewAviso}>Frequência abaixo do mínimo recomendado ({preview.frequencia_minima}%).</p>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#7c2d12", marginTop: 6 }}>
+                        <input type="checkbox" checked={confirmarAbaixoMinimo}
+                          onChange={(e) => setConfirmarAbaixoMinimo(e.target.checked)} />
+                        Emitir mesmo assim
+                      </label>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
               <button style={btnSalvar} onClick={handleEmitir} disabled={emitindo}>
                 {emitindo ? "Emitindo…" : "Emitir certificado"}
@@ -281,3 +396,10 @@ const formGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minm
 const lbl = { display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6 };
 const inputField = { width: "100%", padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", background: "#fff" };
 const btnSalvar = { padding: "10px 24px", background: "#0B1220", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 800 };
+const btnLinkVoltar = { padding: "0 12px", background: "#f3f4f6", color: "#374151", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" };
+const hintTxt = { display: "block", marginTop: 6, fontSize: 12, color: "#9ca3af" };
+const btnVerificar = { padding: "9px 16px", background: "#eef2ff", color: "#4338ca", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
+const previewBoxOk = { marginTop: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px" };
+const previewBoxAlerta = { marginTop: 10, background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: "10px 14px" };
+const previewRow = { display: "flex", gap: 24, fontSize: 13, color: "#0B1220", flexWrap: "wrap" };
+const previewAviso = { margin: "6px 0 0", fontSize: 12, color: "#9a3412", fontWeight: 600 };
