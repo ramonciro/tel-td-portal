@@ -17,7 +17,7 @@ function mensagemErro(error, acaoDescricao) {
 async function obterMural(req, res) {
   try {
     const treinamentoId = Number(req.params.treinamento_id);
-    const mural = await getMuralTurma(treinamentoId);
+    const mural = await getMuralTurma(treinamentoId, req.empresaId);
     if (!mural) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
@@ -42,6 +42,7 @@ async function criarPublicacaoHandler(req, res) {
       titulo,
       conteudo,
       fixado,
+      empresaId: req.empresaId,
     });
 
     registrarAuditoria({
@@ -56,6 +57,9 @@ async function criarPublicacaoHandler(req, res) {
 
     return res.status(201).json({ ok: true, id });
   } catch (error) {
+    if (error.code === "TREINAMENTO_NAO_ENCONTRADO") {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
     return res.status(500).json({ ok: false, message: mensagemErro(error, "publicar o aviso"), error: error.message });
   }
 }
@@ -63,7 +67,7 @@ async function criarPublicacaoHandler(req, res) {
 async function editarPublicacaoHandler(req, res) {
   try {
     const { id } = req.params;
-    const antes = await buscarPublicacao(id);
+    const antes = await buscarPublicacao(id, req.empresaId);
     if (!antes) {
       return res.status(404).json({ ok: false, message: "Publicação não encontrada" });
     }
@@ -90,7 +94,7 @@ async function editarPublicacaoHandler(req, res) {
 async function excluirPublicacaoHandler(req, res) {
   try {
     const { id } = req.params;
-    const antes = await buscarPublicacao(id);
+    const antes = await buscarPublicacao(id, req.empresaId);
     if (!antes) {
       return res.status(404).json({ ok: false, message: "Publicação não encontrada" });
     }

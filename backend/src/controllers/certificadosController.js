@@ -60,14 +60,22 @@ async function emitirCertificado(req, res) {
       return res.status(400).json({ ok: false, message: 'treinamento_id é obrigatório' });
     }
 
-    const empresaId = req.empresaId ?? 1;
+    // Bugfix: "?? 1" mis-atribuía TODO certificado emitido por super_admin ou
+    // usuário legado (empresaId nulo) à empresa de id 1 — em vez de manter
+    // null (sem tenant), como o resto do sistema faz. Também abria brecha
+    // para outro tenant "herdar" certificados da empresa 1 por engano.
+    const empresaId = req.empresaId ?? null;
     const nome  = usuario_nome  || req.user?.nome  || '';
     const email = usuario_email || req.user?.email || null;
 
-    // Busca dados do treinamento
+    // Busca dados do treinamento — com filtro de tenant: sem isso, qualquer
+    // usuário autenticado podia emitir/ler certificado de uma turma de outra
+    // empresa só sabendo o id.
+    const tenantCheckTr = empresaId ? ' AND empresa_id = ?' : '';
+    const trParams = empresaId ? [treinamento_id, empresaId] : [treinamento_id];
     const [trRows] = await pool.query(
-      'SELECT tema, cliente, carga_horaria FROM treinamentos WHERE id = ? LIMIT 1',
-      [treinamento_id]
+      `SELECT tema, cliente, carga_horaria FROM treinamentos WHERE id = ?${tenantCheckTr} LIMIT 1`,
+      trParams
     );
     if (!trRows.length) {
       return res.status(404).json({ ok: false, message: 'Treinamento não encontrado' });
@@ -164,9 +172,11 @@ async function verificarCertificado(req, res) {
       return res.status(400).json({ ok: false, message: 'Parâmetros insuficientes' });
     }
 
+    const tenantCheck = req.empresaId ? ' AND empresa_id = ?' : '';
+    const params = req.empresaId ? [treinamento_id, userEmail, req.empresaId] : [treinamento_id, userEmail];
     const [rows] = await pool.query(
-      'SELECT * FROM certificados WHERE treinamento_id = ? AND usuario_email = ? LIMIT 1',
-      [treinamento_id, userEmail]
+      `SELECT * FROM certificados WHERE treinamento_id = ? AND usuario_email = ?${tenantCheck} LIMIT 1`,
+      params
     );
 
     return res.json({ ok: true, certificado: rows[0] || null });

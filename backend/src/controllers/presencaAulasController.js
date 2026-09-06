@@ -9,6 +9,23 @@ function normalizeStatus(value) {
   return "pendente";
 }
 
+// Isolamento por tenant: turma_aulas.empresa_id não é gravado de forma
+// confiável em todo insert (mesmo motivo documentado em turmaAulasController.js),
+// então a checagem é feita via JOIN até treinamentos, que sempre tem
+// empresa_id. Sem isso, qualquer turma_aula_id de outra empresa dava acesso
+// à lista de presença, permitia inicializar/gravar chamada e ver o resumo.
+async function turmaAulaPertenceAoTenant(turmaAulaId, empresaId) {
+  if (!empresaId) return true;
+  const [rows] = await pool.query(
+    `SELECT ta.id FROM turma_aulas ta
+     JOIN treinamentos t ON t.id = ta.treinamento_id
+     WHERE ta.id = ? AND t.empresa_id = ?
+     LIMIT 1`,
+    [turmaAulaId, empresaId]
+  );
+  return rows.length > 0;
+}
+
 async function listarPresencaAula(req, res) {
   try {
     const { turma_aula_id } = req.query || {};
@@ -18,6 +35,10 @@ async function listarPresencaAula(req, res) {
         ok: false,
         message: "Informe o turma_aula_id",
       });
+    }
+
+    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Aula não encontrada" });
     }
 
     const [rows] = await pool.query(
@@ -58,6 +79,10 @@ async function inicializarPresencaAula(req, res) {
         ok: false,
         message: "Informe o turma_aula_id",
       });
+    }
+
+    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Aula não encontrada" });
     }
 
     const [aulas] = await pool.query(
@@ -158,6 +183,10 @@ async function salvarPresencaAula(req, res) {
       });
     }
 
+    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Aula não encontrada" });
+    }
+
     const [aulas] = await pool.query(
       `
       SELECT id, treinamento_id, data_aula
@@ -243,6 +272,10 @@ async function salvarPresencaAula(req, res) {
 async function resumoPresencaAula(req, res) {
   try {
     const { turma_aula_id } = req.params;
+
+    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Aula não encontrada" });
+    }
 
     const [[aula]] = await pool.query(
       `

@@ -599,8 +599,13 @@ const criarUsuarioRS = async (req, res) => {
   const perfilFinal = ["coordenador_rs","gestor_rs"].includes(perfil) ? perfil : "gestor_rs";
 
   try {
-    // Verificar e-mail duplicado
-    const [[exists]] = await db.query("SELECT id FROM usuarios WHERE email=? LIMIT 1", [email]);
+    // Verificar e-mail duplicado — restrito ao próprio tenant: checar
+    // globalmente vazava (via true/false) se um e-mail já existia em OUTRA
+    // empresa. O índice único de `usuarios` já impede duplicata real.
+    const [[exists]] = await db.query(
+      "SELECT id FROM usuarios WHERE email=? AND empresa_id=? LIMIT 1",
+      [email, empresa_id]
+    );
     if (exists) return res.status(400).json({ error: "E-mail já cadastrado" });
 
     const hash = await bcrypt.hash(senha, 10);

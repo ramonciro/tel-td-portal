@@ -1,5 +1,22 @@
 const pool = require("../lib/db");
 
+// materiais_avaliativos não tem empresa_id própria — isolamento via JOIN
+// até treinamentos, mesmo padrão do restante do módulo de avaliações.
+function tenantJoinTreinamento(empresaId, alias = "materiais_avaliativos") {
+  return empresaId
+    ? ` AND EXISTS (SELECT 1 FROM treinamentos t WHERE t.id = ${alias}.treinamento_id AND t.empresa_id = ${pool.escape(empresaId)})`
+    : "";
+}
+
+async function treinamentoPertenceAoTenant(treinamentoId, empresaId) {
+  if (!empresaId) return true;
+  const [rows] = await pool.query(
+    `SELECT id FROM treinamentos WHERE id = ? AND empresa_id = ? LIMIT 1`,
+    [treinamentoId, empresaId]
+  );
+  return rows.length > 0;
+}
+
 async function listMateriaisAvaliativos(req, res) {
   try {
     const [rows] = await pool.query(`
@@ -15,6 +32,7 @@ async function listMateriaisAvaliativos(req, res) {
         questoes_json,
         criado_em
       FROM materiais_avaliativos
+      WHERE 1 = 1${tenantJoinTreinamento(req.empresaId)}
       ORDER BY id DESC
     `);
 
@@ -46,6 +64,10 @@ async function createMaterialAvaliativo(req, res) {
         ok: false,
         message: "Preencha treinamento, título e tipo",
       });
+    }
+
+    if (!(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
     const [result] = await pool.query(
@@ -110,6 +132,19 @@ async function updateMaterialAvaliativo(req, res) {
       });
     }
 
+    const tenantCheck = tenantJoinTreinamento(req.empresaId);
+    const [exists] = await pool.query(
+      `SELECT id FROM materiais_avaliativos WHERE id = ?${tenantCheck} LIMIT 1`,
+      [id]
+    );
+    if (!exists.length) {
+      return res.status(404).json({ ok: false, message: "Material avaliativo não encontrado" });
+    }
+
+    if (!(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
     await pool.query(
       `
       UPDATE materiais_avaliativos
@@ -154,11 +189,12 @@ async function deleteMaterialAvaliativo(req, res) {
   try {
     const { id } = req.params;
 
+    const tenantCheck = tenantJoinTreinamento(req.empresaId);
     const [materiais] = await pool.query(
       `
       SELECT id, treinamento_id, titulo
       FROM materiais_avaliativos
-      WHERE id = ?
+      WHERE id = ?${tenantCheck}
       LIMIT 1
       `,
       [id]

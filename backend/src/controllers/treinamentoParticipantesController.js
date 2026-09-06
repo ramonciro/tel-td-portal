@@ -48,10 +48,28 @@ function normalizeRowKeys(row) {
   return normalized;
 }
 
+// Isolamento por tenant: confirma que um treinamento_id recebido do cliente
+// pertence à empresa de quem está fazendo a requisição antes de ler/gravar
+// participantes ou chamada. Sem isso, qualquer usuário autenticado podia
+// ver/importar/editar/excluir a lista de participantes e a chamada de uma
+// turma de outra empresa só sabendo (ou incrementando) o id.
+async function treinamentoPertenceAoTenant(db, treinamentoId, empresaId) {
+  if (!empresaId) return true;
+  const [rows] = await db.query(
+    `SELECT id FROM treinamentos WHERE id = ? AND empresa_id = ? LIMIT 1`,
+    [treinamentoId, empresaId]
+  );
+  return rows.length > 0;
+}
+
 async function getParticipantesByTreinamento(req, res) {
   try {
     const { id } = req.params;
     const dataChamada = req.query?.data || null;
+
+    if (!(await treinamentoPertenceAoTenant(db, id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
 
     let rows;
 
@@ -133,6 +151,10 @@ async function importarParticipantesExcel(req, res) {
         ok: false,
         message: "Arquivo Excel não enviado",
       });
+    }
+
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
@@ -266,6 +288,10 @@ async function salvarChamadaParticipantes(req, res) {
       });
     }
 
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
     for (const item of participantes) {
       const status = item.status_presenca || "pendente";
       const presente = status === "presente" ? 1 : 0;
@@ -363,6 +389,10 @@ async function createParticipanteTreinamento(req, res) {
       });
     }
 
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
     const [existentes] = await db.query(
       `
       SELECT id
@@ -440,15 +470,19 @@ async function createParticipanteTreinamento(req, res) {
 async function deleteParticipanteTreinamento(req, res) {
   try {
     const { id } = req.params;
+    const tenantJoin = req.empresaId
+      ? " AND EXISTS (SELECT 1 FROM treinamentos t WHERE t.id = tp.treinamento_id AND t.empresa_id = ?)"
+      : "";
+    const params = req.empresaId ? [id, req.empresaId] : [id];
 
     const [rows] = await db.query(
       `
-      SELECT id, treinamento_id, nome
-      FROM treinamento_participantes
-      WHERE id = ?
+      SELECT tp.id, tp.treinamento_id, tp.nome
+      FROM treinamento_participantes tp
+      WHERE tp.id = ?${tenantJoin}
       LIMIT 1
       `,
-      [id]
+      params
     );
 
     if (!rows.length) {
@@ -501,14 +535,18 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
     }
 
     const placeholders = ids.map(() => "?").join(", ");
+    const tenantJoin = req.empresaId
+      ? " AND EXISTS (SELECT 1 FROM treinamentos t WHERE t.id = tp.treinamento_id AND t.empresa_id = ?)"
+      : "";
+    const params = req.empresaId ? [...ids, req.empresaId] : ids;
 
     const [rows] = await db.query(
       `
-      SELECT id, treinamento_id, nome
-      FROM treinamento_participantes
-      WHERE id IN (${placeholders})
+      SELECT tp.id, tp.treinamento_id, tp.nome
+      FROM treinamento_participantes tp
+      WHERE tp.id IN (${placeholders})${tenantJoin}
       `,
-      ids
+      params
     );
 
     if (!rows.length) {
@@ -528,12 +566,18 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
       );
     }
 
+    // Usa só os ids confirmados como do tenant (rows), não o `ids` bruto do
+    // corpo da requisição — senão um id de outra empresa misturado na lista
+    // seria excluído mesmo depois de barrado no SELECT acima.
+    const idsConfirmados = rows.map((r) => r.id);
+    const placeholdersConfirmados = idsConfirmados.map(() => "?").join(", ");
+
     await db.query(
       `
       DELETE FROM treinamento_participantes
-      WHERE id IN (${placeholders})
+      WHERE id IN (${placeholdersConfirmados})
       `,
-      ids
+      idsConfirmados
     );
 
     return res.json({

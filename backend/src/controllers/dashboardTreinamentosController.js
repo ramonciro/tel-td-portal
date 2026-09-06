@@ -85,6 +85,15 @@ async function getDashboardTreinamentos(req, res) {
     const conditions = [];
     const params = [];
 
+    // Isolamento por tenant: sem este filtro, o dashboard somava turmas,
+    // participantes, presenças e NPS de TODAS as empresas na mesma tela —
+    // era o vazamento mais visível do sistema. req.empresaId nulo (super_admin
+    // ou usuário legado sem empresa atribuída) mantém o comportamento antigo.
+    if (req.empresaId) {
+      conditions.push("t.empresa_id = ?");
+      params.push(req.empresaId);
+    }
+
     if (query.cliente) {
       conditions.push("t.cliente = ?");
       params.push(query.cliente);
@@ -212,7 +221,7 @@ async function getDashboardTreinamentos(req, res) {
     // nunca mais divirjam sobre a mesma turma.
     let resumoPresencaPorId = new Map();
     try {
-      const resumoPresenca = await getResumoPresenca();
+      const resumoPresenca = await getResumoPresenca({ empresaId: req.empresaId });
       resumoPresencaPorId = new Map(resumoPresenca.map((item) => [Number(item.id), item]));
     } catch (err) {
       console.warn("[dashboard] resumo de presença indisponível:", err.message);
@@ -372,15 +381,21 @@ async function getDashboardTreinamentos(req, res) {
     };
 
     try {
-      const [[jornadas]] = await pool.query("SELECT COUNT(*) AS total FROM jornadas_desenvolvimento");
-      const [[acoes]] = await pool.query("SELECT COUNT(*) AS total FROM acoes_desenvolvimento");
-      const [[sustentacoes]] = await pool.query("SELECT COUNT(*) AS total FROM coaching_planos");
-      const [[tripulacao]] = await pool.query("SELECT COUNT(*) AS total FROM jornada_participantes");
+      // Isolamento por tenant no bloco "Oceano" — mesmas colunas empresa_id
+      // adicionadas em database/migrate.js (passo 17).
+      const oceanoWhere = req.empresaId ? "WHERE empresa_id = ?" : "";
+      const oceanoParams = req.empresaId ? [req.empresaId] : [];
+
+      const [[jornadas]] = await pool.query(`SELECT COUNT(*) AS total FROM jornadas_desenvolvimento ${oceanoWhere}`, oceanoParams);
+      const [[acoes]] = await pool.query(`SELECT COUNT(*) AS total FROM acoes_desenvolvimento ${oceanoWhere}`, oceanoParams);
+      const [[sustentacoes]] = await pool.query(`SELECT COUNT(*) AS total FROM coaching_planos ${oceanoWhere}`, oceanoParams);
+      const [[tripulacao]] = await pool.query(`SELECT COUNT(*) AS total FROM jornada_participantes ${oceanoWhere}`, oceanoParams);
       const [progresso] = await pool.query(`
         SELECT status_jornada, COUNT(*) AS total
         FROM jornada_participantes
+        ${oceanoWhere}
         GROUP BY status_jornada
-      `).catch(() => [[]]);
+      `, oceanoParams).catch(() => [[]]);
       const progressMap = { em_percurso: 0, concluido: 0, em_sustentacao: 0 };
       for (const row of progresso) {
         const key = String(row.status_jornada || "").trim().toLowerCase();

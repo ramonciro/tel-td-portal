@@ -40,7 +40,7 @@ async function getResumo(req, res) {
 
     // Turmas por status
     const [statusRows] = await pool.query(
-      `SELECT status, COUNT(*) AS total FROM treinamentos WHERE ${tw} GROUP BY status`
+      `SELECT status, COUNT(*) AS total FROM treinamentos t WHERE ${tw} GROUP BY status`
     );
 
     const porStatus = {};
@@ -58,13 +58,13 @@ async function getResumo(req, res) {
     // Horas treinadas (apenas turmas concluídas)
     const [[{ horas_total }]] = await pool.query(
       `SELECT COALESCE(SUM(carga_horaria), 0) AS horas_total
-       FROM treinamentos WHERE ${tw} AND ${STATUS_CONCLUIDO}`
+       FROM treinamentos t WHERE ${tw} AND ${STATUS_CONCLUIDO}`
     );
 
     // Horas previstas (todas as turmas)
     const [[{ horas_previstas }]] = await pool.query(
       `SELECT COALESCE(SUM(carga_horaria), 0) AS horas_previstas
-       FROM treinamentos WHERE ${tw}`
+       FROM treinamentos t WHERE ${tw}`
     );
 
     // Participantes únicos treinados
@@ -151,7 +151,7 @@ async function getHoras(req, res) {
          MONTH(COALESCE(data_fim, data)) AS mes,
          COALESCE(SUM(carga_horaria), 0) AS horas,
          COUNT(*)                         AS turmas
-       FROM treinamentos
+       FROM treinamentos t
        WHERE ${tw}
          AND ${STATUS_CONCLUIDO}
          AND COALESCE(data_fim, data) >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
@@ -165,7 +165,7 @@ async function getHoras(req, res) {
          COALESCE(cliente, '(sem cliente)') AS cliente,
          COALESCE(SUM(carga_horaria), 0)    AS horas,
          COUNT(*)                            AS turmas
-       FROM treinamentos
+       FROM treinamentos t
        WHERE ${tw} AND ${STATUS_CONCLUIDO}
        GROUP BY cliente
        ORDER BY horas DESC
@@ -178,7 +178,7 @@ async function getHoras(req, res) {
          COALESCE(instrutor, '(sem instrutor)') AS instrutor,
          COALESCE(SUM(carga_horaria), 0)        AS horas,
          COUNT(*)                                AS turmas
-       FROM treinamentos
+       FROM treinamentos t
        WHERE ${tw} AND ${STATUS_CONCLUIDO}
        GROUP BY instrutor
        ORDER BY horas DESC
@@ -188,7 +188,7 @@ async function getHoras(req, res) {
     // Total geral
     const [[{ total }]] = await pool.query(
       `SELECT COALESCE(SUM(carga_horaria), 0) AS total
-       FROM treinamentos WHERE ${tw} AND ${STATUS_CONCLUIDO}`
+       FROM treinamentos t WHERE ${tw} AND ${STATUS_CONCLUIDO}`
     );
 
     return res.json({
@@ -365,7 +365,7 @@ async function getRoi(req, res) {
            THEN carga_horaria ELSE 0 END), 0)             AS horas_realizadas,
          COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
          COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
-       FROM treinamentos WHERE ${tw}`
+       FROM treinamentos t WHERE ${tw}`
     );
 
     const horas      = asInt(dados.horas_realizadas);

@@ -31,12 +31,19 @@ async function list(req, res) {
   try {
     const { jornada_id } = req.query || {};
     const params = [];
-    let where = "";
+    const conditions = [];
 
     if (jornada_id) {
-      where = "WHERE jp.jornada_id = ?";
+      conditions.push("jp.jornada_id = ?");
       params.push(jornada_id);
     }
+
+    if (req.empresaId) {
+      conditions.push("jp.empresa_id = ?");
+      params.push(req.empresaId);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const [rows] = await db.query(
       `
@@ -82,13 +89,23 @@ async function create(req, res) {
       return res.status(400).json({ error: "Informe o nome da pessoa." });
     }
 
+    if (req.empresaId) {
+      const [jornadaDoTenant] = await db.query(
+        `SELECT id FROM jornadas_desenvolvimento WHERE id = ? AND empresa_id = ?`,
+        [jornada_id, req.empresaId]
+      );
+      if (!jornadaDoTenant.length) {
+        return res.status(404).json({ error: "Jornada não encontrada." });
+      }
+    }
+
     await db.query(
       `
       INSERT INTO jornada_participantes (
-        jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, empresa_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao]
+      [jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, req.empresaId ?? null]
     );
 
     return res.status(201).json({ ok: true, message: "Participante vinculado com sucesso." });
@@ -115,13 +132,15 @@ async function create(req, res) {
 async function remove(req, res) {
   try {
     const { id } = req.params;
-    const [exists] = await db.query(`SELECT id FROM jornada_participantes WHERE id = ? LIMIT 1`, [id]);
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const checkParams = req.empresaId ? [id, req.empresaId] : [id];
+    const [exists] = await db.query(`SELECT id FROM jornada_participantes WHERE id = ?${tenantCheck} LIMIT 1`, checkParams);
 
     if (!exists.length) {
       return res.status(404).json({ error: "Participante não encontrado." });
     }
 
-    await db.query(`DELETE FROM jornada_participantes WHERE id = ?`, [id]);
+    await db.query(`DELETE FROM jornada_participantes WHERE id = ?${tenantCheck}`, checkParams);
     return res.json({ ok: true, message: "Participante removido com sucesso." });
   } catch (error) {
     console.error("Erro ao remover participante da jornada:", error);
@@ -139,6 +158,16 @@ async function importExcel(req, res) {
 
     if (!req.file) {
       return res.status(400).json({ error: "Arquivo não enviado." });
+    }
+
+    if (req.empresaId) {
+      const [jornadaDoTenant] = await db.query(
+        `SELECT id FROM jornadas_desenvolvimento WHERE id = ? AND empresa_id = ?`,
+        [jornada_id, req.empresaId]
+      );
+      if (!jornadaDoTenant.length) {
+        return res.status(404).json({ error: "Jornada não encontrada." });
+      }
     }
 
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
@@ -161,8 +190,8 @@ async function importExcel(req, res) {
         await db.query(
           `
           INSERT INTO jornada_participantes (
-            jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, empresa_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
           [
             jornada_id,
@@ -174,6 +203,7 @@ async function importExcel(req, res) {
             String(linha.supervisor || "").trim() || null,
             normalizeStatus(linha.status_jornada),
             "planilha",
+            req.empresaId ?? null,
           ]
         );
         totalImportados += 1;

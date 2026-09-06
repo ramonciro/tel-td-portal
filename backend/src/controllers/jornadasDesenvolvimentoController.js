@@ -32,14 +32,21 @@ function mapRow(item) {
   };
 }
 
-async function listar(_req, res) {
+async function listar(req, res) {
   try {
-    const [rows] = await db.query(`
+    const tenantWhere = req.empresaId ? "WHERE jd.empresa_id = ?" : "";
+    const params = req.empresaId ? [req.empresaId] : [];
+
+    const [rows] = await db.query(
+      `
       SELECT jd.*, u.nome AS responsavel_nome
       FROM jornadas_desenvolvimento jd
       LEFT JOIN usuarios u ON u.id = jd.responsavel_id
+      ${tenantWhere}
       ORDER BY jd.id DESC
-    `);
+      `,
+      params
+    );
 
     res.json(rows.map(mapRow));
   } catch (error) {
@@ -51,15 +58,17 @@ async function listar(_req, res) {
 async function buscarPorId(req, res) {
   try {
     const { id } = req.params;
+    const tenantCheck = req.empresaId ? " AND jd.empresa_id = ?" : "";
+    const params = req.empresaId ? [id, req.empresaId] : [id];
 
     const [rows] = await db.query(
       `
       SELECT jd.*, u.nome AS responsavel_nome
       FROM jornadas_desenvolvimento jd
       LEFT JOIN usuarios u ON u.id = jd.responsavel_id
-      WHERE jd.id = ?
+      WHERE jd.id = ?${tenantCheck}
       `,
-      [id]
+      params
     );
 
     if (!rows.length) {
@@ -93,10 +102,10 @@ async function criar(req, res) {
     const [result] = await db.query(
       `
       INSERT INTO jornadas_desenvolvimento
-      (cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, empresa_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim]
+      [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, req.empresaId ?? null]
     );
 
     const [rows] = await db.query(
@@ -135,18 +144,23 @@ async function atualizar(req, res) {
       return res.status(400).json({ error: "Nome da jornada é obrigatório." });
     }
 
-    const [exists] = await db.query(`SELECT id FROM jornadas_desenvolvimento WHERE id = ?`, [id]);
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const existsParams = req.empresaId ? [id, req.empresaId] : [id];
+    const [exists] = await db.query(`SELECT id FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, existsParams);
     if (!exists.length) {
       return res.status(404).json({ error: "Jornada não encontrada." });
     }
+
+    const updateParams = [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, id];
+    if (req.empresaId) updateParams.push(req.empresaId);
 
     await db.query(
       `
       UPDATE jornadas_desenvolvimento
       SET cliente = ?, nome = ?, descricao = ?, objetivo = ?, publico_macro = ?, observacoes = ?, status = ?, responsavel_id = ?, data_inicio = ?, data_fim = ?
-      WHERE id = ?
+      WHERE id = ?${tenantCheck}
       `,
-      [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, id]
+      updateParams
     );
 
     const [rows] = await db.query(
@@ -170,13 +184,15 @@ async function remover(req, res) {
   try {
     const { id } = req.params;
 
-    const [exists] = await db.query(`SELECT id FROM jornadas_desenvolvimento WHERE id = ?`, [id]);
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const checkParams = req.empresaId ? [id, req.empresaId] : [id];
+    const [exists] = await db.query(`SELECT id FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, checkParams);
     if (!exists.length) {
       return res.status(404).json({ error: "Jornada não encontrada." });
     }
 
     await db.query(`DELETE FROM jornada_participantes WHERE jornada_id = ?`, [id]).catch(() => null);
-    await db.query(`DELETE FROM jornadas_desenvolvimento WHERE id = ?`, [id]);
+    await db.query(`DELETE FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, checkParams);
 
     res.json({ success: true, message: "Jornada removida com sucesso." });
   } catch (error) {

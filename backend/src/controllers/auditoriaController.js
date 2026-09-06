@@ -10,6 +10,7 @@ async function listarAuditoriaHandler(req, res) {
       dataInicio: data_inicio || undefined,
       dataFim: data_fim || undefined,
       limite: limite ? Number(limite) : undefined,
+      empresaId: req.empresaId,
     });
     return res.json({ ok: true, itens });
   } catch (error) {

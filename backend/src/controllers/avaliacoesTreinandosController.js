@@ -2,6 +2,12 @@ const pool = require("../lib/db");
 
 async function listAvaliacoesTreinandos(req, res) {
   try {
+    // LEFT JOIN + WHERE (em vez de INNER) preserva o comportamento anterior
+    // para respostas cujo treinamento tenha sido excluído, mas isola por
+    // tenant quando req.empresaId é real.
+    const tenantWhere = req.empresaId ? "WHERE t.empresa_id = ?" : "";
+    const params = req.empresaId ? [req.empresaId] : [];
+
     const [rows] = await pool.query(
       `
       SELECT
@@ -16,8 +22,10 @@ async function listAvaliacoesTreinandos(req, res) {
         t.instrutor
       FROM avaliacoes_treinandos at
       LEFT JOIN treinamentos t ON t.id = at.treinamento_id
+      ${tenantWhere}
       ORDER BY at.id DESC
-      `
+      `,
+      params
     );
 
     return res.json(rows);
@@ -44,6 +52,9 @@ async function listNpsDisponivel(req, res) {
 
     // Para treinando: só mostra turmas em que ele participa e ainda não respondeu
     if (perfil === "treinando") {
+      const tenantWhere = req.empresaId ? " AND t.empresa_id = ?" : "";
+      const params = req.empresaId ? [nomeUsuario, nomeUsuario, req.empresaId] : [nomeUsuario, nomeUsuario];
+
       const [rows] = await pool.query(
         `
         SELECT
@@ -61,16 +72,19 @@ async function listNpsDisponivel(req, res) {
         LEFT JOIN avaliacoes_treinandos at
           ON at.treinamento_id = t.id
          AND at.treinando_nome = ?
-        WHERE at.id IS NULL
+        WHERE at.id IS NULL${tenantWhere}
         ORDER BY COALESCE(t.data_fim, t.data_inicio, t.data) DESC, t.id DESC
         `,
-        [nomeUsuario, nomeUsuario]
+        params
       );
 
       return res.json(rows);
     }
 
     // Para coord/sup/instrutor: retorna todas as turmas
+    const tenantWhere = req.empresaId ? "WHERE empresa_id = ?" : "";
+    const params = req.empresaId ? [req.empresaId] : [];
+
     const [rows] = await pool.query(
       `
       SELECT
@@ -82,8 +96,10 @@ async function listNpsDisponivel(req, res) {
         data_inicio,
         data_fim
       FROM treinamentos
+      ${tenantWhere}
       ORDER BY COALESCE(data_fim, data_inicio, data) DESC, id DESC
-      `
+      `,
+      params
     );
 
     return res.json(rows);
@@ -121,6 +137,16 @@ async function createAvaliacaoTreinando(req, res) {
         ok: false,
         message: "A nota NPS deve estar entre 0 e 10",
       });
+    }
+
+    if (req.empresaId) {
+      const [treinamentoDoTenant] = await pool.query(
+        `SELECT id FROM treinamentos WHERE id = ? AND empresa_id = ?`,
+        [treinamento_id, req.empresaId]
+      );
+      if (!treinamentoDoTenant.length) {
+        return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+      }
     }
 
     // Se for treinando, valida se ele realmente pertence à turma

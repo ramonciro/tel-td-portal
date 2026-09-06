@@ -7,16 +7,23 @@ function toNumber(value, fallback = 0) {
 
 async function listar(req, res) {
   try {
-    const [rows] = await db.query(`
-      SELECT 
+    const tenantWhere = req.empresaId ? "WHERE a.empresa_id = ?" : "";
+    const params = req.empresaId ? [req.empresaId] : [];
+
+    const [rows] = await db.query(
+      `
+      SELECT
         a.*,
         j.nome AS jornada_nome,
         u.nome AS responsavel_nome
       FROM acoes_desenvolvimento a
       LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
       LEFT JOIN usuarios u ON u.id = a.responsavel_id
+      ${tenantWhere}
       ORDER BY a.id DESC
-    `);
+      `,
+      params
+    );
 
     return res.json(Array.isArray(rows) ? rows : []);
   } catch (error) {
@@ -30,20 +37,22 @@ async function listar(req, res) {
 async function detalhar(req, res) {
   try {
     const { id } = req.params;
+    const tenantCheck = req.empresaId ? " AND a.empresa_id = ?" : "";
+    const params = req.empresaId ? [id, req.empresaId] : [id];
 
     const [rows] = await db.query(
       `
-      SELECT 
+      SELECT
         a.*,
         j.nome AS jornada_nome,
         u.nome AS responsavel_nome
       FROM acoes_desenvolvimento a
       LEFT JOIN jornadas_desenvolvimento j ON j.id = a.jornada_id
       LEFT JOIN usuarios u ON u.id = a.responsavel_id
-      WHERE a.id = ?
+      WHERE a.id = ?${tenantCheck}
       LIMIT 1
       `,
-      [id]
+      params
     );
 
     const acao = rows?.[0];
@@ -83,6 +92,16 @@ async function criar(req, res) {
       });
     }
 
+    if (req.empresaId) {
+      const [jornadaDoTenant] = await db.query(
+        `SELECT id FROM jornadas_desenvolvimento WHERE id = ? AND empresa_id = ?`,
+        [jornadaId, req.empresaId]
+      );
+      if (!jornadaDoTenant.length) {
+        return res.status(404).json({ error: "Jornada não encontrada." });
+      }
+    }
+
     const [result] = await db.query(
       `
       INSERT INTO acoes_desenvolvimento (
@@ -103,8 +122,9 @@ async function criar(req, res) {
         status,
         responsavel_id,
         data_inicio,
-        data_fim
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        data_fim,
+        empresa_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         jornadaId,
@@ -125,6 +145,7 @@ async function criar(req, res) {
         responsavelId,
         dataInicio,
         dataFim,
+        req.empresaId ?? null,
       ]
     );
 
@@ -177,19 +198,49 @@ async function atualizar(req, res) {
       });
     }
 
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const checkParams = req.empresaId ? [id, req.empresaId] : [id];
     const [exists] = await db.query(
       `
       SELECT id
       FROM acoes_desenvolvimento
-      WHERE id = ?
+      WHERE id = ?${tenantCheck}
       LIMIT 1
       `,
-      [id]
+      checkParams
     );
 
     if (!exists?.length) {
       return res.status(404).json({ error: "Ação não encontrada." });
     }
+
+    if (req.empresaId) {
+      const [jornadaDoTenant] = await db.query(
+        `SELECT id FROM jornadas_desenvolvimento WHERE id = ? AND empresa_id = ?`,
+        [jornadaId, req.empresaId]
+      );
+      if (!jornadaDoTenant.length) {
+        return res.status(404).json({ error: "Jornada não encontrada." });
+      }
+    }
+
+    const updateParams = [
+      jornadaId,
+      tema,
+      descricao,
+      cargaHoraria,
+      participantesPrevistos,
+      participantesRealizados,
+      quantidadeTurmasSessoes,
+      horasPlanejadas,
+      horasRealizadas,
+      status,
+      responsavelId,
+      dataInicio,
+      dataFim,
+      id,
+    ];
+    if (req.empresaId) updateParams.push(req.empresaId);
 
     await db.query(
       `
@@ -208,24 +259,9 @@ async function atualizar(req, res) {
         responsavel_id = ?,
         data_inicio = ?,
         data_fim = ?
-      WHERE id = ?
+      WHERE id = ?${tenantCheck}
       `,
-      [
-        jornadaId,
-        tema,
-        descricao,
-        cargaHoraria,
-        participantesPrevistos,
-        participantesRealizados,
-        quantidadeTurmasSessoes,
-        horasPlanejadas,
-        horasRealizadas,
-        status,
-        responsavelId,
-        dataInicio,
-        dataFim,
-        id,
-      ]
+      updateParams
     );
 
     const [rows] = await db.query(
@@ -255,8 +291,20 @@ async function atualizar(req, res) {
 async function remover(req, res) {
   try {
     const { id } = req.params;
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const checkParams = req.empresaId ? [id, req.empresaId] : [id];
 
-    await db.query(`DELETE FROM acoes_desenvolvimento WHERE id = ?`, [id]);
+    if (req.empresaId) {
+      const [exists] = await db.query(
+        `SELECT id FROM acoes_desenvolvimento WHERE id = ?${tenantCheck}`,
+        checkParams
+      );
+      if (!exists.length) {
+        return res.status(404).json({ error: "Ação não encontrada." });
+      }
+    }
+
+    await db.query(`DELETE FROM acoes_desenvolvimento WHERE id = ?${tenantCheck}`, checkParams);
 
     return res.json({ ok: true });
   } catch (error) {

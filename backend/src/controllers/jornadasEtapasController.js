@@ -1,16 +1,23 @@
 const db = require("../lib/db");
 
-exports.listar = async (_req, res) => {
+exports.listar = async (req, res) => {
   try {
-    const [rows] = await db.query(`
+    const tenantWhere = req.empresaId ? "WHERE je.empresa_id = ?" : "";
+    const params = req.empresaId ? [req.empresaId] : [];
+
+    const [rows] = await db.query(
+      `
       SELECT je.*,
              jd.nome AS jornada_nome,
              u.nome AS responsavel_nome
       FROM jornadas_etapas je
       LEFT JOIN jornadas_desenvolvimento jd ON jd.id = je.jornada_id
       LEFT JOIN usuarios u ON u.id = je.responsavel_id
+      ${tenantWhere}
       ORDER BY je.jornada_id ASC, je.ordem ASC, je.id ASC
-    `);
+      `,
+      params
+    );
 
     res.json(rows);
   } catch (error) {
@@ -22,6 +29,8 @@ exports.listar = async (_req, res) => {
 exports.buscarPorId = async (req, res) => {
   try {
     const { id } = req.params;
+    const tenantCheck = req.empresaId ? " AND je.empresa_id = ?" : "";
+    const params = req.empresaId ? [id, req.empresaId] : [id];
 
     const [rows] = await db.query(
       `
@@ -31,9 +40,9 @@ exports.buscarPorId = async (req, res) => {
       FROM jornadas_etapas je
       LEFT JOIN jornadas_desenvolvimento jd ON jd.id = je.jornada_id
       LEFT JOIN usuarios u ON u.id = je.responsavel_id
-      WHERE je.id = ?
+      WHERE je.id = ?${tenantCheck}
       `,
-      [id]
+      params
     );
 
     if (!rows.length) {
@@ -71,9 +80,11 @@ exports.criar = async (req, res) => {
       });
     }
 
+    const tenantCheckJornada = req.empresaId ? " AND empresa_id = ?" : "";
+    const jornadaParams = req.empresaId ? [jornada_id, req.empresaId] : [jornada_id];
     const [jornada] = await db.query(
-      `SELECT id FROM jornadas_desenvolvimento WHERE id = ?`,
-      [jornada_id]
+      `SELECT id FROM jornadas_desenvolvimento WHERE id = ?${tenantCheckJornada}`,
+      jornadaParams
     );
 
     if (!jornada.length) {
@@ -96,9 +107,10 @@ exports.criar = async (req, res) => {
         data_fim,
         carga_horaria_prevista,
         carga_horaria_realizada,
-        observacoes
+        observacoes,
+        empresa_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         Number(jornada_id),
@@ -114,6 +126,7 @@ exports.criar = async (req, res) => {
         Number(carga_horaria_prevista || 0),
         Number(carga_horaria_realizada || 0),
         observacoes || null,
+        req.empresaId ?? null,
       ]
     );
 
@@ -148,14 +161,46 @@ exports.atualizar = async (req, res) => {
       observacoes,
     } = req.body;
 
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const checkParams = req.empresaId ? [id, req.empresaId] : [id];
     const [exists] = await db.query(
-      `SELECT id FROM jornadas_etapas WHERE id = ?`,
-      [id]
+      `SELECT id FROM jornadas_etapas WHERE id = ?${tenantCheck}`,
+      checkParams
     );
 
     if (!exists.length) {
       return res.status(404).json({ error: "Etapa não encontrada." });
     }
+
+    // Se a etapa está sendo movida para outra jornada, garante que a nova
+    // jornada também pertence ao mesmo tenant.
+    if (req.empresaId) {
+      const [jornadaDestino] = await db.query(
+        `SELECT id FROM jornadas_desenvolvimento WHERE id = ? AND empresa_id = ?`,
+        [Number(jornada_id), req.empresaId]
+      );
+      if (!jornadaDestino.length) {
+        return res.status(404).json({ error: "Jornada não encontrada." });
+      }
+    }
+
+    const updateParams = [
+      Number(jornada_id),
+      nome,
+      descricao || null,
+      objetivo || null,
+      tipo || "treinamento",
+      Number(ordem || 0),
+      status || "planejada",
+      responsavel_id || null,
+      data_inicio || null,
+      data_fim || null,
+      Number(carga_horaria_prevista || 0),
+      Number(carga_horaria_realizada || 0),
+      observacoes || null,
+      id,
+    ];
+    if (req.empresaId) updateParams.push(req.empresaId);
 
     await db.query(
       `
@@ -173,24 +218,9 @@ exports.atualizar = async (req, res) => {
           carga_horaria_prevista = ?,
           carga_horaria_realizada = ?,
           observacoes = ?
-      WHERE id = ?
+      WHERE id = ?${tenantCheck}
       `,
-      [
-        Number(jornada_id),
-        nome,
-        descricao || null,
-        objetivo || null,
-        tipo || "treinamento",
-        Number(ordem || 0),
-        status || "planejada",
-        responsavel_id || null,
-        data_inicio || null,
-        data_fim || null,
-        Number(carga_horaria_prevista || 0),
-        Number(carga_horaria_realizada || 0),
-        observacoes || null,
-        id,
-      ]
+      updateParams
     );
 
     const [rows] = await db.query(
@@ -209,16 +239,18 @@ exports.remover = async (req, res) => {
   try {
     const { id } = req.params;
 
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const checkParams = req.empresaId ? [id, req.empresaId] : [id];
     const [exists] = await db.query(
-      `SELECT id FROM jornadas_etapas WHERE id = ?`,
-      [id]
+      `SELECT id FROM jornadas_etapas WHERE id = ?${tenantCheck}`,
+      checkParams
     );
 
     if (!exists.length) {
       return res.status(404).json({ error: "Etapa não encontrada." });
     }
 
-    await db.query(`DELETE FROM jornadas_etapas WHERE id = ?`, [id]);
+    await db.query(`DELETE FROM jornadas_etapas WHERE id = ?${tenantCheck}`, checkParams);
 
     res.json({ success: true, message: "Etapa removida com sucesso." });
   } catch (error) {

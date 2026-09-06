@@ -12,7 +12,11 @@ function garantirPastaUpload() {
 
 async function listBiblioteca(req, res) {
   try {
-    const [rows] = await pool.query(`
+    const tenantWhere = req.empresaId ? "WHERE empresa_id = ?" : "";
+    const params = req.empresaId ? [req.empresaId] : [];
+
+    const [rows] = await pool.query(
+      `
       SELECT
         id,
         titulo,
@@ -25,8 +29,11 @@ async function listBiblioteca(req, res) {
         descricao,
         created_at
       FROM biblioteca
+      ${tenantWhere}
       ORDER BY id DESC
-    `);
+      `,
+      params
+    );
 
     return res.json(rows);
   } catch (error) {
@@ -69,9 +76,10 @@ async function createBiblioteca(req, res) {
         publico,
         status,
         link_arquivo,
-        descricao
+        descricao,
+        empresa_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         titulo,
@@ -82,6 +90,7 @@ async function createBiblioteca(req, res) {
         status || "Publicado",
         link_arquivo || null,
         descricao || null,
+        req.empresaId ?? null,
       ]
     );
 
@@ -119,7 +128,21 @@ async function updateBiblioteca(req, res) {
       });
     }
 
-    await pool.query(
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const updateParams = [
+      titulo,
+      tipo,
+      cliente,
+      categoria || null,
+      publico || null,
+      status || "Publicado",
+      link_arquivo || null,
+      descricao || null,
+      id,
+    ];
+    if (req.empresaId) updateParams.push(req.empresaId);
+
+    const [result] = await pool.query(
       `
       UPDATE biblioteca
       SET
@@ -131,20 +154,14 @@ async function updateBiblioteca(req, res) {
         status = ?,
         link_arquivo = ?,
         descricao = ?
-      WHERE id = ?
+      WHERE id = ?${tenantCheck}
       `,
-      [
-        titulo,
-        tipo,
-        cliente,
-        categoria || null,
-        publico || null,
-        status || "Publicado",
-        link_arquivo || null,
-        descricao || null,
-        id,
-      ]
+      updateParams
     );
+
+    if (req.empresaId && result.affectedRows === 0) {
+      return res.status(404).json({ ok: false, message: "Conteúdo não encontrado." });
+    }
 
     return res.json({ ok: true });
   } catch (error) {
@@ -159,26 +176,30 @@ async function updateBiblioteca(req, res) {
 async function deleteBiblioteca(req, res) {
   try {
     const { id } = req.params;
+    const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+    const params = req.empresaId ? [id, req.empresaId] : [id];
 
     const [rows] = await pool.query(
-      `SELECT link_arquivo FROM biblioteca WHERE id = ? LIMIT 1`,
-      [id]
+      `SELECT link_arquivo FROM biblioteca WHERE id = ?${tenantCheck} LIMIT 1`,
+      params
     );
 
-    if (rows.length) {
-      const link = String(rows[0].link_arquivo || "");
-      if (link.includes("/uploads/biblioteca/")) {
-        const fileName = link.split("/uploads/biblioteca/")[1];
-        if (fileName) {
-          const fullPath = path.join(uploadDir, fileName);
-          if (fs.existsSync(fullPath)) {
-            fs.unlinkSync(fullPath);
-          }
+    if (!rows.length) {
+      return res.status(404).json({ ok: false, message: "Conteúdo não encontrado." });
+    }
+
+    const link = String(rows[0].link_arquivo || "");
+    if (link.includes("/uploads/biblioteca/")) {
+      const fileName = link.split("/uploads/biblioteca/")[1];
+      if (fileName) {
+        const fullPath = path.join(uploadDir, fileName);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
         }
       }
     }
 
-    await pool.query(`DELETE FROM biblioteca WHERE id = ?`, [id]);
+    await pool.query(`DELETE FROM biblioteca WHERE id = ?${tenantCheck}`, params);
 
     return res.json({ ok: true });
   } catch (error) {

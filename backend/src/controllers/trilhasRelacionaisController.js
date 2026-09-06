@@ -59,10 +59,12 @@ async function listTrilhas(req, res) {
 async function getTrilha(req, res) {
   try {
     const { id } = req.params;
+    const tenantCheck = req.empresaId ? ' AND empresa_id = ?' : '';
+    const params = req.empresaId ? [id, req.empresaId] : [id];
 
     const [rows] = await pool.query(
-      'SELECT * FROM trilhas_aprendizagem WHERE id = ? LIMIT 1',
-      [id]
+      `SELECT * FROM trilhas_aprendizagem WHERE id = ?${tenantCheck} LIMIT 1`,
+      params
     );
     if (!rows.length) return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
 
@@ -91,7 +93,9 @@ async function createTrilha(req, res) {
       return res.status(400).json({ ok: false, message: 'Título é obrigatório' });
     }
 
-    const empresaId = req.empresaId ?? 1;
+    // Bugfix: "?? 1" atribuía toda trilha criada por super_admin/usuário
+    // legado (empresaId nulo) à empresa 1 em vez de manter sem tenant.
+    const empresaId = req.empresaId ?? null;
 
     const [result] = await conn.query(
       `INSERT INTO trilhas_aprendizagem (cliente, titulo, descricao, empresa_id)
@@ -144,15 +148,27 @@ async function updateTrilha(req, res) {
       return res.status(400).json({ ok: false, message: 'Título é obrigatório' });
     }
 
-    const empresaId = req.empresaId ?? 1;
+    const empresaId = req.empresaId ?? null;
+
+    const tenantCheck = req.empresaId ? ' AND empresa_id = ?' : '';
+    const checkParams = req.empresaId ? [id, req.empresaId] : [id];
+    const [exists] = await conn.query(
+      `SELECT id FROM trilhas_aprendizagem WHERE id = ?${tenantCheck}`,
+      checkParams
+    );
+    if (!exists.length) {
+      await conn.rollback();
+      conn.release();
+      return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
+    }
 
     await conn.query(
-      `UPDATE trilhas_aprendizagem SET cliente = ?, titulo = ?, descricao = ? WHERE id = ?`,
-      [cliente || null, titulo, descricao || null, id]
+      `UPDATE trilhas_aprendizagem SET cliente = ?, titulo = ?, descricao = ? WHERE id = ?${tenantCheck}`,
+      req.empresaId ? [cliente || null, titulo, descricao || null, id, req.empresaId] : [cliente || null, titulo, descricao || null, id]
     );
 
     // Substitui etapas: deleta as existentes e insere as novas
-    await conn.query('DELETE FROM trilha_etapas WHERE trilha_id = ?', [id]);
+    await conn.query(`DELETE FROM trilha_etapas WHERE trilha_id = ?${tenantCheck}`, checkParams);
 
     if (Array.isArray(etapas) && etapas.length) {
       for (let i = 0; i < etapas.length; i++) {
@@ -190,9 +206,21 @@ async function deleteTrilha(req, res) {
     await conn.beginTransaction();
     const { id } = req.params;
 
+    const tenantCheck = req.empresaId ? ' AND empresa_id = ?' : '';
+    const checkParams = req.empresaId ? [id, req.empresaId] : [id];
+    const [exists] = await conn.query(
+      `SELECT id FROM trilhas_aprendizagem WHERE id = ?${tenantCheck}`,
+      checkParams
+    );
+    if (!exists.length) {
+      await conn.rollback();
+      conn.release();
+      return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
+    }
+
     await conn.query('DELETE FROM trilha_progresso WHERE trilha_id = ?', [id]);
-    await conn.query('DELETE FROM trilha_etapas WHERE trilha_id = ?', [id]);
-    await conn.query('DELETE FROM trilhas_aprendizagem WHERE id = ?', [id]);
+    await conn.query(`DELETE FROM trilha_etapas WHERE trilha_id = ?${tenantCheck}`, checkParams);
+    await conn.query(`DELETE FROM trilhas_aprendizagem WHERE id = ?${tenantCheck}`, checkParams);
 
     await conn.commit();
     conn.release();
@@ -212,6 +240,16 @@ async function getProgresso(req, res) {
     const userEmail = req.user?.email;
 
     if (!userEmail) return res.status(401).json({ ok: false, message: 'Não autenticado' });
+
+    if (req.empresaId) {
+      const [trilhaDoTenant] = await pool.query(
+        'SELECT id FROM trilhas_aprendizagem WHERE id = ? AND empresa_id = ?',
+        [id, req.empresaId]
+      );
+      if (!trilhaDoTenant.length) {
+        return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
+      }
+    }
 
     const [etapas] = await pool.query(
       'SELECT * FROM trilha_etapas WHERE trilha_id = ? ORDER BY ordem ASC',
@@ -252,7 +290,19 @@ async function marcarEtapaConcluida(req, res) {
 
     if (!userEmail) return res.status(401).json({ ok: false, message: 'Não autenticado' });
 
-    const empresaId = req.empresaId ?? 1;
+    if (req.empresaId) {
+      const [trilhaDoTenant] = await pool.query(
+        'SELECT id FROM trilhas_aprendizagem WHERE id = ? AND empresa_id = ?',
+        [id, req.empresaId]
+      );
+      if (!trilhaDoTenant.length) {
+        return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
+      }
+    }
+
+    // Bugfix: "?? 1" gravava todo progresso de super_admin/usuário legado
+    // (empresaId nulo) como se fosse da empresa 1.
+    const empresaId = req.empresaId ?? null;
     const ts = concluido ? new Date() : null;
 
     await pool.query(
