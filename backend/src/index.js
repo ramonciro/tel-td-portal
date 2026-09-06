@@ -54,6 +54,7 @@ const {
   listCertificados,
   emitirCertificado,
   verificarCertificado,
+  previewCertificado,
 } = require("./controllers/certificadosController");
 
 const {
@@ -914,6 +915,14 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   verificarCertificado
+);
+// Preview: calcula frequência/nota sem gravar, para o coordenador conferir
+// antes de emitir de fato.
+app.get(
+  "/api/certificados/preview",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  previewCertificado
 );
 app.post(
   "/api/certificados/emitir",
