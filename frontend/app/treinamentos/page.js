@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, getStoredUser, hasSomeRole } from "../../services/api";
-import { colors } from "../../lib/theme";
+import { colors, chart } from "../../lib/theme";
 import PortalShell from "../../components/PortalShell";
+import PageHero from "../../components/PageHero";
+import StatCard from "../../components/StatCard";
 
 const EMPTY_FORM = {
   tema: "",
@@ -182,26 +184,6 @@ function Select({ value, onChange, options, placeholder, ...props }) {
   );
 }
 
-function Kpi({ icon, value, label, detail, tone = "blue" }) {
-  const tones = {
-    blue: { bg: "#eff6ff", fg: "#2563eb" },
-    green: { bg: "#ecfdf5", fg: "#059669" },
-    purple: { bg: "#f5f3ff", fg: "#7c3aed" },
-    orange: { bg: "#fff7ed", fg: "#ea580c" },
-  };
-  const t = tones[tone] || tones.blue;
-  return (
-    <div style={kpiWrap}>
-      <div style={{ ...kpiIcon, background: t.bg, color: t.fg }}>{icon}</div>
-      <div style={{ minWidth: 0 }}>
-        <div style={kpiValue}>{value}</div>
-        <div style={kpiLabel}>{label}</div>
-        {detail && <div style={kpiDetail}>{detail}</div>}
-      </div>
-    </div>
-  );
-}
-
 function TurmaCard({ item, necessidade, resumo, canEdit, canDelete, onEdit, onDelete }) {
   const statusCode = resumo?.status_turma
     ? normalizeStatus(resumo.status_turma)
@@ -230,7 +212,6 @@ function TurmaCard({ item, necessidade, resumo, canEdit, canDelete, onEdit, onDe
       </div>
 
       <div style={needLine}>
-        <span style={needIcon}>🎯</span>
         <div style={{ minWidth: 0 }}>
           <span style={needCaption}>Necessidade</span>
           <strong style={needText}>{necessidade?.tema || "Necessidade não vinculada"}</strong>
@@ -253,7 +234,7 @@ function TurmaCard({ item, necessidade, resumo, canEdit, canDelete, onEdit, onDe
 
       <div style={cardBottom}>
         <div style={ownerLine}>
-          <span>👤 {item.instrutor || "Sem instrutor"}</span>
+          <span>{item.instrutor || "Sem instrutor"}</span>
           {meta.sala && <span>· {meta.sala}</span>}
           {item.supervisor && <span>· {item.supervisor}</span>}
         </div>
@@ -483,25 +464,24 @@ export default function TreinamentosPage() {
   }
 
   return (
-    <PortalShell title="Treinamentos" subtitle="Planeje, acompanhe e organize as formações em um só lugar.">
+    <PortalShell>
       <main style={page}>
-      <section style={hero}>
-        <div style={{ minWidth: 0 }}>
-          <div style={eyebrow}>PORTAL T&D · OPERAÇÃO</div>
-          <h1 style={heroTitle}>Gestão de Turmas</h1>
-          <p style={heroSubtitle}>{isInstructor ? `Olá, ${nomeLogado || "instrutor"}. Aqui está o que precisa da sua atenção.` : "Planeje, acompanhe e organize as formações em um só lugar."}</p>
-        </div>
-        {canCreate && <button type="button" style={createButton} onClick={openCreate}>＋ Criar nova turma</button>}
-      </section>
+      <div style={{ marginBottom: 20 }}>
+        <PageHero
+          eyebrow="Portal T&D · Operação"
+          title="Gestão de Turmas"
+          subtitle={isInstructor ? `Olá, ${nomeLogado || "instrutor"}. Aqui está o que precisa da sua atenção.` : "Planeje, acompanhe e organize as formações em um só lugar."}
+        />
+      </div>
 
-      {error && <div style={alertError}>⚠️ {error}</div>}
-      {success && <div style={alertSuccess}>✓ {success}</div>}
+      {error && <div style={alertError}>{error}</div>}
+      {success && <div style={alertSuccess}>{success}</div>}
 
       <section style={kpiGrid}>
-        <Kpi icon="🎓" value={fmt(kpis.base.length)} label={isInstructor ? "Minhas turmas" : "Turmas na base"} detail={`${fmt(kpis.proximas)} próximas`} tone="blue" />
-        <Kpi icon="●" value={fmt(kpis.andamento)} label="Em andamento" detail="Execuções ativas" tone="green" />
-        <Kpi icon="◷" value={`${fmt(kpis.horasMes)}h`} label="Horas no mês" detail={`${fmt(kpis.concluidas)} concluídas`} tone="purple" />
-        <Kpi icon="🎯" value={fmt(kpis.pendencias)} label="Sem necessidade" detail={kpis.pendencias ? "Atenção necessária" : "Base consistente"} tone="orange" />
+        <StatCard title={isInstructor ? "Minhas turmas" : "Turmas na base"} value={fmt(kpis.base.length)} subtitle={`${fmt(kpis.proximas)} próximas`} accent={chart.blue} />
+        <StatCard title="Em andamento" value={fmt(kpis.andamento)} subtitle="Execuções ativas" accent={colors.success} />
+        <StatCard title="Horas no mês" value={`${fmt(kpis.horasMes)}h`} subtitle={`${fmt(kpis.concluidas)} concluídas`} accent={chart.purple} />
+        <StatCard title="Sem necessidade" value={fmt(kpis.pendencias)} subtitle={kpis.pendencias ? "Atenção necessária" : "Base consistente"} accent={kpis.pendencias ? colors.warning : colors.neutral} />
       </section>
 
       <section style={actionStrip}>
@@ -519,10 +499,18 @@ export default function TreinamentosPage() {
             <h2 style={sectionTitle}>Minhas turmas</h2>
             <p style={sectionSubtitle}>{filtered.length} resultado(s) · visão operacional</p>
           </div>
-          <button type="button" style={mineToggle(onlyMine)} onClick={() => setOnlyMine((v) => !v)}>👤 {onlyMine ? "Somente minhas" : "Mostrar minhas"}</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" style={mineToggle(onlyMine)} onClick={() => setOnlyMine((v) => !v)}>{onlyMine ? "Somente minhas" : "Mostrar minhas"}</button>
+            {canCreate && <button type="button" style={btnNovo} onClick={openCreate}>+ Criar nova turma</button>}
+          </div>
         </div>
         <div style={filtersGrid}>
-          <div style={searchWrap}><span>⌕</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar turma, cliente ou necessidade..." style={searchInput} /></div>
+          <div style={searchWrap}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar turma, cliente ou necessidade..." style={searchInput} />
+          </div>
           <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={[{ value: "todas", label: "Todos os status" }, ...Object.entries(STATUS).map(([value, x]) => ({ value, label: x.label }))]} />
           <Select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} options={[{ value: "todos", label: "Todos os clientes" }, ...clientesOptions.map((x) => ({ value: x, label: x }))]} />
           <Select value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value)} options={[{ value: "todos", label: "Qualquer período" }, { value: "hoje", label: "Hoje" }, { value: "30dias", label: "Próximos 30 dias" }, { value: "mes", label: "Este mês" }]} />
@@ -531,7 +519,7 @@ export default function TreinamentosPage() {
 
       <section style={{ display: "grid", gap: 12 }}>
         {loading ? <div style={emptyState}><div style={spinner} />Carregando suas turmas...</div> : filtered.length === 0 ? (
-          <div style={emptyState}><div style={emptyIcon}>🎓</div><strong>Nenhuma turma encontrada</strong><span>Ajuste os filtros ou crie uma nova turma para começar.</span>{canCreate && <button type="button" style={createButtonSmall} onClick={openCreate}>＋ Criar nova turma</button>}</div>
+          <div style={emptyState}><div style={emptyIcon}>🎓</div><strong>Nenhuma turma encontrada</strong><span>Ajuste os filtros ou crie uma nova turma para começar.</span>{canCreate && <button type="button" style={createButtonSmall} onClick={openCreate}>+ Criar nova turma</button>}</div>
         ) : filtered.map((item) => <TurmaCard key={item.id} item={item} necessidade={necessidadePorId.get(Number(item.necessidade_id))} resumo={resumoPorId.get(Number(item.id))} canEdit={canEdit} canDelete={canDelete} onEdit={openEdit} onDelete={deleteTurma} />)}
       </section>
 
@@ -567,18 +555,10 @@ export default function TreinamentosPage() {
 }
 
 const page = { minHeight: "100vh", padding: "28px clamp(18px, 3vw, 42px) 48px", maxWidth: 1500, margin: "0 auto", boxSizing: "border-box" };
-const hero = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20, padding: "28px 30px", borderRadius: 24, color: "#fff", background: `linear-gradient(135deg, ${colors.navy || "#0f172a"} 0%, #1e3a8a 100%)`, boxShadow: "0 20px 45px rgba(15,23,42,.16)" };
-const eyebrow = { fontSize: 11, fontWeight: 800, letterSpacing: ".12em", color: "#a5b4fc", marginBottom: 7 };
-const heroTitle = { margin: 0, fontSize: "clamp(26px, 3vw, 34px)", letterSpacing: "-.035em", fontWeight: 850 };
-const heroSubtitle = { margin: "7px 0 0", color: "#cbd5e1", fontSize: 14, lineHeight: 1.5 };
 const createButton = { border: 0, background: "#fff", color: "#1d4ed8", borderRadius: 12, padding: "12px 17px", fontWeight: 850, fontSize: 13, cursor: "pointer", boxShadow: "0 8px 20px rgba(0,0,0,.12)", whiteSpace: "nowrap" };
 const createButtonSmall = { ...createButton, background: "#1d4ed8", color: "#fff", marginTop: 10 };
+const btnNovo = { height: 36, padding: "0 16px", borderRadius: 10, border: 0, background: colors.accent, color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" };
 const kpiGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12, margin: "16px 0" };
-const kpiWrap = { display: "flex", gap: 13, alignItems: "center", padding: "17px 18px", background: "rgba(255,255,255,.9)", border: "1px solid #e5e7eb", borderRadius: 18, boxShadow: "0 5px 18px rgba(15,23,42,.045)" };
-const kpiIcon = { width: 40, height: 40, borderRadius: 13, display: "grid", placeItems: "center", fontSize: 17, flexShrink: 0 };
-const kpiValue = { fontSize: 25, fontWeight: 850, letterSpacing: "-.03em", color: "#0f172a", lineHeight: 1 };
-const kpiLabel = { marginTop: 4, fontSize: 12, fontWeight: 750, color: "#334155" };
-const kpiDetail = { marginTop: 2, fontSize: 11, color: "#94a3b8" };
 const actionStrip = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "15px 18px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 18, marginBottom: 16 };
 const stripEyebrow = { display: "block", fontSize: 10, fontWeight: 850, color: "#94a3b8", letterSpacing: ".08em" };
 const stripTitle = { display: "block", marginTop: 3, fontSize: 14, color: "#0f172a" };
@@ -599,7 +579,6 @@ const clientName = { fontSize: 10, fontWeight: 850, color: "#64748b", textTransf
 const cardTitle = { margin: "3px 0 0", fontSize: 17, color: "#0f172a", letterSpacing: "-.02em" };
 const statusBadge = { borderRadius: 999, padding: "6px 9px", fontSize: 11, fontWeight: 850, whiteSpace: "nowrap" };
 const needLine = { display: "flex", gap: 9, alignItems: "center", marginTop: 14, padding: "10px 12px", borderRadius: 12, background: "#faf5ff", border: "1px solid #ede9fe" };
-const needIcon = { width: 26, height: 26, borderRadius: 8, display: "grid", placeItems: "center", background: "#ede9fe", flexShrink: 0 };
 const needCaption = { display: "block", fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".07em", color: "#8b5cf6" };
 const needText = { display: "block", marginTop: 1, fontSize: 12, color: "#4c1d95" };
 const metricsRow = { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 15 };
