@@ -335,7 +335,7 @@ export default function NecessidadesPage() {
 const kpiGrid    = { display:"grid", gridTemplateColumns:"repeat(5,minmax(0,1fr))", gap:12, marginBottom:14 };
 const controlBar = { display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", background:"#fff", border:"1px solid #e9eef4", borderRadius:14, padding:"12px 14px", marginBottom:14 };
 const searchInput = { height:36, width:"100%", borderRadius:10, border:"1px solid #e2e8f0", background:"#f8fafc", fontSize:13, color:"#334155", outline:"none", paddingRight:10, boxSizing:"border-box" };
-const btnNovo    = { height:36, padding:"0 16px", borderRadius:10, border:0, background:colors.accent, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", marginLeft:"auto", boxShadow:`0 4px 12px rgba(255,107,74,.25)`, whiteSpace:"nowrap" };
+const btnNovo    = { height:36, padding:"0 16px", borderRadius:10, border:0, background:colors.accent, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", marginLeft:"auto", boxShadow:`0 4px 12px rgba(217,119,6,.25)`, whiteSpace:"nowrap" };
 const necCard    = { background:"#fff", border:"1px solid #e9eef4", borderRadius:14, padding:"14px 16px", display:"flex", flexDirection:"column", gap:10 };
 const cardHead   = { display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 };
 const cardTema   = { fontSize:15, fontWeight:800, color:"#0f172a", flex:1 };
