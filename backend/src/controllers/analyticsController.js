@@ -14,6 +14,12 @@
  */
 
 const pool = require('../lib/db');
+const {
+  getHorasAplicadasTotal,
+  getHorasAplicadasPorMes,
+  getHorasAplicadasPorCliente,
+  getHorasAplicadasPorInstrutor,
+} = require('../services/capacidadeResolver');
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -115,12 +121,16 @@ async function getResumo(req, res) {
       .filter((r) => String(r.status || '').toLowerCase().trim().includes('conclui'))
       .reduce((s, r) => s + asInt(r.total), 0);
 
-    // Horas treinadas (apenas turmas concluídas)
-    const [[{ horas_total }]] = await pool.query(
-      `SELECT COALESCE(SUM(carga_horaria), 0) AS horas_total
-       FROM treinamentos t WHERE ${where} AND ${STATUS_CONCLUIDO}`,
-      filtro.params
-    );
+    // Horas treinadas (aplicadas) — mesma fonte única da Capacidade: aula a
+    // aula quando a turma tem cronograma, senão carga horária nominal de
+    // turma que já rodou/está rodando. Antes era um SUM(carga_horaria)
+    // simplificado de turmas concluídas, que não batia com a Capacidade.
+    const horas_total = await getHorasAplicadasTotal({
+      empresaId: eId,
+      cliente: req.query.cliente,
+      dataInicio: req.query.data_inicio,
+      dataFim: req.query.data_fim,
+    });
 
     // Horas previstas (todas as turmas)
     const [[{ horas_previstas }]] = await pool.query(
@@ -209,67 +219,27 @@ async function getResumo(req, res) {
 async function getHoras(req, res) {
   try {
     const eId = req.empresaId ?? null;
-    const tw  = tenantWhere(eId);
-    const filtro = filtroRecorte(req.query);
-    const where = `${tw}${filtro.sql}`;
+    const cliente = req.query.cliente;
+    const dataInicio = req.query.data_inicio;
+    const dataFim = req.query.data_fim;
 
-    // Horas por mês (últimos 12 meses) — a janela fixa de 12 meses continua
-    // valendo por cima do filtro de período escolhido na tela.
-    const [porMes] = await pool.query(
-      `SELECT
-         YEAR(COALESCE(data_fim, data))  AS ano,
-         MONTH(COALESCE(data_fim, data)) AS mes,
-         COALESCE(SUM(carga_horaria), 0) AS horas,
-         COUNT(*)                         AS turmas
-       FROM treinamentos t
-       WHERE ${where}
-         AND ${STATUS_CONCLUIDO}
-         AND COALESCE(data_fim, data) >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
-       GROUP BY ano, mes
-       ORDER BY ano, mes`,
-      filtro.params
-    );
-
-    // Horas por cliente (top 10)
-    const [porCliente] = await pool.query(
-      `SELECT
-         COALESCE(cliente, '(sem cliente)') AS cliente,
-         COALESCE(SUM(carga_horaria), 0)    AS horas,
-         COUNT(*)                            AS turmas
-       FROM treinamentos t
-       WHERE ${where} AND ${STATUS_CONCLUIDO}
-       GROUP BY cliente
-       ORDER BY horas DESC
-       LIMIT 10`,
-      filtro.params
-    );
-
-    // Horas por instrutor (top 10)
-    const [porInstrutor] = await pool.query(
-      `SELECT
-         COALESCE(instrutor, '(sem instrutor)') AS instrutor,
-         COALESCE(SUM(carga_horaria), 0)        AS horas,
-         COUNT(*)                                AS turmas
-       FROM treinamentos t
-       WHERE ${where} AND ${STATUS_CONCLUIDO}
-       GROUP BY instrutor
-       ORDER BY horas DESC
-       LIMIT 10`,
-      filtro.params
-    );
-
-    // Total geral
-    const [[{ total }]] = await pool.query(
-      `SELECT COALESCE(SUM(carga_horaria), 0) AS total
-       FROM treinamentos t WHERE ${where} AND ${STATUS_CONCLUIDO}`,
-      filtro.params
-    );
+    // Horas aplicadas — mesma fonte única da Capacidade (aula a aula quando
+    // a turma tem cronograma, senão carga horária nominal de turma que já
+    // rodou/está rodando). Antes cada agregação abaixo somava carga_horaria
+    // nominal de turmas concluídas direto na tabela treinamentos, sem olhar
+    // aula a aula — o que divergia do que a tela de Capacidade mostrava.
+    const [porMes, porCliente, porInstrutor, total] = await Promise.all([
+      getHorasAplicadasPorMes({ empresaId: eId, cliente, dataInicio, dataFim }),
+      getHorasAplicadasPorCliente({ empresaId: eId, cliente, dataInicio, dataFim, limit: 10 }),
+      getHorasAplicadasPorInstrutor({ empresaId: eId, cliente, dataInicio, dataFim, limit: 10 }),
+      getHorasAplicadasTotal({ empresaId: eId, cliente, dataInicio, dataFim }),
+    ]);
 
     return res.json({
-      total:         asInt(total),
-      por_mes:       porMes.map((r) => ({ ...r, horas: asInt(r.horas), turmas: asInt(r.turmas) })),
-      por_cliente:   porCliente.map((r) => ({ ...r, horas: asInt(r.horas), turmas: asInt(r.turmas) })),
-      por_instrutor: porInstrutor.map((r) => ({ ...r, horas: asInt(r.horas), turmas: asInt(r.turmas) })),
+      total,
+      por_mes:       porMes,
+      por_cliente:   porCliente,
+      por_instrutor: porInstrutor,
     });
   } catch (error) {
     console.error('[analytics] getHoras:', error.message);
@@ -442,20 +412,30 @@ async function getRoi(req, res) {
     const where = `${tenantWhere(eId)}${filtro.sql}`;
     const custoPorHora = await getCustoPorHora(eId);
 
-    const [[dados]] = await pool.query(
-      `SELECT
-         COUNT(*)                                         AS turmas_total,
-         SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
-         COALESCE(SUM(carga_horaria), 0)                  AS horas_total,
-         COALESCE(SUM(CASE WHEN ${STATUS_CONCLUIDO}
-           THEN carga_horaria ELSE 0 END), 0)             AS horas_realizadas,
-         COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
-         COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
-       FROM treinamentos t WHERE ${where}`,
-      filtro.params
-    );
+    const [dados, horasAplicadas] = await Promise.all([
+      pool.query(
+        `SELECT
+           COUNT(*)                                         AS turmas_total,
+           SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
+           COALESCE(SUM(carga_horaria), 0)                  AS horas_total,
+           COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
+           COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
+         FROM treinamentos t WHERE ${where}`,
+        filtro.params
+      ).then(([rows]) => rows[0]),
+      // Horas aplicadas — mesma fonte única da Capacidade (aula a aula
+      // quando a turma tem cronograma, senão carga horária nominal de
+      // turma que já rodou/está rodando). Antes era SUM(carga_horaria)
+      // nominal de turmas concluídas, que não batia com a Capacidade.
+      getHorasAplicadasTotal({
+        empresaId: eId,
+        cliente: req.query.cliente,
+        dataInicio: req.query.data_inicio,
+        dataFim: req.query.data_fim,
+      }),
+    ]);
 
-    const horas      = asInt(dados.horas_realizadas);
+    const horas      = horasAplicadas;
     const pessoas    = asInt(dados.pessoas_impactadas);
     // Custo estimado: configurável por empresa (Admin → tenant → "Custo por
     // hora de treinamento"); sem valor definido, usa R$ 150/h como referência
@@ -503,18 +483,13 @@ async function exportarIndicadores(req, res) {
     const wb = XLSX.utils.book_new();
 
     if (aba === 'horas') {
-      const filtro = filtroRecorte(req.query);
-      const where = `${tenantWhere(eId)}${filtro.sql}`;
-      const [porCliente] = await pool.query(
-        `SELECT COALESCE(cliente, '(sem cliente)') AS cliente, COALESCE(SUM(carga_horaria), 0) AS horas, COUNT(*) AS turmas
-         FROM treinamentos t WHERE ${where} AND ${STATUS_CONCLUIDO} GROUP BY cliente ORDER BY horas DESC`,
-        filtro.params
-      );
-      const [porInstrutor] = await pool.query(
-        `SELECT COALESCE(instrutor, '(sem instrutor)') AS instrutor, COALESCE(SUM(carga_horaria), 0) AS horas, COUNT(*) AS turmas
-         FROM treinamentos t WHERE ${where} AND ${STATUS_CONCLUIDO} GROUP BY instrutor ORDER BY horas DESC`,
-        filtro.params
-      );
+      // Mesma fonte única de horas aplicadas usada pela tela (getHoras) e
+      // pela Capacidade — antes este export somava carga_horaria nominal
+      // direto na tabela, divergindo do que a tela mostrava.
+      const [porCliente, porInstrutor] = await Promise.all([
+        getHorasAplicadasPorCliente({ empresaId: eId, cliente: req.query.cliente, dataInicio: req.query.data_inicio, dataFim: req.query.data_fim, limit: 10 }),
+        getHorasAplicadasPorInstrutor({ empresaId: eId, cliente: req.query.cliente, dataInicio: req.query.data_inicio, dataFim: req.query.data_fim, limit: 10 }),
+      ]);
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
         ["Cliente/Operação", "Turmas", "Horas"],
         ...porCliente.map((r) => [r.cliente, Number(r.turmas), Number(r.horas)]),
@@ -564,19 +539,20 @@ async function exportarIndicadores(req, res) {
       const filtro = filtroRecorte(req.query);
       const where = `${tenantWhere(eId)}${filtro.sql}`;
       const custoPorHora = await getCustoPorHora(eId);
-      const [[dados]] = await pool.query(
-        `SELECT
-           COUNT(*)                                         AS turmas_total,
-           SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
-           COALESCE(SUM(carga_horaria), 0)                  AS horas_total,
-           COALESCE(SUM(CASE WHEN ${STATUS_CONCLUIDO}
-             THEN carga_horaria ELSE 0 END), 0)             AS horas_realizadas,
-           COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
-           COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
-         FROM treinamentos t WHERE ${where}`,
-        filtro.params
-      );
-      const horas = Number(dados.horas_realizadas || 0);
+      const [dados, horas] = await Promise.all([
+        pool.query(
+          `SELECT
+             COUNT(*)                                         AS turmas_total,
+             SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
+             COALESCE(SUM(carga_horaria), 0)                  AS horas_total,
+             COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
+             COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
+           FROM treinamentos t WHERE ${where}`,
+          filtro.params
+        ).then(([rows]) => rows[0]),
+        // Mesma fonte única de horas aplicadas usada pela tela (getRoi).
+        getHorasAplicadasTotal({ empresaId: eId, cliente: req.query.cliente, dataInicio: req.query.data_inicio, dataFim: req.query.data_fim }),
+      ]);
       const pessoas = Number(dados.pessoas_impactadas || 0);
       const custo = horas * pessoas * custoPorHora;
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
