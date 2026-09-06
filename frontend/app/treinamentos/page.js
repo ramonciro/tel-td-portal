@@ -221,7 +221,7 @@ function TurmaCard({ item, necessidade, resumo, canEdit, canDelete, onEdit, onDe
       <div style={metricsRow}>
         <div><span style={metricLabel}>Período</span><strong>{formatDate(inicio)}{fim ? ` → ${formatDate(fim)}` : ""}</strong></div>
         <div><span style={metricLabel}>Participantes</span><strong>{fmt(previstos)}{resumo ? ` · ${fmt(confirmados)} confirmados` : ""}</strong></div>
-        <div><span style={metricLabel}>Carga</span><strong>{parseHoras(item.carga_horaria)}h</strong></div>
+        <div><span style={metricLabel}>Carga</span><strong>{parseHoras(item.carga_horaria)}h{resumo && resumo.horas_aplicadas != null ? ` · ${resumo.horas_aplicadas}h aplicadas` : ""}</strong></div>
         <div><span style={metricLabel}>Formato</span><strong>{meta.modalidade === "presencial" ? "Presencial" : meta.modalidade === "online" ? "Online" : "—"}</strong></div>
       </div>
 
@@ -350,13 +350,17 @@ export default function TreinamentosPage() {
       const d = parseDateOnly(x.data_inicio || x.data);
       return d && d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
     }).reduce((sum, x) => sum + parseHoras(x.carga_horaria), 0);
+    // Horas aplicadas: aula a aula quando a turma tem cronograma, senão
+    // carga horária nominal de turma que já rodou/está rodando — mesma
+    // fonte da página Capacidade e do Indicadores (vem de /presenca-resumo).
+    const horasAplicadas = base.reduce((sum, x) => sum + Number(resumoPorId.get(Number(x.id))?.horas_aplicadas || 0), 0);
     const pendencias = base.filter((x) => !x.necessidade_id).length;
     const next = base.filter((x) => {
       const d = parseDateOnly(x.data_inicio || x.data);
       return d && d >= hoje && getStatus(x) !== "cancelada";
     }).sort((a, b) => parseDateOnly(a.data_inicio || a.data) - parseDateOnly(b.data_inicio || b.data))[0];
-    return { base, andamento, proximas, concluidas, horasMes, pendencias, next };
-  }, [turmas, isInstructor, nomeLogado]);
+    return { base, andamento, proximas, concluidas, horasMes, horasAplicadas, pendencias, next };
+  }, [turmas, isInstructor, nomeLogado, resumoPorId]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -480,7 +484,8 @@ export default function TreinamentosPage() {
       <section style={kpiGrid}>
         <StatCard title={isInstructor ? "Minhas turmas" : "Turmas na base"} value={fmt(kpis.base.length)} subtitle={`${fmt(kpis.proximas)} próximas`} accent={chart.blue} />
         <StatCard title="Em andamento" value={fmt(kpis.andamento)} subtitle="Execuções ativas" accent={colors.success} />
-        <StatCard title="Horas no mês" value={`${fmt(kpis.horasMes)}h`} subtitle={`${fmt(kpis.concluidas)} concluídas`} accent={chart.purple} />
+        <StatCard title="Horas aplicadas" value={`${fmt(kpis.horasAplicadas)}h`} subtitle="Mesma base do Indicadores" accent={chart.purple} />
+        <StatCard title="Horas no mês" value={`${fmt(kpis.horasMes)}h`} subtitle={`${fmt(kpis.concluidas)} concluídas`} accent={chart.blue} />
         <StatCard title="Sem necessidade" value={fmt(kpis.pendencias)} subtitle={kpis.pendencias ? "Atenção necessária" : "Base consistente"} accent={kpis.pendencias ? colors.warning : colors.neutral} />
       </section>
 
