@@ -18,16 +18,24 @@ const {
   salvarOverride,
   excluirOverride,
   listarInstrutoresConhecidos,
+  listarOperacoesConhecidas,
   getCapacidadeVsRealizado,
+  getPainel: resolverGetPainel,
+  getCapacityConsumido,
+  getRanking,
+  getAderenciaPorTema,
+  getDistribuicaoPorOperacao,
+  getAlertas: resolverGetAlertas,
 } = require("../services/capacidadeResolver");
 
 async function getCapacidade(req, res) {
   try {
-    const { ano, mes, instrutor, data_inicio, data_fim } = req.query || {};
+    const { ano, mes, instrutor, cliente, data_inicio, data_fim } = req.query || {};
     const resultado = await getCapacidadeVsRealizado({
       ano: ano ? Number(ano) : undefined,
       mes: mes ? Number(mes) : undefined,
       instrutor: instrutor || undefined,
+      cliente: cliente || undefined,
       dataInicio: data_inicio || undefined,
       dataFim: data_fim || undefined,
     });
@@ -137,6 +145,97 @@ async function getInstrutores(req, res) {
   }
 }
 
+async function getOperacoes(req, res) {
+  try {
+    const operacoes = await listarOperacoesConhecidas();
+    return res.json({ ok: true, operacoes });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: "Erro ao listar operações.", error: error.message });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Visões agregadas — painel executivo, capacity x consumido, ranking,
+// aderência por tema e distribuição por operação. Tudo calculado a partir do
+// que já está registrado (turmas + cronograma); nenhuma delas depende de
+// lançamento manual adicional.
+// ---------------------------------------------------------------------------
+
+async function getPainel(req, res) {
+  try {
+    const q = req.query || {};
+    const painel = await resolverGetPainel({
+      meses: q.meses ? Number(q.meses) : undefined,
+      instrutor: q.instrutor || undefined,
+      cliente: q.cliente || undefined,
+    });
+    return res.json({ ok: true, ...painel });
+  } catch (error) {
+    console.error("[capacidade] getPainel:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar painel de capacidade.", error: error.message });
+  }
+}
+
+async function getCapacity(req, res) {
+  try {
+    const q = req.query || {};
+    const resultado = await getCapacityConsumido({ meses: q.meses ? Number(q.meses) : undefined, cliente: q.cliente || undefined });
+    return res.json({ ok: true, ...resultado });
+  } catch (error) {
+    console.error("[capacidade] getCapacity:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar capacity x consumido.", error: error.message });
+  }
+}
+
+async function getRankingHandler(req, res) {
+  try {
+    const q = req.query || {};
+    const itens = await getRanking({ meses: q.meses ? Number(q.meses) : undefined, cliente: q.cliente || undefined });
+    return res.json({ ok: true, itens });
+  } catch (error) {
+    console.error("[capacidade] getRanking:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar ranking de instrutores.", error: error.message });
+  }
+}
+
+async function getAderencia(req, res) {
+  try {
+    const q = req.query || {};
+    const itens = await getAderenciaPorTema({
+      cliente: q.cliente || undefined,
+      ano: q.ano ? Number(q.ano) : undefined,
+      mes: q.mes ? Number(q.mes) : undefined,
+      dataInicio: q.data_inicio || undefined,
+      dataFim: q.data_fim || undefined,
+    });
+    return res.json({ ok: true, itens });
+  } catch (error) {
+    console.error("[capacidade] getAderencia:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar aderência por tema.", error: error.message });
+  }
+}
+
+async function getDistribuicao(req, res) {
+  try {
+    const q = req.query || {};
+    const resultado = await getDistribuicaoPorOperacao({ meses: q.meses ? Number(q.meses) : undefined });
+    return res.json({ ok: true, ...resultado });
+  } catch (error) {
+    console.error("[capacidade] getDistribuicao:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar distribuição por operação.", error: error.message });
+  }
+}
+
+async function getAlertasHandler(req, res) {
+  try {
+    const resultado = await resolverGetAlertas();
+    return res.json({ ok: true, ...resultado });
+  } catch (error) {
+    console.error("[capacidade] getAlertas:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar alertas de ocupação.", error: error.message });
+  }
+}
+
 module.exports = {
   getCapacidade,
   getRegra,
@@ -145,4 +244,11 @@ module.exports = {
   postOverride,
   deleteOverride,
   getInstrutores,
+  getOperacoes,
+  getPainel,
+  getCapacity,
+  getRankingHandler,
+  getAderencia,
+  getDistribuicao,
+  getAlertasHandler,
 };
