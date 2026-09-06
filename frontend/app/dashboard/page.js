@@ -1,5 +1,5 @@
 "use client";
-
+ 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
@@ -8,15 +8,15 @@ import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
 import { colors, chart } from "../../lib/theme";
-
+ 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
-
+ 
 function formatDate(value) {
   return formatDateBR(value, "-");
 }
-
+ 
 function normalizeStatus(status) {
   const key = String(status || "").toLowerCase();
   if (key.includes("concl")) return "Concluída";
@@ -24,7 +24,7 @@ function normalizeStatus(status) {
   if (key.includes("cancel")) return "Cancelada";
   return "Planejada";
 }
-
+ 
 function parseModalidade(descricao, modalidade) {
   if (modalidade === "presencial") return "Presencial";
   if (modalidade === "online") return "Online";
@@ -35,17 +35,17 @@ function parseModalidade(descricao, modalidade) {
   if (parsed === "online") return "Online";
   return "-";
 }
-
+ 
 function getBadgeStyleByTax(value) {
   const number = Number(value || 0);
   if (number >= 90) return { background: colors.successLight, color: colors.successText, border: "1px solid #86efac" };
   if (number >= 80) return { background: colors.warningLight, color: colors.warningText, border: "1px solid #fcd34d" };
   return { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fca5a5" };
 }
-
+ 
 function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTurmas = []) {
   const items = [];
-
+ 
   if (Number(kpis.pendentes || 0) > 0) {
     items.push({
       title: "Chamada pedindo fechamento",
@@ -53,7 +53,7 @@ function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTur
       tone: Number(kpis.pendentes || 0) > 15 ? "danger" : "attention",
     });
   }
-
+ 
   const clienteMaisSensivel = [...presencaPorCliente].sort((a, b) => Number(a.taxa_presenca || 0) - Number(b.taxa_presenca || 0))[0];
   if (clienteMaisSensivel && Number(clienteMaisSensivel.total_turmas || 0) > 0) {
     items.push({
@@ -62,7 +62,7 @@ function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTur
       tone: Number(clienteMaisSensivel.taxa_presenca || 0) >= 85 ? "ok" : "attention",
     });
   }
-
+ 
   const turmaPendente = ultimasTurmas.find((item) => Number(item.pendentes || 0) > 0);
   if (turmaPendente) {
     items.push({
@@ -71,7 +71,7 @@ function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTur
       tone: Number(turmaPendente.pendentes || 0) > 5 ? "danger" : "attention",
     });
   }
-
+ 
   if (Number(oceano.jornadas || 0) > 0) {
     items.push({
       title: "Oceano em movimento",
@@ -79,7 +79,7 @@ function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTur
       tone: "ok",
     });
   }
-
+ 
   if (!items.length) {
     items.push({
       title: "Leitura tranquila",
@@ -87,10 +87,10 @@ function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTur
       tone: "ok",
     });
   }
-
+ 
   return items.slice(0, 4);
 }
-
+ 
 function buildNarrativa(kpis = {}, filters = {}) {
   const partes = [];
   const recortes = [];
@@ -99,30 +99,30 @@ function buildNarrativa(kpis = {}, filters = {}) {
   if (filters.supervisor) recortes.push(`supervisor ${filters.supervisor}`);
   if (filters.status) recortes.push(`status ${normalizeStatus(filters.status)}`);
   if (filters.modalidade) recortes.push(`modalidade ${filters.modalidade === "online" ? "Online" : "Presencial"}`);
-
+ 
   if (recortes.length) {
     partes.push(`Você está olhando um recorte por ${recortes.join(", ")}.`);
   } else {
     partes.push("Você está olhando a visão consolidada da operação.");
   }
-
+ 
   partes.push(`No período filtrado, a base reúne ${fmt(kpis.treinamentos || 0)} turma(s) e ${fmt(kpis.treinados || 0)} lançamento(s) de chamada.`);
-
+ 
   if (Number(kpis.taxa_presenca || 0) > 0) {
     partes.push(`A presença está em ${fmt(kpis.taxa_presenca)}%, com ${fmt(kpis.presentes || 0)} presença(s) confirmada(s).`);
   } else {
     partes.push("Ainda não há base suficiente para leitura de presença neste recorte.");
   }
-
+ 
   if (Number(kpis.pendentes || 0) > 0) {
     partes.push(`Ainda há ${fmt(kpis.pendentes || 0)} pendência(s) de chamada em aberto, então esse recorte pode mudar ao longo do dia.`);
   } else {
     partes.push("A chamada do período está bem encaminhada, sem pendência relevante.");
   }
-
+ 
   return partes;
 }
-
+ 
 export default function DashboardPage() {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
@@ -142,7 +142,7 @@ export default function DashboardPage() {
     data_inicio: "",
     data_fim: "",
   });
-
+ 
   // alertas: carregados uma vez, independente dos filtros do KPI abaixo —
   // "o que precisa de atenção hoje" não deveria mudar conforme você filtra
   // a tabela.
@@ -155,7 +155,7 @@ export default function DashboardPage() {
         ]);
         const turmas = Array.isArray(resumoData?.itens) ? resumoData.itens : [];
         const necessidades = Array.isArray(necessidadesData?.itens) ? necessidadesData.itens : [];
-
+ 
         setAlertas({
           turmasCriticas: turmas.filter((t) => t.classificacao === "Crítico" && t.status_turma !== "Sem treinandos"),
           necessidadesAtrasadas: necessidades.filter((n) => n.status_calculado === "atrasada"),
@@ -167,7 +167,7 @@ export default function DashboardPage() {
     }
     carregarAlertas();
   }, []);
-
+ 
   // Capacidade / CH por instrutor — mesmo motor automático da página
   // /capacidade (turma + cronograma, sem lançamento manual). Aqui é o resumo
   // do mês corrente para o coordenador ver de cara no Dashboard; o detalhe
@@ -194,7 +194,7 @@ export default function DashboardPage() {
     }
     carregarCapacidade();
   }, [filters.cliente]);
-
+ 
   useEffect(() => {
     async function carregar() {
       try {
@@ -215,7 +215,7 @@ export default function DashboardPage() {
     }
     carregar();
   }, [filters]);
-
+ 
   async function abrirDrillDown(item) {
     setDrillDown({ turma: item, itens: [], loading: true });
     try {
@@ -225,24 +225,24 @@ export default function DashboardPage() {
       setDrillDown({ turma: item, itens: [], loading: false, erro: error.message });
     }
   }
-
+ 
   const kpis = dados?.kpis || {};
   const filtrosApi = dados?.filtros || {};
   const presencaPorCliente = dados?.presenca_por_cliente || [];
   const rankingInstrutores = dados?.ranking_instrutores || [];
   const ultimasTurmas = dados?.ultimas_turmas || [];
   const oceano = dados?.oceano || {};
-
+ 
   const farois = useMemo(() => buildFarois(kpis, oceano, presencaPorCliente, ultimasTurmas), [kpis, oceano, presencaPorCliente, ultimasTurmas]);
   const narrativa = useMemo(() => buildNarrativa(kpis, filters), [kpis, filters]);
-
+ 
   const clienteOptions = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
   const instrutorOptions = Array.isArray(filtrosApi.instrutores) ? filtrosApi.instrutores : [];
   const supervisorOptions = Array.isArray(filtrosApi.supervisores) ? filtrosApi.supervisores : [];
   const statusOptions = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
   const modalidadeOptions = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
   const nps = dados?.nps || {};
-
+ 
   return (
     <PortalShell>
       {loading ? (
@@ -261,9 +261,9 @@ export default function DashboardPage() {
               { label: "execução do recorte", value: `${fmt(kpis.taxa_execucao_diaria || 0)}%` },
             ]}
           />
-
+ 
           <AlertasDashboard alertas={alertas} onAbrirTurma={abrirDrillDown} />
-
+ 
           <SectionCard
             title="Filtros do painel"
             subtitle="Escolha o recorte que faz mais sentido para a sua leitura e refine a análise sem perder contexto."
@@ -296,7 +296,7 @@ export default function DashboardPage() {
                   ))}
                 </select>
               </label>
-
+ 
               <label style={fieldLabel}>
                 Instrutor
                 <select style={inputStyle} value={filters.instrutor} onChange={(e) => setFilters((prev) => ({ ...prev, instrutor: e.target.value }))}>
@@ -306,7 +306,7 @@ export default function DashboardPage() {
                   ))}
                 </select>
               </label>
-
+ 
               <label style={fieldLabel}>
                 Supervisor
                 <select style={inputStyle} value={filters.supervisor} onChange={(e) => setFilters((prev) => ({ ...prev, supervisor: e.target.value }))}>
@@ -316,7 +316,7 @@ export default function DashboardPage() {
                   ))}
                 </select>
               </label>
-
+ 
               <label style={fieldLabel}>
                 Status
                 <select style={inputStyle} value={filters.status} onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}>
@@ -326,7 +326,7 @@ export default function DashboardPage() {
                   ))}
                 </select>
               </label>
-
+ 
               <label style={fieldLabel}>
                 Modalidade
                 <select style={inputStyle} value={filters.modalidade} onChange={(e) => setFilters((prev) => ({ ...prev, modalidade: e.target.value }))}>
@@ -336,19 +336,19 @@ export default function DashboardPage() {
                   ))}
                 </select>
               </label>
-
+ 
               <label style={fieldLabel}>
                 De
                 <input type="date" style={inputStyle} value={filters.data_inicio} onChange={(e) => setFilters((prev) => ({ ...prev, data_inicio: e.target.value }))} />
               </label>
-
+ 
               <label style={fieldLabel}>
                 Até
                 <input type="date" style={inputStyle} value={filters.data_fim} onChange={(e) => setFilters((prev) => ({ ...prev, data_fim: e.target.value }))} />
               </label>
             </div>
           </SectionCard>
-
+ 
           <div style={kpiGrid}>
             <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Base no recorte" accent={chart.blue} />
             <StatCard title="Previstos" value={fmt(kpis.participantes_previstos || 0)} subtitle="Capacidade cadastrada" accent={chart.cyan} />
@@ -371,7 +371,7 @@ export default function DashboardPage() {
               </>
             )}
           </div>
-
+ 
           <SectionCard
             title="Capacidade da equipe (CH por instrutor)"
             subtitle={`Calculado automaticamente a partir das turmas e do cronograma já registrados${filters.cliente ? ` — recorte: ${filters.cliente}` : " — todas as operações"}. Nenhum lançamento manual extra para o time.`}
@@ -409,7 +409,7 @@ export default function DashboardPage() {
                     accent={chart.orange}
                   />
                 </div>
-
+ 
                 {capacidadeAlertas.length > 0 ? (
                   <div>
                     <div style={{ fontSize: 12.5, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 }}>
@@ -432,7 +432,7 @@ export default function DashboardPage() {
                     ✅ Todos os instrutores estão na faixa saudável de ocupação este mês.
                   </div>
                 )}
-
+ 
                 {capacidadeRanking.length > 0 && (
                   <div>
                     <div style={{ fontSize: 12.5, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 }}>
@@ -454,7 +454,7 @@ export default function DashboardPage() {
               </div>
             )}
           </SectionCard>
-
+ 
           <div style={twoColumns}>
             <SectionCard title="Leitura gerencial" subtitle="Sinais que te ajudam a interpretar o cenário com mais rapidez.">
               <div style={summaryList}>
@@ -463,7 +463,7 @@ export default function DashboardPage() {
                 ))}
               </div>
             </SectionCard>
-
+ 
             <SectionCard title="Faróis acionáveis" subtitle="O painel resume o que mais vale sua energia agora.">
               <div style={farolList}>
                 {farois.map((item) => (
@@ -475,7 +475,7 @@ export default function DashboardPage() {
               </div>
             </SectionCard>
           </div>
-
+ 
           <div style={twoColumns}>
             <SectionCard title="Saúde por cliente" subtitle="Ajuda a comparar rapidamente onde a operação está mais firme e onde precisa de suporte.">
               <div style={listGrid}>
@@ -493,7 +493,7 @@ export default function DashboardPage() {
                 }) : <div style={emptyState}>Nenhum dado por cliente apareceu nesse recorte.</div>}
               </div>
             </SectionCard>
-
+ 
             <SectionCard title="Instrutores no recorte" subtitle="Uma leitura simples de produtividade e presença.">
               <div style={listGrid}>
                 {rankingInstrutores.length ? rankingInstrutores.map((item) => {
@@ -511,7 +511,7 @@ export default function DashboardPage() {
               </div>
             </SectionCard>
           </div>
-
+ 
           <div style={twoColumns}>
             <SectionCard title="Oceano em resumo" subtitle="Uma leitura curta para conectar o dashboard ao fluxo de desenvolvimento.">
               <div style={oceanoGrid}>
@@ -521,7 +521,7 @@ export default function DashboardPage() {
                 <MiniStat label="Tripulação" value={fmt(oceano.tripulacao || 0)} />
               </div>
             </SectionCard>
-
+ 
             <SectionCard title="Progresso da tripulação" subtitle="Ajuda a enxergar se o oceano está só bonito ou realmente em movimento.">
               {(() => {
                 const prog = oceano.progresso_tripulacao || {};
@@ -552,7 +552,7 @@ export default function DashboardPage() {
               })()}
             </SectionCard>
           </div>
-
+ 
           <SectionCard title="Turmas recentes" subtitle="As últimas turmas.">
             {ultimasTurmas.length ? (
               <div style={{ overflowX: "auto" }}>
@@ -599,7 +599,7 @@ export default function DashboardPage() {
           </SectionCard>
         </div>
       )}
-
+ 
       {drillDown && (
         <div
           onClick={() => setDrillDown(null)}
@@ -616,13 +616,13 @@ export default function DashboardPage() {
               </div>
               <button onClick={() => setDrillDown(null)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: "#64748b" }}>✕</button>
             </div>
-
+ 
             {drillDown.loading && <p style={{ fontSize: 13, color: "#64748b" }}>Carregando...</p>}
             {drillDown.erro && <p style={{ fontSize: 13, color: "#b91c1c" }}>{drillDown.erro}</p>}
             {!drillDown.loading && !drillDown.erro && drillDown.itens.length === 0 && (
               <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem dados de frequência individual para esta turma ainda.</p>
             )}
-
+ 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {drillDown.itens.map((pessoa, idx) => (
                 <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: "1px solid #eef2f7" }}>
@@ -646,7 +646,7 @@ export default function DashboardPage() {
     </PortalShell>
   );
 }
-
+ 
 function MiniStat({ label, value }) {
   return (
     <div style={miniStatCard}>
@@ -655,7 +655,7 @@ function MiniStat({ label, value }) {
     </div>
   );
 }
-
+ 
 const loadingBox = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, color: "#475569", fontWeight: 700 };
 const errorBox = { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 18, padding: 16, fontWeight: 700 };
 const heroWrap = { display: "grid", gridTemplateColumns: "1.45fr .9fr", gap: 16 };
@@ -698,7 +698,7 @@ const table = { width: "100%", borderCollapse: "separate", borderSpacing: 0, min
 const th = { textAlign: "left", padding: "12px 14px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" };
 const td = { padding: "12px 14px", borderBottom: "1px solid #eef2f7", color: "#334155", fontSize: 14 };
 const emptyState = { padding: 18, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", color: "#64748b" };
-
+ 
 // ---------------------------------------------------------------------------
 // Bloco de alertas — "o que precisa de atenção hoje", antes de qualquer
 // filtro. A ideia é que o Dashboard avise, em vez de esperar você perguntar.
@@ -747,9 +747,9 @@ function AlertasDashboard({ alertas, onAbrirTurma }) {
       href: "/necessidades",
     },
   ];
-
+ 
   const algumAlerta = cards.some((c) => c.itens.length > 0);
-
+ 
   if (!algumAlerta) {
     return (
       <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -758,7 +758,7 @@ function AlertasDashboard({ alertas, onAbrirTurma }) {
       </div>
     );
   }
-
+ 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
       {cards.filter((c) => c.itens.length > 0).map((c) => (
@@ -780,7 +780,7 @@ function AlertasDashboard({ alertas, onAbrirTurma }) {
     </div>
   );
 }
-
+ 
 const alertaItemLink = {
   display: "block",
   fontSize: 12,
