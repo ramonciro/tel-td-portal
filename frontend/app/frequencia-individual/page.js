@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
+import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
@@ -192,47 +193,21 @@ export default function FrequenciaIndividualPage() {
   }, [itensFiltrados]);
 
   return (
-    <PortalShell
-      title="Frequência Individual"
-      subtitle="Leitura consolidada por treinando, com visão de risco, recorrência e apoio à tomada de decisão."
-    >
+    <PortalShell>
+      <div style={{ marginBottom: 20 }}>
+        <PageHero
+          eyebrow="Portal T&D · Acompanhamento individual"
+          title="Frequência Individual"
+          subtitle="Leitura de risco por treinando: identifique rapidamente quem está estável, em atenção ou crítico, com base nas chamadas registradas e no histórico real de presença."
+        />
+      </div>
+
       {loading ? (
         <div style={loadingBox}>Carregando frequência individual...</div>
       ) : erro ? (
         <div style={errorBox}>{erro}</div>
       ) : (
         <div style={{ display: "grid", gap: 16 }}>
-          <div style={heroWrap}>
-            <div style={heroMain}>
-              <div style={heroBadge}>Acompanhamento individual</div>
-              <h2 style={heroTitle}>Leitura de risco por treinando</h2>
-              <p style={heroText}>
-                Identifique rapidamente quem está estável, em atenção ou crítico,
-                com base nas chamadas registradas e no histórico real de presença.
-              </p>
-            </div>
-
-            <div style={heroSide}>
-              <div style={sideCard}>
-                <div style={sideTitle}>Base no filtro</div>
-                <div style={sideValue}>{fmt(resumo.total)}</div>
-                <div style={sideText}>treinandos/turmas considerados</div>
-              </div>
-
-              <div style={sideCard}>
-                <div style={sideTitle}>Média de frequência</div>
-                <div style={sideValue}>{resumo.media}%</div>
-                <div style={sideText}>visão consolidada do conjunto filtrado</div>
-              </div>
-
-              <div style={sideCard}>
-                <div style={sideTitle}>Pendências</div>
-                <div style={sideValue}>{fmt(resumo.pendentes)}</div>
-                <div style={sideText}>chamadas ainda não concluídas</div>
-              </div>
-            </div>
-          </div>
-
           <SectionCard
             title="Filtros"
             subtitle="Refine a leitura por risco, cliente ou palavra-chave."
@@ -559,78 +534,6 @@ const errorBox = {
   borderRadius: 16,
   padding: 16,
   fontWeight: 700,
-};
-
-const heroWrap = {
-  display: "grid",
-  gridTemplateColumns: "1.5fr 1fr",
-  gap: 14,
-};
-
-const heroMain = {
-  background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
-  borderRadius: 22,
-  padding: 22,
-  color: "#ffffff",
-  boxShadow: "0 14px 30px rgba(29, 78, 216, 0.18)",
-};
-
-const heroBadge = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "rgba(255,255,255,.14)",
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-  marginBottom: 10,
-};
-
-const heroTitle = {
-  margin: 0,
-  fontSize: 28,
-  lineHeight: 1.1,
-};
-
-const heroText = {
-  margin: "10px 0 0",
-  color: "rgba(255,255,255,.86)",
-  lineHeight: 1.6,
-};
-
-const heroSide = {
-  display: "grid",
-  gap: 12,
-};
-
-const sideCard = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 18,
-  padding: 18,
-  display: "grid",
-  gap: 6,
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
-};
-
-const sideTitle = {
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: ".04em",
-  color: "#475569",
-};
-
-const sideValue = {
-  fontSize: 28,
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const sideText = {
-  color: "#64748b",
-  lineHeight: 1.5,
 };
 
 const filtersGrid = {
