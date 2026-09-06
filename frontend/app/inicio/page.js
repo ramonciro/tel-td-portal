@@ -26,8 +26,10 @@ function tilesPorPapel(papelRaw, dados) {
   }
 
   if (papel === "instrutor") {
+    // "Fazer chamada" não vira mais tile aqui — o bloco "Meu Dia" (acima,
+    // só para instrutor) já mostra a turma pendente com o botão direto,
+    // sem duplicar o mesmo atalho duas vezes na mesma tela.
     return [
-      { icon: "✅", label: "Fazer chamada", sub: `${pendentes} pendente(s) hoje`, href: "/presencas", color: colors.accent },
       ...base,
       { icon: "📝", label: "Treinamentos", sub: "Suas turmas e cronogramas", href: "/treinamentos", color: chart.purple },
     ];
@@ -122,6 +124,19 @@ export default function InicioPage() {
     [turmas, resumoPorId]
   );
 
+  // "Meu Dia" — só para instrutor. Antes, "fazer chamada" significava abrir a
+  // lista de Presenças e procurar a turma certa; aqui a turma que precisa de
+  // ação hoje já vem em destaque, com o botão de chamada indo direto pra
+  // turma certa (/turma/{id}/chamada), sem passo intermediário.
+  const turmasPendentesHoje = useMemo(
+    () => turmasComResumo.filter((t) => t.resumo?.status_turma === "Chamada pendente"),
+    [turmasComResumo]
+  );
+  const turmasEmAndamentoHoje = useMemo(
+    () => turmasComResumo.filter((t) => t.resumo?.status_turma === "Em andamento"),
+    [turmasComResumo]
+  );
+
   const clientes = useMemo(() => {
     const nomes = new Set(turmasComResumo.map((t) => t.cliente).filter(Boolean));
     return ["Todos", ...Array.from(nomes)];
@@ -201,6 +216,10 @@ export default function InicioPage() {
             <div style={{ background: colors.dangerLight, color: colors.dangerText, borderRadius: radius.sm, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>
               {erro}
             </div>
+          )}
+
+          {!loading && String(usuario?.perfil || "").toLowerCase().trim() === "instrutor" && (
+            <MeuDia pendentes={turmasPendentesHoje} emAndamento={turmasEmAndamentoHoje} />
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${tiles.length}, 1fr)`, gap: 12, marginBottom: 8 }}>
@@ -299,6 +318,98 @@ export default function InicioPage() {
     </PortalShell>
   );
 }
+
+// Bloco "Meu Dia" do instrutor: turma(s) que precisam de ação agora, com
+// botão direto pra chamada (sem passar pela lista de Presenças) e um
+// segundo botão pra ver o cronograma de quem já está em andamento.
+function MeuDia({ pendentes, emAndamento }) {
+  const semNadaPendente = pendentes.length === 0 && emAndamento.length === 0;
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <p style={{ margin: "0 0 10px", fontSize: 10.5, fontWeight: 700, color: colors.textMuted, textTransform: "uppercase", letterSpacing: ".08em" }}>
+        Meu dia
+      </p>
+
+      {semNadaPendente && (
+        <div style={{ background: colors.successLight, border: `1px solid #86efac`, borderRadius: radius.md, padding: "14px 16px", fontSize: 13.5, color: colors.successText, fontWeight: 600 }}>
+          Nenhuma chamada pendente agora — tudo em dia.
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {pendentes.map((t) => (
+          <div key={`pendente-${t.id}`} style={meuDiaCard}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: colors.warning, flexShrink: 0 }} />
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: colors.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.tema}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.warningText, fontWeight: 600 }}>{t.cliente} · chamada pendente</p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <a href={`/turma/${t.id}/cronograma`} style={meuDiaBtnSecundario}>Ver cronograma</a>
+              <a href={`/turma/${t.id}/chamada`} style={meuDiaBtnPrimario}>Fazer chamada</a>
+            </div>
+          </div>
+        ))}
+
+        {emAndamento.map((t) => (
+          <div key={`andamento-${t.id}`} style={meuDiaCard}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: colors.success, flexShrink: 0 }} />
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: colors.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.tema}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: colors.successText, fontWeight: 600 }}>{t.cliente} · em andamento</p>
+              </div>
+            </div>
+            <a href={`/turma/${t.id}/cronograma`} style={meuDiaBtnSecundario}>Ver cronograma</a>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const meuDiaCard = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  background: "#fff",
+  border: `1px solid ${colors.border}`,
+  borderRadius: radius.md,
+  padding: "12px 14px",
+};
+
+const meuDiaBtnPrimario = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 32,
+  padding: "0 14px",
+  borderRadius: radius.sm,
+  background: colors.accent,
+  color: "#fff",
+  fontSize: 12.5,
+  fontWeight: 700,
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+};
+
+const meuDiaBtnSecundario = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 32,
+  padding: "0 14px",
+  borderRadius: radius.sm,
+  background: "#fff",
+  border: `1px solid ${colors.border}`,
+  color: colors.textSecondary,
+  fontSize: 12.5,
+  fontWeight: 700,
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+};
 
 function Metrica({ valor, label, cor, pct }) {
   return (
