@@ -1,6 +1,6 @@
 // src/database/migrate.js
 const pool = require("../lib/db");
-
+ 
 // ---------------------------------------------------------------------------
 // Helpers idempotentes de migração — usados para os itens que a migração
 // original (CREATE TABLE IF NOT EXISTS) não cobre: adicionar colunas em
@@ -20,7 +20,7 @@ async function columnInfo(table, column) {
   );
   return rows[0] || null;
 }
-
+ 
 async function ensureColumn(table, column, definitionSql) {
   const info = await columnInfo(table, column);
   if (info) return;
@@ -33,18 +33,18 @@ async function ensureColumn(table, column, definitionSql) {
     if (!/duplicate column/i.test(error.message || "")) throw error;
   }
 }
-
+ 
 async function ensureDecimalType(table, column, targetTypeSql) {
   const info = await columnInfo(table, column);
   if (!info || info.DATA_TYPE === "decimal") return;
   await pool.query(`ALTER TABLE ${table} MODIFY COLUMN ${column} ${targetTypeSql}`);
   console.log(`  ↳ coluna ampliada para decimal: ${table}.${column}`);
 }
-
+ 
 async function runMigrations() {
   try {
     console.log("🔄 Verificando e aplicando migrações no MySQL...");
-
+ 
     // 1. Tabela de Empresas
     await pool.query(`
       CREATE TABLE IF NOT EXISTS empresas (
@@ -56,7 +56,7 @@ async function runMigrations() {
           atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       );
     `);
-
+ 
     // 2. Tabela de Usuários
     await pool.query(`
       CREATE TABLE IF NOT EXISTS usuarios (
@@ -75,7 +75,7 @@ async function runMigrations() {
           FOREIGN KEY (empresa_id) REFERENCES empresas(id) ON DELETE CASCADE
       );
     `);
-
+ 
     // 3. Tabela de Clientes
     await pool.query(`
       CREATE TABLE IF NOT EXISTS clientes (
@@ -88,7 +88,7 @@ async function runMigrations() {
           criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
+ 
     // 4. Tabela de Necessidades (ISO 10015 - Fase 1)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS necessidades (
@@ -104,7 +104,7 @@ async function runMigrations() {
           FOREIGN KEY (criado_por) REFERENCES usuarios(id)
       );
     `);
-
+ 
     // 5. Tabela de Treinamentos / Turmas
     await pool.query(`
       CREATE TABLE IF NOT EXISTS treinamentos (
@@ -130,7 +130,7 @@ async function runMigrations() {
           FOREIGN KEY (necessidade_id) REFERENCES necessidades(id) ON DELETE SET NULL
       );
     `);
-
+ 
     // 6. Tabela de Participantes do Treinamento
     await pool.query(`
       CREATE TABLE IF NOT EXISTS treinamento_participantes (
@@ -144,7 +144,7 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
-
+ 
     // 7. Tabelas de Aulas, Presenças e Avaliações
     await pool.query(`
       CREATE TABLE IF NOT EXISTS turma_aulas (
@@ -156,7 +156,7 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
-
+ 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS presencas (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -170,7 +170,7 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
-
+ 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS avaliacoes (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -186,7 +186,7 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
-
+ 
     // 8. Roster de participantes por turma (HC previsto) — já usada por
     // treinamentoParticipantesController, mas nunca tinha uma migration
     // versionada rodando automaticamente no boot do servidor.
@@ -208,7 +208,7 @@ async function runMigrations() {
           KEY idx_tp_status (status_presenca)
       );
     `);
-
+ 
     // 9. turma_aulas — a tabela criada no passo 7 (acima) é o schema mínimo
     // legado. As colunas abaixo são o cronograma diário real (planejado x
     // ministrado, por instrutor) que turmaAulasController.js e o resolver de
@@ -237,7 +237,7 @@ async function runMigrations() {
     await ensureColumn("turma_aulas", "atualizado_em", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
     await pool.query(`CREATE INDEX idx_ta_instrutor ON turma_aulas (instrutor_responsavel)`).catch(() => {});
     await pool.query(`CREATE INDEX idx_ta_status ON turma_aulas (status_execucao)`).catch(() => {});
-
+ 
     // 10. Presença por aula (granularidade diária, por participante) — fonte
     // de "dias praticados" e "HC realizado" no nível mais fino. Mesma
     // história do item 9: existia só como .sql avulso, nunca aplicado.
@@ -258,7 +258,7 @@ async function runMigrations() {
           KEY idx_pa_status (status)
       );
     `);
-
+ 
     // 11. Capacidade do instrutor (regra automática + overrides manuais).
     // Mesmo caso: o controller (capacidadeController.js) e o .sql já
     // existiam, mas a tabela nunca era criada automaticamente e o serviço
@@ -294,19 +294,19 @@ async function runMigrations() {
         UNIQUE KEY uq_cim_instrutor_mes (instrutor, ano, mes)
       );
     `);
-
+ 
     // 12. treinamentos.carga_horaria nasceu como INT (migrate.js, passo 5).
     // Isso arredonda qualquer treinamento com carga fracionada (ex.: 1.5h,
     // 4.5h) no INSERT — CH real é perdida de forma silenciosa antes mesmo de
     // chegar aos relatórios. turma_aulas já usa DECIMAL(10,2); alinhamos o
     // campo agregado da turma ao mesmo padrão, preservando os valores atuais.
     await ensureDecimalType("treinamentos", "carga_horaria", "DECIMAL(8,2) NULL");
-
+ 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
     throw error;
   }
 }
-
+ 
 module.exports = { runMigrations };
