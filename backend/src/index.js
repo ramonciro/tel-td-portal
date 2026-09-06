@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
- 
+
 const authRoutes = require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
@@ -9,12 +9,12 @@ const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } = require("./middlewares/auth");
- 
+
 // Sprint 5: Analytics
 const {
   getResumo, getHoras, getNps, getEfetividade, getRoi,
 } = require("./controllers/analyticsController");
- 
+
 // Sprint 4: Admin (super_admin)
 const {
   getGlobalStats,
@@ -29,16 +29,16 @@ const {
 // Sprint 1: middleware de isolamento multi-tenant
 // Sprint 1: middleware de isolamento multi-tenant (import único)
 const { clientMiddleware } = require("./middlewares/clientMiddleware");
- 
+
 const jornadasEtapasRoutes = require("./routes/jornadasEtapasRoutes");
 const jornadasDesenvolvimentoRoutes = require("./routes/jornadasDesenvolvimentoRoutes");
 const acoesDesenvolvimentoRoutes = require("./routes/acoesDesenvolvimentoRoutes");
 const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
- 
+
 // FIX 1: importar a rota de jornada-participantes (estava faltando)
 const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
- 
+
 // Sprint 3: Trilhas relacionais, Certificados
 const {
   listTrilhas,
@@ -49,39 +49,39 @@ const {
   getProgresso,
   marcarEtapaConcluida,
 } = require("./controllers/trilhasRelacionaisController");
- 
+
 const {
   listCertificados,
   emitirCertificado,
   verificarCertificado,
 } = require("./controllers/certificadosController");
- 
+
 const {
   getDashboardTreinamentos,
 } = require("./controllers/dashboardTreinamentosController");
- 
+
 const {
   listarResumoGeral,
   obterResumoPorTreinamento,
 } = require("./controllers/presencaResumoController");
- 
+
 const { registrarAuditoria } = require("./services/auditoria");
 const { listarAuditoriaHandler } = require("./controllers/auditoriaController");
- 
+
 const {
   obterMural,
   criarPublicacaoHandler,
   editarPublicacaoHandler,
   excluirPublicacaoHandler,
 } = require("./controllers/muralController");
- 
+
 const {
   listarHandler: listarNecessidadesHandler,
   criarHandler: criarNecessidadeHandler,
   editarHandler: editarNecessidadeHandler,
   excluirHandler: excluirNecessidadeHandler,
 } = require("./controllers/necessidadesController");
- 
+
 const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
@@ -90,31 +90,31 @@ const {
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
 } = require("./controllers/treinamentoParticipantesController");
- 
+
 const {
   getFrequenciaIndividual,
 } = require("./controllers/frequenciaIndividualController");
- 
+
 const {
   listMateriaisAvaliativos,
   createMaterialAvaliativo,
   updateMaterialAvaliativo,
   deleteMaterialAvaliativo,
 } = require("./controllers/materiaisAvaliativosController");
- 
+
 const {
   listAvaliacoesTreinandos,
   listNpsDisponivel,
   createAvaliacaoTreinando,
 } = require("./controllers/avaliacoesTreinandosController");
- 
+
 const {
   listRespostasAvaliativas,
   createRespostaAvaliativa,
   updateRespostaAvaliativa,
   deleteRespostaAvaliativa,
 } = require("./controllers/respostasAvaliativasController");
- 
+
 const {
   listTurmaAulas,
   getTurmaAulaById,
@@ -125,14 +125,14 @@ const {
   duplicarPlanoAulas,
   getResumoTurmaAulas,
 } = require("./controllers/turmaAulasController");
- 
+
 const {
   listarPresencaAula,
   inicializarPresencaAula,
   salvarPresencaAula,
   resumoPresencaAula,
 } = require("./controllers/presencaAulasController");
- 
+
 // FIX 2 + 3: importar o controller dedicado da biblioteca
 // (resolve o upload e os campos categoria/publico/status que o createCrudRouter ignorava)
 const {
@@ -142,24 +142,24 @@ const {
   deleteBiblioteca,
   uploadBibliotecaArquivo,
 } = require("./controllers/bibliotecaController");
- 
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
- 
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // Sprint 1: clientMiddleware aplicado globalmente — popula req.empresaId
 // via empresa_id do JWT para todas as rotas protegidas
 app.use(clientMiddleware);
- 
+
 app.get(
   "/api/dashboard/treinamentos",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   getDashboardTreinamentos
 );
- 
+
 // Fonte única de presença + status de turma (cronograma > legado > snapshot),
 // usada pelas páginas Presenças e Treinamentos.
 app.get(
@@ -174,14 +174,14 @@ app.get(
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   obterResumoPorTreinamento
 );
- 
+
 app.get(
   "/api/auditoria",
   authRequired,
   authorizeRoles("coordenador", "superintendente"),
   listarAuditoriaHandler
 );
- 
+
 // Mural da turma: publicações manuais + eventos derivados (avaliação
 // publicada, material adicionado, chamada concluída). Ver
 // backend/src/services/muralResolver.js.
@@ -209,7 +209,7 @@ app.delete(
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   excluirPublicacaoHandler
 );
- 
+
 // Fase 1 do ciclo ISO 10015: necessidade de treinamento (antes de a turma
 // existir). Ver backend/src/services/necessidadesResolver.js.
 app.get(
@@ -236,7 +236,7 @@ app.delete(
   authorizeRoles("coordenador", "superintendente"),
   excluirNecessidadeHandler
 );
- 
+
 app.get("/api", async (req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -248,16 +248,16 @@ app.get("/api", async (req, res) => {
     });
   }
 });
- 
+
 app.use("/api/auth", authRoutes);
- 
+
 app.use(
   "/api/dashboard",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   dashboardRoutes
 );
- 
+
 app.use(
   "/api/clientes",
   createCrudRouter({
@@ -271,7 +271,7 @@ app.use(
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
   })
 );
- 
+
 app.use(
   "/api/usuarios",
   createCrudRouter({
@@ -310,7 +310,7 @@ app.use(
     },
   })
 );
- 
+
 app.delete(
   "/api/treinamentos/:id",
   authRequired,
@@ -318,10 +318,19 @@ app.delete(
   async (req, res) => {
     try {
       const { id } = req.params;
- 
-      const [linhas] = await pool.query(`SELECT * FROM treinamentos WHERE id = ?`, [id]);
+
+      // Isolamento por tenant: um coordenador de uma empresa não pode
+      // excluir um treinamento de outra empresa mesmo sabendo o id (esta
+      // rota é escrita à mão, fora do entityCrud.js, então precisa do mesmo
+      // guard manualmente). req.empresaId nulo (ex.: super_admin, ou dado
+      // legado sem empresa atribuída) mantém o comportamento antigo.
+      const tenantCheck = req.empresaId ? ` AND empresa_id = ${pool.escape(req.empresaId)}` : "";
+      const [linhas] = await pool.query(`SELECT * FROM treinamentos WHERE id = ?${tenantCheck}`, [id]);
       const antes = linhas[0] || null;
- 
+      if (!antes) {
+        return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+      }
+
       await pool.query(`DELETE FROM presenca_aulas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM treinamento_participantes WHERE treinamento_id = ?`, [id]);
@@ -329,7 +338,7 @@ app.delete(
       await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
       await pool.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
- 
+
       registrarAuditoria({
         usuario: req.user,
         acao: "excluir",
@@ -339,7 +348,7 @@ app.delete(
         dadosAntes: antes,
         ip: req.ip,
       });
- 
+
       return res.json({
         ok: true,
         message: "Treinamento e dados relacionados excluídos com sucesso",
@@ -353,7 +362,7 @@ app.delete(
     }
   }
 );
- 
+
 app.use(
   "/api/treinamentos",
   createCrudRouter({
@@ -390,7 +399,7 @@ app.use(
     },
   })
 );
- 
+
 app.get(
   "/api/treinamentos/:id",
   authRequired,
@@ -398,7 +407,7 @@ app.get(
   async (req, res) => {
     try {
       const { id } = req.params;
- 
+
       const [rows] = await pool.query(
         `
         SELECT
@@ -426,14 +435,14 @@ app.get(
         `,
         [id]
       );
- 
+
       if (!rows.length) {
         return res.status(404).json({
           ok: false,
           message: "Treinamento não encontrado",
         });
       }
- 
+
       return res.json(rows[0]);
     } catch (error) {
       return res.status(500).json({
@@ -444,14 +453,14 @@ app.get(
     }
   }
 );
- 
+
 app.get(
   "/api/treinamentos/:id/participantes",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   getParticipantesByTreinamento
 );
- 
+
 // FIX: rota POST que o frontend chama ao adicionar participante manualmente.
 // A função createParticipanteTreinamento existia no controller e no module.exports,
 // mas nunca havia sido importada nem registrada — causando Erro 404 na tela de participantes.
@@ -461,7 +470,7 @@ app.post(
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   createParticipanteTreinamento
 );
- 
+
 app.post(
   "/api/treinamentos/importar-participantes",
   authRequired,
@@ -469,116 +478,117 @@ app.post(
   upload.single("arquivo"),
   importarParticipantesExcel
 );
- 
+
 app.post(
   "/api/treinamentos/salvar-chamada",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   salvarChamadaParticipantes
 );
- 
+
 app.delete(
   "/api/treinamentos/participantes/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   deleteParticipanteTreinamento
 );
- 
+
 app.post(
   "/api/treinamentos/participantes/excluir-lote",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   deleteParticipantesTreinamentoBulk
 );
- 
+
 app.get(
   "/api/turma-aulas",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   listTurmaAulas
 );
- 
+
 app.get(
   "/api/turma-aulas/resumo/:treinamento_id",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   getResumoTurmaAulas
 );
- 
+
 app.get(
   "/api/turma-aulas/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   getTurmaAulaById
 );
- 
+
 app.post(
   "/api/turma-aulas",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   createTurmaAula
 );
- 
+
 app.put(
   "/api/turma-aulas/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   updateTurmaAula
 );
- 
+
 app.delete(
   "/api/turma-aulas/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   deleteTurmaAula
 );
- 
+
 app.post(
   "/api/turma-aulas/gerar-cronograma",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   gerarCronogramaTurma
 );
- 
+
 app.post(
   "/api/turma-aulas/duplicar",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   duplicarPlanoAulas
 );
- 
+
 app.get(
   "/api/presenca-aulas",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   listarPresencaAula
 );
- 
+
 app.post(
   "/api/presenca-aulas/inicializar",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   inicializarPresencaAula
 );
- 
+
 app.post(
   "/api/presenca-aulas/salvar",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   salvarPresencaAula
 );
- 
+
 app.get(
   "/api/presenca-aulas/resumo/:turma_aula_id",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   resumoPresencaAula
 );
- 
+
 app.use(
   "/api/presencas",
   createCrudRouter({
     table: "presencas",
+    multiTenant: true, // antes sem isolamento — presenças de tenants diferentes ficavam misturadas
     fields: [
       "treinamento_id",
       "data_chamada",
@@ -600,11 +610,12 @@ app.use(
     },
   })
 );
- 
+
 app.use(
   "/api/avaliacoes",
   createCrudRouter({
     table: "avaliacoes",
+    multiTenant: true, // antes sem isolamento — notas de tenants diferentes ficavam misturadas
     fields: [
       "treinamento_id",
       "titulo",
@@ -636,91 +647,91 @@ app.use(
     },
   })
 );
- 
+
 app.get(
   "/api/frequencia-individual",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   getFrequenciaIndividual
 );
- 
+
 app.get(
   "/api/avaliacoes-treinandos",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   listAvaliacoesTreinandos
 );
- 
+
 app.get(
   "/api/nps-disponivel",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   listNpsDisponivel
 );
- 
+
 app.post(
   "/api/avaliacoes-treinandos",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   createAvaliacaoTreinando
 );
- 
+
 app.get(
   "/api/materiais-avaliativos",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   listMateriaisAvaliativos
 );
- 
+
 app.post(
   "/api/materiais-avaliativos",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   createMaterialAvaliativo
 );
- 
+
 app.put(
   "/api/materiais-avaliativos/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   updateMaterialAvaliativo
 );
- 
+
 app.delete(
   "/api/materiais-avaliativos/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   deleteMaterialAvaliativo
 );
- 
+
 app.get(
   "/api/respostas-avaliativas",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   listRespostasAvaliativas
 );
- 
+
 app.post(
   "/api/respostas-avaliativas",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   createRespostaAvaliativa
 );
- 
+
 app.put(
   "/api/respostas-avaliativas/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   updateRespostaAvaliativa
 );
- 
+
 app.delete(
   "/api/respostas-avaliativas/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   deleteRespostaAvaliativa
 );
- 
+
 // FIX 2 + 3: rotas explícitas da biblioteca usando o controller dedicado.
 // Resolve o upload (que era 404) e os campos categoria/publico/status
 // que o createCrudRouter anterior ignorava silenciosamente.
@@ -730,28 +741,28 @@ app.get(
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   listBiblioteca
 );
- 
+
 app.post(
   "/api/biblioteca",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   createBiblioteca
 );
- 
+
 app.put(
   "/api/biblioteca/:id",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   updateBiblioteca
 );
- 
+
 app.delete(
   "/api/biblioteca/:id",
   authRequired,
   authorizeRoles("coordenador"),
   deleteBiblioteca
 );
- 
+
 app.post(
   "/api/biblioteca/upload",
   authRequired,
@@ -759,7 +770,7 @@ app.post(
   upload.single("arquivo"),
   uploadBibliotecaArquivo
 );
- 
+
 // Sprint 3: Trilhas relacionais — rotas dedicadas (substituem entityCrud)
 // Etapas agora são registros em trilha_etapas, não mais JSON em trilhas_aprendizagem.etapas
 app.get(
@@ -804,7 +815,7 @@ app.post(
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   marcarEtapaConcluida
 );
- 
+
 // Sprint 1: convertido de GET para POST — TRUNCATE nunca pode ser GET
 app.post(
   "/api/zerar-dashboard",
@@ -813,7 +824,7 @@ app.post(
   async (req, res) => {
     try {
       await pool.query("SET FOREIGN_KEY_CHECKS = 0");
- 
+
       await pool.query("TRUNCATE TABLE avaliacoes");
       await pool.query("TRUNCATE TABLE presenca_aulas");
       await pool.query("TRUNCATE TABLE presencas");
@@ -822,9 +833,9 @@ app.post(
       await pool.query("TRUNCATE TABLE treinamentos");
       await pool.query("TRUNCATE TABLE usuarios");
       await pool.query("TRUNCATE TABLE clientes");
- 
+
       await pool.query("SET FOREIGN_KEY_CHECKS = 1");
- 
+
       res.json({
         ok: true,
         message: "Base zerada com sucesso.",
@@ -833,7 +844,7 @@ app.post(
       try {
         await pool.query("SET FOREIGN_KEY_CHECKS = 1");
       } catch (_) {}
- 
+
       console.error("Erro ao zerar base:", error);
       res.status(500).json({
         ok: false,
@@ -843,7 +854,7 @@ app.post(
     }
   }
 );
- 
+
 // Sprint 1: convertido de GET para POST
 app.post(
   "/api/importar-dashboard",
@@ -855,7 +866,7 @@ app.post(
         req.query.truncate === "1" ||
         req.query.truncate === "true" ||
         req.query.truncate === "sim";
- 
+
       if (truncate) {
         await pool.query("SET FOREIGN_KEY_CHECKS = 0");
         await pool.query("TRUNCATE TABLE avaliacoes");
@@ -868,9 +879,9 @@ app.post(
         await pool.query("TRUNCATE TABLE clientes");
         await pool.query("SET FOREIGN_KEY_CHECKS = 1");
       }
- 
+
       const resultado = await importDashboardExcel();
- 
+
       res.json({
         ok: true,
         message: "Importação do dashboard concluída com sucesso.",
@@ -880,7 +891,7 @@ app.post(
       try {
         await pool.query("SET FOREIGN_KEY_CHECKS = 1");
       } catch (_) {}
- 
+
       console.error("Erro ao importar dashboard:", error);
       res.status(500).json({
         ok: false,
@@ -890,7 +901,7 @@ app.post(
     }
   }
 );
- 
+
 // Sprint 3: Certificados
 app.get(
   "/api/certificados",
@@ -910,7 +921,7 @@ app.post(
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   emitirCertificado
 );
- 
+
 // Sprint 3: Minhas Turmas — self-service do treinando
 // Retorna treinamentos em que o usuário logado está inscrito (match por email)
 app.get(
@@ -923,9 +934,9 @@ app.get(
       const userName  = req.user?.nome;
       const perfil    = String(req.user?.perfil || "").toLowerCase().trim();
       const empresaId = req.empresaId ?? null;
- 
+
       let rows;
- 
+
       if (["coordenador", "supervisor"].includes(perfil)) {
         // Gestores veem todas as turmas do tenant
         const tenantWhere = empresaId ? "WHERE t.empresa_id = ?" : "";
@@ -969,7 +980,7 @@ app.get(
           );
         }
       }
- 
+
       return res.json(rows || []);
     } catch (error) {
       console.error("[minhas-turmas]", error.message);
@@ -977,23 +988,23 @@ app.get(
     }
   }
 );
- 
+
 // ─── Sprint 5: Analytics & KPIs ─────────────────────────────────────────────
 // Acessível a coordenadores, supervisores e super_admin.
 // req.empresaId filtrado pelo clientMiddleware — super_admin recebe dados globais.
- 
+
 app.get("/api/analytics/resumo",      authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getResumo);
 app.get("/api/analytics/horas",       authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getHoras);
 app.get("/api/analytics/nps",         authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getNps);
 app.get("/api/analytics/efetividade", authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getEfetividade);
 app.get("/api/analytics/roi",         authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getRoi);
- 
+
 // ─────────────────────────────────────────────────────────────────────────────
- 
+
 // ─── Sprint 4: Admin / Super-Admin ───────────────────────────────────────────
 // Todas as rotas /api/admin/* exigem autenticação + perfil super_admin.
 // requireSuperAdmin retorna 403 imediatamente para qualquer outro perfil.
- 
+
 app.get(  "/api/admin/stats",                  authRequired, requireSuperAdmin, getGlobalStats);
 app.get(  "/api/admin/planos",                 authRequired, requireSuperAdmin, listPlanos);
 app.get(  "/api/admin/empresas",               authRequired, requireSuperAdmin, listEmpresas);
@@ -1002,18 +1013,18 @@ app.post( "/api/admin/empresas",               authRequired, requireSuperAdmin, 
 app.put(  "/api/admin/empresas/:id",           authRequired, requireSuperAdmin, updateEmpresa);
 app.post( "/api/admin/empresas/:id/toggle-ativo", authRequired, requireSuperAdmin, toggleAtivo);
 app.delete("/api/admin/empresas/:id",            authRequired, requireSuperAdmin, deleteEmpresa);
- 
+
 // ─────────────────────────────────────────────────────────────────────────────
- 
+
 // Sprint 1: authRequired adicionado — esta rota estava sem proteção
 app.use("/api/jornadas-etapas", authRequired, jornadasEtapasRoutes);
 app.use("/api/jornadas-desenvolvimento", authRequired, authorizeOceanAccess, jornadasDesenvolvimentoRoutes);
 app.use("/api/acoes-desenvolvimento", authRequired, authorizeOceanAccess, acoesDesenvolvimentoRoutes);
 app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlanosRoutes);
- 
+
 // FIX 1: rota de jornada-participantes registrada junto com as rotas do Oceano
 app.use("/api/jornada-participantes", authRequired, authorizeOceanAccess, jornadaParticipantesRoutes);
- 
+
 // Capacidade x Realizado (CH por instrutor / CH efetiva do time) — o
 // controller e a migration já existiam, mas nunca tinham sido conectados:
 // faltava tanto o serviço (backend/src/services/capacidadeResolver.js, agora
@@ -1026,7 +1037,7 @@ app.use(
   authorizeRoles("coordenador", "supervisor", "superintendente"),
   capacidadeRoutes
 );
- 
+
 // ── Módulo R&S — import do controller ──────────────────────────────────────
 const {
   listar:           listarRPs,
@@ -1043,7 +1054,7 @@ const {
   listarUsuariosRS,
   criarUsuarioRS,
 } = require("./controllers/rsController");
- 
+
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
 // Leitura: coordenador_rs + gestor_rs | Escrita: coordenador_rs apenas
 app.get   ("/api/rs/sites",     authRequired, authorizeRoles("coordenador_rs","gestor_rs"), getRSSites);
@@ -1062,13 +1073,13 @@ app.post  ("/api/rs/importar",  authRequired, authorizeRoles("coordenador_rs"), 
 app.get   ("/api/rs/usuarios",  authRequired, authorizeRoles("coordenador_rs"), listarUsuariosRS);
 app.post  ("/api/rs/usuarios",  authRequired, authorizeRoles("coordenador_rs"), criarUsuarioRS);
 // ─────────────────────────────────────────────────────────────────────────────
- 
+
 const PORT = process.env.PORT || 3000;
- 
+
 async function iniciarAplicacao() {
   try {
     await runMigrations();
- 
+
     app.listen(PORT, () => {
       console.log(`Servidor rodando na porta ${PORT}`);
     });
@@ -1077,5 +1088,5 @@ async function iniciarAplicacao() {
     process.exit(1);
   }
 }
- 
+
 iniciarAplicacao();
