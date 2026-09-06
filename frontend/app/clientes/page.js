@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell  from "../../components/PortalShell";
 import PageHero     from "../../components/PageHero";
 import StatCard     from "../../components/StatCard";
-import { apiFetch } from "../../services/api";
+import { apiFetch, getStoredUser } from "../../services/api";
 import { colors, chart } from "../../lib/theme";
 
 /* ── utilitários ── */
@@ -124,7 +124,7 @@ function MField({ label, children, full = false }) {
 /* ═══════════════════════════════════════════════
    CARD DE OPERAÇÃO
 ═══════════════════════════════════════════════ */
-function ClienteCard({ item, saude, onEditar, onExcluir }) {
+function ClienteCard({ item, saude, podeExcluir, confirmandoExclusao, onEditar, onIniciarExclusao, onConfirmarExclusao, onCancelarExclusao }) {
   const ativo    = normStatus(item.status) === "ativo";
   const cor      = corSaude(saude.presencaMedia);
   const temDados = saude.totalTurmas > 0;
@@ -135,7 +135,7 @@ function ClienteCard({ item, saude, onEditar, onExcluir }) {
       <div style={cardHead}>
         <div>
           <div style={cardNome}>{item.nome}</div>
-          {(item.gestor || item.supervisor) && <div style={cardGestor}>{item.gestor || item.supervisor}</div>}
+          {item.gestor && <div style={cardGestor}>{item.gestor}</div>}
         </div>
         <span style={{
           ...statusBadge,
@@ -166,16 +166,25 @@ function ClienteCard({ item, saude, onEditar, onExcluir }) {
         </div>
       )}
 
-      {/* Observações */}
-      {item.observacoes && (
-        <p style={cardObs}>{item.observacoes.length > 100 ? item.observacoes.slice(0, 100) + "…" : item.observacoes}</p>
+      {/* Observações — FIX: lia "observacoes", mas o formulário/backend salvam
+          em "descricao"; o texto digitado nunca aparecia aqui nem era buscável. */}
+      {item.descricao && (
+        <p style={cardObs}>{item.descricao.length > 100 ? item.descricao.slice(0, 100) + "…" : item.descricao}</p>
       )}
 
       {/* Ações */}
-      <div style={cardAcoes}>
-        <button style={btnEditar} onClick={onEditar}>Editar</button>
-        <button style={btnExcluir} onClick={onExcluir}>Excluir</button>
-      </div>
+      {confirmandoExclusao ? (
+        <div style={confirmInline}>
+          <span style={confirmInlineTxt}>Confirma excluir "{item.nome}"?</span>
+          <button style={{ ...btnExcluir, padding: "6px 12px" }} onClick={onConfirmarExclusao}>Excluir</button>
+          <button style={{ ...btnEditar, padding: "6px 12px" }} onClick={onCancelarExclusao}>Cancelar</button>
+        </div>
+      ) : (
+        <div style={cardAcoes}>
+          <button style={btnEditar} onClick={onEditar}>Editar</button>
+          {podeExcluir && <button style={btnExcluir} onClick={onIniciarExclusao}>Excluir</button>}
+        </div>
+      )}
     </div>
   );
 }
@@ -194,6 +203,10 @@ function SaudeChip({ label, value, sub, cor }) {
    PÁGINA PRINCIPAL
 ═══════════════════════════════════════════════ */
 export default function ClientesPage() {
+  const usuario     = getStoredUser();
+  const perfil      = String(usuario?.perfil || "").toLowerCase();
+  const podeExcluir = perfil === "coordenador"; // backend só permite DELETE pra coordenador
+
   const [clientes,       setClientes]       = useState([]);
   const [resumoPresenca, setResumoPresenca] = useState([]);
   const [necessidades,   setNecessidades]   = useState([]);
@@ -239,7 +252,7 @@ export default function ClientesPage() {
   const listaFiltrada = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return clientes.filter((c) => {
-      const okBusca  = !t || [c.nome, c.supervisor, c.observacoes].join(" ").toLowerCase().includes(t);
+      const okBusca  = !t || [c.nome, c.gestor, c.descricao].join(" ").toLowerCase().includes(t);
       const okStatus = filtroStatus === "todos" || normStatus(c.status) === filtroStatus;
       return okBusca && okStatus;
     });
@@ -310,25 +323,15 @@ export default function ClientesPage() {
             return (
               <ClienteCard
                 key={c.id} item={c} saude={saude}
+                podeExcluir={podeExcluir}
+                confirmandoExclusao={excluindo === c.id}
                 onEditar={() => setModal({ modo: "editar", cliente: c })}
-                onExcluir={() => {
-                  if (excluindo === c.id) { excluir(c.id); }
-                  else setExcluindo(c.id);
-                }}
+                onIniciarExclusao={() => setExcluindo(c.id)}
+                onConfirmarExclusao={() => excluir(c.id)}
+                onCancelarExclusao={() => setExcluindo(null)}
               />
             );
           })}
-        </div>
-      )}
-
-      {/* Confirmação exclusão */}
-      {excluindo && (
-        <div style={confirmBanner}>
-          <span style={{ fontSize: 13, color: "#334155", fontWeight: 600 }}>
-            Confirma exclusão de "{clientes.find((c) => c.id === excluindo)?.nome}"?
-          </span>
-          <button style={{ ...btnExcluir, padding: "6px 14px" }} onClick={() => excluir(excluindo)}>Excluir</button>
-          <button style={{ ...btnEditar, padding: "6px 12px" }} onClick={() => setExcluindo(null)}>Cancelar</button>
         </div>
       )}
 
@@ -361,7 +364,8 @@ const cardObs   = { margin: 0, fontSize: 12, color: "#94a3b8", fontStyle: "itali
 const cardAcoes = { display: "flex", gap: 6, marginTop: 2 };
 const btnEditar = { background: "#dbeafe", color: "#1d4ed8", border: 0, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
 const btnExcluir = { background: colors.dangerLight, color: colors.dangerText, border: 0, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
-const confirmBanner = { display: "flex", alignItems: "center", gap: 10, background: colors.warningLight, border: `1px solid #fed7aa`, borderRadius: 12, padding: "10px 14px", marginTop: 8, flexWrap: "wrap" };
+const confirmInline = { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: colors.warningLight, border: "1px solid #fed7aa", borderRadius: 10, padding: "8px 10px", marginTop: 2 };
+const confirmInlineTxt = { fontSize: 12, color: "#7c2d12", fontWeight: 600, flex: "1 1 auto" };
 const overlay   = { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 16 };
 const modal     = { background: "#fff", borderRadius: 20, padding: 24, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" };
 const modalHeader = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 };
