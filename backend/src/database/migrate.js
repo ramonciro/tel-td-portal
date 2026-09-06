@@ -520,6 +520,13 @@ async function runMigrations() {
       );
     `);
 
+    // 19. empresas.custo_hora_treinamento — usado no cálculo de ROI
+    // (analyticsController.js). Antes o valor de R$/hora era fixo em 150 no
+    // código, mas a tela de Indicadores já tinha uma nota dizendo "configure
+    // um valor real nas preferências do sistema" — essa configuração nunca
+    // existiu. Agora existe como campo do tenant (Admin → editar empresa).
+    await ensureColumn("empresas", "custo_hora_treinamento", "DECIMAL(8,2) NULL");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
