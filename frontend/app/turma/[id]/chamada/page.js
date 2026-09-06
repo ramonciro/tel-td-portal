@@ -432,7 +432,7 @@ const btnSalvar  = {
   background: colors.accent, color: "#fff", border: 0,
   borderRadius: 10, padding: "9px 20px", cursor: "pointer",
   fontWeight: 800, fontSize: 14, flexShrink: 0,
-  boxShadow: `0 4px 14px rgba(255,107,74,.3)`,
+  boxShadow: `0 4px 14px rgba(217,119,6,.3)`,
 };
 
 const progressWrap  = { display: "flex", alignItems: "center", gap: 14, marginBottom: 14 };
