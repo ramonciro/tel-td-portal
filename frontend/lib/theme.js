@@ -7,16 +7,31 @@
 // inventar hex codes novos; telas existentes podem migrar aos poucos, sem
 // pressa, sempre que forem mexidas por outro motivo.
 
+// Paleta extraída de verdade do logo (logo-td.png: fundo navy + rede de nós
+// num gradiente azul → laranja, lembrando conexões/sinapses de um cérebro).
+// Amostrado por pixel: navy ~#10182A, azul ~#296AC2, laranja ~#E19F3B — os
+// valores abaixo são esses tons ajustados para os usos de UI (contraste,
+// tons claros de fundo), não escolhidos de cabeça.
 export const colors = {
   // identidade da marca — usada no chrome do portal (sidebar, cabeçalhos de
   // destaque) e em CTAs primários. Não usar em badges de status — status
   // usa sempre success/warning/danger, pra não competir visualmente.
   navy: "#0B1220",
   navySoft: "#161D2E",
-  accent: "#FF6B4A",
-  accentLight: "#FFE4DB",
+  // antes era um coral (#FF6B4A) que não batia com o laranja real do logo.
+  // `accent` é usado em ~25 telas como fundo de botão com texto branco —
+  // por isso ficou num âmbar mais fechado (contraste ~3.2:1 com branco,
+  // acima do coral anterior ~2.5:1; ainda abaixo do ideal de 4.5:1 do WCAG
+  // AA para texto pequeno — anotado no design-system.md como item aberto de
+  // acessibilidade). `accentBright` é o âmbar vivo de verdade do logo, para
+  // uso decorativo onde contraste de texto não entra (pontos, ícones,
+  // preenchimento de gráfico, fundo suave de destaque).
+  accent: "#D97706",
+  accentBright: "#F59E0B",
+  accentLight: "#FEF3C7",
+  accentText: "#92400E",
 
-  // marca / ação primária
+  // marca / ação primária — já batia com o azul do logo, mantido
   primary: "#2563eb",
   primaryLight: "#dbeafe",
 
@@ -48,6 +63,14 @@ export const colors = {
   surfaceMuted: "#f8fafc",
   border: "#e2e8f0",
 };
+
+// O gradiente azul → laranja do logo, para uso em hero/cabeçalho de destaque
+// e no item ativo do menu — em vez de cada tela inventar seu próprio
+// gradiente (o Dashboard antigo, por exemplo, usava #0f172a → #1d4ed8, um
+// gradiente diferente do da marca).
+export const brandGradient = "linear-gradient(135deg, #2563EB 0%, #F59E0B 100%)";
+export const brandGradientDark = "linear-gradient(135deg, #0B1220 0%, #1d4ed8 55%, #F59E0B 100%)";
+export const brandGradientSoft = "linear-gradient(135deg, rgba(37,99,235,0.12) 0%, rgba(245,158,11,0.12) 100%)";
 
 export const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
 
