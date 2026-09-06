@@ -1,15 +1,15 @@
 "use client";
-
+ 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 import { colors } from "../../lib/theme";
-
+ 
 function fmt(n) { return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(Number(n || 0)); }
 function fmtPct(n) { return n == null ? "—" : `${fmt(n)}%`; }
-
+ 
 const STATUS_LABEL = {
   ocioso: "Ociosa",
   saudavel: "Saudável",
@@ -17,7 +17,7 @@ const STATUS_LABEL = {
   sobrecarga: "Sobrecarga",
   sem_capacidade: "Sem capacidade definida",
 };
-
+ 
 export default function CapacidadePage() {
   const [operacoes, setOperacoes] = useState([]);
   const [operacaoFiltro, setOperacaoFiltro] = useState("");
@@ -29,10 +29,10 @@ export default function CapacidadePage() {
   const [alertas, setAlertas] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-
+ 
   useEffect(() => { apiFetch("/capacidade/operacoes").then((r) => setOperacoes(r?.operacoes || [])).catch(() => {}); }, []);
   useEffect(() => { carregar(); }, [operacaoFiltro]);
-
+ 
   async function carregar() {
     try {
       setLoading(true); setErro("");
@@ -56,14 +56,14 @@ export default function CapacidadePage() {
       );
     } finally { setLoading(false); }
   }
-
+ 
   const ind = painel?.indicadores || {};
-
+ 
   const rankingComMedalha = useMemo(() => {
     const medalhas = ["🥇", "🥈", "🥉"];
     return ranking.map((r) => ({ ...r, medalha: medalhas[r.posicao - 1] || "▫️" }));
   }, [ranking]);
-
+ 
   return (
     <PortalShell>
       <div style={{ marginBottom: 20 }}>
@@ -79,7 +79,7 @@ export default function CapacidadePage() {
           }
         />
       </div>
-
+ 
       {erro && <div style={errBox}>{erro}</div>}
       {loading ? (
         <p style={{ color: "#64748b" }}>Carregando indicadores…</p>
@@ -94,7 +94,7 @@ export default function CapacidadePage() {
             <StatCard title="Aderência geral" value={fmtPct(ind.aderencia_geral_pct)} accent={colors.accent} />
             <StatCard title="Ocupação do time" value={fmtPct(ind.ocupacao_time_pct)} accent={colors.navy} />
           </div>
-
+ 
           <div style={card}>
             <div style={cardTitle}>Capacity mensal do time × consumido</div>
             <div style={{ overflowX: "auto" }}>
@@ -124,7 +124,7 @@ export default function CapacidadePage() {
               </table>
             </div>
           </div>
-
+ 
           <div style={{ ...card, marginTop: 20 }}>
             <div style={cardTitle}>Capacity x consumido — por instrutor (90 dias)</div>
             <div style={{ overflowX: "auto" }}>
@@ -155,7 +155,7 @@ export default function CapacidadePage() {
               </table>
             </div>
           </div>
-
+ 
           <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginTop: 20, alignItems: "start" }}>
             <div style={card}>
               <div style={cardTitle}>Ranking de instrutores — CH realizada (90 dias)</div>
@@ -180,7 +180,7 @@ export default function CapacidadePage() {
                 </tbody>
               </table>
             </div>
-
+ 
             <div style={card}>
               <div style={cardTitle}>Alertas de ocupação (mês atual)</div>
               {(alertas?.itens || []).length === 0 ? (
@@ -197,7 +197,7 @@ export default function CapacidadePage() {
               )}
             </div>
           </div>
-
+ 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20, alignItems: "start" }}>
             <div style={card}>
               <div style={cardTitle}>Distribuição por operação (todos os clientes)</div>
@@ -217,7 +217,7 @@ export default function CapacidadePage() {
                 </tbody>
               </table>
             </div>
-
+ 
             <div style={card}>
               <div style={cardTitle}>Aderência por tema {operacaoFiltro ? `— ${operacaoFiltro}` : "(todas as operações)"}</div>
               <table style={table}>
@@ -248,7 +248,7 @@ export default function CapacidadePage() {
     </PortalShell>
   );
 }
-
+ 
 /* ─── estilos ─────────────────────────────────── */
 const card = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 20, boxShadow: "0 8px 18px rgba(15,23,42,.04)" };
 const cardTitle = { fontSize: 15, fontWeight: 800, color: "#0f172a", marginBottom: 14 };
