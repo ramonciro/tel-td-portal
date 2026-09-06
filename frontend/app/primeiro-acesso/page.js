@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import API_URL, { getStoredUser } from "../../services/api";
+import { apiFetch, getStoredUser } from "../../services/api";
 
 export default function PrimeiroAcessoPage() {
   const router = useRouter();
@@ -31,22 +31,10 @@ export default function PrimeiroAcessoPage() {
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_URL}/auth/alterar-senha`, {
+      await apiFetch("/auth/alterar-senha", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: user.email,
-          novaSenha: senha,
-        }),
+        body: JSON.stringify({ novaSenha: senha }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Erro ao alterar senha");
-      }
 
       if (typeof window !== "undefined") {
         localStorage.setItem(
