@@ -724,7 +724,7 @@ const pill    = { padding: "5px 13px", borderRadius: 999, cursor: "pointer", fon
 /* Barra de controle */
 const controlBar = { display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" };
 const searchInput = { height: 38, width: "100%", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#334155", outline: "none", paddingRight: 10, boxSizing: "border-box" };
-const btnNovoUsuario = { height: 38, padding: "0 18px", borderRadius: 10, border: 0, background: colors.accent, color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", marginLeft: "auto", whiteSpace: "nowrap", boxShadow: `0 4px 12px rgba(255,107,74,.25)` };
+const btnNovoUsuario = { height: 38, padding: "0 18px", borderRadius: 10, border: 0, background: colors.accent, color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", marginLeft: "auto", whiteSpace: "nowrap", boxShadow: `0 4px 12px rgba(217,119,6,.25)` };
 
 /* Tabela */
 const tabelaCard = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, overflow: "hidden" };
