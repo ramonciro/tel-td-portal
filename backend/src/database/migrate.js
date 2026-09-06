@@ -390,6 +390,149 @@ async function runMigrations() {
       WHERE pa.empresa_id IS NULL AND t.empresa_id IS NOT NULL
     `);
 
+    // 16b. Tabelas do "Oceano do Desenvolvimento" (jornadas, etapas, ações,
+    // coaching, tripulação) — mesmo padrão de bug já corrigido acima pra
+    // trilha_etapas/certificados/trilhas_aprendizagem: nenhuma delas tinha
+    // CREATE TABLE em lugar nenhum do repositório. O comentário do passo 17
+    // logo abaixo dizia "são criadas fora deste arquivo" — não são; nunca
+    // existiu um .sql pra elas (jornada_participantes é a única exceção,
+    // com .sql próprio em database/migrations/2026-04-01_jornada_participantes.sql,
+    // nunca rodado automaticamente — mesclado aqui). Schema reconstruído a
+    // partir de todo INSERT/UPDATE/SELECT que os controllers fazem hoje.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS jornadas_desenvolvimento (
+        id              INT AUTO_INCREMENT PRIMARY KEY,
+        cliente         VARCHAR(150) NULL,
+        nome            VARCHAR(200) NOT NULL,
+        descricao       TEXT NULL,
+        objetivo        TEXT NULL,
+        publico_macro   VARCHAR(255) NULL,
+        observacoes     TEXT NULL,
+        status          VARCHAR(20) NOT NULL DEFAULT 'planejada',
+        responsavel_id  INT NULL,
+        data_inicio     DATE NULL,
+        data_fim        DATE NULL,
+        empresa_id      INT NULL DEFAULT 1,
+        INDEX idx_jornadas_desenvolvimento_responsavel (responsavel_id),
+        INDEX idx_jornadas_desenvolvimento_empresa     (empresa_id)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS jornadas_etapas (
+        id                       INT AUTO_INCREMENT PRIMARY KEY,
+        jornada_id               INT NOT NULL,
+        nome                     VARCHAR(200) NOT NULL,
+        descricao                TEXT NULL,
+        objetivo                 TEXT NULL,
+        tipo                     VARCHAR(50) NOT NULL DEFAULT 'treinamento',
+        ordem                    INT NOT NULL DEFAULT 0,
+        status                   VARCHAR(30) NOT NULL DEFAULT 'planejada',
+        responsavel_id           INT NULL,
+        data_inicio              DATE NULL,
+        data_fim                 DATE NULL,
+        carga_horaria_prevista   DECIMAL(10,2) NOT NULL DEFAULT 0,
+        carga_horaria_realizada  DECIMAL(10,2) NOT NULL DEFAULT 0,
+        observacoes              TEXT NULL,
+        empresa_id               INT NULL DEFAULT 1,
+        INDEX idx_jornadas_etapas_jornada     (jornada_id),
+        INDEX idx_jornadas_etapas_responsavel (responsavel_id),
+        INDEX idx_jornadas_etapas_empresa     (empresa_id)
+      );
+    `);
+    // turma_id: novo (ver "vincular Ações a Turmas reais" na revisão do
+    // Mapa de Desenvolvimento) — permite ligar uma ação a uma turma real em
+    // vez de só lançamento manual em "Portos".
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS acoes_desenvolvimento (
+        id                          INT AUTO_INCREMENT PRIMARY KEY,
+        jornada_id                  INT NOT NULL,
+        etapa_id                    INT NULL,
+        turma_id                    INT NULL,
+        tipo_acao                   VARCHAR(50) NOT NULL DEFAULT 'treinamento',
+        tema                        VARCHAR(200) NOT NULL,
+        subtipo                     VARCHAR(100) NULL,
+        publico_alvo                VARCHAR(255) NULL,
+        obrigatoria                 TINYINT(1) NOT NULL DEFAULT 0,
+        descricao                   TEXT NULL,
+        carga_horaria               DECIMAL(10,2) NOT NULL DEFAULT 0,
+        participantes_previstos     INT NOT NULL DEFAULT 0,
+        participantes_realizados    INT NOT NULL DEFAULT 0,
+        quantidade_turmas_sessoes   INT NOT NULL DEFAULT 0,
+        horas_planejadas            DECIMAL(10,2) NOT NULL DEFAULT 0,
+        horas_realizadas            DECIMAL(10,2) NOT NULL DEFAULT 0,
+        status                      VARCHAR(30) NOT NULL DEFAULT 'planejada',
+        responsavel_id              INT NULL,
+        data_inicio                 DATE NULL,
+        data_fim                    DATE NULL,
+        empresa_id                  INT NULL DEFAULT 1,
+        INDEX idx_acoes_desenvolvimento_jornada     (jornada_id),
+        INDEX idx_acoes_desenvolvimento_etapa       (etapa_id),
+        INDEX idx_acoes_desenvolvimento_turma       (turma_id),
+        INDEX idx_acoes_desenvolvimento_responsavel (responsavel_id),
+        INDEX idx_acoes_desenvolvimento_empresa     (empresa_id)
+      );
+    `);
+    // horas_planejadas: novo (ver "melhoria" na revisão) — coaching só tinha
+    // horas_totais, sem equivalente a "planejado" como em acoes_desenvolvimento.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS coaching_planos (
+        id                       INT AUTO_INCREMENT PRIMARY KEY,
+        jornada_id               INT NULL,
+        etapa_id                 INT NULL,
+        acao_id                  INT NULL,
+        tipo_coaching            VARCHAR(50) NOT NULL DEFAULT 'desenvolvimento',
+        titulo                   VARCHAR(200) NOT NULL,
+        publico_alvo             VARCHAR(255) NULL,
+        objetivo                 TEXT NULL,
+        responsavel_id           INT NULL,
+        participantes_previstos  INT NOT NULL DEFAULT 0,
+        participantes_realizados INT NOT NULL DEFAULT 0,
+        sessoes_previstas        INT NOT NULL DEFAULT 0,
+        sessoes_realizadas       INT NOT NULL DEFAULT 0,
+        carga_horaria_sessao     DECIMAL(10,2) NOT NULL DEFAULT 0,
+        horas_totais             DECIMAL(10,2) NOT NULL DEFAULT 0,
+        horas_planejadas         DECIMAL(10,2) NOT NULL DEFAULT 0,
+        status                   VARCHAR(30) NOT NULL DEFAULT 'planejado',
+        data_inicio              DATE NULL,
+        data_fim                 DATE NULL,
+        empresa_id               INT NULL DEFAULT 1,
+        INDEX idx_coaching_planos_jornada     (jornada_id),
+        INDEX idx_coaching_planos_etapa       (etapa_id),
+        INDEX idx_coaching_planos_acao        (acao_id),
+        INDEX idx_coaching_planos_responsavel (responsavel_id),
+        INDEX idx_coaching_planos_empresa     (empresa_id)
+      );
+    `);
+    // jornada_participantes ("tripulação") — schema idêntico ao .sql original
+    // (database/migrations/2026-04-01_jornada_participantes.sql), só que
+    // agora efetivamente executado. Mantém a FK real com CASCADE já prevista
+    // ali (diferente das outras tabelas do Oceano, que não usam FK).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS jornada_participantes (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        jornada_id INT NOT NULL,
+        nome VARCHAR(255) NOT NULL,
+        matricula VARCHAR(100) NULL,
+        cliente VARCHAR(255) NULL,
+        turma VARCHAR(255) NULL,
+        cargo VARCHAR(255) NULL,
+        supervisor VARCHAR(255) NULL,
+        status_jornada ENUM('nao_iniciado','em_percurso','concluido','em_sustentacao') NOT NULL DEFAULT 'em_percurso',
+        origem_importacao VARCHAR(50) NULL DEFAULT 'manual',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_jornada_participantes_jornada (jornada_id),
+        KEY idx_jornada_participantes_nome (nome),
+        UNIQUE KEY uk_jornada_participante (jornada_id, nome, matricula),
+        CONSTRAINT fk_jornada_participantes_jornada
+          FOREIGN KEY (jornada_id) REFERENCES jornadas_desenvolvimento(id)
+          ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    // Cobre tabelas do Oceano já existentes manualmente, sem essas colunas novas.
+    await ensureColumn("acoes_desenvolvimento", "turma_id", "INT NULL");
+    await ensureColumn("coaching_planos", "horas_planejadas", "DECIMAL(10,2) NOT NULL DEFAULT 0");
+
     // 17. Isolamento por tenant — módulo "Oceano do Desenvolvimento" (jornadas,
     // etapas, ações, coaching, tripulação) e Biblioteca. Essas tabelas nunca
     // tiveram nenhuma coluna de empresa — o dashboard e as telas do Oceano
@@ -397,9 +540,12 @@ async function runMigrations() {
     // sua PRÓPRIA coluna (em vez de depender só do JOIN até a jornada), pois
     // "jornada_id" é opcional em coaching_planos — sem coluna própria, um
     // registro sem jornada vinculada ficaria impossível de isolar por tenant.
-    // Cada tabela é envolvida em try/catch individual: se ainda não existir
-    // neste ambiente (são criadas fora deste arquivo), não derruba o resto
-    // da migração — mesmo princípio de resiliência do adminController.js.
+    // Biblioteca continua fora do escopo desta correção (tem seu próprio .sql
+    // avulso, database/migrations/sprint2_fix_biblioteca.sql, deliberadamente
+    // não mexido aqui — investigação da Biblioteca fica pro final do projeto
+    // de revisão página a página). Cada tabela é envolvida em try/catch
+    // individual: nenhuma falha isolada derruba o resto da migração — mesmo
+    // princípio de resiliência do adminController.js.
     for (const tabela of [
       "jornadas_desenvolvimento",
       "jornadas_etapas",
@@ -526,6 +672,32 @@ async function runMigrations() {
     // um valor real nas preferências do sistema" — essa configuração nunca
     // existiu. Agora existe como campo do tenant (Admin → editar empresa).
     await ensureColumn("empresas", "custo_hora_treinamento", "DECIMAL(8,2) NULL");
+
+    // 20. trilhas_aprendizagem — a tabela-mãe de todo o módulo de Trilhas
+    // (backend/src/controllers/trilhasRelacionaisController.js) nunca teve
+    // um CREATE TABLE em lugar nenhum do repositório: nem aqui, nem em
+    // nenhum .sql de database/migrations/ (que só fazem ALTER TABLE ADD
+    // COLUMN empresa_id, assumindo que ela já existe). Provavelmente foi
+    // criada manualmente em algum momento — daí a página funcionar hoje —
+    // mas qualquer ambiente novo (Comércio/IBM/Dasa) quebraria sem chance de
+    // recriação via código versionado. IF NOT EXISTS é seguro nos dois casos.
+    // status: coluna nova (melhoria) — antes o "status" exibido era só
+    // calculado no frontend pela quantidade de etapas, sem nenhum controle
+    // real; agora é um campo de verdade, editável no editor da trilha.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS trilhas_aprendizagem (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        cliente     VARCHAR(150) NULL,
+        titulo      VARCHAR(200) NOT NULL,
+        descricao   TEXT NULL,
+        status      VARCHAR(30) NOT NULL DEFAULT 'estruturacao',
+        empresa_id  INT NULL DEFAULT 1,
+        criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_trilhas_empresa (empresa_id)
+      );
+    `);
+    // Cobre o caso da tabela já existir (criada manualmente, sem "status").
+    await ensureColumn("trilhas_aprendizagem", "status", "VARCHAR(30) NOT NULL DEFAULT 'estruturacao'");
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
