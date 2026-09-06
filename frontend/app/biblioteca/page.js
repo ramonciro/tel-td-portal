@@ -31,7 +31,7 @@ function statusStyle(status) {
 /* ═══════════════════════════════════════════════
    CARD DE MATERIAL
 ═══════════════════════════════════════════════ */
-function MaterialCard({ item, podeEditar, onEditar, onExcluir }) {
+function MaterialCard({ item, podeEditar, podeExcluir, confirmandoExclusao, onEditar, onIniciarExclusao, onConfirmarExclusao, onCancelarExclusao }) {
   return (
     <div style={card}>
       <div style={cardTop}>
@@ -55,19 +55,24 @@ function MaterialCard({ item, podeEditar, onEditar, onExcluir }) {
             {item.descricao.length > 140 ? item.descricao.slice(0,140) + "…" : item.descricao}
           </p>
         )}
-        <div style={cardAcoes}>
-          {item.link_arquivo && (
-            <a href={item.link_arquivo} target="_blank" rel="noreferrer" style={btnAbrir}>
-              Abrir material ↗
-            </a>
-          )}
-          {podeEditar && (
-            <>
-              <button onClick={onEditar}  style={btnEdit}>Editar</button>
-              <button onClick={onExcluir} style={btnDel}>Excluir</button>
-            </>
-          )}
-        </div>
+
+        {confirmandoExclusao ? (
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:10, padding:"8px 10px" }}>
+            <span style={{ fontSize:12, color:"#9a3412", fontWeight:600, flex:"1 1 auto" }}>Confirma excluir este material?</span>
+            <button onClick={onConfirmarExclusao} style={{ ...btnDelStyle, padding:"6px 12px" }}>Excluir</button>
+            <button onClick={onCancelarExclusao}  style={{ ...btnEditStyle, padding:"6px 12px" }}>Cancelar</button>
+          </div>
+        ) : (
+          <div style={cardAcoes}>
+            {item.link_arquivo && (
+              <a href={item.link_arquivo} target="_blank" rel="noreferrer" style={btnAbrir}>
+                Abrir material ↗
+              </a>
+            )}
+            {podeEditar  && <button onClick={onEditar}         style={btnEdit}>Editar</button>}
+            {podeExcluir && <button onClick={onIniciarExclusao} style={btnDel}>Excluir</button>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -94,7 +99,8 @@ function ModalMaterial({ modo, item, uploadLink, onSalvar, onFechar }) {
     try {
       setSalvando(true); setErro("");
       if (!form.titulo.trim()) throw new Error("Título é obrigatório.");
-      const payload = { ...form, titulo: form.titulo.trim() };
+      if (!form.cliente.trim()) throw new Error("Cliente / operação é obrigatório.");
+      const payload = { ...form, titulo: form.titulo.trim(), cliente: form.cliente.trim() };
       if (modo === "editar") {
         await apiFetch(`/biblioteca/${item.id}`, { method:"PUT", body: JSON.stringify(payload) });
       } else {
@@ -130,7 +136,7 @@ function ModalMaterial({ modo, item, uploadLink, onSalvar, onFechar }) {
               {STATUS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
             </select>
           </MF>
-          <MF label="Cliente / operação">
+          <MF label="Cliente / operação *">
             <input value={form.cliente} onChange={campo("cliente")} style={mInput} placeholder="Operação ou GLOBAL" />
           </MF>
           <MF label="Categoria">
@@ -235,7 +241,12 @@ export default function BibliotecaPage() {
   const [excluindo,   setExcluindo]   = useState(null);
 
   const usuario     = getStoredUser();
-  const podeEditar  = ["coordenador","supervisor"].includes(String(usuario?.perfil || "").toLowerCase());
+  const perfil      = String(usuario?.perfil || "").toLowerCase();
+  // Precisa espelhar exatamente as roles liberadas no backend
+  // (backend/src/index.js, rotas /api/biblioteca) — senão o botão aparece
+  // na tela mas a ação falha com erro de permissão.
+  const podeEditar  = ["coordenador","supervisor"].includes(perfil); // criar/editar
+  const podeExcluir = perfil === "coordenador";                      // excluir
 
   useEffect(() => { carregar(); }, []);
 
@@ -343,21 +354,14 @@ export default function BibliotecaPage() {
         <div style={cardsGrid}>
           {listaFiltrada.map((b) => (
             <MaterialCard
-              key={b.id} item={b} podeEditar={podeEditar}
+              key={b.id} item={b} podeEditar={podeEditar} podeExcluir={podeExcluir}
+              confirmandoExclusao={excluindo === b.id}
               onEditar={() => { setUploadLink(""); setModal({ modo:"editar", item: b }); }}
-              onExcluir={() => { if (excluindo === b.id) excluir(b.id); else setExcluindo(b.id); }}
+              onIniciarExclusao={() => setExcluindo(b.id)}
+              onConfirmarExclusao={() => excluir(b.id)}
+              onCancelarExclusao={() => setExcluindo(null)}
             />
           ))}
-        </div>
-      )}
-
-      {excluindo && (
-        <div style={confirmBanner}>
-          <span style={{ fontSize:13, color:"#334155", fontWeight:600 }}>
-            Confirma exclusão de "{biblioteca.find((b) => b.id === excluindo)?.titulo}"?
-          </span>
-          <button style={{ ...btnDelStyle, padding:"6px 14px" }} onClick={() => excluir(excluindo)}>Excluir</button>
-          <button style={{ ...btnEditStyle, padding:"6px 12px" }} onClick={() => setExcluindo(null)}>Cancelar</button>
         </div>
       )}
 
@@ -403,7 +407,6 @@ const linkBox    = { marginTop:10, background:"#eff6ff", border:"1px solid #bfdb
 const btnUpload  = { height:36, padding:"0 16px", borderRadius:10, border:0, background:colors.primary, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" };
 const loadingBox = { background:"#fff", border:"1px solid #e9eef4", borderRadius:14, padding:16, color:"#64748b" };
 const emptyState = { textAlign:"center", padding:"40px 16px", border:"1px dashed #e2e8f0", borderRadius:14, background:"#fafafa" };
-const confirmBanner = { display:"flex", alignItems:"center", gap:10, background:colors.warningLight, border:`1px solid #fed7aa`, borderRadius:12, padding:"10px 14px", marginTop:8, flexWrap:"wrap" };
 const overlay    = { position:"fixed", inset:0, background:"rgba(0,0,0,.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:16 };
 const modal      = { background:"#fff", borderRadius:20, padding:24, width:"100%", maxWidth:580, maxHeight:"90vh", overflowY:"auto", boxShadow:"0 24px 60px rgba(0,0,0,.18)" };
 const mGrid      = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 };
