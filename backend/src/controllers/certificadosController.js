@@ -82,11 +82,11 @@ async function calcularElegibilidade(treinamento_id, nome, empresaId) {
   if (freq === null) {
     const [paRows] = await pool.query(
       `SELECT
-         COUNT(*)                                                       AS total,
-         SUM(CASE WHEN LOWER(TRIM(pa.presente)) = '1' OR LOWER(TRIM(pa.presente)) = 'true' THEN 1 ELSE 0 END) AS presentes
+         COUNT(*)                                                          AS total,
+         SUM(CASE WHEN LOWER(TRIM(pa.status)) = 'presente' THEN 1 ELSE 0 END) AS presentes
        FROM presenca_aulas pa
        JOIN turma_aulas ta ON ta.id = pa.turma_aula_id
-       WHERE ta.treinamento_id = ? AND pa.participante_nome = ?`,
+       WHERE ta.treinamento_id = ? AND pa.treinando_nome = ?`,
       [treinamento_id, nome]
     );
     const paTotal    = Number(paRows[0]?.total    || 0);
