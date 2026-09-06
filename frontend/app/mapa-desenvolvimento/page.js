@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
-import { apiFetch } from "../../services/api";
+import { apiFetch, apiDownload } from "../../services/api";
 import {
   formatDateBR,
   toDateInputLocal,
@@ -504,7 +504,21 @@ const actionInitial = {
   participantes_realizados: "",
   horas_planejadas: "",
   horas_realizadas: "",
+  subtipo: "",
+  turma_id: "",
 };
+
+// Subdivisões usadas para comprovação de horas por norma (ex.: MPT), a
+// partir das jornadas descritas no projeto do Portal T&D. Ramon pode pedir
+// para ajustar esta lista conforme a necessidade real de cada cliente.
+const SUBTIPOS_ACAO = [
+  "Prevenção ao Assédio Moral",
+  "Coaching de Coordenação e Gerência",
+  "Compliance e Ética",
+  "Desenvolvimento de Liderança",
+  "Treinamento Técnico",
+  "Outro",
+];
 
 const coachingInitial = {
   id: null,
@@ -521,6 +535,7 @@ const coachingInitial = {
   sessoes_realizadas: "",
   carga_horaria_sessao: "",
   horas_totais: "",
+  horas_planejadas: "",
   status: "planejado",
   data_inicio: "",
   data_fim: "",
@@ -561,9 +576,11 @@ export default function MapaDesenvolvimentoPage() {
   const [coachings, setCoachings] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [participantesJornada, setParticipantesJornada] = useState([]);
+  const [turmas, setTurmas] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exportando, setExportando] = useState(false);
   const [erro, setErro] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -571,6 +588,7 @@ export default function MapaDesenvolvimentoPage() {
     jornada_id: "",
     status: "",
     busca: "",
+    cliente: "",
   });
 
   const [jornadaForm, setJornadaForm] = useState(journeyInitial);
@@ -599,31 +617,76 @@ export default function MapaDesenvolvimentoPage() {
     setNotice("");
   }, [activeTab]);
 
+  // Bugfix: antes cada fetch tinha um .catch(() => []) individual, então uma
+  // falha real do backend (ex.: tabela ausente, 500, tenant sem permissão)
+  // era silenciosamente convertida em "lista vazia" — o usuário via o mapa
+  // em branco sem nenhum aviso do que deu errado. Agora usamos
+  // Promise.allSettled e reportamos quais seções falharam.
+  const FONTES_MAPA = [
+    { key: "jornadas", label: "jornadas", path: "/jornadas-desenvolvimento", setter: setJornadas },
+    { key: "acoes", label: "ações", path: "/acoes-desenvolvimento", setter: setAcoes },
+    { key: "coachings", label: "coaching", path: "/coaching-planos", setter: setCoachings },
+    // Endpoint enxuto (id + nome) em vez de /api/usuarios — evita mandar
+    // para o navegador a lista completa de usuários com dados sensíveis
+    // (inclusive senha em hash) só para preencher um <select>.
+    { key: "usuarios", label: "usuários", path: "/acoes-desenvolvimento/responsaveis-disponiveis", setter: setUsuarios },
+    { key: "participantes", label: "tripulação", path: "/jornada-participantes", setter: setParticipantesJornada },
+    // Endpoint dedicado do Oceano (não /api/treinamentos) para não depender
+    // das permissões da página de Turmas — aqui basta o acesso ao Oceano do
+    // Desenvolvimento (authorizeOceanAccess), já garantido pelo restante da
+    // página, e o payload é enxuto (só os campos usados no pré-preenchimento).
+    { key: "turmas", label: "turmas", path: "/acoes-desenvolvimento/turmas-disponiveis", setter: setTurmas },
+  ];
+
   async function loadAll() {
     setLoading(true);
     setErro("");
 
     try {
-      const [jornadasData, acoesData, coachingsData, usuariosData, participantesData] =
-        await Promise.all([
-          apiFetch("/jornadas-desenvolvimento").catch(() => []),
-          apiFetch("/acoes-desenvolvimento").catch(() => []),
-          apiFetch("/coaching-planos").catch(() => []),
-          apiFetch("/usuarios").catch(() => []),
-          apiFetch("/jornada-participantes").catch(() => []),
-        ]);
+      const resultados = await Promise.allSettled(
+        FONTES_MAPA.map((fonte) => apiFetch(fonte.path))
+      );
 
-      setJornadas(Array.isArray(jornadasData) ? jornadasData : []);
-      setAcoes(Array.isArray(acoesData) ? acoesData : []);
-      setCoachings(Array.isArray(coachingsData) ? coachingsData : []);
-      setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
-      setParticipantesJornada(Array.isArray(participantesData) ? participantesData : []);
+      const falhas = [];
+      resultados.forEach((resultado, index) => {
+        const fonte = FONTES_MAPA[index];
+        if (resultado.status === "fulfilled") {
+          const dados = resultado.value;
+          fonte.setter(Array.isArray(dados) ? dados : []);
+        } else {
+          fonte.setter([]);
+          falhas.push(
+            `${fonte.label} (${extrairMensagemErro(resultado.reason, "erro desconhecido")})`
+          );
+        }
+      });
+
+      if (falhas.length) {
+        setErro(`Não foi possível carregar: ${falhas.join("; ")}.`);
+      }
     } catch (error) {
       setErro(
         extrairMensagemErro(error, "Erro ao carregar o Mapa de Desenvolvimento.")
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleExportarEvidencias() {
+    setExportando(true);
+    setErro("");
+    try {
+      await apiDownload(
+        "/acoes-desenvolvimento/exportar",
+        "evidencia-mapa-desenvolvimento.xlsx"
+      );
+    } catch (error) {
+      setErro(
+        extrairMensagemErro(error, "Erro ao exportar evidências do Mapa de Desenvolvimento.")
+      );
+    } finally {
+      setExportando(false);
     }
   }
 
@@ -816,6 +879,8 @@ export default function MapaDesenvolvimentoPage() {
         participantes_realizados: Number(acaoForm.participantes_realizados || 0),
         horas_planejadas: Number(acaoForm.horas_planejadas || 0),
         horas_realizadas: Number(acaoForm.horas_realizadas || 0),
+        subtipo: acaoForm.subtipo || null,
+        turma_id: acaoForm.turma_id ? Number(acaoForm.turma_id) : null,
       };
 
       if (acaoForm.id) {
@@ -874,6 +939,7 @@ export default function MapaDesenvolvimentoPage() {
         sessoes_realizadas: Number(coachingForm.sessoes_realizadas || 0),
         carga_horaria_sessao: Number(coachingForm.carga_horaria_sessao || 0),
         horas_totais: Number(coachingForm.horas_totais || 0),
+        horas_planejadas: Number(coachingForm.horas_planejadas || 0),
         status: coachingForm.status || "planejado",
         data_inicio: coachingForm.data_inicio || null,
         data_fim: coachingForm.data_fim || null,
@@ -937,6 +1003,21 @@ export default function MapaDesenvolvimentoPage() {
     setActiveTab("jornadas");
   }
 
+  // Pré-preenche (sem travar) horas e participantes realizados a partir dos
+  // dados reais de uma turma já executada — usuário continua podendo editar
+  // os valores depois de selecionar a turma.
+  function handleSelecionarTurma(turmaIdValue) {
+    const turma = turmas.find((t) => String(t.id) === String(turmaIdValue));
+    setAcaoForm((prev) => ({
+      ...prev,
+      turma_id: turmaIdValue,
+      horas_realizadas: turma ? String(turma.carga_horaria || 0) : prev.horas_realizadas,
+      participantes_realizados: turma
+        ? String(turma.participantes_presentes || turma.participantes || 0)
+        : prev.participantes_realizados,
+    }));
+  }
+
   function editAcao(item) {
     setAcaoForm({
       id: item.id,
@@ -953,6 +1034,8 @@ export default function MapaDesenvolvimentoPage() {
       participantes_realizados: String(item.participantes_realizados || ""),
       horas_planejadas: String(item.horas_planejadas || ""),
       horas_realizadas: String(item.horas_realizadas || ""),
+      subtipo: item.subtipo || "",
+      turma_id: item.turma_id ? String(item.turma_id) : "",
     });
     setActiveTab("acoes");
   }
@@ -973,6 +1056,7 @@ export default function MapaDesenvolvimentoPage() {
       sessoes_realizadas: String(item.sessoes_realizadas || ""),
       carga_horaria_sessao: String(item.carga_horaria_sessao || ""),
       horas_totais: String(item.horas_totais || ""),
+      horas_planejadas: String(item.horas_planejadas || ""),
       status: canonicalStatus(item.status) || "planejado",
       data_inicio: toDateInputLocal(item.data_inicio),
       data_fim: toDateInputLocal(item.data_fim),
@@ -1050,6 +1134,7 @@ export default function MapaDesenvolvimentoPage() {
         ...acao,
         tema: acao.tema || acao.titulo,
         jornada_nome: jornada?.nome || jornada?.titulo || "Sem jornada",
+        cliente: jornada?.cliente || "",
         responsavel_nome:
           usuariosMap[String(acao.responsavel_id)] || "Não definido",
         prazo_info: getPrazoInfo(acao),
@@ -1068,6 +1153,7 @@ export default function MapaDesenvolvimentoPage() {
         ...item,
         jornada_nome: jornada?.nome || jornada?.titulo || "Independente",
         acao_nome: acao?.tema || acao?.titulo || "Sem ação vinculada",
+        cliente: jornada?.cliente || "",
         responsavel_nome:
           usuariosMap[String(item.responsavel_id)] || item.responsavel || "Não definido",
         prazo_info: getPrazoInfo(item),
@@ -1076,6 +1162,13 @@ export default function MapaDesenvolvimentoPage() {
       };
     });
   }, [coachings, jornadas, acoes, usuariosMap]);
+
+  const clientesDisponiveis = useMemo(() => {
+    const nomes = new Set(
+      jornadas.map((item) => String(item.cliente || "").trim()).filter(Boolean)
+    );
+    return Array.from(nomes).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [jornadas]);
 
   const filteredJornadas = useMemo(() => {
     return jornadasEnriquecidas.filter((item) => {
@@ -1088,8 +1181,10 @@ export default function MapaDesenvolvimentoPage() {
         normalize(
           [item.nome, item.objetivo, item.publico_macro, item.cliente].join(" ")
         ).includes(normalize(filters.busca));
+      const matchCliente =
+        !filters.cliente || String(item.cliente || "").trim() === filters.cliente;
 
-      return matchJornada && matchStatus && matchBusca;
+      return matchJornada && matchStatus && matchBusca && matchCliente;
     });
   }, [jornadasEnriquecidas, filters]);
 
@@ -1109,8 +1204,10 @@ export default function MapaDesenvolvimentoPage() {
             item.responsavel_nome,
           ].join(" ")
         ).includes(normalize(filters.busca));
+      const matchCliente =
+        !filters.cliente || String(item.cliente || "").trim() === filters.cliente;
 
-      return matchJornada && matchStatus && matchBusca;
+      return matchJornada && matchStatus && matchBusca && matchCliente;
     });
   }, [acoesEnriquecidas, filters]);
 
@@ -1133,8 +1230,10 @@ export default function MapaDesenvolvimentoPage() {
             item.responsavel_nome,
           ].join(" ")
         ).includes(normalize(filters.busca));
+      const matchCliente =
+        !filters.cliente || String(item.cliente || "").trim() === filters.cliente;
 
-      return matchJornada && matchStatus && matchBusca;
+      return matchJornada && matchStatus && matchBusca && matchCliente;
     });
   }, [coachingsEnriquecidos, filters]);
 
@@ -1170,6 +1269,29 @@ export default function MapaDesenvolvimentoPage() {
       };
     });
   }, [filteredJornadas, filteredAcoes, filteredCoachings]);
+
+  // Visão gerencial pedida no projeto: jornadas agrupadas por cliente
+  // (SAFRA, CREA, DASA etc.), não uma lista plana. Clientes com jornada vêm
+  // ordenados alfabeticamente; jornadas sem cliente informado ficam num
+  // grupo à parte, ao final.
+  const jornadasFluxoAgrupadas = useMemo(() => {
+    const grupos = new Map();
+    jornadasFluxo.forEach((jornada) => {
+      const cliente = String(jornada.cliente || "").trim();
+      const chave = cliente || "__sem_cliente__";
+      if (!grupos.has(chave)) {
+        grupos.set(chave, { cliente: cliente || "Sem cliente definido", itens: [] });
+      }
+      grupos.get(chave).itens.push(jornada);
+    });
+
+    const comCliente = Array.from(grupos.values())
+      .filter((g) => g.cliente !== "Sem cliente definido")
+      .sort((a, b) => a.cliente.localeCompare(b.cliente, "pt-BR"));
+    const semCliente = grupos.get("__sem_cliente__");
+
+    return semCliente ? [...comCliente, semCliente] : comCliente;
+  }, [jornadasFluxo]);
 
   const kpis = useMemo(() => {
     return {
@@ -1290,6 +1412,16 @@ export default function MapaDesenvolvimentoPage() {
         <SectionCard
           title="🗺️ Cartografia do Oceano"
           subtitle="Leitura macro do território de desenvolvimento e do volume em curso."
+          action={
+            <button
+              type="button"
+              style={buttonSecondaryStyle()}
+              onClick={handleExportarEvidencias}
+              disabled={exportando}
+            >
+              {exportando ? "Exportando..." : "⬇ Exportar evidência (MPT)"}
+            </button>
+          }
         >
           <div style={kpiGrid}>
             <StatCard title="Rios ativos" value={fmtNumber(kpis.jornadas)} accent="#2563eb" />
@@ -1334,6 +1466,24 @@ export default function MapaDesenvolvimentoPage() {
                 {jornadas.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.nome || item.titulo}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={labelStyle()}>
+              Cliente
+              <select
+                value={filters.cliente}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, cliente: e.target.value }))
+                }
+                style={inputStyle()}
+              >
+                <option value="">Todos</option>
+                {clientesDisponiveis.map((nome) => (
+                  <option key={nome} value={nome}>
+                    {nome}
                   </option>
                 ))}
               </select>
@@ -1411,77 +1561,86 @@ export default function MapaDesenvolvimentoPage() {
               ) : jornadasFluxo.length === 0 ? (
                 emptyCard("Nenhuma jornada encontrada para os filtros aplicados.")
               ) : (
-                <div style={{ display: "grid", gap: 16 }}>
-                  {jornadasFluxo.map((jornada) => (
-                    <div key={jornada.id} style={journeyFlowCard}>
-                      <div style={journeyFlowHeader}>
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                              alignItems: "center",
-                            }}
-                          >
-                            <span style={badgeStyle(jornada.status)}>
-                              {displayStatus(jornada.status)}
-                            </span>
-                            <span style={attentionBadge(jornada.attention_info.level)}>
-                              {jornada.attention_info.label}
-                            </span>
-                            <span style={prazoBadge(jornada.prazo_info.tone)}>
-                              {jornada.prazo_info.label}
-                            </span>
-                          </div>
-                          <div style={journeyFlowTitle}>{jornada.nome}</div>
-                          <div style={journeyFlowMeta}>
-                            Objetivo: {jornada.objetivo || "Não informado"}
-                          </div>
-                          <div style={journeyFlowMeta}>
-                            Público: {jornada.publico_macro || "Não informado"} • Cliente:{" "}
-                            {jornada.cliente || "Não informado"}
-                          </div>
-                        </div>
-
-                        <div style={journeyFlowSummary}>
-                          <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
-                          <MetricBox label="Sustentações" value={fmtNumber(jornada.coachingsDaJornada.length)} />
-                          <MetricBox label="Tripulação" value={fmtNumber(jornada.total_tripulantes || 0)} />
-                          <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
-                          <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
-                        </div>
+                <div style={{ display: "grid", gap: 24 }}>
+                  {jornadasFluxoAgrupadas.map((grupo) => (
+                    <div key={grupo.cliente} style={{ display: "grid", gap: 12 }}>
+                      <div style={clienteGroupHeader}>
+                        {grupo.cliente} <span style={clienteGroupCount}>({grupo.itens.length})</span>
                       </div>
+                      <div style={{ display: "grid", gap: 16 }}>
+                        {grupo.itens.map((jornada) => (
+                          <div key={jornada.id} style={journeyFlowCard}>
+                            <div style={journeyFlowHeader}>
+                              <div style={{ display: "grid", gap: 8 }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: 8,
+                                    flexWrap: "wrap",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <span style={badgeStyle(jornada.status)}>
+                                    {displayStatus(jornada.status)}
+                                  </span>
+                                  <span style={attentionBadge(jornada.attention_info.level)}>
+                                    {jornada.attention_info.label}
+                                  </span>
+                                  <span style={prazoBadge(jornada.prazo_info.tone)}>
+                                    {jornada.prazo_info.label}
+                                  </span>
+                                </div>
+                                <div style={journeyFlowTitle}>{jornada.nome}</div>
+                                <div style={journeyFlowMeta}>
+                                  Objetivo: {jornada.objetivo || "Não informado"}
+                                </div>
+                                <div style={journeyFlowMeta}>
+                                  Público: {jornada.publico_macro || "Não informado"} • Cliente:{" "}
+                                  {jornada.cliente || "Não informado"}
+                                </div>
+                              </div>
 
-                      <div style={journeyProgressBarWrap}>
-                        <div style={journeyProgressBarTrack}>
-                          <div
-                            style={{
-                              ...journeyProgressBarFill,
-                              width: `${Math.max(jornada.progresso, 6)}%`,
-                            }}
-                          />
-                        </div>
-                        <div style={journeyFlowMeta}>
-                          Próximo trecho: {jornada.proximoPasso}
-                        </div>
-                      </div>
+                              <div style={journeyFlowSummary}>
+                                <MetricBox label="Portos" value={fmtNumber(jornada.acoesDaJornada.length)} />
+                                <MetricBox label="Sustentações" value={fmtNumber(jornada.coachingsDaJornada.length)} />
+                                <MetricBox label="Tripulação" value={fmtNumber(jornada.total_tripulantes || 0)} />
+                                <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
+                                <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
+                              </div>
+                            </div>
 
-                      <div style={buttonRow}>
-                        <button
-                          type="button"
-                          style={buttonSecondaryStyle()}
-                          onClick={() => editJornada(jornada)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          style={buttonDangerStyle()}
-                          onClick={() => removeRegistro("jornada", jornada.id)}
-                        >
-                          Excluir
-                        </button>
+                            <div style={journeyProgressBarWrap}>
+                              <div style={journeyProgressBarTrack}>
+                                <div
+                                  style={{
+                                    ...journeyProgressBarFill,
+                                    width: `${Math.max(jornada.progresso, 6)}%`,
+                                  }}
+                                />
+                              </div>
+                              <div style={journeyFlowMeta}>
+                                Próximo trecho: {jornada.proximoPasso}
+                              </div>
+                            </div>
+
+                            <div style={buttonRow}>
+                              <button
+                                type="button"
+                                style={buttonSecondaryStyle()}
+                                onClick={() => editJornada(jornada)}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                style={buttonDangerStyle()}
+                                onClick={() => removeRegistro("jornada", jornada.id)}
+                              >
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -1506,6 +1665,7 @@ export default function MapaDesenvolvimentoPage() {
                           <div style={execTitle}>{acao.tema}</div>
                           <div style={execSubtitle}>
                             {acao.jornada_nome} • {acao.responsavel_nome}
+                            {acao.subtipo ? ` • ${acao.subtipo}` : ""}
                           </div>
                         </div>
 
@@ -2083,6 +2243,40 @@ export default function MapaDesenvolvimentoPage() {
                     </label>
 
                     <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Subdivisão
+                      <select
+                        value={acaoForm.subtipo}
+                        onChange={(e) =>
+                          setAcaoForm((prev) => ({ ...prev, subtipo: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="">Não classificada</option>
+                        {SUBTIPOS_ACAO.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Vincular turma (opcional)
+                      <select
+                        value={acaoForm.turma_id}
+                        onChange={(e) => handleSelecionarTurma(e.target.value)}
+                        style={compactInputStyle()}
+                      >
+                        <option value="">Nenhuma</option>
+                        {turmas.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.tema} • {item.cliente}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Responsável
                       <select
                         value={acaoForm.responsavel_id}
@@ -2301,6 +2495,7 @@ export default function MapaDesenvolvimentoPage() {
                           <div style={execTitle}>{acao.tema}</div>
                           <div style={execSubtitle}>
                             {acao.jornada_nome} • {acao.responsavel_nome}
+                            {acao.subtipo ? ` • ${acao.subtipo}` : ""}
                           </div>
                         </div>
 
@@ -2617,7 +2812,24 @@ export default function MapaDesenvolvimentoPage() {
                     </label>
 
                     <label style={{ ...labelStyle(), ...fieldSpan.md }}>
-                      Horas totais
+                      Horas planejadas
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={coachingForm.horas_planejadas}
+                        onChange={(e) =>
+                          setCoachingForm((prev) => ({
+                            ...prev,
+                            horas_planejadas: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Horas realizadas
                       <input
                         type="number"
                         step="0.5"
@@ -2957,6 +3169,23 @@ const journeyGuideText = {
   fontSize: 13,
   color: "#475569",
   lineHeight: 1.5,
+};
+
+const clienteGroupHeader = {
+  fontSize: 14,
+  fontWeight: 700,
+  color: "#0f172a",
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+  paddingBottom: 6,
+  borderBottom: "2px solid #dbeafe",
+};
+
+const clienteGroupCount = {
+  fontWeight: 500,
+  color: "#64748b",
+  textTransform: "none",
+  letterSpacing: 0,
 };
 
 const journeyFlowCard = {
