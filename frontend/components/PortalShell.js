@@ -19,6 +19,7 @@ const menuItems = [
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "🎒", roles: ["instrutor", "treinando"] },
   { href: "/certificados",  label: "Certificados",           icon: "🏆", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/indicadores",  label: "Indicadores",             icon: "📊", roles: ["coordenador", "supervisor", "superintendente"] },
+  { href: "/capacidade",   label: "CH por Instrutor",        icon: "⏱️", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/biblioteca",    label: "Biblioteca",             icon: "📚", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/clientes",      label: "Clientes",               icon: "🏢", roles: ["coordenador", "supervisor"] },
   { href: "/usuarios",      label: "Gestão de Usuários",     icon: "👥", roles: ["coordenador", "supervisor"] },
