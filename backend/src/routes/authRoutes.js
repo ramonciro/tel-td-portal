@@ -21,6 +21,39 @@ const bcrypt  = require("bcryptjs");
 const crypto  = require("crypto");
 const { signToken, authRequired } = require("../middlewares/auth");
 
+/* ─── RATE LIMITING (login) ─────────────────────────────────────────────── */
+// Melhoria: antes não havia nenhum limite de tentativas — dava pra tentar
+// adivinhar a senha de um e-mail conhecido indefinidamente. Bloqueio simples
+// em memória por e-mail (não substitui um rate-limit por IP/infra, mas cobre
+// o caso mais comum). Limitação conhecida: reseta a cada deploy/restart e
+// não é compartilhado entre múltiplas instâncias — aceitável pro volume
+// deste portal; se isso crescer, migrar pra Redis ou uma tabela no banco.
+const tentativasLogin = new Map(); // email normalizado -> { count, bloqueadoAte }
+const LOGIN_MAX_TENTATIVAS = 5;
+const LOGIN_BLOQUEIO_MS = 15 * 60 * 1000; // 15 minutos
+
+function minutosBloqueioRestantes(emailNorm) {
+  const registro = tentativasLogin.get(emailNorm);
+  if (registro?.bloqueadoAte && registro.bloqueadoAte > Date.now()) {
+    return Math.ceil((registro.bloqueadoAte - Date.now()) / 60000);
+  }
+  return 0;
+}
+
+function registrarTentativaFalha(emailNorm) {
+  const registro = tentativasLogin.get(emailNorm) || { count: 0, bloqueadoAte: 0 };
+  registro.count += 1;
+  if (registro.count >= LOGIN_MAX_TENTATIVAS) {
+    registro.bloqueadoAte = Date.now() + LOGIN_BLOQUEIO_MS;
+    registro.count = 0;
+  }
+  tentativasLogin.set(emailNorm, registro);
+}
+
+function limparTentativas(emailNorm) {
+  tentativasLogin.delete(emailNorm);
+}
+
 /* ─── LOGIN ─────────────────────────────────────────────────────────────── */
 router.post("/login", async (req, res) => {
   try {
@@ -28,6 +61,15 @@ router.post("/login", async (req, res) => {
 
     if (!email || !senha) {
       return res.status(400).json({ message: "Informe e-mail e senha" });
+    }
+
+    const emailNorm = String(email).trim().toLowerCase();
+
+    const bloqueioRestante = minutosBloqueioRestantes(emailNorm);
+    if (bloqueioRestante > 0) {
+      return res.status(429).json({
+        message: `Muitas tentativas de login. Tente novamente em ${bloqueioRestante} minuto(s).`,
+      });
     }
 
     // SELECT * — resiliente a migrations pendentes (empresa_id, super_admin
@@ -38,11 +80,15 @@ router.post("/login", async (req, res) => {
     // abaixo já usa LOWER(email) — login ficou de fora até agora.
     const [rows] = await pool.query(
       "SELECT * FROM usuarios WHERE LOWER(email) = LOWER(?) LIMIT 1",
-      [String(email).trim()]
+      [emailNorm]
     );
 
+    // Melhoria: mensagem unificada pra "usuário não encontrado" e "senha
+    // incorreta" — antes eram mensagens distintas, o que ajuda quem tenta
+    // adivinhar e-mails cadastrados por tentativa e erro.
     if (!rows.length) {
-      return res.status(401).json({ message: "Usuário não encontrado" });
+      registrarTentativaFalha(emailNorm);
+      return res.status(401).json({ message: "E-mail ou senha inválidos" });
     }
 
     const user = rows[0];
@@ -67,8 +113,11 @@ router.post("/login", async (req, res) => {
     }
 
     if (!senhaValida) {
-      return res.status(401).json({ message: "Senha incorreta" });
+      registrarTentativaFalha(emailNorm);
+      return res.status(401).json({ message: "E-mail ou senha inválidos" });
     }
+
+    limparTentativas(emailNorm);
 
     // Sprint 4: super_admin flag — se coluna não existir, cai no default 0
     const isSuperAdmin = Number(user.super_admin || 0) === 1;
