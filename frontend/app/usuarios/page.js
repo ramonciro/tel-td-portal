@@ -332,7 +332,7 @@ function ModalUsuario({ modo, usuario, clientes, onSalvar, onFechar }) {
               <option value="0">Não</option>
             </select>
           </MField>
-          <MField label="Oceano do Desenvolvimento" full>
+          <MField label="Mapa de Desenvolvimento" full>
             <select value={form.pode_acessar_oceano_desenvolvimento} onChange={campo("pode_acessar_oceano_desenvolvimento")} style={mInput}>
               <option value="0">Bloqueado</option>
               <option value="1">Liberado</option>
@@ -502,7 +502,7 @@ export default function UsuariosPage() {
         <StatCard title="Ativos"   value={fmt(kpis.ativos)}  subtitle="com acesso liberado"  accent={colors.success} />
         <StatCard title="Inativos" value={fmt(kpis.inativos)}
           subtitle="sem acesso" accent={kpis.inativos > 0 ? colors.danger : colors.neutral} />
-        <StatCard title="Oceano"   value={fmt(kpis.oceano)}  subtitle="acesso liberado"      accent={chart.cyan}    />
+        <StatCard title="Mapa de Desenvolvimento" value={fmt(kpis.oceano)}  subtitle="acesso liberado"      accent={chart.cyan}    />
       </div>
 
       {/* ── Barra de distribuição ── */}
@@ -564,7 +564,7 @@ export default function UsuariosPage() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Usuário","Perfil","Operações","Vínculo","Status","Oceano",""].map((h) => (
+                  {["Usuário","Perfil","Operações","Vínculo","Status","Mapa",""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -634,7 +634,7 @@ export default function UsuariosPage() {
                           />
                         </td>
 
-                        {/* Oceano */}
+                        {/* Mapa de Desenvolvimento */}
                         <td style={td}>
                           <span style={{
                             ...badgeBase,
