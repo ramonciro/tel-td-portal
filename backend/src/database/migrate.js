@@ -390,6 +390,63 @@ async function runMigrations() {
       WHERE pa.empresa_id IS NULL AND t.empresa_id IS NOT NULL
     `);
 
+    // 17. Isolamento por tenant — módulo "Oceano do Desenvolvimento" (jornadas,
+    // etapas, ações, coaching, tripulação) e Biblioteca. Essas tabelas nunca
+    // tiveram nenhuma coluna de empresa — o dashboard e as telas do Oceano
+    // somavam/exibiam dado de todas as empresas juntas. Cada tabela recebe
+    // sua PRÓPRIA coluna (em vez de depender só do JOIN até a jornada), pois
+    // "jornada_id" é opcional em coaching_planos — sem coluna própria, um
+    // registro sem jornada vinculada ficaria impossível de isolar por tenant.
+    // Cada tabela é envolvida em try/catch individual: se ainda não existir
+    // neste ambiente (são criadas fora deste arquivo), não derruba o resto
+    // da migração — mesmo princípio de resiliência do adminController.js.
+    for (const tabela of [
+      "jornadas_desenvolvimento",
+      "jornadas_etapas",
+      "coaching_planos",
+      "acoes_desenvolvimento",
+      "jornada_participantes",
+      "biblioteca",
+    ]) {
+      try {
+        await ensureColumn(tabela, "empresa_id", "INT NULL");
+      } catch (err) {
+        console.warn(`  ↳ não foi possível adicionar empresa_id em ${tabela}: ${err.message}`);
+      }
+    }
+
+    // Backfill — etapas/ações/coaching/tripulação herdam o empresa_id da
+    // jornada pai, para os poucos registros que já tiverem uma jornada com
+    // empresa atribuída (idempotente: só atualiza onde ainda está NULL).
+    try {
+      await pool.query(`
+        UPDATE jornadas_etapas je
+        JOIN jornadas_desenvolvimento jd ON jd.id = je.jornada_id
+        SET je.empresa_id = jd.empresa_id
+        WHERE je.empresa_id IS NULL AND jd.empresa_id IS NOT NULL
+      `);
+      await pool.query(`
+        UPDATE acoes_desenvolvimento ad
+        JOIN jornadas_desenvolvimento jd ON jd.id = ad.jornada_id
+        SET ad.empresa_id = jd.empresa_id
+        WHERE ad.empresa_id IS NULL AND jd.empresa_id IS NOT NULL
+      `);
+      await pool.query(`
+        UPDATE coaching_planos cp
+        JOIN jornadas_desenvolvimento jd ON jd.id = cp.jornada_id
+        SET cp.empresa_id = jd.empresa_id
+        WHERE cp.empresa_id IS NULL AND jd.empresa_id IS NOT NULL AND cp.jornada_id IS NOT NULL
+      `);
+      await pool.query(`
+        UPDATE jornada_participantes jp
+        JOIN jornadas_desenvolvimento jd ON jd.id = jp.jornada_id
+        SET jp.empresa_id = jd.empresa_id
+        WHERE jp.empresa_id IS NULL AND jd.empresa_id IS NOT NULL
+      `);
+    } catch (err) {
+      console.warn(`  ↳ backfill do Oceano não aplicado: ${err.message}`);
+    }
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
