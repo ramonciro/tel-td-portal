@@ -561,7 +561,7 @@ const card       = { background: "#fff", borderRadius: 14, padding: 20,
                      boxShadow: "0 1px 4px rgba(0,0,0,.06)", border: "1px solid #f3f4f6" };
 const cardTop    = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 };
 const cardTitulo = { fontWeight: 800, fontSize: 15, color: "#0B1220" };
-const cardCliente = { fontSize: 12, color: "#FF6B4A", fontWeight: 600, marginTop: 2 };
+const cardCliente = { fontSize: 12, color: colors.accent, fontWeight: 600, marginTop: 2 };
 const cardDesc   = { fontSize: 13, color: "#6b7280", marginBottom: 12, lineHeight: 1.5 };
 const badge      = { fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 999, whiteSpace: "nowrap" };
 const etapasRow  = { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 };
@@ -569,7 +569,7 @@ const tipoChip   = { fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRa
 const cardActions = { display: "flex", gap: 8, marginTop: 12 };
 const progRow    = { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 };
 const progBar    = { flex: 1, height: 6, background: "#f3f4f6", borderRadius: 999 };
-const progFill   = { height: "100%", background: "#FF6B4A", borderRadius: 999, transition: "width .3s" };
+const progFill   = { height: "100%", background: colors.accent, borderRadius: 999, transition: "width .3s" };
 const progPct    = { fontSize: 12, fontWeight: 700, color: "#374151", minWidth: 36 };
 
 // Editor
@@ -622,7 +622,7 @@ const modalFooter = { display: "flex", justifyContent: "flex-end", marginTop: 20
                       borderTop: "1px solid #f3f4f6" };
 
 // Buttons
-const btnPrimary  = { padding: "9px 18px", background: "#FF6B4A", color: "#fff", border: "none",
+const btnPrimary  = { padding: "9px 18px", background: colors.accent, color: "#fff", border: "none",
                       borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
 const btnSecundary = { padding: "9px 18px", background: "#f3f4f6", color: "#374151", border: "none",
                        borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
