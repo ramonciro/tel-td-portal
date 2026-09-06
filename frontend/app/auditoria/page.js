@@ -19,7 +19,12 @@ const ENTIDADES = [
   { value: "treinamento", label: "Treinamento" },
   { value: "avaliacao", label: "Avaliação" },
   { value: "presenca", label: "Presença" },
+  { value: "necessidade_treinamento", label: "Necessidade de treinamento" },
+  { value: "publicacao_mural", label: "Publicação no mural" },
 ];
+
+const LIMITE_INICIAL = 200;
+const LIMITE_INCREMENTO = 200;
 
 function acaoStyle(acao) {
   const base = { display: "inline-block", padding: "3px 9px", borderRadius: radius.pill, fontSize: 11, fontWeight: 700 };
@@ -41,7 +46,16 @@ export default function AuditoriaPage() {
   const [erro, setErro] = useState("");
   const [filtroAcao, setFiltroAcao] = useState("");
   const [filtroEntidade, setFiltroEntidade] = useState("");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
+  const [limite, setLimite] = useState(LIMITE_INICIAL);
   const [expandido, setExpandido] = useState(null);
+
+  // Sempre que um filtro muda, volta a paginação para o início — senão o
+  // "carregar mais" acumulado de um filtro anterior vaza para o próximo.
+  useEffect(() => {
+    setLimite(LIMITE_INICIAL);
+  }, [filtroAcao, filtroEntidade, dataInicio, dataFim]);
 
   useEffect(() => {
     async function carregar() {
@@ -50,6 +64,9 @@ export default function AuditoriaPage() {
         const params = new URLSearchParams();
         if (filtroAcao) params.set("acao", filtroAcao);
         if (filtroEntidade) params.set("entidade", filtroEntidade);
+        if (dataInicio) params.set("data_inicio", dataInicio);
+        if (dataFim) params.set("data_fim", `${dataFim} 23:59:59`);
+        params.set("limite", String(limite));
         const resposta = await apiFetch(`/auditoria?${params.toString()}`);
         setItens(Array.isArray(resposta?.itens) ? resposta.itens : []);
         setErro("");
@@ -60,7 +77,7 @@ export default function AuditoriaPage() {
       }
     }
     carregar();
-  }, [filtroAcao, filtroEntidade]);
+  }, [filtroAcao, filtroEntidade, dataInicio, dataFim, limite]);
 
   const totais = useMemo(() => {
     return {
@@ -115,6 +132,32 @@ export default function AuditoriaPage() {
                 <option key={e.value} value={e.value}>{e.label}</option>
               ))}
             </select>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textSecondary }}>
+              De
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                style={{ padding: "7px 9px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 13 }}
+              />
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textSecondary }}>
+              Até
+              <input
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                style={{ padding: "7px 9px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 13 }}
+              />
+            </label>
+            {(filtroAcao || filtroEntidade || dataInicio || dataFim) && (
+              <button
+                onClick={() => { setFiltroAcao(""); setFiltroEntidade(""); setDataInicio(""); setDataFim(""); }}
+                style={{ background: "none", border: "none", color: colors.primary, cursor: "pointer", fontSize: 12, padding: "8px 4px" }}
+              >
+                limpar filtros
+              </button>
+            )}
           </div>
         </SectionCard>
 
@@ -163,6 +206,20 @@ export default function AuditoriaPage() {
               </div>
             ))}
           </div>
+
+          {!loading && !erro && itens.length > 0 && itens.length >= limite && (
+            <div style={{ textAlign: "center", marginTop: 14 }}>
+              <button
+                onClick={() => setLimite((l) => l + LIMITE_INCREMENTO)}
+                style={{
+                  padding: "8px 18px", borderRadius: radius.pill, border: `1px solid ${colors.border}`,
+                  background: colors.surfaceMuted, color: colors.textPrimary, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                Carregar mais
+              </button>
+            </div>
+          )}
         </SectionCard>
       </div>
     </PortalShell>
