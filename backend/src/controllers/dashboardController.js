@@ -1,557 +1,157 @@
-const pool = require("../lib/db");
-const { getResumoPresenca } = require("../services/presencaResolver");
+import pool from "../db.js";
 
-function parseHorasTexto(valor) {
-  if (valor === null || valor === undefined || valor === "") return 0;
-  const texto = String(valor).toLowerCase().replace(",", ".").trim();
-  const match = texto.match(/(\d+(\.\d+)?)/);
-  return match ? Number(match[1]) || 0 : 0;
+async function countOrZero(sql) {
+  const [[row]] = await pool.query(sql);
+  return Number(row.total || 0);
 }
 
-function n(value) {
-  return Number(value || 0);
-}
-
-function parseModalidadeFromDescricao(descricao) {
-  const text = String(descricao || "");
-  const match = text.match(/\[modalidade:([^\]]+)\]/i);
-  const modalidade = String(match?.[1] || "").trim().toLowerCase();
-  if (["presencial", "online"].includes(modalidade)) return modalidade;
-  return "";
-}
-
-function normalizeStatus(value) {
-  const status = String(value || "").trim().toLowerCase();
-  if (["concluido", "concluida", "concluído", "concluída", "finalizado", "finalizada"].includes(status)) return "concluido";
-  if (["em_andamento", "em andamento", "andamento"].includes(status)) return "em_andamento";
-  if (["cancelado", "cancelada"].includes(status)) return "cancelado";
-  return "planejado";
-}
-
-// ---------------------------------------------------------------------------
-// resolvePresenca: fonte ÚNICA de verdade para presença de um treinamento.
-//
-// Antes, cada bloco do dashboard (KPI geral, ranking por cliente, ranking por
-// instrutor) calculava "quantos treinados / quantos presentes" de um jeito
-// diferente, e todos usavam `treinamento_participantes.status_presenca` — um
-// campo ÚNICO que é SOBRESCRITO a cada chamada salva. Isso fazia o dashboard
-// refletir só o status do ÚLTIMO dia de chamada, não a presença real ao longo
-// do treinamento inteiro.
-//
-// Esta função agora delega 100% ao resolver compartilhado
-// (backend/src/services/presencaResolver.js), que já decide cronograma vs.
-// legado vs. snapshot e classifica cada participante (nível "pessoa", não
-// "registro") de forma idêntica em todo o app. O Dashboard não mantém mais
-// nenhuma lógica de presença própria — antes disso, os campos hist_*/snap_*
-// calculados aqui dentro (nível REGISTRO) eram somados junto com os campos
-// de cronograma (nível PESSOA) da mesma forma, o que misturava "quantidade
-// de dias de chamada" com "quantidade de pessoas" na mesma métrica e gerava
-// taxas de presença sem sentido (ex.: 200%+ em turmas multi-dia).
-//
-// Regra de negócio adotada (mesma usada na Frequência Individual):
-//  - "presente" e "ausente" entram no cálculo da taxa de presença.
-//  - "justificado" (falta aprovada) e "pendente" (chamada ainda não feita)
-//    NÃO contam contra a taxa de presença — mas "pendente" ainda conta
-//    contra a taxa de conclusão de chamada.
-// ---------------------------------------------------------------------------
-function resolvePresenca(resumo) {
-  const diasPresente = n(resumo?.presentes_pessoas);
-  const diasAusente = n(resumo?.ausentes_pessoas);
-  const diasJustificado = n(resumo?.justificados_pessoas);
-  const diasPendente = n(resumo?.pendentes_pessoas);
-  const baseParticipantes = n(resumo?.treinandos_confirmados);
-  const diasRegistrados = diasPresente + diasAusente + diasJustificado + diasPendente;
-
-  const denomPresenca = diasPresente + diasAusente;
-
-  return {
-    baseParticipantes,
-    diasRegistrados,
-    diasPresente,
-    diasAusente,
-    diasJustificado,
-    diasPendente,
-    taxaPresenca: denomPresenca > 0 ? Math.round((diasPresente / denomPresenca) * 100) : 0,
-  };
-}
-
-// Monta as condições de filtro (tenant + filtros da tela) a partir da
-// querystring — extraído para ser reaproveitado tanto pelo carregamento
-// normal do Dashboard quanto pela exportação em Excel, que precisa do
-// MESMO recorte de dados que o coordenador está vendo na tela.
-function buildFiltroTreinamentos(req) {
-  const query = req.query || {};
-  const conditions = [];
-  const params = [];
-
-  // Isolamento por tenant: sem este filtro, o dashboard somava turmas,
-  // participantes, presenças e NPS de TODAS as empresas na mesma tela —
-  // era o vazamento mais visível do sistema. req.empresaId nulo (super_admin
-  // ou usuário legado sem empresa atribuída) mantém o comportamento antigo.
-  if (req.empresaId) {
-    conditions.push("t.empresa_id = ?");
-    params.push(req.empresaId);
-  }
-
-  if (query.cliente) {
-    conditions.push("t.cliente = ?");
-    params.push(query.cliente);
-  }
-
-  if (query.instrutor) {
-    conditions.push("t.instrutor = ?");
-    params.push(query.instrutor);
-  }
-
-  if (query.status) {
-    conditions.push("LOWER(COALESCE(t.status, '')) = ?");
-    params.push(String(query.status).toLowerCase());
-  }
-
-  if (query.supervisor) {
-    conditions.push("t.supervisor = ?");
-    params.push(query.supervisor);
-  }
-
-  if (query.data_inicio) {
-    conditions.push("DATE(COALESCE(t.data_inicio, t.data)) >= ?");
-    params.push(query.data_inicio);
-  }
-
-  if (query.data_fim) {
-    // filtra por data_fim (ou data_inicio como fallback quando data_fim não está preenchida)
-    conditions.push("DATE(COALESCE(t.data_fim, t.data_inicio, t.data)) <= ?");
-    params.push(query.data_fim);
-  }
-
-  return {
-    conditions,
-    params,
-    whereSql: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "",
-  };
-}
-
-// Carrega e enriquece as turmas do recorte atual (filtros + tenant) com a
-// presença resolvida — mesma lógica usada tanto pelos KPIs do Dashboard
-// quanto pela exportação em Excel, para as duas nunca divergirem sobre quais
-// turmas entram no recorte.
-async function carregarTurmasEnriquecidas(req) {
-  const query = req.query || {};
-  // colunas fixas — sem SHOW COLUMNS em cada request
-  const participantCountExpr = "COALESCE(t.participantes, 0)";
-  const dateOrderExpr = "COALESCE(t.data_inicio, t.data)";
-
-  const { params, whereSql } = buildFiltroTreinamentos(req);
-
-  // query completa: inclui histórico real de presença (tabela `presencas`) e supervisor
-  // se alguma coluna não existir no ambiente, cai para a query simplificada
-  let baseRows;
-    try {
-      const [rows] = await pool.query(
-        `SELECT
-          t.id, t.tema, t.cliente, t.instrutor,
-          COALESCE(t.supervisor, '') AS supervisor,
-          t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
-          t.carga_horaria,
-          ${participantCountExpr} AS participantes_previstos,
-
-          -- roster: participantes cadastrados no treinamento
-          COUNT(DISTINCT tp.id) AS roster_total,
-
-          -- snapshot: status da ÚLTIMA chamada por participante (usado só como fallback,
-          -- quando o treinamento não tem nenhum histórico de chamada em presencas)
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS snap_presentes,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS snap_ausentes,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS snap_justificados,
-          COALESCE(SUM(CASE WHEN tp.id IS NOT NULL AND (tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente') THEN 1 ELSE 0 END), 0) AS snap_pendentes,
-
-          -- histórico real: agregado de TODAS as chamadas diárias já feitas (tabela presencas)
-          -- esta é a fonte PREFERIDA de presença, pois preserva o dia a dia
-          COALESCE(hist.dias, 0) AS hist_dias,
-          COALESCE(hist.presentes, 0) AS hist_presentes,
-          COALESCE(hist.ausentes, 0) AS hist_ausentes,
-          COALESCE(hist.justificados, 0) AS hist_justificados,
-          COALESCE(hist.pendentes, 0) AS hist_pendentes,
-          COALESCE(hist.participantes_distintos, 0) AS hist_participantes_distintos
-        FROM treinamentos t
-        LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
-        LEFT JOIN (
-          SELECT
-            treinamento_id,
-            COUNT(*) AS dias,
-            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'presente' THEN 1 ELSE 0 END) AS presentes,
-            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
-            SUM(CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'justificado' THEN 1 ELSE 0 END) AS justificados,
-            SUM(CASE WHEN status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) = 'pendente' THEN 1 ELSE 0 END) AS pendentes,
-            COUNT(DISTINCT treinando_nome) AS participantes_distintos
-          FROM presencas
-          GROUP BY treinamento_id
-        ) hist ON hist.treinamento_id = t.id
-        ${whereSql}
-        GROUP BY t.id, t.tema, t.cliente, t.instrutor, t.supervisor,
-          t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
-          t.carga_horaria, ${participantCountExpr}
-        ORDER BY ${dateOrderExpr} DESC, t.id DESC`,
-        params
-      );
-      baseRows = rows;
-    } catch (queryErr) {
-      // fallback: query original sem histórico de presencas nem supervisor
-      console.warn("[dashboard] query completa falhou, usando fallback:", queryErr.message);
-      const [rows] = await pool.query(
-        `SELECT
-          t.id, t.tema, t.cliente, t.instrutor,
-          '' AS supervisor,
-          t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
-          t.carga_horaria,
-          ${participantCountExpr} AS participantes_previstos,
-          COUNT(DISTINCT tp.id) AS roster_total,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'presente' THEN 1 ELSE 0 END), 0) AS snap_presentes,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'ausente' THEN 1 ELSE 0 END), 0) AS snap_ausentes,
-          COALESCE(SUM(CASE WHEN LOWER(TRIM(tp.status_presenca)) = 'justificado' THEN 1 ELSE 0 END), 0) AS snap_justificados,
-          COALESCE(SUM(CASE WHEN tp.id IS NOT NULL AND (tp.status_presenca IS NULL OR TRIM(tp.status_presenca) = '' OR LOWER(TRIM(tp.status_presenca)) = 'pendente') THEN 1 ELSE 0 END), 0) AS snap_pendentes,
-          0 AS hist_dias, 0 AS hist_presentes, 0 AS hist_ausentes,
-          0 AS hist_justificados, 0 AS hist_pendentes, 0 AS hist_participantes_distintos
-        FROM treinamentos t
-        LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
-        ${whereSql}
-        GROUP BY t.id, t.tema, t.cliente, t.instrutor,
-          t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
-          t.carga_horaria, ${participantCountExpr}
-        ORDER BY ${dateOrderExpr} DESC, t.id DESC`,
-        params
-      );
-      baseRows = rows;
-    }
-
-    // filtro de modalidade feito em memória (campo embutido em descricao)
-    // quando modalidade tiver campo próprio na tabela, mover para o WHERE do SQL
-    const filteredRows = baseRows.filter((row) => {
-      if (!query.modalidade) return true;
-      return parseModalidadeFromDescricao(row.descricao) === String(query.modalidade).toLowerCase();
-    });
-
-    // presença + status: buscados uma única vez do resolver compartilhado e
-    // cruzados por id de treinamento — mesma fonte usada por
-    // /api/presenca-resumo (Gestão de Turmas), garantindo que as duas telas
-    // nunca mais divirjam sobre a mesma turma.
-    let resumoPresencaPorId = new Map();
-    try {
-      const resumoPresenca = await getResumoPresenca({ empresaId: req.empresaId });
-      resumoPresencaPorId = new Map(resumoPresenca.map((item) => [Number(item.id), item]));
-    } catch (err) {
-      console.warn("[dashboard] resumo de presença indisponível:", err.message);
-    }
-
-    // enriquece cada turma com a presença resolvida de forma única (fim das
-    // três fórmulas divergentes que existiam entre KPI geral / cliente / instrutor,
-    // e agora também com o cronograma como fonte de maior prioridade)
-    const enriched = filteredRows.map((row) => ({
-      ...row,
-      presenca: resolvePresenca(resumoPresencaPorId.get(Number(row.id))),
-    }));
-
-  return { baseRows, filteredRows, enriched };
-}
-
-async function getDashboardTreinamentos(req, res) {
+export async function getDashboard(req, res) {
   try {
-    const { baseRows, filteredRows, enriched } = await carregarTurmasEnriquecidas(req);
+    const totalClientes = await countOrZero("SELECT COUNT(*) AS total FROM clientes");
+    const totalUsuarios = await countOrZero("SELECT COUNT(*) AS total FROM usuarios");
+    const totalTreinamentos = await countOrZero("SELECT COUNT(*) AS total FROM treinamentos");
+    const totalPresencas = await countOrZero("SELECT COUNT(*) AS total FROM presencas");
+    const totalAvaliacoes = await countOrZero("SELECT COUNT(*) AS total FROM avaliacoes");
 
-    const totalTreinamentos = enriched.length;
-    const totalPrevistos = enriched.reduce((acc, item) => acc + n(item.participantes_previstos), 0);
-    const totalTreinados = enriched.reduce((acc, item) => acc + item.presenca.baseParticipantes, 0);
-    const totalPresentes = enriched.reduce((acc, item) => acc + item.presenca.diasPresente, 0);
-    const totalAusentes = enriched.reduce((acc, item) => acc + item.presenca.diasAusente, 0);
-    const totalJustificados = enriched.reduce((acc, item) => acc + item.presenca.diasJustificado, 0);
-    const totalPendentes = enriched.reduce((acc, item) => acc + item.presenca.diasPendente, 0);
-    const totalDiasRegistrados = enriched.reduce((acc, item) => acc + item.presenca.diasRegistrados, 0);
-
-    // horas ministradas: soma de carga das turmas com participantes registrados
-    // (carga × presentes inflava multi-sessão: 10 pessoas × 12 aulas = 120 "presentes")
-    const horasMinistradas = enriched.reduce(
-      (acc, item) => acc + (item.presenca.baseParticipantes > 0 ? parseHorasTexto(item.carga_horaria) : 0),
-      0
-    );
-    const horasTreinadas = horasMinistradas; // alias mantido por compatibilidade
-    const cargaHorariaTotal = enriched.reduce((acc, item) => acc + parseHorasTexto(item.carga_horaria), 0);
-
-    // taxa de presença: presentes / (presentes + ausentes) — justificado e
-    // pendente não contam contra a taxa (mesma regra da Frequência Individual)
-    const taxaPresenca =
-      totalPresentes + totalAusentes > 0
-        ? Math.round((totalPresentes / (totalPresentes + totalAusentes)) * 100)
-        : 0;
-
-    // taxa de conclusão de chamada: dias já registrados (não pendentes) / dias esperados
-    const taxaConclusaoChamada =
-      totalDiasRegistrados > 0
-        ? Math.round(((totalDiasRegistrados - totalPendentes) / totalDiasRegistrados) * 100)
-        : 0;
-
-    // execução: participantes efetivamente treinados / base ativa (previstos ou já treinados)
-    const turmasComBase = enriched.filter(
-      (item) => n(item.participantes_previstos) > 0 || item.presenca.baseParticipantes > 0
-    );
-    const baseAtiva = turmasComBase.reduce(
-      (acc, item) => acc + Math.max(n(item.participantes_previstos), item.presenca.baseParticipantes),
-      0
-    );
-    const taxaExecucao = baseAtiva > 0 ? Math.min(Math.round((totalTreinados / baseAtiva) * 100), 100) : 0;
-    const mediaParticipantesPorTurma = totalTreinamentos > 0 ? Number((totalPrevistos / totalTreinamentos).toFixed(1)) : 0;
-    const gapPrevistosVsTreinados = Math.max(totalPrevistos - totalTreinados, 0);
-
-    // opções de filtro sempre construídas de baseRows (não filteredRows)
-    // evita que selecionar um filtro esvazie as opções dos outros
-    const clientesSet = new Set();
-    const instrutoresSet = new Set();
-    const supervisoresSet = new Set();
-    const statusSet = new Set();
-    const modalidadeSet = new Set();
-
-    for (const row of baseRows) {
-      if (row.cliente && row.cliente !== "Sem cliente") clientesSet.add(row.cliente);
-      if (row.instrutor) instrutoresSet.add(row.instrutor);
-      if (row.supervisor && String(row.supervisor).trim()) supervisoresSet.add(String(row.supervisor).trim());
-      const modalidade = parseModalidadeFromDescricao(row.descricao);
-      const status = normalizeStatus(row.status);
-      if (status) statusSet.add(status);
-      if (modalidade) modalidadeSet.add(modalidade);
-    }
-
-    const byCliente = new Map();
-    const byInstrutor = new Map();
-
-    for (const row of enriched) {
-      const cliente = row.cliente || "Sem cliente";
-      const instrutor = row.instrutor || "Sem instrutor";
-      const p = row.presenca;
-
-      if (!byCliente.has(cliente)) {
-        byCliente.set(cliente, { cliente, total_turmas: 0, total_treinados: 0, presentes: 0, pendentes: 0, ausentes: 0, justificados: 0 });
-      }
-      const c = byCliente.get(cliente);
-      c.total_turmas += 1;
-      c.total_treinados += p.baseParticipantes;
-      c.presentes += p.diasPresente;
-      c.pendentes += p.diasPendente;
-      c.ausentes += p.diasAusente;
-      c.justificados += p.diasJustificado;
-
-      if (!byInstrutor.has(instrutor)) {
-        byInstrutor.set(instrutor, { instrutor, total_turmas: 0, total_treinados: 0, presentes: 0, ausentes: 0 });
-      }
-      const i = byInstrutor.get(instrutor);
-      i.total_turmas += 1;
-      i.total_treinados += p.baseParticipantes;
-      i.presentes += p.diasPresente;
-      i.ausentes += p.diasAusente;
-    }
-
-    // taxa_presenca por cliente/instrutor agora usa a MESMA regra do KPI geral
-    // (presentes / (presentes + ausentes)) — antes cada bloco calculava diferente
-    // e os números nunca batiam entre si
-    const presencaPorCliente = Array.from(byCliente.values())
-      .map((item) => ({
-        ...item,
-        taxa_presenca: item.presentes + item.ausentes > 0 ? Math.round((item.presentes / (item.presentes + item.ausentes)) * 100) : 0,
-      }))
-      .sort((a, b) => b.total_turmas - a.total_turmas || b.total_treinados - a.total_treinados)
-      .slice(0, 10);
-
-    const rankingInstrutores = Array.from(byInstrutor.values())
-      .map((item) => ({
-        ...item,
-        taxa_presenca: item.presentes + item.ausentes > 0 ? Math.round((item.presentes / (item.presentes + item.ausentes)) * 100) : 0,
-      }))
-      .sort((a, b) => b.total_turmas - a.total_turmas || b.total_treinados - a.total_treinados)
-      .slice(0, 10);
-
-    // NPS e avaliações por turma
-    let npsData = { media_nps: 0, media_qualidade: 0, media_prova: 0, total_avaliacoes: 0 };
+    let totalMateriaisAvaliativos = 0;
     try {
-      const turmaIds = filteredRows.map((r) => r.id).filter(Boolean);
-      if (turmaIds.length > 0) {
-        const placeholders = turmaIds.map(() => "?").join(",");
-        const [[npsRow]] = await pool.query(
-          `SELECT
-            ROUND(AVG(nota_nps), 1) AS media_nps,
-            ROUND(AVG(nota_qualidade), 1) AS media_qualidade,
-            ROUND(AVG(nota_prova), 1) AS media_prova,
-            COUNT(*) AS total_avaliacoes
-           FROM avaliacoes
-           WHERE treinamento_id IN (${placeholders})
-             AND (nota_nps IS NOT NULL OR nota_qualidade IS NOT NULL OR nota_prova IS NOT NULL)`,
-          turmaIds
-        );
-        if (npsRow) {
-          npsData = {
-            media_nps: Number(npsRow.media_nps || 0),
-            media_qualidade: Number(npsRow.media_qualidade || 0),
-            media_prova: Number(npsRow.media_prova || 0),
-            total_avaliacoes: Number(npsRow.total_avaliacoes || 0),
-          };
-        }
-      }
-    } catch { /* avaliacoes opcionais */ }
+      totalMateriaisAvaliativos = await countOrZero("SELECT COUNT(*) AS total FROM materiais_avaliativos");
+    } catch {}
 
-    let oceano = {
-      jornadas: 0,
-      acoes: 0,
-      sustentacoes: 0,
-      tripulacao: 0,
-      progresso_tripulacao: { em_percurso: 0, concluido: 0, em_sustentacao: 0 },
-    };
-
+    let totalConteudosBiblioteca = 0;
     try {
-      // Isolamento por tenant no bloco "Oceano" — mesmas colunas empresa_id
-      // adicionadas em database/migrate.js (passo 17).
-      const oceanoWhere = req.empresaId ? "WHERE empresa_id = ?" : "";
-      const oceanoParams = req.empresaId ? [req.empresaId] : [];
+      totalConteudosBiblioteca = await countOrZero("SELECT COUNT(*) AS total FROM biblioteca_conteudos");
+    } catch {}
 
-      const [[jornadas]] = await pool.query(`SELECT COUNT(*) AS total FROM jornadas_desenvolvimento ${oceanoWhere}`, oceanoParams);
-      const [[acoes]] = await pool.query(`SELECT COUNT(*) AS total FROM acoes_desenvolvimento ${oceanoWhere}`, oceanoParams);
-      const [[sustentacoes]] = await pool.query(`SELECT COUNT(*) AS total FROM coaching_planos ${oceanoWhere}`, oceanoParams);
-      const [[tripulacao]] = await pool.query(`SELECT COUNT(*) AS total FROM jornada_participantes ${oceanoWhere}`, oceanoParams);
-      const [progresso] = await pool.query(`
-        SELECT status_jornada, COUNT(*) AS total
-        FROM jornada_participantes
-        ${oceanoWhere}
-        GROUP BY status_jornada
-      `, oceanoParams).catch(() => [[]]);
-      const progressMap = { em_percurso: 0, concluido: 0, em_sustentacao: 0 };
-      for (const row of progresso) {
-        const key = String(row.status_jornada || "").trim().toLowerCase();
-        if (key in progressMap) progressMap[key] = n(row.total);
-      }
-      oceano = {
-        jornadas: n(jornadas.total),
-        acoes: n(acoes.total),
-        sustentacoes: n(sustentacoes.total),
-        tripulacao: n(tripulacao.total),
-        progresso_tripulacao: progressMap,
-      };
-    } catch {
+    let totalTrilhas = 0;
+    try {
+      totalTrilhas = await countOrZero("SELECT COUNT(*) AS total FROM trilhas_aprendizagem");
+    } catch {}
 
-    }
+    const [[horasRow]] = await pool.query(
+      "SELECT COALESCE(ROUND(SUM(carga_horaria),1),0) AS total FROM treinamentos"
+    );
 
-    const ultimasTurmas = enriched.slice(0, 8).map((item) => {
-      const p = item.presenca;
-      const resumo = resumoPresencaPorId.get(Number(item.id));
-      return {
-        ...item,
-        base_ativa: p.baseParticipantes,
-        taxa_presenca: p.taxaPresenca,
-        presentes: p.diasPresente,
-        pendentes: p.diasPendente,
-        modalidade: parseModalidadeFromDescricao(item.descricao),
-        // antes usava normalizeStatus(item.status) — só prettificava o texto
-        // cru do banco, sem nunca considerar se data_fim já tinha passado.
-        // Agora usa a mesma fonte de status das telas Treinamentos/Presenças.
-        status_canonico: resumo ? resumo.status_turma : normalizeStatus(item.status),
-      };
-    });
+    const [[participantesRow]] = await pool.query(`
+      SELECT COALESCE(COUNT(DISTINCT treinando_nome),0) AS total
+      FROM presencas
+      WHERE COALESCE(status, CASE WHEN presente = 1 THEN 'presente' ELSE 'ausente' END) = 'presente'
+    `);
+
+    const [[conclusaoRow]] = await pool.query(`
+      SELECT COALESCE(
+        ROUND((SUM(concluidos) / NULLIF(SUM(participantes_presentes),0)) * 100, 1),
+        0
+      ) AS total
+      FROM treinamentos
+    `);
+
+    const [[aproveitamentoRow]] = await pool.query(
+      "SELECT COALESCE(ROUND(AVG(nota_prova),1),0) AS total FROM avaliacoes"
+    );
+
+    const [[npsRow]] = await pool.query(
+      "SELECT COALESCE(ROUND(AVG(nota_nps),1),0) AS total FROM avaliacoes"
+    );
+
+    const [[qualidadeRow]] = await pool.query(
+      "SELECT COALESCE(ROUND(AVG(nota_qualidade),1),0) AS total FROM avaliacoes"
+    );
+
+    const [[assiduidadeRow]] = await pool.query(`
+      SELECT COALESCE(
+        ROUND((
+          SUM(CASE 
+            WHEN COALESCE(status, CASE WHEN presente = 1 THEN 'presente' ELSE 'ausente' END) = 'presente' THEN 1
+            ELSE 0
+          END) * 100.0
+        ) / NULLIF(COUNT(*), 0), 1),
+        0
+      ) AS total
+      FROM presencas
+    `);
+
+    const mediaTreinamentosPorPessoa =
+      totalUsuarios > 0 ? Number((totalTreinamentos / totalUsuarios).toFixed(2)) : 0;
+
+    const [treinamentosRecentes] = await pool.query(`
+      SELECT id, tema, cliente, instrutor, status, data, 
+             COALESCE(carga_horaria,0) AS carga_horaria,
+             COALESCE(participantes_presentes,0) AS participantes_presentes
+      FROM treinamentos
+      ORDER BY id DESC
+      LIMIT 10
+    `);
+
+    const [treinamentosPorCliente] = await pool.query(`
+      SELECT cliente, COUNT(*) AS total, COALESCE(ROUND(SUM(carga_horaria),1),0) AS horas
+      FROM treinamentos
+      GROUP BY cliente
+      ORDER BY total DESC, cliente ASC
+      LIMIT 8
+    `);
+
+    const [treinamentosPorInstrutor] = await pool.query(`
+      SELECT instrutor, COUNT(*) AS total, COALESCE(ROUND(SUM(carga_horaria),1),0) AS horas
+      FROM treinamentos
+      GROUP BY instrutor
+      ORDER BY total DESC, instrutor ASC
+      LIMIT 8
+    `);
+
+    const [avaliacoesPorCliente] = await pool.query(`
+      SELECT t.cliente, 
+             COALESCE(ROUND(AVG(a.nota_nps),1),0) AS nps_medio,
+             COALESCE(ROUND(AVG(a.nota_qualidade),1),0) AS qualidade_media
+      FROM avaliacoes a
+      INNER JOIN treinamentos t ON t.id = a.treinamento_id
+      GROUP BY t.cliente
+      ORDER BY nps_medio DESC, t.cliente ASC
+      LIMIT 8
+    `);
+
+    const [rankingInstrutores] = await pool.query(`
+      SELECT 
+        t.instrutor,
+        COUNT(*) AS total_treinamentos,
+        COALESCE(ROUND(SUM(t.carga_horaria),1),0) AS horas,
+        COALESCE(ROUND(AVG(a.nota_nps),1),0) AS nps_medio,
+        COALESCE(ROUND(AVG(a.nota_qualidade),1),0) AS qualidade_media
+      FROM treinamentos t
+      LEFT JOIN avaliacoes a ON a.treinamento_id = t.id
+      GROUP BY t.instrutor
+      ORDER BY total_treinamentos DESC, horas DESC, instrutor ASC
+      LIMIT 8
+    `);
 
     return res.json({
-      ok: true,
-      kpis: {
-        treinamentos: totalTreinamentos,
-        treinados: totalTreinados,
-        participantes_previstos: totalPrevistos,
-        presentes: totalPresentes,
-        ausentes: totalAusentes,
-        justificados: totalJustificados,
-        pendentes: totalPendentes,
-        taxa_presenca: taxaPresenca,
-        taxa_conclusao_chamada: taxaConclusaoChamada,
-        // mantido com o nome antigo por compatibilidade com o frontend
-        // (não é um número "do dia" — é a execução do período filtrado)
-        taxa_execucao_diaria: taxaExecucao,
-        media_participantes_por_turma: mediaParticipantesPorTurma,
-        horas_treinadas: n(horasTreinadas),
-        horas_ministradas: n(horasMinistradas),
-        carga_horaria_total: n(cargaHorariaTotal),
-        clientes_ativos: Array.from(clientesSet).filter((item) => item && item !== "Sem cliente").length,
-        clientes_com_treinamento: Array.from(clientesSet).filter((item) => item && item !== "Sem cliente").length,
-        gap_previstos_vs_treinados: gapPrevistosVsTreinados,
-      },
-      filtros: {
-        clientes: Array.from(clientesSet).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "pt-BR")),
-        instrutores: Array.from(instrutoresSet).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "pt-BR")),
-        supervisores: Array.from(supervisoresSet).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "pt-BR")),
-        status: Array.from(statusSet).map((item) => ({
-          value: item,
-          label:
-            item === "em_andamento"
-              ? "Em andamento"
-              : item === "concluido"
-              ? "Concluída"
-              : item === "cancelado"
-              ? "Cancelada"
-              : "Planejada",
-        })),
-        modalidades: Array.from(modalidadeSet).map((item) => ({ value: item, label: item === "online" ? "Online" : "Presencial" })),
-      },
-      presenca_por_cliente: presencaPorCliente,
-      ranking_instrutores: rankingInstrutores,
-      ultimas_turmas: ultimasTurmas,
-      oceano,
-      nps: npsData,
+      totalClientes,
+      totalUsuarios,
+      totalTreinamentos,
+      totalPresencas,
+      totalAvaliacoes,
+      totalMateriaisAvaliativos,
+      totalConteudosBiblioteca,
+      totalTrilhas,
+      horasTreinadas: Number(horasRow.total || 0),
+      participantesTreinados: Number(participantesRow.total || 0),
+      taxaConclusao: Number(conclusaoRow.total || 0),
+      aproveitamentoMedio: Number(aproveitamentoRow.total || 0),
+      npsMedio: Number(npsRow.total || 0),
+      qualidadeMedia: Number(qualidadeRow.total || 0),
+      assiduidadeMedia: Number(assiduidadeRow.total || 0),
+      mediaTreinamentosPorPessoa,
+      treinamentosRecentes,
+      treinamentosPorCliente,
+      treinamentosPorInstrutor,
+      avaliacoesPorCliente,
+      rankingInstrutores
     });
   } catch (error) {
-    console.error("[dashboard] Erro:", error.message);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao carregar dashboard de treinamentos.",
-      error: error.message,
+      message: "Erro ao carregar dashboard",
+      error: error.message
     });
   }
 }
-
-// GET /api/dashboard/treinamentos/exportar — exporta em Excel o MESMO
-// recorte de turmas que a tabela "Turmas recentes" mostra na tela (que só
-// exibe as 8 mais recentes) — aqui sai a lista completa do filtro aplicado.
-async function exportarTreinamentos(req, res) {
-  try {
-    const { enriched } = await carregarTurmasEnriquecidas(req);
-    const XLSX = require("xlsx");
-
-    const linhas = enriched.map((item) => [
-      item.tema || "-",
-      item.cliente || "-",
-      item.instrutor || "-",
-      parseModalidadeFromDescricao(item.descricao) === "online" ? "Online"
-        : parseModalidadeFromDescricao(item.descricao) === "presencial" ? "Presencial" : "-",
-      normalizeStatus(item.status),
-      item.data_inicio || item.data || "",
-      item.presenca.baseParticipantes,
-      item.presenca.taxaPresenca,
-      item.presenca.diasPresente,
-      item.presenca.diasPendente,
-    ]);
-
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([
-      ["Turma", "Cliente", "Instrutor", "Modalidade", "Status", "Data", "Base", "Presença %", "Presentes", "Pendentes"],
-      ...linhas,
-    ]);
-    XLSX.utils.book_append_sheet(wb, ws, "Turmas");
-
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", 'attachment; filename="dashboard-turmas.xlsx"');
-    return res.send(buf);
-  } catch (error) {
-    console.error("[dashboard] exportarTreinamentos:", error.message);
-    return res.status(500).json({
-      ok: false,
-      message: "Erro ao exportar turmas.",
-      error: error.message,
-    });
-  }
-}
-
-module.exports = {
-  getDashboardTreinamentos,
-  exportarTreinamentos,
-};
