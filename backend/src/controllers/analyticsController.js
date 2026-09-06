@@ -57,9 +57,11 @@ function filtroRecorte(query = {}, alias = 't') {
 
 // Custo por hora usado no cálculo de ROI. Antes fixo em R$ 150 para todo
 // mundo, com uma nota na tela prometendo uma tela de configuração que não
-// existia. Agora lê de empresas.custo_hora_treinamento (configurável em
-// Admin → tenant); sem tenant (super_admin) ou sem valor definido, mantém
-// os R$ 150 como referência padrão.
+// existia. Agora lê de empresas.custo_hora_treinamento — configurável em
+// Painel Super Admin (/admin) → clicar no tenant → seção "Dados do tenant"
+// → campo "Custo por hora de treinamento (R$)" (frontend/app/admin/empresa/[id]/page.js).
+// Sem tenant (ex.: super_admin navegando sem empresa) ou sem valor definido,
+// mantém os R$ 150 como referência padrão.
 const CUSTO_HORA_PADRAO = 150;
 async function getCustoPorHora(empresaId) {
   if (!empresaId) return CUSTO_HORA_PADRAO;
