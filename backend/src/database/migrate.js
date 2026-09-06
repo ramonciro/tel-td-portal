@@ -295,47 +295,7 @@ async function runMigrations() {
       );
     `);
 
-    // 12. Lançamentos de atividade do instrutor — versão em banco da
-    // planilha "Planilha_Operacional_Treinamento_Mercantil.xlsx" que os
-    // instrutores preenchiam manualmente. Cada linha é uma atividade
-    // (treinamento formal ou não) com CH programada x realizada, para captar
-    // também demanda que nunca vira uma turma formal em `treinamentos`
-    // (suporte, coaching pontual, apoio a outra célula etc.).
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS atividades_instrutor (
-        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        empresa_id INT NULL,
-        instrutor VARCHAR(150) NOT NULL,
-        cliente VARCHAR(150) NULL,
-        operacao VARCHAR(150) NULL,
-        data_inicio DATE NOT NULL,
-        data_fim DATE NULL,
-        tema VARCHAR(200) NOT NULL,
-        tipo_atividade VARCHAR(100) NULL,
-        canal VARCHAR(100) NULL,
-        celula VARCHAR(100) NULL,
-        hora_inicio TIME NULL,
-        hora_fim TIME NULL,
-        ch_horas DECIMAL(6,2) NOT NULL DEFAULT 0,
-        num_dias INT NOT NULL DEFAULT 1,
-        hc_programado DECIMAL(8,2) NOT NULL DEFAULT 0,
-        hc_realizado DECIMAL(8,2) NOT NULL DEFAULT 0,
-        status VARCHAR(30) NOT NULL DEFAULT 'programado',
-        local VARCHAR(150) NULL,
-        mes_ref VARCHAR(7) NULL,
-        observacoes TEXT NULL,
-        treinamento_id INT NULL,
-        criado_por VARCHAR(150) NULL,
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        KEY idx_ai_instrutor (instrutor),
-        KEY idx_ai_mes_ref (mes_ref),
-        KEY idx_ai_data_inicio (data_inicio),
-        KEY idx_ai_empresa (empresa_id)
-      );
-    `);
-
-    // 13. treinamentos.carga_horaria nasceu como INT (migrate.js, passo 5).
+    // 12. treinamentos.carga_horaria nasceu como INT (migrate.js, passo 5).
     // Isso arredonda qualquer treinamento com carga fracionada (ex.: 1.5h,
     // 4.5h) no INSERT — CH real é perdida de forma silenciosa antes mesmo de
     // chegar aos relatórios. turma_aulas já usa DECIMAL(10,2); alinhamos o
