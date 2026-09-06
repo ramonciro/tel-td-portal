@@ -334,7 +334,7 @@ const btnCoral = {
   cursor: "pointer",
   fontWeight: 700,
   fontSize: 13,
-  boxShadow: `0 4px 12px rgba(255,107,74,.25)`,
+  boxShadow: `0 4px 12px rgba(217,119,6,.25)`,
 };
 
 const btnOutline = {
