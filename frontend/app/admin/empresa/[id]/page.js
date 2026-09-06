@@ -77,6 +77,7 @@ export default function EmpresaDetailPage() {
           contato_nome: e.contato_nome || "", contato_email: e.contato_email || "",
           contato_telefone: e.contato_telefone || "",
           subdomain: e.subdomain || "", observacoes: e.observacoes || "",
+          custo_hora_treinamento: e.custo_hora_treinamento ?? "",
         });
       } catch (err) {
         setError(err.message || "Erro ao carregar empresa.");
@@ -115,6 +116,7 @@ export default function EmpresaDetailPage() {
         contato_telefone: updated.contato_telefone || "",
         subdomain:        updated.subdomain        || "",
         observacoes:      updated.observacoes      || "",
+        custo_hora_treinamento: updated.custo_hora_treinamento ?? "",
       });
 
       setSuccess("Dados atualizados com sucesso.");
@@ -242,6 +244,14 @@ export default function EmpresaDetailPage() {
               <div>
                 <label style={lbl}>Subdomínio</label>
                 <input {...fld("subdomain")} placeholder="—" />
+              </div>
+              <div>
+                <label style={lbl}>Custo por hora de treinamento (R$)</label>
+                <input {...fld("custo_hora_treinamento")} type="number" min="0" step="0.01"
+                  placeholder="150.00" />
+                <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 4 }}>
+                  Usado no cálculo de ROI (Indicadores). Em branco, usa R$ 150/h como referência.
+                </div>
               </div>
               <div style={fieldFull}>
                 <label style={lbl}>Observações</label>
