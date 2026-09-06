@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import { apiFetch, getStoredUser } from "../../services/api";
+import { colors } from "../../lib/theme";
 
 function normalize(v) { return String(v || "").trim().toLowerCase(); }
 function fmtDate(v) {
@@ -267,7 +268,7 @@ const usageBars  = { margin: "12px 0" };
 const tenantStats = { display: "flex", gap: 12, marginBottom: 14 };
 const statItem   = { fontSize: 12, color: "#6b7280" };
 const tenantActions = { display: "flex", gap: 8 };
-const btnNovo    = { padding: "10px 18px", background: "#FF6B4A", color: "#fff", border: "none",
+const btnNovo    = { padding: "10px 18px", background: colors.accent, color: "#fff", border: "none",
                      borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" };
 const btnDetail  = { flex: 1, padding: "9px 0", background: "#0B1220", color: "#fff", border: "none",
                      borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
