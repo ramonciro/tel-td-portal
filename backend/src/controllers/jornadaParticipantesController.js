@@ -148,20 +148,28 @@ async function remove(req, res) {
   }
 }
 
+// Chave de deduplicação NULL-safe: a UNIQUE KEY do banco é
+// (jornada_id, nome, matricula), mas o MySQL trata NULL != NULL — então ela
+// não pega duplicatas quando a matrícula vem vazia (comum em planilhas sem
+// essa coluna). Tratamos matrícula vazia como parte normal da chave aqui.
+function chaveParticipante(nome, matricula) {
+  return `${String(nome || "").trim().toLowerCase()}|${String(matricula || "").trim().toLowerCase()}`;
+}
+
 async function importExcel(req, res) {
+  const jornada_id = Number(req.body?.jornada_id || 0);
+
+  if (!jornada_id) {
+    return res.status(400).json({ error: "Informe a jornada para importação." });
+  }
+  if (!req.file) {
+    return res.status(400).json({ error: "Arquivo não enviado." });
+  }
+
+  const conn = await db.getConnection();
   try {
-    const jornada_id = Number(req.body?.jornada_id || 0);
-
-    if (!jornada_id) {
-      return res.status(400).json({ error: "Informe a jornada para importação." });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
-    }
-
     if (req.empresaId) {
-      const [jornadaDoTenant] = await db.query(
+      const [jornadaDoTenant] = await conn.query(
         `SELECT id FROM jornadas_desenvolvimento WHERE id = ? AND empresa_id = ?`,
         [jornada_id, req.empresaId]
       );
@@ -180,43 +188,68 @@ async function importExcel(req, res) {
       return res.status(400).json({ error: "A planilha está vazia." });
     }
 
-    let totalImportados = 0;
+    // Bugfix: duplicatas silenciosas quando a mesma planilha é importada mais
+    // de uma vez sem matrícula preenchida — dedupe feito aqui, contra quem já
+    // está na jornada E contra repetições dentro da própria planilha.
+    const [existentes] = await conn.query(
+      `SELECT nome, matricula FROM jornada_participantes WHERE jornada_id = ?`,
+      [jornada_id]
+    );
+    const jaExistentes = new Set(existentes.map((e) => chaveParticipante(e.nome, e.matricula)));
+    const vistosNestaPlanilha = new Set();
 
-    for (const linha of linhas) {
+    const linhasValidas = linhas.filter((l) => String(l.nome || "").trim());
+    const paraInserir = [];
+
+    for (const linha of linhasValidas) {
       const nome = String(linha.nome || "").trim();
-      if (!nome) continue;
+      const matricula = String(linha.matricula || "").trim() || null;
+      const k = chaveParticipante(nome, matricula);
+      if (jaExistentes.has(k) || vistosNestaPlanilha.has(k)) continue;
+      vistosNestaPlanilha.add(k);
 
+      paraInserir.push([
+        jornada_id,
+        nome,
+        matricula,
+        String(linha.cliente || "").trim() || null,
+        String(linha.turma || "").trim() || null,
+        String(linha.cargo || "").trim() || null,
+        String(linha.supervisor || "").trim() || null,
+        normalizeStatus(linha.status_jornada),
+        "planilha",
+        req.empresaId ?? null,
+      ]);
+    }
+
+    // Bugfix: antes era um INSERT por linha, sequencial e sem transação —
+    // lento em planilhas grandes e sem atomicidade (uma falha no meio
+    // deixava a importação parcialmente feita). Agora um único INSERT em
+    // lote, dentro de uma transação.
+    let totalImportados = 0;
+    if (paraInserir.length) {
+      await conn.beginTransaction();
       try {
-        await db.query(
-          `
-          INSERT INTO jornada_participantes (
-            jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, empresa_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-          [
-            jornada_id,
-            nome,
-            String(linha.matricula || "").trim() || null,
-            String(linha.cliente || "").trim() || null,
-            String(linha.turma || "").trim() || null,
-            String(linha.cargo || "").trim() || null,
-            String(linha.supervisor || "").trim() || null,
-            normalizeStatus(linha.status_jornada),
-            "planilha",
-            req.empresaId ?? null,
-          ]
+        await conn.query(
+          `INSERT INTO jornada_participantes
+           (jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, empresa_id)
+           VALUES ?`,
+          [paraInserir]
         );
-        totalImportados += 1;
+        await conn.commit();
+        totalImportados = paraInserir.length;
       } catch (error) {
-        if (!String(error.message || "").includes("Duplicate")) {
-          throw error;
-        }
+        await conn.rollback();
+        throw error;
       }
     }
 
+    const totalIgnorados = linhasValidas.length - totalImportados;
+    const sufixoIgnorados = totalIgnorados > 0 ? `, ${totalIgnorados} já existente(s) ignorado(s)` : "";
+
     return res.json({
       ok: true,
-      message: `Tripulação importada com sucesso. ${totalImportados} registro(s) incluído(s).`,
+      message: `Tripulação importada com sucesso. ${totalImportados} registro(s) incluído(s)${sufixoIgnorados}.`,
       total: totalImportados,
     });
   } catch (error) {
@@ -228,6 +261,8 @@ async function importExcel(req, res) {
 
     console.error("Erro ao importar tripulação:", error);
     return res.status(500).json({ error: "Erro ao importar tripulação da jornada." });
+  } finally {
+    conn.release();
   }
 }
 

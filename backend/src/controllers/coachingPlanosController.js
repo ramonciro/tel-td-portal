@@ -1,5 +1,40 @@
 const db = require("../lib/db");
 
+// Bugfix: criar()/atualizar() gravavam jornada_id/etapa_id/acao_id vindos do
+// corpo da requisição sem checar se pertenciam ao tenant do usuário — uma
+// empresa conseguia vincular um plano de coaching a uma jornada de outra
+// empresa (vazamento de dados entre tenants). Mesmo padrão já usado em
+// acoesDesenvolvimentoController.js.
+async function validarPertencimentoTenant(req, { jornada_id, etapa_id, acao_id }) {
+  if (!req.empresaId) return null;
+
+  if (jornada_id) {
+    const [rows] = await db.query(
+      `SELECT id FROM jornadas_desenvolvimento WHERE id = ? AND empresa_id = ?`,
+      [jornada_id, req.empresaId]
+    );
+    if (!rows.length) return "Jornada não encontrada.";
+  }
+
+  if (etapa_id) {
+    const [rows] = await db.query(
+      `SELECT id FROM jornadas_etapas WHERE id = ? AND empresa_id = ?`,
+      [etapa_id, req.empresaId]
+    );
+    if (!rows.length) return "Etapa não encontrada.";
+  }
+
+  if (acao_id) {
+    const [rows] = await db.query(
+      `SELECT id FROM acoes_desenvolvimento WHERE id = ? AND empresa_id = ?`,
+      [acao_id, req.empresaId]
+    );
+    if (!rows.length) return "Ação não encontrada.";
+  }
+
+  return null;
+}
+
 async function listar(req, res) {
   try {
     const tenantWhere = req.empresaId ? "WHERE cp.empresa_id = ?" : "";
@@ -81,6 +116,7 @@ async function criar(req, res) {
       sessoes_realizadas,
       carga_horaria_sessao,
       horas_totais,
+      horas_planejadas,
       status,
       data_inicio,
       data_fim,
@@ -90,6 +126,19 @@ async function criar(req, res) {
       return res.status(400).json({
         error: "Título do coaching é obrigatório.",
       });
+    }
+
+    const jornadaIdNum = jornada_id ? Number(jornada_id) : null;
+    const etapaIdNum = etapa_id ? Number(etapa_id) : null;
+    const acaoIdNum = acao_id ? Number(acao_id) : null;
+
+    const erroTenant = await validarPertencimentoTenant(req, {
+      jornada_id: jornadaIdNum,
+      etapa_id: etapaIdNum,
+      acao_id: acaoIdNum,
+    });
+    if (erroTenant) {
+      return res.status(404).json({ error: erroTenant });
     }
 
     const [result] = await db.query(
@@ -110,17 +159,18 @@ async function criar(req, res) {
         sessoes_realizadas,
         carga_horaria_sessao,
         horas_totais,
+        horas_planejadas,
         status,
         data_inicio,
         data_fim,
         empresa_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        jornada_id ? Number(jornada_id) : null,
-        etapa_id ? Number(etapa_id) : null,
-        acao_id ? Number(acao_id) : null,
+        jornadaIdNum,
+        etapaIdNum,
+        acaoIdNum,
         tipo_coaching || "desenvolvimento",
         titulo,
         publico_alvo || null,
@@ -132,6 +182,7 @@ async function criar(req, res) {
         Number(sessoes_realizadas || 0),
         Number(carga_horaria_sessao || 0),
         Number(horas_totais || 0),
+        Number(horas_planejadas || 0),
         status || "planejado",
         data_inicio || null,
         data_fim || null,
@@ -169,6 +220,7 @@ async function atualizar(req, res) {
       sessoes_realizadas,
       carga_horaria_sessao,
       horas_totais,
+      horas_planejadas,
       status,
       data_inicio,
       data_fim,
@@ -185,10 +237,23 @@ async function atualizar(req, res) {
       return res.status(404).json({ error: "Plano de coaching não encontrado." });
     }
 
+    const jornadaIdNum = jornada_id ? Number(jornada_id) : null;
+    const etapaIdNum = etapa_id ? Number(etapa_id) : null;
+    const acaoIdNum = acao_id ? Number(acao_id) : null;
+
+    const erroTenant = await validarPertencimentoTenant(req, {
+      jornada_id: jornadaIdNum,
+      etapa_id: etapaIdNum,
+      acao_id: acaoIdNum,
+    });
+    if (erroTenant) {
+      return res.status(404).json({ error: erroTenant });
+    }
+
     const updateParams = [
-      jornada_id ? Number(jornada_id) : null,
-      etapa_id ? Number(etapa_id) : null,
-      acao_id ? Number(acao_id) : null,
+      jornadaIdNum,
+      etapaIdNum,
+      acaoIdNum,
       tipo_coaching || "desenvolvimento",
       titulo,
       publico_alvo || null,
@@ -200,6 +265,7 @@ async function atualizar(req, res) {
       Number(sessoes_realizadas || 0),
       Number(carga_horaria_sessao || 0),
       Number(horas_totais || 0),
+      Number(horas_planejadas || 0),
       status || "planejado",
       data_inicio || null,
       data_fim || null,
@@ -224,6 +290,7 @@ async function atualizar(req, res) {
           sessoes_realizadas = ?,
           carga_horaria_sessao = ?,
           horas_totais = ?,
+          horas_planejadas = ?,
           status = ?,
           data_inicio = ?,
           data_fim = ?

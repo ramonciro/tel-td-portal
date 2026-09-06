@@ -1,34 +1,41 @@
 const db = require("../lib/db");
 
+// Bugfix: a versão anterior colapsava "planejada" e "em_andamento" no MESMO
+// valor de banco ("ativo") — ao escolher "Em andamento", salvar e recarregar,
+// não havia como distinguir das duas e o status voltava a aparecer como
+// "Planejada". Agora cada status do formulário grava um valor de banco
+// próprio, sem perda de informação.
 function normalizeStatusToDb(value) {
-  const status = String(value || "").trim().toLowerCase();
+  const status = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
 
-  if (["planejada", "planejado", "ativo", "ativa", "em_andamento", "em andamento"].includes(status)) {
-    return "ativo";
-  }
+  if (["planejada", "planejado"].includes(status)) return "planejada";
+  if (["ativo", "ativa", "em_andamento"].includes(status)) return "em_andamento";
+  if (["inativo", "inativa", "cancelada", "cancelado"].includes(status)) return "cancelada";
+  if (["concluida", "concluído", "concluido", "finalizada"].includes(status)) return "concluida";
 
-  if (["inativo", "inativa", "cancelada", "cancelado"].includes(status)) {
-    return "inativo";
-  }
-
-  if (["concluida", "concluído", "concluido", "finalizada"].includes(status)) {
-    return "concluido";
-  }
-
-  return "ativo";
+  return "planejada";
 }
 
 function mapRow(item) {
+  const raw = String(item.status || "").trim().toLowerCase();
+
+  // Compatibilidade: linhas gravadas ANTES deste fix usam o vocabulário
+  // antigo, com bug ("ativo" cobria tanto "planejada" quanto "em_andamento",
+  // sem distinção possível hoje — a melhor aproximação é mostrar "planejada").
+  // Linhas novas já vêm com o valor final, sem tradução nenhuma.
+  const STATUS_ATUAIS = ["planejada", "em_andamento", "concluida", "cancelada"];
+  let status;
+  if (STATUS_ATUAIS.includes(raw)) status = raw;
+  else if (raw === "ativo") status = "planejada";
+  else if (raw === "concluido") status = "concluida";
+  else if (raw === "inativo") status = "cancelada";
+  else status = "planejada";
+
   return {
     ...item,
     titulo: item.nome || "",
     publico_alvo: item.publico_macro || "",
-    status:
-      item.status === "ativo"
-        ? "planejada"
-        : item.status === "concluido"
-        ? "concluida"
-        : "cancelada",
+    status,
   };
 }
 
