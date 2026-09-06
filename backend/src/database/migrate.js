@@ -447,6 +447,79 @@ async function runMigrations() {
       console.warn(`  ↳ backfill do Oceano não aplicado: ${err.message}`);
     }
 
+    // 18. Sprint 3 (LMS core) — trilha_etapas, trilha_progresso, certificados
+    // e password_reset_tokens só existiam em database/migrations/
+    // sprint3_lms_core.sql, um .sql avulso com o cabeçalho "Executar: uma
+    // única vez, em manutenção" — nunca rodado automaticamente. Mesmo padrão
+    // de bug já corrigido acima para capacidade_* e necessidades_treinamento:
+    // em produção (Railway) essas 4 tabelas nunca chegaram a ser criadas, e
+    // qualquer chamada quebrava com "Table 'railway.<nome>' doesn't exist" —
+    // silenciada em getGlobalStats/getEmpresaStats (adminController.js) por
+    // contarTabela() engolir o erro e devolver 0, então não aparecia lá; mas
+    // Certificados, Trilhas relacionais e "esqueci minha senha" (que leem/
+    // gravam essas tabelas direto) quebravam de fato. Schema idêntico ao do
+    // .sql original.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS trilha_etapas (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        trilha_id   INT NOT NULL,
+        ordem       INT NOT NULL DEFAULT 0,
+        titulo      VARCHAR(200) NOT NULL,
+        descricao   TEXT,
+        tipo        VARCHAR(50) DEFAULT 'conteudo',
+        turma_id    INT NULL,
+        empresa_id  INT NULL DEFAULT 1,
+        criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_etapas_trilha   (trilha_id),
+        INDEX idx_etapas_empresa  (empresa_id)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS trilha_progresso (
+        id            INT AUTO_INCREMENT PRIMARY KEY,
+        trilha_id     INT NOT NULL,
+        etapa_id      INT NOT NULL,
+        usuario_email VARCHAR(150) NOT NULL,
+        empresa_id    INT NULL DEFAULT 1,
+        concluido     TINYINT(1) DEFAULT 0,
+        concluido_em  TIMESTAMP NULL,
+        UNIQUE KEY uq_progresso (etapa_id, usuario_email),
+        INDEX idx_progresso_trilha   (trilha_id),
+        INDEX idx_progresso_usuario  (usuario_email)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS certificados (
+        id                    INT AUTO_INCREMENT PRIMARY KEY,
+        usuario_nome          VARCHAR(200) NOT NULL,
+        usuario_email         VARCHAR(150) NULL,
+        treinamento_id        INT NOT NULL,
+        treinamento_tema      VARCHAR(200),
+        treinamento_cliente   VARCHAR(150),
+        frequencia_percentual DECIMAL(5,2) NULL,
+        nota_final            DECIMAL(5,2) NULL,
+        carga_horaria         VARCHAR(50)  NULL,
+        empresa_id            INT NULL DEFAULT 1,
+        emitido_em            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_cert    (usuario_email, treinamento_id),
+        INDEX idx_cert_empresa (empresa_id),
+        INDEX idx_cert_usuario (usuario_email),
+        INDEX idx_cert_trein   (treinamento_id)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        usuario_id  INT NOT NULL,
+        token       VARCHAR(64) NOT NULL UNIQUE,
+        expira_em   DATETIME NOT NULL,
+        usado       TINYINT(1) DEFAULT 0,
+        criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_prt_token    (token),
+        INDEX idx_prt_usuario  (usuario_id)
+      );
+    `);
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
