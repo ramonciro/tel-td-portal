@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import { apiFetch, getStoredUser } from "../../services/api";
+import { colors } from "../../lib/theme";
 
 function normalize(v) { return String(v || "").trim().toLowerCase(); }
 function fmtDate(v) {
@@ -110,7 +111,7 @@ export default function CertificadosPage() {
       <style>body{font-family:Georgia,serif;max-width:780px;margin:60px auto;color:#111}
       .logo{font-size:13px;color:#6b7280;letter-spacing:2px;text-transform:uppercase;margin-bottom:48px}
       .titulo{font-size:13px;letter-spacing:4px;text-transform:uppercase;color:#9ca3af;margin-bottom:16px}
-      .nome{font-size:42px;font-weight:bold;color:#0B1220;border-bottom:3px solid #FF6B4A;padding-bottom:12px;margin-bottom:24px}
+      .nome{font-size:42px;font-weight:bold;color:#0B1220;border-bottom:3px solid ${colors.accent};padding-bottom:12px;margin-bottom:24px}
       .corpo{font-size:17px;line-height:1.8;color:#374151}.tema{font-weight:bold;color:#0B1220}
       .metas{display:flex;gap:40px;margin:36px 0}.meta label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9ca3af;display:block;margin-bottom:4px}
       .meta span{font-size:18px;font-weight:bold;color:#0B1220}.footer{margin-top:60px;font-size:11px;color:#9ca3af}
@@ -172,7 +173,7 @@ export default function CertificadosPage() {
             <div style={kpiCard}><div style={kpiValue}>{kpis.treinamentos}</div><div style={kpiLabel}>Treinamentos cobertos</div></div>
           </>}
           {kpis.freqMedia !== null && (
-            <div style={kpiCard}><div style={{ ...kpiValue, color: "#FF6B4A" }}>{kpis.freqMedia}%</div><div style={kpiLabel}>Frequência média</div></div>
+            <div style={kpiCard}><div style={{ ...kpiValue, color: colors.accent }}>{kpis.freqMedia}%</div><div style={kpiLabel}>Frequência média</div></div>
           )}
         </div>
 
@@ -259,12 +260,12 @@ const sel = { padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8
 const empty = { textAlign: "center", color: "#9ca3af", padding: "60px 0", fontSize: 14 };
 const certLista = { display: "flex", flexDirection: "column", gap: 16 };
 const certRow = { display: "flex", alignItems: "center", gap: 16 };
-const certCard = { flex: 1, background: "#fff", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 4px rgba(0,0,0,.06)", borderLeft: "4px solid #FF6B4A" };
+const certCard = { flex: 1, background: "#fff", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 4px rgba(0,0,0,.06)", borderLeft: `4px solid ${colors.accent}` };
 const certTopo = { display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 16 };
 const certIcone = { fontSize: 28, lineHeight: 1 };
 const certNome = { fontWeight: 900, fontSize: 17, color: "#0B1220" };
 const certTema = { fontSize: 14, color: "#374151", marginTop: 2 };
-const certCliente = { fontSize: 12, color: "#FF6B4A", fontWeight: 700, marginTop: 2 };
+const certCliente = { fontSize: 12, color: colors.accent, fontWeight: 700, marginTop: 2 };
 const certDataWrap = { textAlign: "right" };
 const certDataLabel = { fontSize: 11, color: "#9ca3af", fontWeight: 700, letterSpacing: 1 };
 const certDataValor = { fontSize: 14, fontWeight: 800, color: "#0B1220" };
@@ -273,7 +274,7 @@ const metaItem = {};
 const metaLabel = { fontSize: 11, color: "#9ca3af", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 2 };
 const metaValor = { fontSize: 16, fontWeight: 900, color: "#0B1220" };
 const btnImprimir = { padding: "9px 16px", background: "#f3f4f6", color: "#374151", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" };
-const btnEmitir = { padding: "10px 18px", background: "#FF6B4A", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" };
+const btnEmitir = { padding: "10px 18px", background: colors.accent, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" };
 const formCard = { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, padding: "20px 24px", marginBottom: 20 };
 const formTitle = { fontSize: 15, fontWeight: 800, color: "#0B1220", margin: "0 0 16px" };
 const formGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 };
