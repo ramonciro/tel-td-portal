@@ -251,12 +251,12 @@ async function carregarTurmasEnriquecidas(req) {
       presenca: resolvePresenca(resumoPresencaPorId.get(Number(row.id))),
     }));
 
-  return { baseRows, filteredRows, enriched };
+  return { baseRows, filteredRows, enriched, resumoPresencaPorId };
 }
 
 async function getDashboardTreinamentos(req, res) {
   try {
-    const { baseRows, filteredRows, enriched } = await carregarTurmasEnriquecidas(req);
+    const { baseRows, filteredRows, enriched, resumoPresencaPorId } = await carregarTurmasEnriquecidas(req);
 
     const totalTreinamentos = enriched.length;
     const totalPrevistos = enriched.reduce((acc, item) => acc + n(item.participantes_previstos), 0);
