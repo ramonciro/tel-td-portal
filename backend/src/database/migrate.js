@@ -1,6 +1,46 @@
 // src/database/migrate.js
 const pool = require("../lib/db");
 
+// ---------------------------------------------------------------------------
+// Helpers idempotentes de migração — usados para os itens que a migração
+// original (CREATE TABLE IF NOT EXISTS) não cobre: adicionar colunas em
+// tabelas que já existem com um schema mais antigo/menor, e alterar o tipo
+// de uma coluna existente. Sem isso, ambientes onde a tabela já existia
+// (criada manualmente ou por uma versão anterior deste arquivo) nunca
+// recebiam as colunas novas, e os controllers que dependem delas (ex.:
+// turmaAulasController, capacidadeController) quebravam com "unknown column"
+// ou simplesmente nunca tinham dado nenhum para trabalhar.
+// ---------------------------------------------------------------------------
+async function columnInfo(table, column) {
+  const [rows] = await pool.query(
+    `SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+     LIMIT 1`,
+    [table, column]
+  );
+  return rows[0] || null;
+}
+
+async function ensureColumn(table, column, definitionSql) {
+  const info = await columnInfo(table, column);
+  if (info) return;
+  try {
+    await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definitionSql}`);
+    console.log(`  ↳ coluna adicionada: ${table}.${column}`);
+  } catch (error) {
+    // Corrida entre instâncias/deploys tentando adicionar a mesma coluna ao
+    // mesmo tempo — se já existe agora, seguimos; senão, propaga o erro real.
+    if (!/duplicate column/i.test(error.message || "")) throw error;
+  }
+}
+
+async function ensureDecimalType(table, column, targetTypeSql) {
+  const info = await columnInfo(table, column);
+  if (!info || info.DATA_TYPE === "decimal") return;
+  await pool.query(`ALTER TABLE ${table} MODIFY COLUMN ${column} ${targetTypeSql}`);
+  console.log(`  ↳ coluna ampliada para decimal: ${table}.${column}`);
+}
+
 async function runMigrations() {
   try {
     console.log("🔄 Verificando e aplicando migrações no MySQL...");
@@ -146,6 +186,161 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
+
+    // 8. Roster de participantes por turma (HC previsto) — já usada por
+    // treinamentoParticipantesController, mas nunca tinha uma migration
+    // versionada rodando automaticamente no boot do servidor.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS treinamento_participantes (
+          id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+          treinamento_id INT NOT NULL,
+          nome VARCHAR(200) NOT NULL,
+          matricula VARCHAR(50) NULL,
+          cliente VARCHAR(150) NULL,
+          turma VARCHAR(150) NULL,
+          supervisor VARCHAR(150) NULL,
+          operacao VARCHAR(150) NULL,
+          data_admissao DATE NULL,
+          status_presenca VARCHAR(20) DEFAULT 'pendente',
+          justificativa TEXT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          KEY idx_tp_treinamento (treinamento_id),
+          KEY idx_tp_status (status_presenca)
+      );
+    `);
+
+    // 9. turma_aulas — a tabela criada no passo 7 (acima) é o schema mínimo
+    // legado. As colunas abaixo são o cronograma diário real (planejado x
+    // ministrado, por instrutor) que turmaAulasController.js e o resolver de
+    // capacidade dependem. Antes, essas colunas só existiam se alguém tivesse
+    // rodado manualmente o arquivo database/migrations/2026-08-26_turmas_
+    // aulas_participantes.sql — o que nunca acontecia automaticamente, então
+    // um ambiente novo (ou o próprio Railway ao reiniciar do zero) subia com
+    // turma_aulas faltando carga_horaria_real, instrutor_responsavel etc., e
+    // toda a tela de cronograma/CH real quebrava silenciosamente.
+    await ensureColumn("turma_aulas", "dia_numero", "INT NOT NULL DEFAULT 1 AFTER treinamento_id");
+    await ensureColumn("turma_aulas", "ordem", "INT DEFAULT 1");
+    await ensureColumn("turma_aulas", "titulo", "VARCHAR(200) NULL");
+    await ensureColumn("turma_aulas", "objetivo", "TEXT NULL");
+    await ensureColumn("turma_aulas", "conteudo_planejado", "TEXT NULL");
+    await ensureColumn("turma_aulas", "metodologia", "VARCHAR(150) NULL");
+    await ensureColumn("turma_aulas", "carga_horaria_planejada", "DECIMAL(10,2) DEFAULT 0");
+    await ensureColumn("turma_aulas", "instrutor_responsavel", "VARCHAR(150) NULL");
+    await ensureColumn("turma_aulas", "material_apoio", "TEXT NULL");
+    await ensureColumn("turma_aulas", "status_execucao", "VARCHAR(30) DEFAULT 'planejada'");
+    await ensureColumn("turma_aulas", "conteudo_ministrado", "TEXT NULL");
+    await ensureColumn("turma_aulas", "carga_horaria_real", "DECIMAL(10,2) NULL");
+    await ensureColumn("turma_aulas", "observacoes_execucao", "TEXT NULL");
+    await ensureColumn("turma_aulas", "reprogramada", "TINYINT(1) DEFAULT 0");
+    await ensureColumn("turma_aulas", "motivo_reprogramacao", "TEXT NULL");
+    await ensureColumn("turma_aulas", "ministrada_em", "TIMESTAMP NULL");
+    await ensureColumn("turma_aulas", "atualizado_em", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    await pool.query(`CREATE INDEX idx_ta_instrutor ON turma_aulas (instrutor_responsavel)`).catch(() => {});
+    await pool.query(`CREATE INDEX idx_ta_status ON turma_aulas (status_execucao)`).catch(() => {});
+
+    // 10. Presença por aula (granularidade diária, por participante) — fonte
+    // de "dias praticados" e "HC realizado" no nível mais fino. Mesma
+    // história do item 9: existia só como .sql avulso, nunca aplicado.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS presenca_aulas (
+          id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+          turma_aula_id INT NOT NULL,
+          treinamento_id INT NOT NULL,
+          data_aula DATE NOT NULL,
+          treinando_nome VARCHAR(200) NOT NULL,
+          status VARCHAR(20) DEFAULT 'pendente',
+          justificativa TEXT NULL,
+          criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_pa_aula_nome (turma_aula_id, treinando_nome),
+          KEY idx_pa_treinamento (treinamento_id),
+          KEY idx_pa_data (data_aula),
+          KEY idx_pa_status (status)
+      );
+    `);
+
+    // 11. Capacidade do instrutor (regra automática + overrides manuais).
+    // Mesmo caso: o controller (capacidadeController.js) e o .sql já
+    // existiam, mas a tabela nunca era criada automaticamente e o serviço
+    // que o controller importa (capacidadeResolver.js) nem existia no
+    // código — a funcionalidade inteira de "Capacidade x Realizado" estava
+    // morta. Ver backend/src/services/capacidadeResolver.js (novo).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS capacidade_regra_padrao (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        horas_dia_padrao DECIMAL(5,2) NOT NULL DEFAULT 6.00,
+        hc_dia_padrao INT NOT NULL DEFAULT 30,
+        considerar_domingo TINYINT(1) NOT NULL DEFAULT 0,
+        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      );
+    `);
+    await pool.query(`
+      INSERT INTO capacidade_regra_padrao (id, horas_dia_padrao, hc_dia_padrao, considerar_domingo)
+      SELECT 1, 6.00, 30, 0
+      WHERE NOT EXISTS (SELECT 1 FROM capacidade_regra_padrao WHERE id = 1)
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS capacidade_instrutor_mensal (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        instrutor VARCHAR(150) NOT NULL,
+        ano INT NOT NULL,
+        mes INT NOT NULL,
+        horas_capacidade DECIMAL(10,2) NOT NULL DEFAULT 0,
+        hc_capacidade INT NOT NULL DEFAULT 0,
+        observacoes VARCHAR(255) NULL,
+        criado_por VARCHAR(150) NULL,
+        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_cim_instrutor_mes (instrutor, ano, mes)
+      );
+    `);
+
+    // 12. Lançamentos de atividade do instrutor — versão em banco da
+    // planilha "Planilha_Operacional_Treinamento_Mercantil.xlsx" que os
+    // instrutores preenchiam manualmente. Cada linha é uma atividade
+    // (treinamento formal ou não) com CH programada x realizada, para captar
+    // também demanda que nunca vira uma turma formal em `treinamentos`
+    // (suporte, coaching pontual, apoio a outra célula etc.).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS atividades_instrutor (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        empresa_id INT NULL,
+        instrutor VARCHAR(150) NOT NULL,
+        cliente VARCHAR(150) NULL,
+        operacao VARCHAR(150) NULL,
+        data_inicio DATE NOT NULL,
+        data_fim DATE NULL,
+        tema VARCHAR(200) NOT NULL,
+        tipo_atividade VARCHAR(100) NULL,
+        canal VARCHAR(100) NULL,
+        celula VARCHAR(100) NULL,
+        hora_inicio TIME NULL,
+        hora_fim TIME NULL,
+        ch_horas DECIMAL(6,2) NOT NULL DEFAULT 0,
+        num_dias INT NOT NULL DEFAULT 1,
+        hc_programado DECIMAL(8,2) NOT NULL DEFAULT 0,
+        hc_realizado DECIMAL(8,2) NOT NULL DEFAULT 0,
+        status VARCHAR(30) NOT NULL DEFAULT 'programado',
+        local VARCHAR(150) NULL,
+        mes_ref VARCHAR(7) NULL,
+        observacoes TEXT NULL,
+        treinamento_id INT NULL,
+        criado_por VARCHAR(150) NULL,
+        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_ai_instrutor (instrutor),
+        KEY idx_ai_mes_ref (mes_ref),
+        KEY idx_ai_data_inicio (data_inicio),
+        KEY idx_ai_empresa (empresa_id)
+      );
+    `);
+
+    // 13. treinamentos.carga_horaria nasceu como INT (migrate.js, passo 5).
+    // Isso arredonda qualquer treinamento com carga fracionada (ex.: 1.5h,
+    // 4.5h) no INSERT — CH real é perdida de forma silenciosa antes mesmo de
+    // chegar aos relatórios. turma_aulas já usa DECIMAL(10,2); alinhamos o
+    // campo agregado da turma ao mesmo padrão, preservando os valores atuais.
+    await ensureDecimalType("treinamentos", "carga_horaria", "DECIMAL(8,2) NULL");
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
