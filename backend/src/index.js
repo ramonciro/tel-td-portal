@@ -12,7 +12,7 @@ const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } 
 
 // Sprint 5: Analytics
 const {
-  getResumo, getHoras, getNps, getEfetividade, getRoi,
+  getResumo, getHoras, getNps, getEfetividade, getRoi, exportarIndicadores,
 } = require("./controllers/analyticsController");
 
 // Sprint 4: Admin (super_admin)
@@ -59,6 +59,7 @@ const {
 
 const {
   getDashboardTreinamentos,
+  exportarTreinamentos,
 } = require("./controllers/dashboardTreinamentosController");
 
 const {
@@ -159,6 +160,13 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
   getDashboardTreinamentos
+);
+
+app.get(
+  "/api/dashboard/treinamentos/exportar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  exportarTreinamentos
 );
 
 // Fonte única de presença + status de turma (cronograma > legado > snapshot),
@@ -1007,6 +1015,7 @@ app.get("/api/analytics/horas",       authRequired, authorizeRoles("coordenador"
 app.get("/api/analytics/nps",         authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getNps);
 app.get("/api/analytics/efetividade", authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getEfetividade);
 app.get("/api/analytics/roi",         authRequired, authorizeRoles("coordenador","supervisor","superintendente"), getRoi);
+app.get("/api/analytics/exportar",    authRequired, authorizeRoles("coordenador","supervisor","superintendente"), exportarIndicadores);
 
 // ─────────────────────────────────────────────────────────────────────────────
 
