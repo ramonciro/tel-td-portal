@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PortalShell from "../../../components/PortalShell";
 import { apiFetch, getStoredUser } from "../../../services/api";
+import { colors } from "../../../lib/theme";
 
 function normalize(v) { return String(v || "").trim().toLowerCase(); }
 
@@ -385,7 +386,7 @@ const credAviso    = { marginTop: 16, fontSize: 13, color: "#92400e", background
                        border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px" };
 const successActions = { display: "flex", gap: 12, justifyContent: "center" };
 
-const btnPrimary   = { padding: "10px 24px", background: "#FF6B4A", color: "#fff", border: "none",
+const btnPrimary   = { padding: "10px 24px", background: colors.accent, color: "#fff", border: "none",
                        borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 700 };
 const btnSecundary = { padding: "10px 20px", background: "#f3f4f6", color: "#374151", border: "none",
                        borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 700 };
