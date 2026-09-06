@@ -1,6 +1,6 @@
 // src/database/migrate.js
 const pool = require("../lib/db");
- 
+
 // ---------------------------------------------------------------------------
 // Helpers idempotentes de migração — usados para os itens que a migração
 // original (CREATE TABLE IF NOT EXISTS) não cobre: adicionar colunas em
@@ -20,7 +20,7 @@ async function columnInfo(table, column) {
   );
   return rows[0] || null;
 }
- 
+
 async function ensureColumn(table, column, definitionSql) {
   const info = await columnInfo(table, column);
   if (info) return;
@@ -33,18 +33,18 @@ async function ensureColumn(table, column, definitionSql) {
     if (!/duplicate column/i.test(error.message || "")) throw error;
   }
 }
- 
+
 async function ensureDecimalType(table, column, targetTypeSql) {
   const info = await columnInfo(table, column);
   if (!info || info.DATA_TYPE === "decimal") return;
   await pool.query(`ALTER TABLE ${table} MODIFY COLUMN ${column} ${targetTypeSql}`);
   console.log(`  ↳ coluna ampliada para decimal: ${table}.${column}`);
 }
- 
+
 async function runMigrations() {
   try {
     console.log("🔄 Verificando e aplicando migrações no MySQL...");
- 
+
     // 1. Tabela de Empresas
     await pool.query(`
       CREATE TABLE IF NOT EXISTS empresas (
@@ -56,7 +56,7 @@ async function runMigrations() {
           atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       );
     `);
- 
+
     // 2. Tabela de Usuários
     await pool.query(`
       CREATE TABLE IF NOT EXISTS usuarios (
@@ -75,7 +75,7 @@ async function runMigrations() {
           FOREIGN KEY (empresa_id) REFERENCES empresas(id) ON DELETE CASCADE
       );
     `);
- 
+
     // 3. Tabela de Clientes
     await pool.query(`
       CREATE TABLE IF NOT EXISTS clientes (
@@ -88,7 +88,7 @@ async function runMigrations() {
           criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
- 
+
     // 4. Tabela de Necessidades (ISO 10015 - Fase 1)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS necessidades (
@@ -104,7 +104,7 @@ async function runMigrations() {
           FOREIGN KEY (criado_por) REFERENCES usuarios(id)
       );
     `);
- 
+
     // 5. Tabela de Treinamentos / Turmas
     await pool.query(`
       CREATE TABLE IF NOT EXISTS treinamentos (
@@ -130,7 +130,7 @@ async function runMigrations() {
           FOREIGN KEY (necessidade_id) REFERENCES necessidades(id) ON DELETE SET NULL
       );
     `);
- 
+
     // 6. Tabela de Participantes do Treinamento
     await pool.query(`
       CREATE TABLE IF NOT EXISTS treinamento_participantes (
@@ -144,7 +144,7 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
- 
+
     // 7. Tabelas de Aulas, Presenças e Avaliações
     await pool.query(`
       CREATE TABLE IF NOT EXISTS turma_aulas (
@@ -156,7 +156,7 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
- 
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS presencas (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -170,7 +170,7 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
- 
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS avaliacoes (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -186,7 +186,7 @@ async function runMigrations() {
           FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
       );
     `);
- 
+
     // 8. Roster de participantes por turma (HC previsto) — já usada por
     // treinamentoParticipantesController, mas nunca tinha uma migration
     // versionada rodando automaticamente no boot do servidor.
@@ -208,7 +208,7 @@ async function runMigrations() {
           KEY idx_tp_status (status_presenca)
       );
     `);
- 
+
     // 9. turma_aulas — a tabela criada no passo 7 (acima) é o schema mínimo
     // legado. As colunas abaixo são o cronograma diário real (planejado x
     // ministrado, por instrutor) que turmaAulasController.js e o resolver de
@@ -237,7 +237,7 @@ async function runMigrations() {
     await ensureColumn("turma_aulas", "atualizado_em", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
     await pool.query(`CREATE INDEX idx_ta_instrutor ON turma_aulas (instrutor_responsavel)`).catch(() => {});
     await pool.query(`CREATE INDEX idx_ta_status ON turma_aulas (status_execucao)`).catch(() => {});
- 
+
     // 10. Presença por aula (granularidade diária, por participante) — fonte
     // de "dias praticados" e "HC realizado" no nível mais fino. Mesma
     // história do item 9: existia só como .sql avulso, nunca aplicado.
@@ -258,7 +258,7 @@ async function runMigrations() {
           KEY idx_pa_status (status)
       );
     `);
- 
+
     // 11. Capacidade do instrutor (regra automática + overrides manuais).
     // Mesmo caso: o controller (capacidadeController.js) e o .sql já
     // existiam, mas a tabela nunca era criada automaticamente e o serviço
@@ -294,19 +294,107 @@ async function runMigrations() {
         UNIQUE KEY uq_cim_instrutor_mes (instrutor, ano, mes)
       );
     `);
- 
+
     // 12. treinamentos.carga_horaria nasceu como INT (migrate.js, passo 5).
     // Isso arredonda qualquer treinamento com carga fracionada (ex.: 1.5h,
     // 4.5h) no INSERT — CH real é perdida de forma silenciosa antes mesmo de
     // chegar aos relatórios. turma_aulas já usa DECIMAL(10,2); alinhamos o
     // campo agregado da turma ao mesmo padrão, preservando os valores atuais.
     await ensureDecimalType("treinamentos", "carga_horaria", "DECIMAL(8,2) NULL");
- 
+
+    // 13. necessidades_treinamento — a tabela que a feature de Necessidades
+    // REALMENTE usa (necessidadesResolver.js). A tabela "necessidades" criada
+    // no passo 4 acima é de uma versão anterior da feature e não é lida por
+    // nenhum código hoje (fica como está, não removida automaticamente, por
+    // segurança — mas pode ser dropada com segurança se você confirmar).
+    // "necessidades_treinamento" só existia como .sql avulso
+    // (database/migrations/2026-07-18_necessidades_treinamento.sql), nunca
+    // aplicado automaticamente — mesmo padrão de bug já corrigido em
+    // turma_aulas/capacidade: em qualquer ambiente novo (Railway do zero),
+    // a tela de Necessidades quebrava com "tabela não existe".
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS necessidades_treinamento (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        cliente VARCHAR(150) NOT NULL,
+        tema VARCHAR(200) NOT NULL,
+        horas_necessarias DECIMAL(10,2) DEFAULT 0,
+        prazo DATE NULL,
+        prioridade VARCHAR(20) DEFAULT 'media',
+        status VARCHAR(30) NULL,
+        origem VARCHAR(100) NULL,
+        observacoes TEXT NULL,
+        solicitante_id INT NULL,
+        solicitante_nome VARCHAR(150) NULL,
+        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 14. usuarios.senha — o login (authRoutes.js) lê/grava a coluna "senha",
+    // mas o passo 2 acima (CREATE TABLE usuarios) só define "senha_hash". Em
+    // qualquer ambiente cuja tabela usuarios tenha sido criada só por este
+    // arquivo (do zero), login e criação de usuário (POST /api/usuarios, que
+    // já grava em "senha") ficam incompatíveis com o schema. Adiciona a
+    // coluna que o código de fato usa, sem mexer em "senha_hash" (mantida
+    // por compatibilidade, ainda que hoje não seja lida por ninguém).
+    await ensureColumn("usuarios", "senha", "VARCHAR(255) NULL");
+
+    // 15. Isolamento por tenant (empresa_id) nas tabelas centrais — hoje só
+    // "usuarios" tem essa coluna. "treinamentos" e "clientes" já são servidos
+    // por um router (entityCrud.js) preparado para filtrar por empresa_id
+    // quando multiTenant:true, mas a coluna nunca existiu nessas tabelas —
+    // ou seja, o filtro estava configurado mas não tinha o que filtrar.
+    // "presencas", "avaliacoes", "turma_aulas", "presenca_aulas" e
+    // "necessidades_treinamento" não tinham NENHUM isolamento. Colunas
+    // nascem NULL (sem valor) — dado existente continua visível para quem
+    // hoje loga sem empresa definida, exatamente como já funciona; a
+    // segregação passa a valer para dado novo, e para dado antigo assim que
+    // for atribuído a uma empresa.
+    await ensureColumn("treinamentos", "empresa_id", "INT NULL");
+    await ensureColumn("clientes", "empresa_id", "INT NULL");
+    await ensureColumn("necessidades_treinamento", "empresa_id", "INT NULL");
+    await ensureColumn("turma_aulas", "empresa_id", "INT NULL");
+    await ensureColumn("presencas", "empresa_id", "INT NULL");
+    await ensureColumn("avaliacoes", "empresa_id", "INT NULL");
+    await ensureColumn("presenca_aulas", "empresa_id", "INT NULL");
+    await pool.query(`CREATE INDEX idx_treinamentos_empresa ON treinamentos (empresa_id)`).catch(() => {});
+
+    // 16. Backfill — tabelas "filhas" de treinamentos herdam o empresa_id do
+    // treinamento pai (idempotente: só atualiza onde ainda está NULL, então
+    // rodar de novo não sobrescreve nada). "treinamentos", "clientes" e
+    // "necessidades_treinamento" ficam NULL para dado pré-existente — não há
+    // como inferir de forma confiável a que empresa um registro antigo
+    // pertence, então preferimos deixar em aberto a chutar um valor.
+    await pool.query(`
+      UPDATE turma_aulas ta
+      JOIN treinamentos t ON t.id = ta.treinamento_id
+      SET ta.empresa_id = t.empresa_id
+      WHERE ta.empresa_id IS NULL AND t.empresa_id IS NOT NULL
+    `);
+    await pool.query(`
+      UPDATE presencas p
+      JOIN treinamentos t ON t.id = p.treinamento_id
+      SET p.empresa_id = t.empresa_id
+      WHERE p.empresa_id IS NULL AND t.empresa_id IS NOT NULL
+    `);
+    await pool.query(`
+      UPDATE avaliacoes a
+      JOIN treinamentos t ON t.id = a.treinamento_id
+      SET a.empresa_id = t.empresa_id
+      WHERE a.empresa_id IS NULL AND t.empresa_id IS NOT NULL
+    `);
+    await pool.query(`
+      UPDATE presenca_aulas pa
+      JOIN treinamentos t ON t.id = pa.treinamento_id
+      SET pa.empresa_id = t.empresa_id
+      WHERE pa.empresa_id IS NULL AND t.empresa_id IS NOT NULL
+    `);
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
     throw error;
   }
 }
- 
+
 module.exports = { runMigrations };
