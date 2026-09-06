@@ -61,8 +61,14 @@ export default function InicioPage() {
   async function carregar(u) {
     try {
       setLoading(true);
+      // FIX: antes buscava TODAS as turmas do sistema (/treinamentos) e filtrava
+      // no cliente — para "instrutor" com um match de nome, e para "treinando"
+      // com um loop de N requisições (uma por turma) só pra descobrir em quais
+      // ele estava inscrito, o que já causou timeouts/dados vazios (ver FIX #3
+      // no histórico). "/minhas-turmas" já faz esse recorte por papel no
+      // servidor, numa única query — mesmo endpoint usado em Presenças/Minhas Turmas.
       const [treinamentosData, resumoData, necessidadesData] = await Promise.all([
-        apiFetch("/treinamentos").catch(() => []),
+        apiFetch("/minhas-turmas").catch(() => []),
         apiFetch("/presenca-resumo").catch(() => null),
         // FIX: case-insensitive — banco pode guardar "Coordenador" (C maiúsculo)
         ["coordenador","supervisor"].includes(String(u?.perfil || "").toLowerCase().trim())
@@ -70,41 +76,8 @@ export default function InicioPage() {
           : Promise.resolve(null),
       ]);
 
-      const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
+      const minhasTurmas = Array.isArray(treinamentosData) ? treinamentosData : [];
       const listaResumo = Array.isArray(resumoData?.itens) ? resumoData.itens : [];
-
-      // instrutor: só as turmas dele. treinando: turmas onde o nome dele
-      // aparece no roster. coordenador/supervisor: todas.
-      let minhasTurmas = listaTreinamentos;
-      const perfilNorm = String(u?.perfil || "").toLowerCase().trim();
-      if (perfilNorm === "instrutor") {
-        const nome = String(u?.nome || "").trim().toLowerCase();
-        minhasTurmas = listaTreinamentos.filter((t) => String(t.instrutor || "").trim().toLowerCase() === nome);
-      } else if (perfilNorm === "treinando") {
-        // FIX #3: antes fazia Promise.all de N requisições simultâneas (N = total de turmas),
-        // causando timeouts e dados vazios. Agora processa em batches de 10.
-        const nome = String(u?.nome || "").trim().toLowerCase();
-        const BATCH = 10;
-        const verificadas = [];
-        for (let i = 0; i < listaTreinamentos.length; i += BATCH) {
-          const lote = listaTreinamentos.slice(i, i + BATCH);
-          const resultados = await Promise.all(
-            lote.map(async (t) => {
-              try {
-                const participantes = await apiFetch(`/treinamentos/${t.id}/participantes`).catch(() => []);
-                const pertence = (Array.isArray(participantes) ? participantes : []).some(
-                  (p) => String(p.nome || "").trim().toLowerCase() === nome
-                );
-                return pertence ? t : null;
-              } catch {
-                return null;
-              }
-            })
-          );
-          verificadas.push(...resultados.filter(Boolean));
-        }
-        minhasTurmas = verificadas;
-      }
 
       setTurmas(minhasTurmas);
       setResumo(listaResumo);
