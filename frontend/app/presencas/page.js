@@ -148,7 +148,7 @@ function CardActionBtn({ variant, label, onClick }) {
       background: colors.accent,
       color: "#fff",
       border: 0,
-      boxShadow: `0 4px 14px rgba(255,107,74,.30)`,
+      boxShadow: `0 4px 14px rgba(217,119,6,.30)`,
     },
     alerta: {
       background: colors.warningLight,
