@@ -22,6 +22,53 @@ function tenantWhere(empresaId, alias = 't') {
   return empresaId ? `${alias}.empresa_id = ${pool.escape(empresaId)}` : '1=1';
 }
 
+// Filtro de recorte (cliente/operação e período), comum a todas as abas de
+// Indicadores — pedido do coordenador para poder isolar "NPS do último
+// trimestre" ou "efetividade só do cliente X" sem sair da tela. Sempre
+// somado ao tenantWhere (nunca substitui o isolamento por tenant) e às
+// janelas fixas dos gráficos de tendência (últimos 6/12 meses), que
+// continuam valendo por cima deste filtro.
+function filtroRecorte(query = {}, alias = 't') {
+  const conditions = [];
+  const params = [];
+  if (query.cliente) {
+    conditions.push(`${alias}.cliente = ?`);
+    params.push(query.cliente);
+  }
+  if (query.data_inicio) {
+    conditions.push(`DATE(COALESCE(${alias}.data_fim, ${alias}.data_inicio, ${alias}.data)) >= ?`);
+    params.push(query.data_inicio);
+  }
+  if (query.data_fim) {
+    conditions.push(`DATE(COALESCE(${alias}.data_fim, ${alias}.data_inicio, ${alias}.data)) <= ?`);
+    params.push(query.data_fim);
+  }
+  return {
+    sql: conditions.length ? ` AND ${conditions.join(' AND ')}` : '',
+    params,
+  };
+}
+
+// Custo por hora usado no cálculo de ROI. Antes fixo em R$ 150 para todo
+// mundo, com uma nota na tela prometendo uma tela de configuração que não
+// existia. Agora lê de empresas.custo_hora_treinamento (configurável em
+// Admin → tenant); sem tenant (super_admin) ou sem valor definido, mantém
+// os R$ 150 como referência padrão.
+const CUSTO_HORA_PADRAO = 150;
+async function getCustoPorHora(empresaId) {
+  if (!empresaId) return CUSTO_HORA_PADRAO;
+  try {
+    const [[row]] = await pool.query(
+      'SELECT custo_hora_treinamento FROM empresas WHERE id = ? LIMIT 1',
+      [empresaId]
+    );
+    const valor = Number(row?.custo_hora_treinamento);
+    return valor > 0 ? valor : CUSTO_HORA_PADRAO;
+  } catch (_) {
+    return CUSTO_HORA_PADRAO;
+  }
+}
+
 // Status de turmas concluídas (variações encontradas no banco)
 // LIKE evita problemas de charset/acento no MySQL do Railway
 const STATUS_CONCLUIDO = "(LOWER(TRIM(status)) LIKE '%conclui%' OR LOWER(TRIM(status)) = 'encerrado')";
@@ -37,10 +84,23 @@ async function getResumo(req, res) {
   try {
     const eId  = req.empresaId ?? null;
     const tw   = tenantWhere(eId);
+    const filtro = filtroRecorte(req.query);
+    const where = `${tw}${filtro.sql}`;
+
+    // Lista de clientes/operações do tenant, para alimentar o filtro na tela
+    // (Indicadores não tinha filtro nenhum antes — nem cliente, nem período).
+    let clientes = [];
+    try {
+      const [clienteRows] = await pool.query(
+        `SELECT DISTINCT cliente FROM treinamentos t WHERE ${tw} AND cliente IS NOT NULL AND cliente <> '' ORDER BY cliente`
+      );
+      clientes = clienteRows.map((r) => r.cliente);
+    } catch (_) {}
 
     // Turmas por status
     const [statusRows] = await pool.query(
-      `SELECT status, COUNT(*) AS total FROM treinamentos t WHERE ${tw} GROUP BY status`
+      `SELECT status, COUNT(*) AS total FROM treinamentos t WHERE ${where} GROUP BY status`,
+      filtro.params
     );
 
     const porStatus = {};
@@ -58,13 +118,15 @@ async function getResumo(req, res) {
     // Horas treinadas (apenas turmas concluídas)
     const [[{ horas_total }]] = await pool.query(
       `SELECT COALESCE(SUM(carga_horaria), 0) AS horas_total
-       FROM treinamentos t WHERE ${tw} AND ${STATUS_CONCLUIDO}`
+       FROM treinamentos t WHERE ${where} AND ${STATUS_CONCLUIDO}`,
+      filtro.params
     );
 
     // Horas previstas (todas as turmas)
     const [[{ horas_previstas }]] = await pool.query(
       `SELECT COALESCE(SUM(carga_horaria), 0) AS horas_previstas
-       FROM treinamentos t WHERE ${tw}`
+       FROM treinamentos t WHERE ${where}`,
+      filtro.params
     );
 
     // Participantes únicos treinados
@@ -74,14 +136,16 @@ async function getResumo(req, res) {
         `SELECT COUNT(DISTINCT tp.nome) AS total
          FROM treinamento_participantes tp
          JOIN treinamentos t ON t.id = tp.treinamento_id
-         WHERE ${tenantWhere(eId, 't')}`
+         WHERE ${tenantWhere(eId, 't')}${filtro.sql}`,
+        filtro.params
       );
       participantes_unicos = asInt(row.total);
     } catch (_) {
       // Fallback: participantes direto em treinamentos
       const [[row]] = await pool.query(
         `SELECT COALESCE(SUM(participantes_presentes), 0) AS total
-         FROM treinamentos WHERE ${tw}`
+         FROM treinamentos t WHERE ${where}`,
+        filtro.params
       );
       participantes_unicos = asInt(row.total);
     }
@@ -97,7 +161,8 @@ async function getResumo(req, res) {
            SUM(CASE WHEN nota_nps < 7 THEN 1 ELSE 0 END)                   AS detratores
          FROM avaliacoes av
          JOIN treinamentos t ON t.id = av.treinamento_id
-         WHERE ${tenantWhere(eId, 't')} AND av.nota_nps IS NOT NULL`
+         WHERE ${tenantWhere(eId, 't')}${filtro.sql} AND av.nota_nps IS NOT NULL`,
+        filtro.params
       );
       if (asInt(nRow.total) > 0) {
         nps_score = Math.round(
@@ -115,7 +180,8 @@ async function getResumo(req, res) {
            SUM(CASE WHEN LOWER(TRIM(p.status)) = 'presente' THEN 1 ELSE 0 END) AS presentes
          FROM presencas p
          JOIN treinamentos t ON t.id = p.treinamento_id
-         WHERE ${tenantWhere(eId, 't')}`
+         WHERE ${tenantWhere(eId, 't')}${filtro.sql}`,
+        filtro.params
       );
       if (asInt(pRow.total) > 0) {
         taxa_presenca = Number(((asInt(pRow.presentes) / asInt(pRow.total)) * 100).toFixed(1));
@@ -131,6 +197,7 @@ async function getResumo(req, res) {
       nps_score,
       taxa_presenca,
       por_status:           porStatus,
+      clientes,
     });
   } catch (error) {
     console.error('[analytics] getResumo:', error.message);
@@ -143,8 +210,11 @@ async function getHoras(req, res) {
   try {
     const eId = req.empresaId ?? null;
     const tw  = tenantWhere(eId);
+    const filtro = filtroRecorte(req.query);
+    const where = `${tw}${filtro.sql}`;
 
-    // Horas por mês (últimos 12 meses)
+    // Horas por mês (últimos 12 meses) — a janela fixa de 12 meses continua
+    // valendo por cima do filtro de período escolhido na tela.
     const [porMes] = await pool.query(
       `SELECT
          YEAR(COALESCE(data_fim, data))  AS ano,
@@ -152,11 +222,12 @@ async function getHoras(req, res) {
          COALESCE(SUM(carga_horaria), 0) AS horas,
          COUNT(*)                         AS turmas
        FROM treinamentos t
-       WHERE ${tw}
+       WHERE ${where}
          AND ${STATUS_CONCLUIDO}
          AND COALESCE(data_fim, data) >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
        GROUP BY ano, mes
-       ORDER BY ano, mes`
+       ORDER BY ano, mes`,
+      filtro.params
     );
 
     // Horas por cliente (top 10)
@@ -166,10 +237,11 @@ async function getHoras(req, res) {
          COALESCE(SUM(carga_horaria), 0)    AS horas,
          COUNT(*)                            AS turmas
        FROM treinamentos t
-       WHERE ${tw} AND ${STATUS_CONCLUIDO}
+       WHERE ${where} AND ${STATUS_CONCLUIDO}
        GROUP BY cliente
        ORDER BY horas DESC
-       LIMIT 10`
+       LIMIT 10`,
+      filtro.params
     );
 
     // Horas por instrutor (top 10)
@@ -179,16 +251,18 @@ async function getHoras(req, res) {
          COALESCE(SUM(carga_horaria), 0)        AS horas,
          COUNT(*)                                AS turmas
        FROM treinamentos t
-       WHERE ${tw} AND ${STATUS_CONCLUIDO}
+       WHERE ${where} AND ${STATUS_CONCLUIDO}
        GROUP BY instrutor
        ORDER BY horas DESC
-       LIMIT 10`
+       LIMIT 10`,
+      filtro.params
     );
 
     // Total geral
     const [[{ total }]] = await pool.query(
       `SELECT COALESCE(SUM(carga_horaria), 0) AS total
-       FROM treinamentos t WHERE ${tw} AND ${STATUS_CONCLUIDO}`
+       FROM treinamentos t WHERE ${where} AND ${STATUS_CONCLUIDO}`,
+      filtro.params
     );
 
     return res.json({
@@ -207,6 +281,8 @@ async function getHoras(req, res) {
 async function getNps(req, res) {
   try {
     const eId = req.empresaId ?? null;
+    const filtro = filtroRecorte(req.query, 't');
+    const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
 
     const [[global]] = await pool.query(
       `SELECT
@@ -217,7 +293,8 @@ async function getNps(req, res) {
          ROUND(AVG(av.nota_nps), 1)                                       AS media
        FROM avaliacoes av
        JOIN treinamentos t ON t.id = av.treinamento_id
-       WHERE ${tenantWhere(eId, 't')} AND av.nota_nps IS NOT NULL`
+       WHERE ${where} AND av.nota_nps IS NOT NULL`,
+      filtro.params
     );
 
     const total      = asInt(global.total);
@@ -238,14 +315,16 @@ async function getNps(req, res) {
          SUM(CASE WHEN av.nota_nps < 7 THEN 1 ELSE 0 END)                    AS detratores
        FROM avaliacoes av
        JOIN treinamentos t ON t.id = av.treinamento_id
-       WHERE ${tenantWhere(eId, 't')} AND av.nota_nps IS NOT NULL
+       WHERE ${where} AND av.nota_nps IS NOT NULL
        GROUP BY t.id, t.tema, t.cliente
        HAVING respostas >= 2
        ORDER BY respostas DESC
-       LIMIT 10`
+       LIMIT 10`,
+      filtro.params
     );
 
-    // Tendência NPS por mês (últimos 6 meses)
+    // Tendência NPS por mês (últimos 6 meses) — janela fixa de 6 meses
+    // continua valendo por cima do filtro de período escolhido na tela.
     const [tendencia] = await pool.query(
       `SELECT
          YEAR(av.criado_em)   AS ano,
@@ -254,11 +333,12 @@ async function getNps(req, res) {
          ROUND(AVG(av.nota_nps), 1) AS media
        FROM avaliacoes av
        JOIN treinamentos t ON t.id = av.treinamento_id
-       WHERE ${tenantWhere(eId, 't')}
+       WHERE ${where}
          AND av.nota_nps IS NOT NULL
          AND av.criado_em >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
        GROUP BY ano, mes
-       ORDER BY ano, mes`
+       ORDER BY ano, mes`,
+      filtro.params
     );
 
     return res.json({
@@ -281,7 +361,8 @@ async function getNps(req, res) {
 async function getEfetividade(req, res) {
   try {
     const eId = req.empresaId ?? null;
-    const tw  = tenantWhere(eId, 't');
+    const filtro = filtroRecorte(req.query, 't');
+    const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
 
     // Taxa de aprovação global (nota_prova >= 6)
     const [[aprovacao]] = await pool.query(
@@ -291,7 +372,8 @@ async function getEfetividade(req, res) {
          ROUND(AVG(av.nota_prova), 1)                          AS media_prova
        FROM avaliacoes av
        JOIN treinamentos t ON t.id = av.treinamento_id
-       WHERE ${tw} AND av.nota_prova IS NOT NULL`
+       WHERE ${where} AND av.nota_prova IS NOT NULL`,
+      filtro.params
     );
 
     // Taxa de presença global
@@ -303,7 +385,8 @@ async function getEfetividade(req, res) {
            SUM(CASE WHEN LOWER(TRIM(p.status)) = 'presente' THEN 1 ELSE 0 END) AS presentes
          FROM presencas p
          JOIN treinamentos t ON t.id = p.treinamento_id
-         WHERE ${tw}`
+         WHERE ${where}`,
+        filtro.params
       );
       const ptotal = asInt(pRow.total);
       presenca = {
@@ -326,10 +409,11 @@ async function getEfetividade(req, res) {
          COUNT(av.id)                                           AS avaliados
        FROM treinamentos t
        LEFT JOIN avaliacoes av ON av.treinamento_id = t.id
-       WHERE ${tw}
+       WHERE ${where}
        GROUP BY t.cliente
        ORDER BY turmas DESC
-       LIMIT 10`
+       LIMIT 10`,
+      filtro.params
     );
 
     const totalAv    = asInt(aprovacao.total);
@@ -354,7 +438,9 @@ async function getEfetividade(req, res) {
 async function getRoi(req, res) {
   try {
     const eId = req.empresaId ?? null;
-    const tw  = tenantWhere(eId);
+    const filtro = filtroRecorte(req.query);
+    const where = `${tenantWhere(eId)}${filtro.sql}`;
+    const custoPorHora = await getCustoPorHora(eId);
 
     const [[dados]] = await pool.query(
       `SELECT
@@ -365,13 +451,17 @@ async function getRoi(req, res) {
            THEN carga_horaria ELSE 0 END), 0)             AS horas_realizadas,
          COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
          COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
-       FROM treinamentos t WHERE ${tw}`
+       FROM treinamentos t WHERE ${where}`,
+      filtro.params
     );
 
     const horas      = asInt(dados.horas_realizadas);
     const pessoas    = asInt(dados.pessoas_impactadas);
-    // Custo estimado: R$ 150/h por participante (referência T&D Brasil 2024)
-    const custo_est  = horas * pessoas * 150;
+    // Custo estimado: configurável por empresa (Admin → tenant → "Custo por
+    // hora de treinamento"); sem valor definido, usa R$ 150/h como referência
+    // (T&D Brasil 2024) — antes esse valor vinha sempre fixo em 150, mesmo
+    // com uma nota na tela dizendo que dava pra configurar.
+    const custo_est  = horas * pessoas * custoPorHora;
 
     const turmasTotal    = asInt(dados.turmas_total);
     const turmasConc     = asInt(dados.turmas_concluidas);
@@ -394,6 +484,7 @@ async function getRoi(req, res) {
       taxa_conclusao:      taxaConclusao,
       alcance_percentual:  alcance,
       custo_estimado:      custo_est,  // referência indicativa
+      custo_por_hora:      custoPorHora,
     });
   } catch (error) {
     console.error('[analytics] getRoi:', error.message);
@@ -401,4 +492,116 @@ async function getRoi(req, res) {
   }
 }
 
-module.exports = { getResumo, getHoras, getNps, getEfetividade, getRoi };
+/* ─── GET /api/analytics/exportar ──────────────────────────────────────────── */
+// Exporta em Excel a aba de Indicadores ativa (?aba=horas|nps|efetividade|roi),
+// respeitando o mesmo filtro de cliente/período usado na tela.
+async function exportarIndicadores(req, res) {
+  try {
+    const eId = req.empresaId ?? null;
+    const aba = String(req.query.aba || 'horas');
+    const XLSX = require('xlsx');
+    const wb = XLSX.utils.book_new();
+
+    if (aba === 'horas') {
+      const filtro = filtroRecorte(req.query);
+      const where = `${tenantWhere(eId)}${filtro.sql}`;
+      const [porCliente] = await pool.query(
+        `SELECT COALESCE(cliente, '(sem cliente)') AS cliente, COALESCE(SUM(carga_horaria), 0) AS horas, COUNT(*) AS turmas
+         FROM treinamentos t WHERE ${where} AND ${STATUS_CONCLUIDO} GROUP BY cliente ORDER BY horas DESC`,
+        filtro.params
+      );
+      const [porInstrutor] = await pool.query(
+        `SELECT COALESCE(instrutor, '(sem instrutor)') AS instrutor, COALESCE(SUM(carga_horaria), 0) AS horas, COUNT(*) AS turmas
+         FROM treinamentos t WHERE ${where} AND ${STATUS_CONCLUIDO} GROUP BY instrutor ORDER BY horas DESC`,
+        filtro.params
+      );
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ["Cliente/Operação", "Turmas", "Horas"],
+        ...porCliente.map((r) => [r.cliente, Number(r.turmas), Number(r.horas)]),
+      ]), "Por cliente");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ["Instrutor", "Turmas", "Horas"],
+        ...porInstrutor.map((r) => [r.instrutor, Number(r.turmas), Number(r.horas)]),
+      ]), "Por instrutor");
+    } else if (aba === 'nps') {
+      const filtro = filtroRecorte(req.query, 't');
+      const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
+      const [porTurma] = await pool.query(
+        `SELECT t.tema, t.cliente, COUNT(av.id) AS respostas, ROUND(AVG(av.nota_nps), 1) AS media
+         FROM avaliacoes av JOIN treinamentos t ON t.id = av.treinamento_id
+         WHERE ${where} AND av.nota_nps IS NOT NULL
+         GROUP BY t.id, t.tema, t.cliente ORDER BY respostas DESC`,
+        filtro.params
+      );
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ["Turma", "Cliente", "Respostas", "NPS médio"],
+        ...porTurma.map((r) => [r.tema, r.cliente, Number(r.respostas), r.media != null ? Number(r.media) : ""]),
+      ]), "NPS por turma");
+    } else if (aba === 'efetividade') {
+      const filtro = filtroRecorte(req.query, 't');
+      const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
+      const [porCliente] = await pool.query(
+        `SELECT
+           COALESCE(t.cliente, '(sem cliente)')                  AS cliente,
+           COUNT(DISTINCT t.id)                                  AS turmas,
+           ROUND(AVG(av.nota_prova), 1)                          AS media_prova,
+           COUNT(av.id)                                          AS avaliados,
+           SUM(CASE WHEN av.nota_prova >= 6 THEN 1 ELSE 0 END)  AS aprovados
+         FROM treinamentos t LEFT JOIN avaliacoes av ON av.treinamento_id = t.id
+         WHERE ${where} GROUP BY t.cliente ORDER BY turmas DESC`,
+        filtro.params
+      );
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ["Cliente/Operação", "Turmas", "Avaliados", "Nota média", "Aprovados", "% Aprovados"],
+        ...porCliente.map((r) => [
+          r.cliente, Number(r.turmas), Number(r.avaliados || 0),
+          r.media_prova != null ? Number(r.media_prova) : "",
+          Number(r.aprovados || 0),
+          Number(r.avaliados) > 0 ? Math.round((Number(r.aprovados) / Number(r.avaliados)) * 100) : "",
+        ]),
+      ]), "Efetividade por cliente");
+    } else if (aba === 'roi') {
+      const filtro = filtroRecorte(req.query);
+      const where = `${tenantWhere(eId)}${filtro.sql}`;
+      const custoPorHora = await getCustoPorHora(eId);
+      const [[dados]] = await pool.query(
+        `SELECT
+           COUNT(*)                                         AS turmas_total,
+           SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
+           COALESCE(SUM(carga_horaria), 0)                  AS horas_total,
+           COALESCE(SUM(CASE WHEN ${STATUS_CONCLUIDO}
+             THEN carga_horaria ELSE 0 END), 0)             AS horas_realizadas,
+           COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
+           COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
+         FROM treinamentos t WHERE ${where}`,
+        filtro.params
+      );
+      const horas = Number(dados.horas_realizadas || 0);
+      const pessoas = Number(dados.pessoas_impactadas || 0);
+      const custo = horas * pessoas * custoPorHora;
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ["Indicador", "Valor"],
+        ["Turmas totais", Number(dados.turmas_total || 0)],
+        ["Turmas concluídas", Number(dados.turmas_concluidas || 0)],
+        ["Horas previstas", Number(dados.horas_total || 0)],
+        ["Horas realizadas", horas],
+        ["Pessoas impactadas", pessoas],
+        ["Pessoas previstas", Number(dados.pessoas_previstas || 0)],
+        ["Custo por hora (R$)", custoPorHora],
+        ["Custo estimado (R$)", custo],
+      ]), "ROI");
+    } else {
+      return res.status(400).json({ ok: false, message: "Aba inválida." });
+    }
+
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="indicadores_${aba}.xlsx"`);
+    return res.send(buf);
+  } catch (error) {
+    console.error('[analytics] exportarIndicadores:', error.message);
+    return res.status(500).json({ ok: false, message: 'Erro ao exportar indicadores', error: error.message });
+  }
+}
+
+module.exports = { getResumo, getHoras, getNps, getEfetividade, getRoi, exportarIndicadores };
