@@ -37,6 +37,7 @@ const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
 
 // FIX 1: importar a rota de jornada-participantes (estava faltando)
 const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
+const capacidadeRoutes = require("./routes/capacidadeRoutes");
 
 // Sprint 3: Trilhas relacionais, Certificados
 const {
@@ -1012,6 +1013,19 @@ app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlan
 
 // FIX 1: rota de jornada-participantes registrada junto com as rotas do Oceano
 app.use("/api/jornada-participantes", authRequired, authorizeOceanAccess, jornadaParticipantesRoutes);
+
+// Capacidade x Realizado (CH por instrutor / CH efetiva do time) — o
+// controller e a migration já existiam, mas nunca tinham sido conectados:
+// faltava tanto o serviço (backend/src/services/capacidadeResolver.js, agora
+// criado) quanto este app.use(). Calculado 100% a partir do que já é
+// registrado no fluxo normal (turma criada + cronograma/chamada) — não exige
+// nenhum lançamento manual adicional do instrutor ou da coordenação.
+app.use(
+  "/api/capacidade",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  capacidadeRoutes
+);
 
 // ── Módulo R&S — import do controller ──────────────────────────────────────
 const {
