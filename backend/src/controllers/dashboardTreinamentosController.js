@@ -75,61 +75,77 @@ function resolvePresenca(resumo) {
   };
 }
 
-async function getDashboardTreinamentos(req, res) {
-  try {
-    const query = req.query || {};
-    // colunas fixas — sem SHOW COLUMNS em cada request
-    const participantCountExpr = "COALESCE(t.participantes, 0)";
-    const dateOrderExpr = "COALESCE(t.data_inicio, t.data)";
+// Monta as condições de filtro (tenant + filtros da tela) a partir da
+// querystring — extraído para ser reaproveitado tanto pelo carregamento
+// normal do Dashboard quanto pela exportação em Excel, que precisa do
+// MESMO recorte de dados que o coordenador está vendo na tela.
+function buildFiltroTreinamentos(req) {
+  const query = req.query || {};
+  const conditions = [];
+  const params = [];
 
-    const conditions = [];
-    const params = [];
+  // Isolamento por tenant: sem este filtro, o dashboard somava turmas,
+  // participantes, presenças e NPS de TODAS as empresas na mesma tela —
+  // era o vazamento mais visível do sistema. req.empresaId nulo (super_admin
+  // ou usuário legado sem empresa atribuída) mantém o comportamento antigo.
+  if (req.empresaId) {
+    conditions.push("t.empresa_id = ?");
+    params.push(req.empresaId);
+  }
 
-    // Isolamento por tenant: sem este filtro, o dashboard somava turmas,
-    // participantes, presenças e NPS de TODAS as empresas na mesma tela —
-    // era o vazamento mais visível do sistema. req.empresaId nulo (super_admin
-    // ou usuário legado sem empresa atribuída) mantém o comportamento antigo.
-    if (req.empresaId) {
-      conditions.push("t.empresa_id = ?");
-      params.push(req.empresaId);
-    }
+  if (query.cliente) {
+    conditions.push("t.cliente = ?");
+    params.push(query.cliente);
+  }
 
-    if (query.cliente) {
-      conditions.push("t.cliente = ?");
-      params.push(query.cliente);
-    }
+  if (query.instrutor) {
+    conditions.push("t.instrutor = ?");
+    params.push(query.instrutor);
+  }
 
-    if (query.instrutor) {
-      conditions.push("t.instrutor = ?");
-      params.push(query.instrutor);
-    }
+  if (query.status) {
+    conditions.push("LOWER(COALESCE(t.status, '')) = ?");
+    params.push(String(query.status).toLowerCase());
+  }
 
-    if (query.status) {
-      conditions.push("LOWER(COALESCE(t.status, '')) = ?");
-      params.push(String(query.status).toLowerCase());
-    }
+  if (query.supervisor) {
+    conditions.push("t.supervisor = ?");
+    params.push(query.supervisor);
+  }
 
-    if (query.supervisor) {
-      conditions.push("t.supervisor = ?");
-      params.push(query.supervisor);
-    }
+  if (query.data_inicio) {
+    conditions.push("DATE(COALESCE(t.data_inicio, t.data)) >= ?");
+    params.push(query.data_inicio);
+  }
 
-    if (query.data_inicio) {
-      conditions.push("DATE(COALESCE(t.data_inicio, t.data)) >= ?");
-      params.push(query.data_inicio);
-    }
+  if (query.data_fim) {
+    // filtra por data_fim (ou data_inicio como fallback quando data_fim não está preenchida)
+    conditions.push("DATE(COALESCE(t.data_fim, t.data_inicio, t.data)) <= ?");
+    params.push(query.data_fim);
+  }
 
-    if (query.data_fim) {
-      // filtra por data_fim (ou data_inicio como fallback quando data_fim não está preenchida)
-      conditions.push("DATE(COALESCE(t.data_fim, t.data_inicio, t.data)) <= ?");
-      params.push(query.data_fim);
-    }
+  return {
+    conditions,
+    params,
+    whereSql: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "",
+  };
+}
 
-    const whereSql = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+// Carrega e enriquece as turmas do recorte atual (filtros + tenant) com a
+// presença resolvida — mesma lógica usada tanto pelos KPIs do Dashboard
+// quanto pela exportação em Excel, para as duas nunca divergirem sobre quais
+// turmas entram no recorte.
+async function carregarTurmasEnriquecidas(req) {
+  const query = req.query || {};
+  // colunas fixas — sem SHOW COLUMNS em cada request
+  const participantCountExpr = "COALESCE(t.participantes, 0)";
+  const dateOrderExpr = "COALESCE(t.data_inicio, t.data)";
 
-    // query completa: inclui histórico real de presença (tabela `presencas`) e supervisor
-    // se alguma coluna não existir no ambiente, cai para a query simplificada
-    let baseRows;
+  const { params, whereSql } = buildFiltroTreinamentos(req);
+
+  // query completa: inclui histórico real de presença (tabela `presencas`) e supervisor
+  // se alguma coluna não existir no ambiente, cai para a query simplificada
+  let baseRows;
     try {
       const [rows] = await pool.query(
         `SELECT
@@ -234,6 +250,13 @@ async function getDashboardTreinamentos(req, res) {
       ...row,
       presenca: resolvePresenca(resumoPresencaPorId.get(Number(row.id))),
     }));
+
+  return { baseRows, filteredRows, enriched };
+}
+
+async function getDashboardTreinamentos(req, res) {
+  try {
+    const { baseRows, filteredRows, enriched } = await carregarTurmasEnriquecidas(req);
 
     const totalTreinamentos = enriched.length;
     const totalPrevistos = enriched.reduce((acc, item) => acc + n(item.participantes_previstos), 0);
@@ -485,6 +508,50 @@ async function getDashboardTreinamentos(req, res) {
   }
 }
 
+// GET /api/dashboard/treinamentos/exportar — exporta em Excel o MESMO
+// recorte de turmas que a tabela "Turmas recentes" mostra na tela (que só
+// exibe as 8 mais recentes) — aqui sai a lista completa do filtro aplicado.
+async function exportarTreinamentos(req, res) {
+  try {
+    const { enriched } = await carregarTurmasEnriquecidas(req);
+    const XLSX = require("xlsx");
+
+    const linhas = enriched.map((item) => [
+      item.tema || "-",
+      item.cliente || "-",
+      item.instrutor || "-",
+      parseModalidadeFromDescricao(item.descricao) === "online" ? "Online"
+        : parseModalidadeFromDescricao(item.descricao) === "presencial" ? "Presencial" : "-",
+      normalizeStatus(item.status),
+      item.data_inicio || item.data || "",
+      item.presenca.baseParticipantes,
+      item.presenca.taxaPresenca,
+      item.presenca.diasPresente,
+      item.presenca.diasPendente,
+    ]);
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Turma", "Cliente", "Instrutor", "Modalidade", "Status", "Data", "Base", "Presença %", "Presentes", "Pendentes"],
+      ...linhas,
+    ]);
+    XLSX.utils.book_append_sheet(wb, ws, "Turmas");
+
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="dashboard-turmas.xlsx"');
+    return res.send(buf);
+  } catch (error) {
+    console.error("[dashboard] exportarTreinamentos:", error.message);
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao exportar turmas.",
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   getDashboardTreinamentos,
+  exportarTreinamentos,
 };
