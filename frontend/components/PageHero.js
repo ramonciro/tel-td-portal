@@ -1,11 +1,12 @@
 "use client";
 
-import { colors, radius } from "../lib/theme";
+import { colors, radius, brandGradientDark } from "../lib/theme";
 
-// Cabeçalho de página padrão do portal — mesma identidade da Início (navy +
-// coral). Usar no topo de qualquer tela no lugar de um <h1> solto. Stats são
-// opcionais: passe um array [{ label, value }] pra mostrar números rápidos
-// dentro do próprio cabeçalho, sem precisar de StatCards separados embaixo.
+// Cabeçalho de página padrão do portal — mesma identidade do logo (navy →
+// azul → âmbar, a mesma rede de nós que aparece na marca). Usar no topo de
+// qualquer tela no lugar de um <h1> solto. Stats são opcionais: passe um
+// array [{ label, value }] pra mostrar números rápidos dentro do próprio
+// cabeçalho, sem precisar de StatCards separados embaixo.
 export default function PageHero({ eyebrow, title, subtitle, actions, stats }) {
   return (
     <div style={hero}>
@@ -33,7 +34,7 @@ export default function PageHero({ eyebrow, title, subtitle, actions, stats }) {
 }
 
 const hero = {
-  background: `linear-gradient(135deg, ${colors.navy} 0%, ${colors.navySoft} 100%)`,
+  background: brandGradientDark,
   borderRadius: radius.lg,
   padding: "22px 26px",
   color: "#fff",
