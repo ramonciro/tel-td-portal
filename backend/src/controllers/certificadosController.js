@@ -164,8 +164,31 @@ async function emitirCertificado(req, res) {
     // null (sem tenant), como o resto do sistema faz. Também abria brecha
     // para outro tenant "herdar" certificados da empresa 1 por engano.
     const empresaId = req.empresaId ?? null;
-    const nome  = usuario_nome  || req.user?.nome  || '';
-    const email = usuario_email || req.user?.email || null;
+    const nome = usuario_nome || req.user?.nome || '';
+
+    // Bugfix: e-mail usado antes caía sempre para req.user?.email (o e-mail
+    // de quem está logado) quando o formulário não informava um e-mail —
+    // ou seja, um coordenador emitindo certificados para vários participantes
+    // diferentes da mesma turma acabava gravando o PRÓPRIO e-mail em todos.
+    // Como certificados tem UNIQUE KEY (usuario_email, treinamento_id), o
+    // segundo certificado da mesma turma colidia com o primeiro (mesmo
+    // e-mail + mesmo treinamento_id) e o "ON DUPLICATE KEY UPDATE" acabava
+    // sobrescrevendo o certificado do primeiro participante com a frequência/
+    // nota do segundo — silenciosamente, sob o nome errado.
+    // Agora: usa o e-mail informado no formulário; se não vier, tenta achar
+    // o e-mail cadastrado do próprio participante (por nome); só cai para o
+    // e-mail do usuário logado quando nem nome nem e-mail foram informados
+    // (fluxo self-service, ex.: "Minhas Turmas").
+    let email = usuario_email || null;
+    if (!email && !usuario_nome) {
+      email = req.user?.email || null;
+    } else if (!email) {
+      const [[participanteEmail]] = await pool.query(
+        `SELECT email FROM treinamento_participantes WHERE treinamento_id = ? AND nome = ? LIMIT 1`,
+        [treinamento_id, nome]
+      );
+      email = participanteEmail?.email || null;
+    }
 
     // Busca dados do treinamento + calcula frequência/nota (mesma lógica do preview)
     const resultado = await calcularElegibilidade(treinamento_id, nome, empresaId);
