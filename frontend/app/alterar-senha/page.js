@@ -33,14 +33,9 @@ export default function AlterarSenhaPage() {
     try {
       setLoading(true);
 
-      await apiFetch("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email: user.email, senha: senhaAtual }),
-      });
-
       await apiFetch("/auth/alterar-senha", {
         method: "POST",
-        body: JSON.stringify({ email: user.email, novaSenha }),
+        body: JSON.stringify({ senhaAtual, novaSenha }),
       });
 
       setSucesso("Senha alterada com sucesso.");
