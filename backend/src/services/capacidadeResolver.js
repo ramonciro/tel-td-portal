@@ -15,9 +15,19 @@
  *
  *   1) turma_aulas — quando a turma já usa o cronograma diário (Gestão de
  *      Turmas > Cronograma), a CH real de cada instrutor vem daí, aula a
- *      aula (carga_horaria_real, só aulas "ministrada"/"parcial"), o que
- *      também cobre substituição/co-instrução (instrutor_responsavel pode
- *      variar aula a aula dentro da mesma turma).
+ *      aula, contando só aulas com status_execucao = "concluida" (o único
+ *      status "feito" que a tela de Cronograma de fato grava — os valores
+ *      reais gravados pelo formulário são planejada/em_andamento/concluida/
+ *      reprogramada/cancelada; "ministrada"/"parcial" nunca existiram nos
+ *      dados reais, foi um engano da primeira versão deste arquivo).
+ *      A tela de Cronograma hoje sempre grava carga_horaria_real = 0 (o
+ *      campo existe na tabela mas o formulário nunca preenche um valor
+ *      diferente de zero), então, na prática, a CH real de uma aula
+ *      concluída é a própria carga_horaria_planejada daquela aula — se um
+ *      dia o campo carga_horaria_real passar a ser preenchido de verdade,
+ *      o cálculo já usa esse valor no lugar do planejado automaticamente.
+ *      Isso também cobre substituição/co-instrução (instrutor_responsavel
+ *      pode variar aula a aula dentro da mesma turma).
  *   2) treinamentos — para turma que NUNCA teve nenhuma linha de cronograma
  *      gerada, usa a CH nominal da turma inteira (carga_horaria) atribuída
  *      ao instrutor responsável (treinamentos.instrutor) e ao mês de início,
@@ -29,13 +39,13 @@
  * cronograma nunca cai no fallback), então não há risco de contar a mesma
  * turma duas vezes.
  */
-
+ 
 const pool = require("../lib/db");
-
+ 
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
-
+ 
 // Mesma regra de "dia não letivo" já usada em turmaAulasController.js ao
 // gerar o cronograma de uma turma: domingo não conta, a menos que a regra
 // padrão diga para considerá-lo.
@@ -49,10 +59,10 @@ function diasUteisDoMes(ano, mes, considerarDomingo) {
   }
   return uteis;
 }
-
+ 
 function mesesNoIntervalo({ ano, mes, dataInicio, dataFim }) {
   if (ano && mes) return [{ ano: Number(ano), mes: Number(mes) }];
-
+ 
   if (dataInicio || dataFim) {
     const inicio = dataInicio ? new Date(`${dataInicio}T00:00:00Z`) : new Date(`${dataFim}T00:00:00Z`);
     const fim = dataFim ? new Date(`${dataFim}T00:00:00Z`) : new Date(`${dataInicio}T00:00:00Z`);
@@ -65,11 +75,11 @@ function mesesNoIntervalo({ ano, mes, dataInicio, dataFim }) {
     }
     return meses.length ? meses : [{ ano: inicio.getUTCFullYear(), mes: inicio.getUTCMonth() + 1 }];
   }
-
+ 
   const hoje = new Date();
   return [{ ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 }];
 }
-
+ 
 function ultimosNMeses(n) {
   const hoje = new Date();
   const base = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1));
@@ -81,7 +91,7 @@ function ultimosNMeses(n) {
   }
   return meses;
 }
-
+ 
 function statusOcupacao(pct) {
   if (pct == null) return { status: "sem_capacidade", emoji: "—" };
   if (pct < 40) return { status: "ocioso", emoji: "⚪" };
@@ -89,7 +99,7 @@ function statusOcupacao(pct) {
   if (pct <= 120) return { status: "atencao", emoji: "🟡" };
   return { status: "sobrecarga", emoji: "🔴" };
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Fonte única de CH (planejada x real) — combina turma_aulas (quando existe
 // cronograma) com o fallback nominal de treinamentos (quando não existe),
@@ -104,15 +114,16 @@ const FONTE_HORAS_SQL = `
       t.tema AS tema,
       YEAR(ta.data_aula) AS ano,
       MONTH(ta.data_aula) AS mes,
-      CASE WHEN LOWER(TRIM(COALESCE(ta.status_execucao,''))) IN ('ministrada','parcial')
-           THEN COALESCE(ta.carga_horaria_real, 0) ELSE 0 END AS horas_real,
+      CASE WHEN LOWER(TRIM(COALESCE(ta.status_execucao,''))) = 'concluida'
+           THEN COALESCE(NULLIF(ta.carga_horaria_real, 0), ta.carga_horaria_planejada, 0)
+           ELSE 0 END AS horas_real,
       COALESCE(ta.carga_horaria_planejada, 0) AS horas_planejada
     FROM turma_aulas ta
     JOIN treinamentos t ON t.id = ta.treinamento_id
     WHERE ta.instrutor_responsavel IS NOT NULL AND TRIM(ta.instrutor_responsavel) <> ''
-
+ 
     UNION ALL
-
+ 
     SELECT
       t.id AS treinamento_id,
       TRIM(t.instrutor) AS instrutor,
@@ -131,7 +142,7 @@ const FONTE_HORAS_SQL = `
       AND NOT EXISTS (SELECT 1 FROM turma_aulas ta2 WHERE ta2.treinamento_id = t.id)
   ) fonte_horas
 `;
-
+ 
 async function getRegraPadrao() {
   const [rows] = await pool.query(
     `SELECT id, horas_dia_padrao, hc_dia_padrao, considerar_domingo, atualizado_em
@@ -140,7 +151,7 @@ async function getRegraPadrao() {
   if (rows[0]) return rows[0];
   return { id: 1, horas_dia_padrao: 6, hc_dia_padrao: 30, considerar_domingo: 0, atualizado_em: null };
 }
-
+ 
 async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDomingo }) {
   await pool.query(
     `INSERT INTO capacidade_regra_padrao (id, horas_dia_padrao, hc_dia_padrao, considerar_domingo)
@@ -153,7 +164,7 @@ async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDom
   );
   return getRegraPadrao();
 }
-
+ 
 async function listarOverrides({ instrutor, ano } = {}) {
   const conditions = [];
   const params = [];
@@ -168,7 +179,7 @@ async function listarOverrides({ instrutor, ano } = {}) {
   );
   return rows;
 }
-
+ 
 async function salvarOverride({ instrutor, ano, mes, horasCapacidade, hcCapacidade, observacoes, criadoPor }) {
   await pool.query(
     `INSERT INTO capacidade_instrutor_mensal
@@ -182,11 +193,11 @@ async function salvarOverride({ instrutor, ano, mes, horasCapacidade, hcCapacida
     [instrutor, Number(ano), Number(mes), Number(horasCapacidade || 0), Number(hcCapacidade || 0), observacoes || null, criadoPor || null]
   );
 }
-
+ 
 async function excluirOverride(id) {
   await pool.query(`DELETE FROM capacidade_instrutor_mensal WHERE id = ?`, [id]);
 }
-
+ 
 async function listarInstrutoresConhecidos() {
   const [rows] = await pool.query(`
     SELECT nome FROM (
@@ -198,7 +209,7 @@ async function listarInstrutoresConhecidos() {
   `);
   return rows.map((r) => r.nome);
 }
-
+ 
 async function listarOperacoesConhecidas() {
   const [rows] = await pool.query(`
     SELECT DISTINCT cliente FROM treinamentos
@@ -207,20 +218,20 @@ async function listarOperacoesConhecidas() {
   `);
   return rows.map((r) => r.cliente);
 }
-
+ 
 async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInicio, dataFim } = {}) {
   const meses = mesesNoIntervalo({ ano, mes, dataInicio, dataFim });
   const anos = [...new Set(meses.map((m) => m.ano))];
-
+ 
   const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos();
   if (!instrutores.length) return [];
-
+ 
   const placeholdersInstrutores = instrutores.map(() => "?").join(",");
   const placeholdersMeses = meses.map(() => "(?, ?)").join(",");
   const mesesParams = meses.flatMap((m) => [m.ano, m.mes]);
   const clienteSql = cliente ? "AND fonte_horas.cliente = ?" : "";
   const clienteParams = cliente ? [cliente] : [];
-
+ 
   const [horasRows] = await pool.query(
     `SELECT fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes, SUM(fonte_horas.horas_real) AS horas
      FROM ${FONTE_HORAS_SQL}
@@ -230,34 +241,34 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
      GROUP BY fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes`,
     [...instrutores, ...mesesParams, ...clienteParams]
   );
-
+ 
   const [overridesRows] = await pool.query(
     `SELECT instrutor, ano, mes, horas_capacidade, hc_capacidade
      FROM capacidade_instrutor_mensal
      WHERE instrutor IN (${placeholdersInstrutores}) AND ano IN (${anos.map(() => "?").join(",")})`,
     [...instrutores, ...anos]
   );
-
+ 
   const regra = await getRegraPadrao();
-
+ 
   const chaveMes = (a, m) => `${a}-${pad2(m)}`;
   const mapaHoras = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas)]));
   const mapaOverrides = new Map(overridesRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, r]));
-
+ 
   const resultado = [];
   for (const nomeInstrutor of instrutores) {
     for (const { ano: anoRef, mes: mesRef } of meses) {
       const chave = `${nomeInstrutor}|${chaveMes(anoRef, mesRef)}`;
       const horasRealizadas = Number((mapaHoras.get(chave) || 0).toFixed(2));
-
+ 
       const override = mapaOverrides.get(chave);
       const capacidadeHoras = override
         ? Number(override.horas_capacidade)
         : Number((diasUteisDoMes(anoRef, mesRef, !!regra.considerar_domingo) * Number(regra.horas_dia_padrao)).toFixed(2));
-
+ 
       const ocupacaoPct = capacidadeHoras > 0 ? Number(((horasRealizadas / capacidadeHoras) * 100).toFixed(1)) : null;
       const { status, emoji } = statusOcupacao(ocupacaoPct);
-
+ 
       resultado.push({
         instrutor: nomeInstrutor,
         ano: anoRef,
@@ -271,15 +282,15 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
       });
     }
   }
-
+ 
   return resultado;
 }
-
+ 
 async function getPainel({ meses: totalMeses = 3, instrutor, cliente } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const regra = await getRegraPadrao();
   const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos();
-
+ 
   const linhasPorMes = [];
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, instrutor, cliente });
@@ -298,7 +309,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente } = {}) {
       status_emoji: emoji,
     });
   }
-
+ 
   const clienteSql = cliente ? "AND fonte_horas.cliente = ?" : "";
   const clienteParams = cliente ? [cliente] : [];
   const placeholdersMeses = meses.map(() => "(?, ?)").join(",");
@@ -309,13 +320,13 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente } = {}) {
      WHERE (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses}) ${clienteSql}`,
     [...mesesParams, ...clienteParams]
   );
-
+ 
   const capacidadeTotalPeriodo = linhasPorMes.reduce((acc, l) => acc + l.capacidade_nominal, 0);
   const hcRealizadoPeriodo = linhasPorMes.reduce((acc, l) => acc + l.hc_realizado, 0);
   const capacidadePorInstrutorMes = instrutores.length
     ? Number((diasUteisDoMes(meses[meses.length - 1].ano, meses[meses.length - 1].mes, !!regra.considerar_domingo) * Number(regra.horas_dia_padrao)).toFixed(2))
     : 0;
-
+ 
   return {
     periodo: { meses: linhasPorMes.map((l) => l.mes) },
     indicadores: {
@@ -334,12 +345,12 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente } = {}) {
     por_mes: linhasPorMes,
   };
 }
-
+ 
 async function getCapacityConsumido({ meses: totalMeses = 3, cliente } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const instrutores = await listarInstrutoresConhecidos();
   const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, meses: {}, total_90d: 0, capacidade_90d: 0 }]));
-
+ 
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, cliente });
     for (const item of itens) {
@@ -350,7 +361,7 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente } = {}) {
       linha.capacidade_90d += item.capacidade_horas;
     }
   }
-
+ 
   const linhas = Array.from(porInstrutor.values())
     .map((linha) => ({
       ...linha,
@@ -360,10 +371,10 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente } = {}) {
     }))
     .filter((linha) => !cliente || linha.total_90d > 0)
     .sort((a, b) => b.total_90d - a.total_90d);
-
+ 
   return { meses: meses.map((m) => `${m.ano}-${pad2(m.mes)}`), itens: linhas };
 }
-
+ 
 async function getRanking({ meses: totalMeses = 3, cliente } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const acumulado = new Map();
@@ -376,7 +387,7 @@ async function getRanking({ meses: totalMeses = 3, cliente } = {}) {
       acumulado.set(item.instrutor, atual);
     }
   }
-
+ 
   return Array.from(acumulado.values())
     .filter((item) => item.horas > 0)
     .map((item) => ({
@@ -387,7 +398,7 @@ async function getRanking({ meses: totalMeses = 3, cliente } = {}) {
     .sort((a, b) => b.horas_realizadas - a.horas_realizadas)
     .map((item, index) => ({ posicao: index + 1, ...item }));
 }
-
+ 
 async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim } = {}) {
   const temFiltroPeriodo = ano || mes || dataInicio || dataFim;
   const conditions = [];
@@ -399,7 +410,7 @@ async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim } = 
     params.push(...meses.flatMap((m) => [m.ano, m.mes]));
   }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-
+ 
   const [rows] = await pool.query(
     `SELECT
        fonte_horas.tema AS tema,
@@ -412,7 +423,7 @@ async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim } = 
      ORDER BY hc_realizado DESC`,
     params
   );
-
+ 
   return rows.map((r) => {
     const programado = Number(r.hc_programado);
     const realizado = Number(r.hc_realizado);
@@ -425,7 +436,7 @@ async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim } = 
     };
   });
 }
-
+ 
 async function getDistribuicaoPorOperacao({ meses: totalMeses } = {}) {
   const conditions = [];
   const params = [];
@@ -435,7 +446,7 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses } = {}) {
     params.push(...meses.flatMap((m) => [m.ano, m.mes]));
   }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-
+ 
   const [rows] = await pool.query(
     `SELECT
        COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação') AS operacao,
@@ -445,7 +456,7 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses } = {}) {
      GROUP BY COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação')`,
     params
   );
-
+ 
   const total = rows.reduce((acc, r) => acc + Number(r.horas), 0);
   const itens = rows
     .map((r) => ({
@@ -454,10 +465,10 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses } = {}) {
       pct_sobre_total: total > 0 ? Number(((Number(r.horas) / total) * 100).toFixed(1)) : 0,
     }))
     .sort((a, b) => b.horas - a.horas);
-
+ 
   return { itens, total_horas: Number(total.toFixed(2)) };
 }
-
+ 
 async function getAlertas() {
   const hoje = new Date();
   const itens = await getCapacidadeVsRealizado({ ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 });
@@ -470,10 +481,10 @@ async function getAlertas() {
       status_emoji: item.status_emoji,
     }))
     .sort((a, b) => (b.ocupacao_pct || 0) - (a.ocupacao_pct || 0));
-
+ 
   return { itens: alertas, todos: itens };
 }
-
+ 
 module.exports = {
   getRegraPadrao,
   atualizarRegraPadrao,
