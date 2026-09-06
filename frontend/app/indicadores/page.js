@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
-import { apiFetch } from "../../services/api";
+import { apiFetch, apiDownload } from "../../services/api";
 import { colors, card as cardStyle } from "../../lib/theme";
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
@@ -124,27 +124,76 @@ export default function IndicadoresPage() {
   const [tabData,   setTabData]   = useState({});
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState("");
+  const [exportando, setExportando] = useState(false);
 
-  // Carrega resumo global para o PageHero
+  // Filtro de recorte (cliente/operação e período) — antes a tela não tinha
+  // nenhum filtro, então não dava pra isolar "NPS do último trimestre" ou
+  // "efetividade só do cliente X" sem sair da tela.
+  const [filtros, setFiltros] = useState({ cliente: "", data_inicio: "", data_fim: "" });
+
+  function queryString() {
+    const params = new URLSearchParams();
+    Object.entries(filtros).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    return params.toString();
+  }
+
+  // Carrega resumo global para o PageHero (e a lista de clientes do filtro)
   useEffect(() => {
-    apiFetch("/analytics/resumo")
+    const qs = queryString();
+    apiFetch(qs ? `/analytics/resumo?${qs}` : "/analytics/resumo")
       .then(setResumo)
       .catch(() => null);
-  }, []);
+  }, [filtros]);
 
-  // Carrega dados da aba ativa (com cache)
+  // Muda o filtro → invalida o cache das abas, pra todas recarregarem com o
+  // novo recorte na próxima vez que forem abertas.
+  useEffect(() => {
+    setTabData({});
+  }, [filtros]);
+
+  // Carrega dados da aba ativa (com cache por aba+filtro)
   useEffect(() => {
     const tab = TABS.find((t) => t.id === activeTab);
     if (!tab || tabData[activeTab]) return;
     setLoading(true);
     setError("");
-    apiFetch(tab.endpoint)
+    const qs = queryString();
+    apiFetch(qs ? `${tab.endpoint}?${qs}` : tab.endpoint)
       .then((d) => setTabData((prev) => ({ ...prev, [activeTab]: d })))
       .catch((err) => setError(err.message || "Erro ao carregar dados."))
       .finally(() => setLoading(false));
-  }, [activeTab, tabData]);
+  }, [activeTab, tabData, filtros]);
+
+  async function handleExportar() {
+    try {
+      setExportando(true);
+      const qs = queryString();
+      const params = qs ? `aba=${activeTab}&${qs}` : `aba=${activeTab}`;
+      await apiDownload(`/analytics/exportar?${params}`, `indicadores-${activeTab}.xlsx`);
+    } catch (err) {
+      setError(err.message || "Erro ao exportar indicadores.");
+    } finally {
+      setExportando(false);
+    }
+  }
 
   const d = tabData[activeTab];
+
+  // Faróis acionáveis — turmas/clientes que merecem atenção primeiro, para
+  // não depender de olhar tabela por tabela pra achar o que está fora da
+  // curva (mesmo espírito dos faróis já usados no Dashboard).
+  const farolNps = activeTab === "nps" && d?.por_turma
+    ? d.por_turma.filter((t) => Number(t.media) < 6).slice(0, 4)
+    : [];
+  const farolEfetividade = activeTab === "efetividade" && d?.por_cliente
+    ? d.por_cliente.filter((c) => {
+        const avaliados = Number(c.avaliados) || 0;
+        const aprovados = Number(c.aprovados) || 0;
+        return avaliados >= 3 && Math.round((aprovados / avaliados) * 100) < 70;
+      }).slice(0, 4)
+    : [];
 
   return (
     <PortalShell>
@@ -164,8 +213,41 @@ export default function IndicadoresPage() {
 
         <div style={{ padding: "0 24px" }}>
 
+          {/* Filtro de recorte */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end",
+            margin: "20px 0 0" }}>
+            <label style={{ display: "grid", gap: 4, fontSize: 12, fontWeight: 700, color: colors.textSecondary }}>
+              Cliente / operação
+              <select value={filtros.cliente}
+                onChange={(e) => setFiltros((prev) => ({ ...prev, cliente: e.target.value }))}
+                style={filtroInput}>
+                <option value="">Todos</option>
+                {(resumo?.clientes || []).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 4, fontSize: 12, fontWeight: 700, color: colors.textSecondary }}>
+              De
+              <input type="date" style={filtroInput} value={filtros.data_inicio}
+                onChange={(e) => setFiltros((prev) => ({ ...prev, data_inicio: e.target.value }))} />
+            </label>
+            <label style={{ display: "grid", gap: 4, fontSize: 12, fontWeight: 700, color: colors.textSecondary }}>
+              Até
+              <input type="date" style={filtroInput} value={filtros.data_fim}
+                onChange={(e) => setFiltros((prev) => ({ ...prev, data_fim: e.target.value }))} />
+            </label>
+            {(filtros.cliente || filtros.data_inicio || filtros.data_fim) && (
+              <button type="button" onClick={() => setFiltros({ cliente: "", data_inicio: "", data_fim: "" })}
+                style={btnLimparFiltro}>
+                Limpar filtros
+              </button>
+            )}
+            <button type="button" onClick={handleExportar} disabled={exportando || !d} style={btnExportar}>
+              {exportando ? "Exportando..." : "Exportar Excel"}
+            </button>
+          </div>
+
           {/* Tab bar */}
-          <div style={{ display: "flex", gap: 4, margin: "24px 0 20px",
+          <div style={{ display: "flex", gap: 4, margin: "16px 0 20px",
             borderBottom: `2px solid ${colors.borderLight ?? "#f0f2f5"}`,
             paddingBottom: 0 }}>
             {TABS.map((t) => {
@@ -268,6 +350,16 @@ export default function IndicadoresPage() {
               {/* ── NPS ────────────────────────────────────────────────── */}
               {activeTab === "nps" && (
                 <>
+                  {farolNps.length > 0 && (
+                    <div style={farolBox}>
+                      <p style={farolTitulo}>Turmas com NPS crítico — vale olhar primeiro</p>
+                      {farolNps.map((t) => (
+                        <div key={t.tema} style={farolLinha}>
+                          {t.tema}{t.cliente ? ` · ${t.cliente}` : ""} — nota média {t.media} ({t.respostas} resposta{t.respostas === 1 ? "" : "s"})
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div style={twoCol}>
                     <div style={section}>
                       <p style={sectionTitle}>Score NPS</p>
@@ -322,6 +414,16 @@ export default function IndicadoresPage() {
               {/* ── EFETIVIDADE ────────────────────────────────────────── */}
               {activeTab === "efetividade" && (
                 <>
+                  {farolEfetividade.length > 0 && (
+                    <div style={farolBox}>
+                      <p style={farolTitulo}>Clientes com aprovação abaixo de 70% — vale olhar primeiro</p>
+                      {farolEfetividade.map((c) => (
+                        <div key={c.cliente} style={farolLinha}>
+                          {c.cliente} — {Math.round((Number(c.aprovados) / Number(c.avaliados)) * 100)}% de aprovação ({c.avaliados} avaliados)
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div style={kpiRow}>
                     <StatCard title="Taxa de aprovação"
                       value={fmtPct(d.taxa_aprovacao)}
@@ -416,8 +518,9 @@ export default function IndicadoresPage() {
                       <p style={sectionTitle}>Referência de custo</p>
                       <p style={{ fontSize: 13, color: colors.textSecondary,
                         lineHeight: 1.6, margin: "0 0 12px" }}>
-                        O custo estimado usa <strong>R$ 150/h por participante</strong> como
-                        referência de mercado (T&D Brasil 2024).
+                        O custo estimado usa <strong>{fmtR(d.custo_por_hora)}/h por participante</strong>{d.custo_por_hora === 150
+                          ? " como referência de mercado (T&D Brasil 2024)."
+                          : ", valor configurado para este tenant."}
                       </p>
                       {[
                         { l: "Horas × participantes", v: `${fmtH(d.horas_realizadas)} × ${fmtN(d.pessoas_impactadas)}` },
@@ -433,7 +536,7 @@ export default function IndicadoresPage() {
                         </div>
                       ))}
                       <p style={{ fontSize: 11, color: colors.textSecondary, marginTop: 12 }}>
-                        * Configure um valor real nas preferências do sistema para cálculos mais precisos.
+                        * Configurável em Admin → tenant → "Custo por hora de treinamento".
                       </p>
                     </div>
                   </div>
@@ -455,3 +558,9 @@ const twoCol     = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
 const tbl        = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
 const th         = { textAlign: "left", padding: "8px 12px", background: "#f9fafb", fontWeight: 700, color: "#6b7280", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 };
 const td         = { padding: "10px 12px", color: "#374151" };
+const filtroInput = { border: "1px solid #cbd5e1", borderRadius: 10, padding: "8px 10px", fontSize: 13, background: "#fff", color: "#0f172a", minWidth: 160 };
+const btnLimparFiltro = { border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", borderRadius: 10, padding: "8px 12px", fontWeight: 700, fontSize: 12.5, cursor: "pointer" };
+const btnExportar = { border: "1px solid #cbd5e1", background: "#fff", color: colors.accent, borderRadius: 10, padding: "8px 12px", fontWeight: 700, fontSize: 12.5, cursor: "pointer", marginLeft: "auto" };
+const farolBox = { borderRadius: 14, border: "1px solid #fecaca", background: "#fff1f2", padding: "12px 16px", marginBottom: 16 };
+const farolTitulo = { fontSize: 12, fontWeight: 800, color: "#991b1b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 };
+const farolLinha = { fontSize: 13, color: "#7f1d1d", padding: "4px 0" };
