@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PortalShell from "../../../../components/PortalShell";
 import { apiFetch, getStoredUser } from "../../../../services/api";
+import { colors } from "../../../../lib/theme";
 
 function normalize(v) { return String(v || "").trim().toLowerCase(); }
 function fmtDate(v) {
@@ -379,7 +380,7 @@ const dangerTitle  = { fontSize: 14, fontWeight: 800, color: "#991b1b", margin: 
 const dangerRow    = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24 };
 const dangerLabel  = { fontWeight: 700, fontSize: 14, color: "#374151", marginBottom: 4 };
 const dangerDesc   = { fontSize: 13, color: "#9ca3af" };
-const btnPrimary   = { padding: "10px 20px", background: "#FF6B4A", color: "#fff", border: "none",
+const btnPrimary   = { padding: "10px 20px", background: colors.accent, color: "#fff", border: "none",
                        borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
 const btnSecundary = { padding: "10px 20px", background: "#f3f4f6", color: "#374151", border: "none",
                        borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
