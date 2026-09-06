@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
-import { apiFetch, getStoredUser } from "../../services/api";
+import { apiFetch, apiDownload, getStoredUser } from "../../services/api";
 import { colors } from "../../lib/theme";
 
 /* ─── utils ──────────────────────────────────────────────────────────────────── */
@@ -22,15 +22,22 @@ function tipoCor(tipo) {
   }[tipo] || { bg: "#f3f4f6", text: "#374151" };
 }
 
-function statusDaTrilha(etapas) {
-  if (!etapas?.length) return "Em estruturação";
-  if (etapas.length >= 5) return "Estruturada";
-  return "Ativa";
+// Melhoria: status agora é um campo real gravado no banco (trilha.status),
+// escolhido pelo gestor no editor — antes era só um heurístico calculado
+// aqui (>=5 etapas = "Estruturada"), sem nenhuma relação com o uso real.
+const STATUS_TRILHA = {
+  estruturacao: "Em estruturação",
+  ativa:        "Ativa",
+  estruturada:  "Estruturada",
+};
+
+function statusLabel(status) {
+  return STATUS_TRILHA[status] || STATUS_TRILHA.estruturacao;
 }
 
 function statusCor(status) {
-  if (status === "Estruturada") return { bg: "#dcfce7", text: "#166534" };
-  if (status === "Ativa")       return { bg: "#dbeafe", text: "#1d4ed8" };
+  if (status === "estruturada") return { bg: "#dcfce7", text: "#166534" };
+  if (status === "ativa")       return { bg: "#dbeafe", text: "#1d4ed8" };
   return                               { bg: "#ffedd5", text: "#9a3412" };
 }
 
@@ -49,6 +56,7 @@ export default function TrilhasPage() {
   const [treinamentos,  setTreinamentos]  = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(false);
+  const [exportando,    setExportando]    = useState(false);
   const [error,         setError]         = useState("");
   const [success,       setSuccess]       = useState("");
 
@@ -59,7 +67,7 @@ export default function TrilhasPage() {
 
   // Form state
   const [editingId,     setEditingId]     = useState(null);
-  const [form,          setForm]          = useState({ cliente: "", titulo: "", descricao: "" });
+  const [form,          setForm]          = useState({ cliente: "", titulo: "", descricao: "", status: "estruturacao" });
   const [etapas,        setEtapas]        = useState([etapaVazia()]);
 
   // Detail modal
@@ -76,19 +84,13 @@ export default function TrilhasPage() {
       setTrilhas(Array.isArray(tData) ? tData : []);
       setTreinamentos(Array.isArray(trData) ? trData : []);
 
-      // Carrega progresso para treinandos/instrutores
+      // Melhoria: antes buscava o progresso de CADA trilha com uma requisição
+      // paralela por trilha (Promise.allSettled em cima de todos os ids) —
+      // escalava mal com o catálogo crescendo. Agora é uma única chamada em
+      // lote que devolve o progresso de todas de uma vez.
       if (!isGestor) {
-        const ids = (Array.isArray(tData) ? tData : []).map((t) => t.id);
-        const progResults = await Promise.allSettled(
-          ids.map((id) => apiFetch(`/trilhas/${id}/progresso`))
-        );
-        const progMap = {};
-        ids.forEach((id, i) => {
-          if (progResults[i].status === "fulfilled") {
-            progMap[id] = progResults[i].value;
-          }
-        });
-        setProgresso(progMap);
+        const bulk = await apiFetch("/trilhas/progresso").catch(() => null);
+        setProgresso(bulk?.progresso || {});
       }
     } catch (err) {
       setError(err.message || "Erro ao carregar trilhas.");
@@ -118,8 +120,8 @@ export default function TrilhasPage() {
 
   const kpis = useMemo(() => ({
     total:          trilhas.length,
-    estruturadas:   trilhas.filter((t) => statusDaTrilha(t.etapas) === "Estruturada").length,
-    emEstruturacao: trilhas.filter((t) => statusDaTrilha(t.etapas) === "Em estruturação").length,
+    estruturadas:   trilhas.filter((t) => t.status === "estruturada").length,
+    emEstruturacao: trilhas.filter((t) => (t.status || "estruturacao") === "estruturacao").length,
     totalEtapas:    trilhas.reduce((acc, t) => acc + (t.etapas?.length || 0), 0),
   }), [trilhas]);
 
@@ -127,11 +129,16 @@ export default function TrilhasPage() {
   function abrirEditor(trilha = null) {
     if (trilha) {
       setEditingId(trilha.id);
-      setForm({ cliente: trilha.cliente || "", titulo: trilha.titulo || "", descricao: trilha.descricao || "" });
+      setForm({
+        cliente: trilha.cliente || "",
+        titulo: trilha.titulo || "",
+        descricao: trilha.descricao || "",
+        status: trilha.status || "estruturacao",
+      });
       setEtapas(trilha.etapas?.length ? trilha.etapas.map((e) => ({ ...e })) : [etapaVazia()]);
     } else {
       setEditingId(null);
-      setForm({ cliente: "", titulo: "", descricao: "" });
+      setForm({ cliente: "", titulo: "", descricao: "", status: "estruturacao" });
       setEtapas([etapaVazia()]);
     }
     setActiveTab("editor");
@@ -189,6 +196,19 @@ export default function TrilhasPage() {
       setError(err.message || "Erro ao salvar.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Novo recurso: export de "quem concluiu o quê e quando" — pensado como
+  // evidência de desenvolvimento (mesmo espírito do que se quer pro Oceano).
+  async function handleExportarProgresso(trilha) {
+    setExportando(true);
+    try {
+      await apiDownload(`/trilhas/${trilha.id}/progresso/exportar`, `trilha-${trilha.titulo}.xlsx`);
+    } catch (err) {
+      setError(err.message || "Erro ao exportar progresso.");
+    } finally {
+      setExportando(false);
     }
   }
 
@@ -312,7 +332,7 @@ export default function TrilhasPage() {
               <div style={grid}>
                 {filtradas.map((t) => {
                   const etapas = t.etapas || [];
-                  const status = statusDaTrilha(etapas);
+                  const status = t.status || "estruturacao";
                   const sCor   = statusCor(status);
                   const prog   = progresso[t.id];
                   const pct    = prog?.percentual ?? null;
@@ -324,7 +344,7 @@ export default function TrilhasPage() {
                           <div style={cardTitulo}>{t.titulo}</div>
                           {t.cliente && <div style={cardCliente}>{t.cliente}</div>}
                         </div>
-                        <span style={{ ...badge, background: sCor.bg, color: sCor.text }}>{status}</span>
+                        <span style={{ ...badge, background: sCor.bg, color: sCor.text }}>{statusLabel(status)}</span>
                       </div>
 
                       {t.descricao && <div style={cardDesc}>{t.descricao}</div>}
@@ -397,6 +417,15 @@ export default function TrilhasPage() {
                 <input style={input} value={form.cliente}
                   onChange={(e) => setForm({ ...form, cliente: e.target.value })}
                   placeholder="Ex.: Agibank" />
+              </div>
+              <div>
+                <label style={lbl}>Status</label>
+                <select style={input} value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  {Object.entries(STATUS_TRILHA).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
               </div>
               <div style={fieldFull}>
                 <label style={lbl}>Descrição</label>
@@ -524,6 +553,9 @@ export default function TrilhasPage() {
 
             {isGestor && (
               <div style={modalFooter}>
+                <button style={btnSecundary} onClick={() => handleExportarProgresso(detalhe)} disabled={exportando}>
+                  {exportando ? "Exportando…" : "⬇ Exportar progresso"}
+                </button>
                 <button style={btnPrimary} onClick={() => { setDetalhe(null); abrirEditor(detalhe); }}>
                   Editar trilha
                 </button>
@@ -618,7 +650,7 @@ const etapaNumSm  = { width: 24, height: 24, background: "#0B1220", color: "#fff
                       display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, flexShrink: 0 };
 const btnMinitoggle = { padding: "4px 10px", border: "none", borderRadius: 6, cursor: "pointer",
                         fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" };
-const modalFooter = { display: "flex", justifyContent: "flex-end", marginTop: 20, paddingTop: 16,
+const modalFooter = { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20, paddingTop: 16,
                       borderTop: "1px solid #f3f4f6" };
 
 // Buttons
