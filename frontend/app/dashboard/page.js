@@ -129,6 +129,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [drillDown, setDrillDown] = useState(null); // { turma, itens, loading }
   const [alertas, setAlertas] = useState({ turmasCriticas: [], necessidadesAtrasadas: [], chamadasPendentes: [] });
+  const [capacidade, setCapacidade] = useState(null);
+  const [capacidadeAlertas, setCapacidadeAlertas] = useState([]);
+  const [capacidadeRanking, setCapacidadeRanking] = useState([]);
+  const [capacidadeErro, setCapacidadeErro] = useState("");
   const [filters, setFilters] = useState({
     cliente: "",
     instrutor: "",
@@ -163,6 +167,33 @@ export default function DashboardPage() {
     }
     carregarAlertas();
   }, []);
+
+  // Capacidade / CH por instrutor — mesmo motor automático da página
+  // /capacidade (turma + cronograma, sem lançamento manual). Aqui é o resumo
+  // do mês corrente para o coordenador ver de cara no Dashboard; o detalhe
+  // completo (ranking, aderência por tema, distribuição por operação, meses
+  // anteriores) continua em "CH por Instrutor". Reaproveita o filtro de
+  // Cliente já existente no painel para não duplicar controles na tela.
+  useEffect(() => {
+    async function carregarCapacidade() {
+      try {
+        setCapacidadeErro("");
+        const qs = filters.cliente ? `?cliente=${encodeURIComponent(filters.cliente)}` : "";
+        const [painelData, alertasData, rankingData] = await Promise.all([
+          apiFetch(`/capacidade/painel${qs}`),
+          apiFetch(`/capacidade/alertas`),
+          apiFetch(`/capacidade/ranking${qs}${qs ? "&" : "?"}meses=1`),
+        ]);
+        setCapacidade(painelData || null);
+        setCapacidadeAlertas(Array.isArray(alertasData?.itens) ? alertasData.itens : []);
+        setCapacidadeRanking(Array.isArray(rankingData?.itens) ? rankingData.itens : []);
+      } catch (error) {
+        setCapacidade(null);
+        setCapacidadeErro(error.message || "Erro ao carregar capacidade da equipe.");
+      }
+    }
+    carregarCapacidade();
+  }, [filters.cliente]);
 
   useEffect(() => {
     async function carregar() {
@@ -340,6 +371,89 @@ export default function DashboardPage() {
               </>
             )}
           </div>
+
+          <SectionCard
+            title="Capacidade da equipe (CH por instrutor)"
+            subtitle={`Calculado automaticamente a partir das turmas e do cronograma já registrados${filters.cliente ? ` — recorte: ${filters.cliente}` : " — todas as operações"}. Nenhum lançamento manual extra para o time.`}
+            action={<a href="/capacidade" style={linkBotao}>Ver detalhamento completo →</a>}
+          >
+            {capacidadeErro ? (
+              <div style={emptyState}>{capacidadeErro}</div>
+            ) : !capacidade ? (
+              <div style={emptyState}>Carregando capacidade da equipe...</div>
+            ) : (
+              <div style={{ display: "grid", gap: 14 }}>
+                <div style={kpiGrid}>
+                  <StatCard
+                    title="CH programada (período)"
+                    value={`${fmt(capacidade.indicadores?.hc_programado_periodo || 0)}h`}
+                    subtitle="Turmas + cronograma planejados"
+                    accent={chart.cyan}
+                  />
+                  <StatCard
+                    title="CH realizada (período)"
+                    value={`${fmt(capacidade.indicadores?.hc_realizado_periodo || 0)}h`}
+                    subtitle={capacidade.indicadores?.aderencia_geral_pct != null ? `Aderência ${fmt(capacidade.indicadores.aderencia_geral_pct)}%` : "Sem base de comparação"}
+                    accent={colors.primary}
+                  />
+                  <StatCard
+                    title="Ocupação do time"
+                    value={`${fmt(capacidade.indicadores?.ocupacao_time_pct || 0)}%`}
+                    subtitle="Realizado vs. capacidade nominal"
+                    accent={colors.success}
+                  />
+                  <StatCard
+                    title="Capacidade nominal (time)"
+                    value={`${fmt(capacidade.indicadores?.capacidade_nominal_periodo || 0)}h`}
+                    subtitle="Dias úteis × regra padrão"
+                    accent={chart.orange}
+                  />
+                </div>
+
+                {capacidadeAlertas.length > 0 ? (
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 }}>
+                      Instrutores fora da faixa saudável este mês
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                      {capacidadeAlertas.slice(0, 6).map((item) => (
+                        <a key={item.instrutor} href="/capacidade" style={{ ...listRow, textDecoration: "none" }}>
+                          <div>
+                            <div style={rowTitle}>{item.instrutor}</div>
+                            <div style={rowMeta}>{item.status === "sobrecarga" ? "Sobrecarga" : item.status === "atencao" ? "Atenção" : "Ociosidade"} no mês corrente</div>
+                          </div>
+                          <div style={{ ...pill, ...getBadgeStyleByTax(item.ocupacao_pct) }}>{item.status_emoji} {fmt(item.ocupacao_pct)}%</div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "12px 16px", fontSize: 13, color: colors.successText, fontWeight: 600 }}>
+                    ✅ Todos os instrutores estão na faixa saudável de ocupação este mês.
+                  </div>
+                )}
+
+                {capacidadeRanking.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 }}>
+                      Top instrutores por CH realizada (mês corrente)
+                    </div>
+                    <div style={listGrid}>
+                      {capacidadeRanking.slice(0, 3).map((item) => (
+                        <div key={item.instrutor} style={listRow}>
+                          <div>
+                            <div style={rowTitle}>{item.posicao}º · {item.instrutor}</div>
+                            <div style={rowMeta}>{fmt(item.pct_capacidade)}% da capacidade do mês</div>
+                          </div>
+                          <div style={{ ...pill, background: "#eff6ff", color: colors.primary, border: "1px solid #bfdbfe" }}>{fmt(item.horas_realizadas)}h</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </SectionCard>
 
           <div style={twoColumns}>
             <SectionCard title="Leitura gerencial" subtitle="Sinais que te ajudam a interpretar o cenário com mais rapidez.">
@@ -555,6 +669,7 @@ const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0,
 const fieldLabel = { display: "grid", gap: 6, color: "#334155", fontSize: 13, fontWeight: 700 };
 const inputStyle = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 12, padding: "10px 12px", background: "#fff", color: "#0f172a" };
 const buttonSecondary = { border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
+const linkBotao = { border: "1px solid #cbd5e1", background: "#fff", color: "#1d4ed8", borderRadius: 12, padding: "10px 14px", fontWeight: 700, textDecoration: "none", fontSize: 13, whiteSpace: "nowrap" };
 const kpiGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
 const twoColumns = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
 const summaryList = { display: "grid", gap: 10 };
