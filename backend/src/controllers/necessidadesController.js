@@ -17,7 +17,11 @@ function mensagemErro(error, acaoDescricao) {
 async function listarHandler(req, res) {
   try {
     const { cliente, status } = req.query || {};
-    const itens = await listarNecessidades({ cliente: cliente || undefined, status: status || undefined });
+    const itens = await listarNecessidades({
+      cliente: cliente || undefined,
+      status: status || undefined,
+      empresaId: req.empresaId,
+    });
     return res.json({ ok: true, itens });
   } catch (error) {
     const tabelaAusente = /doesn't exist/i.test(error.message);
@@ -42,6 +46,7 @@ async function criarHandler(req, res) {
       ...dados,
       solicitante_id: req.user?.id,
       solicitante_nome: req.user?.nome,
+      empresa_id: req.empresaId ?? dados.empresa_id ?? null,
     });
 
     registrarAuditoria({
@@ -63,12 +68,12 @@ async function criarHandler(req, res) {
 async function editarHandler(req, res) {
   try {
     const { id } = req.params;
-    const antes = await buscarNecessidade(id);
+    const antes = await buscarNecessidade(id, req.empresaId);
     if (!antes) {
       return res.status(404).json({ ok: false, message: "Necessidade não encontrada" });
     }
 
-    await editarNecessidade(id, req.body || {});
+    await editarNecessidade(id, req.body || {}, req.empresaId);
 
     registrarAuditoria({
       usuario: req.user,
@@ -90,12 +95,12 @@ async function editarHandler(req, res) {
 async function excluirHandler(req, res) {
   try {
     const { id } = req.params;
-    const antes = await buscarNecessidade(id);
+    const antes = await buscarNecessidade(id, req.empresaId);
     if (!antes) {
       return res.status(404).json({ ok: false, message: "Necessidade não encontrada" });
     }
 
-    await excluirNecessidade(id);
+    await excluirNecessidade(id, req.empresaId);
 
     registrarAuditoria({
       usuario: req.user,

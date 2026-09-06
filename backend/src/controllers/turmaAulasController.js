@@ -77,6 +77,17 @@ function normalizeStatus(value) {
   return String(value || "").toLowerCase().trim();
 }
 
+// Isolamento por tenant: turma_aulas não é filtrada pelo próprio empresa_id
+// (a coluna existe pra backfill/relatório, mas não é confiável — nada aqui
+// grava ela numa aula nova). Em vez disso a aula herda o tenant do
+// treinamento pai via JOIN, que é sempre gravado corretamente pelo
+// entityCrud (multiTenant: true) no momento da criação da turma. Sem
+// empresaId (login legado/super_admin) o filtro não entra, preservando o
+// comportamento de hoje.
+function tenantJoinTreinamento(empresaId, alias = "t") {
+  return empresaId ? ` AND ${alias}.empresa_id = ${pool.escape(empresaId)}` : "";
+}
+
 async function listTurmaAulas(req, res) {
   try {
     const { treinamento_id } = req.query || {};
@@ -91,30 +102,31 @@ async function listTurmaAulas(req, res) {
     const [rows] = await pool.query(
       `
       SELECT
-        id,
-        treinamento_id,
-        dia_numero,
-        data_aula,
-        ordem,
-        titulo,
-        objetivo,
-        conteudo_planejado,
-        metodologia,
-        carga_horaria_planejada,
-        instrutor_responsavel,
-        material_apoio,
-        status_execucao,
-        conteudo_ministrado,
-        carga_horaria_real,
-        observacoes_execucao,
-        reprogramada,
-        motivo_reprogramacao,
-        ministrada_em,
-        criado_em,
-        atualizado_em
-      FROM turma_aulas
-      WHERE treinamento_id = ?
-      ORDER BY dia_numero ASC, ordem ASC, id ASC
+        a.id,
+        a.treinamento_id,
+        a.dia_numero,
+        a.data_aula,
+        a.ordem,
+        a.titulo,
+        a.objetivo,
+        a.conteudo_planejado,
+        a.metodologia,
+        a.carga_horaria_planejada,
+        a.instrutor_responsavel,
+        a.material_apoio,
+        a.status_execucao,
+        a.conteudo_ministrado,
+        a.carga_horaria_real,
+        a.observacoes_execucao,
+        a.reprogramada,
+        a.motivo_reprogramacao,
+        a.ministrada_em,
+        a.criado_em,
+        a.atualizado_em
+      FROM turma_aulas a
+      JOIN treinamentos t ON t.id = a.treinamento_id
+      WHERE a.treinamento_id = ?${tenantJoinTreinamento(req.empresaId)}
+      ORDER BY a.dia_numero ASC, a.ordem ASC, a.id ASC
       `,
       [treinamento_id]
     );
@@ -136,29 +148,30 @@ async function getTurmaAulaById(req, res) {
     const [rows] = await pool.query(
       `
       SELECT
-        id,
-        treinamento_id,
-        dia_numero,
-        data_aula,
-        ordem,
-        titulo,
-        objetivo,
-        conteudo_planejado,
-        metodologia,
-        carga_horaria_planejada,
-        instrutor_responsavel,
-        material_apoio,
-        status_execucao,
-        conteudo_ministrado,
-        carga_horaria_real,
-        observacoes_execucao,
-        reprogramada,
-        motivo_reprogramacao,
-        ministrada_em,
-        criado_em,
-        atualizado_em
-      FROM turma_aulas
-      WHERE id = ?
+        a.id,
+        a.treinamento_id,
+        a.dia_numero,
+        a.data_aula,
+        a.ordem,
+        a.titulo,
+        a.objetivo,
+        a.conteudo_planejado,
+        a.metodologia,
+        a.carga_horaria_planejada,
+        a.instrutor_responsavel,
+        a.material_apoio,
+        a.status_execucao,
+        a.conteudo_ministrado,
+        a.carga_horaria_real,
+        a.observacoes_execucao,
+        a.reprogramada,
+        a.motivo_reprogramacao,
+        a.ministrada_em,
+        a.criado_em,
+        a.atualizado_em
+      FROM turma_aulas a
+      JOIN treinamentos t ON t.id = a.treinamento_id
+      WHERE a.id = ?${tenantJoinTreinamento(req.empresaId)}
       LIMIT 1
       `,
       [id]
@@ -209,6 +222,14 @@ async function createTurmaAula(req, res) {
         ok: false,
         message: "Preencha treinamento, dia, data e título da aula",
       });
+    }
+
+    const [treinamentoDono] = await pool.query(
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      [treinamento_id]
+    );
+    if (!treinamentoDono.length) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
     const [result] = await pool.query(
@@ -303,6 +324,22 @@ async function updateTurmaAula(req, res) {
       });
     }
 
+    const [aulaAtual] = await pool.query(
+      `SELECT a.id FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req.empresaId)} LIMIT 1`,
+      [id]
+    );
+    if (!aulaAtual.length) {
+      return res.status(404).json({ ok: false, message: "Aula não encontrada" });
+    }
+
+    const [treinamentoDestino] = await pool.query(
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      [treinamento_id]
+    );
+    if (!treinamentoDestino.length) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
     await pool.query(
       `
       UPDATE turma_aulas
@@ -367,6 +404,14 @@ async function deleteTurmaAula(req, res) {
   try {
     const { id } = req.params;
 
+    const [aulaAtual] = await pool.query(
+      `SELECT a.id FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req.empresaId)} LIMIT 1`,
+      [id]
+    );
+    if (!aulaAtual.length) {
+      return res.status(404).json({ ok: false, message: "Aula não encontrada" });
+    }
+
     await pool.query(`DELETE FROM turma_aulas WHERE id = ?`, [id]);
 
     return res.json({
@@ -403,7 +448,7 @@ async function gerarCronogramaTurma(req, res) {
         data_inicio,
         data_fim
       FROM treinamentos
-      WHERE id = ?
+      WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")}
       LIMIT 1
       `,
       [treinamento_id]
@@ -510,6 +555,21 @@ async function duplicarPlanoAulas(req, res) {
       });
     }
 
+    const [origemTreinamento] = await pool.query(
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      [treinamento_origem_id]
+    );
+    const [destinoTreinamento] = await pool.query(
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      [treinamento_destino_id]
+    );
+    if (!origemTreinamento.length || !destinoTreinamento.length) {
+      return res.status(404).json({
+        ok: false,
+        message: "Treinamento de origem ou destino não encontrado",
+      });
+    }
+
     const [origem] = await pool.query(
       `
       SELECT *
@@ -605,6 +665,14 @@ async function duplicarPlanoAulas(req, res) {
 async function getResumoTurmaAulas(req, res) {
   try {
     const { treinamento_id } = req.params;
+
+    const [treinamentoDono] = await pool.query(
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      [treinamento_id]
+    );
+    if (!treinamentoDono.length) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
 
     const [aulas] = await pool.query(
       `
