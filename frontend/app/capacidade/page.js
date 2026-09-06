@@ -1,15 +1,15 @@
 "use client";
- 
+
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
 import { apiFetch } from "../../services/api";
 import { colors } from "../../lib/theme";
- 
+
 function fmt(n) { return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(Number(n || 0)); }
 function fmtPct(n) { return n == null ? "—" : `${fmt(n)}%`; }
- 
+
 const STATUS_LABEL = {
   ocioso: "Ociosa",
   saudavel: "Saudável",
@@ -17,10 +17,13 @@ const STATUS_LABEL = {
   sobrecarga: "Sobrecarga",
   sem_capacidade: "Sem capacidade definida",
 };
- 
+
+const MESES_OPCOES = [3, 6, 12];
+
 export default function CapacidadePage() {
   const [operacoes, setOperacoes] = useState([]);
   const [operacaoFiltro, setOperacaoFiltro] = useState("");
+  const [mesesFiltro, setMesesFiltro] = useState(3);
   const [painel, setPainel] = useState(null);
   const [capacity, setCapacity] = useState(null);
   const [ranking, setRanking] = useState([]);
@@ -29,23 +32,47 @@ export default function CapacidadePage() {
   const [alertas, setAlertas] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
- 
+
+  // ── Configuração (regra automática + overrides manuais) ──
+  const [configAberta,   setConfigAberta]   = useState(false);
+  const [instrutores,    setInstrutores]    = useState([]);
+  const [regra,          setRegra]          = useState(null);
+  const [regraForm,      setRegraForm]      = useState({ horas_dia_padrao: "", hc_dia_padrao: "", considerar_domingo: false });
+  const [regraSalvando,  setRegraSalvando]  = useState(false);
+  const [regraMsg,       setRegraMsg]       = useState({ tipo: "", texto: "" });
+
+  const [overrides,      setOverrides]      = useState([]);
+  const anoAtual = new Date().getFullYear();
+  const [overrideForm,   setOverrideForm]   = useState({
+    instrutor: "", ano: String(anoAtual), mes: "", horas_capacidade: "", hc_capacidade: "", observacoes: "",
+  });
+  const [overrideSalvando, setOverrideSalvando] = useState(false);
+  const [overrideMsg,      setOverrideMsg]      = useState({ tipo: "", texto: "" });
+
   useEffect(() => { apiFetch("/capacidade/operacoes").then((r) => setOperacoes(r?.operacoes || [])).catch(() => {}); }, []);
-  useEffect(() => { carregar(); }, [operacaoFiltro]);
- 
+  useEffect(() => { carregar(); }, [operacaoFiltro, mesesFiltro]);
+  useEffect(() => { if (configAberta) carregarConfig(); }, [configAberta]);
+
   async function carregar() {
     try {
       setLoading(true); setErro("");
-      const qs = operacaoFiltro ? `?cliente=${encodeURIComponent(operacaoFiltro)}` : "";
+      const params = new URLSearchParams();
+      if (operacaoFiltro) params.set("cliente", operacaoFiltro);
+      if (mesesFiltro) params.set("meses", mesesFiltro);
+      const qs = params.toString() ? `?${params.toString()}` : "";
+
+      const qsDist = mesesFiltro ? `?meses=${mesesFiltro}` : "";
+      const qsTema = operacaoFiltro ? `?cliente=${encodeURIComponent(operacaoFiltro)}` : "";
+
       const [p, c, r, t, a] = await Promise.all([
         apiFetch(`/capacidade/painel${qs}`),
         apiFetch(`/capacidade/capacity-consumido${qs}`),
         apiFetch(`/capacidade/ranking${qs}`),
-        apiFetch(`/capacidade/aderencia-por-tema${qs}`),
+        apiFetch(`/capacidade/aderencia-por-tema${qsTema}`),
         apiFetch("/capacidade/alertas"),
       ]);
-      // distribuição por operação não recebe o próprio filtro de operação (é o gráfico que mostra todas)
-      const d = await apiFetch("/capacidade/distribuicao-por-operacao");
+      // distribuição por operação não recebe o filtro de operação (é o gráfico que mostra todas)
+      const d = await apiFetch(`/capacidade/distribuicao-por-operacao${qsDist}`);
       setPainel(p); setCapacity(c); setRanking(r?.itens || []);
       setDistribuicao(d); setTemas(t?.itens || []); setAlertas(a);
     } catch (e) {
@@ -56,14 +83,93 @@ export default function CapacidadePage() {
       );
     } finally { setLoading(false); }
   }
- 
+
+  async function carregarConfig() {
+    try {
+      const [instrData, regraData, overridesData] = await Promise.all([
+        apiFetch("/capacidade/instrutores").catch(() => ({ instrutores: [] })),
+        apiFetch("/capacidade/regra").catch(() => null),
+        apiFetch("/capacidade/overrides").catch(() => ({ itens: [] })),
+      ]);
+      setInstrutores(instrData?.instrutores || []);
+      if (regraData?.regra) {
+        setRegra(regraData.regra);
+        setRegraForm({
+          horas_dia_padrao: String(regraData.regra.horas_dia_padrao ?? ""),
+          hc_dia_padrao: String(regraData.regra.hc_dia_padrao ?? ""),
+          considerar_domingo: !!regraData.regra.considerar_domingo,
+        });
+      }
+      setOverrides(overridesData?.itens || []);
+    } catch (_) { /* painel de config é auxiliar — falha aqui não deve travar a tela principal */ }
+  }
+
+  async function salvarRegra() {
+    try {
+      setRegraSalvando(true); setRegraMsg({ tipo: "", texto: "" });
+      if (regraForm.horas_dia_padrao === "" || regraForm.hc_dia_padrao === "") {
+        setRegraMsg({ tipo: "erro", texto: "Informe horas/dia e HC/dia." });
+        return;
+      }
+      await apiFetch("/capacidade/regra", {
+        method: "PUT",
+        body: JSON.stringify({
+          horas_dia_padrao: Number(regraForm.horas_dia_padrao),
+          hc_dia_padrao: Number(regraForm.hc_dia_padrao),
+          considerar_domingo: regraForm.considerar_domingo,
+        }),
+      });
+      setRegraMsg({ tipo: "ok", texto: "Regra padrão atualizada." });
+      await carregarConfig();
+      await carregar();
+    } catch (e) {
+      setRegraMsg({ tipo: "erro", texto: e.message || "Erro ao salvar regra." });
+    } finally { setRegraSalvando(false); }
+  }
+
+  async function salvarOverride() {
+    try {
+      setOverrideSalvando(true); setOverrideMsg({ tipo: "", texto: "" });
+      const { instrutor, ano, mes, horas_capacidade, hc_capacidade, observacoes } = overrideForm;
+      if (!instrutor || !ano || !mes) {
+        setOverrideMsg({ tipo: "erro", texto: "Selecione instrutor, ano e mês." });
+        return;
+      }
+      await apiFetch("/capacidade/overrides", {
+        method: "POST",
+        body: JSON.stringify({
+          instrutor, ano: Number(ano), mes: Number(mes),
+          horas_capacidade: Number(horas_capacidade || 0),
+          hc_capacidade: Number(hc_capacidade || 0),
+          observacoes: observacoes || null,
+        }),
+      });
+      setOverrideMsg({ tipo: "ok", texto: "Capacidade do instrutor salva." });
+      setOverrideForm({ instrutor: "", ano: String(anoAtual), mes: "", horas_capacidade: "", hc_capacidade: "", observacoes: "" });
+      await carregarConfig();
+      await carregar();
+    } catch (e) {
+      setOverrideMsg({ tipo: "erro", texto: e.message || "Erro ao salvar override." });
+    } finally { setOverrideSalvando(false); }
+  }
+
+  async function excluirOverride(id) {
+    if (!window.confirm("Remover este ajuste manual? O instrutor volta a usar a regra automática nesse mês.")) return;
+    try {
+      await apiFetch(`/capacidade/overrides/${id}`, { method: "DELETE" });
+      await carregarConfig();
+      await carregar();
+    } catch (e) { setOverrideMsg({ tipo: "erro", texto: e.message || "Erro ao remover." }); }
+  }
+
   const ind = painel?.indicadores || {};
- 
+  const janela = mesesFiltro === 3 ? "90 dias" : `${mesesFiltro} meses`;
+
   const rankingComMedalha = useMemo(() => {
     const medalhas = ["🥇", "🥈", "🥉"];
     return ranking.map((r) => ({ ...r, medalha: medalhas[r.posicao - 1] || "▫️" }));
   }, [ranking]);
- 
+
   return (
     <PortalShell>
       <div style={{ marginBottom: 20 }}>
@@ -72,14 +178,19 @@ export default function CapacidadePage() {
           title="Capacidade x Realizado"
           subtitle="Calculado automaticamente a partir das turmas e do cronograma já registrados no sistema — nada aqui exige lançamento manual adicional do time."
           actions={
-            <select value={operacaoFiltro} onChange={(e) => setOperacaoFiltro(e.target.value)} style={selectFiltro}>
-              <option value="">Todas as operações</option>
-              {operacoes.map((op) => <option key={op} value={op}>{op}</option>)}
-            </select>
+            <div style={{ display: "flex", gap: 8 }}>
+              <select value={mesesFiltro} onChange={(e) => setMesesFiltro(Number(e.target.value))} style={selectFiltro}>
+                {MESES_OPCOES.map((m) => <option key={m} value={m}>Últimos {m} meses</option>)}
+              </select>
+              <select value={operacaoFiltro} onChange={(e) => setOperacaoFiltro(e.target.value)} style={selectFiltro}>
+                <option value="">Todas as operações</option>
+                {operacoes.map((op) => <option key={op} value={op}>{op}</option>)}
+              </select>
+            </div>
           }
         />
       </div>
- 
+
       {erro && <div style={errBox}>{erro}</div>}
       {loading ? (
         <p style={{ color: "#64748b" }}>Carregando indicadores…</p>
@@ -94,7 +205,7 @@ export default function CapacidadePage() {
             <StatCard title="Aderência geral" value={fmtPct(ind.aderencia_geral_pct)} accent={colors.accent} />
             <StatCard title="Ocupação do time" value={fmtPct(ind.ocupacao_time_pct)} accent={colors.navy} />
           </div>
- 
+
           <div style={card}>
             <div style={cardTitle}>Capacity mensal do time × consumido</div>
             <div style={{ overflowX: "auto" }}>
@@ -124,17 +235,17 @@ export default function CapacidadePage() {
               </table>
             </div>
           </div>
- 
+
           <div style={{ ...card, marginTop: 20 }}>
-            <div style={cardTitle}>Capacity x consumido — por instrutor (90 dias)</div>
+            <div style={cardTitle}>Capacity x consumido — por instrutor ({janela})</div>
             <div style={{ overflowX: "auto" }}>
               <table style={table}>
                 <thead>
                   <tr style={theadRow}>
                     <th style={th}>Instrutor</th>
                     {(capacity?.meses || []).map((m) => <th key={m} style={{ ...th, textAlign: "right" }}>{m}</th>)}
-                    <th style={{ ...th, textAlign: "right" }}>Total 90d</th>
-                    <th style={{ ...th, textAlign: "right" }}>Cap. 90d</th>
+                    <th style={{ ...th, textAlign: "right" }}>Total {mesesFiltro}m</th>
+                    <th style={{ ...th, textAlign: "right" }}>Cap. {mesesFiltro}m</th>
                     <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
                   </tr>
                 </thead>
@@ -155,10 +266,10 @@ export default function CapacidadePage() {
               </table>
             </div>
           </div>
- 
+
           <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginTop: 20, alignItems: "start" }}>
             <div style={card}>
-              <div style={cardTitle}>Ranking de instrutores — CH realizada (90 dias)</div>
+              <div style={cardTitle}>Ranking de instrutores — CH realizada ({janela})</div>
               <table style={table}>
                 <thead>
                   <tr style={theadRow}>
@@ -180,7 +291,7 @@ export default function CapacidadePage() {
                 </tbody>
               </table>
             </div>
- 
+
             <div style={card}>
               <div style={cardTitle}>Alertas de ocupação (mês atual)</div>
               {(alertas?.itens || []).length === 0 ? (
@@ -197,7 +308,7 @@ export default function CapacidadePage() {
               )}
             </div>
           </div>
- 
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20, alignItems: "start" }}>
             <div style={card}>
               <div style={cardTitle}>Distribuição por operação (todos os clientes)</div>
@@ -217,7 +328,7 @@ export default function CapacidadePage() {
                 </tbody>
               </table>
             </div>
- 
+
             <div style={card}>
               <div style={cardTitle}>Aderência por tema {operacaoFiltro ? `— ${operacaoFiltro}` : "(todas as operações)"}</div>
               <table style={table}>
@@ -243,12 +354,137 @@ export default function CapacidadePage() {
               </table>
             </div>
           </div>
+
+          {/* ── Configuração: regra automática + overrides manuais ── */}
+          <div style={{ marginTop: 20 }}>
+            <button style={btnConfig} onClick={() => setConfigAberta((v) => !v)}>
+              {configAberta ? "▲ Fechar configuração de capacidade" : "⚙ Configurar regra automática e exceções por instrutor"}
+            </button>
+
+            {configAberta && (
+              <div style={{ ...card, marginTop: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 24 }}>
+
+                  {/* Regra padrão */}
+                  <div>
+                    <div style={cardTitle}>Regra automática padrão</div>
+                    <p style={{ fontSize: 12, color: "#64748b", marginTop: -8, marginBottom: 12 }}>
+                      Usada para calcular a capacidade de todo instrutor que não tem um ajuste manual no mês.
+                    </p>
+                    {regraMsg.texto && (
+                      <div style={regraMsg.tipo === "erro" ? msgErro : msgOk}>{regraMsg.texto}</div>
+                    )}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <CField label="Horas por dia">
+                        <input type="number" step="0.5" value={regraForm.horas_dia_padrao}
+                          onChange={(e) => setRegraForm((p) => ({ ...p, horas_dia_padrao: e.target.value }))}
+                          style={cInput} />
+                      </CField>
+                      <CField label="HC (turmas) por dia">
+                        <input type="number" step="1" value={regraForm.hc_dia_padrao}
+                          onChange={(e) => setRegraForm((p) => ({ ...p, hc_dia_padrao: e.target.value }))}
+                          style={cInput} />
+                      </CField>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#334155" }}>
+                        <input type="checkbox" checked={regraForm.considerar_domingo}
+                          onChange={(e) => setRegraForm((p) => ({ ...p, considerar_domingo: e.target.checked }))} />
+                        Considerar domingo como dia útil
+                      </label>
+                      <button style={btnCoral} onClick={salvarRegra} disabled={regraSalvando}>
+                        {regraSalvando ? "Salvando…" : "Salvar regra padrão"}
+                      </button>
+                      {regra?.atualizado_em && (
+                        <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                          Última atualização: {new Date(regra.atualizado_em).toLocaleString("pt-BR")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Overrides manuais */}
+                  <div>
+                    <div style={cardTitle}>Ajuste manual por instrutor/mês</div>
+                    <p style={{ fontSize: 12, color: "#64748b", marginTop: -8, marginBottom: 12 }}>
+                      Use quando um instrutor específico tem capacidade diferente da regra padrão num mês (ex: carga reduzida, licença parcial).
+                    </p>
+                    {overrideMsg.texto && (
+                      <div style={overrideMsg.tipo === "erro" ? msgErro : msgOk}>{overrideMsg.texto}</div>
+                    )}
+                    <div style={overrideFormGrid}>
+                      <CField label="Instrutor" full>
+                        <select value={overrideForm.instrutor}
+                          onChange={(e) => setOverrideForm((p) => ({ ...p, instrutor: e.target.value }))} style={cInput}>
+                          <option value="">Selecione…</option>
+                          {instrutores.map((i) => <option key={i} value={i}>{i}</option>)}
+                        </select>
+                      </CField>
+                      <CField label="Ano">
+                        <input type="number" value={overrideForm.ano}
+                          onChange={(e) => setOverrideForm((p) => ({ ...p, ano: e.target.value }))} style={cInput} />
+                      </CField>
+                      <CField label="Mês">
+                        <select value={overrideForm.mes}
+                          onChange={(e) => setOverrideForm((p) => ({ ...p, mes: e.target.value }))} style={cInput}>
+                          <option value="">—</option>
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </CField>
+                      <CField label="Capacidade (h)">
+                        <input type="number" value={overrideForm.horas_capacidade}
+                          onChange={(e) => setOverrideForm((p) => ({ ...p, horas_capacidade: e.target.value }))} style={cInput} />
+                      </CField>
+                      <CField label="Capacidade (HC)">
+                        <input type="number" value={overrideForm.hc_capacidade}
+                          onChange={(e) => setOverrideForm((p) => ({ ...p, hc_capacidade: e.target.value }))} style={cInput} />
+                      </CField>
+                      <CField label="Observações" full>
+                        <input value={overrideForm.observacoes}
+                          onChange={(e) => setOverrideForm((p) => ({ ...p, observacoes: e.target.value }))}
+                          placeholder="Opcional" style={cInput} />
+                      </CField>
+                    </div>
+                    <button style={{ ...btnCoral, marginTop: 10 }} onClick={salvarOverride} disabled={overrideSalvando}>
+                      {overrideSalvando ? "Salvando…" : "Salvar ajuste"}
+                    </button>
+
+                    <div style={{ marginTop: 16 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: 8 }}>
+                        Ajustes cadastrados ({overrides.length})
+                      </div>
+                      {overrides.length === 0 && <p style={{ fontSize: 13, color: "#94a3b8" }}>Nenhum ajuste manual cadastrado.</p>}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {overrides.map((o) => (
+                          <div key={o.id} style={overrideItem}>
+                            <div>
+                              <strong>{o.instrutor}</strong> — {String(o.mes).padStart(2, "0")}/{o.ano}
+                              <span style={{ color: "#64748b" }}> · {fmt(o.horas_capacidade)}h / {fmt(o.hc_capacidade)} HC</span>
+                              {o.observacoes && <div style={{ fontSize: 12, color: "#94a3b8" }}>{o.observacoes}</div>}
+                            </div>
+                            <button style={btnExcluirOverride} onClick={() => excluirOverride(o.id)}>remover</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
     </PortalShell>
   );
 }
- 
+
+function CField({ label, children, full = false }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: full ? "1 / -1" : "auto" }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{label}</span>
+      {children}
+    </div>
+  );
+}
+
 /* ─── estilos ─────────────────────────────────── */
 const card = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 20, boxShadow: "0 8px 18px rgba(15,23,42,.04)" };
 const cardTitle = { fontSize: 15, fontWeight: 800, color: "#0f172a", marginBottom: 14 };
@@ -260,3 +496,12 @@ const td = { padding: "8px 10px", color: "#334155" };
 const errBox = { background: colors.dangerLight, color: colors.dangerText, padding: "10px 14px", borderRadius: 10, marginBottom: 16, fontSize: 13 };
 const alertRow = { display: "flex", justifyContent: "space-between", fontSize: 13, padding: "8px 10px", background: "#f8fafc", borderRadius: 10 };
 const selectFiltro = { height: 38, borderRadius: 10, border: "1px solid rgba(255,255,255,.4)", padding: "0 10px", fontSize: 13, background: "rgba(255,255,255,.12)", color: "#fff" };
+
+const btnConfig = { width: "100%", background: "#f8fafc", border: "1px dashed #e2e8f0", borderRadius: 12, padding: "10px 16px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#334155", textAlign: "left" };
+const cInput = { height: 36, borderRadius: 9, border: "1px solid #e2e8f0", padding: "0 10px", fontSize: 13, color: "#334155", outline: "none", width: "100%", boxSizing: "border-box" };
+const overrideFormGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 };
+const btnCoral = { background: colors.accent, color: "#fff", border: 0, borderRadius: 10, padding: "9px 18px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
+const msgErro = { background: colors.dangerLight, color: colors.dangerText, borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 600, marginBottom: 10 };
+const msgOk = { background: colors.successLight, color: colors.successText, borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 600, marginBottom: 10 };
+const overrideItem = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, background: "#f8fafc", border: "1px solid #e9eef4", borderRadius: 10, padding: "8px 12px", fontSize: 13 };
+const btnExcluirOverride = { background: "none", border: "none", color: colors.dangerText, cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" };
