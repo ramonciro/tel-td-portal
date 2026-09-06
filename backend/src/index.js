@@ -47,6 +47,8 @@ const {
   updateTrilha,
   deleteTrilha,
   getProgresso,
+  getProgressoBulk,
+  exportarProgresso,
   marcarEtapaConcluida,
 } = require("./controllers/trilhasRelacionaisController");
 
@@ -788,6 +790,14 @@ app.get(
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   listTrilhas
 );
+// Precisa vir ANTES de "/api/trilhas/:id" — senão "progresso" seria
+// interpretado como o :id.
+app.get(
+  "/api/trilhas/progresso",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  getProgressoBulk
+);
 app.get(
   "/api/trilhas/:id",
   authRequired,
@@ -817,6 +827,12 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   getProgresso
+);
+app.get(
+  "/api/trilhas/:id/progresso/exportar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor"),
+  exportarProgresso
 );
 app.post(
   "/api/trilhas/:id/etapas/:etapaId/concluir",
