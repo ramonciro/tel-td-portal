@@ -20,9 +20,16 @@
  */
 
 const pool = require("../lib/db");
+const { getScorecardInstrutor } = require("./desempenhoInstrutorResolver");
 
 const STATUS_CONCLUIDA = ["concluído", "concluido", "concluída", "concluida"];
 const MARCOS_TURMAS = [3, 5, 10];
+
+// Mesmos limiares já usados em desempenhoInstrutorResolver.js (statusNps
+// saudável >=50) e no conceito de "ocupação plena" da tela de Capacidade —
+// nenhum número novo inventado aqui, só reaproveitado como critério de selo.
+const NPS_CONSISTENTE_MIN = 50;
+const CH_META_OCUPACAO_MIN = 100;
 
 function hoje() {
   return new Date().toISOString().slice(0, 10);
@@ -222,14 +229,97 @@ async function calcularConquistasTreinandos(empresaId) {
   return { presenca, trilha, certificacao, sequencia };
 }
 
-/** Lista as conquistas de um treinando específico, mais recentes primeiro. */
-async function listarConquistasTreinando(empresaId, nomeTreinando) {
+// ---------------------------------------------------------------------------
+// Instrutor
+// ---------------------------------------------------------------------------
+
+function mesReferencia(data = new Date()) {
+  return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Selos de instrutor do mês corrente — 100% reaproveitando
+ * desempenhoInstrutorResolver.getScorecardInstrutor (mesmos números do
+ * scorecard e do ranking que a coordenação e o próprio instrutor já veem
+ * em "Meu Desempenho"/Capacidade). Nenhuma métrica nova.
+ *
+ *   - Instrutor do mês: 1º lugar no ranking do índice geral do mês.
+ *   - NPS consistente: NPS do mês na faixa saudável (>=50, mesmo limiar de
+ *     statusNps).
+ *   - Sobre a meta de CH: ocupação (CH realizada / capacidade) do mês >= 100%.
+ */
+async function calcularConquistasInstrutores(empresaId) {
+  const hoje = new Date();
+  const mesRef = mesReferencia(hoje);
+  const scorecard = await getScorecardInstrutor({
+    periodo: "mensal",
+    ano: hoje.getUTCFullYear(),
+    mes: hoje.getUTCMonth() + 1,
+    empresaId,
+  });
+
+  let instrutorDoMes = 0;
+  let npsConsistente = 0;
+  let chMeta = 0;
+
+  const lider = (scorecard.ranking || []).find((r) => r.posicao === 1);
+  if (lider) {
+    await registrarConquista({
+      empresaId,
+      entidadeTipo: "instrutor",
+      entidadeNome: lider.instrutor,
+      tipo: "instrutor_do_mes",
+      titulo: "Instrutor do mês",
+      descricao: `1º lugar no índice geral do time em ${mesRef}.`,
+      contexto: `mes:${mesRef}`,
+      conquistadoEm: hoje.toISOString().slice(0, 10),
+    });
+    instrutorDoMes = 1;
+  }
+
+  for (const item of scorecard.itens || []) {
+    if (item.nps?.nps_score !== null && item.nps?.nps_score !== undefined && item.nps.nps_score >= NPS_CONSISTENTE_MIN) {
+      // eslint-disable-next-line no-await-in-loop
+      await registrarConquista({
+        empresaId,
+        entidadeTipo: "instrutor",
+        entidadeNome: item.instrutor,
+        tipo: "nps_consistente",
+        titulo: "NPS consistente",
+        descricao: `NPS na faixa saudável (${item.nps.nps_score}) em ${mesRef}.`,
+        contexto: `mes:${mesRef}`,
+        conquistadoEm: hoje.toISOString().slice(0, 10),
+      });
+      npsConsistente += 1;
+    }
+
+    if (item.ch?.ocupacao_pct !== null && item.ch?.ocupacao_pct !== undefined && item.ch.ocupacao_pct >= CH_META_OCUPACAO_MIN) {
+      // eslint-disable-next-line no-await-in-loop
+      await registrarConquista({
+        empresaId,
+        entidadeTipo: "instrutor",
+        entidadeNome: item.instrutor,
+        tipo: "ch_meta",
+        titulo: "Sobre a meta de CH",
+        descricao: `Ocupação de ${item.ch.ocupacao_pct}% da capacidade em ${mesRef}.`,
+        contexto: `mes:${mesRef}`,
+        conquistadoEm: hoje.toISOString().slice(0, 10),
+      });
+      chMeta += 1;
+    }
+  }
+
+  return { instrutorDoMes, npsConsistente, chMeta };
+}
+
+/** Lista as conquistas de uma pessoa (treinando ou instrutor), mais recentes primeiro. */
+async function listarConquistas(empresaId, entidadeTipo, nomePessoa) {
   const condEmpresa = empresaId ? "AND empresa_id = ?" : "AND empresa_id IS NULL";
-  const params = empresaId ? [empresaId, nomeTreinando] : [nomeTreinando];
+  const params = empresaId ? [entidadeTipo, empresaId, nomePessoa] : [entidadeTipo, nomePessoa];
   const [rows] = await pool.query(
     `SELECT tipo, titulo, descricao, contexto, conquistado_em
      FROM conquistas
-     WHERE entidade_tipo = 'treinando' ${condEmpresa} AND LOWER(TRIM(entidade_nome)) = LOWER(TRIM(?))
+     WHERE entidade_tipo = ? ${condEmpresa} AND LOWER(TRIM(entidade_nome)) = LOWER(TRIM(?))
      ORDER BY conquistado_em DESC, id DESC`,
     params
   );
@@ -238,6 +328,7 @@ async function listarConquistasTreinando(empresaId, nomeTreinando) {
 
 module.exports = {
   calcularConquistasTreinandos,
-  listarConquistasTreinando,
+  calcularConquistasInstrutores,
+  listarConquistas,
   registrarConquista,
 };
