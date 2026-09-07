@@ -20,6 +20,7 @@ const pool    = require("../lib/db");
 const bcrypt  = require("bcryptjs");
 const crypto  = require("crypto");
 const { signToken, authRequired } = require("../middlewares/auth");
+const { sendMail } = require("../services/mailer");
 
 /* ─── RATE LIMITING (login) ─────────────────────────────────────────────── */
 // Melhoria: antes não havia nenhum limite de tentativas — dava pra tentar
@@ -218,8 +219,13 @@ router.post("/alterar-senha", authRequired, async (req, res) => {
 });
 
 /* ─── ESQUECI MINHA SENHA ───────────────────────────────────────────────── */
-// Sprint 3: gera token de 1h — retornado na resposta enquanto SMTP não existe.
-// Sprint 4 (futuro): substituir por envio via nodemailer quando SMTP configurado.
+// Sprint 3: gerava token de 1h e devolvia direto na resposta (só porque não
+// havia SMTP ainda) — isso permitia qualquer um redefinir a senha de
+// qualquer e-mail cadastrado sem nunca ter acesso à caixa de entrada dele
+// (falha de segurança). Fase 2 (Sprint 4, pós-SMTP): o token agora só viaja
+// por e-mail (via services/mailer.js) e NUNCA mais volta na resposta HTTP —
+// nem mesmo em modo dev (SMTP não configurado), onde o mailer só loga no
+// console do servidor.
 router.post("/esqueci-senha", async (req, res) => {
   try {
     const { email } = req.body || {};
@@ -228,14 +234,20 @@ router.post("/esqueci-senha", async (req, res) => {
       return res.status(400).json({ ok: false, message: "Informe o e-mail cadastrado." });
     }
 
+    // Resposta sempre genérica — evita enumeração de e-mails cadastrados,
+    // esteja o e-mail cadastrado ou não.
+    const respostaGenerica = {
+      ok: true,
+      message: "Se o e-mail informado estiver cadastrado, enviaremos um link de redefinição de senha.",
+    };
+
     const [rows] = await pool.query(
-      "SELECT id, nome FROM usuarios WHERE LOWER(email) = LOWER(?) AND ativo = 1 LIMIT 1",
+      "SELECT id, nome, email FROM usuarios WHERE LOWER(email) = LOWER(?) AND ativo = 1 LIMIT 1",
       [email.trim()]
     );
 
-    // Responde OK mesmo sem encontrar (evita enumeração de e-mails)
     if (!rows.length) {
-      return res.json({ ok: true, message: "Se o e-mail existir, um token será gerado." });
+      return res.json(respostaGenerica);
     }
 
     const user   = rows[0];
@@ -252,16 +264,34 @@ router.post("/esqueci-senha", async (req, res) => {
       [user.id, token, expira]
     );
 
-    // TODO Sprint 4 pós-SMTP: enviar link por email e remover token da resposta
-    return res.json({
-      ok:        true,
-      message:   "Token gerado. Use-o para redefinir sua senha.",
-      token,
-      expira_em: expira.toISOString(),
+    const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3001").replace(/\/$/, "");
+    const link = `${frontendUrl}/redefinir-senha?token=${token}`;
+
+    await sendMail({
+      to: user.email,
+      subject: "Redefinição de senha — Portal T&D",
+      text:
+        `Olá, ${user.nome}.\n\n` +
+        `Recebemos uma solicitação para redefinir sua senha no Portal T&D.\n\n` +
+        `Acesse o link abaixo para criar uma nova senha (válido por 1 hora):\n${link}\n\n` +
+        `Se você não solicitou isso, ignore este e-mail — sua senha permanece a mesma.`,
+      html: `
+        <p>Olá, ${user.nome}.</p>
+        <p>Recebemos uma solicitação para redefinir sua senha no <strong>Portal T&amp;D</strong>.</p>
+        <p>
+          <a href="${link}" style="background:#D97706;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;">
+            Redefinir minha senha
+          </a>
+        </p>
+        <p>Ou copie e cole este link no navegador (válido por 1 hora):<br>${link}</p>
+        <p style="color:#64748b;font-size:13px;">Se você não solicitou isso, ignore este e-mail — sua senha permanece a mesma.</p>
+      `,
     });
+
+    return res.json(respostaGenerica);
   } catch (error) {
     console.error("Erro em esqueci-senha:", error);
-    return res.status(500).json({ ok: false, message: "Erro ao gerar token." });
+    return res.status(500).json({ ok: false, message: "Erro ao processar solicitação." });
   }
 });
 
