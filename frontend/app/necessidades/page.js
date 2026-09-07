@@ -101,7 +101,13 @@ function NecessidadeCard({ item, onEditar, onCancelar }) {
       {podeAcao && (
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:4 }}>
           <button style={btnEdit}   onClick={() => onEditar(item)}>Editar</button>
-          <a href="/treinamentos/novo" style={btnCriarTurma}>+ Criar turma</a>
+          {/* Bugfix: apontava para /treinamentos/novo, rota que nunca existiu
+              nesse app (a tela de Treinamentos é uma única página com modal,
+              sem sub-rota "novo") — o clique caía direto no 404 do Next.
+              Agora manda pra /treinamentos com query params que a própria
+              página lê (useSearchParams) pra abrir o modal de criação já
+              com essa necessidade vinculada. */}
+          <a href={`/treinamentos?abrir=novo&necessidade_id=${item.id}`} style={btnCriarTurma}>+ Criar turma</a>
           <button style={btnCancel} onClick={() => onCancelar(item.id)}>Cancelar necessidade</button>
         </div>
       )}
