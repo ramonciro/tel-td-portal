@@ -56,7 +56,9 @@ async function registrarAuditoria({
   }
 }
 
-async function listarAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim, limite = 200, empresaId } = {}) {
+// Monta o WHERE/valores compartilhado entre a listagem paginada e a contagem
+// total — os dois precisam enxergar exatamente o mesmo filtro.
+function construirFiltroAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim, empresaId } = {}) {
   const condicoes = [];
   const valores = [];
 
@@ -90,6 +92,11 @@ async function listarAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim,
   }
 
   const where = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+  return { where, valores };
+}
+
+async function listarAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim, limite = 200, empresaId } = {}) {
+  const { where, valores } = construirFiltroAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim, empresaId });
   const [rows] = await pool.query(
     `SELECT * FROM auditoria_log ${where} ORDER BY criado_em DESC LIMIT ?`,
     [...valores, Number(limite) || 200]
@@ -97,4 +104,26 @@ async function listarAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim,
   return rows;
 }
 
-module.exports = { registrarAuditoria, listarAuditoria, mascarar };
+// FIX (07/09): a tela de auditoria mostrava os cards de resumo ("Registros no
+// período", "Criações", "Edições", "Exclusões") calculados em cima do array
+// já paginado (`itens`) — se o filtro tivesse mais registros do que o limite
+// carregado, o card mostrava só o que estava na página, rotulado como se
+// fosse o total do período. Esta contagem roda no banco, sem limite, com o
+// mesmo filtro da listagem.
+async function contarAuditoriaPorAcao({ usuarioId, acao, entidade, dataInicio, dataFim, empresaId } = {}) {
+  const { where, valores } = construirFiltroAuditoria({ usuarioId, acao, entidade, dataInicio, dataFim, empresaId });
+  const [rows] = await pool.query(
+    `SELECT acao, COUNT(*) AS total FROM auditoria_log ${where} GROUP BY acao`,
+    valores
+  );
+
+  const totais = { total: 0, criar: 0, editar: 0, excluir: 0 };
+  for (const row of rows) {
+    const qtd = Number(row.total) || 0;
+    totais.total += qtd;
+    if (row.acao in totais) totais[row.acao] = qtd;
+  }
+  return totais;
+}
+
+module.exports = { registrarAuditoria, listarAuditoria, contarAuditoriaPorAcao, mascarar };
