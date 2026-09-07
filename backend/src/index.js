@@ -10,6 +10,13 @@ const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } = require("./middlewares/auth");
 
+// Fase 2 (roadmap de competitividade): automações por e-mail — resumo diário
+// de pendências para coordenadores e lembrete de aula do dia seguinte para
+// instrutores. Ver backend/src/jobs/.
+const { iniciarAgendamentos } = require("./jobs/scheduler");
+const { rodarDigestPendencias } = require("./jobs/pendenciasDigest");
+const { rodarLembretesAula } = require("./jobs/lembretesAula");
+
 // Sprint 5: Analytics
 const {
   getResumo, getHoras, getNps, getEfetividade, getRoi, exportarIndicadores,
@@ -1157,11 +1164,45 @@ app.get   ("/api/rs/usuarios",  authRequired, authorizeRoles("coordenador_rs"), 
 app.post  ("/api/rs/usuarios",  authRequired, authorizeRoles("coordenador_rs"), criarUsuarioRS);
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Fase 2 — disparo manual dos jobs de e-mail (além do agendamento automático
+// em jobs/scheduler.js). Útil para testar sem esperar o horário do cron, e
+// para reenviar sob demanda caso um envio automático falhe.
+app.post(
+  "/api/admin/jobs/rodar-pendencias",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  async (req, res) => {
+    try {
+      const resultado = await rodarDigestPendencias();
+      return res.json({ ok: true, resultado });
+    } catch (error) {
+      console.error("Erro ao rodar digest de pendências:", error);
+      return res.status(500).json({ ok: false, message: "Erro ao rodar o resumo de pendências.", error: error.message });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/jobs/rodar-lembretes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  async (req, res) => {
+    try {
+      const resultado = await rodarLembretesAula();
+      return res.json({ ok: true, resultado });
+    } catch (error) {
+      console.error("Erro ao rodar lembretes de aula:", error);
+      return res.status(500).json({ ok: false, message: "Erro ao rodar os lembretes de aula.", error: error.message });
+    }
+  }
+);
+
 const PORT = process.env.PORT || 3000;
 
 async function iniciarAplicacao() {
   try {
     await runMigrations();
+    iniciarAgendamentos();
 
     app.listen(PORT, () => {
       console.log(`Servidor rodando na porta ${PORT}`);
