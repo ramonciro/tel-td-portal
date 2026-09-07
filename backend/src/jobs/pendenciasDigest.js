@@ -22,6 +22,7 @@ const { sendMail } = require("../services/mailer");
 const { getAlertas } = require("../services/capacidadeResolver");
 const { getResumoExecutivo } = require("../services/desempenhoInstrutorResolver");
 const { getResumoPresenca } = require("../services/presencaResolver");
+const { gerarTextoResumo, salvarResumoDoDia } = require("../services/resumoExecutivoService");
 
 const PERFIS_DESTINATARIOS = ["coordenador", "supervisor", "superintendente"];
 
@@ -125,6 +126,17 @@ async function rodarDigestPendencias() {
     const resumo = await montarResumoEmpresa(empresa.id);
     const total = totalPendencias(resumo);
 
+    // Fase 3 — mesmo resumo já calculado acima vira o texto do "resumo
+    // executivo automático" do Dashboard (sem custo, sem chamada de IA:
+    // ver resumoExecutivoService.js). Cacheado uma vez por dia, para todas
+    // as empresas, mesmo quando não há pendência nenhuma para e-mail.
+    try {
+      const textoResumo = gerarTextoResumo(resumo);
+      await salvarResumoDoDia(empresa.id, textoResumo, total);
+    } catch (error) {
+      console.error("[pendenciasDigest] Erro ao cachear resumo executivo:", error.message);
+    }
+
     if (total === 0) {
       resultados.push({ empresa: empresa.nome, total: 0, enviados: 0 });
       continue;
@@ -145,4 +157,4 @@ async function rodarDigestPendencias() {
   return resultados;
 }
 
-module.exports = { rodarDigestPendencias };
+module.exports = { rodarDigestPendencias, montarResumoEmpresa, totalPendencias, listarEmpresasAtivas };

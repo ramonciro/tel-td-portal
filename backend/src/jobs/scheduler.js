@@ -1,9 +1,11 @@
 /**
  * scheduler.js
  *
- * Fase 2 do roadmap de competitividade — agenda os jobs automáticos via
- * node-cron:
- *   - Resumo diário de pendências: 07h, dias úteis (segunda a sexta).
+ * Fase 2 e Fase 3 do roadmap de competitividade — agenda os jobs
+ * automáticos via node-cron:
+ *   - Cálculo de conquistas (gamificação): 06h, todos os dias.
+ *   - Resumo diário de pendências (+ resumo executivo do Dashboard): 07h,
+ *     dias úteis (segunda a sexta).
  *   - Lembrete de aula do dia seguinte: 17h, todos os dias.
  *
  * Os horários seguem o fuso do próprio processo Node (normalmente UTC no
@@ -11,18 +13,29 @@
  * em produção, ajustar via variável de ambiente TZ=America/Sao_Paulo no
  * serviço, em vez de mexer nas expressões cron abaixo.
  *
- * Ambos os jobs também podem ser disparados manualmente (útil para testes e
- * para reenviar em caso de falha) via:
+ * Todos os jobs também podem ser disparados manualmente (útil para testes e
+ * para reenviar/recalcular em caso de falha) via:
  *   POST /api/admin/jobs/rodar-pendencias
  *   POST /api/admin/jobs/rodar-lembretes
+ *   POST /api/admin/jobs/rodar-conquistas
  * (ver backend/src/index.js)
  */
 
 const cron = require("node-cron");
 const { rodarDigestPendencias } = require("./pendenciasDigest");
 const { rodarLembretesAula } = require("./lembretesAula");
+const { rodarCalculoConquistas } = require("./conquistasJob");
 
 function iniciarAgendamentos() {
+  cron.schedule("0 6 * * *", async () => {
+    try {
+      const resultado = await rodarCalculoConquistas();
+      console.log("[scheduler] Cálculo de conquistas executado:", JSON.stringify(resultado));
+    } catch (error) {
+      console.error("[scheduler] Erro ao calcular conquistas:", error.message);
+    }
+  });
+
   cron.schedule("0 7 * * 1-5", async () => {
     try {
       const resultado = await rodarDigestPendencias();
@@ -42,7 +55,7 @@ function iniciarAgendamentos() {
   });
 
   console.log(
-    "[scheduler] Agendamentos automáticos registrados (pendências 07h dias úteis, lembretes 17h diário)."
+    "[scheduler] Agendamentos automáticos registrados (conquistas 06h diário, pendências 07h dias úteis, lembretes 17h diário)."
   );
 }
 
