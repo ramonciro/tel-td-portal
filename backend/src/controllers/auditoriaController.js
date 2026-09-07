@@ -1,18 +1,23 @@
-const { listarAuditoria } = require("../services/auditoria");
+const { listarAuditoria, contarAuditoriaPorAcao } = require("../services/auditoria");
 
 async function listarAuditoriaHandler(req, res) {
   try {
     const { usuario_id, acao, entidade, data_inicio, data_fim, limite } = req.query;
-    const itens = await listarAuditoria({
+    const filtroBase = {
       usuarioId: usuario_id ? Number(usuario_id) : undefined,
       acao: acao || undefined,
       entidade: entidade || undefined,
       dataInicio: data_inicio || undefined,
       dataFim: data_fim || undefined,
-      limite: limite ? Number(limite) : undefined,
       empresaId: req.empresaId,
-    });
-    return res.json({ ok: true, itens });
+    };
+
+    const [itens, totais] = await Promise.all([
+      listarAuditoria({ ...filtroBase, limite: limite ? Number(limite) : undefined }),
+      contarAuditoriaPorAcao(filtroBase),
+    ]);
+
+    return res.json({ ok: true, itens, totais });
   } catch (error) {
     const tabelaAusente = /doesn't exist/i.test(error.message);
     return res.status(500).json({

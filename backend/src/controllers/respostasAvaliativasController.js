@@ -20,6 +20,19 @@ async function treinamentoPertenceAoTenant(treinamentoId, empresaId) {
 
 async function listRespostasAvaliativas(req, res) {
   try {
+    const perfil = String(req.user?.perfil || "").toLowerCase();
+    const nomeUsuario = String(req.user?.nome || "").trim();
+
+    // Mesma trava de identidade já usada no NPS e na criação desta mesma
+    // rota: um treinando só pode ver as próprias respostas de prova, nunca
+    // as dos colegas (respostas_json inclusive). Sem isso, qualquer
+    // treinando autenticado que chamasse este endpoint recebia as respostas
+    // de todos os treinandos da empresa.
+    const filtroTreinando =
+      perfil === "treinando"
+        ? ` AND ra.treinando_nome = ${pool.escape(nomeUsuario)}`
+        : "";
+
     const [rows] = await pool.query(`
       SELECT
         ra.id,
@@ -34,7 +47,7 @@ async function listRespostasAvaliativas(req, res) {
         ra.criado_em,
         ra.atualizado_em
       FROM respostas_avaliativas ra
-      WHERE 1 = 1${tenantJoinTreinamento(req.empresaId)}
+      WHERE 1 = 1${tenantJoinTreinamento(req.empresaId)}${filtroTreinando}
       ORDER BY ra.id DESC
     `);
 
