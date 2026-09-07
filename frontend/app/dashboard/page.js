@@ -163,6 +163,7 @@ export default function DashboardPage() {
   const [capacidadeErro, setCapacidadeErro] = useState("");
   const [desempenhoResumo, setDesempenhoResumo] = useState(null);
   const [desempenhoErro, setDesempenhoErro] = useState("");
+  const [resumoExecutivo, setResumoExecutivo] = useState(null);
   const [filters, setFilters] = useState({
     cliente: "",
     instrutor: "",
@@ -242,6 +243,22 @@ export default function DashboardPage() {
       }
     }
     carregarDesempenho();
+  }, []);
+
+  // Resumo executivo automático (Fase 3) — 2 a 4 frases prontas, geradas por
+  // template (sem IA/LLM) a partir dos mesmos sinais de capacidade,
+  // desempenho e presença já usados no e-mail diário de pendências. Cacheado
+  // uma vez por dia no backend — carrega uma vez, não depende dos filtros.
+  useEffect(() => {
+    async function carregarResumoExecutivo() {
+      try {
+        const resumo = await apiFetch("/dashboard/resumo-executivo");
+        setResumoExecutivo(resumo || null);
+      } catch (error) {
+        setResumoExecutivo(null);
+      }
+    }
+    carregarResumoExecutivo();
   }, []);
 
   // Cascata de entrada — mesmo padrão já usado em /inicio e /rs. Liga só
@@ -603,6 +620,17 @@ export default function DashboardPage() {
             )}
           </SectionCard>
 
+          {resumoExecutivo?.texto && (
+            <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ animationDelay: ".02s" }}>
+              <SectionCard
+                title="Resumo executivo do dia"
+                subtitle="Gerado automaticamente a partir da capacidade, do desempenho e das presenças — sem preenchimento manual."
+              >
+                <p style={resumoExecutivoText}>{resumoExecutivo.texto}</p>
+              </SectionCard>
+            </div>
+          )}
+
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ ...twoColumns, animationDelay: ".05s" }}>
             <SectionCard title="Leitura gerencial" subtitle="Sinais que te ajudam a interpretar o cenário com mais rapidez.">
               <div style={summaryList}>
@@ -808,6 +836,7 @@ const buttonSecondary = { border: "1px solid #cbd5e1", background: "#fff", color
 const linkBotao = { border: "1px solid #cbd5e1", background: "#fff", color: "#1d4ed8", borderRadius: 12, padding: "10px 14px", fontWeight: 700, textDecoration: "none", fontSize: 13, whiteSpace: "nowrap" };
 const kpiGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
 const twoColumns = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
+const resumoExecutivoText = { margin: 0, padding: "14px 16px", borderRadius: 16, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", lineHeight: 1.7, fontSize: 14 };
 const summaryList = { display: "grid", gap: 10 };
 const summaryItem = { padding: "14px 16px", borderRadius: 16, background: "#f8fafc", border: "1px solid #e2e8f0", color: "#334155", lineHeight: 1.6 };
 const farolList = { display: "grid", gap: 10 };
