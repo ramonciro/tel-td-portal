@@ -67,18 +67,24 @@ const STATUS_CONFIGS = [
 /* ═══════════════════════════════════════════════
    CONFIGURAÇÃO DO BOTÃO DE AÇÃO POR STATUS
 ═══════════════════════════════════════════════ */
-function getActionConfig(statusTurma, usaCronograma) {
+// Bugfix: todo botão de ação levava pro mesmo lugar (Visão geral da turma),
+// não importa o que o rótulo prometesse. Pra "Importar treinandos" — a ação
+// mais crítica, mostrada bem quando a turma não tem ninguém cadastrado —
+// isso significava clicar, cair na aba errada, achar a aba "Pessoas" e ainda
+// abrir manualmente a seção de import (que começa fechada). Agora cada ação
+// já leva direto pro lugar certo.
+function getActionConfig(statusTurma, usaCronograma, id) {
   if (statusTurma === "Sem treinandos")
-    return { label: "Importar treinandos", variant: "alerta" };
+    return { label: "Importar treinandos", variant: "alerta", href: `/turma/${id}/participantes?abrir_import=1` };
   if (usaCronograma && statusTurma === "Sem cronograma")
-    return { label: "Gerir turma", variant: "alerta" };
+    return { label: "Gerir turma", variant: "alerta", href: `/turma/${id}` };
   if (statusTurma === "Planejada")
-    return { label: "Gerir turma", variant: "alerta" };
+    return { label: "Gerir turma", variant: "alerta", href: `/turma/${id}` };
   if (statusTurma === "Cancelada")
-    return { label: "Ver gestão", variant: "neutro" };
+    return { label: "Ver gestão", variant: "neutro", href: `/turma/${id}` };
   if (statusTurma === "Chamada pendente" || statusTurma === "Em andamento")
-    return { label: usaCronograma ? "Gerir turma" : "Abrir chamada", variant: "primario" };
-  return { label: "Ver gestão", variant: "neutro" };
+    return { label: usaCronograma ? "Gerir turma" : "Abrir chamada", variant: "primario", href: `/turma/${id}` };
+  return { label: "Ver gestão", variant: "neutro", href: `/turma/${id}` };
 }
 
 /* ═══════════════════════════════════════════════
@@ -295,8 +301,8 @@ export default function GestaoPresencasPage() {
   }, [turmasFiltradas]);
 
   /* ── ações ── */
-  function abrirTurma(item) {
-    window.location.href = `/turma/${item.id}`;
+  function abrirTurma(href) {
+    window.location.href = href;
   }
 
   function limparFiltros() {
@@ -555,7 +561,7 @@ export default function GestaoPresencasPage() {
           ) : (
             <div style={cardsGrid}>
               {turmasFiltradas.map((item) => {
-                const action       = getActionConfig(item.statusTurma, item.usaCronograma);
+                const action       = getActionConfig(item.statusTurma, item.usaCronograma, item.id);
                 const bordaColor   = getBordaHealth(item);
                 const totalReal    = item.presentes + item.ausentes + item.justificados;
                 const temExecucao  = item.baseEsperada > 0;
@@ -655,7 +661,7 @@ export default function GestaoPresencasPage() {
                     <CardActionBtn
                       variant={action.variant}
                       label={action.label}
-                      onClick={() => abrirTurma(item)}
+                      onClick={() => abrirTurma(action.href)}
                     />
                   </div>
                 );
