@@ -19,6 +19,11 @@ import { colors } from "../../lib/theme";
 function fmt(n) { return n === null || n === undefined ? "—" : new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(Number(n)); }
 function fmtPct(n) { return n == null ? "—" : `${fmt(n)}%`; }
 
+function seloIcone(tipo) {
+  const icones = { instrutor_do_mes: "🌟", nps_consistente: "💬", ch_meta: "📈" };
+  return icones[tipo] || "🏅";
+}
+
 export default function MeuDesempenhoPage() {
   const hoje = new Date();
   const [periodoTipo, setPeriodoTipo] = useState("mensal");
@@ -26,11 +31,21 @@ export default function MeuDesempenhoPage() {
   const [mes,         setMes]         = useState(String(hoje.getMonth() + 1));
   const [trimestre,   setTrimestre]   = useState(String(Math.floor(hoje.getMonth() / 3) + 1));
 
-  const [dados,   setDados]   = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [erro,    setErro]    = useState("");
+  const [dados,      setDados]      = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [erro,       setErro]       = useState("");
+  const [conquistas, setConquistas] = useState([]);
 
   useEffect(() => { carregar(); }, [periodoTipo, ano, mes, trimestre]);
+
+  // Fase 3 — "Meus Selos" (gamificação de instrutor, sem custo/sem IA — ver
+  // services/gamificacaoService.js). Carrega uma vez, não depende dos
+  // filtros de período acima (selos são calculados por mês corrente).
+  useEffect(() => {
+    apiFetch("/minhas-conquistas")
+      .then((r) => setConquistas(r?.conquistas || []))
+      .catch(() => setConquistas([]));
+  }, []);
 
   async function carregar() {
     try {
@@ -81,6 +96,23 @@ export default function MeuDesempenhoPage() {
       </div>
 
       {erro && <div style={errBox}>{erro}</div>}
+
+      {conquistas.length > 0 && (
+        <div style={selosBox}>
+          <div style={selosTitulo}>🏆 Meus selos</div>
+          <div style={selosLista}>
+            {conquistas.map((c) => (
+              <div key={`${c.tipo}-${c.contexto}`} style={seloCard} title={c.descricao}>
+                <div style={seloIconeStyle}>{seloIcone(c.tipo)}</div>
+                <div>
+                  <div style={seloTituloItem}>{c.titulo}</div>
+                  <div style={seloDescricao}>{c.descricao}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <p style={{ color: "#64748b" }}>Carregando seu desempenho…</p>
@@ -145,4 +177,11 @@ const card = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16
 const cardTitle = { fontSize: 15, fontWeight: 800, color: "#0f172a", marginBottom: 14 };
 const linha = { fontSize: 13, color: "#334155", margin: "4px 0" };
 const errBox = { background: colors.dangerLight, color: colors.dangerText, padding: "10px 14px", borderRadius: 10, marginBottom: 16, fontSize: 13 };
+const selosBox        = { background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 16, padding: "16px 20px", marginBottom: 20 };
+const selosTitulo     = { fontWeight: 800, fontSize: 14, color: "#92400e", marginBottom: 12 };
+const selosLista      = { display: "flex", flexWrap: "wrap", gap: 12 };
+const seloCard        = { display: "flex", gap: 10, alignItems: "flex-start", background: "#fff", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", minWidth: 220, maxWidth: 280 };
+const seloIconeStyle  = { fontSize: 22, lineHeight: 1 };
+const seloTituloItem  = { fontWeight: 800, fontSize: 13, color: "#0B1220" };
+const seloDescricao   = { fontSize: 12, color: "#6b7280", marginTop: 2 };
 const selectFiltro = { height: 38, borderRadius: 10, border: "1px solid rgba(255,255,255,.4)", padding: "0 10px", fontSize: 13, background: "rgba(255,255,255,.12)", color: "#fff" };
