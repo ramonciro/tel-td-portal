@@ -2,14 +2,26 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch, getStoredUser } from "../../services/api";
 
+// Next.js exige que useSearchParams() fique dentro de um <Suspense> em rota
+// estática (sem isso, o build de produção falha com "useSearchParams()
+// should be wrapped in a suspense boundary") — por isso o componente que lê
+// a URL fica separado, e o export default só envolve ele em Suspense.
 export default function ResponderNpsPage() {
+  return (
+    <Suspense fallback={<PortalShell><div style={loadingBox}>Carregando turmas...</div></PortalShell>}>
+      <ResponderNpsConteudo />
+    </Suspense>
+  );
+}
+
+function ResponderNpsConteudo() {
   const searchParams = useSearchParams();
   const treinamentoIdContexto = searchParams.get("treinamento_id") || "";
 
