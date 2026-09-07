@@ -3,11 +3,16 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
+import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch, getStoredUser } from "../../services/api";
 
 export default function ResponderNpsPage() {
+  const searchParams = useSearchParams();
+  const treinamentoIdContexto = searchParams.get("treinamento_id") || "";
+
   const [turmas, setTurmas] = useState([]);
   const [treinamentoId, setTreinamentoId] = useState("");
   const [nota, setNota] = useState("");
@@ -30,7 +35,17 @@ export default function ResponderNpsPage() {
         setLoading(true);
         setErro("");
         const data = await apiFetch("/nps-disponivel").catch(() => []);
-        setTurmas(Array.isArray(data) ? data : []);
+        const lista = Array.isArray(data) ? data : [];
+        setTurmas(lista);
+
+        // Veio de um link de turma específica (aba NPS da turma) — pré-seleciona,
+        // em vez de obrigar a escolher de novo a mesma turma que acabou de sair.
+        if (
+          treinamentoIdContexto &&
+          lista.some((item) => String(item.id) === String(treinamentoIdContexto))
+        ) {
+          setTreinamentoId(treinamentoIdContexto);
+        }
       } catch (error) {
         setErro(error.message || "Erro ao carregar turmas disponíveis para NPS.");
       } finally {
@@ -39,7 +54,7 @@ export default function ResponderNpsPage() {
     }
 
     carregar();
-  }, []);
+  }, [treinamentoIdContexto]);
 
   async function enviar() {
     try {
@@ -77,10 +92,15 @@ export default function ResponderNpsPage() {
   if (!user) return null;
 
   return (
-    <PortalShell
-      title="Responder NPS"
-      subtitle="Avalie a experiência do treinamento em que você participou."
-    >
+    <PortalShell>
+      <div style={{ marginBottom: 20 }}>
+        <PageHero
+          eyebrow="Portal T&D · NPS"
+          title="Responder NPS"
+          subtitle="Avalie a experiência do treinamento em que você participou."
+        />
+      </div>
+
       {loading ? (
         <div style={loadingBox}>Carregando turmas...</div>
       ) : (
