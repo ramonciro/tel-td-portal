@@ -4,6 +4,8 @@
  * GET /api/desempenho-instrutor?periodo=mensal&ano=2026&mes=9[&instrutor=Fulano]
  * GET /api/desempenho-instrutor?periodo=trimestral&ano=2026&trimestre=3[&instrutor=Fulano]
  * GET /api/desempenho-instrutor/exportar?... (mesmos filtros, devolve .xlsx)
+ * GET /api/desempenho-instrutor/resumo-executivo (item 5 — resumo do mês
+ *   corrente pro bloco executivo do Dashboard; só coordenação, sem filtro)
  *
  * Scorecard de instrutor (CH, frequência, avaliação, NPS) — ver
  * desempenhoInstrutorResolver.js para o cálculo e as ressalvas sobre
@@ -17,7 +19,7 @@
  * qualquer instrutor, ou ver todos de uma vez (sem o parâmetro).
  */
 
-const { getScorecardInstrutor } = require("../services/desempenhoInstrutorResolver");
+const { getScorecardInstrutor, getResumoExecutivo } = require("../services/desempenhoInstrutorResolver");
 
 function resolverFiltros(req) {
   const perfil = String(req.user?.perfil || "").toLowerCase();
@@ -119,4 +121,20 @@ async function getDesempenhoExportar(req, res) {
   }
 }
 
-module.exports = { getDesempenho, getDesempenhoExportar };
+// Resumo executivo do mês corrente — sempre o time todo (não aceita
+// `instrutor`, nem faz sentido pro perfil instrutor individual: essa rota
+// não é registrada pra esse perfil, ver index.js). Usada pelo Dashboard
+// pra alimentar o farol "Instrutores fora da faixa saudável" e o bloco
+// "Desempenho dos instrutores", do mesmo jeito que a Capacidade já faz com
+// /capacidade/alertas.
+async function getResumoExecutivoController(req, res) {
+  try {
+    const resultado = await getResumoExecutivo({ empresaId: req.empresaId });
+    return res.json({ ok: true, ...resultado });
+  } catch (error) {
+    console.error("[desempenho-instrutor] getResumoExecutivo:", error);
+    return res.status(500).json({ ok: false, message: error.message || "Erro ao montar o resumo executivo de desempenho." });
+  }
+}
+
+module.exports = { getDesempenho, getDesempenhoExportar, getResumoExecutivo: getResumoExecutivoController };
