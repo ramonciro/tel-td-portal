@@ -294,6 +294,32 @@ function calcularIndiceGeral({ frequenciaPct, npsScore }) {
   return arredonda(soma / pesoTotal);
 }
 
+// --- Faixas de saúde para o resumo executivo (item 5 — "plugar no Oceano").
+//     Mesma linguagem de tom (saudável/atenção/crítico) já usada em
+//     statusOcupacao (capacidadeResolver) e nos badges de presença do
+//     frontend (getBadgeStyleByTax: >=90 ok, >=80 atenção, abaixo crítico).
+//     NPS usa a convenção de mercado (>=50 excelente, 0-49 razoável, <0
+//     precisa de atenção). Constantes de código, ajustáveis aqui — não são
+//     lançamento de dado. ---
+const FREQUENCIA_SAUDAVEL_MIN = 90;
+const FREQUENCIA_ATENCAO_MIN = 80;
+const NPS_SAUDAVEL_MIN = 50;
+const NPS_ATENCAO_MIN = 0;
+
+function statusFrequencia(pct) {
+  if (pct === null || pct === undefined) return { status: "sem_dados", emoji: "—" };
+  if (pct >= FREQUENCIA_SAUDAVEL_MIN) return { status: "saudavel", emoji: "🟢" };
+  if (pct >= FREQUENCIA_ATENCAO_MIN) return { status: "atencao", emoji: "🟡" };
+  return { status: "critico", emoji: "🔴" };
+}
+
+function statusNps(score) {
+  if (score === null || score === undefined) return { status: "sem_dados", emoji: "—" };
+  if (score >= NPS_SAUDAVEL_MIN) return { status: "saudavel", emoji: "🟢" };
+  if (score >= NPS_ATENCAO_MIN) return { status: "atencao", emoji: "🟡" };
+  return { status: "critico", emoji: "🔴" };
+}
+
 async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, empresaId } = {}) {
   const periodoResolvido = resolverMesesPeriodo({ periodo, ano, mes, trimestre });
   const { meses } = periodoResolvido;
@@ -369,8 +395,65 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
   return { periodo: periodoResolvido, itens, ranking, medias_time: mediasTime };
 }
 
+// --- Resumo executivo do mês corrente — item 5 da visão de universidade
+//     corporativa: "plugar no Oceano" (bloco executivo do Dashboard que a
+//     diretoria/superintendência já olha), do mesmo jeito que a Capacidade
+//     já fez com CH (getAlertas). Reaproveita getScorecardInstrutor do mês
+//     atual (sem instrutor específico = time todo) e resume pra quem só tem
+//     30 segundos: quantos instrutores estão fora da faixa saudável de
+//     frequência ou NPS, e por quê. ---
+async function getResumoExecutivo({ empresaId } = {}) {
+  const hoje = new Date();
+  const scorecard = await getScorecardInstrutor({
+    periodo: "mensal",
+    ano: hoje.getUTCFullYear(),
+    mes: hoje.getUTCMonth() + 1,
+    empresaId,
+  });
+
+  // Mesmo critério de "teve atividade" do getScorecardInstrutor — não faz
+  // sentido apontar alerta de frequência/NPS pra quem não deu nenhuma
+  // turma no mês.
+  const considerados = scorecard.itens.filter((i) =>
+    i.frequencia.turmas_consideradas > 0 || i.nps.total_respostas > 0
+  );
+
+  const foraFaixaSaudavel = considerados
+    .map((i) => {
+      const freq = statusFrequencia(i.frequencia.media_pct);
+      const nps = statusNps(i.nps.nps_score);
+      const motivos = [];
+      if (freq.status === "atencao" || freq.status === "critico") {
+        motivos.push(`frequência em ${i.frequencia.media_pct}%`);
+      }
+      if (nps.status === "atencao" || nps.status === "critico") {
+        motivos.push(`NPS em ${i.nps.nps_score}`);
+      }
+      if (!motivos.length) return null;
+      const critico = freq.status === "critico" || nps.status === "critico";
+      return {
+        instrutor: i.instrutor,
+        motivo: motivos.join(" e "),
+        status: critico ? "critico" : "atencao",
+        status_emoji: critico ? "🔴" : "🟡",
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === "critico" ? -1 : 1));
+
+  return {
+    periodo: scorecard.periodo,
+    instrutores_considerados: considerados.length,
+    indice_geral_medio: scorecard.medias_time?.indice_geral ?? null,
+    frequencia_media: scorecard.medias_time?.frequencia_pct ?? null,
+    nps_media: scorecard.medias_time?.nps_score ?? null,
+    fora_faixa_saudavel: foraFaixaSaudavel,
+  };
+}
+
 module.exports = {
   getScorecardInstrutor,
+  getResumoExecutivo,
   classificarNps,
   resolverMesesPeriodo,
 };
