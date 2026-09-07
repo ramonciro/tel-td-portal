@@ -1,4 +1,4 @@
- const express = require("express");
+const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 
@@ -41,6 +41,7 @@ const capacidadeRoutes = require("./routes/capacidadeRoutes");
 const {
   getDesempenho: getDesempenhoInstrutor,
   getDesempenhoExportar,
+  getResumoExecutivo: getResumoExecutivoDesempenho,
 } = require("./controllers/desempenhoInstrutorController");
 
 // Sprint 3: Trilhas relacionais, Certificados
@@ -1106,6 +1107,18 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "superintendente", "instrutor"),
   getDesempenhoExportar
+);
+
+// Resumo executivo do mês corrente (time todo) — item 5: plugar no bloco
+// executivo do Dashboard ("Oceano"), do mesmo jeito que a Capacidade já faz
+// com /capacidade/alertas. Só quem acessa o Dashboard (coordenador/
+// supervisor) e superintendente — não faz sentido pro perfil instrutor,
+// que já tem a própria leitura em "Meu Desempenho".
+app.get(
+  "/api/desempenho-instrutor/resumo-executivo",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  getResumoExecutivoDesempenho
 );
 
 // ── Módulo R&S — import do controller ──────────────────────────────────────
