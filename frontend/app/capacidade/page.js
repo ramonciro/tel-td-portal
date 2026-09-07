@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
@@ -20,7 +21,20 @@ const STATUS_LABEL = {
 
 const MESES_OPCOES = [3, 6, 12];
 
+// Next.js exige que useSearchParams() fique dentro de um <Suspense> em rota
+// client component — mesmo padrão já usado em /treinamentos (deep-link de
+// ?aba=instrutor vindo do resumo executivo do Dashboard, item 5 da visão de
+// universidade corporativa).
 export default function CapacidadePage() {
+  return (
+    <Suspense fallback={null}>
+      <CapacidadePageInner />
+    </Suspense>
+  );
+}
+
+function CapacidadePageInner() {
+  const searchParams = useSearchParams();
   const [operacoes, setOperacoes] = useState([]);
   const [operacaoFiltro, setOperacaoFiltro] = useState("");
   const [mesesFiltro, setMesesFiltro] = useState(3);
@@ -50,7 +64,9 @@ export default function CapacidadePage() {
   const [overrideMsg,      setOverrideMsg]      = useState({ tipo: "", texto: "" });
 
   // ── Aba "Scorecard por instrutor" (CH + frequência + avaliação + NPS) ──
-  const [aba, setAba] = useState("time"); // "time" | "instrutor"
+  // ?aba=instrutor abre direto nessa aba — usado pelo link do resumo
+  // executivo "Desempenho dos instrutores" no Dashboard.
+  const [aba, setAba] = useState(() => (searchParams.get("aba") === "instrutor" ? "instrutor" : "time")); // "time" | "instrutor"
   const [scInstrutoresOpcoes, setScInstrutoresOpcoes] = useState([]);
   const [scPeriodoTipo, setScPeriodoTipo] = useState("mensal"); // "mensal" | "trimestral"
   const hoje = new Date();
