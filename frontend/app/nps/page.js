@@ -142,6 +142,15 @@ export default function NpsPage() {
   const [filtroClassificacao, setFiltroClassificacao] = useState("todos");
   const [modalAberto, setModalAberto] = useState(false);
 
+  // Fase 3 — "Análise de comentários" (sem custo/sem IA — ver
+  // services/analiseComentariosService.js no backend). Sob demanda: só
+  // roda quando a coordenação clica, não em todo carregamento da página.
+  const [analisePainelAberto, setAnalisePainelAberto] = useState(false);
+  const [analiseFiltro, setAnaliseFiltro] = useState({ treinamento_id: "", inicio: "", fim: "" });
+  const [analise, setAnalise] = useState(null);
+  const [analisando, setAnalisando] = useState(false);
+  const [analiseErro, setAnaliseErro] = useState("");
+
   const user = getStoredUser();
   const podeCriar = hasSomeRole(user, PODE_CRIAR);
 
@@ -159,6 +168,22 @@ export default function NpsPage() {
     } catch (e) {
       setErro(e.message || "Erro ao carregar respostas.");
     } finally { setLoading(false); }
+  }
+
+  async function rodarAnalise() {
+    try {
+      setAnalisando(true); setAnaliseErro("");
+      const params = new URLSearchParams();
+      if (analiseFiltro.treinamento_id) params.set("treinamento_id", analiseFiltro.treinamento_id);
+      if (analiseFiltro.inicio) params.set("inicio", analiseFiltro.inicio);
+      if (analiseFiltro.fim) params.set("fim", analiseFiltro.fim);
+      const qs = params.toString();
+      const resultado = await apiFetch(`/analise-comentarios${qs ? `?${qs}` : ""}`);
+      setAnalise(resultado);
+    } catch (e) {
+      setAnaliseErro(e.message || "Erro ao analisar comentários.");
+      setAnalise(null);
+    } finally { setAnalisando(false); }
   }
 
   const treinamentoOptions = useMemo(() => treinamentos.map((t) => ({
@@ -228,10 +253,86 @@ export default function NpsPage() {
             style={{ ...searchInput, paddingLeft: 32 }} />
         </div>
         <span style={{ fontSize: 13, color: "#94a3b8" }}>{listaFiltrada.length} de {dados.length}</span>
+        <button style={btnAnalise} onClick={() => setAnalisePainelAberto((v) => !v)}>
+          {analisePainelAberto ? "Fechar análise" : "🔍 Analisar comentários"}
+        </button>
         {podeCriar && (
           <button style={btnNovo} onClick={() => setModalAberto(true)}>+ Novo registro</button>
         )}
       </div>
+
+      {analisePainelAberto && (
+        <div style={analisePainel}>
+          <div style={analiseTitulo}>Análise de comentários</div>
+          <p style={analiseSubtitulo}>
+            Classifica os comentários por palavra-chave (sem IA) e mostra os termos mais citados. Filtre por turma e/ou período e clique em analisar.
+          </p>
+          <div style={analiseFiltrosRow}>
+            <select
+              value={analiseFiltro.treinamento_id}
+              onChange={(e) => setAnaliseFiltro((p) => ({ ...p, treinamento_id: e.target.value }))}
+              style={mInput}
+            >
+              <option value="">Todas as turmas</option>
+              {treinamentoOptions.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+            <input type="date" value={analiseFiltro.inicio} onChange={(e) => setAnaliseFiltro((p) => ({ ...p, inicio: e.target.value }))} style={mInput} />
+            <input type="date" value={analiseFiltro.fim} onChange={(e) => setAnaliseFiltro((p) => ({ ...p, fim: e.target.value }))} style={mInput} />
+            <button style={btnSalvar} onClick={rodarAnalise} disabled={analisando}>
+              {analisando ? "Analisando…" : "Analisar"}
+            </button>
+          </div>
+
+          {analiseErro && <div style={errBox}>{analiseErro}</div>}
+
+          {analise && (
+            analise.total_comentarios === 0 ? (
+              <p style={{ color: "#94a3b8", fontSize: 13, marginTop: 12 }}>Nenhum comentário encontrado para esse filtro.</p>
+            ) : (
+              <div style={{ marginTop: 16 }}>
+                <div style={kpiGrid}>
+                  <StatCard title="Comentários analisados" value={analise.total_comentarios} accent={chart.blue} />
+                  <StatCard title="Positivos" value={`${analise.positivos} (${analise.percentual_positivos}%)`} accent={colors.success} />
+                  <StatCard title="Neutros" value={analise.neutros} accent={colors.warning} />
+                  <StatCard title="Negativos" value={`${analise.negativos} (${analise.percentual_negativos}%)`} accent={colors.danger} />
+                </div>
+
+                {analise.palavras_frequentes.length > 0 && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={analiseSecaoTitulo}>Palavras mais citadas</div>
+                    <div style={palavrasLista}>
+                      {analise.palavras_frequentes.map((p) => (
+                        <span key={p.palavra} style={palavraChip}>{p.palavra} · {p.ocorrencias}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 14 }}>
+                  {analise.exemplos_positivos.length > 0 && (
+                    <div>
+                      <div style={analiseSecaoTitulo}>Exemplos positivos</div>
+                      {analise.exemplos_positivos.map((ex, i) => (
+                        <p key={i} style={exemploTexto}>"{ex.texto}" — {ex.treinando}, {ex.tema}</p>
+                      ))}
+                    </div>
+                  )}
+                  {analise.exemplos_negativos.length > 0 && (
+                    <div>
+                      <div style={analiseSecaoTitulo}>Exemplos negativos</div>
+                      {analise.exemplos_negativos.map((ex, i) => (
+                        <p key={i} style={exemploTexto}>"{ex.texto}" — {ex.treinando}, {ex.tema}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div style={loadingBox}>Carregando respostas…</div>
@@ -270,6 +371,15 @@ const controlBar = { display: "flex", gap: 10, alignItems: "center", flexWrap: "
 const pillBtn   = { padding: "5px 14px", borderRadius: 999, cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" };
 const searchInput = { height: 36, width: "100%", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 13, color: "#334155", outline: "none", paddingRight: 10, boxSizing: "border-box" };
 const btnNovo   = { height: 36, padding: "0 16px", borderRadius: 10, border: 0, background: colors.accent, color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", marginLeft: "auto" };
+const btnAnalise = { height: 36, padding: "0 16px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#334155", fontWeight: 700, fontSize: 13, cursor: "pointer" };
+const analisePainel = { background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 14, padding: "16px 18px", marginBottom: 14 };
+const analiseTitulo = { fontWeight: 800, fontSize: 15, color: "#92400e" };
+const analiseSubtitulo = { fontSize: 12.5, color: "#92400e", opacity: 0.85, margin: "4px 0 12px" };
+const analiseFiltrosRow = { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" };
+const analiseSecaoTitulo = { fontWeight: 800, fontSize: 13, color: "#0f172a", marginBottom: 8 };
+const palavrasLista = { display: "flex", flexWrap: "wrap", gap: 8 };
+const palavraChip = { background: "#fff", border: "1px solid #fde68a", borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, color: "#92400e" };
+const exemploTexto = { fontSize: 12.5, color: "#475569", fontStyle: "italic", background: "#fff", border: "1px solid #f1f5f9", borderRadius: 10, padding: "8px 10px", marginBottom: 8, lineHeight: 1.5 };
 const cardsGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 };
 const respostaCard = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 };
 const cardHead  = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 };
