@@ -751,6 +751,31 @@ async function runMigrations() {
       );
     `);
 
+    // 23. avaliacoes_treinandos — descoberto ao construir a "análise de
+    // comentários" da Fase 3: essa tabela é usada por
+    // avaliacoesTreinandosController.js (rota /avaliacoes-treinandos, tela
+    // /nps e /responder-nps) e por desempenhoInstrutorResolver.js (NPS do
+    // scorecard) há tempos, mas — mesmo caso já visto com
+    // trilhas_aprendizagem (item 20) — nunca teve um CREATE TABLE
+    // versionado em lugar nenhum do repositório. Funciona hoje porque a
+    // tabela já existe na produção atual (criada manualmente em algum
+    // momento), mas qualquer ambiente novo (Comércio/IBM/Dasa) quebraria a
+    // tela de NPS inteira sem chance de recriação via código. IF NOT
+    // EXISTS é seguro nos dois casos. Colunas conferidas contra o schema
+    // real de produção (DESCRIBE), pra não inventar nada.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS avaliacoes_treinandos (
+        id             INT AUTO_INCREMENT PRIMARY KEY,
+        treinamento_id INT NOT NULL,
+        treinando_nome VARCHAR(150) NOT NULL,
+        nota_nps       DECIMAL(5,2) NULL,
+        comentario     TEXT NULL,
+        created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_avtr_treinamento (treinamento_id),
+        INDEX idx_avtr_treinando   (treinando_nome)
+      );
+    `);
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
