@@ -699,6 +699,58 @@ async function runMigrations() {
     // Cobre o caso da tabela já existir (criada manualmente, sem "status").
     await ensureColumn("trilhas_aprendizagem", "status", "VARCHAR(30) NOT NULL DEFAULT 'estruturacao'");
 
+    // 21. resumos_executivos_diarios — Fase 3 (diferenciação): cache do
+    // "resumo executivo automático" exibido no Dashboard (bloco Oceano).
+    // Por decisão do Ramon, esse resumo NÃO usa IA/LLM paga — é montado por
+    // templates fixos de frase em português (resumoExecutivoService.js) a
+    // partir dos mesmos sinais do e-mail diário de pendências. Gerado uma
+    // vez por dia pelo job das 07h (jobs/pendenciasDigest.js) e guardado
+    // aqui — não é recalculado a cada carregamento do Dashboard. Sem UNIQUE
+    // em (empresa_id, data) de propósito: empresa_id pode ser NULL (ambiente
+    // sem tabela "empresas"), e o MySQL não trata NULL como valor único —
+    // o serviço já faz o SELECT-então-UPDATE/INSERT manualmente.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS resumos_executivos_diarios (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        empresa_id   INT NULL,
+        data         DATE NOT NULL,
+        texto        TEXT NOT NULL,
+        total_sinais INT NOT NULL DEFAULT 0,
+        gerado_em    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_resumo_exec_empresa_data (empresa_id, data)
+      );
+    `);
+
+    // 22. conquistas — Fase 3 (diferenciação): gamificação de treinando e de
+    // instrutor. Uma única tabela genérica para os dois tipos de entidade
+    // (entidade_tipo: 'treinando' | 'instrutor') em vez de duas tabelas
+    // quase idênticas — mesmo espírito de reaproveitamento do restante da
+    // Fase 3. Calculada por um job diário (jobs/conquistasJob.js), não em
+    // tempo real a cada carregamento de tela. entidade_nome é o NOME (não
+    // e-mail) da pessoa, para casar com o mesmo padrão de identidade já
+    // usado em toda a base (treinando_nome em presencas/certificados,
+    // instrutor_responsavel em turma_aulas — nunca há FK para usuarios).
+    // UNIQUE (entidade_tipo, entidade_nome, tipo, contexto) + INSERT IGNORE
+    // no serviço torna o job idempotente: rodar de novo todo dia não duplica
+    // conquistas já registradas.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conquistas (
+        id             INT AUTO_INCREMENT PRIMARY KEY,
+        empresa_id     INT NULL,
+        entidade_tipo  VARCHAR(20) NOT NULL,
+        entidade_nome  VARCHAR(200) NOT NULL,
+        tipo           VARCHAR(50) NOT NULL,
+        titulo         VARCHAR(150) NOT NULL,
+        descricao      VARCHAR(300) NULL,
+        contexto       VARCHAR(200) NOT NULL,
+        conquistado_em DATE NOT NULL,
+        criado_em      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_conquista (entidade_tipo, entidade_nome, tipo, contexto),
+        INDEX idx_conquistas_empresa  (empresa_id),
+        INDEX idx_conquistas_entidade (entidade_tipo, entidade_nome)
+      );
+    `);
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
