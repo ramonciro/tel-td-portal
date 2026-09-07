@@ -5,11 +5,21 @@ import { useSearchParams } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
+import { BarraHorizontal, GraficoLinha, Donut, CORES } from "../../components/Charts";
 import { apiFetch, apiDownload } from "../../services/api";
 import { colors } from "../../lib/theme";
 
 function fmt(n) { return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(Number(n || 0)); }
 function fmtPct(n) { return n == null ? "—" : `${fmt(n)}%`; }
+
+// Cor por faixa de aderência — mesma lógica de "saúde por cliente/instrutor"
+// já usada no Dashboard (verde ≥90%, amarelo ≥75%, vermelho abaixo disso).
+function corPorAderencia(pct) {
+  const n = Number(pct || 0);
+  if (n >= 90) return colors.success;
+  if (n >= 75) return colors.warning;
+  return colors.danger;
+}
 
 const STATUS_LABEL = {
   ocioso: "Ociosa",
@@ -241,8 +251,42 @@ function CapacidadePageInner() {
     return ranking.map((r) => ({ ...r, medalha: medalhas[r.posicao - 1] || "▫️" }));
   }, [ranking]);
 
+  // Cascata de entrada — replay a cada recarregamento (troca de filtro),
+  // mesmo padrão de /inicio, /rs, /dashboard e /indicadores.
+  const [revelado, setRevelado] = useState(false);
+  useEffect(() => {
+    setRevelado(false);
+    if (loading) return;
+    const id = requestAnimationFrame(() => setRevelado(true));
+    return () => cancelAnimationFrame(id);
+  }, [loading, painel]);
+
+  // Distribuição por operação como fatias de donut — cores categóricas em
+  // ordem fixa (ver dataviz), dobrando o excedente além de 6 em "Outras"
+  // pra não virar um arco-íris ilegível quando há muitos clientes.
+  const distribuicaoFatias = useMemo(() => {
+    const itens = distribuicao?.itens || [];
+    const principais = itens.slice(0, 6).map((c, i) => ({ label: c.operacao, valor: Number(c.horas || 0), cor: CORES[i % CORES.length] }));
+    const resto = itens.slice(6).reduce((s, c) => s + Number(c.horas || 0), 0);
+    return resto > 0 ? [...principais, { label: "Outras", valor: resto, cor: colors.neutral }] : principais;
+  }, [distribuicao]);
+
+  // Tendência de capacidade × CH realizada (painel.por_mes já vem no
+  // formato "AAAA-MM" que o GraficoLinha espera para extrair o rótulo).
+  const tendenciaCapacidade = painel?.por_mes || [];
+
   return (
     <PortalShell>
+      {/* Cascata de entrada — mesmo padrão de /inicio, /rs, /dashboard e /indicadores. */}
+      <style>{`
+        @keyframes capCascade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .cap-cascade { opacity: 0; }
+        .cap-cascade.cap-play { animation: capCascade .5s cubic-bezier(.16,1,.3,1) forwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .cap-cascade, .cap-cascade.cap-play { animation: none !important; opacity: 1 !important; transform: none !important; }
+        }
+      `}</style>
+
       <div style={{ marginBottom: 20 }}>
         <PageHero
           eyebrow="CH por instrutor · CH efetiva do time"
@@ -274,7 +318,13 @@ function CapacidadePageInner() {
         <p style={{ color: "#64748b" }}>Carregando indicadores…</p>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+          {/* Nota: estes indicadores frequentemente vêm com 1 casa decimal
+             (ex.: ocupação 3,9%) — por isso NÃO usam ContadorAnimado aqui.
+             O contador anima arredondando para inteiro a cada frame (e no
+             valor final), o que trocaria "3,9%" por "4%" e mudaria o dado
+             exibido, não só a forma. A cascata de entrada (fade + slide)
+             ainda se aplica normalmente, só o "contar" fica de fora. */}
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
             <StatCard title="Capacidade nominal (período)" value={`${fmt(ind.capacidade_nominal_periodo)}h`} accent={colors.neutral} />
             <StatCard title="Capacidade mensal do time" value={`${fmt(ind.capacidade_mensal_time)}h`} accent={colors.info} />
             <StatCard title="Capacidade / instrutor (mês)" value={`${fmt(ind.capacidade_por_instrutor)}h`} accent={colors.info} />
@@ -284,8 +334,20 @@ function CapacidadePageInner() {
             <StatCard title="Ocupação do time" value={fmtPct(ind.ocupacao_time_pct)} accent={colors.navy} />
           </div>
 
-          <div style={card}>
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, animationDelay: ".05s" }}>
             <div style={cardTitle}>Capacity mensal do time × consumido</div>
+            {tendenciaCapacidade.length > 0 && (
+              <div style={{ marginBottom: 18 }}>
+                <GraficoLinha
+                  dados={tendenciaCapacidade}
+                  linhas={[
+                    { key: "capacidade_nominal", label: "Capacidade", cor: colors.neutral, sufixo: "h" },
+                    { key: "hc_realizado", label: "CH realizada", cor: colors.success, sufixo: "h" },
+                  ]}
+                  revelado={revelado}
+                />
+              </div>
+            )}
             <div style={{ overflowX: "auto" }}>
               <table style={table}>
                 <thead>
@@ -314,7 +376,7 @@ function CapacidadePageInner() {
             </div>
           </div>
 
-          <div style={{ ...card, marginTop: 20 }}>
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, marginTop: 20, animationDelay: ".1s" }}>
             <div style={cardTitle}>Capacity x consumido — por instrutor ({janela})</div>
             <div style={{ overflowX: "auto" }}>
               <table style={table}>
@@ -345,29 +407,19 @@ function CapacidadePageInner() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginTop: 20, alignItems: "start" }}>
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginTop: 20, alignItems: "start", animationDelay: ".15s" }}>
             <div style={card}>
               <div style={cardTitle}>Ranking de instrutores — CH realizada ({janela})</div>
-              <table style={table}>
-                <thead>
-                  <tr style={theadRow}>
-                    <th style={th}>#</th><th style={th}>Instrutor</th>
-                    <th style={{ ...th, textAlign: "right" }}>CH Realizada (h)</th>
-                    <th style={{ ...th, textAlign: "right" }}>% da capacidade</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rankingComMedalha.map((r) => (
-                    <tr key={r.instrutor} style={tr}>
-                      <td style={td}>{r.medalha}</td>
-                      <td style={{ ...td, fontWeight: 700 }}>{r.instrutor}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmt(r.horas_realizadas)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmtPct(r.pct_capacidade)}</td>
-                    </tr>
-                  ))}
-                  {rankingComMedalha.length === 0 && <tr><td style={td} colSpan={4}>Sem CH realizada no período.</td></tr>}
-                </tbody>
-              </table>
+              {rankingComMedalha.length > 0 ? (
+                <BarraHorizontal
+                  dados={rankingComMedalha}
+                  labelKey="instrutor" valueKey="horas_realizadas" sufixo="h"
+                  cor={colors.primary} revelado={revelado}
+                  subtitulo={(r) => `${r.medalha} ${fmtPct(r.pct_capacidade)} da capacidade`}
+                />
+              ) : (
+                <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem CH realizada no período.</p>
+              )}
             </div>
 
             <div style={card}>
@@ -387,49 +439,47 @@ function CapacidadePageInner() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20, alignItems: "start" }}>
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20, alignItems: "start", animationDelay: ".2s" }}>
             <div style={card}>
               <div style={cardTitle}>Distribuição por operação (todos os clientes)</div>
-              <table style={table}>
-                <thead>
-                  <tr style={theadRow}><th style={th}>Operação</th><th style={{ ...th, textAlign: "right" }}>Horas</th><th style={{ ...th, textAlign: "right" }}>% do total</th></tr>
-                </thead>
-                <tbody>
-                  {(distribuicao?.itens || []).map((c) => (
-                    <tr key={c.operacao} style={tr}>
-                      <td style={td}>{c.operacao}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmt(c.horas)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmtPct(c.pct_sobre_total)}</td>
-                    </tr>
-                  ))}
-                  {(!distribuicao?.itens || distribuicao.itens.length === 0) && <tr><td style={td} colSpan={3}>Sem turmas registradas ainda.</td></tr>}
-                </tbody>
-              </table>
+              {distribuicaoFatias.length > 0 ? (
+                <>
+                  <Donut fatias={distribuicaoFatias} total={distribuicao?.total_horas} revelado={revelado} />
+                  <div style={{ overflowX: "auto", marginTop: 18 }}>
+                    <table style={table}>
+                      <thead>
+                        <tr style={theadRow}><th style={th}>Operação</th><th style={{ ...th, textAlign: "right" }}>Horas</th><th style={{ ...th, textAlign: "right" }}>% do total</th></tr>
+                      </thead>
+                      <tbody>
+                        {(distribuicao?.itens || []).map((c) => (
+                          <tr key={c.operacao} style={tr}>
+                            <td style={td}>{c.operacao}</td>
+                            <td style={{ ...td, textAlign: "right" }}>{fmt(c.horas)}</td>
+                            <td style={{ ...td, textAlign: "right" }}>{fmtPct(c.pct_sobre_total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem turmas registradas ainda.</p>
+              )}
             </div>
 
             <div style={card}>
               <div style={cardTitle}>Aderência por tema {operacaoFiltro ? `— ${operacaoFiltro}` : "(todas as operações)"}</div>
-              <table style={table}>
-                <thead>
-                  <tr style={theadRow}>
-                    <th style={th}>Tema</th><th style={{ ...th, textAlign: "right" }}>Turmas</th>
-                    <th style={{ ...th, textAlign: "right" }}>Programado</th><th style={{ ...th, textAlign: "right" }}>Realizado</th>
-                    <th style={{ ...th, textAlign: "right" }}>Aderência</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {temas.slice(0, 12).map((t) => (
-                    <tr key={t.tema} style={tr}>
-                      <td style={td}>{t.tema}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{t.qtd_turmas}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmt(t.hc_programado)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmt(t.hc_realizado)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmtPct(t.aderencia_pct)}</td>
-                    </tr>
-                  ))}
-                  {temas.length === 0 && <tr><td style={td} colSpan={5}>Sem turmas registradas ainda.</td></tr>}
-                </tbody>
-              </table>
+              {temas.length > 0 ? (
+                <BarraHorizontal
+                  dados={temas}
+                  labelKey="tema" valueKey="aderencia_pct" maxValor={100} sufixo="%"
+                  maxItens={12} revelado={revelado}
+                  corPorItem={(t) => corPorAderencia(t.aderencia_pct)}
+                  subtitulo={(t) => `${fmt(t.hc_realizado)}h / ${fmt(t.hc_programado)}h`}
+                />
+              ) : (
+                <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem turmas registradas ainda.</p>
+              )}
             </div>
           </div>
 
@@ -563,6 +613,7 @@ function CapacidadePageInner() {
           opcoesInstrutor={scInstrutoresOpcoes}
           dados={scDados} loading={scLoading} erro={scErro}
           exportando={scExportando} onExportar={exportarScorecard}
+          revelado={revelado}
         />
       )}
     </PortalShell>
@@ -572,6 +623,7 @@ function CapacidadePageInner() {
 function ScorecardInstrutor({
   periodoTipo, setPeriodoTipo, ano, setAno, mes, setMes, trimestre, setTrimestre,
   instrutor, setInstrutor, opcoesInstrutor, dados, loading, erro, exportando, onExportar,
+  revelado,
 }) {
   const itens = dados?.itens || [];
   const medias = dados?.medias_time;
@@ -627,14 +679,14 @@ function ScorecardInstrutor({
       ) : !dados ? null : vendoTodos ? (
         <>
           {medias && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+            <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
               <StatCard title="Índice geral (média do time)" value={medias.indice_geral ?? "—"} accent={colors.accent} />
               <StatCard title="Frequência média do time" value={fmtPct(medias.frequencia_pct)} accent={colors.primary} />
               <StatCard title="NPS médio do time" value={medias.nps_score ?? "—"} accent={colors.info} />
               <StatCard title="Ocupação média do time" value={fmtPct(medias.ocupacao_pct)} accent={colors.navy} />
             </div>
           )}
-          <div style={card}>
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, animationDelay: ".05s" }}>
             <div style={cardTitle}>Ranking — índice geral por instrutor</div>
             <div style={{ overflowX: "auto" }}>
               <table style={table}>
@@ -677,7 +729,7 @@ function ScorecardInstrutor({
         <p style={{ color: "#64748b" }}>Sem dados para esse instrutor no período selecionado.</p>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
             <StatCard
               title="Índice geral"
               value={item.indice_geral ?? "—"}
