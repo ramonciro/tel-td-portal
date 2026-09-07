@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
+import { ContadorAnimado, BarraHorizontal, GraficoLinha, Donut } from "../../components/Charts";
 import { apiFetch, apiDownload } from "../../services/api";
-import { colors, card as cardStyle } from "../../lib/theme";
+import { colors, chart, card as cardStyle } from "../../lib/theme";
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 function fmtH(v)   { return v != null ? `${Number(v).toLocaleString("pt-BR")}h` : "—"; }
@@ -16,61 +17,8 @@ function fmtR(v) {
   return Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 }
 
-const MESES_ABREV = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
-
-/* ─── HBar — barra horizontal idêntica ao padrão do portal ───────────────── */
-function HBar({ label, value, max, cor = colors.accent, direita }) {
-  const pct = max > 0 ? Math.min(Math.round((value / max) * 100), 100) : 0;
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between",
-        fontSize: 12.5, color: colors.textPrimary, marginBottom: 4, fontWeight: 500 }}>
-        <span style={{ maxWidth: "65%", overflow: "hidden",
-          textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-        <span style={{ fontWeight: 700, color: cor }}>{direita ?? value}</span>
-      </div>
-      <div style={{ height: 6, background: colors.borderLight ?? "#f0f2f5", borderRadius: 999 }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: cor,
-          borderRadius: 999, transition: "width .4s" }} />
-      </div>
-    </div>
-  );
-}
-
-/* ─── Barras verticais inline ─────────────────────────────────────────────── */
-function VBars({ items, cor = colors.accent }) {
-  const max = Math.max(...items.map((i) => i.v || 0), 1);
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 6,
-      height: 100, paddingTop: 4, overflowX: "auto" }}>
-      {items.map((item, i) => {
-        const pct = Math.round(((item.v || 0) / max) * 100);
-        return (
-          <div key={i} style={{ display: "flex", flexDirection: "column",
-            alignItems: "center", minWidth: 28, flex: 1 }}>
-            <div style={{ fontSize: 9, color: cor, fontWeight: 700,
-              height: 12, textAlign: "center" }}>
-              {item.v > 0 ? item.v : ""}
-            </div>
-            <div style={{ width: "100%", height: 72, display: "flex",
-              alignItems: "flex-end" }}>
-              <div style={{ width: "100%",
-                height: `${pct}%`, minHeight: item.v > 0 ? 2 : 0,
-                background: item.v > 0 ? cor : colors.borderLight ?? "#f0f2f5",
-                borderRadius: "3px 3px 0 0", transition: "height .4s" }} />
-            </div>
-            <div style={{ fontSize: 8.5, color: colors.textSecondary,
-              marginTop: 3, textAlign: "center" }}>
-              {item.l}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ─── NPS gauge ───────────────────────────────────────────────────────────── */
+/* ─── NPS gauge — mantido como componente especializado (valor único com
+   faixa -100/+100), não é um dos tipos de gráfico da biblioteca ─────────── */
 function NpsGauge({ score, total }) {
   if (score == null) {
     return (
@@ -181,6 +129,17 @@ export default function IndicadoresPage() {
 
   const d = tabData[activeTab];
 
+  // Cascata de entrada — replay a cada troca de aba (mesmo padrão de
+  // /inicio, /rs e /dashboard). Reseta quando a aba muda ou recarrega, e só
+  // dispara quando os dados da aba já chegaram.
+  const [revelado, setRevelado] = useState(false);
+  useEffect(() => {
+    setRevelado(false);
+    if (loading || !d) return;
+    const id = requestAnimationFrame(() => setRevelado(true));
+    return () => cancelAnimationFrame(id);
+  }, [activeTab, loading, d]);
+
   // Faróis acionáveis — turmas/clientes que merecem atenção primeiro, para
   // não depender de olhar tabela por tabela pra achar o que está fora da
   // curva (mesmo espírito dos faróis já usados no Dashboard).
@@ -195,8 +154,59 @@ export default function IndicadoresPage() {
       }).slice(0, 4)
     : [];
 
+  // Tendência de horas — últimos 12 meses, no formato "AAAA-MM" que o
+  // GraficoLinha espera para extrair o rótulo do mês.
+  const tendenciaHoras = activeTab === "horas" && d?.por_mes ? (() => {
+    const agora = new Date();
+    return Array.from({ length: 12 }, (_, i) => {
+      const dt = new Date(agora.getFullYear(), agora.getMonth() - 11 + i, 1);
+      const found = d.por_mes.find(
+        (m) => Number(m.ano) === dt.getFullYear() && Number(m.mes) === dt.getMonth() + 1
+      );
+      return { mes: `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`, horas: found?.horas || 0 };
+    });
+  })() : [];
+
+  // Tendência de NPS — últimos 6 meses, mesmo formato.
+  const tendenciaNps = activeTab === "nps" && d?.tendencia
+    ? d.tendencia.map((t) => ({
+        mes: `${t.ano || new Date().getFullYear()}-${String(Number(t.mes) || 1).padStart(2, "0")}`,
+        media: Number(Number(t.media || 0).toFixed(1)),
+      }))
+    : [];
+
+  // NPS por turma — junta tema+cliente num único rótulo pro BarraHorizontal
+  // (que espera uma única chave de label).
+  const turmasNps = activeTab === "nps" && d?.por_turma
+    ? d.por_turma.map((t) => ({ ...t, rotulo: `${t.tema}${t.cliente ? ` · ${t.cliente}` : ""}` }))
+    : [];
+
+  // Volume de aprendizagem (ROI) — cada métrica tem seu próprio teto
+  // ("previsto"), então normaliza pra % do previsto antes de escalar todas
+  // no mesmo BarraHorizontal (maxValor=100), preservando os números reais
+  // no subtítulo.
+  const volumeAprendizagem = activeTab === "roi" && d ? [
+    { label: "Horas realizadas",   valor: d.horas_realizadas,   max: d.horas_previstas,   suf: "h" },
+    { label: "Pessoas impactadas", valor: d.pessoas_impactadas, max: d.pessoas_previstas, suf: "" },
+    { label: "Turmas concluídas",  valor: d.turmas_concluidas,  max: d.turmas_total,      suf: "" },
+  ].map((item) => {
+    const max = item.max || item.valor || 1;
+    const pct = Math.min(Math.round((Number(item.valor || 0) / max) * 100), 100);
+    return { ...item, pct, display: `${fmtN(item.valor)}${item.suf} / ${item.max ?? "?"}${item.suf}` };
+  }) : [];
+
   return (
     <PortalShell>
+      {/* Cascata de entrada — mesmo padrão de /inicio, /rs e /dashboard. */}
+      <style>{`
+        @keyframes indCascade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .ind-cascade { opacity: 0; }
+        .ind-cascade.ind-play { animation: indCascade .5s cubic-bezier(.16,1,.3,1) forwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .ind-cascade, .ind-cascade.ind-play { animation: none !important; opacity: 1 !important; transform: none !important; }
+        }
+      `}</style>
+
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 0 40px" }}>
 
         <PageHero
@@ -288,61 +298,54 @@ export default function IndicadoresPage() {
           {!loading && d && (
             <div>
 
+              {/* Nota sobre `decimais` no ContadorAnimado abaixo: horas e taxas
+                 aqui saem do backend com 1-2 casas decimais (ex.: 87,3% de
+                 aprovação, 12,4h realizadas) — sem informar `decimais`, o
+                 contador arredonda pra inteiro ao terminar de animar e o
+                 valor exibido muda, não só a forma. Contagens simples
+                 (nº de clientes/instrutores/pessoas) continuam sem isso. */}
               {/* ── HORAS ──────────────────────────────────────────────── */}
               {activeTab === "horas" && (
                 <>
-                  <div style={kpiRow}>
+                  <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={kpiRow}>
                     <StatCard title="Horas realizadas"
-                      value={fmtH(d.total)}
+                      value={d.total != null ? <ContadorAnimado valor={d.total} decimais={2} sufixo="h" revelado={revelado} /> : "—"}
                       subtitle="turmas concluídas"
                       accent={colors.accent} />
                     <StatCard title="Clientes / operações"
-                      value={String(d.por_cliente?.length ?? "—")} />
+                      value={<ContadorAnimado valor={d.por_cliente?.length || 0} revelado={revelado} />} />
                     <StatCard title="Instrutores"
-                      value={String(d.por_instrutor?.length ?? "—")} />
+                      value={<ContadorAnimado valor={d.por_instrutor?.length || 0} revelado={revelado} />} />
                   </div>
 
-                  {d.por_mes?.length > 0 && (
-                    <div style={section}>
+                  {tendenciaHoras.length > 0 && (
+                    <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={{ ...section, animationDelay: ".05s" }}>
                       <p style={sectionTitle}>Horas treinadas — últimos 12 meses</p>
-                      <VBars cor={colors.accent}
-                        items={(() => {
-                          const agora = new Date();
-                          return Array.from({ length: 12 }, (_, i) => {
-                            const dt = new Date(agora.getFullYear(), agora.getMonth() - 11 + i, 1);
-                            const found = d.por_mes.find(
-                              (m) => Number(m.ano) === dt.getFullYear() &&
-                                     Number(m.mes) === dt.getMonth() + 1
-                            );
-                            return { l: MESES_ABREV[dt.getMonth()], v: found?.horas || 0 };
-                          });
-                        })()}
+                      <GraficoLinha
+                        dados={tendenciaHoras}
+                        linhas={[{ key: "horas", label: "Horas", cor: chart.blue, sufixo: "h" }]}
+                        revelado={revelado}
                       />
                     </div>
                   )}
 
-                  <div style={twoCol}>
-                    {d.por_cliente?.length > 0 && (
-                      <div style={section}>
-                        <p style={sectionTitle}>Por cliente / operação</p>
-                        {d.por_cliente.slice(0, 8).map((r) => (
-                          <HBar key={r.cliente} label={r.cliente}
-                            value={r.horas} max={d.por_cliente[0].horas}
-                            direita={fmtH(r.horas)} />
-                        ))}
-                      </div>
-                    )}
-                    {d.por_instrutor?.length > 0 && (
-                      <div style={section}>
-                        <p style={sectionTitle}>Por instrutor</p>
-                        {d.por_instrutor.slice(0, 8).map((r) => (
-                          <HBar key={r.instrutor} label={r.instrutor}
-                            value={r.horas} max={d.por_instrutor[0].horas}
-                            cor={colors.navy ?? "#0B1220"}
-                            direita={fmtH(r.horas)} />
-                        ))}
-                      </div>
-                    )}
+                  <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={{ ...twoCol, animationDelay: ".1s" }}>
+                    <div style={section}>
+                      <p style={sectionTitle}>Por cliente / operação</p>
+                      <BarraHorizontal
+                        dados={d.por_cliente || []}
+                        labelKey="cliente" valueKey="horas" sufixo="h"
+                        cor={chart.blue} maxItens={8} revelado={revelado}
+                      />
+                    </div>
+                    <div style={section}>
+                      <p style={sectionTitle}>Por instrutor</p>
+                      <BarraHorizontal
+                        dados={d.por_instrutor || []}
+                        labelKey="instrutor" valueKey="horas" sufixo="h"
+                        cor={colors.navy} maxItens={8} revelado={revelado}
+                      />
+                    </div>
                   </div>
                 </>
               )}
@@ -360,50 +363,45 @@ export default function IndicadoresPage() {
                       ))}
                     </div>
                   )}
-                  <div style={twoCol}>
+                  <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={twoCol}>
                     <div style={section}>
                       <p style={sectionTitle}>Score NPS</p>
                       <NpsGauge score={d.score} total={d.total} />
                       {d.total > 0 && (
-                        <div style={{ marginTop: 20, display: "flex",
-                          flexDirection: "column", gap: 10 }}>
-                          {[
-                            { l: "Promotores (9–10)", v: d.promotores, cor: colors.success },
-                            { l: "Neutros (7–8)",     v: d.neutros,    cor: colors.warning },
-                            { l: "Detratores (0–6)",  v: d.detratores, cor: colors.danger },
-                          ].map((item) => (
-                            <HBar key={item.l} label={item.l} value={item.v}
-                              max={d.total} cor={item.cor}
-                              direita={`${item.v} (${d.total > 0 ? Math.round((item.v/d.total)*100) : 0}%)`}
-                            />
-                          ))}
+                        <div style={{ marginTop: 20 }}>
+                          <Donut
+                            fatias={[
+                              { label: "Promotores (9–10)", valor: Number(d.promotores || 0), cor: colors.success },
+                              { label: "Neutros (7–8)",     valor: Number(d.neutros || 0),    cor: colors.warning },
+                              { label: "Detratores (0–6)",  valor: Number(d.detratores || 0), cor: colors.danger },
+                            ]}
+                            total={d.total}
+                            revelado={revelado}
+                          />
                         </div>
                       )}
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                      {d.tendencia?.length > 0 && (
+                      {tendenciaNps.length > 0 && (
                         <div style={section}>
                           <p style={sectionTitle}>Tendência — últimos 6 meses</p>
-                          <VBars cor="#3b82f6"
-                            items={d.tendencia.map((t) => ({
-                              l: MESES_ABREV[(Number(t.mes) || 1) - 1],
-                              v: Number((t.media || 0).toFixed(1)),
-                            }))}
+                          <GraficoLinha
+                            dados={tendenciaNps}
+                            linhas={[{ key: "media", label: "NPS médio", cor: chart.blue }]}
+                            revelado={revelado}
                           />
                         </div>
                       )}
-                      {d.por_turma?.length > 0 && (
+                      {turmasNps.length > 0 && (
                         <div style={section}>
                           <p style={sectionTitle}>NPS por turma</p>
-                          {d.por_turma.slice(0, 6).map((t) => (
-                            <HBar key={t.tema}
-                              label={`${t.tema}${t.cliente ? ` · ${t.cliente}` : ""}`}
-                              value={Number(t.media)} max={10}
-                              cor={colors.accent}
-                              direita={`${t.media} (${t.respostas} resp.)`}
-                            />
-                          ))}
+                          <BarraHorizontal
+                            dados={turmasNps}
+                            labelKey="rotulo" valueKey="media" maxValor={10}
+                            cor={colors.accent} maxItens={6} revelado={revelado}
+                            subtitulo={(t) => `${t.respostas} resp.`}
+                          />
                         </div>
                       )}
                     </div>
@@ -424,15 +422,15 @@ export default function IndicadoresPage() {
                       ))}
                     </div>
                   )}
-                  <div style={kpiRow}>
+                  <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={kpiRow}>
                     <StatCard title="Taxa de aprovação"
-                      value={fmtPct(d.taxa_aprovacao)}
+                      value={d.taxa_aprovacao != null ? <ContadorAnimado valor={d.taxa_aprovacao} decimais={1} sufixo="%" revelado={revelado} /> : "—"}
                       subtitle={`${fmtN(d.total_avaliados)} avaliados`}
                       accent={colors.success} />
                     <StatCard title="Nota média (prova)"
                       value={d.media_prova != null ? String(d.media_prova) : "—"} />
                     <StatCard title="Taxa de presença"
-                      value={fmtPct(d.presenca?.taxa)}
+                      value={d.presenca?.taxa != null ? <ContadorAnimado valor={d.presenca.taxa} decimais={1} sufixo="%" revelado={revelado} /> : "—"}
                       subtitle={d.presenca?.total > 0
                         ? `${fmtN(d.presenca.presentes)} presenças`
                         : "sem registros"}
@@ -440,7 +438,7 @@ export default function IndicadoresPage() {
                   </div>
 
                   {d.por_cliente?.length > 0 && (
-                    <div style={section}>
+                    <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={{ ...section, animationDelay: ".05s" }}>
                       <p style={sectionTitle}>Efetividade por cliente / operação</p>
                       <div style={{ overflowX: "auto" }}>
                         <table style={tbl}>
@@ -482,36 +480,32 @@ export default function IndicadoresPage() {
               {/* ── ROI ────────────────────────────────────────────────── */}
               {activeTab === "roi" && (
                 <>
-                  <div style={kpiRow}>
+                  <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={kpiRow}>
                     <StatCard title="Horas realizadas"
-                      value={fmtH(d.horas_realizadas)}
+                      value={d.horas_realizadas != null ? <ContadorAnimado valor={d.horas_realizadas} decimais={2} sufixo="h" revelado={revelado} /> : "—"}
                       subtitle={`de ${fmtH(d.horas_previstas)} previstas`}
                       accent={colors.accent} />
                     <StatCard title="Pessoas impactadas"
-                      value={fmtN(d.pessoas_impactadas)}
+                      value={d.pessoas_impactadas != null ? <ContadorAnimado valor={d.pessoas_impactadas} revelado={revelado} /> : "—"}
                       subtitle={d.alcance_percentual
                         ? `${d.alcance_percentual}% do previsto` : ""} />
                     <StatCard title="Taxa de conclusão"
-                      value={fmtPct(d.taxa_conclusao)}
+                      value={d.taxa_conclusao != null ? <ContadorAnimado valor={d.taxa_conclusao} decimais={1} sufixo="%" revelado={revelado} /> : "—"}
                       subtitle={`${fmtN(d.turmas_concluidas)} de ${fmtN(d.turmas_total)} turmas`}
                       accent={d.taxa_conclusao >= 70 ? colors.success : colors.warning} />
                     <StatCard title="Custo estimado*"
-                      value={fmtR(d.custo_estimado)} />
+                      value={d.custo_estimado != null ? <ContadorAnimado valor={d.custo_estimado} formatar={fmtR} revelado={revelado} /> : "—"} />
                   </div>
 
-                  <div style={twoCol}>
+                  <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={{ ...twoCol, animationDelay: ".05s" }}>
                     <div style={section}>
                       <p style={sectionTitle}>Volume de aprendizagem</p>
-                      {[
-                        { l: "Horas realizadas",    v: d.horas_realizadas,   max: d.horas_previstas,    suf: "h" },
-                        { l: "Pessoas impactadas",  v: d.pessoas_impactadas, max: d.pessoas_previstas,  suf: "" },
-                        { l: "Turmas concluídas",   v: d.turmas_concluidas,  max: d.turmas_total,       suf: "" },
-                      ].map((item) => (
-                        <HBar key={item.l} label={item.l}
-                          value={item.v} max={item.max || item.v || 1}
-                          direita={`${item.v}${item.suf} / ${item.max ?? "?"}${item.suf}`}
-                        />
-                      ))}
+                      <BarraHorizontal
+                        dados={volumeAprendizagem}
+                        labelKey="label" valueKey="pct" maxValor={100} sufixo="%"
+                        cor={colors.accent} revelado={revelado}
+                        subtitulo={(item) => item.display}
+                      />
                     </div>
 
                     <div style={section}>
