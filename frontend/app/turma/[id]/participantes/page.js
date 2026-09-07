@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState }    from "react";
-import { useParams }                        from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams }   from "next/navigation";
 import TurmaPageShell                       from "../../../../components/TurmaPageShell";
 import { apiDownload, apiFetch }            from "../../../../services/api";
 import { formatDateBR }                     from "../../../../lib/date";
@@ -32,6 +32,7 @@ function estiloFreq(pct) {
 
 export default function ParticipantesTurmaPage() {
   const { id } = useParams() || {};
+  const searchParams = useSearchParams();
 
   const [treinamento,   setTreinamento]   = useState(null);
   const [participantes, setParticipantes] = useState([]);
@@ -46,7 +47,12 @@ export default function ParticipantesTurmaPage() {
   const [busca,         setBusca]         = useState("");
 
   /* Seções colapsáveis */
-  const [abrirImport, setAbrirImport] = useState(false);
+  // Bugfix: o botão "Importar treinandos" da página Gestão de Turmas
+  // (presenças) mandava pra cá mas essa seção começa sempre fechada — o
+  // usuário clicava numa ação que prometia "importar" e caía numa lista
+  // vazia, sem pista de que precisava abrir "↑ Importar Excel" primeiro.
+  // Agora, vindo de ?abrir_import=1, a seção já abre sozinha.
+  const [abrirImport, setAbrirImport] = useState(() => searchParams.get("abrir_import") === "1");
   const [abrirManual, setAbrirManual] = useState(false);
 
   useEffect(() => { carregarTudo(); }, [id]);
