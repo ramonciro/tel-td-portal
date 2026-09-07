@@ -77,7 +77,16 @@ function usePrefersReducedMotion() {
 // Conta de 0 até `valor` ao ser revelado — usado nos números grandes de KPI
 // (StatCard-like) para dar a mesma sensação de "painel vivo" que os
 // concorrentes de LMS pesquisados no benchmark anunciam como diferencial.
-export function ContadorAnimado({ valor = 0, duracaoMs = 700, formatar = fmt, revelado, sufixo = "" }) {
+// `decimais` (default 0): quantas casas decimais preservar durante e ao
+// final da contagem. FIX (setembro/2026, achado ao revisar Indicadores/
+// Capacidade/Dashboard): antes o passo da animação sempre arredondava para
+// inteiro (`Math.round(alvo * ease)`), então um valor como 87,3% ou -87,5 de
+// NPS terminava a animação virando "87%"/"-88" — não só a forma, o DADO
+// exibido mudava. Métricas que o backend já entrega com 1-2 casas decimais
+// (índice geral, NPS médio, taxas de aprovação/presença/conclusão, horas
+// fracionadas) devem passar `decimais` correspondente; contagens inteiras
+// (turmas, pessoas, horas fechadas) seguem com o padrão 0 sem mudar nada.
+export function ContadorAnimado({ valor = 0, duracaoMs = 700, formatar = fmt, revelado, sufixo = "", decimais = 0 }) {
   const show = useAutoRevelado(revelado);
   const [exibido, setExibido] = useState(0);
   const inicioRef = useRef(null);
@@ -91,17 +100,18 @@ export function ContadorAnimado({ valor = 0, duracaoMs = 700, formatar = fmt, re
     if (!show) { setExibido(0); return; }
     inicioRef.current = null;
     const alvo = Number(valor) || 0;
+    const fator = 10 ** decimais;
     function passo(ts) {
       if (inicioRef.current === null) inicioRef.current = ts;
       const t = Math.min(1, (ts - inicioRef.current) / duracaoMs);
       const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
-      setExibido(Math.round(alvo * ease));
+      setExibido(Math.round(alvo * ease * fator) / fator);
       if (t < 1) frameRef.current = requestAnimationFrame(passo);
     }
     frameRef.current = requestAnimationFrame(passo);
     return () => frameRef.current && cancelAnimationFrame(frameRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [show, valor]);
+  }, [show, valor, decimais]);
 
   return <>{formatar(exibido)}{sufixo}</>;
 }
@@ -111,11 +121,15 @@ export function ContadorAnimado({ valor = 0, duracaoMs = 700, formatar = fmt, re
 // só faz sentido quando cada barra é uma identidade diferente, não quando
 // todas medem a mesma métrica). Passe `corPorItem` só quando as barras
 // representarem categorias distintas de verdade (ex.: status).
-export function BarraHorizontal({ dados = [], labelKey, valueKey, cor = chartColors.blue, sufixo = "", maxItens = 8, revelado, corPorItem = null, subtitulo = null }) {
+export function BarraHorizontal({ dados = [], labelKey, valueKey, cor = chartColors.blue, sufixo = "", maxItens = 8, revelado, corPorItem = null, subtitulo = null, maxValor = null }) {
   const show = useAutoRevelado(revelado);
   const reduceMotion = usePrefersReducedMotion();
   const lista = [...dados].sort((a, b) => Number(b[valueKey] || 0) - Number(a[valueKey] || 0)).slice(0, maxItens);
-  const max = Math.max(...lista.map((d) => Number(d[valueKey] || 0)), 1);
+  // maxValor: escala fixa (ex.: 100 para percentuais) em vez do maior valor
+  // da própria lista — importante quando o valor já tem um teto natural, senão
+  // um cliente com 92% de presença apareceria com a barra cheia (100% de si
+  // mesmo) só porque é o maior da lista, escondendo que ainda não é perfeito.
+  const max = maxValor != null ? maxValor : Math.max(...lista.map((d) => Number(d[valueKey] || 0)), 1);
 
   if (!lista.length) {
     return <p style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center", padding: "16px 0" }}>Sem dados no período</p>;
