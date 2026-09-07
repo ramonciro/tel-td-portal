@@ -8,6 +8,7 @@ import StatCard from "../../components/StatCard";
 import { apiFetch, apiDownload } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
 import { colors, chart } from "../../lib/theme";
+import { ContadorAnimado, Donut, BarraHorizontal } from "../../components/Charts";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -41,6 +42,17 @@ function getBadgeStyleByTax(value) {
   if (number >= 90) return { background: colors.successLight, color: colors.successText, border: "1px solid #86efac" };
   if (number >= 80) return { background: colors.warningLight, color: colors.warningText, border: "1px solid #fcd34d" };
   return { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fca5a5" };
+}
+
+// Mesmos limiares de getBadgeStyleByTax, só que como cor sólida — usado nos
+// rankings de barra (BarraHorizontal) de "Saúde por cliente"/"Instrutores no
+// recorte", onde presença é um indicador de saúde (status), não uma métrica
+// neutra de magnitude — por isso cor por item é intencional aqui.
+function corPorPresenca(value) {
+  const number = Number(value || 0);
+  if (number >= 90) return colors.success;
+  if (number >= 80) return colors.warning;
+  return colors.danger;
 }
 
 function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTurmas = [], desempenhoResumo = null) {
@@ -232,6 +244,16 @@ export default function DashboardPage() {
     carregarDesempenho();
   }, []);
 
+  // Cascata de entrada — mesmo padrão já usado em /inicio e /rs. Liga só
+  // depois que o KPI principal termina de carregar pela primeira vez, e não
+  // religa a cada troca de filtro (senão a tela "piscaria" a cada clique).
+  const [revelado, setRevelado] = useState(false);
+  useEffect(() => {
+    if (loading) return;
+    const id = requestAnimationFrame(() => setRevelado(true));
+    return () => cancelAnimationFrame(id);
+  }, [loading]);
+
   useEffect(() => {
     async function carregar() {
       try {
@@ -303,6 +325,16 @@ export default function DashboardPage() {
 
   return (
     <PortalShell>
+      {/* Cascata de entrada — mesmo padrão de /inicio e /rs. */}
+      <style>{`
+        @keyframes dashCascade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .dash-cascade { opacity: 0; }
+        .dash-cascade.dash-play { animation: dashCascade .5s cubic-bezier(.16,1,.3,1) forwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .dash-cascade, .dash-cascade.dash-play { animation: none !important; opacity: 1 !important; transform: none !important; }
+        }
+      `}</style>
+
       {loading ? (
         <div style={loadingBox}>Carregando o dashboard...</div>
       ) : erro ? (
@@ -320,7 +352,9 @@ export default function DashboardPage() {
             ]}
           />
 
-          <AlertasDashboard alertas={alertas} onAbrirTurma={abrirDrillDown} />
+          <div className={`dash-cascade ${revelado ? "dash-play" : ""}`}>
+            <AlertasDashboard alertas={alertas} onAbrirTurma={abrirDrillDown} />
+          </div>
 
           <SectionCard
             title="Filtros do painel"
@@ -407,21 +441,24 @@ export default function DashboardPage() {
             </div>
           </SectionCard>
 
-          <div style={kpiGrid}>
-            <StatCard title="Turmas" value={fmt(kpis.treinamentos || 0)} subtitle="Base no recorte" accent={chart.blue} />
-            <StatCard title="Previstos" value={fmt(kpis.participantes_previstos || 0)} subtitle="Capacidade cadastrada" accent={chart.cyan} />
-            <StatCard title="Confirmados" value={fmt(kpis.treinados || 0)} subtitle="Com chamada registrada" accent={colors.primary} />
-            <StatCard title="Presença" value={`${fmt(kpis.taxa_presenca || 0)}%`} subtitle="Consolidado" accent={colors.success} />
-            <StatCard title="Pendências" value={fmt(kpis.pendentes || 0)} subtitle="Ainda em aberto" accent={colors.warning} />
-            <StatCard title="Execução" value={`${fmt(kpis.taxa_execucao_diaria || 0)}%`} subtitle="Base já registrada" accent={chart.purple} />
-            <StatCard title="Chamada concluída" value={`${fmt(kpis.taxa_conclusao_chamada || 0)}%`} subtitle="Dias de chamada já registrados" accent={chart.teal} />
-            <StatCard title="Gap de participantes" value={fmt(kpis.gap_previstos_vs_treinados || 0)} subtitle="Previstos ainda sem chamada" accent={colors.warning} />
+          <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={kpiGrid}>
+            <StatCard title="Turmas" value={<ContadorAnimado valor={kpis.treinamentos} revelado={revelado} />} subtitle="Base no recorte" accent={chart.blue} />
+            <StatCard title="Previstos" value={<ContadorAnimado valor={kpis.participantes_previstos} revelado={revelado} />} subtitle="Capacidade cadastrada" accent={chart.cyan} />
+            <StatCard title="Confirmados" value={<ContadorAnimado valor={kpis.treinados} revelado={revelado} />} subtitle="Com chamada registrada" accent={colors.primary} />
+            <StatCard title="Presença" value={<ContadorAnimado valor={kpis.taxa_presenca} sufixo="%" revelado={revelado} />} subtitle="Consolidado" accent={colors.success} />
+            <StatCard title="Pendências" value={<ContadorAnimado valor={kpis.pendentes} revelado={revelado} />} subtitle="Ainda em aberto" accent={colors.warning} />
+            <StatCard title="Execução" value={<ContadorAnimado valor={kpis.taxa_execucao_diaria} sufixo="%" revelado={revelado} />} subtitle="Base já registrada" accent={chart.purple} />
+            <StatCard title="Chamada concluída" value={<ContadorAnimado valor={kpis.taxa_conclusao_chamada} sufixo="%" revelado={revelado} />} subtitle="Dias de chamada já registrados" accent={chart.teal} />
+            <StatCard title="Gap de participantes" value={<ContadorAnimado valor={kpis.gap_previstos_vs_treinados} revelado={revelado} />} subtitle="Previstos ainda sem chamada" accent={colors.warning} />
+            {/* decimais=1: media_nps/media_qualidade/media_prova vêm do backend
+               como ROUND(AVG(...), 1) — sem isso a nota terminaria a animação
+               arredondada pra inteiro (8,5 virando "9"). */}
             {nps.total_avaliacoes > 0 && (
               <>
-                <StatCard title="NPS médio" value={nps.media_nps > 0 ? fmt(nps.media_nps) : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent={chart.pink} />
-                <StatCard title="Qualidade" value={nps.media_qualidade > 0 ? fmt(nps.media_qualidade) : "—"} subtitle="Nota média qualidade" accent={chart.orange} />
+                <StatCard title="NPS médio" value={nps.media_nps > 0 ? <ContadorAnimado valor={nps.media_nps} decimais={1} revelado={revelado} /> : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent={chart.pink} />
+                <StatCard title="Qualidade" value={nps.media_qualidade > 0 ? <ContadorAnimado valor={nps.media_qualidade} decimais={1} revelado={revelado} /> : "—"} subtitle="Nota média qualidade" accent={chart.orange} />
                 {nps.media_prova > 0 && (
-                  <StatCard title="Prova" value={fmt(nps.media_prova)} subtitle="Nota média prova" accent={chart.teal} />
+                  <StatCard title="Prova" value={<ContadorAnimado valor={nps.media_prova} decimais={1} revelado={revelado} />} subtitle="Nota média prova" accent={chart.teal} />
                 )}
               </>
             )}
@@ -438,28 +475,32 @@ export default function DashboardPage() {
               <div style={emptyState}>Carregando capacidade da equipe...</div>
             ) : (
               <div style={{ display: "grid", gap: 14 }}>
-                <div style={kpiGrid}>
+                <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={kpiGrid}>
+                  {/* decimais=2 nas horas e 1 na ocupação: mesmos campos de
+                     /capacidade (hc_*_periodo e capacidade_nominal_periodo saem
+                     com até 2 casas, ocupacao_time_pct com 1) — sem isso o
+                     contador arredondava o valor exibido, não só a forma. */}
                   <StatCard
                     title="CH programada (período)"
-                    value={`${fmt(capacidade.indicadores?.hc_programado_periodo || 0)}h`}
+                    value={<ContadorAnimado valor={capacidade.indicadores?.hc_programado_periodo} decimais={2} sufixo="h" revelado={revelado} />}
                     subtitle="Turmas + cronograma planejados"
                     accent={chart.cyan}
                   />
                   <StatCard
                     title="CH realizada (período)"
-                    value={`${fmt(capacidade.indicadores?.hc_realizado_periodo || 0)}h`}
+                    value={<ContadorAnimado valor={capacidade.indicadores?.hc_realizado_periodo} decimais={2} sufixo="h" revelado={revelado} />}
                     subtitle={capacidade.indicadores?.aderencia_geral_pct != null ? `Aderência ${fmt(capacidade.indicadores.aderencia_geral_pct)}%` : "Sem base de comparação"}
                     accent={colors.primary}
                   />
                   <StatCard
                     title="Ocupação do time"
-                    value={`${fmt(capacidade.indicadores?.ocupacao_time_pct || 0)}%`}
+                    value={<ContadorAnimado valor={capacidade.indicadores?.ocupacao_time_pct} decimais={1} sufixo="%" revelado={revelado} />}
                     subtitle="Realizado vs. capacidade nominal"
                     accent={colors.success}
                   />
                   <StatCard
                     title="Capacidade nominal (time)"
-                    value={`${fmt(capacidade.indicadores?.capacidade_nominal_periodo || 0)}h`}
+                    value={<ContadorAnimado valor={capacidade.indicadores?.capacidade_nominal_periodo} decimais={2} sufixo="h" revelado={revelado} />}
                     subtitle="Dias úteis × regra padrão"
                     accent={chart.orange}
                   />
@@ -493,17 +534,16 @@ export default function DashboardPage() {
                     <div style={{ fontSize: 12.5, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 }}>
                       Top instrutores por CH realizada (mês corrente)
                     </div>
-                    <div style={listGrid}>
-                      {capacidadeRanking.slice(0, 3).map((item) => (
-                        <div key={item.instrutor} style={listRow}>
-                          <div>
-                            <div style={rowTitle}>{item.posicao}º · {item.instrutor}</div>
-                            <div style={rowMeta}>{fmt(item.pct_capacidade)}% da capacidade do mês</div>
-                          </div>
-                          <div style={{ ...pill, background: "#eff6ff", color: colors.primary, border: "1px solid #bfdbfe" }}>{fmt(item.horas_realizadas)}h</div>
-                        </div>
-                      ))}
-                    </div>
+                    <BarraHorizontal
+                      dados={capacidadeRanking}
+                      labelKey="instrutor"
+                      valueKey="horas_realizadas"
+                      sufixo="h"
+                      cor={colors.primary}
+                      maxItens={3}
+                      revelado={revelado}
+                      subtitulo={(d) => `${fmt(d.pct_capacidade)}% da capacidade do mês`}
+                    />
                   </div>
                 )}
               </div>
@@ -523,11 +563,16 @@ export default function DashboardPage() {
               <div style={emptyState}>Nenhum instrutor com atividade registrada este mês ainda.</div>
             ) : (
               <div style={{ display: "grid", gap: 14 }}>
-                <div style={kpiGrid}>
-                  <StatCard title="Instrutores considerados" value={fmt(desempenhoResumo.instrutores_considerados)} subtitle="Com atividade no mês" accent={chart.cyan} />
-                  <StatCard title="Índice geral médio" value={desempenhoResumo.indice_geral_medio ?? "—"} subtitle="90% frequência + 10% NPS" accent={colors.primary} />
-                  <StatCard title="Frequência média" value={`${fmt(desempenhoResumo.frequencia_media || 0)}%`} subtitle="Média do time" accent={colors.success} />
-                  <StatCard title="NPS médio" value={desempenhoResumo.nps_media ?? "—"} subtitle="Média do time" accent={chart.pink} />
+                <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={kpiGrid}>
+                  <StatCard title="Instrutores considerados" value={<ContadorAnimado valor={desempenhoResumo.instrutores_considerados} revelado={revelado} />} subtitle="Com atividade no mês" accent={chart.cyan} />
+                  {/* decimais=1: estas três médias vêm do backend já com 1 casa
+                     decimal (ex.: índice 87,3 · NPS -14,5) — sem isso o contador
+                     arredondava pra inteiro ao terminar de animar, trocando o
+                     dado exibido, não só a forma (achado ao revisar Indicadores/
+                     Capacidade, que tinham o mesmo padrão de dado). */}
+                  <StatCard title="Índice geral médio" value={desempenhoResumo.indice_geral_medio != null ? <ContadorAnimado valor={desempenhoResumo.indice_geral_medio} decimais={1} revelado={revelado} /> : "—"} subtitle="90% frequência + 10% NPS" accent={colors.primary} />
+                  <StatCard title="Frequência média" value={<ContadorAnimado valor={desempenhoResumo.frequencia_media} decimais={1} sufixo="%" revelado={revelado} />} subtitle="Média do time" accent={colors.success} />
+                  <StatCard title="NPS médio" value={desempenhoResumo.nps_media != null ? <ContadorAnimado valor={desempenhoResumo.nps_media} decimais={1} revelado={revelado} /> : "—"} subtitle="Média do time" accent={chart.pink} />
                 </div>
 
                 {desempenhoResumo.fora_faixa_saudavel.length > 0 ? (
@@ -558,7 +603,7 @@ export default function DashboardPage() {
             )}
           </SectionCard>
 
-          <div style={twoColumns}>
+          <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ ...twoColumns, animationDelay: ".05s" }}>
             <SectionCard title="Leitura gerencial" subtitle="Sinais que te ajudam a interpretar o cenário com mais rapidez.">
               <div style={summaryList}>
                 {narrativa.map((item) => (
@@ -579,43 +624,41 @@ export default function DashboardPage() {
             </SectionCard>
           </div>
 
-          <div style={twoColumns}>
+          <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ ...twoColumns, animationDelay: ".1s" }}>
             <SectionCard title="Saúde por cliente" subtitle="Ajuda a comparar rapidamente onde a operação está mais firme e onde precisa de suporte.">
-              <div style={listGrid}>
-                {presencaPorCliente.length ? presencaPorCliente.map((item) => {
-                  const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
-                  return (
-                    <div key={item.cliente} style={listRow}>
-                      <div>
-                        <div style={rowTitle}>{item.cliente}</div>
-                        <div style={rowMeta}>{fmt(item.total_treinados)} base • {fmt(item.presentes)} presentes • {fmt(item.pendentes)} pendentes</div>
-                      </div>
-                      <div style={{ ...pill, ...badgeStyle }}>{fmt(item.taxa_presenca)}%</div>
-                    </div>
-                  );
-                }) : <div style={emptyState}>Nenhum dado por cliente apareceu nesse recorte.</div>}
-              </div>
+              {presencaPorCliente.length ? (
+                <BarraHorizontal
+                  dados={presencaPorCliente}
+                  labelKey="cliente"
+                  valueKey="taxa_presenca"
+                  sufixo="%"
+                  maxValor={100}
+                  maxItens={10}
+                  corPorItem={(d) => corPorPresenca(d.taxa_presenca)}
+                  subtitulo={(d) => `${fmt(d.total_treinados)} base · ${fmt(d.presentes)} presentes · ${fmt(d.pendentes)} pendentes`}
+                  revelado={revelado}
+                />
+              ) : <div style={emptyState}>Nenhum dado por cliente apareceu nesse recorte.</div>}
             </SectionCard>
 
             <SectionCard title="Instrutores no recorte" subtitle="Uma leitura simples de produtividade e presença.">
-              <div style={listGrid}>
-                {rankingInstrutores.length ? rankingInstrutores.map((item) => {
-                  const badgeStyle = getBadgeStyleByTax(item.taxa_presenca);
-                  return (
-                    <div key={item.instrutor} style={listRow}>
-                      <div>
-                        <div style={rowTitle}>{item.instrutor}</div>
-                        <div style={rowMeta}>{fmt(item.total_turmas)} turma(s) • {fmt(item.total_treinados)} base • {fmt(item.presentes)} presentes</div>
-                      </div>
-                      <div style={{ ...pill, ...badgeStyle }}>{fmt(item.taxa_presenca)}%</div>
-                    </div>
-                  );
-                }) : <div style={emptyState}>Nenhum dado de instrutor apareceu nesse recorte.</div>}
-              </div>
+              {rankingInstrutores.length ? (
+                <BarraHorizontal
+                  dados={rankingInstrutores}
+                  labelKey="instrutor"
+                  valueKey="taxa_presenca"
+                  sufixo="%"
+                  maxValor={100}
+                  maxItens={10}
+                  corPorItem={(d) => corPorPresenca(d.taxa_presenca)}
+                  subtitulo={(d) => `${fmt(d.total_turmas)} turma(s) · ${fmt(d.total_treinados)} base · ${fmt(d.presentes)} presentes`}
+                  revelado={revelado}
+                />
+              ) : <div style={emptyState}>Nenhum dado de instrutor apareceu nesse recorte.</div>}
             </SectionCard>
           </div>
 
-          <div style={twoColumns}>
+          <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ ...twoColumns, animationDelay: ".15s" }}>
             <SectionCard title="Oceano em resumo" subtitle="Uma leitura curta para conectar o dashboard ao fluxo de desenvolvimento.">
               <div style={oceanoGrid}>
                 <MiniStat label="Jornadas" value={fmt(oceano.jornadas || 0)} />
@@ -628,30 +671,12 @@ export default function DashboardPage() {
             <SectionCard title="Progresso da tripulação" subtitle="Ajuda a enxergar se o oceano está só bonito ou realmente em movimento.">
               {(() => {
                 const prog = oceano.progresso_tripulacao || {};
-                const total = Number(oceano.tripulacao || 0);
-                const items = [
-                  { label: "Em percurso", value: Number(prog.em_percurso || 0), color: "#3b82f6" },
-                  { label: "Concluídos", value: Number(prog.concluido || 0), color: "#16a34a" },
-                  { label: "Em sustentação", value: Number(prog.em_sustentacao || 0), color: "#7c3aed" },
+                const fatias = [
+                  { label: "Em percurso", valor: Number(prog.em_percurso || 0), cor: chart.blue },
+                  { label: "Concluídos", valor: Number(prog.concluido || 0), cor: colors.success },
+                  { label: "Em sustentação", valor: Number(prog.em_sustentacao || 0), cor: chart.purple },
                 ];
-                return (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {items.map((item) => {
-                      const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
-                      return (
-                        <div key={item.label}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 5 }}>
-                            <span>{item.label}</span>
-                            <span style={{ color: item.color }}>{fmt(item.value)} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({pct}%)</span></span>
-                          </div>
-                          <div style={{ height: 8, borderRadius: 999, background: "#f1f5f9", overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${pct}%`, background: item.color, borderRadius: 999, transition: "width .4s ease" }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
+                return <Donut fatias={fatias} total={Number(oceano.tripulacao || 0)} revelado={revelado} />;
               })()}
             </SectionCard>
           </div>
