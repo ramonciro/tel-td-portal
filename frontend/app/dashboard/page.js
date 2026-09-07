@@ -43,7 +43,7 @@ function getBadgeStyleByTax(value) {
   return { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fca5a5" };
 }
 
-function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTurmas = []) {
+function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTurmas = [], desempenhoResumo = null) {
   const items = [];
 
   if (Number(kpis.pendentes || 0) > 0) {
@@ -76,6 +76,22 @@ function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTur
     items.push({
       title: "Oceano em movimento",
       text: `${fmt(oceano.jornadas)} jornada(s), ${fmt(oceano.acoes)} ação(ões) e ${fmt(oceano.tripulacao)} pessoa(s) já estão no fluxo do desenvolvimento.`,
+      tone: "ok",
+    });
+  }
+
+  const foraFaixa = desempenhoResumo?.fora_faixa_saudavel || [];
+  if (foraFaixa.length > 0) {
+    const algumCritico = foraFaixa.some((i) => i.status === "critico");
+    items.push({
+      title: "Instrutores fora da faixa saudável",
+      text: `${fmt(foraFaixa.length)} instrutor(es) com frequência ou NPS fora da faixa saudável este mês (${foraFaixa.slice(0, 2).map((i) => i.instrutor).join(", ")}${foraFaixa.length > 2 ? "..." : ""}).`,
+      tone: algumCritico ? "danger" : "attention",
+    });
+  } else if (desempenhoResumo && Number(desempenhoResumo.instrutores_considerados || 0) > 0) {
+    items.push({
+      title: "Instrutores na faixa saudável",
+      text: `Os ${fmt(desempenhoResumo.instrutores_considerados)} instrutor(es) com atividade este mês estão dentro da faixa saudável de frequência e NPS.`,
       tone: "ok",
     });
   }
@@ -133,6 +149,8 @@ export default function DashboardPage() {
   const [capacidadeAlertas, setCapacidadeAlertas] = useState([]);
   const [capacidadeRanking, setCapacidadeRanking] = useState([]);
   const [capacidadeErro, setCapacidadeErro] = useState("");
+  const [desempenhoResumo, setDesempenhoResumo] = useState(null);
+  const [desempenhoErro, setDesempenhoErro] = useState("");
   const [filters, setFilters] = useState({
     cliente: "",
     instrutor: "",
@@ -195,6 +213,25 @@ export default function DashboardPage() {
     carregarCapacidade();
   }, [filters.cliente]);
 
+  // Resumo executivo do desempenho de instrutor (frequência/NPS do mês
+  // corrente) — item 5 da visão de universidade corporativa (ver
+  // claude/visao-plataforma-educativa-instrutor-2026-09.md no projeto).
+  // Mesmo espírito da Capacidade acima: carrega uma vez, não depende dos
+  // filtros do painel — é sempre "o mês inteiro, o time todo".
+  useEffect(() => {
+    async function carregarDesempenho() {
+      try {
+        setDesempenhoErro("");
+        const resumo = await apiFetch("/desempenho-instrutor/resumo-executivo");
+        setDesempenhoResumo(resumo || null);
+      } catch (error) {
+        setDesempenhoResumo(null);
+        setDesempenhoErro(error.message || "Erro ao carregar o resumo de desempenho dos instrutores.");
+      }
+    }
+    carregarDesempenho();
+  }, []);
+
   useEffect(() => {
     async function carregar() {
       try {
@@ -251,7 +288,10 @@ export default function DashboardPage() {
   const ultimasTurmas = dados?.ultimas_turmas || [];
   const oceano = dados?.oceano || {};
 
-  const farois = useMemo(() => buildFarois(kpis, oceano, presencaPorCliente, ultimasTurmas), [kpis, oceano, presencaPorCliente, ultimasTurmas]);
+  const farois = useMemo(
+    () => buildFarois(kpis, oceano, presencaPorCliente, ultimasTurmas, desempenhoResumo),
+    [kpis, oceano, presencaPorCliente, ultimasTurmas, desempenhoResumo]
+  );
   const narrativa = useMemo(() => buildNarrativa(kpis, filters), [kpis, filters]);
 
   const clienteOptions = Array.isArray(filtrosApi.clientes) ? filtrosApi.clientes : [];
@@ -464,6 +504,54 @@ export default function DashboardPage() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Desempenho dos instrutores (frequência e NPS)"
+            subtitle="Índice geral, frequência e NPS do mês corrente — o mesmo scorecard que cada instrutor já vê em 'Meu Desempenho'."
+            action={<a href="/capacidade?aba=instrutor" style={linkBotao}>Ver scorecard completo →</a>}
+          >
+            {desempenhoErro ? (
+              <div style={emptyState}>{desempenhoErro}</div>
+            ) : !desempenhoResumo ? (
+              <div style={emptyState}>Carregando desempenho dos instrutores...</div>
+            ) : desempenhoResumo.instrutores_considerados === 0 ? (
+              <div style={emptyState}>Nenhum instrutor com atividade registrada este mês ainda.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 14 }}>
+                <div style={kpiGrid}>
+                  <StatCard title="Instrutores considerados" value={fmt(desempenhoResumo.instrutores_considerados)} subtitle="Com atividade no mês" accent={chart.cyan} />
+                  <StatCard title="Índice geral médio" value={desempenhoResumo.indice_geral_medio ?? "—"} subtitle="90% frequência + 10% NPS" accent={colors.primary} />
+                  <StatCard title="Frequência média" value={`${fmt(desempenhoResumo.frequencia_media || 0)}%`} subtitle="Média do time" accent={colors.success} />
+                  <StatCard title="NPS médio" value={desempenhoResumo.nps_media ?? "—"} subtitle="Média do time" accent={chart.pink} />
+                </div>
+
+                {desempenhoResumo.fora_faixa_saudavel.length > 0 ? (
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 }}>
+                      Instrutores fora da faixa saudável este mês
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                      {desempenhoResumo.fora_faixa_saudavel.slice(0, 6).map((item) => (
+                        <a key={item.instrutor} href="/capacidade?aba=instrutor" style={{ ...listRow, textDecoration: "none" }}>
+                          <div>
+                            <div style={rowTitle}>{item.instrutor}</div>
+                            <div style={rowMeta}>{item.motivo}</div>
+                          </div>
+                          <div style={{ ...pill, ...(item.status === "critico" ? { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fca5a5" } : { background: colors.warningLight, color: colors.warningText, border: "1px solid #fcd34d" }) }}>
+                            {item.status_emoji}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "12px 16px", fontSize: 13, color: colors.successText, fontWeight: 600 }}>
+                    ✅ Todos os instrutores com atividade este mês estão na faixa saudável de frequência e NPS.
                   </div>
                 )}
               </div>
