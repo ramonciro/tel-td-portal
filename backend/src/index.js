@@ -18,7 +18,7 @@ const { rodarDigestPendencias, montarResumoEmpresa } = require("./jobs/pendencia
 const { rodarLembretesAula } = require("./jobs/lembretesAula");
 const { rodarCalculoConquistas } = require("./jobs/conquistasJob");
 const { gerarTextoResumo, getResumoCacheadoDoDia } = require("./services/resumoExecutivoService");
-const { listarConquistasTreinando } = require("./services/gamificacaoService");
+const { listarConquistas } = require("./services/gamificacaoService");
 
 // Sprint 5: Analytics
 const {
@@ -1218,23 +1218,28 @@ app.post(
   }
 );
 
-// Fase 3 — "Minhas Conquistas" (gamificação de treinando, sem custo/sem IA
-// — ver services/gamificacaoService.js). Qualquer perfil autenticado pode
-// consultar; o nome usado é sempre o do próprio usuário logado (mesmo
-// auto-escopo de "minhas-turmas"), exceto coordenador/supervisor, que pode
-// consultar qualquer treinando via ?nome= (visão gerencial).
+// Fase 3 — "Minhas Conquistas" (gamificação de treinando E de instrutor,
+// sem custo/sem IA — ver services/gamificacaoService.js). Qualquer perfil
+// autenticado consulta a própria lista, sob o próprio nome (mesmo
+// auto-escopo de "minhas-turmas"/"Meu Desempenho") — o tipo de entidade é
+// derivado do próprio perfil logado (instrutor → 'instrutor', qualquer
+// outro perfil → 'treinando'). Coordenador/supervisor/superintendente pode
+// consultar qualquer pessoa via ?nome=&tipo= (visão gerencial).
 app.get("/api/minhas-conquistas", authRequired, async (req, res) => {
   try {
     const perfil = String(req.user?.perfil || "").toLowerCase();
     const podeConsultarOutro = ["coordenador", "supervisor", "superintendente"].includes(perfil);
     const nome = (podeConsultarOutro && req.query.nome) ? req.query.nome : req.user?.nome;
+    const tipo = (podeConsultarOutro && req.query.tipo === "instrutor") || perfil === "instrutor"
+      ? "instrutor"
+      : "treinando";
 
     if (!nome) {
-      return res.status(400).json({ message: "Nome do treinando não informado." });
+      return res.status(400).json({ message: "Nome não informado." });
     }
 
-    const conquistas = await listarConquistasTreinando(req.empresaId || null, nome);
-    return res.json({ nome, conquistas });
+    const conquistas = await listarConquistas(req.empresaId || null, tipo, nome);
+    return res.json({ nome, tipo, conquistas });
   } catch (error) {
     console.error("Erro ao buscar conquistas:", error);
     return res.status(500).json({ message: "Erro ao buscar conquistas." });
