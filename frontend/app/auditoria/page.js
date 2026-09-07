@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch } from "../../services/api";
@@ -50,6 +50,11 @@ export default function AuditoriaPage() {
   const [dataFim, setDataFim] = useState("");
   const [limite, setLimite] = useState(LIMITE_INICIAL);
   const [expandido, setExpandido] = useState(null);
+  // FIX (07/09): totais vêm de uma contagem real no backend (sem limite de
+  // página) — antes eram calculados em cima do array já paginado (`itens`) e
+  // mostravam só o que estava carregado, rotulado como se fosse o total do
+  // período filtrado.
+  const [totaisServidor, setTotaisServidor] = useState({ total: 0, criar: 0, editar: 0, excluir: 0 });
 
   // Sempre que um filtro muda, volta a paginação para o início — senão o
   // "carregar mais" acumulado de um filtro anterior vaza para o próximo.
@@ -69,6 +74,12 @@ export default function AuditoriaPage() {
         params.set("limite", String(limite));
         const resposta = await apiFetch(`/auditoria?${params.toString()}`);
         setItens(Array.isArray(resposta?.itens) ? resposta.itens : []);
+        setTotaisServidor({
+          total: Number(resposta?.totais?.total || 0),
+          criar: Number(resposta?.totais?.criar || 0),
+          editar: Number(resposta?.totais?.editar || 0),
+          excluir: Number(resposta?.totais?.excluir || 0),
+        });
         setErro("");
       } catch (error) {
         setErro(error.message || "Erro ao carregar auditoria.");
@@ -79,14 +90,7 @@ export default function AuditoriaPage() {
     carregar();
   }, [filtroAcao, filtroEntidade, dataInicio, dataFim, limite]);
 
-  const totais = useMemo(() => {
-    return {
-      total: itens.length,
-      criar: itens.filter((i) => i.acao === "criar").length,
-      editar: itens.filter((i) => i.acao === "editar").length,
-      excluir: itens.filter((i) => i.acao === "excluir").length,
-    };
-  }, [itens]);
+  const totais = totaisServidor;
 
   return (
     <PortalShell>
