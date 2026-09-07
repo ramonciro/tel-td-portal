@@ -40,17 +40,18 @@ export default function NpsTurmaPage() {
     if (!id) return;
     try {
       setLoading(true);
-      // FIX: antes buscava /treinamentos (todos) e filtrava no frontend.
-      // Agora usa /treinamentos/${id} — mais eficiente.
+      // FIX: antes buscava /treinamentos (todos) e /avaliacoes-treinandos
+      // (todas as respostas de NPS de todas as turmas do tenant) e filtrava
+      // no frontend — além de ineficiente, o backend agora reforça isolamento
+      // por participante pro perfil treinando, então filtrar por
+      // treinamento_id direto na consulta é o caminho certo.
       const [treinamentoData, npsData] = await Promise.all([
         apiFetch(`/treinamentos/${id}`).catch(() => null),
-        apiFetch("/avaliacoes-treinandos").catch(() => []),
+        apiFetch(`/avaliacoes-treinandos?treinamento_id=${id}`).catch(() => []),
       ]);
       setTreinamento(treinamentoData || null);
       setRespostas(
-        (Array.isArray(npsData) ? npsData : []).filter(
-          (r) => String(r.treinamento_id) === String(id) && r.nota_nps != null
-        )
+        (Array.isArray(npsData) ? npsData : []).filter((r) => r.nota_nps != null)
       );
       setErro("");
     } catch (e) {
