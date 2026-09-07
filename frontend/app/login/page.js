@@ -98,6 +98,8 @@ export default function LoginPage() {
           <button disabled={loading} style={loading ? { ...button, opacity: 0.7, cursor: "default" } : button}>
             {loading ? "Entrando..." : "Entrar"}
           </button>
+
+          <a href="/esqueci-senha" style={forgotLink}>Esqueci minha senha</a>
         </form>
       </div>
     </div>
@@ -241,6 +243,15 @@ const button = {
   fontWeight: 700,
   fontSize: 14,
   cursor: "pointer",
+};
+
+const forgotLink = {
+  marginTop: 16,
+  fontSize: 12.5,
+  color: colors.textSecondary,
+  textAlign: "center",
+  textDecoration: "none",
+  alignSelf: "center",
 };
 
 const errorBox = {
