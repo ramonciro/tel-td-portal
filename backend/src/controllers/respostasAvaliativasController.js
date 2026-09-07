@@ -53,13 +53,27 @@ async function createRespostaAvaliativa(req, res) {
     const {
       material_id,
       treinamento_id,
-      treinando_nome,
       respostas_json,
       acertos,
       total_questoes,
       percentual,
       nota_final,
     } = req.body || {};
+
+    let treinando_nome = req.body?.treinando_nome;
+
+    const perfil = String(req.user?.perfil || "").toLowerCase();
+    const nomeUsuario = String(req.user?.nome || "").trim();
+
+    // Mesma trava de identidade já usada no NPS (avaliacoesTreinandosController):
+    // treinando não escolhe em nome de quem responde, é sempre o próprio
+    // usuário logado — evita um treinando registrar resposta em nome de outro.
+    if (perfil === "treinando") {
+      if (!nomeUsuario) {
+        return res.status(400).json({ ok: false, message: "Usuário não identificado" });
+      }
+      treinando_nome = nomeUsuario;
+    }
 
     if (!material_id || !treinamento_id || !treinando_nome) {
       return res.status(400).json({
@@ -70,6 +84,32 @@ async function createRespostaAvaliativa(req, res) {
 
     if (!(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
+    if (perfil === "treinando") {
+      // Valida se o treinando realmente participa da turma — mesma regra do NPS.
+      const [participa] = await pool.query(
+        `SELECT id FROM treinamento_participantes WHERE treinamento_id = ? AND nome = ? LIMIT 1`,
+        [treinamento_id, nomeUsuario]
+      );
+      if (!participa.length) {
+        return res.status(403).json({
+          ok: false,
+          message: "Você só pode responder avaliações de treinamentos em que está participando",
+        });
+      }
+
+      // Uma tentativa por prova/simulado — evita refazer até acertar tudo.
+      const [duplicado] = await pool.query(
+        `SELECT id FROM respostas_avaliativas WHERE material_id = ? AND treinando_nome = ? LIMIT 1`,
+        [material_id, nomeUsuario]
+      );
+      if (duplicado.length) {
+        return res.status(400).json({
+          ok: false,
+          message: "Você já respondeu esta prova/simulado.",
+        });
+      }
     }
 
     await pool.query(
