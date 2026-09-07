@@ -2,11 +2,44 @@ const pool = require("../lib/db");
 
 async function listAvaliacoesTreinandos(req, res) {
   try {
+    const perfil = String(req.user?.perfil || "").toLowerCase();
+    const nomeUsuario = String(req.user?.nome || "").trim();
+    const treinamentoId = req.query?.treinamento_id ? Number(req.query.treinamento_id) : null;
+
     // LEFT JOIN + WHERE (em vez de INNER) preserva o comportamento anterior
     // para respostas cujo treinamento tenha sido excluído, mas isola por
     // tenant quando req.empresaId é real.
-    const tenantWhere = req.empresaId ? "WHERE t.empresa_id = ?" : "";
-    const params = req.empresaId ? [req.empresaId] : [];
+    const wheres = [];
+    const params = [];
+
+    if (req.empresaId) {
+      wheres.push("t.empresa_id = ?");
+      params.push(req.empresaId);
+    }
+
+    // Filtro opcional por turma — usado pela tela turma/[id]/nps para não
+    // precisar trazer o NPS de todas as turmas do tenant só pra mostrar uma.
+    if (treinamentoId) {
+      wheres.push("at.treinamento_id = ?");
+      params.push(treinamentoId);
+    }
+
+    // Bugfix (segurança): este endpoint permite o perfil "treinando" (porque
+    // ele também é usado pra registrar a própria resposta via POST), mas até
+    // aqui o GET só filtrava por tenant — um treinando autenticado recebia,
+    // na resposta, o NPS (nome, comentário e nota) de TODAS as turmas do
+    // cliente, mesmo que a tela só mostre esse dado pra coordenador/
+    // supervisor/instrutor. Agora, pro perfil treinando, a consulta só
+    // retorna as respostas que ele mesmo enviou.
+    if (perfil === "treinando") {
+      if (!nomeUsuario) {
+        return res.status(400).json({ ok: false, message: "Usuário não identificado" });
+      }
+      wheres.push("at.treinando_nome = ?");
+      params.push(nomeUsuario);
+    }
+
+    const whereClause = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
 
     const [rows] = await pool.query(
       `
@@ -22,7 +55,7 @@ async function listAvaliacoesTreinandos(req, res) {
         t.instrutor
       FROM avaliacoes_treinandos at
       LEFT JOIN treinamentos t ON t.id = at.treinamento_id
-      ${tenantWhere}
+      ${whereClause}
       ORDER BY at.id DESC
       `,
       params
