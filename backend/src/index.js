@@ -14,8 +14,11 @@ const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } 
 // de pendências para coordenadores e lembrete de aula do dia seguinte para
 // instrutores. Ver backend/src/jobs/.
 const { iniciarAgendamentos } = require("./jobs/scheduler");
-const { rodarDigestPendencias } = require("./jobs/pendenciasDigest");
+const { rodarDigestPendencias, montarResumoEmpresa } = require("./jobs/pendenciasDigest");
 const { rodarLembretesAula } = require("./jobs/lembretesAula");
+const { rodarCalculoConquistas } = require("./jobs/conquistasJob");
+const { gerarTextoResumo, getResumoCacheadoDoDia } = require("./services/resumoExecutivoService");
+const { listarConquistasTreinando } = require("./services/gamificacaoService");
 
 // Sprint 5: Analytics
 const {
@@ -1021,18 +1024,21 @@ app.get(
             empresaId ? [userName, empresaId] : [userName]
           );
         } else {
-          // Treinando: por email (prioritário) ou por nome
+          // Treinando: por nome — treinamento_participantes não tem coluna
+          // de e-mail (nem nunca teve: a query anterior referenciava
+          // "tp.email" e "tp.status", nenhuma das duas existente no schema
+          // real — DESCRIBE treinamento_participantes só tem
+          // "status_presenca" — o que fazia essa rota quebrar com 500 pra
+          // QUALQUER treinando que a acessasse. Corrigido junto da Fase 3
+          // ao testar "Minhas Turmas"/"Minhas Conquistas" ponta a ponta.
           [rows] = await pool.query(
-            `SELECT DISTINCT t.*, tp.status AS status_participante
+            `SELECT DISTINCT t.*, tp.status_presenca AS status_participante
              FROM treinamentos t
              JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
-             WHERE (
-               (tp.email IS NOT NULL AND tp.email != '' AND LOWER(tp.email) = LOWER(?))
-               OR LOWER(tp.nome) = LOWER(?)
-             )
+             WHERE LOWER(tp.nome) = LOWER(?)
              ${empresaId ? "AND t.empresa_id = ?" : ""}
              ORDER BY t.id DESC`,
-            empresaId ? [userEmail, userName, empresaId] : [userEmail, userName]
+            empresaId ? [userName, empresaId] : [userName]
           );
         }
       }
@@ -1193,6 +1199,72 @@ app.post(
     } catch (error) {
       console.error("Erro ao rodar lembretes de aula:", error);
       return res.status(500).json({ ok: false, message: "Erro ao rodar os lembretes de aula.", error: error.message });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/jobs/rodar-conquistas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  async (req, res) => {
+    try {
+      const resultado = await rodarCalculoConquistas();
+      return res.json({ ok: true, resultado });
+    } catch (error) {
+      console.error("Erro ao calcular conquistas:", error);
+      return res.status(500).json({ ok: false, message: "Erro ao calcular conquistas.", error: error.message });
+    }
+  }
+);
+
+// Fase 3 — "Minhas Conquistas" (gamificação de treinando, sem custo/sem IA
+// — ver services/gamificacaoService.js). Qualquer perfil autenticado pode
+// consultar; o nome usado é sempre o do próprio usuário logado (mesmo
+// auto-escopo de "minhas-turmas"), exceto coordenador/supervisor, que pode
+// consultar qualquer treinando via ?nome= (visão gerencial).
+app.get("/api/minhas-conquistas", authRequired, async (req, res) => {
+  try {
+    const perfil = String(req.user?.perfil || "").toLowerCase();
+    const podeConsultarOutro = ["coordenador", "supervisor", "superintendente"].includes(perfil);
+    const nome = (podeConsultarOutro && req.query.nome) ? req.query.nome : req.user?.nome;
+
+    if (!nome) {
+      return res.status(400).json({ message: "Nome do treinando não informado." });
+    }
+
+    const conquistas = await listarConquistasTreinando(req.empresaId || null, nome);
+    return res.json({ nome, conquistas });
+  } catch (error) {
+    console.error("Erro ao buscar conquistas:", error);
+    return res.status(500).json({ message: "Erro ao buscar conquistas." });
+  }
+});
+
+// Fase 3 — "resumo executivo automático" do Dashboard (bloco Oceano). Sem
+// IA/LLM (decisão do Ramon: "vamos seguir sem custo por enquanto") — texto
+// fixo por template, ver services/resumoExecutivoService.js. Normalmente
+// serve o resumo já cacheado pelo job das 07h (jobs/pendenciasDigest.js);
+// se ainda não houver cache para hoje, gera na hora (sem cachear) para a
+// tela nunca ficar vazia. Mesmas roles do Dashboard/resumo de desempenho.
+app.get(
+  "/api/dashboard/resumo-executivo",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  async (req, res) => {
+    try {
+      const empresaId = req.empresaId || null;
+      const cacheado = await getResumoCacheadoDoDia(empresaId);
+      if (cacheado) {
+        return res.json({ texto: cacheado.texto, gerado_em: cacheado.gerado_em, cache: true });
+      }
+
+      const resumo = await montarResumoEmpresa(empresaId);
+      const texto = gerarTextoResumo(resumo);
+      return res.json({ texto, gerado_em: new Date().toISOString(), cache: false });
+    } catch (error) {
+      console.error("Erro ao buscar resumo executivo:", error);
+      return res.status(500).json({ message: "Erro ao buscar o resumo executivo." });
     }
   }
 );
