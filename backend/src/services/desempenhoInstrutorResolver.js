@@ -271,12 +271,13 @@ async function getFrequenciaPorInstrutor({ instrutores, meses, empresaId }) {
 }
 
 // Pesos do índice geral — ver ressalva (2) no topo do arquivo sobre por que
-// avaliação fica de fora da conta. Combinado com o Ramon em 07/09/2026 que
-// frequência deve pesar mais que os demais; NPS entra com o peso restante.
-// Ajustável aqui caso a proporção mude — não é lançamento de dado, é
-// constante do código, igual às faixas de ocupação em capacidadeResolver.
-const PESO_FREQUENCIA = 0.65;
-const PESO_NPS = 0.35;
+// avaliação fica de fora da conta. Ajustado com o Ramon em 07/09/2026 (o
+// índice geral ainda não é muito usado por enquanto, então frequência pesa
+// bem mais que NPS). Ajustável aqui caso a proporção mude — não é
+// lançamento de dado, é constante do código, igual às faixas de ocupação em
+// capacidadeResolver.
+const PESO_FREQUENCIA = 0.9;
+const PESO_NPS = 0.1;
 
 function calcularIndiceGeral({ frequenciaPct, npsScore }) {
   const partes = [];
