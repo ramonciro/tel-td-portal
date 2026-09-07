@@ -1,4 +1,4 @@
-const express = require("express");
+ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 
@@ -38,7 +38,10 @@ const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
 // FIX 1: importar a rota de jornada-participantes (estava faltando)
 const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
-const { getDesempenho: getDesempenhoInstrutor } = require("./controllers/desempenhoInstrutorController");
+const {
+  getDesempenho: getDesempenhoInstrutor,
+  getDesempenhoExportar,
+} = require("./controllers/desempenhoInstrutorController");
 
 // Sprint 3: Trilhas relacionais, Certificados
 const {
@@ -1097,6 +1100,12 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "superintendente", "instrutor"),
   getDesempenhoInstrutor
+);
+app.get(
+  "/api/desempenho-instrutor/exportar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente", "instrutor"),
+  getDesempenhoExportar
 );
 
 // ── Módulo R&S — import do controller ──────────────────────────────────────
