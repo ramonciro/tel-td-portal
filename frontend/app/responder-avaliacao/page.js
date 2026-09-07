@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
+import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch, getStoredUser } from "../../services/api";
 
@@ -14,13 +16,9 @@ function safeParseQuestoes(raw) {
   }
 }
 
-function formatTreinamentoLabel(material, treinamentos) {
-  const treinamento = treinamentos.find(
-    (item) => String(item.id) === String(material.treinamento_id)
-  );
-
+function formatTreinamentoLabel(material) {
   return `${material.titulo} • ${material.tipo || "material"}${
-    treinamento?.cliente ? ` • ${treinamento.cliente}` : ""
+    material.cliente ? ` • ${material.cliente}` : ""
   }`;
 }
 
@@ -97,9 +95,24 @@ function calcularResultado(materialSelecionado, questoes, respostas) {
   };
 }
 
+// Next.js exige que useSearchParams() fique dentro de um <Suspense> em rota
+// estática (sem isso, o build de produção falha com "useSearchParams()
+// should be wrapped in a suspense boundary") — por isso o componente que lê
+// a URL fica separado, e o export default só envolve ele em Suspense.
 export default function ResponderAvaliacaoPage() {
+  return (
+    <Suspense fallback={<PortalShell><div style={loadingBox}>Carregando avaliações...</div></PortalShell>}>
+      <ResponderAvaliacaoConteudo />
+    </Suspense>
+  );
+}
+
+function ResponderAvaliacaoConteudo() {
+  const searchParams = useSearchParams();
+  const treinamentoIdContexto = searchParams.get("treinamento_id") || "";
+
+  const [user, setUser] = useState(null);
   const [materiais, setMateriais] = useState([]);
-  const [treinamentos, setTreinamentos] = useState([]);
   const [materialId, setMaterialId] = useState("");
   const [treinandoNome, setTreinandoNome] = useState("");
   const [respostas, setRespostas] = useState({});
@@ -109,32 +122,41 @@ export default function ResponderAvaliacaoPage() {
   const [loading, setLoading] = useState(true);
   const [enviando, setEnviando] = useState(false);
 
+  const ehTreinando = String(user?.perfil || "").toLowerCase() === "treinando";
+
   useEffect(() => {
     async function carregar() {
       try {
         setLoading(true);
         setErro("");
 
-        const user = getStoredUser();
-        if (user?.nome) {
-          setTreinandoNome(user.nome);
+        const storedUser = getStoredUser();
+        setUser(storedUser);
+        if (storedUser?.nome) {
+          setTreinandoNome(storedUser.nome);
         }
 
-        const [materiaisData, treinamentosData] = await Promise.all([
-          apiFetch("/materiais-avaliativos").catch(() => []),
-          apiFetch("/treinamentos").catch(() => []),
-        ]);
+        // FIX: antes buscava em /materiais-avaliativos, rota que não autoriza
+        // o perfil "treinando" (403) — a página do próprio treinando nunca
+        // listava nenhuma prova. Agora usa a rota dedicada, que também
+        // restringe às provas dos treinamentos em que ele participa e some
+        // com as que ele já respondeu (uma tentativa por prova).
+        const query = treinamentoIdContexto ? `?treinamento_id=${treinamentoIdContexto}` : "";
+        const materiaisData = await apiFetch(`/materiais-avaliativos-disponiveis${query}`).catch(() => []);
 
         const listaMateriais = Array.isArray(materiaisData) ? materiaisData : [];
-        const listaTreinamentos = Array.isArray(treinamentosData) ? treinamentosData : [];
+        const materiaisComQuestoes = listaMateriais.filter((item) => {
+          const questoes = safeParseQuestoes(item.questoes_json);
+          return questoes.length > 0;
+        });
 
-        setTreinamentos(listaTreinamentos);
-        setMateriais(
-          listaMateriais.filter((item) => {
-            const questoes = safeParseQuestoes(item.questoes_json);
-            return questoes.length > 0;
-          })
-        );
+        setMateriais(materiaisComQuestoes);
+
+        // Veio de um link de turma específica (aba Avaliações) e só há uma
+        // prova pendente ali — seleciona direto, sem exigir mais um clique.
+        if (treinamentoIdContexto && materiaisComQuestoes.length === 1) {
+          setMaterialId(String(materiaisComQuestoes[0].id));
+        }
       } catch (error) {
         setErro(error.message || "Erro ao carregar avaliações.");
       } finally {
@@ -143,21 +165,11 @@ export default function ResponderAvaliacaoPage() {
     }
 
     carregar();
-  }, []);
+  }, [treinamentoIdContexto]);
 
   const materialSelecionado = useMemo(() => {
     return materiais.find((item) => String(item.id) === String(materialId)) || null;
   }, [materiais, materialId]);
-
-  const treinamentoSelecionado = useMemo(() => {
-    if (!materialSelecionado) return null;
-
-    return (
-      treinamentos.find(
-        (item) => String(item.id) === String(materialSelecionado.treinamento_id)
-      ) || null
-    );
-  }, [materialSelecionado, treinamentos]);
 
   const questoes = useMemo(() => {
     return materialSelecionado ? safeParseQuestoes(materialSelecionado.questoes_json) : [];
@@ -239,10 +251,15 @@ export default function ResponderAvaliacaoPage() {
   }
 
   return (
-    <PortalShell
-      title="Responder Avaliação"
-      subtitle="Página separada para o treinando realizar provas e simulados no portal."
-    >
+    <PortalShell>
+      <div style={{ marginBottom: 20 }}>
+        <PageHero
+          eyebrow="Portal T&D · Avaliação"
+          title="Responder Avaliação"
+          subtitle="Realize a prova ou simulado da sua turma diretamente pelo portal."
+        />
+      </div>
+
       {loading ? (
         <div style={loadingBox}>Carregando avaliações...</div>
       ) : (
@@ -250,65 +267,79 @@ export default function ResponderAvaliacaoPage() {
           {erro ? <div style={errorBox}>{erro}</div> : null}
           {sucesso ? <div style={successBox}>{sucesso}</div> : null}
 
-          <SectionCard
-            title="Selecionar prova ou simulado"
-            subtitle="Escolha o material avaliativo e informe o treinando."
-          >
-            <div style={formGrid}>
-              <div style={fieldWrap}>
-                <label style={label}>Treinando</label>
-                <input
-                  style={input}
-                  value={treinandoNome}
-                  onChange={(e) => setTreinandoNome(e.target.value)}
-                  placeholder="Nome do treinando"
-                />
+          {materiais.length === 0 ? (
+            <SectionCard
+              title="Nenhuma prova pendente"
+              subtitle="Não há prova ou simulado aguardando sua resposta no momento."
+            >
+              <div style={materialDescription}>
+                Se você já respondeu a prova desta turma, ela some da lista automaticamente — só é
+                permitida uma tentativa por prova/simulado. Se acha que isso é um engano, fale com
+                o instrutor ou coordenador da turma.
               </div>
-
-              <div style={fieldWrap}>
-                <label style={label}>Material</label>
-                <select
-                  style={input}
-                  value={materialId}
-                  onChange={(e) => {
-                    setMaterialId(e.target.value);
-                    setRespostas({});
-                    setResultado(null);
-                    setErro("");
-                    setSucesso("");
-                  }}
-                >
-                  <option value="">Selecione uma prova/simulado</option>
-                  {materiais.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {formatTreinamentoLabel(item, treinamentos)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {materialSelecionado ? (
-              <div style={materialInfo}>
-                <div style={materialTitle}>{materialSelecionado.titulo}</div>
-                <div style={materialMeta}>
-                  Tipo: {materialSelecionado.tipo || "-"} • Nota máxima:{" "}
-                  {Number(materialSelecionado.nota_maxima ?? 0).toFixed(2)} •{" "}
-                  {questoes.length} questão(ões)
+            </SectionCard>
+          ) : (
+            <SectionCard
+              title="Selecionar prova ou simulado"
+              subtitle="Escolha o material avaliativo e confirme o treinando."
+            >
+              <div style={formGrid}>
+                <div style={fieldWrap}>
+                  <label style={label}>Treinando</label>
+                  <input
+                    style={input}
+                    value={treinandoNome}
+                    onChange={(e) => setTreinandoNome(e.target.value)}
+                    placeholder="Nome do treinando"
+                    disabled={ehTreinando}
+                  />
                 </div>
 
-                {treinamentoSelecionado ? (
-                  <div style={materialDescription}>
-                    Treinamento vinculado: {treinamentoSelecionado.tema || "-"}
-                  </div>
-                ) : null}
-
-                {materialSelecionado.descricao ? (
-                  <div style={materialDescription}>{materialSelecionado.descricao}</div>
-                ) : null}
+                <div style={fieldWrap}>
+                  <label style={label}>Material</label>
+                  <select
+                    style={input}
+                    value={materialId}
+                    onChange={(e) => {
+                      setMaterialId(e.target.value);
+                      setRespostas({});
+                      setResultado(null);
+                      setErro("");
+                      setSucesso("");
+                    }}
+                  >
+                    <option value="">Selecione uma prova/simulado</option>
+                    {materiais.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {formatTreinamentoLabel(item)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            ) : null}
-          </SectionCard>
+
+              {materialSelecionado ? (
+                <div style={materialInfo}>
+                  <div style={materialTitle}>{materialSelecionado.titulo}</div>
+                  <div style={materialMeta}>
+                    Tipo: {materialSelecionado.tipo || "-"} • Nota máxima:{" "}
+                    {Number(materialSelecionado.nota_maxima ?? 0).toFixed(2)} •{" "}
+                    {questoes.length} questão(ões)
+                  </div>
+
+                  {materialSelecionado.tema ? (
+                    <div style={materialDescription}>
+                      Treinamento vinculado: {materialSelecionado.tema}
+                    </div>
+                  ) : null}
+
+                  {materialSelecionado.descricao ? (
+                    <div style={materialDescription}>{materialSelecionado.descricao}</div>
+                  ) : null}
+                </div>
+              ) : null}
+            </SectionCard>
+          )}
 
           {materialSelecionado ? (
             <SectionCard
