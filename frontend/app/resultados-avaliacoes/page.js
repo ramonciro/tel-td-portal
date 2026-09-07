@@ -1,454 +1,507 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import PortalShell from "../../components/PortalShell";
-import PageHero from "../../components/PageHero";
+import { useEffect, useMemo, useState } from "react";
 import SectionCard from "../../components/SectionCard";
-import { apiFetch, getStoredUser } from "../../services/api";
+import StatCard from "../../components/StatCard";
+import PortalShell from "../../components/PortalShell";
+import { apiFetch } from "../../services/api";
 
-function safeParseQuestoes(raw) {
-  try {
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function fmt(n) {
+  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
-function formatTreinamentoLabel(material) {
-  return `${material.titulo} • ${material.tipo || "material"}${
-    material.cliente ? ` • ${material.cliente}` : ""
-  }`;
+function avg(arr, field) {
+  if (!arr.length) return 0;
+  const total = arr.reduce((acc, item) => acc + Number(item?.[field] || 0), 0);
+  return total / arr.length;
 }
 
-function normalizarAlternativa(valor) {
-  if (valor === null || valor === undefined) return "";
-
-  const texto = String(valor).trim().toUpperCase();
-
-  if (!texto) return "";
-
-  if (["A", "B", "C", "D"].includes(texto)) return texto;
-
-  const matchLetra = texto.match(/\b([ABCD])\b/);
-  if (matchLetra) return matchLetra[1];
-
-  if (texto.startsWith("ALTERNATIVA A")) return "A";
-  if (texto.startsWith("ALTERNATIVA B")) return "B";
-  if (texto.startsWith("ALTERNATIVA C")) return "C";
-  if (texto.startsWith("ALTERNATIVA D")) return "D";
-
-  if (texto.startsWith("A)")) return "A";
-  if (texto.startsWith("B)")) return "B";
-  if (texto.startsWith("C)")) return "C";
-  if (texto.startsWith("D)")) return "D";
-
-  return "";
+function getNotaFinal(item) {
+  return Number(item?.nota_final || 0);
 }
 
-function obterRespostaCorreta(questao) {
-  const possiveisCampos = [
-    questao?.resposta_correta,
-    questao?.gabarito,
-    questao?.correta,
-    questao?.alternativa_correta,
-    questao?.resposta,
-  ];
-
-  for (const valor of possiveisCampos) {
-    const normalizada = normalizarAlternativa(valor);
-    if (normalizada) return normalizada;
-  }
-
-  return "";
+function classificarResultado(item) {
+  const nota = getNotaFinal(item);
+  if (nota >= 8) return "Aprovado";
+  if (nota >= 6) return "Atenção";
+  return "Reforço";
 }
 
-function calcularResultado(materialSelecionado, questoes, respostas) {
-  const totalQuestoes = questoes.length;
-
-  let acertos = 0;
-
-  questoes.forEach((questao, index) => {
-    const respostaMarcada = normalizarAlternativa(respostas[index]);
-    const respostaCorreta = obterRespostaCorreta(questao);
-
-    if (respostaMarcada && respostaCorreta && respostaMarcada === respostaCorreta) {
-      acertos += 1;
-    }
-  });
-
-  const percentual =
-    totalQuestoes > 0 ? Number(((acertos / totalQuestoes) * 100).toFixed(2)) : 0;
-
-  const notaMaxima = Number(materialSelecionado?.nota_maxima || 0);
-  const notaFinal =
-    totalQuestoes > 0
-      ? Number(((acertos / totalQuestoes) * notaMaxima).toFixed(2))
-      : 0;
-
-  return {
-    acertos,
-    total_questoes: totalQuestoes,
-    percentual,
-    nota_final: notaFinal,
+function badgeClassificacao(label) {
+  const base = {
+    display: "inline-block",
+    padding: "5px 9px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 11,
   };
+
+  if (label === "Aprovado") {
+    return { ...base, background: "#dcfce7", color: "#166534" };
+  }
+
+  if (label === "Atenção") {
+    return { ...base, background: "#fff7ed", color: "#c2410c" };
+  }
+
+  return { ...base, background: "#fee2e2", color: "#b91c1c" };
 }
 
-// Next.js exige que useSearchParams() fique dentro de um <Suspense> em rota
-// estática (sem isso, o build de produção falha com "useSearchParams()
-// should be wrapped in a suspense boundary") — por isso o componente que lê
-// a URL fica separado, e o export default só envolve ele em Suspense.
-export default function ResponderAvaliacaoPage() {
-  return (
-    <Suspense fallback={<PortalShell><div style={loadingBox}>Carregando avaliações...</div></PortalShell>}>
-      <ResponderAvaliacaoConteudo />
-    </Suspense>
+function getTreinamento(item, treinamentos) {
+  return treinamentos.find(
+    (t) => String(t.id) === String(item.treinamento_id)
   );
 }
 
-function ResponderAvaliacaoConteudo() {
-  const searchParams = useSearchParams();
-  const treinamentoIdContexto = searchParams.get("treinamento_id") || "";
+function getMaterial(item, materiais) {
+  return materiais.find(
+    (m) => String(m.id) === String(item.material_id)
+  );
+}
 
-  const [user, setUser] = useState(null);
+export default function ResultadosDasAvaliacoesPage() {
+  const [treinamentos, setTreinamentos] = useState([]);
   const [materiais, setMateriais] = useState([]);
-  const [materialId, setMaterialId] = useState("");
-  const [treinandoNome, setTreinandoNome] = useState("");
-  const [respostas, setRespostas] = useState({});
+  const [respostas, setRespostas] = useState([]);
   const [erro, setErro] = useState("");
-  const [sucesso, setSucesso] = useState("");
-  const [resultado, setResultado] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [enviando, setEnviando] = useState(false);
 
-  const ehTreinando = String(user?.perfil || "").toLowerCase() === "treinando";
+  const [filtroCliente, setFiltroCliente] = useState("todos");
+  const [filtroTreinamento, setFiltroTreinamento] = useState("todos");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     async function carregar() {
       try {
-        setLoading(true);
         setErro("");
+        setLoading(true);
 
-        const storedUser = getStoredUser();
-        setUser(storedUser);
-        if (storedUser?.nome) {
-          setTreinandoNome(storedUser.nome);
-        }
+        // FIX (07/09): esta tela lê nota_final/percentual/acertos/total_questoes/
+        // material_id — campos que existem na tabela/endpoint respostas_avaliativas,
+        // não em /avaliacoes (tabela diferente, com nota_prova/nota_qualidade/nota_nps).
+        // Chamar /avaliacoes fazia todo treinando aparecer com nota zero.
+        const [treinamentosData, materiaisData, respostasData] = await Promise.all([
+          apiFetch("/treinamentos").catch(() => []),
+          apiFetch("/materiais-avaliativos").catch(() => []),
+          apiFetch("/respostas-avaliativas").catch(() => []),
+        ]);
 
-        // FIX: antes buscava em /materiais-avaliativos, rota que não autoriza
-        // o perfil "treinando" (403) — a página do próprio treinando nunca
-        // listava nenhuma prova. Agora usa a rota dedicada, que também
-        // restringe às provas dos treinamentos em que ele participa e some
-        // com as que ele já respondeu (uma tentativa por prova).
-        const query = treinamentoIdContexto ? `?treinamento_id=${treinamentoIdContexto}` : "";
-        const materiaisData = await apiFetch(`/materiais-avaliativos-disponiveis${query}`).catch(() => []);
-
-        const listaMateriais = Array.isArray(materiaisData) ? materiaisData : [];
-        const materiaisComQuestoes = listaMateriais.filter((item) => {
-          const questoes = safeParseQuestoes(item.questoes_json);
-          return questoes.length > 0;
-        });
-
-        setMateriais(materiaisComQuestoes);
-
-        // Veio de um link de turma específica (aba Avaliações) e só há uma
-        // prova pendente ali — seleciona direto, sem exigir mais um clique.
-        if (treinamentoIdContexto && materiaisComQuestoes.length === 1) {
-          setMaterialId(String(materiaisComQuestoes[0].id));
-        }
+        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
+        setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
+        setRespostas(Array.isArray(respostasData) ? respostasData : []);
       } catch (error) {
-        setErro(error.message || "Erro ao carregar avaliações.");
+        setErro(error.message || "Erro ao carregar resultados das avaliações.");
       } finally {
         setLoading(false);
       }
     }
 
     carregar();
-  }, [treinamentoIdContexto]);
+  }, []);
 
-  const materialSelecionado = useMemo(() => {
-    return materiais.find((item) => String(item.id) === String(materialId)) || null;
-  }, [materiais, materialId]);
+  const clienteOptions = useMemo(() => {
+    const lista = [...new Set(
+      treinamentos.map((item) => item.cliente).filter(Boolean)
+    )];
+    return lista.sort((a, b) => String(a).localeCompare(String(b)));
+  }, [treinamentos]);
 
-  const questoes = useMemo(() => {
-    return materialSelecionado ? safeParseQuestoes(materialSelecionado.questoes_json) : [];
-  }, [materialSelecionado]);
-
-  function selecionarResposta(index, alternativa) {
-    setRespostas((prev) => ({
-      ...prev,
-      [index]: alternativa,
+  const treinamentoOptions = useMemo(() => {
+    const lista = treinamentos.map((item) => ({
+      value: String(item.id),
+      label: `${item.tema || "Treinamento"}${item.cliente ? ` - ${item.cliente}` : ""}`,
     }));
-  }
 
-  async function enviarRespostas() {
-    try {
-      setErro("");
-      setSucesso("");
-      setResultado(null);
+    return lista.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  }, [treinamentos]);
 
-      if (!materialSelecionado) {
-        setErro("Selecione uma prova ou simulado.");
-        return;
+  const baseFiltrada = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+
+    return respostas.filter((item) => {
+      const treinamento = getTreinamento(item, treinamentos);
+      const material = getMaterial(item, materiais);
+      const status = classificarResultado(item);
+
+      const matchCliente =
+        filtroCliente === "todos" ||
+        String(treinamento?.cliente || "") === filtroCliente;
+
+      const matchTreinamento =
+        filtroTreinamento === "todos" ||
+        String(item.treinamento_id) === filtroTreinamento;
+
+      const matchStatus =
+        filtroStatus === "todos" ||
+        status === filtroStatus;
+
+      const alvoBusca = [
+        item.treinando_nome,
+        material?.titulo,
+        treinamento?.tema,
+        treinamento?.cliente,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchBusca = !termo || alvoBusca.includes(termo);
+
+      return matchCliente && matchTreinamento && matchStatus && matchBusca;
+    });
+  }, [
+    respostas,
+    treinamentos,
+    materiais,
+    filtroCliente,
+    filtroTreinamento,
+    filtroStatus,
+    busca,
+  ]);
+
+  const kpis = useMemo(() => {
+    const totalRespostas = baseFiltrada.length;
+    const mediaAcertos = avg(baseFiltrada, "acertos").toFixed(1);
+    const mediaPercentual = avg(baseFiltrada, "percentual").toFixed(1);
+    const mediaNotaFinal = avg(baseFiltrada, "nota_final").toFixed(1);
+
+    const aprovados = baseFiltrada.filter(
+      (item) => classificarResultado(item) === "Aprovado"
+    ).length;
+
+    const atencao = baseFiltrada.filter(
+      (item) => classificarResultado(item) === "Atenção"
+    ).length;
+
+    const reforco = baseFiltrada.filter(
+      (item) => classificarResultado(item) === "Reforço"
+    ).length;
+
+    const porProvaMap = {};
+    const porTurmaMap = {};
+
+    baseFiltrada.forEach((item) => {
+      const treinamento = getTreinamento(item, treinamentos);
+      const material = getMaterial(item, materiais);
+
+      const chaveProva = String(item.material_id || "sem-material");
+      const chaveTurma = String(item.treinamento_id || "sem-treinamento");
+
+      if (!porProvaMap[chaveProva]) {
+        porProvaMap[chaveProva] = {
+          titulo: material?.titulo || `Material #${item.material_id || "-"}`,
+          total: 0,
+          somaNota: 0,
+          somaPercentual: 0,
+        };
       }
 
-      if (!materialSelecionado.treinamento_id) {
-        setErro("Este material não está vinculado a um treinamento.");
-        return;
+      porProvaMap[chaveProva].total += 1;
+      porProvaMap[chaveProva].somaNota += Number(item.nota_final || 0);
+      porProvaMap[chaveProva].somaPercentual += Number(item.percentual || 0);
+
+      if (!porTurmaMap[chaveTurma]) {
+        porTurmaMap[chaveTurma] = {
+          turma: treinamento?.tema || `Turma #${item.treinamento_id || "-"}`,
+          total: 0,
+          somaNota: 0,
+          somaPercentual: 0,
+        };
       }
 
-      if (!treinandoNome || !String(treinandoNome).trim()) {
-        setErro("Informe o nome do treinando.");
-        return;
-      }
+      porTurmaMap[chaveTurma].total += 1;
+      porTurmaMap[chaveTurma].somaNota += Number(item.nota_final || 0);
+      porTurmaMap[chaveTurma].somaPercentual += Number(item.percentual || 0);
+    });
 
-      if (!questoes.length) {
-        setErro("Este material não possui questões cadastradas.");
-        return;
-      }
+    const rankingProva = Object.values(porProvaMap)
+      .map((item) => ({
+        ...item,
+        mediaNota: item.total ? (item.somaNota / item.total).toFixed(1) : "0.0",
+        mediaPercentual: item.total
+          ? (item.somaPercentual / item.total).toFixed(1)
+          : "0.0",
+      }))
+      .sort((a, b) => Number(b.mediaNota) - Number(a.mediaNota));
 
-      const totalRespondidas = Object.keys(respostas).length;
+    const rankingTurma = Object.values(porTurmaMap)
+      .map((item) => ({
+        ...item,
+        mediaNota: item.total ? (item.somaNota / item.total).toFixed(1) : "0.0",
+        mediaPercentual: item.total
+          ? (item.somaPercentual / item.total).toFixed(1)
+          : "0.0",
+      }))
+      .sort((a, b) => Number(b.mediaNota) - Number(a.mediaNota));
 
-      if (totalRespondidas < questoes.length) {
-        setErro("Responda todas as questões antes de enviar.");
-        return;
-      }
-
-      const calculo = calcularResultado(materialSelecionado, questoes, respostas);
-
-      const payload = {
-        material_id: Number(materialSelecionado.id),
-        treinamento_id: Number(materialSelecionado.treinamento_id),
-        treinando_nome: String(treinandoNome).trim(),
-        respostas_json: JSON.stringify(respostas),
-        acertos: calculo.acertos,
-        total_questoes: calculo.total_questoes,
-        percentual: calculo.percentual,
-        nota_final: calculo.nota_final,
-      };
-
-      setEnviando(true);
-
-      const response = await apiFetch("/respostas-avaliativas", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-
-      setResultado({
-        acertos: response?.acertos ?? calculo.acertos,
-        total_questoes: response?.total_questoes ?? calculo.total_questoes,
-        percentual: response?.percentual ?? calculo.percentual,
-        nota_final: response?.nota_final ?? calculo.nota_final,
-      });
-
-      setSucesso("Respostas enviadas com sucesso.");
-    } catch (error) {
-      setErro(error.message || "Erro ao enviar respostas.");
-    } finally {
-      setEnviando(false);
-    }
-  }
+    return {
+      totalRespostas,
+      mediaAcertos,
+      mediaPercentual,
+      mediaNotaFinal,
+      aprovados,
+      atencao,
+      reforco,
+      rankingProva,
+      rankingTurma,
+    };
+  }, [baseFiltrada, treinamentos, materiais]);
 
   return (
-    <PortalShell>
-      <div style={{ marginBottom: 20 }}>
-        <PageHero
-          eyebrow="Portal T&D · Avaliação"
-          title="Responder Avaliação"
-          subtitle="Realize a prova ou simulado da sua turma diretamente pelo portal."
-        />
-      </div>
-
+    <PortalShell
+      title="Resultados das Avaliações"
+      subtitle="Consolidado dos resultados de provas e simulados com leitura prática do desempenho."
+    >
       {loading ? (
-        <div style={loadingBox}>Carregando avaliações...</div>
+        <div style={loadingBox}>Carregando resultados...</div>
+      ) : erro ? (
+        <div style={errorBox}>{erro}</div>
       ) : (
-        <div style={{ display: "grid", gap: 16 }}>
-          {erro ? <div style={errorBox}>{erro}</div> : null}
-          {sucesso ? <div style={successBox}>{sucesso}</div> : null}
-
-          {materiais.length === 0 ? (
-            <SectionCard
-              title="Nenhuma prova pendente"
-              subtitle="Não há prova ou simulado aguardando sua resposta no momento."
-            >
-              <div style={materialDescription}>
-                Se você já respondeu a prova desta turma, ela some da lista automaticamente — só é
-                permitida uma tentativa por prova/simulado. Se acha que isso é um engano, fale com
-                o instrutor ou coordenador da turma.
-              </div>
-            </SectionCard>
-          ) : (
-            <SectionCard
-              title="Selecionar prova ou simulado"
-              subtitle="Escolha o material avaliativo e confirme o treinando."
-            >
-              <div style={formGrid}>
-                <div style={fieldWrap}>
-                  <label style={label}>Treinando</label>
-                  <input
-                    style={input}
-                    value={treinandoNome}
-                    onChange={(e) => setTreinandoNome(e.target.value)}
-                    placeholder="Nome do treinando"
-                    disabled={ehTreinando}
-                  />
-                </div>
-
-                <div style={fieldWrap}>
-                  <label style={label}>Material</label>
-                  <select
-                    style={input}
-                    value={materialId}
-                    onChange={(e) => {
-                      setMaterialId(e.target.value);
-                      setRespostas({});
-                      setResultado(null);
-                      setErro("");
-                      setSucesso("");
-                    }}
-                  >
-                    <option value="">Selecione uma prova/simulado</option>
-                    {materiais.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {formatTreinamentoLabel(item)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {materialSelecionado ? (
-                <div style={materialInfo}>
-                  <div style={materialTitle}>{materialSelecionado.titulo}</div>
-                  <div style={materialMeta}>
-                    Tipo: {materialSelecionado.tipo || "-"} • Nota máxima:{" "}
-                    {Number(materialSelecionado.nota_maxima ?? 0).toFixed(2)} •{" "}
-                    {questoes.length} questão(ões)
-                  </div>
-
-                  {materialSelecionado.tema ? (
-                    <div style={materialDescription}>
-                      Treinamento vinculado: {materialSelecionado.tema}
-                    </div>
-                  ) : null}
-
-                  {materialSelecionado.descricao ? (
-                    <div style={materialDescription}>{materialSelecionado.descricao}</div>
-                  ) : null}
-                </div>
-              ) : null}
-            </SectionCard>
-          )}
-
-          {materialSelecionado ? (
-            <SectionCard
-              title="Responder questões"
-              subtitle="Marque uma alternativa por questão e envie ao final."
-            >
-              <div style={questionsGrid}>
-                {questoes.map((questao, index) => (
-                  <div key={index} style={questionCard}>
-                    <div style={questionTitle}>
-                      {index + 1}. {questao.enunciado || "Questão sem enunciado"}
-                    </div>
-
-                    <div style={optionsGrid}>
-                      {["A", "B", "C", "D"].map((letra) => {
-                        const texto = questao[`alternativa_${letra.toLowerCase()}`];
-
-                        return (
-                          <label key={letra} style={optionItem}>
-                            <input
-                              type="radio"
-                              name={`questao-${index}`}
-                              value={letra}
-                              checked={respostas[index] === letra}
-                              onChange={() => selecionarResposta(index, letra)}
-                            />
-                            <span style={{ marginLeft: 8 }}>
-                              <strong>{letra})</strong> {texto || "-"}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ marginTop: 16 }}>
-                <button
-                  type="button"
-                  style={btnPrimary}
-                  onClick={enviarRespostas}
-                  disabled={enviando}
+        <div style={{ display: "grid", gap: 14 }}>
+          <SectionCard
+            title="Filtros"
+            subtitle="Refine a visualização por cliente, turma, status ou busca."
+          >
+            <div style={filtersGrid}>
+              <div style={fieldWrap}>
+                <label style={label}>Cliente</label>
+                <select
+                  value={filtroCliente}
+                  onChange={(e) => setFiltroCliente(e.target.value)}
+                  style={input}
                 >
-                  {enviando ? "Enviando..." : "Enviar respostas"}
-                </button>
+                  <option value="todos">Todos</option>
+                  {clienteOptions.map((cliente) => (
+                    <option key={cliente} value={cliente}>
+                      {cliente}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </SectionCard>
-          ) : null}
 
-          {resultado ? (
+              <div style={fieldWrap}>
+                <label style={label}>Turma</label>
+                <select
+                  value={filtroTreinamento}
+                  onChange={(e) => setFiltroTreinamento(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todas</option>
+                  {treinamentoOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Status</label>
+                <select
+                  value={filtroStatus}
+                  onChange={(e) => setFiltroStatus(e.target.value)}
+                  style={input}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="Aprovado">Aprovado</option>
+                  <option value="Atenção">Atenção</option>
+                  <option value="Reforço">Reforço</option>
+                </select>
+              </div>
+
+              <div style={fieldWrap}>
+                <label style={label}>Busca</label>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar por treinando, prova, turma ou cliente"
+                  style={input}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                style={btnSecundario}
+                onClick={() => {
+                  setFiltroCliente("todos");
+                  setFiltroTreinamento("todos");
+                  setFiltroStatus("todos");
+                  setBusca("");
+                }}
+              >
+                Limpar filtros
+              </button>
+            </div>
+          </SectionCard>
+
+          <div style={heroGrid}>
+            <StatCard
+              title="Respostas"
+              value={fmt(kpis.totalRespostas)}
+              subtitle="Envios realizados"
+              accent="#2563eb"
+            />
+            <StatCard
+              title="Média de acertos"
+              value={kpis.mediaAcertos}
+              subtitle="Acertos por tentativa"
+              accent="#0891b2"
+            />
+            <StatCard
+              title="Média percentual"
+              value={`${kpis.mediaPercentual}%`}
+              subtitle="Taxa média de acerto"
+              accent="#06b6d4"
+            />
+            <StatCard
+              title="Média nota final"
+              value={kpis.mediaNotaFinal}
+              subtitle="Nota média das avaliações"
+              accent="#7c3aed"
+            />
+          </div>
+
+          <div style={heroGrid}>
+            <StatCard
+              title="Aprovados"
+              value={fmt(kpis.aprovados)}
+              subtitle="Nota final ≥ 8"
+              accent="#16a34a"
+            />
+            <StatCard
+              title="Atenção"
+              value={fmt(kpis.atencao)}
+              subtitle="Nota entre 6 e 7,9"
+              accent="#f59e0b"
+            />
+            <StatCard
+              title="Reforço"
+              value={fmt(kpis.reforco)}
+              subtitle="Nota abaixo de 6"
+              accent="#b91c1c"
+            />
+            <StatCard
+              title="Base filtrada"
+              value={fmt(baseFiltrada.length)}
+              subtitle="Registros considerados"
+              accent="#475569"
+            />
+          </div>
+
+          <div style={twoCol}>
             <SectionCard
-              title="Resultado da avaliação"
-              subtitle="Resumo do desempenho calculado automaticamente pelo portal."
+              title="Ranking por prova"
+              subtitle="Média de nota e percentual por material aplicado."
             >
-              <div style={resultGrid}>
-                <div style={resultCard}>
-                  <span style={resultLabel}>Acertos</span>
-                  <strong style={resultValue}>
-                    {resultado.acertos}/{resultado.total_questoes}
-                  </strong>
-                </div>
-
-                <div style={resultCard}>
-                  <span style={resultLabel}>Percentual</span>
-                  <strong style={resultValue}>{resultado.percentual}%</strong>
-                </div>
-
-                <div style={resultCard}>
-                  <span style={resultLabel}>Nota final</span>
-                  <strong style={resultValue}>{resultado.nota_final}</strong>
-                </div>
+              <div style={listGrid}>
+                {kpis.rankingProva.length ? (
+                  kpis.rankingProva.slice(0, 8).map((item) => (
+                    <div key={item.titulo} style={listItem}>
+                      <div style={itemTitle}>{item.titulo}</div>
+                      <div style={itemMeta}>
+                        {fmt(item.total)} resposta(s) • {item.mediaPercentual}% média de acerto
+                      </div>
+                      <div style={itemBadgeBlue}>{item.mediaNota}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={emptyText}>Nenhuma prova respondida ainda.</div>
+                )}
               </div>
             </SectionCard>
-          ) : null}
+
+            <SectionCard
+              title="Ranking por turma"
+              subtitle="Desempenho consolidado por turma."
+            >
+              <div style={listGrid}>
+                {kpis.rankingTurma.length ? (
+                  kpis.rankingTurma.slice(0, 8).map((item) => (
+                    <div key={item.turma} style={listItem}>
+                      <div style={itemTitle}>{item.turma}</div>
+                      <div style={itemMeta}>
+                        {fmt(item.total)} resposta(s) • {item.mediaPercentual}% média de acerto
+                      </div>
+                      <div style={itemBadgePurple}>{item.mediaNota}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={emptyText}>Nenhuma turma com respostas ainda.</div>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+
+          <SectionCard
+            title="Base detalhada de respostas"
+            subtitle="Visão individual do desempenho dos treinandos."
+          >
+            {baseFiltrada.length ? (
+              <div style={{ overflowX: "auto" }}>
+                <table style={table}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Treinando</th>
+                      <th style={th}>Prova</th>
+                      <th style={th}>Turma</th>
+                      <th style={th}>Acertos</th>
+                      <th style={th}>Percentual</th>
+                      <th style={th}>Nota</th>
+                      <th style={th}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {baseFiltrada.map((item) => {
+                      const treinamento = getTreinamento(item, treinamentos);
+                      const material = getMaterial(item, materiais);
+                      const status = classificarResultado(item);
+
+                      return (
+                        <tr key={item.id}>
+                          <td style={td}>{item.treinando_nome || "-"}</td>
+                          <td style={td}>{material?.titulo || `Material #${item.material_id || "-"}`}</td>
+                          <td style={td}>{treinamento?.tema || "-"}</td>
+                          <td style={td}>
+                            {fmt(item.acertos || 0)}/{fmt(item.total_questoes || 0)}
+                          </td>
+                          <td style={td}>{Number(item.percentual || 0).toFixed(1)}%</td>
+                          <td style={td}>{Number(item.nota_final || 0).toFixed(1)}</td>
+                          <td style={td}>
+                            <span style={badgeClassificacao(status)}>{status}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={emptyText}>Nenhuma resposta registrada para os filtros aplicados.</div>
+            )}
+          </SectionCard>
         </div>
       )}
     </PortalShell>
   );
 }
 
-const loadingBox = {
-  background: "#fff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 16,
-  padding: 18,
-  color: "#475569",
-  fontWeight: 700,
+const heroGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
 };
 
-const errorBox = {
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
+const twoCol = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 14,
 };
 
-const successBox = {
-  background: "#f0fdf4",
-  border: "1px solid #bbf7d0",
-  color: "#166534",
-  borderRadius: 14,
-  padding: 12,
-  fontWeight: 700,
-};
-
-const formGrid = {
+const filtersGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: 12,
@@ -478,95 +531,102 @@ const input = {
   boxSizing: "border-box",
 };
 
-const materialInfo = {
-  marginTop: 16,
-  padding: 14,
-  borderRadius: 14,
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-};
-
-const materialTitle = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const materialMeta = {
-  marginTop: 6,
-  color: "#64748b",
-  fontSize: 13,
-};
-
-const materialDescription = {
-  marginTop: 10,
-  color: "#334155",
-  lineHeight: 1.5,
-};
-
-const questionsGrid = {
-  display: "grid",
-  gap: 14,
-};
-
-const questionCard = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 14,
-};
-
-const questionTitle = {
-  fontWeight: 800,
-  color: "#0f172a",
-  marginBottom: 12,
-  lineHeight: 1.5,
-};
-
-const optionsGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const optionItem = {
-  display: "flex",
-  alignItems: "flex-start",
-  color: "#334155",
-  lineHeight: 1.45,
-};
-
-const btnPrimary = {
-  border: "none",
+const btnSecundario = {
+  border: "1px solid #cbd5e1",
   borderRadius: 10,
   padding: "10px 16px",
-  background: "#2563eb",
-  color: "#ffffff",
+  background: "#ffffff",
+  color: "#334155",
   fontWeight: 800,
   cursor: "pointer",
   fontSize: 14,
 };
 
-const resultGrid = {
+const listGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
+  gap: 10,
 };
 
-const resultCard = {
+const listItem = {
   background: "#f8fafc",
-  border: "1px solid #e2e8f0",
+  padding: 12,
   borderRadius: 14,
-  padding: 14,
+  border: "1px solid #e2e8f0",
   display: "grid",
   gap: 6,
 };
 
-const resultLabel = {
-  color: "#64748b",
+const itemTitle = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const itemMeta = {
+  color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const itemBadgeBlue = {
+  display: "inline-block",
+  justifySelf: "start",
+  padding: "4px 10px",
+  borderRadius: 999,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontWeight: 800,
+  fontSize: 12,
+};
+
+const itemBadgePurple = {
+  display: "inline-block",
+  justifySelf: "start",
+  padding: "4px 10px",
+  borderRadius: 999,
+  background: "#f5f3ff",
+  color: "#7c3aed",
+  fontWeight: 800,
+  fontSize: 12,
+};
+
+const table = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const th = {
+  textAlign: "left",
+  padding: "12px 10px",
+  borderBottom: "1px solid #e2e8f0",
+  color: "#475569",
   fontSize: 13,
 };
 
-const resultValue = {
+const td = {
+  padding: "12px 10px",
+  borderBottom: "1px solid #f1f5f9",
   color: "#0f172a",
-  fontSize: 24,
-  lineHeight: 1.1,
+  fontSize: 14,
+};
+
+const loadingBox = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  padding: 18,
+  color: "#475569",
+  fontWeight: 700,
+};
+
+const errorBox = {
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  borderRadius: 16,
+  padding: 16,
+  fontWeight: 700,
+};
+
+const emptyText = {
+  color: "#64748b",
 };
