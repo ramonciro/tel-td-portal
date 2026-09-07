@@ -20,6 +20,16 @@ function corFreq(n) {
   return              { bg: "#fef2f2", text: "#991b1b" };
 }
 
+function conquistaIcon(tipo) {
+  const icones = {
+    presenca_perfeita: "🎯",
+    trilha_concluida: "🧭",
+    primeira_certificacao: "🏅",
+    sequencia_turmas: "🔥",
+  };
+  return icones[tipo] || "⭐";
+}
+
 function statusStyle(status) {
   const s = normalize(status);
   if (["concluído", "concluido", "concluida", "concluída"].includes(s))
@@ -48,6 +58,7 @@ export default function MinhasTurmasPage() {
 
   const [search,      setSearch]      = useState("");
   const [filterStatus,setFilterStatus]= useState("todos");
+  const [conquistas,  setConquistas]  = useState([]);
 
   /* ─── load ──────────────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -84,6 +95,12 @@ export default function MinhasTurmasPage() {
             certMap[c.treinamento_id] = c;
           });
           setCerts(certMap);
+
+          // Fase 3 — Minhas Conquistas (gamificação, sem custo/sem IA). Não
+          // trava o carregamento da página se falhar — é um extra, não algo
+          // essencial pra a tela funcionar.
+          const conquistasData = await apiFetch("/minhas-conquistas").catch(() => null);
+          setConquistas(conquistasData?.conquistas || []);
         }
       } catch (err) {
         setError(err.message || "Erro ao carregar turmas.");
@@ -164,6 +181,24 @@ export default function MinhasTurmasPage() {
             </div>
           )}
         </div>
+
+        {/* Minhas Conquistas — Fase 3 (gamificação, sem custo/sem IA) */}
+        {!isGestor && conquistas.length > 0 && (
+          <div style={conquistasBox}>
+            <div style={conquistasTitulo}>🏆 Minhas conquistas</div>
+            <div style={conquistasLista}>
+              {conquistas.map((c) => (
+                <div key={`${c.tipo}-${c.contexto}`} style={conquistaCard} title={c.descricao}>
+                  <div style={conquistaIconStyle}>{conquistaIcon(c.tipo)}</div>
+                  <div>
+                    <div style={conquistaTituloItem}>{c.titulo}</div>
+                    <div style={conquistaDescricao}>{c.descricao}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Feedback */}
         {error   && <div style={alertErr}>{error}</div>}
@@ -307,6 +342,13 @@ const kpiCard     = { flex: 1, background: "#fff", borderRadius: 12, padding: "1
                       boxShadow: "0 1px 4px rgba(0,0,0,.06)", textAlign: "center" };
 const kpiValue    = { fontSize: 32, fontWeight: 900, color: "#0B1220" };
 const kpiLabel    = { fontSize: 12, color: "#6b7280", marginTop: 4, fontWeight: 600 };
+const conquistasBox      = { background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 14, padding: "16px 20px", marginBottom: 20 };
+const conquistasTitulo   = { fontWeight: 800, fontSize: 14, color: "#92400e", marginBottom: 12 };
+const conquistasLista    = { display: "flex", flexWrap: "wrap", gap: 12 };
+const conquistaCard      = { display: "flex", gap: 10, alignItems: "flex-start", background: "#fff", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", minWidth: 220, maxWidth: 280 };
+const conquistaIconStyle = { fontSize: 22, lineHeight: 1 };
+const conquistaTituloItem = { fontWeight: 800, fontSize: 13, color: "#0B1220" };
+const conquistaDescricao  = { fontSize: 12, color: "#6b7280", marginTop: 2 };
 const alertErr    = { background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca",
                       borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 14 };
 const alertOk     = { background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0",
