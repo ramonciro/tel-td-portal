@@ -22,6 +22,7 @@ const menuItems = [
   { href: "/treinamentos",  label: "Treinamentos",           icon: "cap", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/presencas",     label: "Gestão de Turmas",       icon: "folder", roles: ["coordenador", "supervisor", "instrutor"] },
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "backpack", roles: ["instrutor", "treinando"] },
+  { href: "/meu-desempenho", label: "Meu Desempenho",        icon: "trending", roles: ["instrutor"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/indicadores",  label: "Indicadores",             icon: "trending", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/capacidade",   label: "CH por Instrutor",        icon: "clock", roles: ["coordenador", "supervisor", "superintendente"] },
