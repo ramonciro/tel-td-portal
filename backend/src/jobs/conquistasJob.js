@@ -11,7 +11,7 @@
  */
 
 const { listarEmpresasAtivas } = require("./pendenciasDigest");
-const { calcularConquistasTreinandos } = require("../services/gamificacaoService");
+const { calcularConquistasTreinandos, calcularConquistasInstrutores } = require("../services/gamificacaoService");
 
 async function rodarCalculoConquistas() {
   const empresas = await listarEmpresasAtivas();
@@ -20,7 +20,12 @@ async function rodarCalculoConquistas() {
   for (const empresa of empresas) {
     // eslint-disable-next-line no-await-in-loop
     const treinandos = await calcularConquistasTreinandos(empresa.id);
-    resultados.push({ empresa: empresa.nome, treinandos });
+    // eslint-disable-next-line no-await-in-loop
+    const instrutores = await calcularConquistasInstrutores(empresa.id).catch((e) => {
+      console.error("[conquistasJob] Erro ao calcular conquistas de instrutor:", e.message);
+      return null;
+    });
+    resultados.push({ empresa: empresa.nome, treinandos, instrutores });
   }
 
   return resultados;
