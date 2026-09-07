@@ -101,6 +101,7 @@ const {
 
 const {
   listMateriaisAvaliativos,
+  listMateriaisAvaliativosDisponiveis,
   createMaterialAvaliativo,
   updateMaterialAvaliativo,
   deleteMaterialAvaliativo,
@@ -692,6 +693,16 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
   listMateriaisAvaliativos
+);
+
+// Usada pela página do treinando (/responder-avaliacao). Antes o treinando
+// batia direto em /api/materiais-avaliativos (403, role não autorizada) e a
+// página ficava com a lista de provas sempre vazia — bug real, não só visual.
+app.get(
+  "/api/materiais-avaliativos-disponiveis",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  listMateriaisAvaliativosDisponiveis
 );
 
 app.post(
