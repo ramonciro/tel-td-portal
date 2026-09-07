@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
-import { apiFetch } from "../../services/api";
+import { apiFetch, apiDownload } from "../../services/api";
 import { colors } from "../../lib/theme";
 
 function fmt(n) { return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(Number(n || 0)); }
@@ -49,9 +49,64 @@ export default function CapacidadePage() {
   const [overrideSalvando, setOverrideSalvando] = useState(false);
   const [overrideMsg,      setOverrideMsg]      = useState({ tipo: "", texto: "" });
 
+  // ── Aba "Scorecard por instrutor" (CH + frequência + avaliação + NPS) ──
+  const [aba, setAba] = useState("time"); // "time" | "instrutor"
+  const [scInstrutoresOpcoes, setScInstrutoresOpcoes] = useState([]);
+  const [scPeriodoTipo, setScPeriodoTipo] = useState("mensal"); // "mensal" | "trimestral"
+  const hoje = new Date();
+  const [scAno,       setScAno]       = useState(String(hoje.getFullYear()));
+  const [scMes,       setScMes]       = useState(String(hoje.getMonth() + 1));
+  const [scTrimestre, setScTrimestre] = useState(String(Math.floor(hoje.getMonth() / 3) + 1));
+  const [scInstrutor, setScInstrutor] = useState("");
+  const [scDados,     setScDados]     = useState(null);
+  const [scLoading,   setScLoading]   = useState(false);
+  const [scErro,      setScErro]      = useState("");
+  const [scExportando, setScExportando] = useState(false);
+
   useEffect(() => { apiFetch("/capacidade/operacoes").then((r) => setOperacoes(r?.operacoes || [])).catch(() => {}); }, []);
   useEffect(() => { carregar(); }, [operacaoFiltro, mesesFiltro]);
   useEffect(() => { if (configAberta) carregarConfig(); }, [configAberta]);
+
+  // Lazy: só busca a lista de instrutores e o scorecard quando a aba é aberta
+  // pela primeira vez — não tem sentido carregar isso pra quem só usa a
+  // visão do time.
+  useEffect(() => {
+    if (aba !== "instrutor") return;
+    if (!scInstrutoresOpcoes.length) {
+      apiFetch("/capacidade/instrutores").then((r) => setScInstrutoresOpcoes(r?.instrutores || [])).catch(() => {});
+    }
+    carregarScorecard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, scPeriodoTipo, scAno, scMes, scTrimestre, scInstrutor]);
+
+  function scQueryString() {
+    const params = new URLSearchParams();
+    params.set("periodo", scPeriodoTipo);
+    params.set("ano", scAno);
+    if (scPeriodoTipo === "trimestral") params.set("trimestre", scTrimestre);
+    else params.set("mes", scMes);
+    if (scInstrutor) params.set("instrutor", scInstrutor);
+    return params.toString();
+  }
+
+  async function carregarScorecard() {
+    try {
+      setScLoading(true); setScErro("");
+      const r = await apiFetch(`/desempenho-instrutor?${scQueryString()}`);
+      setScDados(r);
+    } catch (e) {
+      setScErro(e.message || "Erro ao carregar desempenho por instrutor.");
+    } finally { setScLoading(false); }
+  }
+
+  async function exportarScorecard() {
+    try {
+      setScExportando(true);
+      await apiDownload(`/desempenho-instrutor/exportar?${scQueryString()}`, "desempenho-instrutor.xlsx");
+    } catch (e) {
+      setScErro(e.message || "Erro ao exportar.");
+    } finally { setScExportando(false); }
+  }
 
   async function carregar() {
     try {
@@ -191,6 +246,13 @@ export default function CapacidadePage() {
         />
       </div>
 
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button style={aba === "time" ? abaBtnAtiva : abaBtn} onClick={() => setAba("time")}>Visão do time</button>
+        <button style={aba === "instrutor" ? abaBtnAtiva : abaBtn} onClick={() => setAba("instrutor")}>Scorecard por instrutor</button>
+      </div>
+
+      {aba === "time" && (
+      <>
       {erro && <div style={errBox}>{erro}</div>}
       {loading ? (
         <p style={{ color: "#64748b" }}>Carregando indicadores…</p>
@@ -472,7 +534,189 @@ export default function CapacidadePage() {
           </div>
         </>
       )}
+      </>
+      )}
+
+      {aba === "instrutor" && (
+        <ScorecardInstrutor
+          periodoTipo={scPeriodoTipo} setPeriodoTipo={setScPeriodoTipo}
+          ano={scAno} setAno={setScAno}
+          mes={scMes} setMes={setScMes}
+          trimestre={scTrimestre} setTrimestre={setScTrimestre}
+          instrutor={scInstrutor} setInstrutor={setScInstrutor}
+          opcoesInstrutor={scInstrutoresOpcoes}
+          dados={scDados} loading={scLoading} erro={scErro}
+          exportando={scExportando} onExportar={exportarScorecard}
+        />
+      )}
     </PortalShell>
+  );
+}
+
+function ScorecardInstrutor({
+  periodoTipo, setPeriodoTipo, ano, setAno, mes, setMes, trimestre, setTrimestre,
+  instrutor, setInstrutor, opcoesInstrutor, dados, loading, erro, exportando, onExportar,
+}) {
+  const itens = dados?.itens || [];
+  const medias = dados?.medias_time;
+  const vendoTodos = !instrutor;
+  const item = !vendoTodos ? itens.find((i) => i.instrutor === instrutor) : null;
+
+  return (
+    <>
+      <div style={{ ...card, marginBottom: 20 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            <CField label="Período">
+              <select value={periodoTipo} onChange={(e) => setPeriodoTipo(e.target.value)} style={cInput}>
+                <option value="mensal">Mensal</option>
+                <option value="trimestral">Trimestral</option>
+              </select>
+            </CField>
+            <CField label="Ano">
+              <input type="number" value={ano} onChange={(e) => setAno(e.target.value)} style={{ ...cInput, width: 90 }} />
+            </CField>
+            {periodoTipo === "mensal" ? (
+              <CField label="Mês">
+                <select value={mes} onChange={(e) => setMes(e.target.value)} style={cInput}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
+                </select>
+              </CField>
+            ) : (
+              <CField label="Trimestre">
+                <select value={trimestre} onChange={(e) => setTrimestre(e.target.value)} style={cInput}>
+                  {[1, 2, 3, 4].map((t) => <option key={t} value={t}>{t}º (T{t})</option>)}
+                </select>
+              </CField>
+            )}
+            <CField label="Instrutor">
+              <select value={instrutor} onChange={(e) => setInstrutor(e.target.value)} style={cInput}>
+                <option value="">Todos (ranking)</option>
+                {opcoesInstrutor.map((i) => <option key={i} value={i}>{i}</option>)}
+              </select>
+            </CField>
+          </div>
+          <button style={btnCoral} onClick={onExportar} disabled={exportando || loading || !dados}>
+            {exportando ? "Exportando…" : "⭳ Exportar"}
+          </button>
+        </div>
+        <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 10, marginBottom: 0 }}>
+          Índice geral pondera frequência (peso maior) e NPS — a nota de avaliação aparece à parte, com a cobertura de lançamento, porque não tem uma escala fixa hoje (a "nota máx." de cada prova é livre).
+        </p>
+      </div>
+
+      {erro && <div style={errBox}>{erro}</div>}
+      {loading ? (
+        <p style={{ color: "#64748b" }}>Carregando desempenho…</p>
+      ) : !dados ? null : vendoTodos ? (
+        <>
+          {medias && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+              <StatCard title="Índice geral (média do time)" value={medias.indice_geral ?? "—"} accent={colors.accent} />
+              <StatCard title="Frequência média do time" value={fmtPct(medias.frequencia_pct)} accent={colors.primary} />
+              <StatCard title="NPS médio do time" value={medias.nps_score ?? "—"} accent={colors.info} />
+              <StatCard title="Ocupação média do time" value={fmtPct(medias.ocupacao_pct)} accent={colors.navy} />
+            </div>
+          )}
+          <div style={card}>
+            <div style={cardTitle}>Ranking — índice geral por instrutor</div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={table}>
+                <thead>
+                  <tr style={theadRow}>
+                    <th style={th}>#</th><th style={th}>Instrutor</th>
+                    <th style={{ ...th, textAlign: "right" }}>Índice geral</th>
+                    <th style={{ ...th, textAlign: "right" }}>Frequência</th>
+                    <th style={{ ...th, textAlign: "right" }}>NPS</th>
+                    <th style={{ ...th, textAlign: "right" }}>Avaliação (cobertura)</th>
+                    <th style={{ ...th, textAlign: "right" }}>Ocupação CH</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {itens
+                    .slice()
+                    .sort((a, b) => (b.indice_geral ?? -Infinity) - (a.indice_geral ?? -Infinity))
+                    .map((i) => (
+                      <tr key={i.instrutor} style={tr}>
+                        <td style={td}>{i.posicao_no_time ?? "—"}</td>
+                        <td style={{ ...td, fontWeight: 700 }}>{i.instrutor}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{i.indice_geral ?? "—"}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{fmtPct(i.frequencia.media_pct)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{i.nps.nps_score ?? "—"}</td>
+                        <td style={{ ...td, textAlign: "right" }}>
+                          {i.avaliacao.nota_prova_media != null ? fmt(i.avaliacao.nota_prova_media) : "—"}
+                          {" "}
+                          <span style={{ color: "#94a3b8" }}>({i.avaliacao.turmas_com_avaliacao}/{i.avaliacao.turmas_no_periodo})</span>
+                        </td>
+                        <td style={{ ...td, textAlign: "right" }}>{fmtPct(i.ch.ocupacao_pct)}</td>
+                      </tr>
+                    ))}
+                  {itens.length === 0 && <tr><td style={td} colSpan={7}>Nenhum instrutor com atividade nesse período.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : !item ? (
+        <p style={{ color: "#64748b" }}>Sem dados para esse instrutor no período selecionado.</p>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+            <StatCard
+              title="Índice geral"
+              value={item.indice_geral ?? "—"}
+              accent={colors.accent}
+            />
+            <StatCard title="Posição no time" value={item.posicao_no_time ? `${item.posicao_no_time}º de ${item.total_no_ranking}` : "—"} accent={colors.navy} />
+            <StatCard title="Frequência das turmas" value={fmtPct(item.frequencia.media_pct)} accent={colors.primary} />
+            <StatCard title="Ocupação (CH)" value={fmtPct(item.ch.ocupacao_pct)} accent={colors.info} />
+            <StatCard title="NPS score" value={item.nps.nps_score ?? "—"} accent={colors.success} />
+          </div>
+
+          {medias && (
+            <p style={{ fontSize: 12, color: "#64748b", marginTop: -8, marginBottom: 16 }}>
+              Média do time no período: índice geral {medias.indice_geral ?? "—"}, frequência {fmtPct(medias.frequencia_pct)}, NPS {medias.nps_score ?? "—"}, ocupação {fmtPct(medias.ocupacao_pct)}.
+            </p>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div style={card}>
+              <div style={cardTitle}>Avaliação de turma</div>
+              {item.avaliacao.turmas_no_periodo === 0 ? (
+                <p style={{ fontSize: 13, color: "#94a3b8" }}>Nenhuma turma no período.</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13, color: "#334155", margin: "4px 0" }}>
+                    Nota de prova (média): <strong>{item.avaliacao.nota_prova_media != null ? fmt(item.avaliacao.nota_prova_media) : "—"}</strong>
+                  </p>
+                  <p style={{ fontSize: 13, color: "#334155", margin: "4px 0" }}>
+                    Nota de qualidade (média): <strong>{item.avaliacao.nota_qualidade_media != null ? fmt(item.avaliacao.nota_qualidade_media) : "—"}</strong>
+                  </p>
+                  <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>
+                    Cobertura: {item.avaliacao.turmas_com_avaliacao} de {item.avaliacao.turmas_no_periodo} turmas com avaliação lançada ({fmtPct(item.avaliacao.cobertura_pct)}) — lançamento não é obrigatório, então cobertura baixa não é necessariamente desempenho ruim.
+                  </p>
+                </>
+              )}
+            </div>
+            <div style={card}>
+              <div style={cardTitle}>NPS</div>
+              {item.nps.total_respostas === 0 ? (
+                <p style={{ fontSize: 13, color: "#94a3b8" }}>Nenhuma resposta de NPS no período.</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13, color: "#334155", margin: "4px 0" }}>
+                    Nota média: <strong>{fmt(item.nps.nota_media)}</strong> · {item.nps.total_respostas} resposta(s)
+                  </p>
+                  <p style={{ fontSize: 13, color: "#334155", margin: "4px 0" }}>
+                    Promotores {item.nps.promotores} · Neutros {item.nps.neutros} · Detratores {item.nps.detratores}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -505,3 +749,5 @@ const msgErro = { background: colors.dangerLight, color: colors.dangerText, bord
 const msgOk = { background: colors.successLight, color: colors.successText, borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 600, marginBottom: 10 };
 const overrideItem = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, background: "#f8fafc", border: "1px solid #e9eef4", borderRadius: 10, padding: "8px 12px", fontSize: 13 };
 const btnExcluirOverride = { background: "none", border: "none", color: colors.dangerText, cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" };
+const abaBtn = { background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
+const abaBtnAtiva = { ...abaBtn, background: colors.accent, color: "#fff", border: `1px solid ${colors.accent}` };
