@@ -90,11 +90,22 @@ export default function PortalShell({
     if (!user) return;
     if (user.perfil === "super_admin" && !pathname.startsWith("/admin")) {
       router.replace("/admin");
+      return;
     }
     // Módulo R&S: redireciona para a área correta se tentar acessar T&D
     const rsPerfiles = ["coordenador_rs", "gestor_rs"];
     if (rsPerfiles.includes(user.perfil) && !pathname.startsWith("/rs")) {
       router.replace("/rs/rps");
+      return;
+    }
+    // Bugfix: troca de senha obrigatória (primeiro acesso) só era aplicada no
+    // redirect logo após o login (ver frontend/app/login/page.js) — depois
+    // disso, nada impedia o usuário de clicar em qualquer item do menu, usar
+    // o botão "voltar" do navegador ou digitar outra URL direto e continuar
+    // usando o portal com a senha temporária, pulando a troca por completo.
+    // Replicando aqui o mesmo padrão de redirect já usado para super_admin/R&S.
+    if (user.troca_senha_obrigatoria && pathname !== "/primeiro-acesso") {
+      router.replace("/primeiro-acesso");
     }
   }, [user, pathname]);
 
@@ -149,6 +160,8 @@ export default function PortalShell({
 
   if (user === undefined) return null;
   if (!user) return null;
+  // Evita "piscar" a tela protegida por um frame antes do redirect acima rodar.
+  if (user.troca_senha_obrigatoria && pathname !== "/primeiro-acesso") return null;
 
   if (!currentAllowed) {
     return (
