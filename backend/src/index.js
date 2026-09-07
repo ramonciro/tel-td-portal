@@ -19,6 +19,7 @@ const { rodarLembretesAula } = require("./jobs/lembretesAula");
 const { rodarCalculoConquistas } = require("./jobs/conquistasJob");
 const { gerarTextoResumo, getResumoCacheadoDoDia } = require("./services/resumoExecutivoService");
 const { listarConquistas } = require("./services/gamificacaoService");
+const { getAnaliseComentarios } = require("./services/analiseComentariosService");
 
 // Sprint 5: Analytics
 const {
@@ -1245,6 +1246,39 @@ app.get("/api/minhas-conquistas", authRequired, async (req, res) => {
     return res.status(500).json({ message: "Erro ao buscar conquistas." });
   }
 });
+
+// Fase 3 — "análise de comentários" das respostas de NPS do treinando. Sem
+// IA/LLM (decisão do Ramon) — classificação por palavra-chave em português,
+// ver services/analiseComentariosService.js. Calculada sob demanda (não é
+// cacheada — é uma consulta pontual da coordenação, com filtros livres).
+// Instrutor só analisa os próprios comentários (auto-escopo, mesmo padrão
+// de "Meu Desempenho"); coordenador/supervisor/superintendente pode
+// filtrar por qualquer turma/instrutor/cliente/período.
+app.get(
+  "/api/analise-comentarios",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente", "instrutor"),
+  async (req, res) => {
+    try {
+      const perfil = String(req.user?.perfil || "").toLowerCase();
+      const instrutor = perfil === "instrutor" ? req.user?.nome : (req.query.instrutor || undefined);
+
+      const resultado = await getAnaliseComentarios({
+        empresaId: req.empresaId || null,
+        treinamentoId: req.query.treinamento_id ? Number(req.query.treinamento_id) : undefined,
+        instrutor,
+        cliente: req.query.cliente || undefined,
+        inicio: req.query.inicio || undefined,
+        fim: req.query.fim || undefined,
+      });
+
+      return res.json(resultado);
+    } catch (error) {
+      console.error("Erro na análise de comentários:", error);
+      return res.status(500).json({ message: "Erro ao analisar comentários." });
+    }
+  }
+);
 
 // Fase 3 — "resumo executivo automático" do Dashboard (bloco Oceano). Sem
 // IA/LLM (decisão do Ramon: "vamos seguir sem custo por enquanto") — texto
