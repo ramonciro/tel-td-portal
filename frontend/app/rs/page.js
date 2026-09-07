@@ -5,6 +5,7 @@ import Link from "next/link";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
+import { ContadorAnimado, Donut, BarraHorizontal, GraficoLinha } from "../../components/Charts";
 import { apiFetch } from "../../services/api";
 import { colors } from "../../lib/theme";
 
@@ -34,12 +35,24 @@ function getMesesDisponiveis() {
   });
 }
 
+// 6 meses em ordem cronológica (mais antigo -> mais novo), terminando no mês
+// selecionado no filtro — assim a tendência acompanha o mesmo período que o
+// resto do painel, e dá pra "olhar pra trás" trocando o seletor de mês.
+function getUltimos6Meses(mesFinal) {
+  const [ano, mm] = mesFinal.split("-").map(Number);
+  return Array.from({ length: 6 }, (_, i) => {
+    const offset = 5 - i;
+    const d = new Date(ano, mm - 1 - offset, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+}
+
 const fmtNum = (v) => Number(v || 0).toLocaleString("pt-BR");
 
-// ─── Barra de progresso de status ──────────────────────────────────
+// ─── Status (usado no Donut) ────────────────────────────────────────
 const STATUS_CORES = {
   entregue:     colors.success,
-  em_andamento: "#2563eb",
+  em_andamento: colors.primary,
   nao_entregue: colors.danger,
   cancelada:    colors.neutral,
 };
@@ -49,26 +62,6 @@ const STATUS_LABELS = {
   nao_entregue: "Não Entregue",
   cancelada:    "Cancelada",
 };
-
-function BarraStatus({ chave, dados }) {
-  const { count = 0, pct = 0 } = dados || {};
-  const cor = STATUS_CORES[chave] || colors.neutral;
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-        <span style={{ fontSize: 13, color: colors.textSecondary }}>{STATUS_LABELS[chave]}</span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: colors.textPrimary }}>
-          {count}{" "}
-          <span style={{ fontSize: 11, color: colors.textMuted, fontWeight: 400 }}>({pct}%)</span>
-        </span>
-      </div>
-      <div style={{ height: 6, background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: cor,
-                      borderRadius: 4, transition: "width .5s ease" }} />
-      </div>
-    </div>
-  );
-}
 
 // ─── Card de breakdown por setor ───────────────────────────────────
 function SetorCard({ titulo, dados, cor }) {
@@ -105,6 +98,23 @@ export default function RSDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [mes, setMes] = useState(MES_ATUAL());
 
+  // Tendência dos últimos 6 meses — puramente do lado do front, chamando o
+  // mesmo endpoint /rs/dashboard uma vez por mês em paralelo (o backend já
+  // filtra por `mes` com DATE_FORMAT(mes_referencia,'%Y-%m'), não precisou
+  // mudar nada lá). Estado separado do KPI do mês atual porque tem seu
+  // próprio ciclo de carregamento (6 requisições em vez de 1).
+  const [tendencia, setTendencia] = useState([]);
+  const [loadingTendencia, setLoadingTendencia] = useState(true);
+
+  // Cascata de entrada: só liga depois que os KPIs do mês terminam de
+  // carregar pela primeira vez — mesmo padrão já aprovado em /inicio.
+  const [revelado, setRevelado] = useState(false);
+  useEffect(() => {
+    if (loading) return;
+    const id = requestAnimationFrame(() => setRevelado(true));
+    return () => cancelAnimationFrame(id);
+  }, [loading]);
+
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
@@ -114,7 +124,27 @@ export default function RSDashboardPage() {
     finally { setLoading(false); }
   }, [mes]);
 
+  const carregarTendencia = useCallback(async () => {
+    setLoadingTendencia(true);
+    try {
+      const meses = getUltimos6Meses(mes);
+      const resultados = await Promise.all(
+        meses.map((m) => apiFetch(`/rs/dashboard?mes=${m}`).catch(() => null))
+      );
+      setTendencia(
+        meses.map((m, i) => ({
+          mes: m,
+          rps: Number(resultados[i]?.total_rps || 0),
+          entregue: Number(resultados[i]?.total_entregue || 0),
+        }))
+      );
+    } finally {
+      setLoadingTendencia(false);
+    }
+  }, [mes]);
+
   useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { carregarTendencia(); }, [carregarTendencia]);
 
   const selectorMes = (
     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -132,12 +162,33 @@ export default function RSDashboardPage() {
     </div>
   );
 
+  const fatiasStatus = data
+    ? Object.keys(STATUS_LABELS).map((k) => ({
+        label: STATUS_LABELS[k],
+        valor: Number(data.por_status?.[k]?.count || 0),
+        cor: STATUS_CORES[k],
+      }))
+    : [];
+
   return (
     <PortalShell
       title="Dashboard R&S"
       subtitle={`Visão consolidada · ${mesLabel(mes)}`}
       topRight={selectorMes}
     >
+      {/* Cascata de entrada — mesmo padrão de /inicio (revisão setembro/2026,
+          a pedido do Ramon: "melhorar os gráficos e permitir animações").
+          prefers-reduced-motion desliga tudo pra quem pediu menos movimento
+          no sistema operacional. */}
+      <style>{`
+        @keyframes rsCascade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .rs-cascade { opacity: 0; }
+        .rs-cascade.rs-play { animation: rsCascade .5s cubic-bezier(.16,1,.3,1) forwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .rs-cascade, .rs-cascade.rs-play { animation: none !important; opacity: 1 !important; transform: none !important; }
+        }
+      `}</style>
+
       <PageHero
         eyebrow="Recrutamento & Seleção"
         title="Indicadores do Mês"
@@ -161,72 +212,77 @@ export default function RSDashboardPage() {
       ) : (
         <div style={{ marginTop: 16 }}>
 
-          {/* KPI cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 14 }}>
-            <StatCard title="Total de RPs"     value={fmtNum(data.total_rps)}           accent={colors.accent}  />
-            <StatCard title="HC'S Solicitados" value={fmtNum(data.total_hcs)}           accent="#2563eb"        />
-            <StatCard title="HC'S Aprovados"   value={fmtNum(data.total_hcs_aprovados)} accent="#7c3aed"        />
-            <StatCard title="QTD Entregue"     value={fmtNum(data.total_entregue)}      accent={colors.success} />
+          {/* KPI cards — números "contando" até o valor real ao revelar,
+              mesma sensação de "painel vivo" apontada como diferencial dos
+              concorrentes de LMS no benchmark. */}
+          <div className={`rs-cascade ${revelado ? "rs-play" : ""}`}
+               style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 14 }}>
+            <StatCard title="Total de RPs"     value={<ContadorAnimado valor={data.total_rps} revelado={revelado} />}           accent={colors.accent}  />
+            <StatCard title="HC'S Solicitados" value={<ContadorAnimado valor={data.total_hcs} revelado={revelado} />}           accent={colors.primary} />
+            <StatCard title="HC'S Aprovados"   value={<ContadorAnimado valor={data.total_hcs_aprovados} revelado={revelado} />} accent={colors.purple || "#7c3aed"} />
+            <StatCard title="QTD Entregue"     value={<ContadorAnimado valor={data.total_entregue} revelado={revelado} />}      accent={colors.success} />
           </div>
 
           {/* Operacional vs Estratégico */}
-          <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
-            <SetorCard titulo="Operacional" dados={data.operacional} cor="#2563eb" />
-            <SetorCard titulo="Estratégico" dados={data.estrategico} cor="#7c3aed" />
+          <div className={`rs-cascade ${revelado ? "rs-play" : ""}`}
+               style={{ display: "flex", gap: 12, marginBottom: 14, animationDelay: ".05s" }}>
+            <SetorCard titulo="Operacional" dados={data.operacional} cor={colors.primary} />
+            <SetorCard titulo="Estratégico" dados={data.estrategico} cor={colors.purple || "#7c3aed"} />
           </div>
 
-          {/* Status + Top produtos */}
+          {/* Status (donut) + Top produtos (ranking de magnitude, uma cor só) */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-            <div style={card}>
+            <div className={`rs-cascade ${revelado ? "rs-play" : ""}`} style={{ ...card, animationDelay: ".1s" }}>
               <p style={cardTitle}>Distribuição de Status</p>
-              {Object.keys(STATUS_LABELS).map(k => (
-                <BarraStatus key={k} chave={k} dados={data.por_status?.[k]} />
-              ))}
+              <Donut fatias={fatiasStatus} revelado={revelado} />
             </div>
 
-            <div style={card}>
+            <div className={`rs-cascade ${revelado ? "rs-play" : ""}`} style={{ ...card, animationDelay: ".15s" }}>
               <p style={cardTitle}>Top Produtos por HC'S</p>
-              {data.top_produtos && data.top_produtos.length > 0 ? (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <th style={thLight}>Produto</th>
-                      <th style={{ ...thLight, textAlign: "right" }}>HC'S</th>
-                      <th style={{ ...thLight, textAlign: "right" }}>Entregue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.top_produtos.map((p, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                        <td style={{ padding: "9px 0", color: colors.textPrimary, fontWeight: 600 }}>{p.produto}</td>
-                        <td style={{ padding: "9px 0", textAlign: "right", color: colors.textSecondary }}>{fmtNum(p.hcs)}</td>
-                        <td style={{ padding: "9px 0", textAlign: "right", color: colors.success, fontWeight: 700 }}>{fmtNum(p.qtd_entregue)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p style={{ color: colors.textMuted, fontSize: 13 }}>Sem dados de produto para este mês.</p>
-              )}
+              <BarraHorizontal
+                dados={data.top_produtos || []}
+                labelKey="produto"
+                valueKey="hcs"
+                cor={colors.primary}
+                revelado={revelado}
+                subtitulo={(d) => `Entregue: ${fmtNum(d.qtd_entregue)}`}
+              />
             </div>
+          </div>
+
+          {/* Tendência — últimos 6 meses (novo: não existia antes). RPs
+              recebidos x quantidade entregue, lado a lado, pra enxergar se a
+              entrega está acompanhando a demanda. Paleta azul/laranja
+              validada no dataviz (CVD e contraste OK nas duas direções). */}
+          <div className={`rs-cascade ${revelado ? "rs-play" : ""}`} style={{ ...card, marginBottom: 14, animationDelay: ".2s" }}>
+            <p style={cardTitle}>Tendência (últimos 6 meses)</p>
+            {loadingTendencia ? (
+              <p style={{ fontSize: 13, color: colors.textMuted, textAlign: "center", padding: "24px 0" }}>Carregando tendência...</p>
+            ) : (
+              <GraficoLinha
+                dados={tendencia}
+                linhas={[
+                  { key: "rps",      label: "Total de RPs",   cor: colors.primary },
+                  { key: "entregue", label: "Qtd. Entregue",  cor: colors.accent },
+                ]}
+                eixoX="mes"
+                revelado={revelado}
+              />
+            )}
           </div>
 
           {/* Por site */}
           {data.por_site && data.por_site.length > 0 && (
-            <div style={card}>
+            <div className={`rs-cascade ${revelado ? "rs-play" : ""}`} style={{ ...card, animationDelay: ".25s" }}>
               <p style={cardTitle}>RPs por Site</p>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                {data.por_site.map(s => (
-                  <div key={s.site} style={{
-                    background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12,
-                    padding: "14px 20px", textAlign: "center", minWidth: 130,
-                  }}>
-                    <div style={{ fontSize: 28, fontWeight: 900, color: colors.textPrimary }}>{s.total_rps}</div>
-                    <div style={{ fontSize: 11, color: colors.textMuted, marginTop: 4,
-                                  textTransform: "uppercase", letterSpacing: ".04em" }}>{s.site}</div>
-                  </div>
-                ))}
-              </div>
+              <BarraHorizontal
+                dados={data.por_site}
+                labelKey="site"
+                valueKey="total_rps"
+                cor={colors.accent}
+                revelado={revelado}
+                maxItens={10}
+              />
             </div>
           )}
         </div>
@@ -242,8 +298,4 @@ const card = {
 const cardTitle = {
   margin: "0 0 16px", fontSize: 12, fontWeight: 800,
   textTransform: "uppercase", letterSpacing: ".06em", color: colors.accent,
-};
-const thLight = {
-  padding: "0 0 8px", fontSize: 10, fontWeight: 700, color: colors.textMuted,
-  textTransform: "uppercase", letterSpacing: ".04em", textAlign: "left",
 };
