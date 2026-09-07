@@ -38,6 +38,7 @@ const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
 // FIX 1: importar a rota de jornada-participantes (estava faltando)
 const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
+const { getDesempenho: getDesempenhoInstrutor } = require("./controllers/desempenhoInstrutorController");
 
 // Sprint 3: Trilhas relacionais, Certificados
 const {
@@ -1081,6 +1082,21 @@ app.use(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "superintendente"),
   capacidadeRoutes
+);
+
+// Scorecard de instrutor (CH + frequência + avaliação + NPS, mensal/
+// trimestral) — item 2 da visão de universidade corporativa (ver
+// claude/visao-plataforma-educativa-instrutor-2026-09.md no projeto).
+// Coordenador/supervisor/superintendente veem qualquer instrutor (ou todos);
+// o próprio instrutor também acessa, mas só o próprio scorecard — o
+// controller ignora um ?instrutor= diferente do usuário logado nesse caso,
+// mesmo padrão de auto-escopo já usado para o perfil treinando em
+// avaliacoesTreinandosController.
+app.get(
+  "/api/desempenho-instrutor",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente", "instrutor"),
+  getDesempenhoInstrutor
 );
 
 // ── Módulo R&S — import do controller ──────────────────────────────────────
