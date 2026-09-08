@@ -1,4 +1,4 @@
-// src/database/migrate.js
+  // src/database/migrate.js
 const pool = require("../lib/db");
 
 // ---------------------------------------------------------------------------
