@@ -1,33 +1,39 @@
-# Marca da empresa no restante do portal + correção sobre o Dasa Front
+# Pendências da Fase 4 (Biblioteca + regra de capacidade) e preparo do onboarding do IBM
 
-## Antes de tudo: uma correção
+Você pediu pra seguir com os itens 1 e 2: resolver as duas pendências da Fase 4, e continuar a arquitetura multi-ambiente. Os dois estão nesta entrega.
 
-O achado que te passei no pacote anterior — "o registro do Dasa Front tem um campo `cliente: 'Claro'` estranho" — **estava errado, e o erro foi meu**. Veio de uma leitura malformada de log da Railway (dois resultados de consultas diferentes se misturaram no texto que reconstruí). Refiz a leitura de um jeito confiável e confirmei direto na estrutura da tabela: **`empresas` nunca teve essa coluna**. Não mexi em nada porque não havia nada de errado pra corrigir. Detalhe completo no relatório anexo.
+## 1. Biblioteca corrigida
 
-De caminho, já aproveitei pra confirmar que o Dasa Front está certinho: código/subdomínio/contato corretos, João Lobo ativo e já com senha própria (já usou o portal de verdade), zero turmas/certificados (normal, tenant novo). Pode seguir com o IBM sem pendência aqui.
+A tela de Biblioteca estava quebrada porque a tabela que ela usa (`biblioteca`) nunca tinha sido criada em produção. Criei a tabela certa (sem o valor padrão perigoso que um fix antigo não-aplicado tinha) e corrigi mais dois pontos que ainda liam da tabela antiga por engano: o card "Biblioteca" do Dashboard e o Mural das turmas.
 
-## O que foi feito
+## 2. Regra de capacidade agora é por empresa
 
-**Backend** (`backend/src/routes/authRoutes.js`): o login agora devolve também a marca da empresa do usuário (`user.empresa`: nome, cor, logo) — antes só a tela de login usava isso.
+Antes, mudar a regra padrão de capacidade (horas/dia, headcount/dia) afetava todo mundo ao mesmo tempo. Agora cada empresa tem a sua — e qualquer tenant que ainda não configurou a própria (como o Dasa Front hoje, e como o IBM vai nascer) usa automaticamente o valor padrão global, sem nenhuma ação manual.
 
-**Frontend** (`frontend/components/PortalShell.js`): o menu lateral e o cabeçalho do resto do portal agora usam essa marca — cor de destaque do item ativo e logo, tanto no computador quanto no celular. Empresas sem cor/logo cadastrados continuam com a aparência padrão de sempre, sem mudança nenhuma.
+## 3. Painel admin ganhou campos de cor/logo (faltavam)
+
+Descobri que o formulário de editar tenant não tinha onde preencher cor ou logo — só o backend aceitava, mas a tela não tinha os campos. Corrigido nas duas telas (criar e editar tenant), com seletor de cor visual e pré-visualização da logo. Agora você já pode preencher a cor/logo reais de Comércio e Dasa Front quando tiver esses dados — e o IBM já pode nascer com a marca certa desde a criação.
+
+## 4. Onboarding do IBM testado de ponta a ponta
+
+Sem ter os dados reais do IBM ainda, simulei o fluxo inteiro com um tenant de teste: criar → aparece no seletor de login → coordenador loga com a senha temporária → dashboard nasce zerado → regra de capacidade cai no padrão automaticamente → excluí o teste sem deixar resquício. Está tudo pronto pra quando você tiver os dados de contato do IBM.
+
+## O que falta e depende de você
+
+- Cor e logo reais de Comércio e Dasa Front (agora já dá pra preencher direto no painel admin).
+- Dados de contato do IBM, quando for a hora do onboarding de verdade.
 
 ## Como aplicar
 
-1. Substituir os 2 arquivos acima nos mesmos caminhos do seu repositório.
+1. Substituir os arquivos deste pacote nos mesmos caminhos do seu repositório (backend: `migrate.js`, `capacidadeResolver.js`, `capacidadeController.js`, `dashboardRoutes.js`, `muralResolver.js`, `adminController.js`; frontend: `admin/nova-empresa/page.js`, `admin/empresa/[id]/page.js`).
 2. Commit + push (deploy automático).
-3. Nenhuma variável de ambiente nova, nenhuma migração nova.
+3. Nenhuma variável de ambiente nova. A migração cria a tabela `biblioteca` e a coluna nova de `capacidade_regra_padrao` automaticamente no boot do backend.
 
 ## Como foi testado
 
-- Comparação lado a lado entre um tenant com cor/logo próprios e um sem — capturas em anexo confirmam a cor certa aplicada e o fallback de logo funcionando.
-- As 12 verificações de isolamento da Fase 4, as 9 de regressão, e as 7 do login multi-ambiente — todas re-executadas, todas passando.
+- 12 verificações de isolamento da Fase 4, 9 de regressão, 7 do login multi-ambiente — todas passando depois destas mudanças.
+- 12 verificações novas cobrindo Biblioteca (isolamento por empresa em criar/listar/editar/excluir) e regra de capacidade por empresa.
+- Teste manual do Mural confirmando que materiais aparecem corretamente.
+- Simulação completa do onboarding do IBM, como descrito acima.
+- As duas telas do painel admin testadas visualmente — capturas em anexo.
 - `next build` limpo (39/39 rotas).
-
-## Pendência sua (mesma situação de antes)
-
-Uma segunda função temporária que criei na Railway pra consultar produção com segurança (`data-verify-temp`) ainda existe — só leitura, nunca escreveu nada, mas o ideal é remover. Precisa de confirmação com dois fatores no painel da Railway (minhas ferramentas não têm acesso a isso). Mesmo processo de quando você removeu a `db-query-temp` anterior.
-
-## Sugestão de próximo passo
-
-Preencher `cor_primaria`/`logo_url` de verdade para "Tel Centro de Contatos" e "Dasa Front" no formulário de editar empresa (painel admin) — assim que preenchido, o portal inteiro já reflete automaticamente, sem precisar de nova entrega.
