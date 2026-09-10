@@ -40,7 +40,12 @@ router.get("/", async (req, res) => {
       countTenant("treinamentos"),
       countTenant("presencas"),
       countTenant("avaliacoes"),
-      countTenant("biblioteca_conteudos"),
+      // Item A da Fase 4, resolvido: a tela de Biblioteca usa a tabela
+      // `biblioteca` (criada em migrate.js) — `biblioteca_conteudos` é uma
+      // tabela mais antiga, sem empresa_id e vazia em produção, que nunca
+      // era a fonte real dessa contagem (o filtro por empresa_id abaixo
+      // sempre falhava silenciosamente nela e devolvia 0).
+      countTenant("biblioteca"),
       countTenant("trilhas_aprendizagem"),
     ]);
 
