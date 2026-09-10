@@ -55,10 +55,41 @@ function limparTentativas(emailNorm) {
   tentativasLogin.delete(emailNorm);
 }
 
+/* ─── AMBIENTES (seleção de empresa no login) ────────────────────────────── */
+// Fase "arquitetura multi-ambiente" (10/09/2026): endpoint público (sem
+// autenticação — roda ANTES do login) que alimenta o seletor de empresa na
+// tela de entrada. Devolve só o que é seguro expor sem sessão: identidade
+// visual (nome, código, logo, cor). Nunca inclui contato/observações/
+// limites — esses só aparecem no painel admin, autenticado como super_admin.
+router.get("/ambientes", async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, nome, codigo, logo_url, cor_primaria
+       FROM empresas
+       WHERE ativo = 1
+       ORDER BY nome ASC`
+    );
+    return res.json(
+      rows.map((e) => ({
+        codigo: e.codigo || `empresa-${e.id}`,
+        nome: e.nome,
+        logo_url: e.logo_url || null,
+        cor_primaria: e.cor_primaria || null,
+      }))
+    );
+  } catch (error) {
+    // Resiliente: se a tabela/coluna ainda não existir neste ambiente
+    // (migration pendente), o seletor simplesmente fica vazio — o login por
+    // e-mail/senha direto continua funcionando normalmente.
+    console.warn("[auth] não foi possível listar ambientes:", error.message);
+    return res.json([]);
+  }
+});
+
 /* ─── LOGIN ─────────────────────────────────────────────────────────────── */
 router.post("/login", async (req, res) => {
   try {
-    const { email, senha } = req.body || {};
+    const { email, senha, empresa_codigo } = req.body || {};
 
     if (!email || !senha) {
       return res.status(400).json({ message: "Informe e-mail e senha" });
@@ -123,6 +154,42 @@ router.post("/login", async (req, res) => {
     // Sprint 4: super_admin flag — se coluna não existir, cai no default 0
     const isSuperAdmin = Number(user.super_admin || 0) === 1;
     const perfilFinal  = isSuperAdmin ? "super_admin" : (user.perfil || "instrutor");
+
+    // Fase "arquitetura multi-ambiente" (10/09/2026): se a tela de login
+    // enviou uma empresa selecionada (empresa_codigo), confere que a conta
+    // realmente pertence a ela — evita a confusão de "entrei errado no
+    // ambiente da outra empresa" (o e-mail já é globalmente único, então
+    // isso não é uma segunda camada de isolamento de dado, é clareza de UX:
+    // erro específico em vez de um dashboard vazio/errado depois de logar).
+    // Super admin nunca é bloqueado por isso (ele não pertence a uma
+    // empresa específica, por design). Um código de empresa desconhecido ou
+    // uma tabela/coluna ainda sem a migration aplicada nunca bloqueia login
+    // — a checagem é só feita quando dá pra fazer com segurança.
+    if (empresa_codigo && !isSuperAdmin) {
+      try {
+        const [empRows] = await pool.query(
+          "SELECT id, nome FROM empresas WHERE codigo = ? LIMIT 1",
+          [String(empresa_codigo).trim().toLowerCase()]
+        );
+        const empresaSelecionada = empRows[0];
+        if (empresaSelecionada) {
+          const empresaIdUsuario = user.empresa_id ?? null;
+          if (empresaIdUsuario == null) {
+            return res.status(403).json({
+              message: "Sua conta ainda não está vinculada a nenhuma empresa. Contate o coordenador do seu ambiente.",
+            });
+          }
+          if (Number(empresaIdUsuario) !== Number(empresaSelecionada.id)) {
+            registrarTentativaFalha(emailNorm);
+            return res.status(403).json({
+              message: `Este e-mail não pertence ao ambiente "${empresaSelecionada.nome}". Verifique se selecionou a empresa certa.`,
+            });
+          }
+        }
+      } catch (error) {
+        console.warn("[auth] checagem de empresa_codigo ignorada:", error.message);
+      }
+    }
 
     const token = signToken({
       id:         user.id,
