@@ -50,6 +50,26 @@ function isRouteActive(pathname, href) {
   return pathname.startsWith(`${href}/`);
 }
 
+// Fase "arquitetura multi-ambiente" (10/09/2026, parte 2): a marca da
+// empresa (cor, logo) que o login já carrega em `user.empresa` agora é
+// aplicada aqui também — antes só a tela de login mudava de cara por
+// empresa; o menu/cabeçalho do resto do portal continuavam sempre com a
+// identidade padrão do Tel T&D. Empresas sem cor/logo próprios cadastrados
+// (ou o super_admin, que não pertence a uma empresa) continuam vendo
+// exatamente a mesma marca padrão de sempre — nada muda pra quem não tem
+// branding configurado.
+const LOGO_PADRAO = "/logo-td.png";
+
+function hexParaRgba(hex, alpha) {
+  const limpo = String(hex || "").replace("#", "");
+  const valido = /^[0-9a-fA-F]{6}$/.test(limpo);
+  if (!valido) return `rgba(217,119,6,${alpha})`; // fallback: sombra do accent padrão
+  const r = parseInt(limpo.slice(0, 2), 16);
+  const g = parseInt(limpo.slice(2, 4), 16);
+  const b = parseInt(limpo.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export default function PortalShell({
   title,
   subtitle,
@@ -111,6 +131,22 @@ export default function PortalShell({
   }, [user, pathname]);
 
   const isSuperAdmin = user?.perfil === "super_admin";
+
+  // Marca da empresa logada (null para super_admin ou empresas sem cor/logo
+  // cadastrados — nesses casos os valores padrão abaixo mantêm a aparência
+  // de sempre).
+  const empresaBranding = user?.empresa || null;
+  const corPrimaria = empresaBranding?.cor_primaria || colors.accent;
+  const logoUrl = empresaBranding?.logo_url || LOGO_PADRAO;
+
+  const navItemActiveStyle = useMemo(
+    () => ({
+      background: corPrimaria,
+      color: "#fff",
+      boxShadow: `0 10px 18px ${hexParaRgba(corPrimaria, 0.35)}`,
+    }),
+    [corPrimaria]
+  );
 
   const allowedMenuItems = useMemo(() => {
     if (!user) return [];
@@ -203,7 +239,12 @@ export default function PortalShell({
         <>
           <header style={mobileTopbar}>
             <div style={mobileBrandWrap}>
-              <img src="/logo-td.png" alt="Portal T&D" style={mobileLogo} />
+              <img
+                src={logoUrl}
+                alt="Portal T&D"
+                style={mobileLogo}
+                onError={(e) => { e.currentTarget.src = LOGO_PADRAO; }}
+              />
               <div style={{ minWidth: 0 }}>
                 <div style={mobileBrandTitle}>Portal T&amp;D</div>
                 <div style={mobileBrandSubtitle}>Treinamento e Desenvolvimento</div>
@@ -231,7 +272,7 @@ export default function PortalShell({
                       href={item.href}
                       style={{
                         ...mobileNavItem,
-                        ...(active ? mobileNavItemActive : {}),
+                        ...(active ? navItemActiveStyle : {}),
                       }}
                     >
                       <span style={mobileNavIcon}><NavIcon name={item.icon} /></span>
@@ -261,7 +302,12 @@ export default function PortalShell({
       ) : (
         <aside style={sidebar}>
           <div style={brandBox}>
-            <img src="/logo-td.png" alt="Portal T&D" style={logo} />
+            <img
+              src={logoUrl}
+              alt="Portal T&D"
+              style={logo}
+              onError={(e) => { e.currentTarget.src = LOGO_PADRAO; }}
+            />
 
             <div style={{ minWidth: 0 }}>
               <div style={brandTitle}>Portal T&amp;D</div>
@@ -279,7 +325,7 @@ export default function PortalShell({
                   href={item.href}
                   style={{
                     ...navItem,
-                    ...(active ? navItemActive : {}),
+                    ...(active ? navItemActiveStyle : {}),
                   }}
                 >
                   <span style={navIcon}><NavIcon name={item.icon} /></span>
@@ -392,12 +438,6 @@ const navItem = {
   textDecoration: "none",
   fontWeight: 700,
   transition: "all .2s ease",
-};
-
-const navItemActive = {
-  background: colors.accent,
-  color: "#fff",
-  boxShadow: "0 10px 18px rgba(217,119,6,0.35)",
 };
 
 const navIcon = {
@@ -559,11 +599,6 @@ const mobileNavItem = {
   color: "rgba(255,255,255,0.88)",
   textDecoration: "none",
   fontWeight: 700,
-};
-
-const mobileNavItemActive = {
-  background: colors.accent,
-  color: "#fff",
 };
 
 const mobileNavIcon = {
