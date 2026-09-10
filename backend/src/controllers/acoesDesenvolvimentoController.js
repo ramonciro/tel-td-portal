@@ -1,5 +1,6 @@
 const db = require("../lib/db");
 const XLSX = require("xlsx");
+const { usuarioPertenceAoTenant, treinamentoPertenceAoTenant } = require("../services/tenantValidation");
 
 function toNumber(value, fallback = 0) {
   const num = Number(value);
@@ -117,6 +118,15 @@ async function criar(req, res) {
       if (!jornadaDoTenant.length) {
         return res.status(404).json({ error: "Jornada não encontrada." });
       }
+    }
+
+    // Fase 4 (isolamento multi-tenant): responsavel_id e turma_id nunca
+    // eram checados contra o tenant — ver services/tenantValidation.js.
+    if (responsavelId && !(await usuarioPertenceAoTenant(responsavelId, req.empresaId))) {
+      return res.status(400).json({ error: "O responsável informado não pertence à sua empresa." });
+    }
+    if (turmaId && !(await treinamentoPertenceAoTenant(turmaId, req.empresaId))) {
+      return res.status(400).json({ error: "A turma informada não pertence à sua empresa." });
     }
 
     const [result] = await db.query(
@@ -246,6 +256,14 @@ async function atualizar(req, res) {
       if (!jornadaDoTenant.length) {
         return res.status(404).json({ error: "Jornada não encontrada." });
       }
+    }
+
+    // Fase 4 (isolamento multi-tenant): idem ao criar() acima.
+    if (responsavelId && !(await usuarioPertenceAoTenant(responsavelId, req.empresaId))) {
+      return res.status(400).json({ error: "O responsável informado não pertence à sua empresa." });
+    }
+    if (turmaId && !(await treinamentoPertenceAoTenant(turmaId, req.empresaId))) {
+      return res.status(400).json({ error: "A turma informada não pertence à sua empresa." });
     }
 
     const updateParams = [

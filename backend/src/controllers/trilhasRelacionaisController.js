@@ -441,6 +441,21 @@ async function marcarEtapaConcluida(req, res) {
       }
     }
 
+    // Fase 4 (isolamento multi-tenant, 08/09/2026): só a trilha (`id`) era
+    // checada — `etapaId` (vindo da URL) nunca era validado como pertencente
+    // a essa trilha, nem verificado se existe de verdade. Isso permitia
+    // "concluir" ids de etapa inventados/de outra trilha até bater a conta
+    // de etapas concluídas e disparar a conquista "Trilha concluída" (ver
+    // gamificacaoService.js) sem completar o conteúdo real, além de gravar
+    // uma referência cruzada sem dono em trilha_progresso.etapa_id.
+    const [etapaDaTrilha] = await pool.query(
+      'SELECT id FROM trilha_etapas WHERE id = ? AND trilha_id = ?',
+      [etapaId, id]
+    );
+    if (!etapaDaTrilha.length) {
+      return res.status(404).json({ ok: false, message: 'Etapa não encontrada nesta trilha' });
+    }
+
     // Bugfix: "?? 1" gravava todo progresso de super_admin/usuário legado
     // (empresaId nulo) como se fosse da empresa 1.
     const empresaId = req.empresaId ?? null;

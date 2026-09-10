@@ -5,7 +5,7 @@ const db = require("../lib/db");
 // empresa conseguia vincular um plano de coaching a uma jornada de outra
 // empresa (vazamento de dados entre tenants). Mesmo padrão já usado em
 // acoesDesenvolvimentoController.js.
-async function validarPertencimentoTenant(req, { jornada_id, etapa_id, acao_id }) {
+async function validarPertencimentoTenant(req, { jornada_id, etapa_id, acao_id, responsavel_id }) {
   if (!req.empresaId) return null;
 
   if (jornada_id) {
@@ -30,6 +30,17 @@ async function validarPertencimentoTenant(req, { jornada_id, etapa_id, acao_id }
       [acao_id, req.empresaId]
     );
     if (!rows.length) return "Ação não encontrada.";
+  }
+
+  // Fase 4 (isolamento multi-tenant, 08/09/2026): faltava aqui — o único dos
+  // 4 campos de FK que não era checado. Ver comentário equivalente nos
+  // outros controllers do Oceano.
+  if (responsavel_id) {
+    const [rows] = await db.query(
+      `SELECT id FROM usuarios WHERE id = ? AND empresa_id = ?`,
+      [responsavel_id, req.empresaId]
+    );
+    if (!rows.length) return "O responsável informado não pertence à sua empresa.";
   }
 
   return null;
@@ -131,11 +142,13 @@ async function criar(req, res) {
     const jornadaIdNum = jornada_id ? Number(jornada_id) : null;
     const etapaIdNum = etapa_id ? Number(etapa_id) : null;
     const acaoIdNum = acao_id ? Number(acao_id) : null;
+    const responsavelIdNum = responsavel_id ? Number(responsavel_id) : null;
 
     const erroTenant = await validarPertencimentoTenant(req, {
       jornada_id: jornadaIdNum,
       etapa_id: etapaIdNum,
       acao_id: acaoIdNum,
+      responsavel_id: responsavelIdNum, // Fase 4
     });
     if (erroTenant) {
       return res.status(404).json({ error: erroTenant });
@@ -240,11 +253,13 @@ async function atualizar(req, res) {
     const jornadaIdNum = jornada_id ? Number(jornada_id) : null;
     const etapaIdNum = etapa_id ? Number(etapa_id) : null;
     const acaoIdNum = acao_id ? Number(acao_id) : null;
+    const responsavelIdNum = responsavel_id ? Number(responsavel_id) : null;
 
     const erroTenant = await validarPertencimentoTenant(req, {
       jornada_id: jornadaIdNum,
       etapa_id: etapaIdNum,
       acao_id: acaoIdNum,
+      responsavel_id: responsavelIdNum, // Fase 4
     });
     if (erroTenant) {
       return res.status(404).json({ error: erroTenant });

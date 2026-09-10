@@ -322,11 +322,17 @@ async function salvarChamadaParticipantes(req, res) {
           ]
         );
       } else {
+        // Fase 4 (isolamento multi-tenant): faltava gravar empresa_id aqui —
+        // era o único caminho de criação de `presencas` que não preenchia a
+        // coluna (o CRUD genérico de /api/presencas injeta automaticamente).
+        // Sem isso, a chamada salva por esta tela nunca aparecia em
+        // GET /api/presencas (que filtra por empresa_id) e não podia ser
+        // editada/excluída por lá.
         await db.query(
           `
           INSERT INTO presencas
-          (treinamento_id, treinando_nome, data_chamada, presente, status, justificativa)
-          VALUES (?, ?, ?, ?, ?, ?)
+          (treinamento_id, treinando_nome, data_chamada, presente, status, justificativa, empresa_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
           `,
           [
             treinamento_id,
@@ -335,6 +341,7 @@ async function salvarChamadaParticipantes(req, res) {
             presente,
             status,
             item.justificativa || null,
+            req.empresaId || null,
           ]
         );
       }

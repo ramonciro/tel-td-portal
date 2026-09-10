@@ -18,6 +18,25 @@ async function treinamentoPertenceAoTenant(treinamentoId, empresaId) {
   return rows.length > 0;
 }
 
+// Fase 4 (isolamento multi-tenant, 08/09/2026): treinamento_id sempre foi
+// validado contra o tenant, mas material_id nunca era checado contra
+// treinamento_id nenhum — dava pra registrar/editar uma resposta com
+// treinamento_id da própria empresa mas material_id de um material de OUTRA
+// empresa (ids são sequenciais e fáceis de adivinhar), plantando uma
+// referência cruzada entre tenants. Hoje isso não vaza leitura (as consultas
+// que unem respostas_avaliativas a materiais_avaliativos sempre re-filtram
+// pelo tenant de quem consulta), mas é uma referência inválida e vira
+// vazamento no dia em que alguma tela juntar as duas tabelas só por
+// material_id. Esta checagem garante que o material realmente pertence ao
+// treinamento informado.
+async function materialPertenceAoTreinamento(materialId, treinamentoId) {
+  const [rows] = await pool.query(
+    `SELECT id FROM materiais_avaliativos WHERE id = ? AND treinamento_id = ? LIMIT 1`,
+    [materialId, treinamentoId]
+  );
+  return rows.length > 0;
+}
+
 async function listRespostasAvaliativas(req, res) {
   try {
     const perfil = String(req.user?.perfil || "").toLowerCase();
@@ -97,6 +116,10 @@ async function createRespostaAvaliativa(req, res) {
 
     if (!(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
+    if (!(await materialPertenceAoTreinamento(material_id, treinamento_id))) {
+      return res.status(400).json({ ok: false, message: "Material não pertence a este treinamento." });
     }
 
     if (perfil === "treinando") {
@@ -190,15 +213,27 @@ async function updateRespostaAvaliativa(req, res) {
 
     const tenantCheck = tenantJoinTreinamento(req.empresaId, "respostas_avaliativas");
     const [exists] = await pool.query(
-      `SELECT id FROM respostas_avaliativas WHERE id = ?${tenantCheck} LIMIT 1`,
+      `SELECT id, material_id, treinamento_id FROM respostas_avaliativas WHERE id = ?${tenantCheck} LIMIT 1`,
       [id]
     );
     if (!exists.length) {
       return res.status(404).json({ ok: false, message: "Resposta avaliativa não encontrada" });
     }
 
+    // Fase 4 (isolamento multi-tenant): quando o corpo não manda material_id/
+    // treinamento_id, mantém os valores atuais em vez de gravar undefined —
+    // e valida o par (novo ou atual) contra o tenant e um contra o outro,
+    // fechando a mesma lacuna do create (ver comentário em
+    // materialPertenceAoTreinamento).
+    const materialIdFinal = material_id ?? exists[0].material_id;
+    const treinamentoIdFinal = treinamento_id ?? exists[0].treinamento_id;
+
     if (treinamento_id && !(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
+    if (!(await materialPertenceAoTreinamento(materialIdFinal, treinamentoIdFinal))) {
+      return res.status(400).json({ ok: false, message: "Material não pertence a este treinamento." });
     }
 
     await pool.query(
@@ -217,8 +252,8 @@ async function updateRespostaAvaliativa(req, res) {
       WHERE id = ?
       `,
       [
-        material_id,
-        treinamento_id,
+        materialIdFinal,
+        treinamentoIdFinal,
         treinando_nome,
         typeof respostas_json === "string"
           ? respostas_json

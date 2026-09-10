@@ -96,7 +96,13 @@ async function putRegra(req, res) {
 async function getOverrides(req, res) {
   try {
     const { instrutor, ano } = req.query || {};
-    const itens = await listarOverrides({ instrutor: instrutor || undefined, ano: ano ? Number(ano) : undefined });
+    // Fase 4 (isolamento multi-tenant): antes não passava req.empresaId —
+    // qualquer coordenador via os overrides de capacidade de todas as empresas.
+    const itens = await listarOverrides({
+      instrutor: instrutor || undefined,
+      ano: ano ? Number(ano) : undefined,
+      empresaId: req.empresaId || undefined,
+    });
     return res.json({ ok: true, itens });
   } catch (error) {
     return res.status(500).json({ ok: false, message: "Erro ao listar overrides.", error: error.message });
@@ -120,6 +126,10 @@ async function postOverride(req, res) {
       hcCapacidade: hc_capacidade || 0,
       observacoes,
       criadoPor: req.user?.nome || req.user?.email || null,
+      // Fase 4: sem isso, o UNIQUE KEY (instrutor+ano+mes) fazia um
+      // coordenador sobrescrever, sem querer, o override de outra empresa
+      // que tivesse um instrutor com o mesmo nome no mesmo mês.
+      empresaId: req.empresaId || null,
     });
     return res.json({ ok: true, message: "Capacidade do instrutor salva com sucesso." });
   } catch (error) {
@@ -130,7 +140,9 @@ async function postOverride(req, res) {
 async function deleteOverride(req, res) {
   try {
     const { id } = req.params;
-    await excluirOverride(id);
+    // Fase 4: sem passar req.empresaId, qualquer coordenador conseguia
+    // excluir por id o override de capacidade de qualquer outra empresa.
+    await excluirOverride(id, req.empresaId || undefined);
     return res.json({ ok: true, message: "Override removido — instrutor volta a usar a regra automática." });
   } catch (error) {
     return res.status(500).json({ ok: false, message: "Erro ao remover override.", error: error.message });

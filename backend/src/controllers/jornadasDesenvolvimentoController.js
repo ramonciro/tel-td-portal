@@ -1,4 +1,5 @@
 const db = require("../lib/db");
+const { usuarioPertenceAoTenant } = require("../services/tenantValidation");
 
 // Bugfix: a versão anterior colapsava "planejada" e "em_andamento" no MESMO
 // valor de banco ("ativo") — ao escolher "Em andamento", salvar e recarregar,
@@ -106,6 +107,12 @@ async function criar(req, res) {
       return res.status(400).json({ error: "Nome da jornada é obrigatório." });
     }
 
+    // Fase 4 (isolamento multi-tenant): responsavel_id nunca era checado
+    // contra o tenant — ver services/tenantValidation.js.
+    if (responsavel_id && !(await usuarioPertenceAoTenant(responsavel_id, req.empresaId))) {
+      return res.status(400).json({ error: "O responsável informado não pertence à sua empresa." });
+    }
+
     const [result] = await db.query(
       `
       INSERT INTO jornadas_desenvolvimento
@@ -156,6 +163,11 @@ async function atualizar(req, res) {
     const [exists] = await db.query(`SELECT id FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, existsParams);
     if (!exists.length) {
       return res.status(404).json({ error: "Jornada não encontrada." });
+    }
+
+    // Fase 4 (isolamento multi-tenant): idem ao criar() acima.
+    if (responsavel_id && !(await usuarioPertenceAoTenant(responsavel_id, req.empresaId))) {
+      return res.status(400).json({ error: "O responsável informado não pertence à sua empresa." });
     }
 
     const updateParams = [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, id];

@@ -9,6 +9,9 @@ async function getFrequenciaIndividual(req, res) {
       treinamentoId: treinamento_id ? Number(treinamento_id) : undefined,
       inicio: inicio || undefined,
       fim: fim || undefined,
+      // Fase 4 (isolamento multi-tenant): faltava esta linha — sem ela, a
+      // rota devolvia frequência de participantes de TODAS as empresas.
+      empresaId: req.empresaId || undefined,
     });
 
     const totalTreinandos = itens.length;
