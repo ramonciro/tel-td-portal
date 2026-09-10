@@ -805,6 +805,99 @@ async function runMigrations() {
       }
     }
 
+    // Item 25 — Fase "arquitetura multi-ambiente" (10/09/2026): as colunas
+    // abaixo já existiam em produção (aplicadas manualmente, sem migração
+    // versionada — mesmo padrão de "tabela órfã" já visto antes com
+    // biblioteca_conteudos/avaliacoes_treinandos/trilhas_aprendizagem) porque
+    // o painel "Novo Tenant" (adminController.createEmpresa) e o seletor de
+    // ambiente no login dependem delas. Versionando aqui pra qualquer
+    // ambiente novo (dev local, ou uma recriação do banco) subir com o
+    // schema completo — cada coluna é independente e opcional (NULL), então
+    // não quebra nada em bancos que já as têm.
+    for (const [coluna, definicao] of [
+      ["codigo", "VARCHAR(50) NULL"],
+      ["plano", "VARCHAR(30) NULL DEFAULT 'basico'"],
+      ["limite_usuarios", "INT NULL"],
+      ["limite_turmas", "INT NULL"],
+      ["contato_nome", "VARCHAR(150) NULL"],
+      ["contato_email", "VARCHAR(150) NULL"],
+      ["contato_telefone", "VARCHAR(30) NULL"],
+      ["subdomain", "VARCHAR(150) NULL"],
+      ["cor_primaria", "VARCHAR(10) NULL DEFAULT '#FF6B4A'"],
+      ["logo_url", "VARCHAR(500) NULL"],
+      ["observacoes", "TEXT NULL"],
+      ["custo_hora_treinamento", "DECIMAL(10,2) NULL"],
+    ]) {
+      try {
+        await ensureColumn("empresas", coluna, definicao);
+      } catch (err) {
+        console.warn(`  ↳ não foi possível adicionar empresas.${coluna}: ${err.message}`);
+      }
+    }
+    // codigo precisa ser único pra servir de identificador estável no
+    // seletor de ambiente do login (?empresa=<codigo>) — criado à parte
+    // (não dá pra declarar UNIQUE direto no ensureColumn genérico) e só
+    // depois de a coluna já existir com os valores atuais preenchidos.
+    try {
+      await pool.query(`ALTER TABLE empresas ADD UNIQUE KEY uq_empresas_codigo (codigo)`);
+      console.log("  ↳ índice único criado: empresas.uq_empresas_codigo");
+    } catch (error) {
+      if (!/duplicate key name|Duplicate entry/i.test(error.message || "")) {
+        console.log(`  ↳ não foi possível criar uq_empresas_codigo (${error.message}) — seguindo`);
+      }
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS planos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        slug VARCHAR(30) NOT NULL UNIQUE,
+        nome VARCHAR(80) NOT NULL,
+        descricao VARCHAR(200) NULL,
+        limite_usuarios INT NOT NULL DEFAULT 50,
+        limite_turmas INT NOT NULL DEFAULT 100,
+        ativo TINYINT(1) NOT NULL DEFAULT 1,
+        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await pool.query(`
+      INSERT INTO planos (slug, nome, descricao, limite_usuarios, limite_turmas)
+      SELECT * FROM (SELECT 'basico' AS slug, 'Básico' AS nome, 'Até 30 usuários e 50 turmas' AS descricao, 30 AS limite_usuarios, 50 AS limite_turmas) AS tmp
+      WHERE NOT EXISTS (SELECT 1 FROM planos WHERE slug = 'basico')
+    `);
+    await pool.query(`
+      INSERT INTO planos (slug, nome, descricao, limite_usuarios, limite_turmas)
+      SELECT * FROM (SELECT 'profissional' AS slug, 'Profissional' AS nome, 'Até 100 usuários e 300 turmas' AS descricao, 100 AS limite_usuarios, 300 AS limite_turmas) AS tmp
+      WHERE NOT EXISTS (SELECT 1 FROM planos WHERE slug = 'profissional')
+    `);
+    await pool.query(`
+      INSERT INTO planos (slug, nome, descricao, limite_usuarios, limite_turmas)
+      SELECT * FROM (SELECT 'enterprise' AS slug, 'Enterprise' AS nome, 'Sem limites operacionais' AS descricao, 9999 AS limite_usuarios, 9999 AS limite_turmas) AS tmp
+      WHERE NOT EXISTS (SELECT 1 FROM planos WHERE slug = 'enterprise')
+    `);
+
+    // Backfill: empresas existentes sem "codigo" (criadas antes desta coluna
+    // existir) recebem um slug derivado do nome, pra nunca ficarem de fora
+    // do seletor de ambiente do login por falta de identificador.
+    try {
+      const [semCodigo] = await pool.query(
+        `SELECT id, nome FROM empresas WHERE codigo IS NULL OR codigo = ''`
+      );
+      for (const emp of semCodigo) {
+        let slug = String(emp.nome || `empresa-${emp.id}`)
+          .toLowerCase()
+          .normalize("NFD").replace(/[̀-ͯ]/g, "")
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") || `empresa-${emp.id}`;
+        // eslint-disable-next-line no-await-in-loop
+        const [existe] = await pool.query(`SELECT id FROM empresas WHERE codigo = ? LIMIT 1`, [slug]);
+        if (existe.length) slug = `${slug}-${emp.id}`;
+        // eslint-disable-next-line no-await-in-loop
+        await pool.query(`UPDATE empresas SET codigo = ? WHERE id = ?`, [slug, emp.id]);
+      }
+    } catch (err) {
+      console.warn(`  ↳ backfill de empresas.codigo não concluído: ${err.message}`);
+    }
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
