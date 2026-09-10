@@ -898,6 +898,65 @@ async function runMigrations() {
       console.warn(`  ↳ backfill de empresas.codigo não concluído: ${err.message}`);
     }
 
+    // 26. Item A da Fase 4 (relatorio-fase4-isolamento-multitenant-2026-09.md):
+    // a tela de Biblioteca está quebrada em produção porque a tabela que o
+    // controller usa (`biblioteca`) nunca chegou a ser criada — só existe uma
+    // tabela mais antiga, `biblioteca_conteudos` (sem empresa_id, vinculada só
+    // por nome de cliente, e vazia em produção: 0 linhas). Havia um .sql
+    // avulso de um sprint anterior pra criar essa tabela
+    // (database/migrations/sprint2_fix_biblioteca.sql), mas ele: (a) nunca foi
+    // executado, (b) usava nomes de coluna (criado_em/atualizado_em)
+    // diferentes do que o controller espera hoje (created_at), e (c) definia
+    // `empresa_id INT NULL DEFAULT 1` — um DEFAULT perigoso, que criaria uma
+    // nova brecha de isolamento (todo registro cadastrado sem empresa_id
+    // explícito cairia silenciosamente dentro do tenant de id 1). A tabela
+    // abaixo usa exatamente as colunas que bibliotecaController.js já espera,
+    // sem esse DEFAULT — mesmo padrão de "sem tenant = sem tenant" usado no
+    // resto da Fase 4. `biblioteca_conteudos` fica como está (não é apagada:
+    // zero linhas, sem risco, candidata a limpeza de schema futura).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS biblioteca (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        titulo       VARCHAR(200) NOT NULL,
+        tipo         VARCHAR(50)  NULL,
+        cliente      VARCHAR(150) NULL,
+        categoria    VARCHAR(100) NULL,
+        publico      VARCHAR(100) NULL,
+        status       VARCHAR(50)  NULL DEFAULT 'Publicado',
+        link_arquivo TEXT NULL,
+        descricao    TEXT NULL,
+        empresa_id   INT NULL,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_biblioteca_empresa (empresa_id),
+        KEY idx_biblioteca_cliente (cliente)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 27. Item B da Fase 4: a regra padrão de capacidade (horas/dia e
+    // headcount/dia usados no cálculo de "Capacidade x Realizado") era uma
+    // única linha global pra todo o portal — mudar o valor afetava todos os
+    // tenants ao mesmo tempo. Agora cada empresa pode ter sua própria linha
+    // (empresa_id preenchido); a linha antiga (id=1, empresa_id fica NULL
+    // depois do ALTER) continua servindo de valor padrão de fallback pra
+    // qualquer tenant que ainda não tenha configurado a própria regra — ou
+    // seja, IBM/Dasa (ou qualquer tenant novo) já nascem com um valor
+    // sensato sem precisar de nenhuma ação manual, e podem sobrescrever
+    // quando quiserem via a mesma tela de sempre (Capacidade → Regra
+    // padrão). Ver backend/src/services/capacidadeResolver.js.
+    try {
+      await ensureColumn("capacidade_regra_padrao", "empresa_id", "INT NULL");
+    } catch (err) {
+      console.warn(`  ↳ não foi possível adicionar capacidade_regra_padrao.empresa_id: ${err.message}`);
+    }
+    try {
+      await pool.query(`ALTER TABLE capacidade_regra_padrao ADD UNIQUE KEY uq_crp_empresa (empresa_id)`);
+      console.log("  ↳ índice único criado: capacidade_regra_padrao.uq_crp_empresa");
+    } catch (error) {
+      if (!/duplicate key name|Duplicate entry/i.test(error.message || "")) {
+        console.log(`  ↳ não foi possível criar uq_crp_empresa (${error.message}) — seguindo`);
+      }
+    }
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
