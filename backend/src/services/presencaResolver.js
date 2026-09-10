@@ -408,14 +408,18 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
 // drill-down (Dashboard, aba Pessoas da turma). Antes, a Frequência
 // Individual só olhava para a tabela `presencas` (legado) — turmas geridas
 // por cronograma apareciam como se ninguém tivesse frequência nenhuma.
-async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fim } = {}) {
-  const resumo = await getResumoPresenca({ treinamentoId });
+async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fim, empresaId } = {}) {
+  // Fase 4 (isolamento multi-tenant): esta função não recebia empresaId
+  // nenhum antes — GET /api/frequencia-individual devolvia presença de
+  // TODOS os tenants, sem filtro nenhum (achado da auditoria de 08/09/2026).
+  const resumo = await getResumoPresenca({ treinamentoId, empresaId });
   const origemPorId = new Map(resumo.map((r) => [r.id, r.origem_frequencia]));
 
   const whereBase = [];
   const paramsBase = [];
   if (cliente) { whereBase.push("t.cliente = ?"); paramsBase.push(cliente); }
   if (treinamentoId) { whereBase.push("t.id = ?"); paramsBase.push(treinamentoId); }
+  if (empresaId) { whereBase.push("t.empresa_id = ?"); paramsBase.push(empresaId); }
 
   // fonte 1: legado (presencas) — usada quando origem_frequencia é
   // 'legado' ou 'presencas' (turmas sem cronograma, ou cronograma vazio)

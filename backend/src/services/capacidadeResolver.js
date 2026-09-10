@@ -188,11 +188,18 @@ async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDom
   return getRegraPadrao();
 }
 
-async function listarOverrides({ instrutor, ano } = {}) {
+// Fase 4 (isolamento multi-tenant, 08/09/2026): as três funções abaixo não
+// recebiam empresaId nenhum antes — qualquer coordenador conseguia listar os
+// overrides de TODAS as empresas, sobrescrever o override de outra empresa
+// (o UNIQUE KEY batia só em instrutor+ano+mes) ou excluir por id o override
+// de qualquer empresa. Corrigido para exigir e filtrar por empresaId em
+// tudo (ver migrate.js item 24 para a coluna/índice novos).
+async function listarOverrides({ instrutor, ano, empresaId } = {}) {
   const conditions = [];
   const params = [];
   if (instrutor) { conditions.push("instrutor = ?"); params.push(instrutor); }
   if (ano) { conditions.push("ano = ?"); params.push(Number(ano)); }
+  if (empresaId) { conditions.push("empresa_id = ?"); params.push(empresaId); }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const [rows] = await pool.query(
     `SELECT id, instrutor, ano, mes, horas_capacidade, hc_capacidade, observacoes, criado_por, criado_em, atualizado_em
@@ -203,22 +210,24 @@ async function listarOverrides({ instrutor, ano } = {}) {
   return rows;
 }
 
-async function salvarOverride({ instrutor, ano, mes, horasCapacidade, hcCapacidade, observacoes, criadoPor }) {
+async function salvarOverride({ instrutor, ano, mes, horasCapacidade, hcCapacidade, observacoes, criadoPor, empresaId }) {
   await pool.query(
     `INSERT INTO capacidade_instrutor_mensal
-       (instrutor, ano, mes, horas_capacidade, hc_capacidade, observacoes, criado_por)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+       (instrutor, ano, mes, horas_capacidade, hc_capacidade, observacoes, criado_por, empresa_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        horas_capacidade = VALUES(horas_capacidade),
        hc_capacidade = VALUES(hc_capacidade),
        observacoes = VALUES(observacoes),
        criado_por = VALUES(criado_por)`,
-    [instrutor, Number(ano), Number(mes), Number(horasCapacidade || 0), Number(hcCapacidade || 0), observacoes || null, criadoPor || null]
+    [instrutor, Number(ano), Number(mes), Number(horasCapacidade || 0), Number(hcCapacidade || 0), observacoes || null, criadoPor || null, empresaId || null]
   );
 }
 
-async function excluirOverride(id) {
-  await pool.query(`DELETE FROM capacidade_instrutor_mensal WHERE id = ?`, [id]);
+async function excluirOverride(id, empresaId) {
+  const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const params = empresaId ? [id, empresaId] : [id];
+  await pool.query(`DELETE FROM capacidade_instrutor_mensal WHERE id = ?${tenantCheck}`, params);
 }
 
 async function listarInstrutoresConhecidos(empresaId) {
@@ -277,11 +286,15 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
     [...instrutores, ...mesesParams, ...clienteParams, ...tenantFonteHorasParam(empresaId)]
   );
 
+  // Fase 4: filtra também por empresa_id — sem isso, um override de outra
+  // empresa com o mesmo nome de instrutor + ano/mês entrava na conta.
+  const overrideTenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const overrideTenantParam = empresaId ? [empresaId] : [];
   const [overridesRows] = await pool.query(
     `SELECT instrutor, ano, mes, horas_capacidade, hc_capacidade
      FROM capacidade_instrutor_mensal
-     WHERE instrutor IN (${placeholdersInstrutores}) AND ano IN (${anos.map(() => "?").join(",")})`,
-    [...instrutores, ...anos]
+     WHERE instrutor IN (${placeholdersInstrutores}) AND ano IN (${anos.map(() => "?").join(",")})${overrideTenantCheck}`,
+    [...instrutores, ...anos, ...overrideTenantParam]
   );
 
   const regra = await getRegraPadrao();
