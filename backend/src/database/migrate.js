@@ -1,4 +1,4 @@
-  // src/database/migrate.js
+// src/database/migrate.js
 const pool = require("../lib/db");
 
 // ---------------------------------------------------------------------------
@@ -775,6 +775,35 @@ async function runMigrations() {
         INDEX idx_avtr_treinando   (treinando_nome)
       );
     `);
+
+    // Item 24 — Fase 4 (isolamento multi-tenant, 08/09/2026): a tabela de
+    // overrides manuais de capacidade por instrutor não tinha empresa_id —
+    // qualquer coordenador conseguia ler, sobrescrever (o UNIQUE KEY original
+    // batia só em instrutor+ano+mes, sem tenant) ou excluir por id o override
+    // de qualquer outra empresa. A tabela está vazia em produção hoje (0
+    // linhas), então dá pra trocar o UNIQUE KEY com segurança, sem precisar
+    // decidir o que fazer com dado conflitante existente.
+    await ensureColumn("capacidade_instrutor_mensal", "empresa_id", "INT NULL");
+    try {
+      await pool.query(`ALTER TABLE capacidade_instrutor_mensal DROP INDEX uq_cim_instrutor_mes`);
+      console.log("  ↳ índice antigo removido: capacidade_instrutor_mensal.uq_cim_instrutor_mes");
+    } catch (error) {
+      // Já removido em um deploy anterior, ou nunca existiu com esse nome — segue.
+      if (!/check that column\/key exists|doesn't exist/i.test(error.message || "")) {
+        console.log(`  ↳ não foi possível remover uq_cim_instrutor_mes (${error.message}) — seguindo`);
+      }
+    }
+    try {
+      await pool.query(`
+        ALTER TABLE capacidade_instrutor_mensal
+        ADD UNIQUE KEY uq_cim_instrutor_mes_empresa (instrutor, ano, mes, empresa_id)
+      `);
+      console.log("  ↳ índice novo criado: capacidade_instrutor_mensal.uq_cim_instrutor_mes_empresa");
+    } catch (error) {
+      if (!/duplicate key name/i.test(error.message || "")) {
+        console.log(`  ↳ não foi possível criar uq_cim_instrutor_mes_empresa (${error.message}) — seguindo`);
+      }
+    }
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
