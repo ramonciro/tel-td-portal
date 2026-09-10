@@ -78,6 +78,7 @@ export default function EmpresaDetailPage() {
           contato_telefone: e.contato_telefone || "",
           subdomain: e.subdomain || "", observacoes: e.observacoes || "",
           custo_hora_treinamento: e.custo_hora_treinamento ?? "",
+          cor_primaria: e.cor_primaria || colors.accent, logo_url: e.logo_url || "",
         });
       } catch (err) {
         setError(err.message || "Erro ao carregar empresa.");
@@ -117,6 +118,8 @@ export default function EmpresaDetailPage() {
         subdomain:        updated.subdomain        || "",
         observacoes:      updated.observacoes      || "",
         custo_hora_treinamento: updated.custo_hora_treinamento ?? "",
+        cor_primaria:     updated.cor_primaria      || colors.accent,
+        logo_url:         updated.logo_url          || "",
       });
 
       setSuccess("Dados atualizados com sucesso.");
@@ -245,6 +248,41 @@ export default function EmpresaDetailPage() {
                 <label style={lbl}>Subdomínio</label>
                 <input {...fld("subdomain")} placeholder="—" />
               </div>
+              <div style={fieldFull}><div style={divider} /></div>
+              <div>
+                <label style={lbl}>Cor de marca</label>
+                <div style={corRow}>
+                  <input
+                    type="color"
+                    value={form.cor_primaria || colors.accent}
+                    disabled={!editMode}
+                    onChange={(e) => setForm((prev) => ({ ...prev, cor_primaria: e.target.value }))}
+                    style={corSwatch}
+                  />
+                  <input {...fld("cor_primaria")} placeholder="#FF6B4A" />
+                </div>
+                <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 4 }}>
+                  Aparece no seletor de login e no menu do portal deste tenant.
+                </div>
+              </div>
+              <div>
+                <label style={lbl}>URL da logo</label>
+                <div style={corRow}>
+                  {form.logo_url && (
+                    <img
+                      src={form.logo_url}
+                      alt="Logo"
+                      style={logoPreview}
+                      onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+                      onLoad={(e) => { e.currentTarget.style.visibility = "visible"; }}
+                    />
+                  )}
+                  <input {...fld("logo_url")} placeholder="https://…/logo.png" />
+                </div>
+                <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 4 }}>
+                  Opcional — sem logo própria, usa a logo padrão do Portal T&amp;D.
+                </div>
+              </div>
               <div>
                 <label style={lbl}>Custo por hora de treinamento (R$)</label>
                 <input {...fld("custo_hora_treinamento")} type="number" min="0" step="0.01"
@@ -372,6 +410,11 @@ const lbl          = { display: "block", fontSize: 12, fontWeight: 700, color: "
 const inp          = { width: "100%", padding: "9px 12px", border: "1px solid #e5e7eb", borderRadius: 8,
                        fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 const divider      = { height: 1, background: "#f3f4f6" };
+const corRow       = { display: "flex", alignItems: "center", gap: 8 };
+const corSwatch    = { width: 38, height: 38, padding: 0, border: "1px solid #e5e7eb", borderRadius: 8,
+                       cursor: "pointer", flexShrink: 0, background: "none" };
+const logoPreview  = { width: 38, height: 38, borderRadius: 8, objectFit: "contain",
+                       border: "1px solid #e5e7eb", flexShrink: 0, background: "#f9fafb" };
 const metaInfo     = { fontSize: 12, color: "#9ca3af" };
 const emptyMsg     = { textAlign: "center", color: "#9ca3af", padding: "20px 0", fontSize: 13 };
 const userList     = { display: "flex", flexDirection: "column", gap: 8 };
