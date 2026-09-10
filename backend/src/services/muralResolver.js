@@ -7,13 +7,21 @@
 // "postar" manualmente que uma avaliação foi criada — isso já é rastreável
 // a partir das tabelas que já existem.
 //
-// Observação sobre os eventos derivados de biblioteca: a tabela
-// `biblioteca_conteudos` vincula material por CLIENTE, não por turma
-// específica (não existe treinamento_id nela) — então um material aparece
-// no mural de todas as turmas daquele cliente, não só de uma. É uma
-// aproximação razoável dado o desenho atual da tabela; se no futuro
-// biblioteca passar a vincular por turma, esse evento fica mais preciso
-// automaticamente, sem mudar a interface do mural.
+// Observação sobre os eventos derivados de biblioteca: a tabela `biblioteca`
+// vincula material por CLIENTE, não por turma específica (não existe
+// treinamento_id nela) — então um material aparece no mural de todas as
+// turmas daquele cliente, não só de uma. É uma aproximação razoável dado o
+// desenho atual da tabela; se no futuro biblioteca passar a vincular por
+// turma, esse evento fica mais preciso automaticamente, sem mudar a
+// interface do mural.
+//
+// Fase 4 / Item A (resolvido em 10/09/2026): antes esta consulta lia de
+// `biblioteca_conteudos` — uma tabela mais antiga, sem empresa_id, que ficou
+// vazia em produção porque a tela de Biblioteca de verdade usa a tabela
+// `biblioteca` (ver migrate.js e bibliotecaController.js). Além de corrigir
+// a tabela, o filtro agora também exige empresa_id: sem isso, dois clientes
+// com o mesmo nome em empresas (tenants) diferentes veriam o material um do
+// outro no mural — o filtro por `cliente` sozinho não bastava.
 
 const pool = require("../lib/db");
 
@@ -73,12 +81,14 @@ async function getEventosAvaliacoes(treinamentoId) {
   }
 }
 
-async function getEventosMateriais(cliente) {
+async function getEventosMateriais(cliente, empresaId) {
   if (!cliente) return [];
   try {
+    const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+    const params = empresaId ? [cliente, empresaId] : [cliente];
     const [rows] = await pool.query(
-      `SELECT * FROM biblioteca_conteudos WHERE cliente = ? ORDER BY id DESC LIMIT 20`,
-      [cliente]
+      `SELECT * FROM biblioteca WHERE cliente = ?${tenantCheck} ORDER BY id DESC LIMIT 20`,
+      params
     );
     return rows.map((m) => ({
       tipo: "material",
@@ -87,7 +97,7 @@ async function getEventosMateriais(cliente) {
       titulo: `Material "${m.titulo || "sem título"}" disponível na biblioteca`,
       descricao: m.categoria || null,
       autor: null,
-      data: m.criado_em || m.created_at || null,
+      data: m.created_at || null,
       editavel: false,
     }));
   } catch (error) {
@@ -139,7 +149,7 @@ async function getMuralTurma(treinamentoId, empresaId) {
   const [publicacoes, avaliacoesEventos, materiaisEventos, chamadaEventos] = await Promise.all([
     getPublicacoesManuais(treinamentoId),
     getEventosAvaliacoes(treinamentoId),
-    getEventosMateriais(treinamento.cliente),
+    getEventosMateriais(treinamento.cliente, treinamento.empresa_id),
     getEventosChamadas(treinamentoId),
   ]);
 

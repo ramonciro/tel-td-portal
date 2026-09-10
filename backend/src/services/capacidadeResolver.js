@@ -150,15 +150,6 @@ const FONTE_HORAS_SQL = `
   ) fonte_horas
 `;
 
-// Pendência conhecida (documentada, não resolvida nesta rodada): as tabelas
-// capacidade_instrutor_mensal (override manual de capacidade) e
-// capacidade_regra_padrao (regra padrão de horas/dia) não têm empresa_id —
-// são configuração única pro portal inteiro hoje. Isso não vaza dado de
-// turma/treinamento de outro tenant (isso já é filtrado via FONTE_HORAS_SQL
-// abaixo), mas significa que a regra de capacidade e os overrides por
-// instrutor ainda são compartilhados entre tenants. Corrigir isso exige
-// decidir se "capacidade padrão" deve ser por empresa (provável, quando IBM/
-// Dasa entrarem) — deixo como próximo passo, não decidido sozinho aqui.
 function tenantFonteHoras(empresaId) {
   return empresaId ? " AND fonte_horas.empresa_id = ?" : "";
 }
@@ -166,25 +157,66 @@ function tenantFonteHorasParam(empresaId) {
   return empresaId ? [empresaId] : [];
 }
 
-async function getRegraPadrao() {
-  const [rows] = await pool.query(
+// Item B da Fase 4 (relatorio-fase4-isolamento-multitenant-2026-09.md),
+// resolvido: a regra padrão de capacidade agora pode ser configurada por
+// empresa. A linha antiga (empresa_id NULL, criada antes desta coluna
+// existir) vira o valor padrão de fallback — qualquer tenant que ainda não
+// tenha configurado a própria regra usa esse valor global, sem precisar de
+// nenhuma ação manual no onboarding. Quando o tenant salva sua própria regra
+// (PUT /capacidade/regra autenticado com empresa_id no token), grava/atualiza
+// a linha dele especificamente, sem afetar mais ninguém.
+async function getRegraPadrao(empresaId) {
+  if (empresaId) {
+    const [rows] = await pool.query(
+      `SELECT id, horas_dia_padrao, hc_dia_padrao, considerar_domingo, atualizado_em
+       FROM capacidade_regra_padrao WHERE empresa_id = ? LIMIT 1`,
+      [empresaId]
+    );
+    if (rows[0]) return rows[0];
+  }
+  // Sem empresaId (super admin, chamada interna sem tenant) ou tenant sem
+  // regra própria ainda configurada → cai no valor padrão global.
+  const [globalRows] = await pool.query(
     `SELECT id, horas_dia_padrao, hc_dia_padrao, considerar_domingo, atualizado_em
-     FROM capacidade_regra_padrao WHERE id = 1 LIMIT 1`
+     FROM capacidade_regra_padrao WHERE empresa_id IS NULL ORDER BY id ASC LIMIT 1`
   );
-  if (rows[0]) return rows[0];
-  return { id: 1, horas_dia_padrao: 6, hc_dia_padrao: 30, considerar_domingo: 0, atualizado_em: null };
+  if (globalRows[0]) return globalRows[0];
+  return { id: null, horas_dia_padrao: 6, hc_dia_padrao: 30, considerar_domingo: 0, atualizado_em: null };
 }
 
-async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDomingo }) {
-  await pool.query(
-    `INSERT INTO capacidade_regra_padrao (id, horas_dia_padrao, hc_dia_padrao, considerar_domingo)
-     VALUES (1, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       horas_dia_padrao = VALUES(horas_dia_padrao),
-       hc_dia_padrao = VALUES(hc_dia_padrao),
-       considerar_domingo = VALUES(considerar_domingo)`,
-    [Number(horasDiaPadrao), Number(hcDiaPadrao), considerarDomingo ? 1 : 0]
+async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDomingo, empresaId }) {
+  if (empresaId) {
+    await pool.query(
+      `INSERT INTO capacidade_regra_padrao (empresa_id, horas_dia_padrao, hc_dia_padrao, considerar_domingo)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         horas_dia_padrao = VALUES(horas_dia_padrao),
+         hc_dia_padrao = VALUES(hc_dia_padrao),
+         considerar_domingo = VALUES(considerar_domingo)`,
+      [empresaId, Number(horasDiaPadrao), Number(hcDiaPadrao), considerarDomingo ? 1 : 0]
+    );
+    return getRegraPadrao(empresaId);
+  }
+
+  // Sem empresaId (ex.: super admin) — atualiza o valor padrão global usado
+  // como fallback por todo tenant que ainda não tem regra própria.
+  const [globalRows] = await pool.query(
+    `SELECT id FROM capacidade_regra_padrao WHERE empresa_id IS NULL ORDER BY id ASC LIMIT 1`
   );
+  if (globalRows[0]) {
+    await pool.query(
+      `UPDATE capacidade_regra_padrao
+       SET horas_dia_padrao = ?, hc_dia_padrao = ?, considerar_domingo = ?
+       WHERE id = ?`,
+      [Number(horasDiaPadrao), Number(hcDiaPadrao), considerarDomingo ? 1 : 0, globalRows[0].id]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO capacidade_regra_padrao (empresa_id, horas_dia_padrao, hc_dia_padrao, considerar_domingo)
+       VALUES (NULL, ?, ?, ?)`,
+      [Number(horasDiaPadrao), Number(hcDiaPadrao), considerarDomingo ? 1 : 0]
+    );
+  }
   return getRegraPadrao();
 }
 
@@ -297,7 +329,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
     [...instrutores, ...anos, ...overrideTenantParam]
   );
 
-  const regra = await getRegraPadrao();
+  const regra = await getRegraPadrao(empresaId);
 
   const chaveMes = (a, m) => `${a}-${pad2(m)}`;
   const mapaHoras = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas)]));
@@ -336,7 +368,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
 
 async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
-  const regra = await getRegraPadrao();
+  const regra = await getRegraPadrao(empresaId);
   const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos(empresaId);
 
   const linhasPorMes = [];
