@@ -69,7 +69,11 @@ async function getCapacidade(req, res) {
 
 async function getRegra(req, res) {
   try {
-    const regra = await getRegraPadrao();
+    // Item B da Fase 4, resolvido: regra padrão agora é por empresa (com
+    // fallback pro valor global quando o tenant ainda não tem a própria) —
+    // ver capacidadeResolver.js. Super admin (req.empresaId null) lê/edita
+    // o valor global de fallback, não um tenant específico.
+    const regra = await getRegraPadrao(req.empresaId);
     return res.json({ ok: true, regra });
   } catch (error) {
     return res.status(500).json({ ok: false, message: "Erro ao buscar regra padrão.", error: error.message });
@@ -86,6 +90,7 @@ async function putRegra(req, res) {
       horasDiaPadrao: horas_dia_padrao,
       hcDiaPadrao: hc_dia_padrao,
       considerarDomingo: !!considerar_domingo,
+      empresaId: req.empresaId,
     });
     return res.json({ ok: true, regra, message: "Regra padrão atualizada com sucesso." });
   } catch (error) {

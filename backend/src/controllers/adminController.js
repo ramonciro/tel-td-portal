@@ -158,7 +158,7 @@ async function createEmpresa(req, res) {
     const {
       nome, codigo, plano = 'basico',
       contato_nome, contato_email, contato_telefone,
-      subdomain, cor_primaria = '#FF6B4A', observacoes,
+      subdomain, cor_primaria = '#FF6B4A', logo_url, observacoes,
       admin_nome, admin_email, admin_senha,
     } = req.body || {};
 
@@ -194,6 +194,7 @@ async function createEmpresa(req, res) {
       ['contato_telefone', contato_telefone || null],
       ['subdomain',        subdomain        || null],
       ['cor_primaria',     cor_primaria            ],
+      ['logo_url',         logo_url         || null],
       ['observacoes',      observacoes      || null],
     ];
 
