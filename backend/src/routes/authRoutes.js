@@ -202,6 +202,36 @@ router.post("/login", async (req, res) => {
       pode_acessar_oceano_desenvolvimento: Number(user.pode_acessar_oceano_desenvolvimento || 0),
     });
 
+    // Fase "arquitetura multi-ambiente" (10/09/2026, parte 2): a marca da
+    // empresa (nome, cor, logo) volta junto do login pra o PortalShell
+    // aplicar no resto do portal — antes só a tela de login usava isso (via
+    // /auth/ambientes), então o menu/cabeçalho continuavam sempre com a
+    // identidade padrão do Tel T&D, não importa de qual empresa a pessoa
+    // era. Fica só na resposta do login (guardado junto do resto de "user"
+    // no localStorage do front) — nunca no JWT, que não precisa carregar
+    // dado de apresentação em toda requisição autenticada. Super admin não
+    // pertence a uma empresa específica, então nunca tem branding próprio.
+    let empresaBranding = null;
+    if (!isSuperAdmin && user.empresa_id) {
+      try {
+        const [empRows] = await pool.query(
+          "SELECT nome, cor_primaria, logo_url FROM empresas WHERE id = ? LIMIT 1",
+          [user.empresa_id]
+        );
+        if (empRows[0]) {
+          empresaBranding = {
+            nome: empRows[0].nome || null,
+            cor_primaria: empRows[0].cor_primaria || null,
+            logo_url: empRows[0].logo_url || null,
+          };
+        }
+      } catch (error) {
+        // Resiliente a migration pendente (empresas.cor_primaria/logo_url) —
+        // sem branding, o portal só usa a identidade padrão, como sempre fez.
+        console.warn("[auth] não foi possível carregar marca da empresa:", error.message);
+      }
+    }
+
     return res.json({
       token,
       user: {
@@ -211,6 +241,7 @@ router.post("/login", async (req, res) => {
         perfil:     perfilFinal,
         cliente:    user.cliente || "",
         empresa_id: isSuperAdmin ? null : (user.empresa_id ?? null),
+        empresa:    empresaBranding,
         super_admin: isSuperAdmin ? 1 : 0,
         troca_senha_obrigatoria:             !!user.troca_senha_obrigatoria,
         pode_acessar_oceano_desenvolvimento: Number(user.pode_acessar_oceano_desenvolvimento || 0),
