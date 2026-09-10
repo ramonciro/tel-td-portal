@@ -52,6 +52,7 @@ export default function NovaEmpresaPage() {
     nome: "", codigo: "", plano: "basico",
     contato_nome: "", contato_email: "", contato_telefone: "",
     subdomain: "", observacoes: "",
+    cor_primaria: colors.accent, logo_url: "",
   });
   const [admin, setAdmin] = useState({
     admin_nome: "", admin_email: "", admin_senha: "",
@@ -196,7 +197,7 @@ export default function NovaEmpresaPage() {
                 <div>
                   <label style={lbl}>Código / Slug</label>
                   <input style={inp} placeholder="ex: dasa" {...fieldEmpresa("codigo")} />
-                  <div style={hint}>Identificador único — usado em subdomain e X-Client-ID</div>
+                  <div style={hint}>Identificador único — usado no seletor de ambiente do login e no subdomínio</div>
                 </div>
                 <div>
                   <label style={lbl}>Plano</label>
@@ -228,6 +229,36 @@ export default function NovaEmpresaPage() {
                 <div>
                   <label style={lbl}>Subdomínio</label>
                   <input style={inp} placeholder="dasa.teltd.com.br" {...fieldEmpresa("subdomain")} />
+                </div>
+                <div style={fieldFull}><div style={divider} /></div>
+                <div>
+                  <label style={lbl}>Cor de marca</label>
+                  <div style={corRow}>
+                    <input
+                      type="color"
+                      value={empresa.cor_primaria || colors.accent}
+                      onChange={(e) => setEmpresa((prev) => ({ ...prev, cor_primaria: e.target.value }))}
+                      style={corSwatch}
+                    />
+                    <input style={inp} placeholder="#FF6B4A" {...fieldEmpresa("cor_primaria")} />
+                  </div>
+                  <div style={hint}>Aparece no seletor de login e no menu do portal deste tenant.</div>
+                </div>
+                <div>
+                  <label style={lbl}>URL da logo</label>
+                  <div style={corRow}>
+                    {empresa.logo_url && (
+                      <img
+                        src={empresa.logo_url}
+                        alt="Logo"
+                        style={logoPreview}
+                        onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+                        onLoad={(e) => { e.currentTarget.style.visibility = "visible"; }}
+                      />
+                    )}
+                    <input style={inp} placeholder="https://…/logo.png" {...fieldEmpresa("logo_url")} />
+                  </div>
+                  <div style={hint}>Opcional — sem logo própria, usa a logo padrão do Portal T&amp;D.</div>
                 </div>
                 <div style={fieldFull}>
                   <label style={lbl}>Observações</label>
@@ -283,6 +314,8 @@ export default function NovaEmpresaPage() {
                     { label: "Contato",  value: empresa.contato_nome || "—" },
                     { label: "E-mail",   value: empresa.contato_email || "—" },
                     { label: "Telefone", value: empresa.contato_telefone || "—" },
+                    { label: "Cor de marca", value: empresa.cor_primaria || "—" },
+                    { label: "Logo",     value: empresa.logo_url ? "Definida" : "Padrão do Portal T&D" },
                   ].map(({ label, value }) => (
                     <div key={label} style={reviewItem}>
                       <span style={reviewLabel}>{label}</span>
@@ -354,6 +387,11 @@ const inp          = { width: "100%", padding: "10px 12px", border: "1px solid #
                        background: "#fff" };
 const hint         = { fontSize: 12, color: "#9ca3af", marginTop: 4 };
 const divider      = { height: 1, background: "#f3f4f6" };
+const corRow       = { display: "flex", alignItems: "center", gap: 8 };
+const corSwatch    = { width: 40, height: 40, padding: 0, border: "1px solid #e5e7eb", borderRadius: 8,
+                       cursor: "pointer", flexShrink: 0, background: "none" };
+const logoPreview  = { width: 40, height: 40, borderRadius: 8, objectFit: "contain",
+                       border: "1px solid #e5e7eb", flexShrink: 0, background: "#f9fafb" };
 const planoCaps    = { gridColumn: "1 / -1", display: "flex", gap: 16, fontSize: 13, color: "#374151",
                        background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px" };
 const reviewGrid   = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 };
