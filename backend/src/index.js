@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
+const bcrypt = require("bcryptjs");
 
 const authRoutes = require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
@@ -300,6 +301,48 @@ app.use(
   })
 );
 
+/**
+ * Fase 4 (isolamento multi-tenant) — descoberto na auditoria de 08/09/2026:
+ * o CRUD genérico de /api/usuarios aceitava "perfil" e "empresa_id" sem
+ * nenhuma restrição de valor. Um coordenador/supervisor/superintendente
+ * comum (os únicos perfis liberados para editar usuário) conseguia:
+ *   1. Se auto-promover (ou promover qualquer usuário da própria empresa) a
+ *      "super_admin" via PUT/POST — e super_admin tem acesso irrestrito a
+ *      TUDO no sistema, inclusive a outras empresas.
+ *   2. Editar o "empresa_id" de um usuário livremente via PUT, movendo a
+ *      conta para outra empresa.
+ * Este hook barra os dois casos para quem não é já super_admin, e de
+ * quebra fecha uma lacuna separada: a senha enviada por este endpoint nunca
+ * era hasheada (só era hasheada nos fluxos de login/troca de senha
+ * dedicados) — ficava em texto plano no banco entre a edição e o próximo
+ * login (que faz o "upgrade" automático do hash). Agora já sai hasheada.
+ */
+async function sanitizarEscritaUsuario(data, req, ctx) {
+  const dados = { ...data };
+  const perfilAtor = String(req.user?.perfil || "").toLowerCase();
+  const atorEhSuperAdmin = perfilAtor === "super_admin";
+
+  if ("perfil" in dados) {
+    const perfilNovo = String(dados.perfil || "").toLowerCase();
+    if (perfilNovo === "super_admin" && !atorEhSuperAdmin) {
+      const erro = new Error("Você não tem permissão para atribuir o perfil super_admin.");
+      erro.status = 403;
+      throw erro;
+    }
+  }
+
+  if (ctx.operation === "update" && "empresa_id" in dados && !atorEhSuperAdmin) {
+    // Só o super_admin pode mover um usuário entre empresas por esta rota.
+    delete dados.empresa_id;
+  }
+
+  if ("senha" in dados && dados.senha) {
+    dados.senha = await bcrypt.hash(String(dados.senha), 10);
+  }
+
+  return dados;
+}
+
 app.use(
   "/api/usuarios",
   createCrudRouter({
@@ -316,6 +359,8 @@ app.use(
       "empresa_id",
     ],
     multiTenant: true, // Sprint 1
+    beforeWrite: sanitizarEscritaUsuario, // Fase 4
+    hideFields: ["senha"], // Fase 4 — hash da senha nunca sai na listagem
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
@@ -436,6 +481,14 @@ app.get(
     try {
       const { id } = req.params;
 
+      // Fase 4 (isolamento multi-tenant): esta rota era a única do CRUD de
+      // treinamentos sem checagem de empresa_id — qualquer coordenador/
+      // supervisor/instrutor conseguia ler o detalhe de um treinamento de
+      // outra empresa só sabendo o id. Corrigido para exigir o mesmo tenant,
+      // igual ao DELETE /api/treinamentos/:id logo abaixo.
+      const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
+      const params = req.empresaId ? [id, req.empresaId] : [id];
+
       const [rows] = await pool.query(
         `
         SELECT
@@ -458,10 +511,10 @@ app.get(
           supervisor,
           necessidade_id
         FROM treinamentos
-        WHERE id = ?
+        WHERE id = ?${tenantCheck}
         LIMIT 1
         `,
-        [id]
+        params
       );
 
       if (!rows.length) {
@@ -639,11 +692,39 @@ app.use(
   })
 );
 
+/**
+ * Fase 4 (isolamento multi-tenant, 08/09/2026): o CRUD de /api/avaliacoes já
+ * é multiTenant (empresa_id da própria linha é validado certinho), mas
+ * nunca conferia se o `treinamento_id` enviado pertence à mesma empresa —
+ * um coordenador conseguia criar/editar uma avaliação com empresa_id=A
+ * (a sua) mas treinamento_id apontando pra uma turma de outra empresa. A
+ * própria linha continuava "invisível" pro dashboard de quem criou (que
+ * filtra por avaliacoes.empresa_id), mas o analyticsController (NPS,
+ * efetividade, resumo) junta avaliacoes com treinamentos e filtra pelo
+ * empresa_id de TREINAMENTOS — essa nota fabricada acabava contaminando
+ * o NPS/efetividade da OUTRA empresa.
+ */
+async function validarTreinamentoDaAvaliacao(data, req) {
+  if (data.treinamento_id && req.empresaId) {
+    const [rows] = await pool.query(
+      `SELECT id FROM treinamentos WHERE id = ? AND empresa_id = ? LIMIT 1`,
+      [data.treinamento_id, req.empresaId]
+    );
+    if (!rows.length) {
+      const erro = new Error("O treinamento informado não pertence à sua empresa.");
+      erro.status = 400;
+      throw erro;
+    }
+  }
+  return data;
+}
+
 app.use(
   "/api/avaliacoes",
   createCrudRouter({
     table: "avaliacoes",
     multiTenant: true, // antes sem isolamento — notas de tenants diferentes ficavam misturadas
+    beforeWrite: validarTreinamentoDaAvaliacao, // Fase 4
     fields: [
       "treinamento_id",
       "titulo",
@@ -869,10 +950,16 @@ app.post(
 );
 
 // Sprint 1: convertido de GET para POST — TRUNCATE nunca pode ser GET
+// Fase 4 (isolamento multi-tenant): TRUNCATE esvazia a tabela inteira — não
+// existe "TRUNCATE só da minha empresa". Com authorizeRoles("coordenador"),
+// qualquer coordenador de qualquer empresa apagava os dados de TODAS as
+// empresas de uma vez. Restrito a super_admin (não há nenhum botão no
+// frontend que chame esta rota hoje — confirmado por busca no código —
+// então essa restrição não tira nenhuma funcionalidade em uso).
 app.post(
   "/api/zerar-dashboard",
   authRequired,
-  authorizeRoles("coordenador"),
+  requireSuperAdmin,
   async (req, res) => {
     try {
       await pool.query("SET FOREIGN_KEY_CHECKS = 0");
@@ -908,10 +995,13 @@ app.post(
 );
 
 // Sprint 1: convertido de GET para POST
+// Fase 4 (isolamento multi-tenant): mesmo motivo do /api/zerar-dashboard —
+// o `?truncate=1` também esvazia as tabelas centrais por inteiro, de todas
+// as empresas. Restrito a super_admin.
 app.post(
   "/api/importar-dashboard",
   authRequired,
-  authorizeRoles("coordenador"),
+  requireSuperAdmin,
   async (req, res) => {
     try {
       const truncate =
@@ -1081,7 +1171,13 @@ app.delete("/api/admin/empresas/:id",            authRequired, requireSuperAdmin
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Sprint 1: authRequired adicionado — esta rota estava sem proteção
-app.use("/api/jornadas-etapas", authRequired, jornadasEtapasRoutes);
+// Fase 4 (isolamento multi-tenant): faltava authorizeOceanAccess aqui — era
+// a única das 4 rotas do Oceano sem essa checagem, então qualquer usuário
+// autenticado (mesmo sem o perfil/flag do Oceano) conseguia ler/criar/editar/
+// excluir etapas de jornada. O isolamento por empresa continuava valendo
+// (não vazava dado de outro tenant), mas o controle de acesso ao módulo
+// Oceano em si estava furado para este uma rota.
+app.use("/api/jornadas-etapas", authRequired, authorizeOceanAccess, jornadasEtapasRoutes);
 app.use("/api/jornadas-desenvolvimento", authRequired, authorizeOceanAccess, jornadasDesenvolvimentoRoutes);
 app.use("/api/acoes-desenvolvimento", authRequired, authorizeOceanAccess, acoesDesenvolvimentoRoutes);
 app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlanosRoutes);
