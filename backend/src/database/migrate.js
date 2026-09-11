@@ -131,19 +131,14 @@ async function runMigrations() {
       );
     `);
 
-    // 6. Tabela de Participantes do Treinamento
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS treinamento_participantes (
-          id INT AUTO_INCREMENT PRIMARY KEY,
-          treinamento_id INT NOT NULL,
-          nome VARCHAR(150) NOT NULL,
-          email VARCHAR(150),
-          matricula VARCHAR(50),
-          status VARCHAR(50) DEFAULT 'Inscrito',
-          criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id) ON DELETE CASCADE
-      );
-    `);
+    // 6. [removido] Este passo criava uma versão antiga e incompleta de
+    // "treinamento_participantes" (sem cliente/turma/supervisor/operacao/
+    // status_presenca). Como usava CREATE TABLE IF NOT EXISTS e rodava ANTES
+    // do passo 8 (schema correto, o que treinamentoParticipantesController.js
+    // realmente usa), em qualquer banco novo — como o que será criado para o
+    // onboarding da IBM — esta versão "vencia" e o passo 8 virava um no-op,
+    // deixando a tela de roster de participantes quebrada silenciosamente
+    // por falta de colunas. Mantido apenas como comentário histórico.
 
     // 7. Tabelas de Aulas, Presenças e Avaliações
     await pool.query(`
