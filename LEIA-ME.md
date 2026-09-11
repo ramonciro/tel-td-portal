@@ -1,48 +1,71 @@
-# Hotfix — filtro de Supervisor sempre vazio no Dashboard
+# Pacote 3 (parte 1) — Acesso restrito por cliente + Certificado automático (Portal T&D)
 
-Achado durante o teste em produção logo após o deploy do Pacote 2 (não é
-item do Pacote 2 — é um bug pré-existente, só ficou visível agora porque
-fui olhar os logs do Railway depois do deploy).
-
-## O que estava acontecendo
-
-A query principal que alimenta o Dashboard de Treinamentos (`GET
-/api/dashboard/treinamentos`) e a exportação em Excel falhava **sempre**
-em produção (nunca localmente, por isso nunca foi percebido antes) por
-causa do modo mais rígido do MySQL do Railway (`ONLY_FULL_GROUP_BY`) —
-confirmei isso lendo o log de runtime do deploy mais recente:
-
-```
-[dashboard] query completa falhou, usando fallback: Expression #18 of
-SELECT list is not in GROUP BY clause...
-```
-
-O sistema tem um fallback automático para não derrubar a tela, mas esse
-fallback sempre grava o campo "Supervisor" como vazio. Resultado prático:
-**o filtro de Supervisor do Dashboard sempre esteve vazio, sem nenhuma
-opção pra selecionar**, desde que essa tela existe — nunca gerou erro
-visível pro usuário, só uma funcionalidade quieta e permanentemente quebrada.
-
-## Correção
-
-Uma linha: as colunas que vêm de uma subconsulta (`hist.dias`,
-`hist.presentes` etc.) precisavam estar explicitamente no `GROUP BY` para
-o MySQL aceitar a query — não muda nenhum resultado (são um valor só por
-treinamento), só satisfaz a checagem mais rígida. Detalhe completo do
-porquê no comentário adicionado no próprio código.
+Este pacote contém os arquivos alterados para os dois primeiros itens do
+Pacote 3 do [roadmap definitivo](https://claude.ai — ver projeto "Portal
+T&D", doc `roadmap-definitivo-avaliacao-completa-2026-09.md`): "Acesso
+restrito por cliente (generalizar)" e "Certificado automático ao concluir a
+turma". O relatório completo, com causa raiz e teste de cada item, está em
+`relatorio-pacote3-parte1-2026-09.md` (também salvo no projeto).
 
 ## Como aplicar
 
-Substitua `backend/src/controllers/dashboardTreinamentosController.js`
-pelo arquivo deste zip. Nenhuma outra mudança, nenhuma migration nova.
+1. Substitua no seu repositório GitHub cada arquivo abaixo pelo equivalente
+   deste zip (mesmo caminho relativo, a partir da raiz do repo) — dois
+   arquivos são **novos** (`src/lib/acessoCliente.js` e
+   `src/jobs/certificadosAutomaticos.js`), o restante já existe e é só
+   substituir.
+2. Nenhuma dependência nova, nenhuma variável de ambiente nova, nenhuma
+   migration nova. É só código de aplicação.
+3. Reinicie o backend (redeploy normal) para o novo job (05h diário) entrar
+   no agendamento — o log de boot passa a mostrar "certificados 05h diário"
+   na linha de agendamentos automáticos.
 
-## Teste
+## Arquivos neste pacote
 
-Reproduzi o erro exato de produção localmente (setando o mesmo
-`sql_mode=ONLY_FULL_GROUP_BY` do Railway, que o MySQL local não usa por
-padrão — por isso passou despercebido antes) e confirmei que a query
-original falha e a corrigida funciona; testei a função do controller de
-ponta a ponta (não só a query solta) e confirmei que o filtro de
-Supervisor passa a vir preenchido; testei também a exportação em Excel
-sob o mesmo modo estrito, sem erro. Também revisei as outras 4 queries
-com `GROUP BY` do backend — nenhuma tem esse mesmo problema.
+**Backend** (`backend/`):
+- `src/lib/acessoCliente.js` **(novo)** — helper central de restrição por
+  cliente: `usuarioTemAcessoAoCliente()` (checagem pontual de um recurso já
+  carregado) e `filtroClientesSQL()` (recorte em listagens). Trata
+  corretamente o caso de usuário vinculado a mais de um cliente
+  (`"ClienteX, ClienteY"`), o que a única checagem existente antes deste
+  pacote (em Trilhas) não fazia.
+- `src/routes/entityCrud.js` — novo hook opcional `listFiltro` no router
+  genérico de CRUD, usado para aplicar o recorte por cliente na listagem de
+  Treinamentos sem duplicar o router inteiro.
+- `src/index.js` — liga o `listFiltro` à rota `/api/treinamentos`; adiciona
+  o `require` e a rota `POST /api/admin/jobs/rodar-certificados-automaticos`
+  (disparo manual do job, mesma restrição de perfil dos outros três jobs já
+  existentes).
+- `src/controllers/trilhasRelacionaisController.js` — retrofit para usar o
+  helper central (corrige, de brinde, o bug de multi-cliente que já existia
+  aqui).
+- `src/controllers/treinamentoParticipantesController.js` — checagem de
+  cliente na leitura, importação por Excel, chamada, criação e nas duas
+  rotas de exclusão de participantes de uma turma.
+- `src/controllers/bibliotecaController.js` — recorte por cliente na
+  listagem (não existia nenhum antes).
+- `src/controllers/certificadosController.js` — checagem de cliente no
+  preview e na emissão; extração da função compartilhada
+  `registrarCertificado()` (usada também pelo job novo); correção do
+  bug de duplicidade quando não há e-mail (chave única não deduplica
+  `NULL`); correção da consulta a uma coluna inexistente
+  (`treinamento_participantes.email`) no caminho de e-mail não informado —
+  agora resolve pela tabela `usuarios`.
+- `src/controllers/muralController.js` — checagem de cliente na leitura do
+  mural da turma.
+- `src/jobs/certificadosAutomaticos.js` **(novo)** — job que emite/atualiza
+  certificado automaticamente para toda turma concluída (status explícito
+  OU `data_fim` já passada, exceto cancelada), reaproveitando a mesma regra
+  de elegibilidade (frequência ≥ 75%) já usada pela emissão manual.
+- `src/jobs/scheduler.js` — agenda o novo job para rodar todo dia às 05h.
+
+## O que NÃO precisa de ação manual
+
+- Não há dado para migrar — nenhuma tabela nova, nenhuma coluna nova.
+- O job de certificados automáticos começa a rodar sozinho no próximo dia
+  às 05h; se quiser ver o efeito imediatamente após o deploy, dispare uma
+  vez manualmente via `POST /api/admin/jobs/rodar-certificados-automaticos`
+  (autenticado como coordenador/supervisor/superintendente).
+- Rodar o job de novo nunca duplica certificado já emitido — ele atualiza
+  o existente (frequência/nota), mesmo para participantes sem e-mail
+  cadastrado.
