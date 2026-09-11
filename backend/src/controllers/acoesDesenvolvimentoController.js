@@ -197,7 +197,7 @@ async function criar(req, res) {
   } catch (error) {
     console.error("Erro ao criar ação de desenvolvimento:", error);
     return res.status(500).json({
-      error: error.message || "Erro ao criar ação.",
+      error: "Erro ao criar ação.",
     });
   }
 }
@@ -335,7 +335,7 @@ async function atualizar(req, res) {
   } catch (error) {
     console.error("Erro ao atualizar ação de desenvolvimento:", error);
     return res.status(500).json({
-      error: error.message || "Erro ao atualizar ação.",
+      error: "Erro ao atualizar ação.",
     });
   }
 }

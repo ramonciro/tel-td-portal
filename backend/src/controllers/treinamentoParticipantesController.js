@@ -127,11 +127,10 @@ async function getParticipantesByTreinamento(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[treinamentoParticipantesController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao buscar participantes da turma",
-      error: error.message,
-    });
+      message: "Erro ao buscar participantes da turma"});
   }
 }
 
@@ -192,62 +191,77 @@ async function importarParticipantesExcel(req, res) {
       });
     }
 
-    await db.query(
-      `DELETE FROM presencas WHERE treinamento_id = ?`,
-      [treinamento_id]
-    );
-
-    await db.query(
-      `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
-      [treinamento_id]
-    );
-
+    // Pacote 2 (débito técnico, 2026-09): apagar os participantes/presenças
+    // antigos e inserir os novos linha a linha rodava como queries soltas no
+    // pool — se a conexão caísse no meio de uma planilha grande, a turma
+    // ficava sem os participantes antigos (já apagados) E sem os novos
+    // (importação incompleta), sem nenhuma forma de desfazer. Envolvido numa
+    // transação: ou a planilha inteira entra, ou nada muda.
+    const conn = await db.getConnection();
     let totalImportados = 0;
+    try {
+      await conn.beginTransaction();
 
-    for (const linha of linhas) {
-      const nome = String(linha.nome || "").trim();
-      if (!nome) continue;
-
-      await db.query(
-        `
-        INSERT INTO treinamento_participantes
-        (
-          treinamento_id,
-          nome,
-          matricula,
-          cliente,
-          turma,
-          supervisor,
-          operacao,
-          data_admissao,
-          status_presenca,
-          justificativa
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          treinamento_id,
-          nome,
-          String(linha.matricula || "").trim(),
-          String(linha.cliente || "").trim(),
-          String(linha.turma || "").trim(),
-          String(linha.supervisor || "").trim(),
-          String(linha.operacao || "").trim(),
-          formatExcelDateToMySQL(linha.data_admissao),
-          "pendente",
-          null,
-        ]
+      await conn.query(
+        `DELETE FROM presencas WHERE treinamento_id = ?`,
+        [treinamento_id]
       );
 
-      totalImportados += 1;
-    }
+      await conn.query(
+        `DELETE FROM treinamento_participantes WHERE treinamento_id = ?`,
+        [treinamento_id]
+      );
 
-    try {
-      await db.query(
+      for (const linha of linhas) {
+        const nome = String(linha.nome || "").trim();
+        if (!nome) continue;
+
+        await conn.query(
+          `
+          INSERT INTO treinamento_participantes
+          (
+            treinamento_id,
+            nome,
+            matricula,
+            cliente,
+            turma,
+            supervisor,
+            operacao,
+            data_admissao,
+            status_presenca,
+            justificativa
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            treinamento_id,
+            nome,
+            String(linha.matricula || "").trim(),
+            String(linha.cliente || "").trim(),
+            String(linha.turma || "").trim(),
+            String(linha.supervisor || "").trim(),
+            String(linha.operacao || "").trim(),
+            formatExcelDateToMySQL(linha.data_admissao),
+            "pendente",
+            null,
+          ]
+        );
+
+        totalImportados += 1;
+      }
+
+      await conn.query(
         `UPDATE treinamentos SET participantes = ? WHERE id = ?`,
         [totalImportados, treinamento_id]
       );
-    } catch {}
+
+      await conn.commit();
+    } catch (erroTransacao) {
+      await conn.rollback();
+      throw erroTransacao;
+    } finally {
+      conn.release();
+    }
 
     return res.json({
       ok: true,
@@ -255,10 +269,10 @@ async function importarParticipantesExcel(req, res) {
       total: totalImportados,
     });
   } catch (error) {
+    console.error("[participantes] importarExcel:", error.message);
     return res.status(500).json({
       ok: false,
       message: "Erro ao importar participantes",
-      error: error.message,
     });
   }
 }
@@ -368,11 +382,10 @@ async function salvarChamadaParticipantes(req, res) {
       message: "Chamada diária salva com sucesso",
     });
   } catch (error) {
+    console.error("[treinamentoParticipantesController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao salvar chamada diária",
-      error: error.message,
-    });
+      message: "Erro ao salvar chamada diária"});
   }
 }
 
@@ -466,11 +479,10 @@ async function createParticipanteTreinamento(req, res) {
       message: "Participante adicionado com sucesso",
     });
   } catch (error) {
+    console.error("[treinamentoParticipantesController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao adicionar participante",
-      error: error.message,
-    });
+      message: "Erro ao adicionar participante"});
   }
 }
 
@@ -522,11 +534,10 @@ async function deleteParticipanteTreinamento(req, res) {
       message: "Participante excluído com sucesso",
     });
   } catch (error) {
+    console.error("[treinamentoParticipantesController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao excluir participante",
-      error: error.message,
-    });
+      message: "Erro ao excluir participante"});
   }
 }
 
@@ -593,11 +604,10 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
       total: rows.length,
     });
   } catch (error) {
+    console.error("[treinamentoParticipantesController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao excluir participantes",
-      error: error.message,
-    });
+      message: "Erro ao excluir participantes"});
   }
 }
 

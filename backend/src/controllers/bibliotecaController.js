@@ -37,11 +37,10 @@ async function listBiblioteca(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[bibliotecaController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao listar biblioteca",
-      error: error.message,
-    });
+      message: "Erro ao listar biblioteca"});
   }
 }
 
@@ -99,11 +98,10 @@ async function createBiblioteca(req, res) {
       id: result.insertId,
     });
   } catch (error) {
+    console.error("[bibliotecaController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao criar conteúdo",
-      error: error.message,
-    });
+      message: "Erro ao criar conteúdo"});
   }
 }
 
@@ -165,11 +163,10 @@ async function updateBiblioteca(req, res) {
 
     return res.json({ ok: true });
   } catch (error) {
+    console.error("[bibliotecaController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao atualizar conteúdo",
-      error: error.message,
-    });
+      message: "Erro ao atualizar conteúdo"});
   }
 }
 
@@ -203,11 +200,10 @@ async function deleteBiblioteca(req, res) {
 
     return res.json({ ok: true });
   } catch (error) {
+    console.error("[bibliotecaController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao excluir conteúdo",
-      error: error.message,
-    });
+      message: "Erro ao excluir conteúdo"});
   }
 }
 
@@ -244,11 +240,10 @@ async function uploadBibliotecaArquivo(req, res) {
       message: "Arquivo enviado com sucesso",
     });
   } catch (error) {
+    console.error("[bibliotecaController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao fazer upload do arquivo",
-      error: error.message,
-    });
+      message: "Erro ao fazer upload do arquivo"});
   }
 }
 

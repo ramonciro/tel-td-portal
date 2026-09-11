@@ -502,9 +502,7 @@ async function getDashboardTreinamentos(req, res) {
     console.error("[dashboard] Erro:", error.message);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao carregar dashboard de treinamentos.",
-      error: error.message,
-    });
+      message: "Erro ao carregar dashboard de treinamentos."});
   }
 }
 
@@ -545,9 +543,7 @@ async function exportarTreinamentos(req, res) {
     console.error("[dashboard] exportarTreinamentos:", error.message);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao exportar turmas.",
-      error: error.message,
-    });
+      message: "Erro ao exportar turmas."});
   }
 }
 

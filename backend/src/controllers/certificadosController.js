@@ -46,7 +46,7 @@ async function listCertificados(req, res) {
     return res.json(rows);
   } catch (error) {
     console.error('[certificados] listCertificados:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao listar certificados', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao listar certificados'});
   }
 }
 
@@ -158,7 +158,7 @@ async function previewCertificado(req, res) {
     });
   } catch (error) {
     console.error('[certificados] previewCertificado:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao calcular elegibilidade', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao calcular elegibilidade'});
   }
 }
 
@@ -259,7 +259,7 @@ async function emitirCertificado(req, res) {
     });
   } catch (error) {
     console.error('[certificados] emitirCertificado:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao emitir certificado', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao emitir certificado'});
   }
 }
 
@@ -284,7 +284,7 @@ async function verificarCertificado(req, res) {
     return res.json({ ok: true, certificado: rows[0] || null });
   } catch (error) {
     console.error('[certificados] verificarCertificado:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao verificar certificado', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao verificar certificado'});
   }
 }
 

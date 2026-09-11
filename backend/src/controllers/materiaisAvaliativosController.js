@@ -38,11 +38,10 @@ async function listMateriaisAvaliativos(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[materiaisAvaliativosController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao listar materiais avaliativos",
-      error: error.message,
-    });
+      message: "Erro ao listar materiais avaliativos"});
   }
 }
 
@@ -114,11 +113,10 @@ async function listMateriaisAvaliativosDisponiveis(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[materiaisAvaliativosController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao listar provas/simulados disponíveis",
-      error: error.message,
-    });
+      message: "Erro ao listar provas/simulados disponíveis"});
   }
 }
 
@@ -179,11 +177,10 @@ async function createMaterialAvaliativo(req, res) {
       message: "Material avaliativo criado com sucesso",
     });
   } catch (error) {
+    console.error("[materiaisAvaliativosController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao criar material avaliativo",
-      error: error.message,
-    });
+      message: "Erro ao criar material avaliativo"});
   }
 }
 
@@ -253,11 +250,10 @@ async function updateMaterialAvaliativo(req, res) {
       message: "Material avaliativo atualizado com sucesso",
     });
   } catch (error) {
+    console.error("[materiaisAvaliativosController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao atualizar material avaliativo",
-      error: error.message,
-    });
+      message: "Erro ao atualizar material avaliativo"});
   }
 }
 
@@ -310,11 +306,10 @@ async function deleteMaterialAvaliativo(req, res) {
       message: "Material avaliativo e resultados vinculados excluídos com sucesso",
     });
   } catch (error) {
+    console.error("[materiaisAvaliativosController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao excluir material avaliativo",
-      error: error.message,
-    });
+      message: "Erro ao excluir material avaliativo"});
   }
 }
 

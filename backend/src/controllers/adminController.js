@@ -59,7 +59,7 @@ async function getGlobalStats(req, res) {
     });
   } catch (error) {
     console.error('[admin] getGlobalStats:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar stats', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar stats'});
   }
 }
 
@@ -104,7 +104,7 @@ async function listEmpresas(req, res) {
     return res.json(result);
   } catch (error) {
     console.error('[admin] listEmpresas:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao listar empresas', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao listar empresas'});
   }
 }
 
@@ -151,7 +151,7 @@ async function getEmpresa(req, res) {
     return res.json({ ...empresa, stats, usuarios });
   } catch (error) {
     console.error('[admin] getEmpresa:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar empresa', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar empresa'});
   }
 }
 
@@ -266,7 +266,7 @@ async function createEmpresa(req, res) {
     await conn.rollback();
     conn.release();
     console.error('[admin] createEmpresa:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao criar empresa', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao criar empresa'});
   }
 }
 
@@ -343,9 +343,7 @@ async function updateEmpresa(req, res) {
     console.error('[admin] updateEmpresa:', error.message);
     return res.status(500).json({
       ok: false,
-      message: 'Erro ao atualizar empresa',
-      error: error.message,
-    });
+      message: 'Erro ao atualizar empresa'});
   }
 }
 
@@ -361,7 +359,7 @@ async function toggleAtivo(req, res) {
     return res.json({ ok: true, ativo: novoAtivo });
   } catch (error) {
     console.error('[admin] toggleAtivo:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao alterar status', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao alterar status'});
   }
 }
 
@@ -431,6 +429,6 @@ async function deleteEmpresa(req, res) {
     await conn.rollback();
     conn.release();
     console.error('[admin] deleteEmpresa:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao excluir empresa', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao excluir empresa'});
   }
 }

@@ -62,11 +62,10 @@ async function listarPresencaAula(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[presencaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao listar presença da aula",
-      error: error.message,
-    });
+      message: "Erro ao listar presença da aula"});
   }
 }
 
@@ -164,11 +163,10 @@ async function inicializarPresencaAula(req, res) {
       registros: rows,
     });
   } catch (error) {
+    console.error("[presencaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao inicializar presença da aula",
-      error: error.message,
-    });
+      message: "Erro ao inicializar presença da aula"});
   }
 }
 
@@ -180,6 +178,25 @@ async function salvarPresencaAula(req, res) {
       return res.status(400).json({
         ok: false,
         message: "Informe turma_aula_id e a lista de registros",
+      });
+    }
+
+    // Pacote 2 — "validar justificativa obrigatória na tela de chamada": a
+    // tela já mostra o campo de texto só quando o status é "justificado",
+    // mas nada impedia salvar com o campo vazio (nem aqui, nem no frontend) —
+    // a falta ficava sem nenhum motivo registrado, esvaziando o propósito do
+    // status. Validação no backend é a que realmente conta (o frontend só
+    // evita a viagem desnecessária até aqui — ver chamada/page.js).
+    const semJustificativa = registros
+      .filter((item) => normalizeStatus(item?.status) === "justificado")
+      .filter((item) => !String(item?.justificativa || "").trim())
+      .map((item) => String(item?.treinando_nome || "").trim())
+      .filter(Boolean);
+
+    if (semJustificativa.length) {
+      return res.status(400).json({
+        ok: false,
+        message: `Informe a justificativa para: ${semJustificativa.join(", ")}.`,
       });
     }
 
@@ -261,11 +278,10 @@ async function salvarPresencaAula(req, res) {
       registros: rows,
     });
   } catch (error) {
+    console.error("[presencaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao salvar presença da aula",
-      error: error.message,
-    });
+      message: "Erro ao salvar presença da aula"});
   }
 }
 
@@ -356,11 +372,10 @@ async function resumoPresencaAula(req, res) {
       },
     });
   } catch (error) {
+    console.error("[presencaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao carregar resumo da presença da aula",
-      error: error.message,
-    });
+      message: "Erro ao carregar resumo da presença da aula"});
   }
 }
 

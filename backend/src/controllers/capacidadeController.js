@@ -63,7 +63,7 @@ async function getCapacidade(req, res) {
     });
   } catch (error) {
     console.error("[capacidade] getCapacidade:", error);
-    return res.status(500).json({ ok: false, message: "Erro ao buscar capacidade x realizado.", error: error.message });
+    return res.status(500).json({ ok: false, message: "Erro ao buscar capacidade x realizado."});
   }
 }
 
@@ -76,7 +76,8 @@ async function getRegra(req, res) {
     const regra = await getRegraPadrao(req.empresaId);
     return res.json({ ok: true, regra });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao buscar regra padrão.", error: error.message });
+    console.error("[capacidadeController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao buscar regra padrão."});
   }
 }
 
@@ -94,7 +95,8 @@ async function putRegra(req, res) {
     });
     return res.json({ ok: true, regra, message: "Regra padrão atualizada com sucesso." });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao atualizar regra padrão.", error: error.message });
+    console.error("[capacidadeController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao atualizar regra padrão."});
   }
 }
 
@@ -110,7 +112,8 @@ async function getOverrides(req, res) {
     });
     return res.json({ ok: true, itens });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao listar overrides.", error: error.message });
+    console.error("[capacidadeController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao listar overrides."});
   }
 }
 
@@ -138,7 +141,8 @@ async function postOverride(req, res) {
     });
     return res.json({ ok: true, message: "Capacidade do instrutor salva com sucesso." });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao salvar override de capacidade.", error: error.message });
+    console.error("[capacidadeController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao salvar override de capacidade."});
   }
 }
 
@@ -150,7 +154,8 @@ async function deleteOverride(req, res) {
     await excluirOverride(id, req.empresaId || undefined);
     return res.json({ ok: true, message: "Override removido — instrutor volta a usar a regra automática." });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao remover override.", error: error.message });
+    console.error("[capacidadeController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao remover override."});
   }
 }
 
@@ -159,7 +164,8 @@ async function getInstrutores(req, res) {
     const instrutores = await listarInstrutoresConhecidos(req.empresaId);
     return res.json({ ok: true, instrutores });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao listar instrutores.", error: error.message });
+    console.error("[capacidadeController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao listar instrutores."});
   }
 }
 
@@ -168,7 +174,8 @@ async function getOperacoes(req, res) {
     const operacoes = await listarOperacoesConhecidas(req.empresaId);
     return res.json({ ok: true, operacoes });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao listar operações.", error: error.message });
+    console.error("[capacidadeController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao listar operações."});
   }
 }
 
@@ -191,7 +198,7 @@ async function getPainel(req, res) {
     return res.json({ ok: true, ...painel });
   } catch (error) {
     console.error("[capacidade] getPainel:", error);
-    return res.status(500).json({ ok: false, message: "Erro ao montar painel de capacidade.", error: error.message });
+    return res.status(500).json({ ok: false, message: "Erro ao montar painel de capacidade."});
   }
 }
 
@@ -202,7 +209,7 @@ async function getCapacity(req, res) {
     return res.json({ ok: true, ...resultado });
   } catch (error) {
     console.error("[capacidade] getCapacity:", error);
-    return res.status(500).json({ ok: false, message: "Erro ao montar capacity x consumido.", error: error.message });
+    return res.status(500).json({ ok: false, message: "Erro ao montar capacity x consumido."});
   }
 }
 
@@ -213,7 +220,7 @@ async function getRankingHandler(req, res) {
     return res.json({ ok: true, itens });
   } catch (error) {
     console.error("[capacidade] getRanking:", error);
-    return res.status(500).json({ ok: false, message: "Erro ao montar ranking de instrutores.", error: error.message });
+    return res.status(500).json({ ok: false, message: "Erro ao montar ranking de instrutores."});
   }
 }
 
@@ -231,7 +238,7 @@ async function getAderencia(req, res) {
     return res.json({ ok: true, itens });
   } catch (error) {
     console.error("[capacidade] getAderencia:", error);
-    return res.status(500).json({ ok: false, message: "Erro ao montar aderência por tema.", error: error.message });
+    return res.status(500).json({ ok: false, message: "Erro ao montar aderência por tema."});
   }
 }
 
@@ -242,7 +249,7 @@ async function getDistribuicao(req, res) {
     return res.json({ ok: true, ...resultado });
   } catch (error) {
     console.error("[capacidade] getDistribuicao:", error);
-    return res.status(500).json({ ok: false, message: "Erro ao montar distribuição por operação.", error: error.message });
+    return res.status(500).json({ ok: false, message: "Erro ao montar distribuição por operação."});
   }
 }
 
@@ -252,7 +259,7 @@ async function getAlertasHandler(req, res) {
     return res.json({ ok: true, ...resultado });
   } catch (error) {
     console.error("[capacidade] getAlertas:", error);
-    return res.status(500).json({ ok: false, message: "Erro ao montar alertas de ocupação.", error: error.message });
+    return res.status(500).json({ ok: false, message: "Erro ao montar alertas de ocupação."});
   }
 }
 

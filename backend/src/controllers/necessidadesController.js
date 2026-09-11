@@ -24,14 +24,13 @@ async function listarHandler(req, res) {
     });
     return res.json({ ok: true, itens });
   } catch (error) {
+    console.error("[necessidadesController]", error.message || error);
     const tabelaAusente = /doesn't exist/i.test(error.message);
     return res.status(500).json({
       ok: false,
       message: tabelaAusente
         ? "A tabela necessidades_treinamento ainda não existe neste banco. Rode a migration database/migrations/2026-07-18_necessidades_treinamento.sql no banco de produção e recarregue esta página."
-        : `Erro ao listar necessidades: ${error.message}`,
-      error: error.message,
-    });
+        : `Erro ao listar necessidades: ${error.message}`});
   }
 }
 
@@ -61,7 +60,8 @@ async function criarHandler(req, res) {
 
     return res.status(201).json({ ok: true, id });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: mensagemErro(error, "criar a necessidade"), error: error.message });
+    console.error("[necessidadesController]", error.message || error);
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "criar a necessidade")});
   }
 }
 
@@ -88,7 +88,8 @@ async function editarHandler(req, res) {
 
     return res.json({ ok: true, message: "Necessidade atualizada" });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: mensagemErro(error, "editar a necessidade"), error: error.message });
+    console.error("[necessidadesController]", error.message || error);
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "editar a necessidade")});
   }
 }
 
@@ -114,7 +115,8 @@ async function excluirHandler(req, res) {
 
     return res.json({ ok: true, message: "Necessidade excluída" });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: mensagemErro(error, "excluir a necessidade"), error: error.message });
+    console.error("[necessidadesController]", error.message || error);
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "excluir a necessidade")});
   }
 }
 

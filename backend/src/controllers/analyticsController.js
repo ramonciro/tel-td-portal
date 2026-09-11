@@ -213,7 +213,7 @@ async function getResumo(req, res) {
     });
   } catch (error) {
     console.error('[analytics] getResumo:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar resumo', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar resumo'});
   }
 }
 
@@ -245,7 +245,7 @@ async function getHoras(req, res) {
     });
   } catch (error) {
     console.error('[analytics] getHoras:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar horas', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar horas'});
   }
 }
 
@@ -325,7 +325,7 @@ async function getNps(req, res) {
     });
   } catch (error) {
     console.error('[analytics] getNps:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar NPS', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar NPS'});
   }
 }
 
@@ -402,7 +402,7 @@ async function getEfetividade(req, res) {
     });
   } catch (error) {
     console.error('[analytics] getEfetividade:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar efetividade', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar efetividade'});
   }
 }
 
@@ -470,7 +470,7 @@ async function getRoi(req, res) {
     });
   } catch (error) {
     console.error('[analytics] getRoi:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar ROI', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar ROI'});
   }
 }
 
@@ -578,7 +578,7 @@ async function exportarIndicadores(req, res) {
     return res.send(buf);
   } catch (error) {
     console.error('[analytics] exportarIndicadores:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao exportar indicadores', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao exportar indicadores'});
   }
 }
 

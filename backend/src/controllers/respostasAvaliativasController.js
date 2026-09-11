@@ -72,11 +72,10 @@ async function listRespostasAvaliativas(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[respostasAvaliativasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao listar respostas avaliativas",
-      error: error.message,
-    });
+      message: "Erro ao listar respostas avaliativas"});
   }
 }
 
@@ -189,11 +188,10 @@ async function createRespostaAvaliativa(req, res) {
       message: "Resposta avaliativa registrada com sucesso",
     });
   } catch (error) {
+    console.error("[respostasAvaliativasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao registrar resposta avaliativa",
-      error: error.message,
-    });
+      message: "Erro ao registrar resposta avaliativa"});
   }
 }
 
@@ -271,11 +269,10 @@ async function updateRespostaAvaliativa(req, res) {
       message: "Resposta avaliativa atualizada com sucesso",
     });
   } catch (error) {
+    console.error("[respostasAvaliativasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao atualizar resposta avaliativa",
-      error: error.message,
-    });
+      message: "Erro ao atualizar resposta avaliativa"});
   }
 }
 
@@ -302,11 +299,10 @@ async function deleteRespostaAvaliativa(req, res) {
       message: "Resposta avaliativa excluída com sucesso",
     });
   } catch (error) {
+    console.error("[respostasAvaliativasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao excluir resposta avaliativa",
-      error: error.message,
-    });
+      message: "Erro ao excluir resposta avaliativa"});
   }
 }
 

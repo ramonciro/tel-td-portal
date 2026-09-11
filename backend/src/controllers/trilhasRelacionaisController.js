@@ -70,7 +70,7 @@ async function listTrilhas(req, res) {
     return res.json(result);
   } catch (error) {
     console.error('[trilhas] listTrilhas:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao listar trilhas', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao listar trilhas'});
   }
 }
 
@@ -118,7 +118,7 @@ async function getTrilha(req, res) {
     return res.json({ ...rows[0], etapas });
   } catch (error) {
     console.error('[trilhas] getTrilha:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar trilha', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar trilha'});
   }
 }
 
@@ -174,7 +174,7 @@ async function createTrilha(req, res) {
     await conn.rollback();
     conn.release();
     console.error('[trilhas] createTrilha:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao criar trilha', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao criar trilha'});
   }
 }
 
@@ -243,7 +243,7 @@ async function updateTrilha(req, res) {
     await conn.rollback();
     conn.release();
     console.error('[trilhas] updateTrilha:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao atualizar trilha', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao atualizar trilha'});
   }
 }
 
@@ -277,7 +277,7 @@ async function deleteTrilha(req, res) {
     await conn.rollback();
     conn.release();
     console.error('[trilhas] deleteTrilha:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao excluir trilha', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao excluir trilha'});
   }
 }
 
@@ -325,7 +325,7 @@ async function getProgresso(req, res) {
     return res.json({ ok: true, etapas: etapasComProgresso, total, concluidas, percentual });
   } catch (error) {
     console.error('[trilhas] getProgresso:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar progresso', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar progresso'});
   }
 }
 
@@ -369,7 +369,7 @@ async function getProgressoBulk(req, res) {
     return res.json({ ok: true, progresso });
   } catch (error) {
     console.error('[trilhas] getProgressoBulk:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao buscar progresso', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar progresso'});
   }
 }
 
@@ -441,7 +441,7 @@ async function exportarProgresso(req, res) {
     return res.send(buf);
   } catch (error) {
     console.error('[trilhas] exportarProgresso:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao exportar progresso', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao exportar progresso'});
   }
 }
 
@@ -494,7 +494,7 @@ async function marcarEtapaConcluida(req, res) {
     return res.json({ ok: true, concluido, concluido_em: ts });
   } catch (error) {
     console.error('[trilhas] marcarEtapaConcluida:', error.message);
-    return res.status(500).json({ ok: false, message: 'Erro ao marcar etapa', error: error.message });
+    return res.status(500).json({ ok: false, message: 'Erro ao marcar etapa'});
   }
 }
 

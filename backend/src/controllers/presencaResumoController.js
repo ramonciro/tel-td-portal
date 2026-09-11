@@ -8,11 +8,10 @@ async function listarResumoGeral(req, res) {
     const dados = await getResumoPresenca({ empresaId });
     return res.json({ ok: true, itens: dados });
   } catch (error) {
+    console.error("[presencaResumoController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao montar o resumo de presença",
-      error: error.message,
-    });
+      message: "Erro ao montar o resumo de presença"});
   }
 }
 
@@ -29,11 +28,10 @@ async function obterResumoPorTreinamento(req, res) {
     }
     return res.json({ ok: true, item: dados[0] });
   } catch (error) {
+    console.error("[presencaResumoController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao montar o resumo de presença",
-      error: error.message,
-    });
+      message: "Erro ao montar o resumo de presença"});
   }
 }
 

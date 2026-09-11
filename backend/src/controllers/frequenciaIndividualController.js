@@ -43,11 +43,10 @@ async function getFrequenciaIndividual(req, res) {
       itens,
     });
   } catch (error) {
+    console.error("[frequenciaIndividualController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao carregar frequência individual",
-      error: error.message,
-    });
+      message: "Erro ao carregar frequência individual"});
   }
 }
 

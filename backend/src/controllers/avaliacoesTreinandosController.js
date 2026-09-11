@@ -63,11 +63,10 @@ async function listAvaliacoesTreinandos(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[avaliacoesTreinandosController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao listar respostas de NPS",
-      error: error.message,
-    });
+      message: "Erro ao listar respostas de NPS"});
   }
 }
 
@@ -137,11 +136,10 @@ async function listNpsDisponivel(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[avaliacoesTreinandosController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao listar NPS disponível",
-      error: error.message,
-    });
+      message: "Erro ao listar NPS disponível"});
   }
 }
 
@@ -235,11 +233,10 @@ async function createAvaliacaoTreinando(req, res) {
       message: "NPS enviado com sucesso",
     });
   } catch (error) {
+    console.error("[avaliacoesTreinandosController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao salvar NPS",
-      error: error.message,
-    });
+      message: "Erro ao salvar NPS"});
   }
 }
 

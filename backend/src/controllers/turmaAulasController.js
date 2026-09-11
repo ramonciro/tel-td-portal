@@ -133,11 +133,10 @@ async function listTurmaAulas(req, res) {
 
     return res.json(rows);
   } catch (error) {
+    console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao listar aulas da turma",
-      error: error.message,
-    });
+      message: "Erro ao listar aulas da turma"});
   }
 }
 
@@ -186,11 +185,10 @@ async function getTurmaAulaById(req, res) {
 
     return res.json(rows[0]);
   } catch (error) {
+    console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao buscar aula",
-      error: error.message,
-    });
+      message: "Erro ao buscar aula"});
   }
 }
 
@@ -285,11 +283,10 @@ async function createTurmaAula(req, res) {
       message: "Aula criada com sucesso",
     });
   } catch (error) {
+    console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao criar aula da turma",
-      error: error.message,
-    });
+      message: "Erro ao criar aula da turma"});
   }
 }
 
@@ -392,11 +389,10 @@ async function updateTurmaAula(req, res) {
       message: "Aula atualizada com sucesso",
     });
   } catch (error) {
+    console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao atualizar aula da turma",
-      error: error.message,
-    });
+      message: "Erro ao atualizar aula da turma"});
   }
 }
 
@@ -419,11 +415,10 @@ async function deleteTurmaAula(req, res) {
       message: "Aula excluída com sucesso",
     });
   } catch (error) {
+    console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao excluir aula da turma",
-      error: error.message,
-    });
+      message: "Erro ao excluir aula da turma"});
   }
 }
 
@@ -536,11 +531,10 @@ async function gerarCronogramaTurma(req, res) {
       total_dias: diaNumero - 1,
     });
   } catch (error) {
+    console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao gerar cronograma da turma",
-      error: error.message,
-    });
+      message: "Erro ao gerar cronograma da turma"});
   }
 }
 
@@ -654,11 +648,10 @@ async function duplicarPlanoAulas(req, res) {
       total: origem.length,
     });
   } catch (error) {
+    console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao duplicar plano de aulas",
-      error: error.message,
-    });
+      message: "Erro ao duplicar plano de aulas"});
   }
 }
 
@@ -703,15 +696,23 @@ async function getResumoTurmaAulas(req, res) {
       [treinamento_id]
     );
 
+    // FIX (Pacote 2 — "alinhar status de aulas"): este resumo contava aulas
+    // com status_execucao "ministrada"/"parcial", valores que nunca existiram
+    // nos dados reais — o formulário de Cronograma (STATUS_AULA_OPTIONS no
+    // frontend) só grava planejada/em_andamento/concluida/reprogramada/
+    // cancelada (mesmo engano já documentado e corrigido em
+    // capacidadeResolver.js). Na prática, ministradas/parciais sempre davam
+    // zero e toda aula concluída ou em andamento caía no bucket "planejadas"
+    // do detalhamento por dia (ver `else` mais abaixo, antes desta correção).
     const totalAulas = aulas.length;
     const planejadas = aulas.filter(
       (item) => normalizeStatus(item.status_execucao) === "planejada"
     ).length;
-    const ministradas = aulas.filter(
-      (item) => normalizeStatus(item.status_execucao) === "ministrada"
+    const concluidas = aulas.filter(
+      (item) => normalizeStatus(item.status_execucao) === "concluida"
     ).length;
-    const parciais = aulas.filter(
-      (item) => normalizeStatus(item.status_execucao) === "parcial"
+    const emAndamento = aulas.filter(
+      (item) => normalizeStatus(item.status_execucao) === "em_andamento"
     ).length;
     const reprogramadas = aulas.filter(
       (item) =>
@@ -733,7 +734,7 @@ async function getResumoTurmaAulas(req, res) {
     );
 
     const aderenciaAulas = totalAulas
-      ? Math.round(((ministradas + parciais) / totalAulas) * 100)
+      ? Math.round(((concluidas + emAndamento) / totalAulas) * 100)
       : 0;
 
     const aderenciaCarga =
@@ -751,8 +752,8 @@ async function getResumoTurmaAulas(req, res) {
           dia_numero: Number(item.dia_numero || 0),
           data_aula: toDateOnly(item.data_aula),
           total_aulas: 0,
-          ministradas: 0,
-          parciais: 0,
+          concluidas: 0,
+          em_andamento: 0,
           planejadas: 0,
           reprogramadas: 0,
           canceladas: 0,
@@ -768,12 +769,12 @@ async function getResumoTurmaAulas(req, res) {
       bucket.carga_planejada += Number(item.carga_horaria_planejada || 0);
       bucket.carga_real += Number(item.carga_horaria_real || 0);
 
-      if (status === "ministrada") bucket.ministradas += 1;
-      else if (status === "parcial") bucket.parciais += 1;
+      if (status === "concluida") bucket.concluidas += 1;
+      else if (status === "em_andamento") bucket.em_andamento += 1;
       else if (status === "reprogramada" || Number(item.reprogramada || 0) === 1)
         bucket.reprogramadas += 1;
       else if (status === "cancelada") bucket.canceladas += 1;
-      else bucket.planejadas += 1;
+      else bucket.planejadas += 1; // "planejada" ou status vazio/desconhecido
     });
 
     const porDia = Object.values(porDiaMap)
@@ -781,7 +782,7 @@ async function getResumoTurmaAulas(req, res) {
       .map((item) => {
         const aderencia =
           item.total_aulas > 0
-            ? Math.round(((item.ministradas + item.parciais) / item.total_aulas) * 100)
+            ? Math.round(((item.concluidas + item.em_andamento) / item.total_aulas) * 100)
             : 0;
 
         return {
@@ -797,8 +798,8 @@ async function getResumoTurmaAulas(req, res) {
       alertas.push(`${planejadas} aula(s) ainda estão planejadas.`);
     }
 
-    if (parciais > 0) {
-      alertas.push(`${parciais} aula(s) foram executadas parcialmente.`);
+    if (emAndamento > 0) {
+      alertas.push(`${emAndamento} aula(s) estão em andamento.`);
     }
 
     if (reprogramadas > 0) {
@@ -818,8 +819,8 @@ async function getResumoTurmaAulas(req, res) {
       resumo: {
         total_aulas: totalAulas,
         planejadas,
-        ministradas,
-        parciais,
+        concluidas,
+        em_andamento: emAndamento,
         reprogramadas,
         canceladas,
         carga_planejada: Number(cargaPlanejada.toFixed(2)),
@@ -832,11 +833,10 @@ async function getResumoTurmaAulas(req, res) {
       alertas,
     });
   } catch (error) {
+    console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao carregar resumo do cronograma",
-      error: error.message,
-    });
+      message: "Erro ao carregar resumo do cronograma"});
   }
 }
 

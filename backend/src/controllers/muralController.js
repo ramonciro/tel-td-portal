@@ -23,7 +23,8 @@ async function obterMural(req, res) {
     }
     return res.json({ ok: true, ...mural });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: "Erro ao montar o mural", error: error.message });
+    console.error("[muralController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar o mural"});
   }
 }
 
@@ -57,10 +58,11 @@ async function criarPublicacaoHandler(req, res) {
 
     return res.status(201).json({ ok: true, id });
   } catch (error) {
+    console.error("[muralController]", error.message || error);
     if (error.code === "TREINAMENTO_NAO_ENCONTRADO") {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
-    return res.status(500).json({ ok: false, message: mensagemErro(error, "publicar o aviso"), error: error.message });
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "publicar o aviso")});
   }
 }
 
@@ -87,7 +89,8 @@ async function editarPublicacaoHandler(req, res) {
 
     return res.json({ ok: true, message: "Publicação atualizada" });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: mensagemErro(error, "editar o aviso"), error: error.message });
+    console.error("[muralController]", error.message || error);
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "editar o aviso")});
   }
 }
 
@@ -113,7 +116,8 @@ async function excluirPublicacaoHandler(req, res) {
 
     return res.json({ ok: true, message: "Publicação excluída" });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: mensagemErro(error, "excluir o aviso"), error: error.message });
+    console.error("[muralController]", error.message || error);
+    return res.status(500).json({ ok: false, message: mensagemErro(error, "excluir o aviso")});
   }
 }
 

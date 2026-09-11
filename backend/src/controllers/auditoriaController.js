@@ -19,14 +19,13 @@ async function listarAuditoriaHandler(req, res) {
 
     return res.json({ ok: true, itens, totais });
   } catch (error) {
+    console.error("[auditoriaController]", error.message || error);
     const tabelaAusente = /doesn't exist/i.test(error.message);
     return res.status(500).json({
       ok: false,
       message: tabelaAusente
-        ? "A tabela auditoria_log ainda não existe neste banco. Rode a migration database/migrations/2026-07-16_auditoria_log.sql no banco de produção e recarregue esta página."
-        : `Erro ao listar auditoria: ${error.message}`,
-      error: error.message,
-    });
+        ? "A tabela auditoria_log ainda não existe neste banco. Reinicie o servidor para que a migration automática a crie e recarregue esta página."
+        : `Erro ao listar auditoria: ${error.message}`});
   }
 }
 
