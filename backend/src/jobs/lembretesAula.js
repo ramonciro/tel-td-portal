@@ -28,13 +28,19 @@ function amanhaISO() {
 
 async function buscarAulasDeAmanha() {
   const data = amanhaISO();
+  // FIX (Pacote 2 — "alinhar status de aulas"): o filtro excluía 'ministrada',
+  // um status que nunca é gravado pelo formulário de Cronograma (que só usa
+  // planejada/em_andamento/concluida/reprogramada/cancelada — mesmo engano já
+  // corrigido em turmaAulasController.js/capacidadeResolver.js). Na prática
+  // isso significava que aulas já marcadas 'concluida' (ex.: data reprogramada
+  // pra trás, ou lançamento retroativo) continuavam disparando lembrete.
   const [rows] = await pool.query(
     `SELECT ta.id, ta.instrutor_responsavel, ta.titulo,
             t.tema, t.cliente, t.id AS treinamento_id
      FROM turma_aulas ta
      JOIN treinamentos t ON t.id = ta.treinamento_id
      WHERE ta.data_aula = ?
-       AND ta.status_execucao NOT IN ('cancelada', 'ministrada')
+       AND ta.status_execucao NOT IN ('cancelada', 'concluida')
        AND ta.instrutor_responsavel IS NOT NULL
        AND TRIM(ta.instrutor_responsavel) <> ''`,
     [data]
