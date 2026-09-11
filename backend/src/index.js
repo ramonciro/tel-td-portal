@@ -10,6 +10,7 @@ const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } = require("./middlewares/auth");
+const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
 
 // Fase 2 (roadmap de competitividade): automações por e-mail — resumo diário
 // de pendências para coordenadores e lembrete de aula do dia seguinte para
@@ -18,6 +19,7 @@ const { iniciarAgendamentos } = require("./jobs/scheduler");
 const { rodarDigestPendencias, montarResumoEmpresa } = require("./jobs/pendenciasDigest");
 const { rodarLembretesAula } = require("./jobs/lembretesAula");
 const { rodarCalculoConquistas } = require("./jobs/conquistasJob");
+const { rodarCertificadosAutomaticos } = require("./jobs/certificadosAutomaticos");
 const { gerarTextoResumo, getResumoCacheadoDoDia } = require("./services/resumoExecutivoService");
 const { listarConquistas } = require("./services/gamificacaoService");
 const { getAnaliseComentarios } = require("./services/analiseComentariosService");
@@ -507,6 +509,17 @@ app.use(
   createCrudRouter({
     multiTenant: true, // Sprint 1
     table: "treinamentos",
+    // Pacote 3 (acesso restrito por cliente, generalizar): até aqui, o
+    // recorte por cliente da listagem de turmas era feito só no frontend
+    // (a tela escondia as turmas de outro cliente, mas a API sempre
+    // devolvia todas as turmas do tenant para qualquer perfil autorizado a
+    // listar, inclusive treinando) — "filtro de conveniência", não controle
+    // de acesso real. Agora o próprio backend recorta: gestor (coordenador/
+    // supervisor/superintendente) continua vendo tudo; instrutor/treinando
+    // só veem turmas do(s) próprio(s) cliente(s), ou sem essa restrição
+    // quando o usuário não tem cliente vinculado (comportamento anterior
+    // preservado para essas contas).
+    listFiltro: (req) => filtroClientesSQL(req, "cliente"),
     fields: [
       "tema",
       "cliente",
@@ -1379,6 +1392,23 @@ app.post(
     } catch (error) {
       console.error("Erro ao calcular conquistas:", error);
       return res.status(500).json({ ok: false, message: "Erro ao calcular conquistas."});
+    }
+  }
+);
+
+// Pacote 3 — certificado automático ao concluir a turma (além do
+// agendamento automático em jobs/scheduler.js, 05h diário).
+app.post(
+  "/api/admin/jobs/rodar-certificados-automaticos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  async (req, res) => {
+    try {
+      const resultado = await rodarCertificadosAutomaticos();
+      return res.json({ ok: true, resultado });
+    } catch (error) {
+      console.error("Erro ao rodar certificados automáticos:", error);
+      return res.status(500).json({ ok: false, message: "Erro ao rodar certificados automáticos."});
     }
   }
 );
