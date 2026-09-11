@@ -145,6 +145,19 @@ async function carregarTurmasEnriquecidas(req) {
 
   // query completa: inclui histórico real de presença (tabela `presencas`) e supervisor
   // se alguma coluna não existir no ambiente, cai para a query simplificada
+  //
+  // FIX (achado no teste pós-Pacote 2, em produção): as colunas hist.* vinham
+  // de uma subquery (derived table) sem chave primária conhecida pelo MySQL,
+  // então o modo sql_mode=ONLY_FULL_GROUP_BY do MySQL de produção (o
+  // MariaDB local usado nos testes não tem esse modo ativo, por isso isso
+  // nunca apareceu antes) rejeitava a query original por elas não estarem no
+  // GROUP BY — SEMPRE caindo no fallback abaixo. Efeito prático: o filtro de
+  // "Supervisor" do Dashboard ficava sempre vazio (a query de fallback grava
+  // supervisor como '' fixo), e os campos hist_* (histórico real de presença)
+  // nunca chegavam a ser usados. Adicionar as colunas hist.* ao GROUP BY não
+  // muda nenhum resultado (elas já são 1 valor por treinamento_id, vindas de
+  // uma subquery que já agrupa por treinamento_id) — só satisfaz a checagem
+  // do MySQL.
   let baseRows;
     try {
       const [rows] = await pool.query(
@@ -190,7 +203,9 @@ async function carregarTurmasEnriquecidas(req) {
         ${whereSql}
         GROUP BY t.id, t.tema, t.cliente, t.instrutor, t.supervisor,
           t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
-          t.carga_horaria, ${participantCountExpr}
+          t.carga_horaria, ${participantCountExpr},
+          hist.dias, hist.presentes, hist.ausentes, hist.justificados,
+          hist.pendentes, hist.participantes_distintos
         ORDER BY ${dateOrderExpr} DESC, t.id DESC`,
         params
       );
