@@ -86,7 +86,7 @@ async function sendMail({ to, subject, html, text }) {
     return { ok: true, devMode: false };
   } catch (error) {
     console.error("[mailer] Erro ao enviar e-mail:", error.message);
-    return { ok: false, devMode: false, error: error.message };
+    return { ok: false, devMode: false};
   }
 }
 
