@@ -119,7 +119,21 @@ const FREQUENCIA_MINIMA = 75;
 // foi emitido.
 async function previewCertificado(req, res) {
   try {
-    const { treinamento_id, nome } = req.query || {};
+    const { treinamento_id } = req.query || {};
+    let { nome } = req.query || {};
+
+    // Correção de segurança: um treinando podia informar `nome` de outra
+    // pessoa na query string e ver a frequência/nota calculada dela — sem
+    // nenhuma checagem de que o nome pertencia ao próprio usuário logado.
+    // Perfis não-gestores (treinando/instrutor) só podem consultar o próprio
+    // preview; coordenação/supervisão/superintendência continuam podendo
+    // informar qualquer nome (fluxo de emissão em lote).
+    const perfil = String(req.user?.perfil || '').toLowerCase().trim();
+    const isGestor = ['coordenador', 'supervisor', 'superintendente'].includes(perfil);
+    if (!isGestor) {
+      nome = req.user?.nome || '';
+    }
+
     if (!treinamento_id || !nome) {
       return res.status(400).json({ ok: false, message: 'Informe treinamento_id e nome.' });
     }
@@ -153,10 +167,26 @@ async function previewCertificado(req, res) {
 // Se não informados, usa dados do usuário logado (req.user)
 async function emitirCertificado(req, res) {
   try {
-    const { treinamento_id, usuario_nome, usuario_email } = req.body || {};
+    const { treinamento_id } = req.body || {};
+    let { usuario_nome, usuario_email } = req.body || {};
 
     if (!treinamento_id) {
       return res.status(400).json({ ok: false, message: 'treinamento_id é obrigatório' });
+    }
+
+    // Correção de segurança: perfil "treinando" chamando este endpoint (fluxo
+    // self-service, ex.: "Minhas Turmas") podia mandar usuario_nome/
+    // usuario_email de OUTRA pessoa no body e emitir/consultar certificado em
+    // nome dela — nada aqui verificava que o solicitante era gestor antes de
+    // aceitar esses campos. Agora, para treinando/instrutor, os dados do
+    // próprio usuário logado sempre prevalecem, ignorando o que veio no body.
+    // Coordenação/supervisão/superintendência continuam podendo emitir para
+    // qualquer participante (é assim que a emissão em lote funciona).
+    const perfil = String(req.user?.perfil || '').toLowerCase().trim();
+    const isGestor = ['coordenador', 'supervisor', 'superintendente'].includes(perfil);
+    if (!isGestor) {
+      usuario_nome  = req.user?.nome  || '';
+      usuario_email = req.user?.email || '';
     }
 
     // Bugfix: "?? 1" mis-atribuía TODO certificado emitido por super_admin ou

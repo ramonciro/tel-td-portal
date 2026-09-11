@@ -117,11 +117,17 @@ async function getEmpresa(req, res) {
 
     const empresa = rows[0];
 
+    // Nunca interpolar `id` direto na string SQL — mesmo vindo de uma rota
+    // restrita a super_admin, contarTabela() monta a query por concatenação,
+    // então isso seria uma injeção de SQL clássica. Number() neutraliza
+    // qualquer coisa que não seja um id numérico (mesmo padrão já usado em
+    // deleteEmpresa/verificacoes, logo abaixo neste mesmo arquivo).
+    const empresaIdNum = Number(id) || 0;
     const stats = {
-      total_usuarios:     await contarTabela('usuarios',    `WHERE empresa_id = ${id}`),
-      total_turmas:       await contarTabela('treinamentos',`WHERE empresa_id = ${id}`),
-      total_certificados: await contarTabela('certificados',`WHERE empresa_id = ${id}`),
-      total_presencas:    await contarTabela('presencas',   `WHERE empresa_id = ${id}`),
+      total_usuarios:     await contarTabela('usuarios',    `WHERE empresa_id = ${empresaIdNum}`),
+      total_turmas:       await contarTabela('treinamentos',`WHERE empresa_id = ${empresaIdNum}`),
+      total_certificados: await contarTabela('certificados',`WHERE empresa_id = ${empresaIdNum}`),
+      total_presencas:    await contarTabela('presencas',   `WHERE empresa_id = ${empresaIdNum}`),
     };
 
     let usuarios = [];

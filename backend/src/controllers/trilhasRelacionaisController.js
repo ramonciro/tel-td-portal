@@ -74,6 +74,25 @@ async function listTrilhas(req, res) {
   }
 }
 
+// Correção de segurança: `listTrilhas` já recorta o catálogo por cliente pra
+// treinando/instrutor (só veem trilhas globais ou do próprio cliente), mas
+// os outros endpoints que recebem o :id diretamente (getTrilha, getProgresso,
+// marcarEtapaConcluida) nunca replicavam essa checagem — bastava conhecer/
+// adivinhar o id de uma trilha de outro cliente do mesmo tenant pra acessá-la
+// por completo (conteúdo das etapas, progresso, e até marcar etapas como
+// concluídas). Helper único pra manter os três endpoints consistentes.
+function usuarioPodeAcessarTrilha(trilha, req) {
+  const perfil = String(req.user?.perfil || '').toLowerCase().trim();
+  const isGestor = ['coordenador', 'supervisor'].includes(perfil);
+  if (isGestor) return true;
+
+  const clienteTrilha = String(trilha.cliente || '').trim();
+  if (!clienteTrilha) return true; // trilha global — visível a todos no tenant
+
+  const clienteUsuario = String(req.user?.cliente || '').trim();
+  return clienteUsuario.toLowerCase() === clienteTrilha.toLowerCase();
+}
+
 /* ─── GET ONE ───────────────────────────────────────────────────────────────── */
 async function getTrilha(req, res) {
   try {
@@ -86,6 +105,10 @@ async function getTrilha(req, res) {
       params
     );
     if (!rows.length) return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
+
+    if (!usuarioPodeAcessarTrilha(rows[0], req)) {
+      return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
+    }
 
     const [etapas] = await pool.query(
       'SELECT * FROM trilha_etapas WHERE trilha_id = ? ORDER BY ordem ASC',
@@ -266,14 +289,14 @@ async function getProgresso(req, res) {
 
     if (!userEmail) return res.status(401).json({ ok: false, message: 'Não autenticado' });
 
-    if (req.empresaId) {
-      const [trilhaDoTenant] = await pool.query(
-        'SELECT id FROM trilhas_aprendizagem WHERE id = ? AND empresa_id = ?',
-        [id, req.empresaId]
-      );
-      if (!trilhaDoTenant.length) {
-        return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
-      }
+    const tenantCheck = req.empresaId ? ' AND empresa_id = ?' : '';
+    const tenantParams = req.empresaId ? [id, req.empresaId] : [id];
+    const [trilhaRows] = await pool.query(
+      `SELECT id, cliente FROM trilhas_aprendizagem WHERE id = ?${tenantCheck}`,
+      tenantParams
+    );
+    if (!trilhaRows.length || !usuarioPodeAcessarTrilha(trilhaRows[0], req)) {
+      return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
     }
 
     const [etapas] = await pool.query(
@@ -431,14 +454,14 @@ async function marcarEtapaConcluida(req, res) {
 
     if (!userEmail) return res.status(401).json({ ok: false, message: 'Não autenticado' });
 
-    if (req.empresaId) {
-      const [trilhaDoTenant] = await pool.query(
-        'SELECT id FROM trilhas_aprendizagem WHERE id = ? AND empresa_id = ?',
-        [id, req.empresaId]
-      );
-      if (!trilhaDoTenant.length) {
-        return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
-      }
+    const tenantCheck = req.empresaId ? ' AND empresa_id = ?' : '';
+    const tenantParams = req.empresaId ? [id, req.empresaId] : [id];
+    const [trilhaDoTenant] = await pool.query(
+      `SELECT id, cliente FROM trilhas_aprendizagem WHERE id = ?${tenantCheck}`,
+      tenantParams
+    );
+    if (!trilhaDoTenant.length || !usuarioPodeAcessarTrilha(trilhaDoTenant[0], req)) {
+      return res.status(404).json({ ok: false, message: 'Trilha não encontrada' });
     }
 
     // Fase 4 (isolamento multi-tenant, 08/09/2026): só a trilha (`id`) era
