@@ -1,71 +1,60 @@
-# Pacote 3 (parte 1) — Acesso restrito por cliente + Certificado automático (Portal T&D)
+# Migração Next.js 14 → 16 (Portal T&D)
 
-Este pacote contém os arquivos alterados para os dois primeiros itens do
-Pacote 3 do [roadmap definitivo](https://claude.ai — ver projeto "Portal
-T&D", doc `roadmap-definitivo-avaliacao-completa-2026-09.md`): "Acesso
-restrito por cliente (generalizar)" e "Certificado automático ao concluir a
-turma". O relatório completo, com causa raiz e teste de cada item, está em
-`relatorio-pacote3-parte1-2026-09.md` (também salvo no projeto).
+Este pacote contém a migração do frontend para o Next.js 16 (React 19),
+combinada com Ramon após o plano em
+`plano-migracao-nextjs-15-16-2026-09.md` (também salvo no projeto). A
+auditoria de risco, o motivo de ir direto para o 16 (em vez de parar no 15)
+e o resultado dos testes estão no relatório
+`relatorio-migracao-nextjs16-2026-09.md` (salvo no projeto) — este arquivo
+é só o "como aplicar".
+
+## O que mudou
+
+**Só 3 arquivos** — a auditoria previu (e o teste confirmou) zero mudança
+de código de aplicação necessária, porque o frontend não usa nenhum dos
+recursos afetados pelas mudanças de quebra do Next 15/16 (ver relatório).
+
+- `package.json` — `next` 14.2.35 → **16.3.4**; `react` e `react-dom`
+  18.3.1 → **19.3.0**; adicionado `eslint` + `eslint-config-next` como
+  devDependency (gerado pelo codemod oficial do Next — não afeta build nem
+  runtime, é só uma configuração de lint disponível para uso futuro, sem
+  script `lint` ligado a nada).
+- `package-lock.json` — atualizado para as novas versões.
+- `eslint.config.mjs` **(novo)** — configuração padrão do
+  `eslint-config-next`, gerada automaticamente pelo codemod oficial.
+  Nenhum script do `package.json` chama lint (nem `next build` roda lint
+  automaticamente a partir do Next 16), então este arquivo é inofensivo —
+  fica disponível caso você queira rodar `npx eslint .` manualmente no
+  futuro.
+
+Nenhum arquivo de `app/`, `components/`, `lib/` ou `services/` precisou
+mudar.
 
 ## Como aplicar
 
-1. Substitua no seu repositório GitHub cada arquivo abaixo pelo equivalente
-   deste zip (mesmo caminho relativo, a partir da raiz do repo) — dois
-   arquivos são **novos** (`src/lib/acessoCliente.js` e
-   `src/jobs/certificadosAutomaticos.js`), o restante já existe e é só
-   substituir.
-2. Nenhuma dependência nova, nenhuma variável de ambiente nova, nenhuma
-   migration nova. É só código de aplicação.
-3. Reinicie o backend (redeploy normal) para o novo job (05h diário) entrar
-   no agendamento — o log de boot passa a mostrar "certificados 05h diário"
-   na linha de agendamentos automáticos.
+1. Substitua `frontend/package.json`, `frontend/package-lock.json` no seu
+   repositório e adicione `frontend/eslint.config.mjs` (novo).
+2. **Recomendação de segurança extra, por ser major version:** aplique
+   isso numa branch separada (ex.: `migracao-nextjs-16`) e abra um PR, em
+   vez de subir direto na branch de produção. Como o projeto já está
+   conectado ao Vercel via GitHub, isso gera automaticamente um preview
+   deployment real — dá pra conferir a URL de preview funcionando de
+   verdade antes de fazer o merge para produção. Depois de conferir (ou
+   se preferir confiar direto na validação já feita, descrita no
+   relatório), é só mergear.
+3. Nenhuma variável de ambiente nova é necessária — o Vercel já está
+   configurado com Node.js 24.x, acima do mínimo exigido pelo Next 16
+   (20.9+).
+4. O backend (Railway/Express) **não muda nada** — esta migração é só do
+   frontend.
 
-## Arquivos neste pacote
+## O que já foi validado antes de entregar
 
-**Backend** (`backend/`):
-- `src/lib/acessoCliente.js` **(novo)** — helper central de restrição por
-  cliente: `usuarioTemAcessoAoCliente()` (checagem pontual de um recurso já
-  carregado) e `filtroClientesSQL()` (recorte em listagens). Trata
-  corretamente o caso de usuário vinculado a mais de um cliente
-  (`"ClienteX, ClienteY"`), o que a única checagem existente antes deste
-  pacote (em Trilhas) não fazia.
-- `src/routes/entityCrud.js` — novo hook opcional `listFiltro` no router
-  genérico de CRUD, usado para aplicar o recorte por cliente na listagem de
-  Treinamentos sem duplicar o router inteiro.
-- `src/index.js` — liga o `listFiltro` à rota `/api/treinamentos`; adiciona
-  o `require` e a rota `POST /api/admin/jobs/rodar-certificados-automaticos`
-  (disparo manual do job, mesma restrição de perfil dos outros três jobs já
-  existentes).
-- `src/controllers/trilhasRelacionaisController.js` — retrofit para usar o
-  helper central (corrige, de brinde, o bug de multi-cliente que já existia
-  aqui).
-- `src/controllers/treinamentoParticipantesController.js` — checagem de
-  cliente na leitura, importação por Excel, chamada, criação e nas duas
-  rotas de exclusão de participantes de uma turma.
-- `src/controllers/bibliotecaController.js` — recorte por cliente na
-  listagem (não existia nenhum antes).
-- `src/controllers/certificadosController.js` — checagem de cliente no
-  preview e na emissão; extração da função compartilhada
-  `registrarCertificado()` (usada também pelo job novo); correção do
-  bug de duplicidade quando não há e-mail (chave única não deduplica
-  `NULL`); correção da consulta a uma coluna inexistente
-  (`treinamento_participantes.email`) no caminho de e-mail não informado —
-  agora resolve pela tabela `usuarios`.
-- `src/controllers/muralController.js` — checagem de cliente na leitura do
-  mural da turma.
-- `src/jobs/certificadosAutomaticos.js` **(novo)** — job que emite/atualiza
-  certificado automaticamente para toda turma concluída (status explícito
-  OU `data_fim` já passada, exceto cancelada), reaproveitando a mesma regra
-  de elegibilidade (frequência ≥ 75%) já usada pela emissão manual.
-- `src/jobs/scheduler.js` — agenda o novo job para rodar todo dia às 05h.
-
-## O que NÃO precisa de ação manual
-
-- Não há dado para migrar — nenhuma tabela nova, nenhuma coluna nova.
-- O job de certificados automáticos começa a rodar sozinho no próximo dia
-  às 05h; se quiser ver o efeito imediatamente após o deploy, dispare uma
-  vez manualmente via `POST /api/admin/jobs/rodar-certificados-automaticos`
-  (autenticado como coordenador/supervisor/superintendente).
-- Rodar o job de novo nunca duplica certificado já emitido — ele atualiza
-  o existente (frequência/nota), mesmo para participantes sem e-mail
-  cadastrado.
+Ver o relatório completo, mas resumindo: build de produção local rodou
+limpo sob Turbopack (motor de build novo, padrão a partir do Next 16);
+30 páginas testadas via navegador real automatizado (login sintético,
+todas as telas principais, as duas rotas dinâmicas de turma, navegação
+pelo menu) sem nenhum erro de console, warning de hidratação ou exceção
+não tratada; um fluxo de escrita completo (criar material na Biblioteca,
+do preenchimento do formulário até o card aparecer na listagem) testado
+de ponta a ponta pela interface real, também sem erro.
