@@ -290,7 +290,8 @@ export default function NovaEmpresaPage() {
                 </div>
                 <div style={fieldFull}>
                   <label style={lbl}>Senha temporária</label>
-                  <input style={inp} placeholder="Deixe vazio para gerar automaticamente"
+                  <input style={inp} type="password" autoComplete="new-password"
+                    placeholder="Deixe vazio para gerar automaticamente"
                     {...fieldAdmin("admin_senha")} />
                   <div style={hint}>
                     Se deixado em branco, uma senha segura de 10 caracteres será gerada e exibida após a criação.
