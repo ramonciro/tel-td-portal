@@ -1,72 +1,48 @@
-# Pacote 2 — Débito técnico e robustez (Portal T&D)
+# Hotfix — filtro de Supervisor sempre vazio no Dashboard
 
-Este pacote contém os arquivos alterados para os 9 itens do Pacote 2 do
-[roadmap definitivo](https://claude.ai — ver projeto "Portal T&D", doc
-`roadmap-definitivo-avaliacao-completa-2026-09.md`). O relatório completo,
-com causa raiz e teste de cada item, está em
-`relatorio-pacote2-debito-tecnico-2026-09.md` (também salvo no projeto).
+Achado durante o teste em produção logo após o deploy do Pacote 2 (não é
+item do Pacote 2 — é um bug pré-existente, só ficou visível agora porque
+fui olhar os logs do Railway depois do deploy).
+
+## O que estava acontecendo
+
+A query principal que alimenta o Dashboard de Treinamentos (`GET
+/api/dashboard/treinamentos`) e a exportação em Excel falhava **sempre**
+em produção (nunca localmente, por isso nunca foi percebido antes) por
+causa do modo mais rígido do MySQL do Railway (`ONLY_FULL_GROUP_BY`) —
+confirmei isso lendo o log de runtime do deploy mais recente:
+
+```
+[dashboard] query completa falhou, usando fallback: Expression #18 of
+SELECT list is not in GROUP BY clause...
+```
+
+O sistema tem um fallback automático para não derrubar a tela, mas esse
+fallback sempre grava o campo "Supervisor" como vazio. Resultado prático:
+**o filtro de Supervisor do Dashboard sempre esteve vazio, sem nenhuma
+opção pra selecionar**, desde que essa tela existe — nunca gerou erro
+visível pro usuário, só uma funcionalidade quieta e permanentemente quebrada.
+
+## Correção
+
+Uma linha: as colunas que vêm de uma subconsulta (`hist.dias`,
+`hist.presentes` etc.) precisavam estar explicitamente no `GROUP BY` para
+o MySQL aceitar a query — não muda nenhum resultado (são um valor só por
+treinamento), só satisfaz a checagem mais rígida. Detalhe completo do
+porquê no comentário adicionado no próprio código.
 
 ## Como aplicar
 
-1. Substitua no seu repositório GitHub cada arquivo abaixo pelo equivalente
-   deste zip (mesmo caminho relativo, a partir da raiz do repo).
-2. **Importante — dependências:** dois `package.json` foram alterados
-   (`backend/package.json` e `frontend/package.json`), junto com os
-   `package-lock.json` correspondentes. Depois de substituir os arquivos,
-   rode `npm install` em cada pasta (local) **ou** apenas faça o commit/push
-   normal — o Railway e o Vercel já rodam `npm install` sozinhos no deploy.
-3. Nenhuma variável de ambiente nova é necessária.
-4. A tabela `auditoria_log` e o ajuste nas 8 tabelas do Oceano/Trilhas/
-   Certificados são aplicados automaticamente pela migration no primeiro
-   boot do backend após o deploy (mesmo mecanismo já usado no Pacote 1) —
-   não precisa rodar nada manualmente no banco.
+Substitua `backend/src/controllers/dashboardTreinamentosController.js`
+pelo arquivo deste zip. Nenhuma outra mudança, nenhuma migration nova.
 
-## Arquivos neste pacote
+## Teste
 
-**Backend** (`backend/`):
-- `package.json`, `package-lock.json` — dependência `xlsx` trocada de
-  `^0.18.5` (vulnerável, sem correção disponível no npm) para
-  `npm:@e965/xlsx@^0.20.3` (mirror oficial do SheetJS, mesma API).
-- `src/database/migrate.js` — remove o `DEFAULT 1` perigoso de `empresa_id`
-  em 8 tabelas; cria a tabela `auditoria_log` automaticamente.
-- `src/index.js` — transações nas exclusões/reimportações destrutivas,
-  limite de tamanho de upload nas rotas de importação restantes, remoção de
-  vazamento de erro técnico.
-- `src/controllers/treinamentoParticipantesController.js` — transação na
-  reimportação de participantes via Excel.
-- `src/routes/authRoutes.js` — rate limit em "esqueci minha senha".
-- `src/controllers/turmaAulasController.js`, `src/jobs/lembretesAula.js` —
-  alinhamento dos status de aula (`ministrada`/`parcial` → valores reais:
-  `em_andamento`/`concluida`).
-- `src/controllers/presencaAulasController.js` — exige justificativa quando
-  o status da chamada é "Justificado".
-- `src/controllers/auditoriaController.js` — mensagem de erro atualizada
-  (a tabela agora é criada automaticamente).
-- Demais controllers/middlewares/services listados abaixo — apenas remoção
-  de vazamento de detalhe técnico de erro nas respostas de erro:
-  `adminController.js`, `analyticsController.js`, `capacidadeController.js`,
-  `certificadosController.js`, `muralController.js`, `necessidadesController.js`,
-  `trilhasRelacionaisController.js`, `materiaisAvaliativosController.js`,
-  `acoesDesenvolvimentoController.js`, `bibliotecaController.js`,
-  `frequenciaIndividualController.js`, `avaliacoesTreinandosController.js`,
-  `dashboardTreinamentosController.js`, `presencaResumoController.js`,
-  `respostasAvaliativasController.js`, `middlewares/auth.js`,
-  `middlewares/authorizeRoles.js`, `routes/dashboardRoutes.js`,
-  `services/mailer.js`.
-
-**Frontend** (`frontend/`):
-- `package.json`, `package-lock.json` — mesma troca do `xlsx`; `next`
-  atualizado de `14.2.5` para `14.2.35` (patches de segurança, mesma versão
-  major/minor, sem breaking changes).
-- `services/api.js` — remoção do header `X-Client-ID` morto (substituído
-  há tempos pelo isolamento via JWT).
-- `app/turma/[id]/chamada/page.js` — validação de justificativa obrigatória
-  antes de salvar a chamada.
-
-## O que NÃO precisa de ação manual
-
-- A correção do `DEFAULT` perigoso e a criação de `auditoria_log` rodam
-  sozinhas no próximo boot do backend (via `runMigrations()`), tanto em
-  produção quanto em qualquer ambiente novo.
-- Não há dado para migrar/corrigir manualmente — os dois itens de schema são
-  aditivos/corretivos e não apagam nem alteram dado existente.
+Reproduzi o erro exato de produção localmente (setando o mesmo
+`sql_mode=ONLY_FULL_GROUP_BY` do Railway, que o MySQL local não usa por
+padrão — por isso passou despercebido antes) e confirmei que a query
+original falha e a corrigida funciona; testei a função do controller de
+ponta a ponta (não só a query solta) e confirmei que o filtro de
+Supervisor passa a vir preenchido; testei também a exportação em Excel
+sob o mesmo modo estrito, sem erro. Também revisei as outras 4 queries
+com `GROUP BY` do backend — nenhuma tem esse mesmo problema.
