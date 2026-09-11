@@ -144,6 +144,13 @@ function createCrudRouter({
   // não há razão para esse campo sair da API. `hideFields` remove as
   // colunas listadas de cada linha antes de responder.
   hideFields = [],
+  // Pacote 3 (acesso restrito por cliente, generalizar): hook opcional para
+  // recortar a listagem além do isolamento por empresa — hoje usado por
+  // /api/treinamentos para aplicar o filtro de cliente(s) do usuário
+  // (ver backend/src/lib/acessoCliente.js). Recebe `req` e deve devolver
+  // `{ sql, params }` (uma condição a mais no WHERE, com `?` posicionais)
+  // ou `null`/`undefined` quando não há filtro a aplicar.
+  listFiltro = null,
 }) {
   const router = express.Router();
 
@@ -156,11 +163,22 @@ function createCrudRouter({
         const empresaId = multiTenant ? (req.empresaId ?? null) : null;
 
         let query  = `SELECT * FROM ${table}`;
+        const condicoes = [];
         let params = [];
 
         if (multiTenant && empresaId !== null) {
-          query  += ` WHERE empresa_id = ?`;
-          params  = [empresaId];
+          condicoes.push("empresa_id = ?");
+          params.push(empresaId);
+        }
+
+        const extra = listFiltro ? listFiltro(req) : null;
+        if (extra) {
+          condicoes.push(extra.sql);
+          params.push(...extra.params);
+        }
+
+        if (condicoes.length) {
+          query += ` WHERE ${condicoes.join(" AND ")}`;
         }
 
         query += ` ORDER BY ${orderBy}`;
