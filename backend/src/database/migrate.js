@@ -1031,6 +1031,22 @@ async function runMigrations() {
       }
     }
 
+    // 30. usuarios.criado_em — causa raiz do vazamento de usuários entre
+    // tenants encontrado em 11/09/2026 (ver
+    // claude/hotfix-vazamento-usuarios-tenant-2026-09.md): o CREATE TABLE
+    // usuarios (passo 2 acima) já declara essa coluna, mas CREATE TABLE IF
+    // NOT EXISTS não altera uma tabela que já existe — e em produção a
+    // tabela "usuarios" já existia de antes dessa coluna ser adicionada ao
+    // schema deste arquivo. Resultado: a consulta de `adminController.
+    // getEmpresa` (usuários de um tenant específico) falhava com "Unknown
+    // column 'criado_em'" toda vez, caindo num fallback que — antes do
+    // hotfix de hoje — vazava usuários de TODOS os tenants. O hotfix já
+    // corrigiu o fallback para nunca mais vazar dado; este passo aqui
+    // resolve a causa raiz, trazendo de volta a data de criação de cada
+    // usuário (hoje mostrada em branco, já que o fallback atual não a
+    // busca) sem precisar de nenhuma ação manual no banco de produção.
+    await ensureColumn("usuarios", "criado_em", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
