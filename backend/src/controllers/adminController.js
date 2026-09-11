@@ -138,14 +138,32 @@ async function getEmpresa(req, res) {
         [id]
       );
       usuarios = uRows;
-    } catch (_) {
-      // empresa_id ainda não existe em usuarios
+    } catch (error) {
+      // BUGFIX (11/09/2026): o fallback antigo, ao falhar esta consulta,
+      // caía numa versão SEM `WHERE empresa_id` — ou seja, listava os
+      // usuários de TODOS os tenants na tela de um tenant específico. Isso
+      // vazou dado real em produção (usuários de outras empresas visíveis
+      // ao editar um tenant recém-criado). O empresa_id é coluna garantida
+      // desde o Sprint 1 (multi-tenant), então essa consulta não deveria
+      // falhar por causa dela — mas se falhar por qualquer outro motivo
+      // (ex.: coluna opcional divergente entre ambientes, como `criado_em`),
+      // o retry abaixo mantém SEMPRE o filtro por tenant, só removendo essa
+      // coluna. Nunca removemos o WHERE empresa_id.
+      console.error('[admin] getEmpresa: consulta de usuários falhou, tentando novamente sem a coluna criado_em (mantendo o filtro por tenant):', error.message);
       try {
         const [uRows] = await pool.query(
-          'SELECT id, nome, email, perfil, ativo FROM usuarios ORDER BY nome ASC LIMIT 50'
+          `SELECT id, nome, email, perfil, ativo
+           FROM usuarios WHERE empresa_id = ? ORDER BY perfil DESC, nome ASC`,
+          [id]
         );
         usuarios = uRows;
-      } catch (_) {}
+      } catch (error2) {
+        // Mesmo a versão mínima falhou. Melhor mostrar a lista vazia (e
+        // registrar o erro real para investigar) do que arriscar vazar
+        // usuários de outro tenant.
+        console.error('[admin] getEmpresa: consulta de usuários falhou mesmo sem criado_em — retornando lista vazia para não vazar dado de outro tenant:', error2.message);
+        usuarios = [];
+      }
     }
 
     return res.json({ ...empresa, stats, usuarios });
