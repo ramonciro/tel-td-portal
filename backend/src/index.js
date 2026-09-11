@@ -166,7 +166,31 @@ const {
 } = require("./controllers/bibliotecaController");
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+// Pacote 2 (débito técnico, 2026-09): esta instância genérica (planilhas de
+// importação — participantes, R&S) não tinha nenhum limite de tamanho — um
+// arquivo enorme enviado por qualquer usuário autenticado consumia memória
+// do processo inteiro (multer.memoryStorage carrega tudo em RAM) antes de
+// qualquer validação de conteúdo. 15MB é folgado para uma planilha real.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+
+// Pacote 2: wrapper único para transformar erro de multer (tipo/tamanho) em
+// JSON 400 — sem isso, o erro cai no handler padrão do Express (HTML) em
+// qualquer rota de upload. Usado nas rotas de planilha; a Biblioteca já tinha
+// o próprio wrapper inline desde o Pacote 1.
+function comUploadTratado(multerMiddleware) {
+  return (req, res, next) => {
+    multerMiddleware(req, res, (err) => {
+      if (err) {
+        const tamanho = err.code === "LIMIT_FILE_SIZE";
+        return res.status(400).json({
+          ok: false,
+          message: tamanho ? "Arquivo maior que o limite permitido (15MB)." : (err.message || "Falha no upload do arquivo"),
+        });
+      }
+      return next();
+    });
+  };
+}
 
 // Pacote 1 (correções críticas, 2026-09): upload da Biblioteca com allowlist
 // de extensão + limite de tamanho. Antes usava o `upload` genérico acima —
@@ -302,10 +326,9 @@ app.get("/api", async (req, res) => {
     await pool.query("SELECT 1");
     res.json({ status: "API Tel T&D online" });
   } catch (error) {
+    console.error("[index]", error.message || error);
     res.status(500).json({
-      status: "API online sem conexão com banco",
-      error: error.message,
-    });
+      status: "API online sem conexão com banco"});
   }
 });
 
@@ -420,6 +443,12 @@ app.delete(
   authRequired,
   authorizeRoles("coordenador"),
   async (req, res) => {
+    // Pacote 2 (débito técnico, 2026-09): as 7 exclusões abaixo rodavam como
+    // queries soltas no pool, sem transação — se a conexão caísse no meio
+    // (ex.: entre apagar turma_aulas e apagar treinamentos), sobrava dado
+    // órfão sem chance de rollback. Envolvido numa única transação, no mesmo
+    // padrão já usado em createEmpresa/deleteEmpresa (adminController.js).
+    const conn = await pool.getConnection();
     try {
       const { id } = req.params;
 
@@ -429,19 +458,23 @@ app.delete(
       // guard manualmente). req.empresaId nulo (ex.: super_admin, ou dado
       // legado sem empresa atribuída) mantém o comportamento antigo.
       const tenantCheck = req.empresaId ? ` AND empresa_id = ${pool.escape(req.empresaId)}` : "";
-      const [linhas] = await pool.query(`SELECT * FROM treinamentos WHERE id = ?${tenantCheck}`, [id]);
+      const [linhas] = await conn.query(`SELECT * FROM treinamentos WHERE id = ?${tenantCheck}`, [id]);
       const antes = linhas[0] || null;
       if (!antes) {
+        conn.release();
         return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
       }
 
-      await pool.query(`DELETE FROM presenca_aulas WHERE treinamento_id = ?`, [id]);
-      await pool.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
-      await pool.query(`DELETE FROM treinamento_participantes WHERE treinamento_id = ?`, [id]);
-      await pool.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
-      await pool.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
-      await pool.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
-      await pool.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
+      await conn.beginTransaction();
+      await conn.query(`DELETE FROM presenca_aulas WHERE treinamento_id = ?`, [id]);
+      await conn.query(`DELETE FROM turma_aulas WHERE treinamento_id = ?`, [id]);
+      await conn.query(`DELETE FROM treinamento_participantes WHERE treinamento_id = ?`, [id]);
+      await conn.query(`DELETE FROM presencas WHERE treinamento_id = ?`, [id]);
+      await conn.query(`DELETE FROM avaliacoes WHERE treinamento_id = ?`, [id]);
+      await conn.query(`DELETE FROM materiais_avaliativos WHERE treinamento_id = ?`, [id]);
+      await conn.query(`DELETE FROM treinamentos WHERE id = ?`, [id]);
+      await conn.commit();
+      conn.release();
 
       registrarAuditoria({
         usuario: req.user,
@@ -458,10 +491,12 @@ app.delete(
         message: "Treinamento e dados relacionados excluídos com sucesso",
       });
     } catch (error) {
+      try { await conn.rollback(); } catch (_) {}
+      conn.release();
+      console.error("[treinamentos] excluir:", error.message);
       return res.status(500).json({
         ok: false,
         message: "Erro ao excluir treinamento",
-        error: error.message,
       });
     }
   }
@@ -557,11 +592,10 @@ app.get(
 
       return res.json(rows[0]);
     } catch (error) {
+      console.error("[index]", error.message || error);
       return res.status(500).json({
         ok: false,
-        message: "Erro ao buscar treinamento",
-        error: error.message,
-      });
+        message: "Erro ao buscar treinamento"});
     }
   }
 );
@@ -587,7 +621,7 @@ app.post(
   "/api/treinamentos/importar-participantes",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor"),
-  upload.single("arquivo"),
+  comUploadTratado(upload.single("arquivo")),
   importarParticipantesExcel
 );
 
@@ -1025,9 +1059,7 @@ app.post(
       console.error("Erro ao zerar base:", error);
       res.status(500).json({
         ok: false,
-        message: "Erro ao zerar base.",
-        error: error.message,
-      });
+        message: "Erro ao zerar base."});
     }
   }
 );
@@ -1075,9 +1107,7 @@ app.post(
       console.error("Erro ao importar dashboard:", error);
       res.status(500).json({
         ok: false,
-        message: "Erro ao importar dashboard.",
-        error: error.message,
-      });
+        message: "Erro ao importar dashboard."});
     }
   }
 );
@@ -1175,7 +1205,7 @@ app.get(
       return res.json(rows || []);
     } catch (error) {
       console.error("[minhas-turmas]", error.message);
-      return res.status(500).json({ ok: false, message: "Erro ao buscar turmas", error: error.message });
+      return res.status(500).json({ ok: false, message: "Erro ao buscar turmas"});
     }
   }
 );
@@ -1299,7 +1329,7 @@ app.get   ("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs","g
 app.put   ("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"),              editarRP);
 app.delete("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"),              excluirRP);
 // Importação de planilha histórica (xlsx do Google Sheets)
-app.post  ("/api/rs/importar",  authRequired, authorizeRoles("coordenador_rs"), upload.single("arquivo"), importarRSPlanilha);
+app.post  ("/api/rs/importar",  authRequired, authorizeRoles("coordenador_rs"), comUploadTratado(upload.single("arquivo")), importarRSPlanilha);
 // Gestão de usuários R&S (sem precisar do /usuarios do T&D)
 app.get   ("/api/rs/usuarios",  authRequired, authorizeRoles("coordenador_rs"), listarUsuariosRS);
 app.post  ("/api/rs/usuarios",  authRequired, authorizeRoles("coordenador_rs"), criarUsuarioRS);
@@ -1318,7 +1348,7 @@ app.post(
       return res.json({ ok: true, resultado });
     } catch (error) {
       console.error("Erro ao rodar digest de pendências:", error);
-      return res.status(500).json({ ok: false, message: "Erro ao rodar o resumo de pendências.", error: error.message });
+      return res.status(500).json({ ok: false, message: "Erro ao rodar o resumo de pendências."});
     }
   }
 );
@@ -1333,7 +1363,7 @@ app.post(
       return res.json({ ok: true, resultado });
     } catch (error) {
       console.error("Erro ao rodar lembretes de aula:", error);
-      return res.status(500).json({ ok: false, message: "Erro ao rodar os lembretes de aula.", error: error.message });
+      return res.status(500).json({ ok: false, message: "Erro ao rodar os lembretes de aula."});
     }
   }
 );
@@ -1348,7 +1378,7 @@ app.post(
       return res.json({ ok: true, resultado });
     } catch (error) {
       console.error("Erro ao calcular conquistas:", error);
-      return res.status(500).json({ ok: false, message: "Erro ao calcular conquistas.", error: error.message });
+      return res.status(500).json({ ok: false, message: "Erro ao calcular conquistas."});
     }
   }
 );
