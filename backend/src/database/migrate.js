@@ -41,6 +41,33 @@ async function ensureDecimalType(table, column, targetTypeSql) {
   console.log(`  ↳ coluna ampliada para decimal: ${table}.${column}`);
 }
 
+// Pacote 2 (item "DEFAULT perigoso em empresa_id"): várias tabelas do módulo
+// Oceano/Trilhas/Certificados foram criadas com `empresa_id INT NULL DEFAULT
+// 1` — mesmo problema já identificado e corrigido na tabela `biblioteca`
+// (ver item 26 abaixo): qualquer INSERT que esqueça de informar empresa_id
+// explicitamente cai silenciosamente dentro do tenant de id 1 (Tel Centro de
+// Contatos/Comércio) em vez de ficar sem tenant e ser barrado pelos filtros
+// de isolamento. Os CREATE TABLE já foram corrigidos para `empresa_id INT
+// NULL` (sem DEFAULT), mas isso só vale para bancos novos — em produção a
+// coluna já existe com o DEFAULT antigo, e CREATE TABLE IF NOT EXISTS não
+// mexe em tabela existente. Esta função detecta e remove o DEFAULT em
+// bancos onde ele já foi aplicado; idempotente e segura de rodar toda vez.
+async function ensureNoTenantDefault(table, column) {
+  const [rows] = await pool.query(
+    `SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+     LIMIT 1`,
+    [table, column]
+  );
+  const info = rows[0];
+  // mysql2 devolve o DEFAULT ausente ora como null de verdade, ora como a
+  // string literal "NULL" (varia conforme a versão do servidor) — os dois
+  // significam "já está sem DEFAULT", nada a fazer.
+  if (!info || info.COLUMN_DEFAULT === null || info.COLUMN_DEFAULT === "NULL") return;
+  await pool.query(`ALTER TABLE ${table} MODIFY COLUMN ${column} INT NULL`);
+  console.log(`  ↳ removido DEFAULT perigoso: ${table}.${column} (era DEFAULT ${info.COLUMN_DEFAULT})`);
+}
+
 async function runMigrations() {
   try {
     console.log("🔄 Verificando e aplicando migrações no MySQL...");
@@ -407,7 +434,7 @@ async function runMigrations() {
         responsavel_id  INT NULL,
         data_inicio     DATE NULL,
         data_fim        DATE NULL,
-        empresa_id      INT NULL DEFAULT 1,
+        empresa_id      INT NULL,
         INDEX idx_jornadas_desenvolvimento_responsavel (responsavel_id),
         INDEX idx_jornadas_desenvolvimento_empresa     (empresa_id)
       );
@@ -428,7 +455,7 @@ async function runMigrations() {
         carga_horaria_prevista   DECIMAL(10,2) NOT NULL DEFAULT 0,
         carga_horaria_realizada  DECIMAL(10,2) NOT NULL DEFAULT 0,
         observacoes              TEXT NULL,
-        empresa_id               INT NULL DEFAULT 1,
+        empresa_id               INT NULL,
         INDEX idx_jornadas_etapas_jornada     (jornada_id),
         INDEX idx_jornadas_etapas_responsavel (responsavel_id),
         INDEX idx_jornadas_etapas_empresa     (empresa_id)
@@ -459,7 +486,7 @@ async function runMigrations() {
         responsavel_id              INT NULL,
         data_inicio                 DATE NULL,
         data_fim                    DATE NULL,
-        empresa_id                  INT NULL DEFAULT 1,
+        empresa_id                  INT NULL,
         INDEX idx_acoes_desenvolvimento_jornada     (jornada_id),
         INDEX idx_acoes_desenvolvimento_etapa       (etapa_id),
         INDEX idx_acoes_desenvolvimento_turma       (turma_id),
@@ -490,7 +517,7 @@ async function runMigrations() {
         status                   VARCHAR(30) NOT NULL DEFAULT 'planejado',
         data_inicio              DATE NULL,
         data_fim                 DATE NULL,
-        empresa_id               INT NULL DEFAULT 1,
+        empresa_id               INT NULL,
         INDEX idx_coaching_planos_jornada     (jornada_id),
         INDEX idx_coaching_planos_etapa       (etapa_id),
         INDEX idx_coaching_planos_acao        (acao_id),
@@ -609,7 +636,7 @@ async function runMigrations() {
         descricao   TEXT,
         tipo        VARCHAR(50) DEFAULT 'conteudo',
         turma_id    INT NULL,
-        empresa_id  INT NULL DEFAULT 1,
+        empresa_id  INT NULL,
         criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_etapas_trilha   (trilha_id),
         INDEX idx_etapas_empresa  (empresa_id)
@@ -621,7 +648,7 @@ async function runMigrations() {
         trilha_id     INT NOT NULL,
         etapa_id      INT NOT NULL,
         usuario_email VARCHAR(150) NOT NULL,
-        empresa_id    INT NULL DEFAULT 1,
+        empresa_id    INT NULL,
         concluido     TINYINT(1) DEFAULT 0,
         concluido_em  TIMESTAMP NULL,
         UNIQUE KEY uq_progresso (etapa_id, usuario_email),
@@ -640,7 +667,7 @@ async function runMigrations() {
         frequencia_percentual DECIMAL(5,2) NULL,
         nota_final            DECIMAL(5,2) NULL,
         carga_horaria         VARCHAR(50)  NULL,
-        empresa_id            INT NULL DEFAULT 1,
+        empresa_id            INT NULL,
         emitido_em            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uq_cert    (usuario_email, treinamento_id),
         INDEX idx_cert_empresa (empresa_id),
@@ -686,7 +713,7 @@ async function runMigrations() {
         titulo      VARCHAR(200) NOT NULL,
         descricao   TEXT NULL,
         status      VARCHAR(30) NOT NULL DEFAULT 'estruturacao',
-        empresa_id  INT NULL DEFAULT 1,
+        empresa_id  INT NULL,
         criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_trilhas_empresa (empresa_id)
       );
@@ -949,6 +976,58 @@ async function runMigrations() {
     } catch (error) {
       if (!/duplicate key name|Duplicate entry/i.test(error.message || "")) {
         console.log(`  ↳ não foi possível criar uq_crp_empresa (${error.message}) — seguindo`);
+      }
+    }
+
+    // 29. Item de Pacote 2 (relatorio-pendencias-revisao-paginas /
+    // auditoriaController.js) — auditoria_log nunca teve CREATE TABLE
+    // versionado: só existia como database/migrations/2026-07-16_auditoria_log.sql,
+    // um .sql avulso que nunca chegou a existir neste checkout e nunca foi
+    // rodado em produção — mesmo padrão de bug já corrigido para
+    // trilha_etapas/certificados/etc. (item 18). Resultado: a tela de
+    // Auditoria mostra a mensagem de erro "rode a migration manualmente" pra
+    // sempre, e registrarAuditoria() (services/auditoria.js) falha silenciosamente
+    // em todo INSERT (auditoria é best-effort por design, então a ação
+    // principal do usuário nunca quebra — mas nenhum log é gravado). Schema
+    // idêntico ao que auditoria.js já espera (INSERT/SELECT com essas colunas).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS auditoria_log (
+        id            INT AUTO_INCREMENT PRIMARY KEY,
+        usuario_id    INT NULL,
+        usuario_nome  VARCHAR(200) NULL,
+        perfil        VARCHAR(50) NULL,
+        acao          VARCHAR(50) NOT NULL,
+        entidade      VARCHAR(100) NOT NULL,
+        entidade_id   INT NULL,
+        resumo        TEXT NULL,
+        dados_antes   JSON NULL,
+        dados_depois  JSON NULL,
+        ip            VARCHAR(45) NULL,
+        criado_em     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_auditoria_usuario  (usuario_id),
+        INDEX idx_auditoria_acao     (acao),
+        INDEX idx_auditoria_entidade (entidade),
+        INDEX idx_auditoria_criado   (criado_em)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 28. Item de Pacote 2 — remove o DEFAULT 1 perigoso de empresa_id nas 8
+    // tabelas do módulo Oceano/Trilhas/Certificados onde ele ainda existir
+    // (ver ensureNoTenantDefault acima). Cada tabela em try/catch isolado.
+    for (const tabela of [
+      "jornadas_desenvolvimento",
+      "jornadas_etapas",
+      "acoes_desenvolvimento",
+      "coaching_planos",
+      "trilha_etapas",
+      "trilha_progresso",
+      "certificados",
+      "trilhas_aprendizagem",
+    ]) {
+      try {
+        await ensureNoTenantDefault(tabela, "empresa_id");
+      } catch (err) {
+        console.warn(`  ↳ não foi possível remover DEFAULT de ${tabela}.empresa_id: ${err.message}`);
       }
     }
 
