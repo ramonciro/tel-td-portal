@@ -15,7 +15,8 @@ export function authorizeRoles(...allowedRoles) {
 
       next();
     } catch (error) {
-      return res.status(500).json({ ok: false, message: "Erro ao validar perfil", error: error.message });
+      console.error("[authorizeRoles]", error.message || error);
+      return res.status(500).json({ ok: false, message: "Erro ao validar perfil"});
     }
   };
 }

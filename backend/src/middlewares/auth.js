@@ -39,11 +39,10 @@ function authRequired(req, res, next) {
 
     return next();
   } catch (error) {
+    console.error("[auth]", error.message || error);
     return res.status(401).json({
       ok: false,
-      message: "Token inválido ou expirado",
-      error: error.message,
-    });
+      message: "Token inválido ou expirado"});
   }
 }
 
@@ -70,11 +69,10 @@ function authorizeOceanAccess(req, res, next) {
 
     return next();
   } catch (error) {
+    console.error("[auth]", error.message || error);
     return res.status(500).json({
       ok: false,
-      message: "Erro ao validar acesso ao Oceano do Desenvolvimento",
-      error: error.message,
-    });
+      message: "Erro ao validar acesso ao Oceano do Desenvolvimento"});
   }
 }
 
@@ -108,11 +106,10 @@ function authorizeRoles(...allowedRoles) {
 
       return next();
     } catch (error) {
+      console.error("[auth]", error.message || error);
       return res.status(500).json({
         ok: false,
-        message: "Erro ao validar permissões",
-        error: error.message,
-      });
+        message: "Erro ao validar permissões"});
     }
   };
 }
