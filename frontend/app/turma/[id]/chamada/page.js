@@ -166,6 +166,23 @@ export default function ChamadaTurmaPage() {
 
   /* ── salvar ── */
   async function salvar() {
+    // FIX (Pacote 2 — "validar justificativa obrigatória"): o campo só
+    // aparecia quando o status virava "justificado", mas nada impedia salvar
+    // com ele vazio — o backend agora também barra isso, esta checagem é só
+    // pra dar o feedback na hora, sem esperar a resposta da API.
+    const semJustificativa = registros
+      .filter((r) => normalizeStatus(r.status) === "justificado")
+      .filter((r) => !String(r.justificativa || "").trim());
+
+    if (semJustificativa.length) {
+      setErro(
+        `Informe a justificativa para: ${semJustificativa
+          .map((r) => r.treinando_nome)
+          .join(", ")}.`
+      );
+      return;
+    }
+
     try {
       setSalvando(true); setErro(""); setSucesso("");
       await apiFetch("/presenca-aulas/salvar", {
