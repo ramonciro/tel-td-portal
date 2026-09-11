@@ -114,6 +114,11 @@ export default function AdminPage() {
           title="Super Admin"
           subtitle="Gestão de tenants, planos e saúde da plataforma"
           icon="⚙️"
+          actions={
+            <button style={btnConsolidado} onClick={() => router.push("/admin/consolidado")}>
+              📊 Visão consolidada
+            </button>
+          }
         />
 
         {/* KPIs globais */}
@@ -274,3 +279,6 @@ const btnDetail  = { flex: 1, padding: "9px 0", background: "#0B1220", color: "#
                      borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
 const btnToggle  = { padding: "9px 14px", border: "none", borderRadius: 8, cursor: "pointer",
                      fontSize: 13, fontWeight: 700 };
+const btnConsolidado = { padding: "10px 16px", background: "rgba(255,255,255,0.12)", color: "#fff",
+                         border: "1px solid rgba(255,255,255,0.25)", borderRadius: 8, cursor: "pointer",
+                         fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" };
