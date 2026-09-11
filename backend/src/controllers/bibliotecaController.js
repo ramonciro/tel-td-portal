@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const pool = require("../lib/db");
+const { filtroClientesSQL } = require("../lib/acessoCliente");
 
 const uploadDir = path.join(process.cwd(), "uploads", "biblioteca");
 
@@ -12,8 +13,25 @@ function garantirPastaUpload() {
 
 async function listBiblioteca(req, res) {
   try {
-    const tenantWhere = req.empresaId ? "WHERE empresa_id = ?" : "";
-    const params = req.empresaId ? [req.empresaId] : [];
+    // Pacote 3 (acesso restrito por cliente, generalizar): a listagem nunca
+    // recortava por cliente — qualquer instrutor/treinando via TODO
+    // material da Biblioteca do tenant, inclusive de outros clientes.
+    // Gestor (coordenador/supervisor/superintendente) continua vendo tudo.
+    const condicoes = [];
+    const params = [];
+
+    if (req.empresaId) {
+      condicoes.push("empresa_id = ?");
+      params.push(req.empresaId);
+    }
+
+    const filtroCliente = filtroClientesSQL(req, "cliente");
+    if (filtroCliente) {
+      condicoes.push(filtroCliente.sql);
+      params.push(...filtroCliente.params);
+    }
+
+    const where = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
 
     const [rows] = await pool.query(
       `
@@ -29,7 +47,7 @@ async function listBiblioteca(req, res) {
         descricao,
         created_at
       FROM biblioteca
-      ${tenantWhere}
+      ${where}
       ORDER BY id DESC
       `,
       params

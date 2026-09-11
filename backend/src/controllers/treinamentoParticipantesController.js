@@ -1,5 +1,6 @@
 const XLSX = require("xlsx");
 const db = require("../lib/db");
+const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 
 function parseLocalDate(dateValue) {
   if (!dateValue) return null;
@@ -53,13 +54,26 @@ function normalizeRowKeys(row) {
 // participantes ou chamada. Sem isso, qualquer usuário autenticado podia
 // ver/importar/editar/excluir a lista de participantes e a chamada de uma
 // turma de outra empresa só sabendo (ou incrementando) o id.
-async function treinamentoPertenceAoTenant(db, treinamentoId, empresaId) {
-  if (!empresaId) return true;
+//
+// Pacote 3 (acesso restrito por cliente, generalizar): além do tenant,
+// agora também confere o cliente do treinamento contra o(s) cliente(s) do
+// usuário (req), pelo mesmo motivo que já valia para Trilhas (Pacote 1,
+// item 6) — sem isso, instrutor/treinando de um cliente podia ver ou
+// mexer na lista de participantes/chamada de uma turma de OUTRO cliente
+// do mesmo tenant só sabendo/incrementando o treinamento_id. Gestor
+// (coordenador/supervisor/superintendente) continua com acesso total.
+// `req` é opcional para não quebrar nenhum chamador futuro que só precise
+// do isolamento por tenant (hoje todos os pontos deste arquivo passam req).
+async function treinamentoPertenceAoTenant(db, treinamentoId, empresaId, req = null) {
+  const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const params = empresaId ? [treinamentoId, empresaId] : [treinamentoId];
   const [rows] = await db.query(
-    `SELECT id FROM treinamentos WHERE id = ? AND empresa_id = ? LIMIT 1`,
-    [treinamentoId, empresaId]
+    `SELECT cliente FROM treinamentos WHERE id = ?${tenantCheck} LIMIT 1`,
+    params
   );
-  return rows.length > 0;
+  if (!rows.length) return false;
+  if (!req) return true;
+  return usuarioTemAcessoAoCliente(req, rows[0].cliente);
 }
 
 async function getParticipantesByTreinamento(req, res) {
@@ -67,7 +81,7 @@ async function getParticipantesByTreinamento(req, res) {
     const { id } = req.params;
     const dataChamada = req.query?.data || null;
 
-    if (!(await treinamentoPertenceAoTenant(db, id, req.empresaId))) {
+    if (!(await treinamentoPertenceAoTenant(db, id, req.empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -152,7 +166,7 @@ async function importarParticipantesExcel(req, res) {
       });
     }
 
-    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId))) {
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -302,7 +316,7 @@ async function salvarChamadaParticipantes(req, res) {
       });
     }
 
-    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId))) {
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -409,7 +423,7 @@ async function createParticipanteTreinamento(req, res) {
       });
     }
 
-    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId))) {
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -494,17 +508,22 @@ async function deleteParticipanteTreinamento(req, res) {
       : "";
     const params = req.empresaId ? [id, req.empresaId] : [id];
 
+    // Pacote 3 (acesso restrito por cliente, generalizar): junta o cliente
+    // do treinamento pra confirmar, abaixo, que instrutor/treinando só
+    // excluem participante de turma do(s) próprio(s) cliente(s) — mesma
+    // lacuna já fechada para leitura/importação/chamada acima.
     const [rows] = await db.query(
       `
-      SELECT tp.id, tp.treinamento_id, tp.nome
+      SELECT tp.id, tp.treinamento_id, tp.nome, t.cliente AS treinamento_cliente
       FROM treinamento_participantes tp
+      JOIN treinamentos t ON t.id = tp.treinamento_id
       WHERE tp.id = ?${tenantJoin}
       LIMIT 1
       `,
       params
     );
 
-    if (!rows.length) {
+    if (!rows.length || !usuarioTemAcessoAoCliente(req, rows[0].treinamento_cliente)) {
       return res.status(404).json({
         ok: false,
         message: "Participante não encontrado",
@@ -558,13 +577,21 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
       : "";
     const params = req.empresaId ? [...ids, req.empresaId] : ids;
 
-    const [rows] = await db.query(
+    // Pacote 3 (acesso restrito por cliente, generalizar): mesma junção com
+    // o cliente do treinamento usada em deleteParticipanteTreinamento —
+    // linhas de um cliente fora do alcance do usuário são descartadas
+    // abaixo, do mesmo jeito que já acontecia pra linhas de outro tenant.
+    const [todasAsLinhas] = await db.query(
       `
-      SELECT tp.id, tp.treinamento_id, tp.nome
+      SELECT tp.id, tp.treinamento_id, tp.nome, t.cliente AS treinamento_cliente
       FROM treinamento_participantes tp
+      JOIN treinamentos t ON t.id = tp.treinamento_id
       WHERE tp.id IN (${placeholders})${tenantJoin}
       `,
       params
+    );
+    const rows = todasAsLinhas.filter((r) =>
+      usuarioTemAcessoAoCliente(req, r.treinamento_cliente)
     );
 
     if (!rows.length) {

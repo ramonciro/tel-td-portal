@@ -15,6 +15,7 @@
  */
 
 const pool = require('../lib/db');
+const { usuarioTemAcessoAoCliente } = require('../lib/acessoCliente');
 
 /* ─── LIST ─────────────────────────────────────────────────────────────────── */
 async function listCertificados(req, res) {
@@ -112,6 +113,74 @@ async function calcularElegibilidade(treinamento_id, nome, empresaId) {
 
 const FREQUENCIA_MINIMA = 75;
 
+/* ─── REGISTRAR (upsert compartilhado entre emissão manual e job automático) ─── */
+// Grava (ou atualiza) um certificado. Extraído de emitirCertificado para que
+// o job de "certificado automático ao concluir a turma" (Pacote 3) grave
+// exatamente da mesma forma que a emissão manual — sem duplicar lógica.
+//
+// Bugfix: a UNIQUE KEY (usuario_email, treinamento_id) não deduplica quando
+// usuario_email é NULL — o MySQL trata cada NULL como um valor distinto no
+// índice único. Isso nunca dava problema na emissão manual (sempre havia um
+// e-mail, exceto no fluxo self-service logado). Mas o job automático roda
+// periodicamente sobre participantes que muitas vezes NÃO têm um usuário
+// cadastrado (logo, sem e-mail para resolver) — rodar o job de novo faria o
+// "ON DUPLICATE KEY UPDATE" inserir uma linha nova a cada execução em vez de
+// atualizar a existente. Por isso, quando não há e-mail, a checagem de
+// duplicidade é feita manualmente por (treinamento_id + nome + email nulo).
+async function registrarCertificado({
+  nome,
+  email,
+  treinamentoId,
+  tema,
+  cliente,
+  cargaHoraria,
+  freqFinal,
+  nota,
+  empresaId,
+}) {
+  if (email) {
+    const [result] = await pool.query(
+      `INSERT INTO certificados
+         (usuario_nome, usuario_email, treinamento_id, treinamento_tema,
+          treinamento_cliente, frequencia_percentual, nota_final, carga_horaria, empresa_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         usuario_nome           = VALUES(usuario_nome),
+         frequencia_percentual  = VALUES(frequencia_percentual),
+         nota_final             = VALUES(nota_final),
+         emitido_em             = CURRENT_TIMESTAMP`,
+      [nome, email, treinamentoId, tema, cliente, freqFinal, nota, cargaHoraria, empresaId]
+    );
+    return { id: result.insertId || null, atualizado: result.affectedRows === 2 };
+  }
+
+  const [existentes] = await pool.query(
+    `SELECT id FROM certificados
+     WHERE treinamento_id = ? AND usuario_nome = ? AND usuario_email IS NULL
+     LIMIT 1`,
+    [treinamentoId, nome]
+  );
+
+  if (existentes.length) {
+    await pool.query(
+      `UPDATE certificados
+       SET frequencia_percentual = ?, nota_final = ?, emitido_em = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [freqFinal, nota, existentes[0].id]
+    );
+    return { id: existentes[0].id, atualizado: true };
+  }
+
+  const [result] = await pool.query(
+    `INSERT INTO certificados
+       (usuario_nome, usuario_email, treinamento_id, treinamento_tema,
+        treinamento_cliente, frequencia_percentual, nota_final, carga_horaria, empresa_id)
+     VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+    [nome, treinamentoId, tema, cliente, freqFinal, nota, cargaHoraria, empresaId]
+  );
+  return { id: result.insertId || null, atualizado: false };
+}
+
 /* ─── PREVIEW (não grava nada) ───────────────────────────────────────────────── */
 // GET /api/certificados/preview?treinamento_id=X&nome=Y
 // Deixa o coordenador ver frequência/nota calculadas ANTES de confirmar a
@@ -144,6 +213,16 @@ async function previewCertificado(req, res) {
       return res.status(404).json({ ok: false, message: 'Treinamento não encontrado' });
     }
     const { tr, freqFinal, nota } = resultado;
+
+    // Pacote 3 (acesso restrito por cliente, generalizar): sem isso, um
+    // treinando/instrutor conseguia consultar o preview de um treinamento_id
+    // de outro cliente do mesmo tenant e descobrir tema/cliente/carga
+    // horária da turma (mesmo sem ter frequência/nota lá). Resposta 404
+    // igual à de "treinamento não encontrado", pelo mesmo motivo de sempre:
+    // não revelar que o id existe.
+    if (!usuarioTemAcessoAoCliente(req, tr.cliente)) {
+      return res.status(404).json({ ok: false, message: 'Treinamento não encontrado' });
+    }
 
     return res.json({
       ok: true,
@@ -209,15 +288,26 @@ async function emitirCertificado(req, res) {
     // o e-mail cadastrado do próprio participante (por nome); só cai para o
     // e-mail do usuário logado quando nem nome nem e-mail foram informados
     // (fluxo self-service, ex.: "Minhas Turmas").
+    // Bugfix: esse fallback consultava uma coluna `email` que não existe em
+    // treinamento_participantes (a tabela guarda nome/matrícula/cliente/
+    // turma, mas não e-mail) — daria ER_BAD_FIELD_ERROR se algum dia fosse
+    // executado. Nunca disparava na prática porque o formulário de emissão
+    // sempre manda nome+e-mail juntos (ou nenhum dos dois, no self-service),
+    // mas o job automático (Pacote 3) passa a exercitar exatamente esse
+    // caminho — participante sem e-mail informado. Resolve agora por um
+    // cadastro de usuário (tabela `usuarios`) cujo nome bata (case-insensitive),
+    // que é onde e-mail de fato existe no sistema.
     let email = usuario_email || null;
     if (!email && !usuario_nome) {
       email = req.user?.email || null;
     } else if (!email) {
-      const [[participanteEmail]] = await pool.query(
-        `SELECT email FROM treinamento_participantes WHERE treinamento_id = ? AND nome = ? LIMIT 1`,
-        [treinamento_id, nome]
+      const empresaCheck = empresaId ? ' AND empresa_id = ?' : '';
+      const empresaParams = empresaId ? [empresaId] : [];
+      const [[usuarioCadastrado]] = await pool.query(
+        `SELECT email FROM usuarios WHERE LOWER(TRIM(nome)) = LOWER(TRIM(?))${empresaCheck} LIMIT 1`,
+        [nome, ...empresaParams]
       );
-      email = participanteEmail?.email || null;
+      email = usuarioCadastrado?.email || null;
     }
 
     // Busca dados do treinamento + calcula frequência/nota (mesma lógica do preview)
@@ -227,20 +317,28 @@ async function emitirCertificado(req, res) {
     }
     const { tr, freqFinal, nota } = resultado;
 
-    // Emite (upsert — emitir de novo atualiza frequência e nota)
-    const [result] = await pool.query(
-      `INSERT INTO certificados
-         (usuario_nome, usuario_email, treinamento_id, treinamento_tema,
-          treinamento_cliente, frequencia_percentual, nota_final, carga_horaria, empresa_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         frequencia_percentual = VALUES(frequencia_percentual),
-         nota_final            = VALUES(nota_final),
-         emitido_em            = CURRENT_TIMESTAMP`,
-      [nome, email, treinamento_id, tr.tema, tr.cliente, freqFinal, nota, tr.carga_horaria, empresaId]
-    );
+    // Pacote 3 (acesso restrito por cliente, generalizar): mesma checagem
+    // do preview — sem isso, o fluxo self-service ("Minhas Turmas") deixava
+    // treinando/instrutor emitir certificado com treinamento_id de outro
+    // cliente do mesmo tenant.
+    if (!usuarioTemAcessoAoCliente(req, tr.cliente)) {
+      return res.status(404).json({ ok: false, message: 'Treinamento não encontrado' });
+    }
 
-    const certId = result.insertId || null;
+    // Emite (upsert — emitir de novo atualiza frequência e nota). Usa a
+    // mesma função que o job automático (Pacote 3), incluindo o tratamento
+    // de duplicidade quando não há e-mail resolvido.
+    const { id: certId } = await registrarCertificado({
+      nome,
+      email,
+      treinamentoId: treinamento_id,
+      tema: tr.tema,
+      cliente: tr.cliente,
+      cargaHoraria: tr.carga_horaria,
+      freqFinal,
+      nota,
+      empresaId,
+    });
 
     return res.status(201).json({
       ok: true,
@@ -288,4 +386,12 @@ async function verificarCertificado(req, res) {
   }
 }
 
-module.exports = { listCertificados, emitirCertificado, verificarCertificado, previewCertificado };
+module.exports = {
+  listCertificados,
+  emitirCertificado,
+  verificarCertificado,
+  previewCertificado,
+  calcularElegibilidade,
+  registrarCertificado,
+  FREQUENCIA_MINIMA,
+};

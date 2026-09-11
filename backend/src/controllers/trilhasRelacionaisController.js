@@ -19,6 +19,7 @@
 
 const pool = require('../lib/db');
 const XLSX = require('xlsx');
+const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require('../lib/acessoCliente');
 
 const STATUS_VALIDOS = ['estruturacao', 'ativa', 'estruturada'];
 
@@ -26,8 +27,6 @@ const STATUS_VALIDOS = ['estruturacao', 'ativa', 'estruturada'];
 async function listTrilhas(req, res) {
   try {
     const empresaId = req.empresaId ?? null;
-    const perfil = String(req.user?.perfil || '').toLowerCase().trim();
-    const isGestor = ['coordenador', 'supervisor'].includes(perfil);
 
     const where = [];
     const params = [];
@@ -40,12 +39,21 @@ async function listTrilhas(req, res) {
     // Novo recurso: pra treinando/instrutor, o catálogo mostrava TODAS as
     // trilhas do tenant, sem nenhum recorte por cliente/pessoa. Como um
     // primeiro passo de "trilhas atribuídas", instrutor/treinando agora só
-    // veem trilhas globais (sem cliente) ou do próprio cliente do usuário.
-    // Gestor (coordenador/supervisor) continua vendo tudo, pra gerenciar.
-    const clienteUsuario = String(req.user?.cliente || '').trim();
-    if (!isGestor && clienteUsuario) {
-      where.push('(cliente IS NULL OR cliente = \'\' OR LOWER(cliente) = LOWER(?))');
-      params.push(clienteUsuario);
+    // veem trilhas globais (sem cliente) ou de algum dos próprios clientes
+    // do usuário. Gestor (coordenador/supervisor/superintendente) continua
+    // vendo tudo, pra gerenciar.
+    //
+    // Pacote 3 (acesso restrito por cliente, generalizar): esse recorte
+    // antes comparava req.user.cliente como valor único (===) — pra
+    // qualquer usuário vinculado a mais de um cliente (campo aceita lista
+    // separada por vírgula, ver backend/src/lib/acessoCliente.js) a
+    // comparação nunca batia, escondendo indevidamente trilhas do segundo
+    // cliente em diante. Corrigido usando o helper compartilhado, que trata
+    // a lista corretamente.
+    const filtroCliente = filtroClientesSQL(req, 'cliente');
+    if (filtroCliente) {
+      where.push(filtroCliente.sql);
+      params.push(...filtroCliente.params);
     }
 
     let query = 'SELECT * FROM trilhas_aprendizagem';
@@ -82,15 +90,9 @@ async function listTrilhas(req, res) {
 // por completo (conteúdo das etapas, progresso, e até marcar etapas como
 // concluídas). Helper único pra manter os três endpoints consistentes.
 function usuarioPodeAcessarTrilha(trilha, req) {
-  const perfil = String(req.user?.perfil || '').toLowerCase().trim();
-  const isGestor = ['coordenador', 'supervisor'].includes(perfil);
-  if (isGestor) return true;
-
-  const clienteTrilha = String(trilha.cliente || '').trim();
-  if (!clienteTrilha) return true; // trilha global — visível a todos no tenant
-
-  const clienteUsuario = String(req.user?.cliente || '').trim();
-  return clienteUsuario.toLowerCase() === clienteTrilha.toLowerCase();
+  // Pacote 3: mesma correção do multi-cliente aplicada em listTrilhas —
+  // delega pro helper compartilhado em vez de comparar valor único.
+  return usuarioTemAcessoAoCliente(req, trilha.cliente);
 }
 
 /* ─── GET ONE ───────────────────────────────────────────────────────────────── */

@@ -6,6 +6,7 @@ const {
   excluirPublicacao,
 } = require("../services/muralResolver");
 const { registrarAuditoria } = require("../services/auditoria");
+const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 
 function mensagemErro(error, acaoDescricao) {
   const tabelaAusente = /doesn't exist/i.test(error.message);
@@ -19,6 +20,14 @@ async function obterMural(req, res) {
     const treinamentoId = Number(req.params.treinamento_id);
     const mural = await getMuralTurma(treinamentoId, req.empresaId);
     if (!mural) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+    // Pacote 3 (acesso restrito por cliente, generalizar): o mural devolve
+    // a turma inteira (tema, instrutor, participantes...) mais o feed de
+    // avisos/avaliações/materiais/chamadas — sem essa checagem, instrutor/
+    // treinando de um cliente viam o mural completo de uma turma de OUTRO
+    // cliente do mesmo tenant só sabendo/incrementando o treinamento_id.
+    if (!usuarioTemAcessoAoCliente(req, mural.treinamento?.cliente)) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
     return res.json({ ok: true, ...mural });
