@@ -168,9 +168,40 @@ const {
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Pacote 1 (correções críticas, 2026-09): upload da Biblioteca com allowlist
+// de extensão + limite de tamanho. Antes usava o `upload` genérico acima —
+// que também serve os importadores de planilha (.xlsx/.xls/.csv) — sem
+// nenhuma checagem de tipo, então qualquer arquivo (incluindo executáveis)
+// podia ser salvo em disco e servido de volta publicamente. Instância própria
+// para não afetar as rotas de importação de planilha.
+const EXTENSOES_BIBLIOTECA_PERMITIDAS = [
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv",
+  ".jpg", ".jpeg", ".png", ".gif", ".mp4", ".zip",
+];
+const uploadBiblioteca = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+  fileFilter: (req, file, cb) => {
+    const ext = require("path").extname(file.originalname || "").toLowerCase();
+    if (!EXTENSOES_BIBLIOTECA_PERMITIDAS.includes(ext)) {
+      return cb(new Error(`Tipo de arquivo não permitido: ${ext || "(sem extensão)"}`));
+    }
+    return cb(null, true);
+  },
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Pacote 1 (correções críticas, 2026-09): a Biblioteca gravava os arquivos
+// enviados em uploads/biblioteca/ e devolvia um link "<host>/uploads/
+// biblioteca/<arquivo>", mas nada aqui servia essa pasta estaticamente —
+// todo link gerado respondia 404, tornando o recurso de anexar arquivo
+// inutilizável de ponta a ponta. Serve publicamente (mesmo padrão de link
+// direto já usado por esses arquivos); no Railway o disco não é persistente
+// entre deploys — isso é uma limitação arquitetural separada, já registrada
+// no roadmap, e não é resolvida por esta correção pontual.
+app.use("/uploads", express.static(require("path").join(process.cwd(), "uploads")));
 // Sprint 1: clientMiddleware aplicado globalmente — popula req.empresaId
 // via empresa_id do JWT para todas as rotas protegidas
 app.use(clientMiddleware);
@@ -886,7 +917,14 @@ app.post(
   "/api/biblioteca/upload",
   authRequired,
   authorizeRoles("coordenador", "supervisor"),
-  upload.single("arquivo"),
+  (req, res, next) => {
+    uploadBiblioteca.single("arquivo")(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ ok: false, message: err.message || "Falha no upload do arquivo" });
+      }
+      return next();
+    });
+  },
   uploadBibliotecaArquivo
 );
 
