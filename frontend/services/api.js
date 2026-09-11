@@ -8,17 +8,6 @@ export function getToken() {
   return localStorage.getItem("token") || "";
 }
 
-// Funções para gerenciar o ambiente/cliente selecionado no navegador
-export function getSelectedClient() {
-  if (typeof window === "undefined") return "dasa";
-  return localStorage.getItem("client_id") || "dasa";
-}
-
-export function setSelectedClient(clientCode) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("client_id", clientCode);
-}
-
 export function getStoredUser() {
   if (typeof window === "undefined") return null;
 
@@ -65,11 +54,9 @@ export function hasSomeRole(user, allowedRoles = []) {
   return userRoles.some((r) => normalizedAllowed.includes(r));
 }
 
-// Função central de requisição atualizada para enviar o ambiente atual (X-Client-ID)
 export async function apiFetch(path, options = {}) {
   const url = `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
   const token = getToken();
-  const currentClient = getSelectedClient(); // Envia o ambiente selecionado (dasa, sebrae, cemig, igua)
 
   // FIX: quando o body é FormData (upload de arquivo), NÃO definir Content-Type.
   // O browser precisa calculá-lo automaticamente para incluir o boundary multipart.
@@ -78,7 +65,6 @@ export async function apiFetch(path, options = {}) {
 
   const headers = {
     ...(!isFormData && { "Content-Type": "application/json" }),
-    "X-Client-ID": currentClient,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
@@ -113,13 +99,11 @@ export async function apiFetch(path, options = {}) {
 export async function apiDownload(path, filenameFallback = "arquivo.xlsx") {
   const url = `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
   const token = getToken();
-  const currentClient = getSelectedClient();
 
   let response;
   try {
     response = await fetch(url, {
       headers: {
-        "X-Client-ID": currentClient,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
