@@ -1,60 +1,90 @@
-# Migração Next.js 14 → 16 (Portal T&D)
+# Painel super-admin — Visão consolidada entre tenants
 
-Este pacote contém a migração do frontend para o Next.js 16 (React 19),
-combinada com Ramon após o plano em
-`plano-migracao-nextjs-15-16-2026-09.md` (também salvo no projeto). A
-auditoria de risco, o motivo de ir direto para o 16 (em vez de parar no 15)
-e o resultado dos testes estão no relatório
-`relatorio-migracao-nextjs16-2026-09.md` (salvo no projeto) — este arquivo
-é só o "como aplicar".
+Este pacote implementa o item do roadmap "Painel super-admin com visão
+consolidada entre tenants": uma tela nova que agrega a saúde de todos os
+tenants (Comércio, e os próximos que entrarem, como IBM) numa visão só, em
+vez de precisar abrir tenant por tenant.
 
-## O que mudou
+## O que foi feito
 
-**Só 3 arquivos** — a auditoria previu (e o teste confirmou) zero mudança
-de código de aplicação necessária, porque o frontend não usa nenhum dos
-recursos afetados pelas mudanças de quebra do Next 15/16 (ver relatório).
+**2 arquivos, nenhuma mudança de backend.** Como o roadmap já apontava, a
+maior parte do dado necessário já existia — a tela nova só consome os dois
+endpoints que o `/admin` já usa (`/admin/stats` e `/admin/empresas`); não
+precisou de nenhuma rota, coluna ou migração nova.
 
-- `package.json` — `next` 14.2.35 → **16.3.4**; `react` e `react-dom`
-  18.3.1 → **19.3.0**; adicionado `eslint` + `eslint-config-next` como
-  devDependency (gerado pelo codemod oficial do Next — não afeta build nem
-  runtime, é só uma configuração de lint disponível para uso futuro, sem
-  script `lint` ligado a nada).
-- `package-lock.json` — atualizado para as novas versões.
-- `eslint.config.mjs` **(novo)** — configuração padrão do
-  `eslint-config-next`, gerada automaticamente pelo codemod oficial.
-  Nenhum script do `package.json` chama lint (nem `next build` roda lint
-  automaticamente a partir do Next 16), então este arquivo é inofensivo —
-  fica disponível caso você queira rodar `npx eslint .` manualmente no
-  futuro.
+- `frontend/app/admin/consolidado/page.js` **(novo)** — a tela consolidada.
+- `frontend/app/admin/page.js` **(modificado)** — só adiciona um botão
+  "📊 Visão consolidada" no cabeçalho, levando para a tela nova. Nenhuma
+  outra linha do arquivo mudou.
 
-Nenhum arquivo de `app/`, `components/`, `lib/` ou `services/` precisou
-mudar.
+## O que a tela mostra
+
+Conforme conversamos: uso vs. limites por tenant, alertas acionáveis e
+volume agregado, com atalho direto para o tenant.
+
+1. **KPIs agregados** (mesmos totais do `/admin`, para servir como resumo
+   executivo autônomo se alguém abrir só esta tela): tenants ativos,
+   usuários, turmas e certificados somados entre todos os tenants.
+2. **Alertas** — lista priorizada (crítico → atenção → info) do que merece
+   atenção agora, calculada a partir dos dados que já existem, sem
+   necessidade de nenhum campo novo no banco:
+   - Uso de usuários ou turmas **≥ 90%** do limite → crítico.
+   - Uso **≥ 70%** do limite → atenção.
+   - Tenant ativo sem e-mail de contato cadastrado → atenção (onboarding
+     incompleto).
+   - Tenant ativo sem nenhuma turma cadastrada → atenção (tenant parado).
+   - Tenant desativado → informativo.
+
+   Cada alerta tem um botão "Ver tenant" que leva direto para
+   `/admin/empresa/[id]`, a tela de gestão daquele tenant que já existe.
+3. **Comparativo lado a lado** — uma tabela com todos os tenants (nome,
+   plano, status, uso de usuários e turmas com barra de progresso,
+   certificados emitidos, data de criação), ordenada para trazer primeiro
+   quem tem algum alerta crítico. Cada linha tem um botão "Gerenciar" para
+   o mesmo atalho.
+
+O `/admin` original **não foi alterado** além do botão novo — os cards por
+tenant, filtros e o fluxo de criar/editar/desativar tenant continuam
+exatamente como estavam.
 
 ## Como aplicar
 
-1. Substitua `frontend/package.json`, `frontend/package-lock.json` no seu
-   repositório e adicione `frontend/eslint.config.mjs` (novo).
-2. **Recomendação de segurança extra, por ser major version:** aplique
-   isso numa branch separada (ex.: `migracao-nextjs-16`) e abra um PR, em
-   vez de subir direto na branch de produção. Como o projeto já está
-   conectado ao Vercel via GitHub, isso gera automaticamente um preview
-   deployment real — dá pra conferir a URL de preview funcionando de
-   verdade antes de fazer o merge para produção. Depois de conferir (ou
-   se preferir confiar direto na validação já feita, descrita no
-   relatório), é só mergear.
-3. Nenhuma variável de ambiente nova é necessária — o Vercel já está
-   configurado com Node.js 24.x, acima do mínimo exigido pelo Next 16
-   (20.9+).
-4. O backend (Railway/Express) **não muda nada** — esta migração é só do
-   frontend.
+1. Adicione o arquivo novo `frontend/app/admin/consolidado/page.js`.
+2. Substitua `frontend/app/admin/page.js` pelo arquivo deste pacote (a
+   única mudança real é o botão "Visão consolidada" no cabeçalho — o resto
+   do arquivo é idêntico ao que já está em produção).
+3. Nenhuma variável de ambiente, migração de banco ou dependência nova é
+   necessária.
 
-## O que já foi validado antes de entregar
+## O que já foi testado antes de entregar
 
-Ver o relatório completo, mas resumindo: build de produção local rodou
-limpo sob Turbopack (motor de build novo, padrão a partir do Next 16);
-30 páginas testadas via navegador real automatizado (login sintético,
-todas as telas principais, as duas rotas dinâmicas de turma, navegação
-pelo menu) sem nenhum erro de console, warning de hidratação ou exceção
-não tratada; um fluxo de escrita completo (criar material na Biblioteca,
-do preenchimento do formulário até o card aparecer na listagem) testado
-de ponta a ponta pela interface real, também sem erro.
+Build de produção local (Turbopack) gerou a rota nova sem erros. Testei com
+navegador real automatizado (Playwright), autenticado como super_admin via
+JWT sintético (sem senha real envolvida), contra o banco de teste local com
+os 2 tenants que já existem lá:
+
+- Navegação `/admin` → botão "Visão consolidada" → `/admin/consolidado` e
+  volta, sem erro de console.
+- Os alertas calculados batem com o dado real do banco de teste (ambos os
+  tenants sem e-mail de contato cadastrado, por exemplo, geraram o alerta
+  esperado).
+- Botões "Ver tenant" (nos alertas) e "Gerenciar" (na tabela) navegam
+  corretamente para `/admin/empresa/[id]`.
+- Simulei um cenário de tenant perto do limite (baixando temporariamente o
+  limite de usuários de um tenant de teste) para confirmar que o alerta
+  crítico aparece, com o badge vermelho certo, e que a tabela reordena para
+  trazer esse tenant para o topo — depois desfiz a alteração, era só teste.
+- Conferi que o número mostrado como limite (ex.: "4/50") bate exatamente
+  com o que o `/admin` já mostra nos cards de cada tenant — a primeira
+  versão que testei aqui mostrava "∞" num caso em que o `/admin` mostra
+  "50" (tenant sem `limite_usuarios` preenchido no banco); corrigi para
+  usar o mesmo valor padrão (50 usuários / 100 turmas) que o resto do
+  painel já usa, evitando as duas telas mostrarem números diferentes para
+  o mesmo tenant.
+
+## Fica de fora deste pacote (não é bloqueio, é escopo)
+
+Os alertas de uso (90%/70%) e de onboarding incompleto cobrem o que dá para
+derivar dos dados que já existem hoje. Coisas que dependeriam de dado novo
+(ex.: um alerta de "pagamento pendente", já que o portal não tem essa
+informação hoje) ficam fora até existir essa informação no sistema.
