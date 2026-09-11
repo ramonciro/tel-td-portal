@@ -51,6 +51,32 @@ function registrarTentativaFalha(emailNorm) {
   tentativasLogin.set(emailNorm, registro);
 }
 
+/* ─── RATE LIMITING (esqueci-senha) ──────────────────────────────────────── */
+// Pacote 2 (débito técnico, 2026-09): diferente do login, esta rota não tinha
+// nenhum controle de tentativas — dava pra chamar /esqueci-senha pro mesmo
+// e-mail quantas vezes quisesse, cada uma disparando um envio real pelo
+// Resend (spam de caixa de entrada pra vítima, além de consumir cota de
+// envio). Janela fixa simples em memória, mesma limitação conhecida do
+// limiter de login (reseta a cada deploy, não compartilhado entre
+// instâncias). Quando o limite estoura, a rota continua respondendo com a
+// MESMA mensagem genérica de sempre — só não envia o e-mail — pra não expor
+// nem se o e-mail existe, nem que o rate limit foi acionado.
+const tentativasEsqueciSenha = new Map(); // email normalizado -> { count, inicioJanela }
+const ESQUECI_SENHA_MAX_TENTATIVAS = 3;
+const ESQUECI_SENHA_JANELA_MS = 15 * 60 * 1000; // 15 minutos
+
+function excedeuLimiteEsqueciSenha(emailNorm) {
+  const agora = Number(Date.now());
+  const registro = tentativasEsqueciSenha.get(emailNorm);
+  if (!registro || agora - registro.inicioJanela > ESQUECI_SENHA_JANELA_MS) {
+    tentativasEsqueciSenha.set(emailNorm, { count: 1, inicioJanela: agora });
+    return false;
+  }
+  registro.count += 1;
+  tentativasEsqueciSenha.set(emailNorm, registro);
+  return registro.count > ESQUECI_SENHA_MAX_TENTATIVAS;
+}
+
 function limparTentativas(emailNorm) {
   tentativasLogin.delete(emailNorm);
 }
@@ -249,7 +275,7 @@ router.post("/login", async (req, res) => {
     });
   } catch (error) {
     console.error("Erro no login:", error);
-    return res.status(500).json({ message: "Erro ao realizar login", error: error.message });
+    return res.status(500).json({ message: "Erro ao realizar login"});
   }
 });
 
@@ -312,7 +338,7 @@ router.post("/alterar-senha", authRequired, async (req, res) => {
     return res.json({ message: "Senha alterada com sucesso" });
   } catch (error) {
     console.error("Erro ao alterar senha:", error);
-    return res.status(500).json({ message: "Erro ao alterar senha", error: error.message });
+    return res.status(500).json({ message: "Erro ao alterar senha"});
   }
 });
 
@@ -338,6 +364,12 @@ router.post("/esqueci-senha", async (req, res) => {
       ok: true,
       message: "Se o e-mail informado estiver cadastrado, enviaremos um link de redefinição de senha.",
     };
+
+    const emailNorm = email.trim().toLowerCase();
+    if (excedeuLimiteEsqueciSenha(emailNorm)) {
+      console.warn(`[esqueci-senha] limite de tentativas excedido para ${emailNorm}`);
+      return res.json(respostaGenerica);
+    }
 
     const [rows] = await pool.query(
       "SELECT id, nome, email FROM usuarios WHERE LOWER(email) = LOWER(?) AND ativo = 1 LIMIT 1",
