@@ -1168,6 +1168,45 @@ async function runMigrations() {
     // convertendo para VARCHAR(50) se algum dia foi criado como ENUM.
     await ensureVarcharType("usuarios", "perfil", 50);
 
+    // 36. Planilha de Vale Transporte no modelo real do financeiro (pedido
+    // de Ramon, 15/09/2026, a partir do arquivo "SOLICITAÇÃO DE VT -
+    // AVALIAÇÃO TÉCNICA.xlsx"). Duas peças novas:
+    //
+    // a) dados_bancarios_colaborador — banco/agência/conta OU chave PIX de
+    //    cada pessoa, cadastrado uma vez pela Assistente/Coordenador na
+    //    própria tela de Reembolso de Transporte e reaproveitado em
+    //    qualquer turma futura da mesma pessoa (chave = CPF, sem
+    //    empresa_id: o mesmo CPF é a mesma pessoa em qualquer cliente/
+    //    tenant — a extração em si já é restrita por perfil, como o resto
+    //    do CPF nesta tela). Fica de fora de treinamento_participantes de
+    //    propósito, porque esse dado não é "da turma", é "da pessoa".
+    // b) treinamentos.valor_passagem_vt — valor da passagem (ida) usado
+    //    pra essa turma na planilha de VT; o total por dia é sempre 2x
+    //    esse valor (ida + volta), igual ao modelo (R$5,90 -> R$11,80).
+    //    Fica NULL até a primeira exportação, quando o valor informado é
+    //    gravado aqui e vira o padrão nas próximas exportações da mesma
+    //    turma. Sem valor gravado, o controller usa R$5,90 como padrão.
+    // "dv" normalmente é 1 dígito, mas o modelo do Ramon repete o texto
+    // "SICLOS BANK" nas 5 colunas bancárias (banco/agência/OP/conta/DV)
+    // quando o pagamento é por PIX via CPF, em vez de deixar em branco —
+    // por isso VARCHAR(20) e não algo mais curto.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS dados_bancarios_colaborador (
+          cpf             VARCHAR(11) NOT NULL PRIMARY KEY,
+          nome            VARCHAR(200) NULL,
+          banco           VARCHAR(100) NULL,
+          agencia         VARCHAR(20) NULL,
+          operacao        VARCHAR(20) NULL,
+          conta           VARCHAR(30) NULL,
+          dv              VARCHAR(20) NULL,
+          tipo_chave_pix  VARCHAR(20) NULL,
+          chave_pix       VARCHAR(150) NULL,
+          atualizado_por  VARCHAR(150) NULL,
+          atualizado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      );
+    `);
+    await ensureColumn("treinamentos", "valor_passagem_vt", "DECIMAL(10,2) NULL");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
