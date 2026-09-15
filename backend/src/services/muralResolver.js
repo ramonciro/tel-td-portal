@@ -164,6 +164,16 @@ async function getMuralTurma(treinamentoId, empresaId) {
   return { treinamento, feed };
 }
 
+// Usado pelo controller antes de criar uma publicação, pra checar acesso
+// por cliente (usuarioTemAcessoAoCliente) do mesmo jeito que a leitura do
+// mural já faz — ver nota de segurança acima de buscarPublicacao.
+async function obterClienteTreinamento(treinamentoId, empresaId) {
+  const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const params = empresaId ? [treinamentoId, empresaId] : [treinamentoId];
+  const [rows] = await pool.query(`SELECT cliente FROM treinamentos WHERE id = ?${tenantCheck} LIMIT 1`, params);
+  return rows[0] || null;
+}
+
 // empresaId (quando informado) exige que o treinamento de destino pertença
 // ao tenant do autor — sem isso, dava para publicar um aviso na turma de
 // outra empresa apenas informando o treinamento_id.
@@ -188,12 +198,26 @@ async function criarPublicacao({ treinamentoId, autor, titulo, conteudo, fixado,
 // empresaId (quando informado) restringe a publicação buscada ao tenant —
 // usado antes de editar/excluir, para impedir que um coordenador edite ou
 // apague um aviso de outra empresa só sabendo o id da publicação.
+//
+// Correção de segurança 15/09/2026 (auditoria, Pacote A.3): isso cobria só
+// o tenant, não o cliente (SAFRA/CREA/etc. dentro do mesmo tenant) — a
+// leitura do mural (getMuralTurma, via obterMural) já filtra por cliente,
+// mas editar/excluir usavam só esta função, deixando um instrutor vinculado
+// a um cliente editar/apagar aviso de turma de outro cliente do mesmo
+// tenant. Agora devolve também `cliente`, pro controller aplicar o mesmo
+// usuarioTemAcessoAoCliente já usado na leitura.
 async function buscarPublicacao(id, empresaId) {
   const tenantJoin = empresaId
     ? " AND EXISTS (SELECT 1 FROM treinamentos t WHERE t.id = tp.treinamento_id AND t.empresa_id = ?)"
     : "";
   const params = empresaId ? [id, empresaId] : [id];
-  const [rows] = await pool.query(`SELECT tp.* FROM turma_publicacoes tp WHERE tp.id = ?${tenantJoin}`, params);
+  const [rows] = await pool.query(
+    `SELECT tp.*, t.cliente AS cliente
+     FROM turma_publicacoes tp
+     LEFT JOIN treinamentos t ON t.id = tp.treinamento_id
+     WHERE tp.id = ?${tenantJoin}`,
+    params
+  );
   return rows[0] || null;
 }
 
@@ -215,6 +239,7 @@ async function excluirPublicacao(id) {
 module.exports = {
   getMuralTurma,
   criarPublicacao,
+  obterClienteTreinamento,
   buscarPublicacao,
   editarPublicacao,
   excluirPublicacao,
