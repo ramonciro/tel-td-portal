@@ -41,6 +41,24 @@ async function ensureDecimalType(table, column, targetTypeSql) {
   console.log(`  ↳ coluna ampliada para decimal: ${table}.${column}`);
 }
 
+// Ajuste pós-entrega do Pacote Salas (15/09/2026) — hipótese levantada para o
+// erro genérico "Erro ao criar registro em usuarios" ao tentar criar o
+// primeiro usuário com o perfil novo (assistente_treinamento): se a tabela
+// `usuarios` já existia (criada manualmente, ou por uma versão bem antiga
+// deste projeto) com `perfil` como ENUM de valores fixos em vez de VARCHAR —
+// `CREATE TABLE IF NOT EXISTS` (passo 2 acima) nunca chega a rodar nesse
+// ambiente, então a coluna nunca foi corrigida. Um ENUM aceita qualquer valor
+// já cadastrado antes (coordenador, supervisor, instrutor...) sem problema, e
+// só quebra exatamente no primeiro valor totalmente novo — o que bate com o
+// sintoma. Idempotente e segura: em qualquer ambiente onde a coluna já é
+// VARCHAR (caso do banco de teste local), não faz nada.
+async function ensureVarcharType(table, column, length) {
+  const info = await columnInfo(table, column);
+  if (!info || info.DATA_TYPE === "varchar") return;
+  await pool.query(`ALTER TABLE ${table} MODIFY COLUMN ${column} VARCHAR(${length})`);
+  console.log(`  ↳ coluna convertida para VARCHAR(${length}): ${table}.${column} (era ${info.DATA_TYPE})`);
+}
+
 // Pacote 2 (item "DEFAULT perigoso em empresa_id"): várias tabelas do módulo
 // Oceano/Trilhas/Certificados foram criadas com `empresa_id INT NULL DEFAULT
 // 1` — mesmo problema já identificado e corrigido na tabela `biblioteca`
@@ -1143,6 +1161,12 @@ async function runMigrations() {
         ('Avaliação Técnica'),
         ('Outro');
     `);
+
+    // 35. Ajuste pós-entrega do Pacote Salas (15/09/2026) — ver o comentário
+    // de `ensureVarcharType` acima para o raciocínio completo. Garante que
+    // `usuarios.perfil` aceite qualquer perfil novo (hoje: assistente_treinamento),
+    // convertendo para VARCHAR(50) se algum dia foi criado como ENUM.
+    await ensureVarcharType("usuarios", "perfil", 50);
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
