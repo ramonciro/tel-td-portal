@@ -1,632 +1,219 @@
 "use client";
 
+/**
+ * app/reembolso-transporte/page.js — Pacote Salas/Assistente/CPF/Horas/
+ * Farol MPT (15/09/2026)
+ *
+ * Presença Nominal / Reembolso de Transporte (decisões 14-16, 19):
+ * seleciona uma turma classificada como "Avaliação Técnica" (subtipo, ver
+ * treinamentos/page.js) e mostra nome completo + CPF + dias em treinamento
+ * de cada participante, com exportação em Excel. Restrito a Coordenador,
+ * Assistente de Treinamento e Super Admin (mesmos perfis que podem ver
+ * CPF) — ver backend/src/controllers/reembolsoTransporteController.js.
+ *
+ * A Assistente enxerga turma de qualquer cliente/tenant aqui (acesso
+ * cross-tenant decidido no controller, nunca no clientMiddleware — ver
+ * lib/tenantScope.js). Toda visualização e exportação fica registrada em
+ * auditoria (decisão 19), automaticamente pelo backend.
+ *
+ * Nota: esta página ainda não está no menu do PortalShell — mesma decisão
+ * pendente das outras telas novas deste pacote (Ramon pediu pra deixar
+ * pro final). Funciona por URL direta.
+ */
+
 import { useEffect, useMemo, useState } from "react";
-import SectionCard from "../../components/SectionCard";
-import StatCard from "../../components/StatCard";
 import PortalShell from "../../components/PortalShell";
-import { apiFetch } from "../../services/api";
+import PageHero from "../../components/PageHero";
+import { apiFetch, apiDownload, getStoredUser, hasSomeRole } from "../../services/api";
+import { colors } from "../../lib/theme";
 
-function fmt(n) {
-  return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
+function formatDate(value) {
+  if (!value) return "—";
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-");
+  return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : String(value);
 }
 
-function avg(arr, field) {
-  if (!arr.length) return 0;
-  const total = arr.reduce((acc, item) => acc + Number(item?.[field] || 0), 0);
-  return total / arr.length;
+function formatCpf(cpf) {
+  if (!cpf) return "—";
+  const digits = String(cpf).replace(/\D/g, "");
+  if (digits.length !== 11) return cpf;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
-function getNotaFinal(item) {
-  return Number(item?.nota_final || 0);
-}
+export default function ReembolsoTransportePage() {
+  const [usuario, setUsuario] = useState(null);
+  const [turmas, setTurmas] = useState([]);
+  const [turmaId, setTurmaId] = useState("");
+  const [detalhe, setDetalhe] = useState(null);
+  const [loadingTurmas, setLoadingTurmas] = useState(true);
+  const [loadingDetalhe, setLoadingDetalhe] = useState(false);
+  const [exportando, setExportando] = useState(false);
+  const [error, setError] = useState("");
 
-function classificarResultado(item) {
-  const nota = getNotaFinal(item);
-  if (nota >= 8) return "Aprovado";
-  if (nota >= 6) return "Atenção";
-  return "Reforço";
-}
-
-function badgeClassificacao(label) {
-  const base = {
-    display: "inline-block",
-    padding: "5px 9px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 11,
-  };
-
-  if (label === "Aprovado") {
-    return { ...base, background: "#dcfce7", color: "#166534" };
-  }
-
-  if (label === "Atenção") {
-    return { ...base, background: "#fff7ed", color: "#c2410c" };
-  }
-
-  return { ...base, background: "#fee2e2", color: "#b91c1c" };
-}
-
-function getTreinamento(item, treinamentos) {
-  return treinamentos.find(
-    (t) => String(t.id) === String(item.treinamento_id)
-  );
-}
-
-function getMaterial(item, materiais) {
-  return materiais.find(
-    (m) => String(m.id) === String(item.material_id)
-  );
-}
-
-export default function ResultadosDasAvaliacoesPage() {
-  const [treinamentos, setTreinamentos] = useState([]);
-  const [materiais, setMateriais] = useState([]);
-  const [respostas, setRespostas] = useState([]);
-  const [erro, setErro] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  const [filtroCliente, setFiltroCliente] = useState("todos");
-  const [filtroTreinamento, setFiltroTreinamento] = useState("todos");
-  const [filtroStatus, setFiltroStatus] = useState("todos");
-  const [busca, setBusca] = useState("");
+  const temAcesso = hasSomeRole(usuario, ["coordenador", "assistente_treinamento"]);
 
   useEffect(() => {
-    async function carregar() {
-      try {
-        setErro("");
-        setLoading(true);
-
-        // FIX (07/09): esta tela lê nota_final/percentual/acertos/total_questoes/
-        // material_id — campos que existem na tabela/endpoint respostas_avaliativas,
-        // não em /avaliacoes (tabela diferente, com nota_prova/nota_qualidade/nota_nps).
-        // Chamar /avaliacoes fazia todo treinando aparecer com nota zero.
-        const [treinamentosData, materiaisData, respostasData] = await Promise.all([
-          apiFetch("/treinamentos").catch(() => []),
-          apiFetch("/materiais-avaliativos").catch(() => []),
-          apiFetch("/respostas-avaliativas").catch(() => []),
-        ]);
-
-        setTreinamentos(Array.isArray(treinamentosData) ? treinamentosData : []);
-        setMateriais(Array.isArray(materiaisData) ? materiaisData : []);
-        setRespostas(Array.isArray(respostasData) ? respostasData : []);
-      } catch (error) {
-        setErro(error.message || "Erro ao carregar resultados das avaliações.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    carregar();
+    setUsuario(getStoredUser());
   }, []);
 
-  const clienteOptions = useMemo(() => {
-    const lista = [...new Set(
-      treinamentos.map((item) => item.cliente).filter(Boolean)
-    )];
-    return lista.sort((a, b) => String(a).localeCompare(String(b)));
-  }, [treinamentos]);
-
-  const treinamentoOptions = useMemo(() => {
-    const lista = treinamentos.map((item) => ({
-      value: String(item.id),
-      label: `${item.tema || "Treinamento"}${item.cliente ? ` - ${item.cliente}` : ""}`,
-    }));
-
-    return lista.sort((a, b) => String(a.label).localeCompare(String(b.label)));
-  }, [treinamentos]);
-
-  const baseFiltrada = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
-
-    return respostas.filter((item) => {
-      const treinamento = getTreinamento(item, treinamentos);
-      const material = getMaterial(item, materiais);
-      const status = classificarResultado(item);
-
-      const matchCliente =
-        filtroCliente === "todos" ||
-        String(treinamento?.cliente || "") === filtroCliente;
-
-      const matchTreinamento =
-        filtroTreinamento === "todos" ||
-        String(item.treinamento_id) === filtroTreinamento;
-
-      const matchStatus =
-        filtroStatus === "todos" ||
-        status === filtroStatus;
-
-      const alvoBusca = [
-        item.treinando_nome,
-        material?.titulo,
-        treinamento?.tema,
-        treinamento?.cliente,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      const matchBusca = !termo || alvoBusca.includes(termo);
-
-      return matchCliente && matchTreinamento && matchStatus && matchBusca;
-    });
-  }, [
-    respostas,
-    treinamentos,
-    materiais,
-    filtroCliente,
-    filtroTreinamento,
-    filtroStatus,
-    busca,
-  ]);
-
-  const kpis = useMemo(() => {
-    const totalRespostas = baseFiltrada.length;
-    const mediaAcertos = avg(baseFiltrada, "acertos").toFixed(1);
-    const mediaPercentual = avg(baseFiltrada, "percentual").toFixed(1);
-    const mediaNotaFinal = avg(baseFiltrada, "nota_final").toFixed(1);
-
-    const aprovados = baseFiltrada.filter(
-      (item) => classificarResultado(item) === "Aprovado"
-    ).length;
-
-    const atencao = baseFiltrada.filter(
-      (item) => classificarResultado(item) === "Atenção"
-    ).length;
-
-    const reforco = baseFiltrada.filter(
-      (item) => classificarResultado(item) === "Reforço"
-    ).length;
-
-    const porProvaMap = {};
-    const porTurmaMap = {};
-
-    baseFiltrada.forEach((item) => {
-      const treinamento = getTreinamento(item, treinamentos);
-      const material = getMaterial(item, materiais);
-
-      const chaveProva = String(item.material_id || "sem-material");
-      const chaveTurma = String(item.treinamento_id || "sem-treinamento");
-
-      if (!porProvaMap[chaveProva]) {
-        porProvaMap[chaveProva] = {
-          titulo: material?.titulo || `Material #${item.material_id || "-"}`,
-          total: 0,
-          somaNota: 0,
-          somaPercentual: 0,
-        };
+  useEffect(() => {
+    async function carregarTurmas() {
+      try {
+        setLoadingTurmas(true);
+        setError("");
+        const data = await apiFetch("/reembolso-transporte/turmas");
+        setTurmas(Array.isArray(data) ? data : []);
+      } catch (err) {
+        setError(err.message || "Não foi possível carregar as turmas de Avaliação Técnica.");
+      } finally {
+        setLoadingTurmas(false);
       }
+    }
+    carregarTurmas();
+  }, []);
 
-      porProvaMap[chaveProva].total += 1;
-      porProvaMap[chaveProva].somaNota += Number(item.nota_final || 0);
-      porProvaMap[chaveProva].somaPercentual += Number(item.percentual || 0);
-
-      if (!porTurmaMap[chaveTurma]) {
-        porTurmaMap[chaveTurma] = {
-          turma: treinamento?.tema || `Turma #${item.treinamento_id || "-"}`,
-          total: 0,
-          somaNota: 0,
-          somaPercentual: 0,
-        };
+  useEffect(() => {
+    if (!turmaId) { setDetalhe(null); return; }
+    let cancelado = false;
+    async function carregarDetalhe() {
+      try {
+        setLoadingDetalhe(true);
+        setError("");
+        const data = await apiFetch(`/reembolso-transporte/${turmaId}`);
+        if (!cancelado) setDetalhe(data);
+      } catch (err) {
+        if (!cancelado) setError(err.message || "Não foi possível carregar a lista nominal.");
+      } finally {
+        if (!cancelado) setLoadingDetalhe(false);
       }
+    }
+    carregarDetalhe();
+    return () => { cancelado = true; };
+  }, [turmaId]);
 
-      porTurmaMap[chaveTurma].total += 1;
-      porTurmaMap[chaveTurma].somaNota += Number(item.nota_final || 0);
-      porTurmaMap[chaveTurma].somaPercentual += Number(item.percentual || 0);
-    });
+  const turmasOrdenadas = useMemo(
+    () => [...turmas].sort((a, b) => String(b.data_inicio || b.data || "").localeCompare(String(a.data_inicio || a.data || ""))),
+    [turmas]
+  );
 
-    const rankingProva = Object.values(porProvaMap)
-      .map((item) => ({
-        ...item,
-        mediaNota: item.total ? (item.somaNota / item.total).toFixed(1) : "0.0",
-        mediaPercentual: item.total
-          ? (item.somaPercentual / item.total).toFixed(1)
-          : "0.0",
-      }))
-      .sort((a, b) => Number(b.mediaNota) - Number(a.mediaNota));
+  async function exportar() {
+    if (!turmaId) return;
+    try {
+      setExportando(true);
+      setError("");
+      await apiDownload(`/reembolso-transporte/${turmaId}/exportar`, `reembolso-transporte-turma-${turmaId}.xlsx`);
+    } catch (err) {
+      setError(err.message || "Não foi possível exportar a lista.");
+    } finally {
+      setExportando(false);
+    }
+  }
 
-    const rankingTurma = Object.values(porTurmaMap)
-      .map((item) => ({
-        ...item,
-        mediaNota: item.total ? (item.somaNota / item.total).toFixed(1) : "0.0",
-        mediaPercentual: item.total
-          ? (item.somaPercentual / item.total).toFixed(1)
-          : "0.0",
-      }))
-      .sort((a, b) => Number(b.mediaNota) - Number(a.mediaNota));
-
-    return {
-      totalRespostas,
-      mediaAcertos,
-      mediaPercentual,
-      mediaNotaFinal,
-      aprovados,
-      atencao,
-      reforco,
-      rankingProva,
-      rankingTurma,
-    };
-  }, [baseFiltrada, treinamentos, materiais]);
+  if (usuario && !temAcesso) {
+    return (
+      <PortalShell>
+        <main style={page}>
+          <div style={alertError}>Esta tela é restrita a Coordenador, Super Admin e Assistente de Treinamento (mesmos perfis com acesso a CPF).</div>
+        </main>
+      </PortalShell>
+    );
+  }
 
   return (
-    <PortalShell
-      title="Resultados das Avaliações"
-      subtitle="Consolidado dos resultados de provas e simulados com leitura prática do desempenho."
-    >
-      {loading ? (
-        <div style={loadingBox}>Carregando resultados...</div>
-      ) : erro ? (
-        <div style={errorBox}>{erro}</div>
-      ) : (
-        <div style={{ display: "grid", gap: 14 }}>
-          <SectionCard
-            title="Filtros"
-            subtitle="Refine a visualização por cliente, turma, status ou busca."
-          >
-            <div style={filtersGrid}>
-              <div style={fieldWrap}>
-                <label style={label}>Cliente</label>
-                <select
-                  value={filtroCliente}
-                  onChange={(e) => setFiltroCliente(e.target.value)}
-                  style={input}
-                >
-                  <option value="todos">Todos</option>
-                  {clienteOptions.map((cliente) => (
-                    <option key={cliente} value={cliente}>
-                      {cliente}
-                    </option>
-                  ))}
-                </select>
-              </div>
+    <PortalShell>
+      <main style={page}>
+        <PageHero
+          eyebrow="Portal T&D · Conformidade"
+          title="Presença Nominal / Reembolso de Transporte"
+          subtitle="Lista nominal com CPF e dias em treinamento, para turmas classificadas como Avaliação Técnica."
+        />
 
-              <div style={fieldWrap}>
-                <label style={label}>Turma</label>
-                <select
-                  value={filtroTreinamento}
-                  onChange={(e) => setFiltroTreinamento(e.target.value)}
-                  style={input}
-                >
-                  <option value="todos">Todas</option>
-                  {treinamentoOptions.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {error && <div style={alertError}>{error}</div>}
 
-              <div style={fieldWrap}>
-                <label style={label}>Status</label>
-                <select
-                  value={filtroStatus}
-                  onChange={(e) => setFiltroStatus(e.target.value)}
-                  style={input}
-                >
-                  <option value="todos">Todos</option>
-                  <option value="Aprovado">Aprovado</option>
-                  <option value="Atenção">Atenção</option>
-                  <option value="Reforço">Reforço</option>
-                </select>
-              </div>
-
-              <div style={fieldWrap}>
-                <label style={label}>Busca</label>
-                <input
-                  type="text"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                  placeholder="Buscar por treinando, prova, turma ou cliente"
-                  style={input}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <button
-                type="button"
-                style={btnSecundario}
-                onClick={() => {
-                  setFiltroCliente("todos");
-                  setFiltroTreinamento("todos");
-                  setFiltroStatus("todos");
-                  setBusca("");
-                }}
-              >
-                Limpar filtros
-              </button>
-            </div>
-          </SectionCard>
-
-          <div style={heroGrid}>
-            <StatCard
-              title="Respostas"
-              value={fmt(kpis.totalRespostas)}
-              subtitle="Envios realizados"
-              accent="#2563eb"
-            />
-            <StatCard
-              title="Média de acertos"
-              value={kpis.mediaAcertos}
-              subtitle="Acertos por tentativa"
-              accent="#0891b2"
-            />
-            <StatCard
-              title="Média percentual"
-              value={`${kpis.mediaPercentual}%`}
-              subtitle="Taxa média de acerto"
-              accent="#06b6d4"
-            />
-            <StatCard
-              title="Média nota final"
-              value={kpis.mediaNotaFinal}
-              subtitle="Nota média das avaliações"
-              accent="#7c3aed"
-            />
-          </div>
-
-          <div style={heroGrid}>
-            <StatCard
-              title="Aprovados"
-              value={fmt(kpis.aprovados)}
-              subtitle="Nota final ≥ 8"
-              accent="#16a34a"
-            />
-            <StatCard
-              title="Atenção"
-              value={fmt(kpis.atencao)}
-              subtitle="Nota entre 6 e 7,9"
-              accent="#f59e0b"
-            />
-            <StatCard
-              title="Reforço"
-              value={fmt(kpis.reforco)}
-              subtitle="Nota abaixo de 6"
-              accent="#b91c1c"
-            />
-            <StatCard
-              title="Base filtrada"
-              value={fmt(baseFiltrada.length)}
-              subtitle="Registros considerados"
-              accent="#475569"
-            />
-          </div>
-
-          <div style={twoCol}>
-            <SectionCard
-              title="Ranking por prova"
-              subtitle="Média de nota e percentual por material aplicado."
+        <section style={card}>
+          <label style={fieldWrap}>
+            <span style={fieldLabel}>Turma (Avaliação Técnica)</span>
+            <select
+              style={inputStyle}
+              value={turmaId}
+              onChange={(e) => setTurmaId(e.target.value)}
+              disabled={loadingTurmas}
             >
-              <div style={listGrid}>
-                {kpis.rankingProva.length ? (
-                  kpis.rankingProva.slice(0, 8).map((item) => (
-                    <div key={item.titulo} style={listItem}>
-                      <div style={itemTitle}>{item.titulo}</div>
-                      <div style={itemMeta}>
-                        {fmt(item.total)} resposta(s) • {item.mediaPercentual}% média de acerto
-                      </div>
-                      <div style={itemBadgeBlue}>{item.mediaNota}</div>
-                    </div>
-                  ))
+              <option value="">{loadingTurmas ? "Carregando turmas..." : "Selecione a turma"}</option>
+              {turmasOrdenadas.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.tema} — {t.cliente} ({formatDate(t.data_inicio || t.data)})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {!loadingTurmas && turmasOrdenadas.length === 0 && (
+            <p style={emptyHint}>Nenhuma turma está classificada como "Avaliação Técnica" ainda. Defina a subdivisão no cadastro da turma (tela Treinamentos) para ela aparecer aqui.</p>
+          )}
+        </section>
+
+        {turmaId && (
+          <section style={{ ...card, marginTop: 16 }}>
+            {loadingDetalhe ? (
+              <div style={emptyHint}>Carregando lista nominal...</div>
+            ) : detalhe ? (
+              <>
+                <div style={detalheHeader}>
+                  <div>
+                    <strong style={{ fontSize: 15, color: "#0f172a" }}>{detalhe.turma?.tema}</strong>
+                    <span style={{ display: "block", fontSize: 12, color: "#64748b" }}>{detalhe.turma?.cliente}</span>
+                  </div>
+                  <button type="button" style={exportButton} onClick={exportar} disabled={exportando || !detalhe.itens?.length}>
+                    {exportando ? "Exportando..." : "Exportar Excel"}
+                  </button>
+                </div>
+
+                {!detalhe.itens?.length ? (
+                  <p style={emptyHint}>Esta turma ainda não tem participantes cadastrados.</p>
                 ) : (
-                  <div style={emptyText}>Nenhuma prova respondida ainda.</div>
-                )}
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              title="Ranking por turma"
-              subtitle="Desempenho consolidado por turma."
-            >
-              <div style={listGrid}>
-                {kpis.rankingTurma.length ? (
-                  kpis.rankingTurma.slice(0, 8).map((item) => (
-                    <div key={item.turma} style={listItem}>
-                      <div style={itemTitle}>{item.turma}</div>
-                      <div style={itemMeta}>
-                        {fmt(item.total)} resposta(s) • {item.mediaPercentual}% média de acerto
-                      </div>
-                      <div style={itemBadgePurple}>{item.mediaNota}</div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={emptyText}>Nenhuma turma com respostas ainda.</div>
-                )}
-              </div>
-            </SectionCard>
-          </div>
-
-          <SectionCard
-            title="Base detalhada de respostas"
-            subtitle="Visão individual do desempenho dos treinandos."
-          >
-            {baseFiltrada.length ? (
-              <div style={{ overflowX: "auto" }}>
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Treinando</th>
-                      <th style={th}>Prova</th>
-                      <th style={th}>Turma</th>
-                      <th style={th}>Acertos</th>
-                      <th style={th}>Percentual</th>
-                      <th style={th}>Nota</th>
-                      <th style={th}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {baseFiltrada.map((item) => {
-                      const treinamento = getTreinamento(item, treinamentos);
-                      const material = getMaterial(item, materiais);
-                      const status = classificarResultado(item);
-
-                      return (
-                        <tr key={item.id}>
-                          <td style={td}>{item.treinando_nome || "-"}</td>
-                          <td style={td}>{material?.titulo || `Material #${item.material_id || "-"}`}</td>
-                          <td style={td}>{treinamento?.tema || "-"}</td>
-                          <td style={td}>
-                            {fmt(item.acertos || 0)}/{fmt(item.total_questoes || 0)}
-                          </td>
-                          <td style={td}>{Number(item.percentual || 0).toFixed(1)}%</td>
-                          <td style={td}>{Number(item.nota_final || 0).toFixed(1)}</td>
-                          <td style={td}>
-                            <span style={badgeClassificacao(status)}>{status}</span>
-                          </td>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={table}>
+                      <thead>
+                        <tr>
+                          <th style={th}>Nome completo</th>
+                          <th style={th}>CPF</th>
+                          <th style={th}>Matrícula</th>
+                          <th style={th}>Dias em treinamento</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div style={emptyText}>Nenhuma resposta registrada para os filtros aplicados.</div>
-            )}
-          </SectionCard>
-        </div>
-      )}
+                      </thead>
+                      <tbody>
+                        {detalhe.itens.map((item, index) => (
+                          <tr key={index}>
+                            <td style={td}>{item.nome}</td>
+                            <td style={td}>{formatCpf(item.cpf)}</td>
+                            <td style={td}>{item.matricula || "—"}</td>
+                            <td style={td}>{item.dias_em_treinamento}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </section>
+        )}
+      </main>
     </PortalShell>
   );
 }
 
-const heroGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-};
-
-const twoCol = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 14,
-};
-
-const filtersGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
-};
-
-const fieldWrap = {
-  display: "grid",
-  gap: 6,
-};
-
-const label = {
-  fontWeight: 800,
-  color: "#0f172a",
-  fontSize: 14,
-};
-
-const input = {
-  width: "100%",
-  height: 42,
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  padding: "0 12px",
-  fontSize: 14,
-  color: "#0f172a",
-  outline: "none",
-  background: "#ffffff",
-  boxSizing: "border-box",
-};
-
-const btnSecundario = {
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  padding: "10px 16px",
-  background: "#ffffff",
-  color: "#334155",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 14,
-};
-
-const listGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const listItem = {
-  background: "#f8fafc",
-  padding: 12,
-  borderRadius: 14,
-  border: "1px solid #e2e8f0",
-  display: "grid",
-  gap: 6,
-};
-
-const itemTitle = {
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const itemMeta = {
-  color: "#475569",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
-
-const itemBadgeBlue = {
-  display: "inline-block",
-  justifySelf: "start",
-  padding: "4px 10px",
-  borderRadius: 999,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontWeight: 800,
-  fontSize: 12,
-};
-
-const itemBadgePurple = {
-  display: "inline-block",
-  justifySelf: "start",
-  padding: "4px 10px",
-  borderRadius: 999,
-  background: "#f5f3ff",
-  color: "#7c3aed",
-  fontWeight: 800,
-  fontSize: 12,
-};
-
-const table = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
-const th = {
-  textAlign: "left",
-  padding: "12px 10px",
-  borderBottom: "1px solid #e2e8f0",
-  color: "#475569",
-  fontSize: 13,
-};
-
-const td = {
-  padding: "12px 10px",
-  borderBottom: "1px solid #f1f5f9",
-  color: "#0f172a",
-  fontSize: 14,
-};
-
-const loadingBox = {
-  background: "#fff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 16,
-  padding: 18,
-  color: "#475569",
-  fontWeight: 700,
-};
-
-const errorBox = {
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
-  borderRadius: 16,
-  padding: 16,
-  fontWeight: 700,
-};
-
-const emptyText = {
-  color: "#64748b",
-};
+const page = { minHeight: "100vh", padding: "28px clamp(18px, 3vw, 42px) 48px", maxWidth: 1100, margin: "0 auto", boxSizing: "border-box" };
+const card = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 20, padding: 20, marginTop: 16 };
+const fieldWrap = { display: "grid", gap: 6, maxWidth: 460 };
+const fieldLabel = { fontSize: 11, fontWeight: 800, color: "#334155" };
+const inputStyle = { width: "100%", height: 40, boxSizing: "border-box", border: "1px solid #dbe2ea", borderRadius: 10, background: "#f8fafc", color: "#0f172a", padding: "0 11px", outline: "none", fontSize: 12.5 };
+const emptyHint = { marginTop: 12, fontSize: 12, color: "#64748b" };
+const detalheHeader = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 16 };
+const exportButton = { border: 0, background: colors.accent, color: "#fff", borderRadius: 10, padding: "10px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
+const table = { width: "100%", borderCollapse: "collapse", fontSize: 12.5 };
+const th = { textAlign: "left", padding: "8px 10px", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".04em" };
+const td = { padding: "9px 10px", borderBottom: "1px solid #f1f5f9", color: "#0f172a" };
+const alertError = { margin: "12px 0", padding: "11px 13px", borderRadius: 12, background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", fontSize: 12, fontWeight: 700 };
