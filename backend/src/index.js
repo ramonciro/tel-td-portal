@@ -894,24 +894,30 @@ app.get(
   disponibilidadeSalas
 );
 
+// Decisão 13 revista (ajuste pós-entrega, 15/09/2026): originalmente só a
+// Assistente de Treinamento administrava o catálogo de salas; Ramon (que
+// usa o sistema como Coordenador) relatou não conseguir editar o nome de
+// uma sala — o Coordenador estava mesmo travado, propositalmente, mas na
+// prática é ele quem cadastra/ajusta o catálogo no dia a dia. Liberado
+// também para Coordenador, mesmo padrão adotado para Subtipos logo abaixo.
 app.post(
   "/api/salas",
   authRequired,
-  authorizeRoles("assistente_treinamento"),
+  authorizeRoles("coordenador", "assistente_treinamento"),
   criarSala
 );
 
 app.put(
   "/api/salas/:id",
   authRequired,
-  authorizeRoles("assistente_treinamento"),
+  authorizeRoles("coordenador", "assistente_treinamento"),
   atualizarSala
 );
 
 app.delete(
   "/api/salas/:id",
   authRequired,
-  authorizeRoles("assistente_treinamento"),
+  authorizeRoles("coordenador", "assistente_treinamento"),
   desativarSala
 );
 
@@ -921,8 +927,7 @@ app.delete(
 // formulário (Treinamentos, Ações de Desenvolvimento); administração
 // (criar/editar/desativar) fica com Coordenador e Assistente de Treinamento
 // (Super Admin sempre passa pelo bypass automático do authorizeRoles) —
-// diferente de Salas (decisão 13, só Assistente), porque aqui é o próprio
-// Coordenador quem decide a classificação de conformidade.
+// mesmo padrão de Salas depois da revisão da decisão 13 acima.
 app.get(
   "/api/subtipos",
   authRequired,
