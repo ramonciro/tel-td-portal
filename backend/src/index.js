@@ -163,6 +163,7 @@ const {
   listarTurmasElegiveis: listarTurmasAvaliacaoTecnica,
   obterListaNominal,
   exportarListaNominal,
+  salvarDadosBancarios,
 } = require("./controllers/reembolsoTransporteController");
 const { buscarConflitosSala, turmaEhRetroativa } = require("./services/salaConflitoService");
 const { normalizeSubtipo } = require("./lib/subtipos");
@@ -980,6 +981,15 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "assistente_treinamento"),
   exportarListaNominal
+);
+
+// Ajuste 15/09/2026 (tarde): dados bancários/PIX por CPF, usados na
+// planilha de VT no modelo do financeiro — ver reembolsoTransporteController.js.
+app.put(
+  "/api/reembolso-transporte/:treinamento_id/dados-bancarios",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  salvarDadosBancarios
 );
 
 app.use(
