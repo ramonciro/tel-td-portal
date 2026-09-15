@@ -166,6 +166,12 @@ const {
 } = require("./controllers/reembolsoTransporteController");
 const { buscarConflitosSala, turmaEhRetroativa } = require("./services/salaConflitoService");
 const { normalizeSubtipo } = require("./lib/subtipos");
+const {
+  listar: listarSubtipos,
+  criar: criarSubtipo,
+  atualizar: atualizarSubtipo,
+  desativar: desativarSubtipo,
+} = require("./controllers/subtiposController");
 const { tenantScopeFor } = require("./lib/tenantScope");
 
 const {
@@ -539,7 +545,7 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   const dados = { ...data };
 
   if ("subtipo" in dados) {
-    dados.subtipo = normalizeSubtipo(dados.subtipo);
+    dados.subtipo = await normalizeSubtipo(dados.subtipo);
   }
 
   const horaInicio = dados.hora_inicio ?? ctx.antes?.hora_inicio ?? null;
@@ -907,6 +913,42 @@ app.delete(
   authRequired,
   authorizeRoles("assistente_treinamento"),
   desativarSala
+);
+
+// Ajuste pós-entrega do Pacote Salas (15/09/2026): catálogo de subtipo/
+// subdivisão, editável por quem usa (Ramon pediu — antes era lista fixa no
+// código). Leitura liberada pra todo mundo que preenche subtipo em algum
+// formulário (Treinamentos, Ações de Desenvolvimento); administração
+// (criar/editar/desativar) fica com Coordenador e Assistente de Treinamento
+// (Super Admin sempre passa pelo bypass automático do authorizeRoles) —
+// diferente de Salas (decisão 13, só Assistente), porque aqui é o próprio
+// Coordenador quem decide a classificação de conformidade.
+app.get(
+  "/api/subtipos",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  listarSubtipos
+);
+
+app.post(
+  "/api/subtipos",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  criarSubtipo
+);
+
+app.put(
+  "/api/subtipos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  atualizarSubtipo
+);
+
+app.delete(
+  "/api/subtipos/:id",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  desativarSubtipo
 );
 
 // Decisões 14/16/19: Presença Nominal / Reembolso de Transporte — restrito a
