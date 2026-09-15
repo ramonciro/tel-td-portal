@@ -28,6 +28,29 @@ function normalizeStatus(value) {
   return "planejado";
 }
 
+// Ajuste pós-entrega do Pacote Salas (15/09/2026): Ramon pediu para revisar
+// como Início e Dashboard leem o status das turmas. Achado aqui: o filtro de
+// "Status" do Dashboard (e a lista de opções do próprio filtro) comparava
+// direto com a coluna crua `treinamentos.status` — que ninguém atualiza
+// sozinha quando o cronograma avança (decisão "cronograma sempre") — em vez
+// de usar a mesma fonte que a tabela "Turmas recentes" já exibia
+// (resolverStatusTurma, via getResumoPresenca — a mesma usada por
+// Treinamentos/Presenças). Resultado prático: filtrar por "Em andamento"
+// podia não trazer uma turma que estava, de fato, em andamento (só que com a
+// coluna crua ainda em "planejado"), e a lista de opções nunca oferecia
+// "Chamada pendente" como filtro. Esta função centraliza o cálculo do status
+// "de verdade" de uma turma (sempre em Title Case), usada tanto para filtrar
+// quanto para exibir — nunca mais as duas coisas divergem.
+function statusCanonicoDaTurma(row, resumoPresencaPorId) {
+  const resumo = resumoPresencaPorId.get(Number(row.id));
+  if (resumo?.status_turma) return resumo.status_turma;
+  const bruto = normalizeStatus(row.status);
+  if (bruto === "concluido") return "Concluída";
+  if (bruto === "em_andamento") return "Em andamento";
+  if (bruto === "cancelado") return "Cancelada";
+  return "Planejada";
+}
+
 // ---------------------------------------------------------------------------
 // resolvePresenca: fonte ÚNICA de verdade para presença de um treinamento.
 //
@@ -103,10 +126,10 @@ function buildFiltroTreinamentos(req) {
     params.push(query.instrutor);
   }
 
-  if (query.status) {
-    conditions.push("LOWER(COALESCE(t.status, '')) = ?");
-    params.push(String(query.status).toLowerCase());
-  }
+  // Status saiu do WHERE do SQL (ver statusCanonicoDaTurma acima) — agora é
+  // filtrado em memória em carregarTurmasEnriquecidas, depois que o resumo de
+  // presença/cronograma está disponível, no mesmo padrão já usado para
+  // modalidade logo abaixo.
 
   if (query.supervisor) {
     conditions.push("t.supervisor = ?");
@@ -239,17 +262,11 @@ async function carregarTurmasEnriquecidas(req) {
       baseRows = rows;
     }
 
-    // filtro de modalidade feito em memória (campo embutido em descricao)
-    // quando modalidade tiver campo próprio na tabela, mover para o WHERE do SQL
-    const filteredRows = baseRows.filter((row) => {
-      if (!query.modalidade) return true;
-      return parseModalidadeFromDescricao(row.descricao) === String(query.modalidade).toLowerCase();
-    });
-
     // presença + status: buscados uma única vez do resolver compartilhado e
     // cruzados por id de treinamento — mesma fonte usada por
     // /api/presenca-resumo (Gestão de Turmas), garantindo que as duas telas
-    // nunca mais divirjam sobre a mesma turma.
+    // nunca mais divirjam sobre a mesma turma. Precisa vir ANTES do filtro de
+    // status abaixo, que depende dele.
     let resumoPresencaPorId = new Map();
     try {
       const resumoPresenca = await getResumoPresenca({ empresaId: req.empresaId });
@@ -258,12 +275,27 @@ async function carregarTurmasEnriquecidas(req) {
       console.warn("[dashboard] resumo de presença indisponível:", err.message);
     }
 
+    // filtro de modalidade (campo embutido em descricao) e de status (ver
+    // statusCanonicoDaTurma acima) feitos em memória — nenhum dos dois é uma
+    // coluna diretamente filtrável no SQL acima.
+    const filteredRows = baseRows.filter((row) => {
+      if (query.modalidade && parseModalidadeFromDescricao(row.descricao) !== String(query.modalidade).toLowerCase()) {
+        return false;
+      }
+      if (query.status && statusCanonicoDaTurma(row, resumoPresencaPorId) !== query.status) {
+        return false;
+      }
+      return true;
+    });
+
     // enriquece cada turma com a presença resolvida de forma única (fim das
     // três fórmulas divergentes que existiam entre KPI geral / cliente / instrutor,
-    // e agora também com o cronograma como fonte de maior prioridade)
+    // e agora também com o cronograma como fonte de maior prioridade) e com o
+    // status canônico (mesma fonte usada pelo filtro acima, nunca divergem).
     const enriched = filteredRows.map((row) => ({
       ...row,
       presenca: resolvePresenca(resumoPresencaPorId.get(Number(row.id))),
+      status_canonico: statusCanonicoDaTurma(row, resumoPresencaPorId),
     }));
 
   return { baseRows, filteredRows, enriched, resumoPresencaPorId };
@@ -329,7 +361,10 @@ async function getDashboardTreinamentos(req, res) {
       if (row.instrutor) instrutoresSet.add(row.instrutor);
       if (row.supervisor && String(row.supervisor).trim()) supervisoresSet.add(String(row.supervisor).trim());
       const modalidade = parseModalidadeFromDescricao(row.descricao);
-      const status = normalizeStatus(row.status);
+      // Ver statusCanonicoDaTurma acima — mesma fonte usada pelo filtro, para
+      // as opções deste dropdown sempre baterem com o que o filtro de fato
+      // aceita (inclui "Chamada pendente" etc., que a coluna crua não tinha).
+      const status = statusCanonicoDaTurma(row, resumoPresencaPorId);
       if (status) statusSet.add(status);
       if (modalidade) modalidadeSet.add(modalidade);
     }
@@ -452,7 +487,6 @@ async function getDashboardTreinamentos(req, res) {
 
     const ultimasTurmas = enriched.slice(0, 8).map((item) => {
       const p = item.presenca;
-      const resumo = resumoPresencaPorId.get(Number(item.id));
       return {
         ...item,
         base_ativa: p.baseParticipantes,
@@ -460,10 +494,8 @@ async function getDashboardTreinamentos(req, res) {
         presentes: p.diasPresente,
         pendentes: p.diasPendente,
         modalidade: parseModalidadeFromDescricao(item.descricao),
-        // antes usava normalizeStatus(item.status) — só prettificava o texto
-        // cru do banco, sem nunca considerar se data_fim já tinha passado.
-        // Agora usa a mesma fonte de status das telas Treinamentos/Presenças.
-        status_canonico: resumo ? resumo.status_turma : normalizeStatus(item.status),
+        // status_canonico já vem calculado em `enriched` (statusCanonicoDaTurma)
+        // e chega aqui pelo spread de `...item` logo acima.
       };
     });
 
@@ -494,17 +526,11 @@ async function getDashboardTreinamentos(req, res) {
         clientes: Array.from(clientesSet).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "pt-BR")),
         instrutores: Array.from(instrutoresSet).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "pt-BR")),
         supervisores: Array.from(supervisoresSet).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "pt-BR")),
-        status: Array.from(statusSet).map((item) => ({
-          value: item,
-          label:
-            item === "em_andamento"
-              ? "Em andamento"
-              : item === "concluido"
-              ? "Concluída"
-              : item === "cancelado"
-              ? "Cancelada"
-              : "Planejada",
-        })),
+        // item já vem em Title Case de statusCanonicoDaTurma — value e label
+        // são o mesmo texto de propósito (o filtro compara pelo texto exato).
+        status: Array.from(statusSet)
+          .sort((a, b) => String(a).localeCompare(String(b), "pt-BR"))
+          .map((item) => ({ value: item, label: item })),
         modalidades: Array.from(modalidadeSet).map((item) => ({ value: item, label: item === "online" ? "Online" : "Presencial" })),
       },
       presenca_por_cliente: presencaPorCliente,
@@ -535,7 +561,10 @@ async function exportarTreinamentos(req, res) {
       item.instrutor || "-",
       parseModalidadeFromDescricao(item.descricao) === "online" ? "Online"
         : parseModalidadeFromDescricao(item.descricao) === "presencial" ? "Presencial" : "-",
-      normalizeStatus(item.status),
+      // Bug real (mesma raiz do filtro/tabela): usava normalizeStatus(item.status)
+      // — texto cru do banco, nunca refletia cronograma/chamada pendente.
+      // Excel exportado dizia "Planejada" pra turma que já estava rodando.
+      item.status_canonico,
       item.data_inicio || item.data || "",
       item.presenca.baseParticipantes,
       item.presenca.taxaPresenca,
