@@ -1,6 +1,6 @@
 /**
  * reembolsoTransporteController.js — Pacote Salas/Assistente/CPF/Horas/Farol
- * MPT (15/09/2026)
+ * MPT (15/09/2026) + planilha no modelo do financeiro (15/09/2026, tarde)
  *
  * Presença Nominal / Reembolso de Transporte (decisão 15): para turmas
  * classificadas como "Avaliação Técnica" (decisão 20, mesmo padrão de
@@ -20,8 +20,27 @@
  * Acesso cross-tenant da Assistente de Treinamento: decidido aqui, não no
  * clientMiddleware (ver lib/tenantScope.js e a razão registrada em
  * claude/auditoria-riscos-cruzados-pacote-salas-2026-09.md).
+ *
+ * --- Ajuste de 15/09/2026 (tarde) — planilha no modelo real do financeiro ---
+ * Ramon mandou o modelo usado hoje para pedir VT ("SOLICITAÇÃO DE VT -
+ * AVALIAÇÃO TÉCNICA.xlsx") e pediu pra exportação seguir esse layout. Três
+ * coisas que o export simples (nome/CPF/matrícula/dias) não tinha e o
+ * modelo real precisa, decididas com o Ramon antes de implementar:
+ *
+ *   1) Dados bancários/PIX por pessoa — cadastrados manualmente no Portal
+ *      (não tínhamos esse dado em lugar nenhum) e guardados por CPF em
+ *      dados_bancarios_colaborador (migrate.js passo 36), pra não pedir de
+ *      novo numa próxima turma da mesma pessoa. Ver salvarDadosBancarios.
+ *   2) Valor da passagem configurável por turma (nem toda turma/cliente
+ *      paga o mesmo valor) — treinamentos.valor_passagem_vt, com R$5,90
+ *      como padrão até a primeira exportação informar um valor.
+ *   3) "Período da requisição" pode ser um recorte de dias dentro da turma
+ *      (cortes semanais/quinzenais), não necessariamente a turma inteira —
+ *      reaproveita os parâmetros `inicio`/`fim` que
+ *      getFrequenciaPorParticipante já aceitava (usados em outro lugar do
+ *      sistema) pra contar só a presença dentro do período pedido.
  */
-const XLSX = require("xlsx");
+const ExcelJS = require("exceljs");
 const pool = require("../lib/db");
 const { getFrequenciaPorParticipante } = require("../services/presencaResolver");
 const { registrarAuditoria } = require("../services/auditoria");
@@ -29,6 +48,7 @@ const { tenantScopeFor } = require("../lib/tenantScope");
 
 const CROSS_TENANT_ROLES = ["assistente_treinamento"];
 const SUBTIPO_AVALIACAO_TECNICA = "Avaliação Técnica";
+const VALOR_PASSAGEM_PADRAO = 5.9;
 
 async function buscarTurmaElegivel(req, treinamentoId) {
   const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
@@ -36,13 +56,31 @@ async function buscarTurmaElegivel(req, treinamentoId) {
   const params = empresaId ? [treinamentoId, empresaId] : [treinamentoId];
 
   const [rows] = await pool.query(
-    `SELECT id, tema, cliente, empresa_id, subtipo FROM treinamentos WHERE id = ?${tenantCheck} LIMIT 1`,
+    `SELECT id, tema, cliente, empresa_id, subtipo, data_inicio, data, data_fim, valor_passagem_vt
+     FROM treinamentos WHERE id = ?${tenantCheck} LIMIT 1`,
     params
   );
   return rows[0] || null;
 }
 
-async function montarListaNominal(treinamentoId, empresaId) {
+function normalizarCpf(valor) {
+  const digits = String(valor || "").replace(/\D/g, "");
+  return digits.length === 11 ? digits : null;
+}
+
+async function buscarDadosBancarios(cpfs) {
+  const cpfsValidos = [...new Set(cpfs.filter(Boolean))];
+  if (!cpfsValidos.length) return new Map();
+  const placeholders = cpfsValidos.map(() => "?").join(",");
+  const [rows] = await pool.query(
+    `SELECT cpf, banco, agencia, operacao, conta, dv, tipo_chave_pix, chave_pix
+     FROM dados_bancarios_colaborador WHERE cpf IN (${placeholders})`,
+    cpfsValidos
+  );
+  return new Map(rows.map((r) => [r.cpf, r]));
+}
+
+async function montarListaNominal(treinamentoId, empresaId, { inicio, fim } = {}) {
   const [participantes] = await pool.query(
     `SELECT nome, cpf, matricula FROM treinamento_participantes WHERE treinamento_id = ? ORDER BY nome ASC`,
     [treinamentoId]
@@ -51,11 +89,18 @@ async function montarListaNominal(treinamentoId, empresaId) {
   const frequencias = await getFrequenciaPorParticipante({
     treinamentoId: Number(treinamentoId),
     empresaId,
+    inicio: inicio || undefined,
+    fim: fim || undefined,
   });
   const freqPorNome = new Map(frequencias.map((f) => [f.treinando_nome, f]));
 
-  return participantes.map((p) => {
+  const cpfsNormalizados = participantes.map((p) => normalizarCpf(p.cpf));
+  const bancarios = await buscarDadosBancarios(cpfsNormalizados);
+
+  return participantes.map((p, index) => {
     const freq = freqPorNome.get(p.nome);
+    const cpfNormalizado = cpfsNormalizados[index];
+    const dadosBancarios = cpfNormalizado ? bancarios.get(cpfNormalizado) : null;
     return {
       nome: p.nome,
       cpf: p.cpf || null,
@@ -65,7 +110,16 @@ async function montarListaNominal(treinamentoId, empresaId) {
       // > legado pela mesma prioridade usada no resto do sistema (ver
       // presencaResolver.js), então turma migrada retroativamente sem
       // dado de presença por dia continua puxando do legado corretamente.
+      // Com inicio/fim informados, conta só a presença dentro do recorte
+      // pedido (período da requisição), não a turma inteira.
       dias_em_treinamento: freq ? freq.presentes : 0,
+      banco: dadosBancarios?.banco || "",
+      agencia: dadosBancarios?.agencia || "",
+      operacao: dadosBancarios?.operacao || "",
+      conta: dadosBancarios?.conta || "",
+      dv: dadosBancarios?.dv || "",
+      tipo_chave_pix: dadosBancarios?.tipo_chave_pix || "",
+      chave_pix: dadosBancarios?.chave_pix || "",
     };
   });
 }
@@ -96,9 +150,12 @@ async function listarTurmasElegiveis(req, res) {
 }
 
 // GET /api/reembolso-transporte/:treinamento_id — lista nominal em tela.
+// Aceita ?inicio=YYYY-MM-DD&fim=YYYY-MM-DD pra recortar o período da
+// requisição (opcional — sem eles, conta a turma inteira).
 async function obterListaNominal(req, res) {
   try {
     const { treinamento_id } = req.params;
+    const { inicio, fim } = req.query;
     const { empresaId, crossTenant } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
 
     const turma = await buscarTurmaElegivel(req, treinamento_id);
@@ -112,7 +169,7 @@ async function obterListaNominal(req, res) {
       });
     }
 
-    const itens = await montarListaNominal(treinamento_id, empresaId);
+    const itens = await montarListaNominal(treinamento_id, empresaId, { inicio, fim });
 
     // Decisão 19 — toda VISUALIZAÇÃO gera auditoria.
     registrarAuditoria({
@@ -124,17 +181,115 @@ async function obterListaNominal(req, res) {
       ip: req.ip,
     });
 
-    return res.json({ ok: true, turma, itens });
+    return res.json({
+      ok: true,
+      turma,
+      itens,
+      valor_passagem_padrao: turma.valor_passagem_vt != null ? Number(turma.valor_passagem_vt) : VALOR_PASSAGEM_PADRAO,
+    });
   } catch (error) {
     console.error("[reembolsoTransporteController]", error.message || error);
     return res.status(500).json({ ok: false, message: "Erro ao montar a lista nominal" });
   }
 }
 
-// GET /api/reembolso-transporte/:treinamento_id/exportar — export Excel.
+// PUT /api/reembolso-transporte/:treinamento_id/dados-bancarios — cadastra/
+// atualiza banco/agência/conta ou chave PIX de um ou mais participantes da
+// turma, guardado por CPF (reaproveitado em qualquer outra turma da mesma
+// pessoa). Body: { itens: [{ cpf, banco, agencia, operacao, conta, dv,
+// tipo_chave_pix, chave_pix }, ...] }. treinamento_id só serve pra checar
+// que quem está chamando tem acesso a essa turma (e pra auditoria) — a
+// tabela em si não é por turma.
+async function salvarDadosBancarios(req, res) {
+  try {
+    const { treinamento_id } = req.params;
+    const itens = Array.isArray(req.body?.itens) ? req.body.itens : [];
+
+    const turma = await buscarTurmaElegivel(req, treinamento_id);
+    if (!turma) {
+      return res.status(404).json({ ok: false, message: "Turma não encontrada" });
+    }
+
+    let salvos = 0;
+    for (const item of itens) {
+      const cpf = normalizarCpf(item.cpf);
+      if (!cpf) continue;
+
+      await pool.query(
+        `
+        INSERT INTO dados_bancarios_colaborador
+          (cpf, nome, banco, agencia, operacao, conta, dv, tipo_chave_pix, chave_pix, atualizado_por)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          nome = COALESCE(VALUES(nome), nome),
+          banco = VALUES(banco), agencia = VALUES(agencia), operacao = VALUES(operacao),
+          conta = VALUES(conta), dv = VALUES(dv), tipo_chave_pix = VALUES(tipo_chave_pix),
+          chave_pix = VALUES(chave_pix), atualizado_por = VALUES(atualizado_por)
+        `,
+        [
+          cpf,
+          item.nome || null,
+          item.banco || null,
+          item.agencia || null,
+          item.operacao || null,
+          item.conta || null,
+          item.dv || null,
+          item.tipo_chave_pix || null,
+          item.chave_pix || null,
+          req.user?.nome || null,
+        ]
+      );
+      salvos += 1;
+    }
+
+    registrarAuditoria({
+      usuario: req.user,
+      acao: "editar",
+      entidade: "dados_bancarios_colaborador",
+      entidadeId: treinamento_id,
+      resumo: `${req.user?.nome || "Alguém"} atualizou dados bancários/PIX de ${salvos} participante(s) a partir da turma "${turma.tema}" (${turma.cliente})`,
+      ip: req.ip,
+    });
+
+    return res.json({ ok: true, salvos });
+  } catch (error) {
+    console.error("[reembolsoTransporteController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao salvar os dados bancários" });
+  }
+}
+
+function formatarDataBR(value) {
+  if (!value) return "";
+  const iso = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const [ano, mes, dia] = iso.split("-");
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : "";
+}
+
+function paraDate(value) {
+  if (!value) return null;
+  const iso = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const [ano, mes, dia] = iso.split("-").map(Number);
+  if (!ano || !mes || !dia) return null;
+  return new Date(ano, mes - 1, dia);
+}
+
+// GET /api/reembolso-transporte/:treinamento_id/exportar — export Excel no
+// modelo real de solicitação de VT (ver cabeçalho do arquivo). Aceita, via
+// query string, os campos que variam a cada solicitação:
+//   inicio, fim            — período da requisição (recorta a presença
+//                             contada; sem eles, usa a turma inteira)
+//   valor_passagem          — valor da passagem de ida (total do dia = 2x
+//                             esse valor); se informado, fica salvo em
+//                             treinamentos.valor_passagem_vt como padrão
+//                             das próximas exportações dessa turma
+//   motivo                  — texto livre pro "Motivo do treinamento:"
+//                             (padrão: tema da turma em caixa alta)
+//   responsavel              — "Responsável pelo preenchimento:" (padrão:
+//                             nome de quem está exportando)
 async function exportarListaNominal(req, res) {
   try {
     const { treinamento_id } = req.params;
+    const { inicio, fim, valor_passagem, motivo, responsavel } = req.query;
     const { empresaId, crossTenant } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
 
     const turma = await buscarTurmaElegivel(req, treinamento_id);
@@ -148,23 +303,124 @@ async function exportarListaNominal(req, res) {
       });
     }
 
-    const itens = await montarListaNominal(treinamento_id, empresaId);
+    const itens = await montarListaNominal(treinamento_id, empresaId, { inicio, fim });
 
-    const linhas = itens.map((item) => [
-      item.nome,
-      item.cpf || "-",
-      item.matricula || "-",
-      item.dias_em_treinamento,
-    ]);
+    let valorPassagem = valor_passagem != null && valor_passagem !== "" ? Number(valor_passagem) : null;
+    if (!Number.isFinite(valorPassagem) || valorPassagem <= 0) {
+      valorPassagem = turma.valor_passagem_vt != null ? Number(turma.valor_passagem_vt) : VALOR_PASSAGEM_PADRAO;
+    } else if (valorPassagem !== Number(turma.valor_passagem_vt)) {
+      // Valor novo informado nesta exportação — fica de padrão pras próximas.
+      await pool.query(`UPDATE treinamentos SET valor_passagem_vt = ? WHERE id = ?`, [valorPassagem, treinamento_id]);
+    }
+    const totalPorDia = Math.round(valorPassagem * 2 * 100) / 100;
 
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([
-      [`Turma: ${turma.tema}`, `Cliente: ${turma.cliente}`],
-      [],
-      ["Nome completo", "CPF", "Matrícula", "Dias em treinamento"],
-      ...linhas,
-    ]);
-    XLSX.utils.book_append_sheet(wb, ws, "Presença Nominal");
+    const motivoFinal = (motivo && String(motivo).trim()) || `${turma.tema}${turma.cliente ? ` — ${turma.cliente}` : ""}`.toUpperCase();
+    const responsavelFinal = (responsavel && String(responsavel).trim()) || req.user?.nome || "";
+    const periodoLabel =
+      inicio && fim
+        ? `${formatarDataBR(inicio)} à ${formatarDataBR(fim)}`
+        : `${formatarDataBR(turma.data_inicio || turma.data)} à ${formatarDataBR(turma.data_fim || turma.data)}`;
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Presença Nominal");
+
+    ws.columns = [
+      { width: 34 }, { width: 15 }, { width: 20 }, { width: 12 }, { width: 8 },
+      { width: 15 }, { width: 6 }, { width: 7 }, { width: 11 }, { width: 11 },
+      { width: 13 }, { width: 18 },
+    ];
+
+    const bold = { bold: true };
+    const dinheiro = '"R$" #,##0.00';
+
+    ws.mergeCells("A4:B4");
+    ws.getCell("A4").value = "Vale Transporte - Treinamento";
+    ws.getCell("A4").font = { bold: true, size: 13 };
+
+    ws.getCell("A5").value = "TEL:  16.18.1618099";
+    ws.getCell("A6").value = `Responsável pelo preenchimento: ${responsavelFinal}`;
+    ws.getCell("A7").value = "Departamento: Treinamento";
+
+    ws.getCell("D4").value = "Data de início do treinamento:";
+    ws.getCell("D4").font = bold;
+    const dataInicioTurma = paraDate(turma.data_inicio || turma.data);
+    if (dataInicioTurma) { ws.getCell("G4").value = dataInicioTurma; ws.getCell("G4").numFmt = "dd/mm/yyyy"; }
+
+    ws.getCell("D5").value = "Data de conclusão do treinamento:";
+    ws.getCell("D5").font = bold;
+    const dataFimTurma = paraDate(turma.data_fim || turma.data);
+    if (dataFimTurma) { ws.getCell("G5").value = dataFimTurma; ws.getCell("G5").numFmt = "dd/mm/yyyy"; }
+
+    ws.mergeCells("G6:I6");
+    ws.getCell("D6").value = "Período da requisição:";
+    ws.getCell("D6").font = bold;
+    ws.getCell("G6").value = periodoLabel;
+
+    ws.getCell("D7").value = "Data da Solicitação";
+    ws.getCell("D7").font = bold;
+    ws.getCell("G7").value = new Date();
+    ws.getCell("G7").numFmt = "dd/mm/yyyy";
+
+    ws.mergeCells("G8:I8");
+    ws.getCell("D8").value = "Motivo do treinamento:";
+    ws.getCell("D8").font = bold;
+    ws.getCell("G8").value = motivoFinal;
+
+    ws.getCell("D9").value = "Número de Registros:";
+    ws.getCell("D9").font = bold;
+    ws.getCell("G9").value = itens.length;
+
+    const primeiraLinha = 15;
+    const ultimaLinha = primeiraLinha + itens.length - 1;
+
+    ws.mergeCells("G10:I10");
+    ws.getCell("D10").value = "Total:";
+    ws.getCell("D10").font = bold;
+    if (itens.length) {
+      ws.getCell("G10").value = { formula: `SUM(J${primeiraLinha}:J${ultimaLinha})` };
+      ws.getCell("G10").numFmt = dinheiro;
+    } else {
+      ws.getCell("G10").value = 0;
+      ws.getCell("G10").numFmt = dinheiro;
+    }
+
+    const headerRow = 14;
+    const headers = ["Nome", "CPF", "Banco", "Agência", "OP", "Conta", "DV", "Dias", "Passagem", "Total", "Tipo de Chave", "Chave PIX"];
+    headers.forEach((texto, i) => {
+      const cell = ws.getCell(headerRow, i + 1);
+      cell.value = texto;
+      cell.font = bold;
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+    });
+
+    itens.forEach((item, index) => {
+      const row = primeiraLinha + index;
+      ws.getCell(row, 1).value = item.nome;
+      ws.getCell(row, 2).value = item.cpf ? String(item.cpf) : "";
+      ws.getCell(row, 2).numFmt = "@";
+      ws.getCell(row, 3).value = item.banco;
+      ws.getCell(row, 4).value = item.agencia;
+      ws.getCell(row, 5).value = item.operacao;
+      ws.getCell(row, 6).value = item.conta;
+      ws.getCell(row, 7).value = item.dv;
+      ws.getCell(row, 8).value = item.dias_em_treinamento;
+      ws.getCell(row, 9).value = valorPassagem;
+      ws.getCell(row, 9).numFmt = dinheiro;
+      ws.getCell(row, 10).value = { formula: `${totalPorDia}*H${row}` };
+      ws.getCell(row, 10).numFmt = dinheiro;
+      ws.getCell(row, 11).value = item.tipo_chave_pix;
+      ws.getCell(row, 12).value = item.chave_pix ? String(item.chave_pix) : "";
+    });
+
+    if (itens.length) {
+      const linhaTotal = ultimaLinha + 1;
+      ws.getCell(linhaTotal, 9).value = "TOTAL:";
+      ws.getCell(linhaTotal, 9).font = bold;
+      ws.getCell(linhaTotal, 9).alignment = { horizontal: "right" };
+      ws.getCell(linhaTotal, 10).value = { formula: `SUM(J${primeiraLinha}:J${ultimaLinha})` };
+      ws.getCell(linhaTotal, 10).numFmt = dinheiro;
+      ws.getCell(linhaTotal, 10).font = bold;
+    }
 
     // Decisão 19 — todo EXPORT gera auditoria.
     registrarAuditoria({
@@ -172,17 +428,17 @@ async function exportarListaNominal(req, res) {
       acao: "exportar",
       entidade: "presenca_nominal",
       entidadeId: treinamento_id,
-      resumo: `${req.user?.nome || "Alguém"} exportou a lista nominal (CPF) da turma "${turma.tema}" (${turma.cliente})${crossTenant ? " — acesso cross-tenant (Assistente de Treinamento)" : ""}`,
+      resumo: `${req.user?.nome || "Alguém"} exportou a solicitação de VT da turma "${turma.tema}" (${turma.cliente})${crossTenant ? " — acesso cross-tenant (Assistente de Treinamento)" : ""}`,
       ip: req.ip,
     });
 
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const buf = await wb.xlsx.writeBuffer();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="reembolso-transporte-turma-${treinamento_id}.xlsx"`);
-    return res.send(buf);
+    res.setHeader("Content-Disposition", `attachment; filename="solicitacao-vt-turma-${treinamento_id}.xlsx"`);
+    return res.send(Buffer.from(buf));
   } catch (error) {
     console.error("[reembolsoTransporteController]", error.message || error);
-    return res.status(500).json({ ok: false, message: "Erro ao exportar a lista nominal" });
+    return res.status(500).json({ ok: false, message: "Erro ao exportar a solicitação de VT" });
   }
 }
 
@@ -190,4 +446,5 @@ module.exports = {
   listarTurmasElegiveis,
   obterListaNominal,
   exportarListaNominal,
+  salvarDadosBancarios,
 };
