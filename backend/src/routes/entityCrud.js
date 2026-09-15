@@ -136,6 +136,13 @@ function createCrudRouter({
   // (iguais ou transformados); pode lançar um erro com `.status` e `.message`
   // para rejeitar a operação com essa resposta.
   beforeWrite = null,
+  // Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026): hook opcional
+  // que roda DEPOIS do INSERT ter sucesso, com { id, data, req } — usado por
+  // /api/treinamentos para gerar o cronograma automaticamente na criação da
+  // turma (decisão 21, "cronograma sempre"). Roda em try/catch próprio aqui
+  // dentro: uma falha no afterWrite nunca desfaz nem transforma em erro a
+  // criação do registro principal, que já aconteceu — só é logada.
+  afterWrite = null,
   // Fase 4 (isolamento multi-tenant): a listagem fazia SELECT * — para
   // /api/usuarios isso devolvia o hash bcrypt da senha para qualquer perfil
   // autorizado a listar usuários (coordenador, supervisor, instrutor,
@@ -151,8 +158,22 @@ function createCrudRouter({
   // `{ sql, params }` (uma condição a mais no WHERE, com `?` posicionais)
   // ou `null`/`undefined` quando não há filtro a aplicar.
   listFiltro = null,
+  // Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026): perfis que
+  // enxergam TODAS as tenants nesta tabela (hoje só usado por
+  // /api/treinamentos, para a Assistente de Treinamento — decisão 12 da
+  // proposta de Agendamento de Salas). Decidido aqui, na configuração desta
+  // rota específica, nunca no clientMiddleware — ver lib/tenantScope.js
+  // para a razão completa. Vazio por padrão: zero mudança de comportamento
+  // para toda outra tabela que usa este router genérico.
+  crossTenantRoles = [],
 }) {
   const router = express.Router();
+  const { tenantScopeFor } = require("../lib/tenantScope");
+
+  function empresaIdEfetivo(req) {
+    if (!multiTenant) return null;
+    return tenantScopeFor(req, { crossTenantRoles }).empresaId ?? null;
+  }
 
   /* ─── LIST ──────────────────────────────────────────────── */
   router.get(
@@ -160,7 +181,7 @@ function createCrudRouter({
     ...normalizeMiddlewares(listMiddlewares),
     async (req, res) => {
       try {
-        const empresaId = multiTenant ? (req.empresaId ?? null) : null;
+        const empresaId = empresaIdEfetivo(req);
 
         let query  = `SELECT * FROM ${table}`;
         const condicoes = [];
@@ -256,6 +277,14 @@ function createCrudRouter({
           });
         }
 
+        if (afterWrite) {
+          try {
+            await afterWrite({ id: result.insertId, data, req });
+          } catch (err) {
+            console.error(`[entityCrud] afterWrite falhou para ${table} #${result.insertId}:`, err.message || err);
+          }
+        }
+
         res.status(201).json({ id: result.insertId, message: "Registro criado com sucesso." });
       } catch (error) {
         console.error(error);
@@ -273,7 +302,7 @@ function createCrudRouter({
     async (req, res) => {
       try {
         let data    = { ...(req.body || {}) };
-        const empresaId = multiTenant ? (req.empresaId ?? null) : null;
+        const empresaId = empresaIdEfetivo(req);
 
         // Busca o registro antes da edição (auditoria + check de tenant +
         // contexto para o beforeWrite, se houver)
@@ -353,7 +382,7 @@ function createCrudRouter({
     ...normalizeMiddlewares(deleteMiddlewares),
     async (req, res) => {
       try {
-        const empresaId = multiTenant ? (req.empresaId ?? null) : null;
+        const empresaId = empresaIdEfetivo(req);
 
         let antes = null;
         if (auditoria || (multiTenant && empresaId)) {
