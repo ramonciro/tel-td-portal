@@ -46,7 +46,13 @@ export default function PrimeiroAcessoPage() {
         );
       }
 
-      router.push("/inicio");
+      // Ajuste pós-entrega do Pacote Salas (15/09/2026): usuário novo
+      // (troca de senha obrigatória é o padrão pra quem acabou de ser
+      // criado) com perfil Assistente de Treinamento caía direto numa tela
+      // de "Acesso restrito" — /inicio não é uma das telas liberadas pra
+      // ela. Mesmo destino usado no login normal (ver login/page.js).
+      const perfil = String(user?.perfil || "").toLowerCase().trim();
+      router.push(perfil === "assistente_treinamento" ? "/salas" : "/inicio");
     } catch (err) {
       setErro(err.message);
     } finally {
