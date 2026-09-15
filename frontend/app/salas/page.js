@@ -46,11 +46,14 @@ export default function SalasPage() {
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
 
-  // Decisão 13: só a Assistente de Treinamento administra o catálogo de
-  // salas (Super Admin também pode, via bypass automático do backend, mas
-  // ele nunca chega nesta tela — PortalShell sempre redireciona pra
-  // /admin). Coordenador e os demais perfis só consultam.
-  const canManage = hasSomeRole(usuario, ["assistente_treinamento"]);
+  // Decisão 13 revista (ajuste pós-entrega, 15/09/2026): originalmente só a
+  // Assistente de Treinamento administrava o catálogo (Coordenador e os
+  // demais perfis só consultavam) — mas o Coordenador (Ramon, no dia a dia)
+  // reportou não conseguir editar nome de sala. Liberado também para
+  // Coordenador (Super Admin também pode, via bypass automático do backend,
+  // mas ele nunca chega nesta tela — PortalShell redireciona pra /admin,
+  // exceto quando acessa /salas direto, ver ROTAS_GLOBAIS_LIBERADAS_SUPER_ADMIN).
+  const canManage = hasSomeRole(usuario, ["coordenador", "assistente_treinamento"]);
 
   async function carregar() {
     try {
