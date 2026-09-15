@@ -1207,6 +1207,20 @@ async function runMigrations() {
     `);
     await ensureColumn("treinamentos", "valor_passagem_vt", "DECIMAL(10,2) NULL");
 
+    // 37. Correção de segurança (auditoria 15/09/2026, Pacote A.1):
+    // dados_bancarios_colaborador nasceu sem empresa_id (comentário acima
+    // do passo 36 dizia "sem empresa_id: o mesmo CPF é a mesma pessoa em
+    // qualquer cliente/tenant"), mas isso abria uma falha real: como o
+    // registro é achado só pelo CPF, um Coordenador de um tenant conseguia
+    // ler OU sobrescrever silenciosamente a chave PIX/dados bancários de
+    // outro tenant, bastando digitar o mesmo CPF numa turma qualquer da
+    // própria empresa. empresa_id aqui não trava o cadastro por tenant (a
+    // Assistente de Treinamento continua vendo/gravando de qualquer
+    // tenant, de propósito) — serve só pra registrar QUEM foi o primeiro a
+    // cadastrar aquele CPF, pra então bloquear sobrescrita por um tenant
+    // diferente do dono original. Ver reembolsoTransporteController.js.
+    await ensureColumn("dados_bancarios_colaborador", "empresa_id", "INT NULL");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
