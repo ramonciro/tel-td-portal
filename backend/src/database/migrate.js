@@ -1115,6 +1115,35 @@ async function runMigrations() {
     // devolve.
     await ensureColumn("treinamento_participantes", "cpf", "VARCHAR(11) NULL");
 
+    // 34. Ajuste pós-entrega do Pacote Salas (15/09/2026) — Ramon revisou a
+    // primeira entrega e pediu para a lista de subtipo/subdivisão deixar de
+    // ser fixa no código e virar algo que ele mesmo edita. Antes disso,
+    // `lib/subtipos.js` tinha `SUBTIPOS_VALIDOS` como array hardcoded — essa
+    // tabela substitui o array (o seed abaixo é idempotente, com os mesmos 7
+    // valores que já estavam valendo, pra não invalidar nenhuma turma/ação
+    // já classificada). Catálogo GLOBAL (sem empresa_id), mesma razão de
+    // `salas`: subdivisão/subtipo é um conceito só, comum a toda a operação
+    // (comprovação ao MPT não é por tenant).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS subtipos (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        nome        VARCHAR(100) NOT NULL,
+        ativo       TINYINT(1) NOT NULL DEFAULT 1,
+        criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_subtipos_nome (nome)
+      );
+    `);
+    await pool.query(`
+      INSERT IGNORE INTO subtipos (nome) VALUES
+        ('Prevenção ao Assédio Moral'),
+        ('Coaching de Coordenação e Gerência'),
+        ('Compliance e Ética'),
+        ('Desenvolvimento de Liderança'),
+        ('Treinamento Técnico'),
+        ('Avaliação Técnica'),
+        ('Outro');
+    `);
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
