@@ -1047,6 +1047,74 @@ async function runMigrations() {
     // busca) sem precisar de nenhuma ação manual no banco de produção.
     await ensureColumn("usuarios", "criado_em", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
 
+    // 31. Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026) — cadastro
+    // de salas. Catálogo GLOBAL, sem empresa_id: as 6 salas físicas são um
+    // espaço compartilhado entre todas as tenants (Tel T&D, Comércio, Dasa,
+    // IBM etc. treinam no mesmo prédio) — ver claude/proposta-agendamento-
+    // salas-2026-09.md, decisão 8. Isso é deliberado e diferente de toda
+    // outra tabela do sistema (que ou tem empresa_id, ou herda por JOIN);
+    // não é uma tabela esquecida sem isolamento, é isolamento nenhum por
+    // design. `grupo` distingue as 4 salas de uso geral das 2 exclusivas do
+    // Sebrae (decisão 8 do contexto trazido pelo Ramon).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS salas (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        nome        VARCHAR(80) NOT NULL,
+        capacidade  INT NULL,
+        grupo       VARCHAR(30) NOT NULL DEFAULT 'geral',
+        ativo       TINYINT(1) NOT NULL DEFAULT 1,
+        criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_salas_nome (nome)
+      );
+    `);
+    // Seed idempotente (decisão 10: nomes provisórios "Sala 1" a "Sala 6" —
+    // nomes definitivos ficam para depois da implantação). INSERT IGNORE
+    // não sobrescreve se alguém já renomeou/editou a sala manualmente.
+    await pool.query(`
+      INSERT IGNORE INTO salas (nome, grupo) VALUES
+        ('Sala 1', 'geral'),
+        ('Sala 2', 'geral'),
+        ('Sala 3', 'geral'),
+        ('Sala 4', 'geral'),
+        ('Sala 5', 'sebrae'),
+        ('Sala 6', 'sebrae');
+    `);
+
+    // 32. Horário, sala estruturada e subtipo na turma. hora_inicio/hora_fim
+    // (decisão 5) alimentam automaticamente a carga horária planejada de
+    // cada dia do cronograma (decisão 17 — ver cronogramaGenerator.js).
+    // sala_id substitui o texto livre "[sala:...]" colado em `descricao`
+    // (achado técnico do levantamento original) por uma referência real ao
+    // catálogo; sala_outro_local cobre a opção "Outro local (fora do
+    // catálogo)" da decisão 11, para presencial fora das 6 salas, sem
+    // checagem de conflito. subtipo (decisão 20) reaproveita o mesmo padrão
+    // já usado em acoes_desenvolvimento.subtipo — ver backend/src/lib/
+    // subtipos.js para a lista fixa e a validação (que o subtipo original
+    // de Ações de Desenvolvimento nunca teve; adicionada agora para os dois
+    // ao mesmo tempo, ver acoesDesenvolvimentoController.js).
+    await ensureColumn("treinamentos", "hora_inicio", "TIME NULL");
+    await ensureColumn("treinamentos", "hora_fim", "TIME NULL");
+    await ensureColumn("treinamentos", "sala_id", "INT NULL");
+    await ensureColumn("treinamentos", "sala_outro_local", "VARCHAR(150) NULL");
+    await ensureColumn("treinamentos", "subtipo", "VARCHAR(100) NULL");
+    await pool.query(`CREATE INDEX idx_treinamentos_sala ON treinamentos (sala_id)`).catch(() => {});
+    // FK best-effort — em bancos onde a coluna já tinha dado incompatível
+    // (não deveria acontecer, coluna nova) isso simplesmente não aplica a
+    // constraint; não bloqueia o boot do servidor.
+    await pool.query(`
+      ALTER TABLE treinamentos
+      ADD CONSTRAINT fk_treinamentos_sala FOREIGN KEY (sala_id) REFERENCES salas(id) ON DELETE SET NULL
+    `).catch(() => {});
+
+    // 33. CPF em treinamento_participantes (decisão 14) — campo 100% novo,
+    // não existia em lugar nenhum do sistema antes desta entrega. Guardado
+    // só como dígitos (sem máscara) pela própria validação do controller;
+    // a exibição formatada é responsabilidade do frontend. Acesso restrito
+    // por perfil é feito na camada de controller (getParticipantesByTreinamento),
+    // não aqui — a coluna existe para todo mundo, o corte é no que a API
+    // devolve.
+    await ensureColumn("treinamento_participantes", "cpf", "VARCHAR(11) NULL");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
