@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch, getStoredUser, hasSomeRole } from "../../services/api";
 import { colors, chart } from "../../lib/theme";
 import PortalShell from "../../components/PortalShell";
@@ -22,7 +23,31 @@ const EMPTY_FORM = {
   modalidade: "",
   sala: "",
   descricao: "",
+  // Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026): campos novos,
+  // distintos do "Sala" (texto livre acima, que só vira uma tag dentro de
+  // `descricao`). Aqui `sala_id` é uma reserva de verdade contra o catálogo
+  // global de salas (decisões 1/8/9 — checagem de conflito de horário no
+  // backend), e hora_inicio/hora_fim alimentam o cálculo automático da
+  // carga horária diária do cronograma (decisão 17/21).
+  hora_inicio: "",
+  hora_fim: "",
+  sala_id: "",
+  sala_outro_local: "",
+  subtipo: "",
 };
+
+// Mesma lista fixa do backend (backend/src/lib/subtipos.js) — duplicada de
+// propósito (front não importa código do back), igual a outras
+// classificações já duplicadas nesta tela (ver normalizeStatus).
+const SUBTIPOS_OPCOES = [
+  "Prevenção ao Assédio Moral",
+  "Coaching de Coordenação e Gerência",
+  "Compliance e Ética",
+  "Desenvolvimento de Liderança",
+  "Treinamento Técnico",
+  "Avaliação Técnica",
+  "Outro",
+];
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -248,12 +273,27 @@ function TurmaCard({ item, necessidade, resumo, canEdit, canDelete, onEdit, onDe
   );
 }
 
+// Next.js exige que useSearchParams() fique dentro de um <Suspense> em rota
+// estática, senão o build de produção falha (ver responder-avaliacao/page.js
+// e responder-nps/page.js pro mesmo fix) — por isso o componente que lê a
+// URL fica separado, e o export default só envolve ele em Suspense.
 export default function TreinamentosPage() {
+  return (
+    <Suspense fallback={null}>
+      <TreinamentosConteudo />
+    </Suspense>
+  );
+}
+
+function TreinamentosConteudo() {
+  const searchParams = useSearchParams();
+  const abriuViaLinkRef = useRef(false);
   const [turmas, setTurmas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [necessidades, setNecessidades] = useState([]);
   const [resumoPresenca, setResumoPresenca] = useState([]);
+  const [salas, setSalas] = useState([]);
   const [usuario, setUsuario] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -274,7 +314,11 @@ export default function TreinamentosPage() {
   const nomeLogado = usuario?.nome || "";
   const global = isGlobalUser(clienteLogado);
   const canCreate = hasSomeRole(usuario, ["coordenador", "supervisor", "instrutor"]);
-  const canEdit = hasSomeRole(usuario, ["coordenador", "supervisor", "instrutor"]);
+  // Decisão 12: a Assistente de Treinamento pode editar turma de qualquer
+  // tenant nesta tela, mas não cria turma nova (ela atua sobre turmas já
+  // existentes de clientes que não são o dela — ver entityCrud.js,
+  // createMiddlewares desta rota não inclui assistente_treinamento).
+  const canEdit = hasSomeRole(usuario, ["coordenador", "supervisor", "instrutor", "assistente_treinamento"]);
   const canDelete = hasSomeRole(usuario, ["coordenador"]);
   const isInstructor = perfil === "instrutor";
 
@@ -282,18 +326,20 @@ export default function TreinamentosPage() {
     try {
       setLoading(true);
       setError("");
-      const [turmasData, usuariosData, clientesData, resumoData, necessidadesData] = await Promise.all([
+      const [turmasData, usuariosData, clientesData, resumoData, necessidadesData, salasData] = await Promise.all([
         apiFetch("/treinamentos"),
         apiFetch("/usuarios").catch(() => []),
         apiFetch("/clientes").catch(() => []),
         apiFetch("/presenca-resumo").catch(() => null),
         apiFetch("/necessidades").catch(() => null),
+        apiFetch("/salas").catch(() => []),
       ]);
       setTurmas(Array.isArray(turmasData) ? turmasData : []);
       setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
       setClientes(Array.isArray(clientesData) ? clientesData : []);
       setResumoPresenca(Array.isArray(resumoData?.itens) ? resumoData.itens : []);
       setNecessidades(normalizeNecessidades(necessidadesData));
+      setSalas(Array.isArray(salasData) ? salasData.filter((s) => s.ativo) : []);
     } catch (err) {
       setError(err.message || "Não foi possível carregar as turmas.");
     } finally {
@@ -412,9 +458,41 @@ export default function TreinamentosPage() {
       modalidade: meta.modalidade || "",
       sala: meta.sala || "",
       descricao: meta.descricao || "",
+      hora_inicio: String(item.hora_inicio || "").slice(0, 5),
+      hora_fim: String(item.hora_fim || "").slice(0, 5),
+      sala_id: item.sala_id ? String(item.sala_id) : item.sala_outro_local ? "outro" : "",
+      sala_outro_local: item.sala_outro_local || "",
+      subtipo: item.subtipo || "",
     });
     setFormErrors({}); setError(""); setSuccess(""); setModalOpen(true);
   }
+
+  function abrirCriacaoParaNecessidade(necessidade) {
+    setEditingId(null);
+    setForm({
+      ...EMPTY_FORM,
+      cliente: necessidade.cliente || (isInstructor && clientesOptions.length === 1 ? clientesOptions[0] : ""),
+      necessidade_id: String(necessidade.id),
+      instrutor: isInstructor ? nomeLogado : "",
+      supervisor: perfil === "supervisor" ? nomeLogado : "",
+    });
+    setFormErrors({}); setError(""); setSuccess(""); setModalOpen(true);
+  }
+
+  // Vem do botão "+ Criar turma" na página de Necessidades
+  // (/treinamentos?abrir=novo&necessidade_id=123) — antes esse botão apontava
+  // pra uma rota que não existia (/treinamentos/novo, 404). Espera a lista de
+  // necessidades carregar pra já abrir o modal com a necessidade vinculada.
+  useEffect(() => {
+    if (loading || abriuViaLinkRef.current) return;
+    if (searchParams.get("abrir") !== "novo") return;
+    abriuViaLinkRef.current = true;
+    if (!canCreate) return;
+    const necessidadeId = Number(searchParams.get("necessidade_id"));
+    const necessidade = necessidadeId ? necessidades.find((n) => Number(n.id) === necessidadeId) : null;
+    if (necessidade) abrirCriacaoParaNecessidade(necessidade);
+    else openCreate();
+  }, [loading, necessidades, searchParams, canCreate]);
 
   function setField(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -431,6 +509,19 @@ export default function TreinamentosPage() {
     if (!form.data_fim) errors.data_fim = "Informe a data de fim.";
     if (form.data_inicio && form.data_fim && form.data_fim < form.data_inicio) errors.data_fim = "A data final não pode ser anterior à inicial.";
     if (!form.modalidade) errors.modalidade = "Selecione a modalidade.";
+    // Decisão 17: horário é opcional (turma sem horário real cai no cálculo
+    // por dias úteis na hora de gerar cronograma), mas se um dos dois campos
+    // foi preenchido o outro também precisa ser, e fim tem que vir depois do
+    // início — mesma checagem que o backend faz em sanitizarEscritaTreinamento
+    // (index.js), replicada aqui só para dar o erro na hora, sem round-trip.
+    if ((form.hora_inicio && !form.hora_fim) || (!form.hora_inicio && form.hora_fim)) {
+      errors.hora_fim = "Informe início e fim do horário, ou deixe os dois em branco.";
+    } else if (form.hora_inicio && form.hora_fim && form.hora_fim <= form.hora_inicio) {
+      errors.hora_fim = "O horário de fim precisa ser depois do início.";
+    }
+    if (form.sala_id === "outro" && !form.sala_outro_local.trim()) {
+      errors.sala_outro_local = "Informe o local, já que a sala não é uma das cadastradas.";
+    }
     return errors;
   }
 
@@ -445,6 +536,14 @@ export default function TreinamentosPage() {
         supervisor: perfil === "supervisor" ? nomeLogado : form.supervisor, publico: form.publico, carga_horaria: form.carga_horaria,
         participantes: Number(form.participantes || 0), participantes_previstos: Number(form.participantes || 0), status: form.status || "planejado",
         data_inicio: form.data_inicio, data_fim: form.data_fim, data: form.data_inicio, descricao: buildDescricao(form),
+        // Decisões 1/17/20: horário real (usado pelo cronograma automático),
+        // reserva de sala (catálogo global ou "outro local" em texto livre)
+        // e subtipo/subdivisão — todos opcionais.
+        hora_inicio: form.hora_inicio || null,
+        hora_fim: form.hora_fim || null,
+        sala_id: form.sala_id && form.sala_id !== "outro" ? Number(form.sala_id) : null,
+        sala_outro_local: form.sala_id === "outro" ? form.sala_outro_local.trim() : null,
+        subtipo: form.subtipo || null,
       };
       if (editingId) await apiFetch(`/treinamentos/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/treinamentos", { method: "POST", body: JSON.stringify(payload) });
@@ -546,7 +645,25 @@ export default function TreinamentosPage() {
               <Field label="Data de início" required error={formErrors.data_inicio}><Input type="date" value={form.data_inicio} onChange={(e) => setField("data_inicio", e.target.value)} /></Field>
               <Field label="Data de fim" required error={formErrors.data_fim}><Input type="date" value={form.data_fim} onChange={(e) => setField("data_fim", e.target.value)} /></Field>
               <Field label="Modalidade" required error={formErrors.modalidade}><Select value={form.modalidade} onChange={(e) => setField("modalidade", e.target.value)} options={[{ value: "online", label: "Online" }, { value: "presencial", label: "Presencial" }]} placeholder="Selecione a modalidade" /></Field>
-              <Field label="Sala"><Input value={form.sala} onChange={(e) => setField("sala", e.target.value)} placeholder="Ex.: Sala 01 / Lab 02" /></Field>
+              <Field label="Sala (anotação livre)" hint="Campo antigo, sem checagem de conflito — use a reserva de sala abaixo para bloquear horário."><Input value={form.sala} onChange={(e) => setField("sala", e.target.value)} placeholder="Ex.: Sala 01 / Lab 02" /></Field>
+              <Field label="Horário de início" hint="Opcional — informe para o cronograma calcular a carga horária diária automaticamente."><Input type="time" value={form.hora_inicio} onChange={(e) => setField("hora_inicio", e.target.value)} /></Field>
+              <Field label="Horário de fim" error={formErrors.hora_fim}><Input type="time" value={form.hora_fim} onChange={(e) => setField("hora_fim", e.target.value)} /></Field>
+              <Field label="Reserva de sala" hint="Verifica conflito de horário com outras turmas, de qualquer cliente.">
+                <Select
+                  value={form.sala_id}
+                  onChange={(e) => setField("sala_id", e.target.value)}
+                  options={[...salas.map((s) => ({ value: String(s.id), label: s.nome })), { value: "outro", label: "Outro local (fora do catálogo)" }]}
+                  placeholder="Sem reserva de sala"
+                />
+              </Field>
+              {form.sala_id === "outro" && (
+                <Field label="Qual local?" required error={formErrors.sala_outro_local}>
+                  <Input value={form.sala_outro_local} onChange={(e) => setField("sala_outro_local", e.target.value)} placeholder="Ex.: Auditório do cliente" />
+                </Field>
+              )}
+              <Field label="Subdivisão / subtipo" hint="Usado para comprovação de horas por subdivisão (ex.: MPT). Selecione &quot;Avaliação Técnica&quot; para habilitar a Presença Nominal/Reembolso de Transporte.">
+                <Select value={form.subtipo} onChange={(e) => setField("subtipo", e.target.value)} options={SUBTIPOS_OPCOES.map((x) => ({ value: x, label: x }))} placeholder="Sem subdivisão" />
+              </Field>
               <Field label="Status"><Select value={form.status} onChange={(e) => setField("status", e.target.value)} options={Object.entries(STATUS).map(([value, x]) => ({ value, label: x.label }))} placeholder="Selecione o status" /></Field>
               <Field label="Observações"><textarea value={form.descricao} onChange={(e) => setField("descricao", e.target.value)} placeholder="Informações complementares" style={{ ...inputStyle, minHeight: 92, resize: "vertical" }} /></Field>
             </div>
