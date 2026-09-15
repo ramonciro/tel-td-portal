@@ -27,6 +27,14 @@ const menuItems = [
   // logaria e veria o menu lateral vazio, mesmo com acesso de API completo.
   { href: "/treinamentos",  label: "Treinamentos",           icon: "cap", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento"] },
   { href: "/presencas",     label: "Gestão de Turmas",       icon: "folder", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento"] },
+  // Ajuste pós-entrega do Pacote Salas (15/09/2026), pedido do Ramon: o
+  // perfil Assistente de Treinamento também precisa ver Salas e Reembolso de
+  // Transporte no próprio menu — sem isso, ela só alcançava essas telas
+  // sabendo a URL de cor. Restrito só a ela por enquanto (Coordenador e os
+  // demais perfis continuam sem essas duas no menu — mesma decisão "definir
+  // no final" que Ramon já tinha adiado; ele já acessa ambas por URL direta).
+  { href: "/salas",         label: "Salas",                  icon: "building", roles: ["assistente_treinamento"] },
+  { href: "/reembolso-transporte", label: "Reembolso de Transporte", icon: "bus", roles: ["assistente_treinamento"] },
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "backpack", roles: ["instrutor", "treinando"] },
   { href: "/meu-desempenho", label: "Meu Desempenho",        icon: "trending", roles: ["instrutor"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
