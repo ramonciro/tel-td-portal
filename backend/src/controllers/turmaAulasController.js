@@ -1,6 +1,7 @@
 const pool = require("../lib/db");
 const { montarLinhasCronograma, toDateOnly: toDateOnlyGerador } = require("../lib/cronogramaGenerator");
 const { tenantScopeFor } = require("../lib/tenantScope");
+const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga o cronograma de qualquer tenant nesta
@@ -97,6 +98,23 @@ function tenantJoinTreinamento(req, alias = "t") {
   return empresaId ? ` AND ${alias}.empresa_id = ${pool.escape(empresaId)}` : "";
 }
 
+// Correção de segurança 15/09/2026 (auditoria, Pacote A.5): tenantJoinTreinamento
+// só cobre tenant — este módulo (plano de aula/cronograma) não tinha o
+// filtro de cliente (SAFRA/CREA/etc. dentro do mesmo tenant) que outras
+// telas já aplicam, deixando um instrutor vinculado a um cliente ver/editar
+// o plano de aula (título, conteúdo, metodologia) de turma de outro cliente
+// do mesmo tenant. Devolve true/false; quem chama decide a mensagem de erro
+// (mantendo os "não encontrado" já usados, pra não revelar que a turma
+// existe em outro cliente).
+async function treinamentoAcessivel(req, treinamentoId) {
+  const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+  const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const params = empresaId ? [treinamentoId, empresaId] : [treinamentoId];
+  const [rows] = await pool.query(`SELECT cliente FROM treinamentos WHERE id = ?${tenantCheck} LIMIT 1`, params);
+  if (!rows.length) return false;
+  return usuarioTemAcessoAoCliente(req, rows[0].cliente);
+}
+
 async function listTurmaAulas(req, res) {
   try {
     const { treinamento_id } = req.query || {};
@@ -106,6 +124,10 @@ async function listTurmaAulas(req, res) {
         ok: false,
         message: "Informe o treinamento_id",
       });
+    }
+
+    if (!(await treinamentoAcessivel(req, treinamento_id))) {
+      return res.json([]);
     }
 
     const [rows] = await pool.query(
@@ -176,7 +198,8 @@ async function getTurmaAulaById(req, res) {
         a.motivo_reprogramacao,
         a.ministrada_em,
         a.criado_em,
-        a.atualizado_em
+        a.atualizado_em,
+        t.cliente AS cliente_turma
       FROM turma_aulas a
       JOIN treinamentos t ON t.id = a.treinamento_id
       WHERE a.id = ?${tenantJoinTreinamento(req)}
@@ -185,13 +208,14 @@ async function getTurmaAulaById(req, res) {
       [id]
     );
 
-    if (!rows.length) {
+    if (!rows.length || !usuarioTemAcessoAoCliente(req, rows[0].cliente_turma)) {
       return res.status(404).json({
         ok: false,
         message: "Aula não encontrada",
       });
     }
 
+    delete rows[0].cliente_turma;
     return res.json(rows[0]);
   } catch (error) {
     console.error("[turmaAulasController]", error.message || error);
@@ -231,11 +255,7 @@ async function createTurmaAula(req, res) {
       });
     }
 
-    const [treinamentoDono] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
-      [treinamento_id]
-    );
-    if (!treinamentoDono.length) {
+    if (!(await treinamentoAcessivel(req, treinamento_id))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -331,18 +351,14 @@ async function updateTurmaAula(req, res) {
     }
 
     const [aulaAtual] = await pool.query(
-      `SELECT a.id FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req)} LIMIT 1`,
+      `SELECT a.id, t.cliente AS cliente_turma FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req)} LIMIT 1`,
       [id]
     );
-    if (!aulaAtual.length) {
+    if (!aulaAtual.length || !usuarioTemAcessoAoCliente(req, aulaAtual[0].cliente_turma)) {
       return res.status(404).json({ ok: false, message: "Aula não encontrada" });
     }
 
-    const [treinamentoDestino] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
-      [treinamento_id]
-    );
-    if (!treinamentoDestino.length) {
+    if (!(await treinamentoAcessivel(req, treinamento_id))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -410,10 +426,10 @@ async function deleteTurmaAula(req, res) {
     const { id } = req.params;
 
     const [aulaAtual] = await pool.query(
-      `SELECT a.id FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req)} LIMIT 1`,
+      `SELECT a.id, t.cliente AS cliente_turma FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req)} LIMIT 1`,
       [id]
     );
-    if (!aulaAtual.length) {
+    if (!aulaAtual.length || !usuarioTemAcessoAoCliente(req, aulaAtual[0].cliente_turma)) {
       return res.status(404).json({ ok: false, message: "Aula não encontrada" });
     }
 
@@ -496,7 +512,8 @@ async function gerarCronogramaTurma(req, res) {
         data_fim,
         carga_horaria,
         hora_inicio,
-        hora_fim
+        hora_fim,
+        cliente
       FROM treinamentos
       WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")}
       LIMIT 1
@@ -504,7 +521,7 @@ async function gerarCronogramaTurma(req, res) {
       [treinamento_id]
     );
 
-    if (!treinamentos.length) {
+    if (!treinamentos.length || !usuarioTemAcessoAoCliente(req, treinamentos[0].cliente)) {
       return res.status(404).json({
         ok: false,
         message: "Turma não encontrada",
@@ -601,15 +618,11 @@ async function duplicarPlanoAulas(req, res) {
       });
     }
 
-    const [origemTreinamento] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
-      [treinamento_origem_id]
-    );
-    const [destinoTreinamento] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
-      [treinamento_destino_id]
-    );
-    if (!origemTreinamento.length || !destinoTreinamento.length) {
+    const [origemAcessivel, destinoAcessivel] = await Promise.all([
+      treinamentoAcessivel(req, treinamento_origem_id),
+      treinamentoAcessivel(req, treinamento_destino_id),
+    ]);
+    if (!origemAcessivel || !destinoAcessivel) {
       return res.status(404).json({
         ok: false,
         message: "Treinamento de origem ou destino não encontrado",
@@ -711,11 +724,7 @@ async function getResumoTurmaAulas(req, res) {
   try {
     const { treinamento_id } = req.params;
 
-    const [treinamentoDono] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
-      [treinamento_id]
-    );
-    if (!treinamentoDono.length) {
+    if (!(await treinamentoAcessivel(req, treinamento_id))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 

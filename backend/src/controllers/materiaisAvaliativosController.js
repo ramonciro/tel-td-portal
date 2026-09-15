@@ -1,4 +1,5 @@
 const pool = require("../lib/db");
+const { usuarioTemAcessoAoCliente, filtroClientesSQL } = require("../lib/acessoCliente");
 
 // materiais_avaliativos não tem empresa_id própria — isolamento via JOIN
 // até treinamentos, mesmo padrão do restante do módulo de avaliações.
@@ -8,33 +9,55 @@ function tenantJoinTreinamento(empresaId, alias = "materiais_avaliativos") {
     : "";
 }
 
-async function treinamentoPertenceAoTenant(treinamentoId, empresaId) {
-  if (!empresaId) return true;
+// Correção de segurança 15/09/2026 (auditoria, Pacote A.4): antes só
+// confería tenant (empresa_id). Agora também confere o cliente
+// (SAFRA/CREA/etc. dentro do mesmo tenant) — sem isso, um instrutor
+// vinculado a um cliente conseguia criar/editar/excluir prova numa turma de
+// outro cliente do mesmo tenant, só informando o treinamento_id.
+async function treinamentoPertenceAoTenant(treinamentoId, empresaId, req = null) {
+  const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const params = empresaId ? [treinamentoId, empresaId] : [treinamentoId];
   const [rows] = await pool.query(
-    `SELECT id FROM treinamentos WHERE id = ? AND empresa_id = ? LIMIT 1`,
-    [treinamentoId, empresaId]
+    `SELECT cliente FROM treinamentos WHERE id = ?${tenantCheck} LIMIT 1`,
+    params
   );
-  return rows.length > 0;
+  if (!rows.length) return false;
+  if (!req) return true;
+  return usuarioTemAcessoAoCliente(req, rows[0].cliente);
 }
 
 async function listMateriaisAvaliativos(req, res) {
   try {
-    const [rows] = await pool.query(`
+    // Correção de segurança 15/09/2026 (auditoria, Pacote A.4): esta
+    // listagem (usada por coordenador/supervisor/instrutor) filtrava só por
+    // tenant — um instrutor vinculado a um cliente conseguia puxar o
+    // conteúdo real de provas (questoes_json) de turmas de OUTRO cliente do
+    // mesmo tenant. Agora junta treinamentos e aplica o mesmo filtro de
+    // cliente já usado em Biblioteca/Certificados/Mural.
+    const clienteFiltro = filtroClientesSQL(req, "t.cliente");
+    const clienteWhere = clienteFiltro ? ` AND ${clienteFiltro.sql}` : "";
+    const params = clienteFiltro ? clienteFiltro.params : [];
+
+    const [rows] = await pool.query(
+      `
       SELECT
-        id,
-        treinamento_id,
-        titulo,
-        tipo,
-        link_arquivo,
-        descricao,
-        COALESCE(nota_maxima, 0) AS nota_maxima,
-        data_aplicacao,
-        questoes_json,
-        criado_em
-      FROM materiais_avaliativos
-      WHERE 1 = 1${tenantJoinTreinamento(req.empresaId)}
-      ORDER BY id DESC
-    `);
+        m.id,
+        m.treinamento_id,
+        m.titulo,
+        m.tipo,
+        m.link_arquivo,
+        m.descricao,
+        COALESCE(m.nota_maxima, 0) AS nota_maxima,
+        m.data_aplicacao,
+        m.questoes_json,
+        m.criado_em
+      FROM materiais_avaliativos m
+      LEFT JOIN treinamentos t ON t.id = m.treinamento_id
+      WHERE 1 = 1${tenantJoinTreinamento(req.empresaId, "m")}${clienteWhere}
+      ORDER BY m.id DESC
+      `,
+      params
+    );
 
     return res.json(rows);
   } catch (error) {
@@ -140,7 +163,7 @@ async function createMaterialAvaliativo(req, res) {
       });
     }
 
-    if (!(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId))) {
+    if (!(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -205,16 +228,20 @@ async function updateMaterialAvaliativo(req, res) {
       });
     }
 
-    const tenantCheck = tenantJoinTreinamento(req.empresaId);
+    const tenantCheck = tenantJoinTreinamento(req.empresaId, "m");
     const [exists] = await pool.query(
-      `SELECT id FROM materiais_avaliativos WHERE id = ?${tenantCheck} LIMIT 1`,
+      `SELECT m.id, t.cliente AS cliente_atual
+       FROM materiais_avaliativos m
+       LEFT JOIN treinamentos t ON t.id = m.treinamento_id
+       WHERE m.id = ?${tenantCheck}
+       LIMIT 1`,
       [id]
     );
-    if (!exists.length) {
+    if (!exists.length || !usuarioTemAcessoAoCliente(req, exists[0].cliente_atual)) {
       return res.status(404).json({ ok: false, message: "Material avaliativo não encontrado" });
     }
 
-    if (!(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId))) {
+    if (!(await treinamentoPertenceAoTenant(treinamento_id, req.empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -261,18 +288,19 @@ async function deleteMaterialAvaliativo(req, res) {
   try {
     const { id } = req.params;
 
-    const tenantCheck = tenantJoinTreinamento(req.empresaId);
+    const tenantCheck = tenantJoinTreinamento(req.empresaId, "m");
     const [materiais] = await pool.query(
       `
-      SELECT id, treinamento_id, titulo
-      FROM materiais_avaliativos
-      WHERE id = ?${tenantCheck}
+      SELECT m.id, m.treinamento_id, m.titulo, t.cliente AS cliente_atual
+      FROM materiais_avaliativos m
+      LEFT JOIN treinamentos t ON t.id = m.treinamento_id
+      WHERE m.id = ?${tenantCheck}
       LIMIT 1
       `,
       [id]
     );
 
-    if (!materiais.length) {
+    if (!materiais.length || !usuarioTemAcessoAoCliente(req, materiais[0].cliente_atual)) {
       return res.status(404).json({
         ok: false,
         message: "Material avaliativo não encontrado",

@@ -1,6 +1,7 @@
 const {
   getMuralTurma,
   criarPublicacao,
+  obterClienteTreinamento,
   buscarPublicacao,
   editarPublicacao,
   excluirPublicacao,
@@ -46,6 +47,16 @@ async function criarPublicacaoHandler(req, res) {
       return res.status(400).json({ ok: false, message: "O conteúdo do aviso é obrigatório" });
     }
 
+    // Correção de segurança 15/09/2026 (auditoria, Pacote A.3) — mesmo
+    // filtro de cliente já aplicado na leitura do mural, agora também na
+    // criação: sem isso, um instrutor vinculado só ao cliente SAFRA
+    // conseguia publicar um aviso numa turma do cliente CREA do mesmo
+    // tenant, bastando informar o treinamento_id.
+    const treinamentoDestino = await obterClienteTreinamento(treinamentoId, req.empresaId);
+    if (!treinamentoDestino || !usuarioTemAcessoAoCliente(req, treinamentoDestino.cliente)) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
     const id = await criarPublicacao({
       treinamentoId,
       autor: req.user,
@@ -82,6 +93,11 @@ async function editarPublicacaoHandler(req, res) {
     if (!antes) {
       return res.status(404).json({ ok: false, message: "Publicação não encontrada" });
     }
+    // Correção de segurança 15/09/2026 (auditoria, Pacote A.3) — ver nota em
+    // muralResolver.js/buscarPublicacao.
+    if (!usuarioTemAcessoAoCliente(req, antes.cliente)) {
+      return res.status(404).json({ ok: false, message: "Publicação não encontrada" });
+    }
 
     await editarPublicacao(id, req.body || {});
 
@@ -108,6 +124,11 @@ async function excluirPublicacaoHandler(req, res) {
     const { id } = req.params;
     const antes = await buscarPublicacao(id, req.empresaId);
     if (!antes) {
+      return res.status(404).json({ ok: false, message: "Publicação não encontrada" });
+    }
+    // Correção de segurança 15/09/2026 (auditoria, Pacote A.3) — ver nota em
+    // muralResolver.js/buscarPublicacao.
+    if (!usuarioTemAcessoAoCliente(req, antes.cliente)) {
       return res.status(404).json({ ok: false, message: "Publicação não encontrada" });
     }
 

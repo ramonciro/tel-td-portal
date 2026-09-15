@@ -114,9 +114,33 @@ async function getParticipantesByTreinamento(req, res) {
     const { id } = req.params;
     const dataChamada = req.query?.data || null;
     const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const perfil = String(req.user?.perfil || "").toLowerCase().trim();
 
     if (!(await treinamentoPertenceAoTenant(db, id, empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
+    // Correção de segurança 15/09/2026 (auditoria, Pacote A.2): antes, este
+    // endpoint só conferia se a turma era do mesmo tenant/cliente — não se
+    // o treinando logado estava matriculado NELA. Resultado: um treinando
+    // autenticado, sabendo/adivinhando o ID de qualquer turma do próprio
+    // tenant (mesmo uma em que nunca participou), via nome completo,
+    // matrícula, supervisor, operação e data de admissão de todos os
+    // participantes — dado pessoal (LGPD) sem necessidade. Mesmo padrão de
+    // "não é você, não vê" já usado em NPS/avaliações: sem matrícula na
+    // turma, 404 (igual a turma não encontrada, não revela que ela existe).
+    if (perfil === "treinando") {
+      const nomeUsuario = String(req.user?.nome || "").trim();
+      if (!nomeUsuario) {
+        return res.status(400).json({ ok: false, message: "Usuário não identificado" });
+      }
+      const [matriculado] = await db.query(
+        `SELECT id FROM treinamento_participantes WHERE treinamento_id = ? AND nome = ? LIMIT 1`,
+        [id, nomeUsuario]
+      );
+      if (!matriculado.length) {
+        return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+      }
     }
 
     let rows;

@@ -68,14 +68,24 @@ function normalizarCpf(valor) {
   return digits.length === 11 ? digits : null;
 }
 
-async function buscarDadosBancarios(cpfs) {
+// Correção de segurança 15/09/2026 (auditoria, Pacote A.1): antes, essa
+// consulta não filtrava por tenant nenhum — qualquer Coordenador conseguia
+// ler banco/PIX de um CPF cadastrado por outro cliente/tenant, bastando
+// digitar o mesmo CPF numa turma da própria empresa. Agora só devolve um
+// registro se ele foi cadastrado pelo mesmo tenant (empresa_id = ?) ou se
+// ainda não tem dono (empresa_id IS NULL — registros antigos, de antes
+// desta correção). empresaId null = Assistente de Treinamento, que
+// continua vendo tudo (cross-tenant é intencional pra esse perfil).
+async function buscarDadosBancarios(cpfs, empresaId) {
   const cpfsValidos = [...new Set(cpfs.filter(Boolean))];
   if (!cpfsValidos.length) return new Map();
   const placeholders = cpfsValidos.map(() => "?").join(",");
+  const tenantCheck = empresaId ? " AND (empresa_id = ? OR empresa_id IS NULL)" : "";
+  const params = empresaId ? [...cpfsValidos, empresaId] : cpfsValidos;
   const [rows] = await pool.query(
     `SELECT cpf, banco, agencia, operacao, conta, dv, tipo_chave_pix, chave_pix
-     FROM dados_bancarios_colaborador WHERE cpf IN (${placeholders})`,
-    cpfsValidos
+     FROM dados_bancarios_colaborador WHERE cpf IN (${placeholders})${tenantCheck}`,
+    params
   );
   return new Map(rows.map((r) => [r.cpf, r]));
 }
@@ -95,7 +105,7 @@ async function montarListaNominal(treinamentoId, empresaId, { inicio, fim } = {}
   const freqPorNome = new Map(frequencias.map((f) => [f.treinando_nome, f]));
 
   const cpfsNormalizados = participantes.map((p) => normalizarCpf(p.cpf));
-  const bancarios = await buscarDadosBancarios(cpfsNormalizados);
+  const bancarios = await buscarDadosBancarios(cpfsNormalizados, empresaId);
 
   return participantes.map((p, index) => {
     const freq = freqPorNome.get(p.nome);
@@ -204,27 +214,59 @@ async function salvarDadosBancarios(req, res) {
   try {
     const { treinamento_id } = req.params;
     const itens = Array.isArray(req.body?.itens) ? req.body.itens : [];
+    const { empresaId, crossTenant } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
 
     const turma = await buscarTurmaElegivel(req, treinamento_id);
     if (!turma) {
       return res.status(404).json({ ok: false, message: "Turma não encontrada" });
     }
 
+    // Correção de segurança 15/09/2026 (auditoria, Pacote A.1): antes, este
+    // UPSERT gravava direto pelo CPF sem checar dono nenhum — um
+    // Coordenador conseguia sobrescrever silenciosamente banco/PIX de um
+    // CPF já cadastrado por outro tenant, bastando incluir esse CPF numa
+    // turma da própria empresa. Agora, antes de cada gravação, checa quem
+    // é o dono atual do registro (se existir) e bloqueia quando o dono é
+    // um tenant diferente do efetivo (empresaId; null pra Assistente de
+    // Treinamento, que pode gravar em qualquer tenant de propósito).
+    // Registro sem dono (empresa_id NULL, de antes desta correção) é
+    // "adotado" pelo tenant que gravar primeiro depois da correção.
+    //
+    // Ressalva conhecida (aceita como troca razoável, sem exigir um
+    // sistema de verificação de identidade completo pra um patch de
+    // segurança urgente): quem cadastrar um CPF alheio ANTES do dono
+    // legítimo "reserva" esse CPF pro próprio tenant — a gravação legítima
+    // seguinte fica bloqueada (visível, auditada) em vez de silenciosamente
+    // sobrescrita, que já elimina o risco de vazamento/hijack de PIX.
     let salvos = 0;
+    const bloqueados = [];
     for (const item of itens) {
       const cpf = normalizarCpf(item.cpf);
       if (!cpf) continue;
 
+      if (empresaId) {
+        const [existentes] = await pool.query(
+          `SELECT empresa_id FROM dados_bancarios_colaborador WHERE cpf = ? LIMIT 1`,
+          [cpf]
+        );
+        const donoAtual = existentes[0]?.empresa_id;
+        if (donoAtual != null && Number(donoAtual) !== Number(empresaId)) {
+          bloqueados.push(cpf);
+          continue;
+        }
+      }
+
       await pool.query(
         `
         INSERT INTO dados_bancarios_colaborador
-          (cpf, nome, banco, agencia, operacao, conta, dv, tipo_chave_pix, chave_pix, atualizado_por)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (cpf, nome, banco, agencia, operacao, conta, dv, tipo_chave_pix, chave_pix, atualizado_por, empresa_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           nome = COALESCE(VALUES(nome), nome),
           banco = VALUES(banco), agencia = VALUES(agencia), operacao = VALUES(operacao),
           conta = VALUES(conta), dv = VALUES(dv), tipo_chave_pix = VALUES(tipo_chave_pix),
-          chave_pix = VALUES(chave_pix), atualizado_por = VALUES(atualizado_por)
+          chave_pix = VALUES(chave_pix), atualizado_por = VALUES(atualizado_por),
+          empresa_id = COALESCE(dados_bancarios_colaborador.empresa_id, VALUES(empresa_id))
         `,
         [
           cpf,
@@ -237,6 +279,7 @@ async function salvarDadosBancarios(req, res) {
           item.tipo_chave_pix || null,
           item.chave_pix || null,
           req.user?.nome || null,
+          empresaId || null,
         ]
       );
       salvos += 1;
@@ -247,11 +290,22 @@ async function salvarDadosBancarios(req, res) {
       acao: "editar",
       entidade: "dados_bancarios_colaborador",
       entidadeId: treinamento_id,
-      resumo: `${req.user?.nome || "Alguém"} atualizou dados bancários/PIX de ${salvos} participante(s) a partir da turma "${turma.tema}" (${turma.cliente})`,
+      resumo: `${req.user?.nome || "Alguém"} atualizou dados bancários/PIX de ${salvos} participante(s) a partir da turma "${turma.tema}" (${turma.cliente})${crossTenant ? " — acesso cross-tenant (Assistente de Treinamento)" : ""}`,
       ip: req.ip,
     });
 
-    return res.json({ ok: true, salvos });
+    if (bloqueados.length) {
+      registrarAuditoria({
+        usuario: req.user,
+        acao: "bloqueado",
+        entidade: "dados_bancarios_colaborador",
+        entidadeId: treinamento_id,
+        resumo: `${req.user?.nome || "Alguém"} tentou gravar dados bancários/PIX de CPF(s) já cadastrado(s) por outro cliente/tenant, a partir da turma "${turma.tema}" (${turma.cliente}) — gravação bloqueada`,
+        ip: req.ip,
+      });
+    }
+
+    return res.json({ ok: true, salvos, bloqueados: bloqueados.length });
   } catch (error) {
     console.error("[reembolsoTransporteController]", error.message || error);
     return res.status(500).json({ ok: false, message: "Erro ao salvar os dados bancários" });
