@@ -32,6 +32,11 @@ const PERFIL_COR = {
   superintendente:{ bg: "#fef3c7", text: "#92400e", avatar: "#d97706" },
   coaching:       { bg: "#fce7f3", text: "#9d174d", avatar: "#db2777" },
   metodologia:    { bg: "#e0f2fe", text: "#0369a1", avatar: "#0284c7" },
+  // Ajuste pós-entrega do Pacote Salas (15/09/2026): o perfil já existia no
+  // backend desde a Fase 1 (authorizeRoles em várias rotas já aceitava
+  // "assistente_treinamento"), mas não dava pra criar um usuário com esse
+  // perfil pela tela — faltava aqui.
+  assistente_treinamento: { bg: "#ffedd5", text: "#9a3412", avatar: "#ea580c" },
 };
 function perfilCor(perfil) {
   return PERFIL_COR[String(perfil || "").toLowerCase()] || { bg: "#f1f5f9", text: "#475569", avatar: "#64748b" };
@@ -41,6 +46,7 @@ const PERFIL_LABEL = {
   coordenador: "Coordenador", supervisor: "Supervisor", instrutor: "Instrutor",
   treinando: "Treinando", superintendente: "Superintendente",
   coaching: "Coaching", metodologia: "Metodologia",
+  assistente_treinamento: "Assistente de Treinamento",
 };
 
 /* ── Opções fixas ── */
@@ -52,6 +58,7 @@ const PERFIL_OPTIONS = [
   { value: "superintendente", label: "Superintendente"  },
   { value: "coaching",        label: "Coaching"         },
   { value: "metodologia",     label: "Metodologia"      },
+  { value: "assistente_treinamento", label: "Assistente de Treinamento" },
 ];
 
 /* ═══════════════════════════════════════════════
