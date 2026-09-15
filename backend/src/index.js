@@ -146,9 +146,27 @@ const {
   updateTurmaAula,
   deleteTurmaAula,
   gerarCronogramaTurma,
+  gerarCronogramaAutomatico,
   duplicarPlanoAulas,
   getResumoTurmaAulas,
 } = require("./controllers/turmaAulasController");
+
+// Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026)
+const {
+  listarSalas,
+  criarSala,
+  atualizarSala,
+  desativarSala,
+  disponibilidadeSalas,
+} = require("./controllers/salasController");
+const {
+  listarTurmasElegiveis: listarTurmasAvaliacaoTecnica,
+  obterListaNominal,
+  exportarListaNominal,
+} = require("./controllers/reembolsoTransporteController");
+const { buscarConflitosSala, turmaEhRetroativa } = require("./services/salaConflitoService");
+const { normalizeSubtipo } = require("./lib/subtipos");
+const { tenantScopeFor } = require("./lib/tenantScope");
 
 const {
   listarPresencaAula,
@@ -251,13 +269,13 @@ app.get(
 app.get(
   "/api/presenca-resumo",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento"),
   listarResumoGeral
 );
 app.get(
   "/api/presenca-resumo/:treinamento_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   obterResumoPorTreinamento
 );
 
@@ -504,10 +522,80 @@ app.delete(
   }
 );
 
+/**
+ * Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026) — beforeWrite de
+ * /api/treinamentos:
+ *   1. Valida subtipo contra a lista fixa (decisão 20 — mesmo padrão de
+ *      acoes_desenvolvimento.subtipo, agora com a validação que faltava).
+ *   2. Valida hora_inicio/hora_fim (decisão 5) quando informados.
+ *   3. Checagem de conflito de sala (decisões 1, 7, 8, 9): bloqueia só
+ *      quando a turma não é retroativa — turma já concluída (data_fim no
+ *      passado) recebe o cadastro normalmente, sem bloqueio, porque o
+ *      conflito nesse caso é só um dado histórico, não um problema real de
+ *      agenda (a mesma regra que o painel de disponibilidade usa, ver
+ *      salaConflitoService.js).
+ */
+async function sanitizarEscritaTreinamento(data, req, ctx) {
+  const dados = { ...data };
+
+  if ("subtipo" in dados) {
+    dados.subtipo = normalizeSubtipo(dados.subtipo);
+  }
+
+  const horaInicio = dados.hora_inicio ?? ctx.antes?.hora_inicio ?? null;
+  const horaFim = dados.hora_fim ?? ctx.antes?.hora_fim ?? null;
+  if ((dados.hora_inicio !== undefined || dados.hora_fim !== undefined) && horaInicio && horaFim) {
+    const padraoHora = /^\d{2}:\d{2}(:\d{2})?$/;
+    if (!padraoHora.test(String(horaInicio)) || !padraoHora.test(String(horaFim))) {
+      const erro = new Error("Horário de início/fim inválido — use o formato HH:MM.");
+      erro.status = 400;
+      throw erro;
+    }
+    if (String(horaFim) <= String(horaInicio)) {
+      const erro = new Error("O horário de fim precisa ser depois do horário de início.");
+      erro.status = 400;
+      throw erro;
+    }
+  }
+
+  const salaId = dados.sala_id !== undefined ? dados.sala_id : ctx.antes?.sala_id;
+  const dataInicio = dados.data_inicio ?? dados.data ?? ctx.antes?.data_inicio ?? ctx.antes?.data;
+  const dataFim = dados.data_fim ?? ctx.antes?.data_fim;
+
+  if (salaId && dataInicio && dataFim && horaInicio && horaFim) {
+    if (!turmaEhRetroativa(dataFim)) {
+      const conflitos = await buscarConflitosSala({
+        salaId,
+        dataInicio,
+        dataFim,
+        horaInicio,
+        horaFim,
+        excluirTreinamentoId: ctx.antes?.id || null,
+      });
+      if (conflitos.length) {
+        const c = conflitos[0];
+        const erro = new Error(
+          `Sala já reservada nesse horário pela turma "${c.tema}" (${c.cliente}), de ${c.hora_inicio} às ${c.hora_fim}.`
+        );
+        erro.status = 409;
+        throw erro;
+      }
+    }
+  }
+
+  return dados;
+}
+
 app.use(
   "/api/treinamentos",
   createCrudRouter({
     multiTenant: true, // Sprint 1
+    // Decisão 12 — Assistente de Treinamento enxerga/edita turmas de
+    // qualquer tenant nesta tela (ver entityCrud.js, empresaIdEfetivo, e
+    // lib/tenantScope.js para a razão de isso não estar no clientMiddleware).
+    crossTenantRoles: ["assistente_treinamento"],
+    beforeWrite: sanitizarEscritaTreinamento,
+    afterWrite: ({ id, data }) => gerarCronogramaAutomatico({ id, data }), // decisão 21
     table: "treinamentos",
     // Pacote 3 (acesso restrito por cliente, generalizar): até aqui, o
     // recorte por cliente da listagem de turmas era feito só no frontend
@@ -519,7 +607,21 @@ app.use(
     // só veem turmas do(s) próprio(s) cliente(s), ou sem essa restrição
     // quando o usuário não tem cliente vinculado (comportamento anterior
     // preservado para essas contas).
-    listFiltro: (req) => filtroClientesSQL(req, "cliente"),
+    // Decisão 12: o recorte por cliente abaixo é para instrutor/treinando
+    // (isGestor()==false) verem só as turmas do(s) próprio(s) cliente(s) —
+    // não pode se aplicar à Assistente de Treinamento, cujo objetivo nesta
+    // tela é justamente enxergar turmas de qualquer cliente/tenant. Ela não
+    // é gestora (isGestor()==false também pra ela), então sem esta exceção
+    // explícita cairia no mesmo filtro por padrão SE algum dia seu cadastro
+    // ganhar um valor em `cliente` (hoje fica sem restrição só porque o
+    // campo está vazio — não é seguro depender disso). Resolvido aqui, não
+    // em filtroClientesSQL/isGestor, para não afetar outras telas que usam
+    // as mesmas funções (mesma razão de tenantScopeFor nunca entrar no
+    // clientMiddleware — ver lib/tenantScope.js).
+    listFiltro: (req) =>
+      String(req.user?.perfil || "").toLowerCase() === "assistente_treinamento"
+        ? null
+        : filtroClientesSQL(req, "cliente"),
     fields: [
       "tema",
       "cliente",
@@ -538,11 +640,21 @@ app.use(
       "turma",
       "supervisor",
       "necessidade_id",
+      // Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026): campos
+      // novos do agendamento de sala e do cronograma automático (decisões
+      // 1, 17, 20). Sem isso o beforeWrite (sanitizarEscritaTreinamento)
+      // recebe os valores em `dados`, mas o createCrudRouter genérico só
+      // grava colunas que estão listadas aqui.
+      "hora_inicio",
+      "hora_fim",
+      "sala_id",
+      "sala_outro_local",
+      "subtipo",
     ],
     orderBy: "id DESC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
     auditoria: {
       entidade: "treinamento",
@@ -555,7 +667,7 @@ app.use(
 app.get(
   "/api/treinamentos/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -565,8 +677,13 @@ app.get(
       // supervisor/instrutor conseguia ler o detalhe de um treinamento de
       // outra empresa só sabendo o id. Corrigido para exigir o mesmo tenant,
       // igual ao DELETE /api/treinamentos/:id logo abaixo.
-      const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
-      const params = req.empresaId ? [id, req.empresaId] : [id];
+      // Decisão 12: Assistente de Treinamento enxerga o detalhe de qualquer
+      // tenant (mesma exceção usada no restante das telas dela).
+      const { empresaId: empresaIdEfetivo } = tenantScopeFor(req, {
+        crossTenantRoles: ["assistente_treinamento"],
+      });
+      const tenantCheck = empresaIdEfetivo ? " AND empresa_id = ?" : "";
+      const params = empresaIdEfetivo ? [id, empresaIdEfetivo] : [id];
 
       const [rows] = await pool.query(
         `
@@ -588,7 +705,12 @@ app.get(
           data_fim,
           turma,
           supervisor,
-          necessidade_id
+          necessidade_id,
+          hora_inicio,
+          hora_fim,
+          sala_id,
+          sala_outro_local,
+          subtipo
         FROM treinamentos
         WHERE id = ?${tenantCheck}
         LIMIT 1
@@ -616,7 +738,7 @@ app.get(
 app.get(
   "/api/treinamentos/:id/participantes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento"),
   getParticipantesByTreinamento
 );
 
@@ -626,14 +748,14 @@ app.get(
 app.post(
   "/api/treinamentos/:id/participantes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   createParticipanteTreinamento
 );
 
 app.post(
   "/api/treinamentos/importar-participantes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   comUploadTratado(upload.single("arquivo")),
   importarParticipantesExcel
 );
@@ -641,106 +763,176 @@ app.post(
 app.post(
   "/api/treinamentos/salvar-chamada",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   salvarChamadaParticipantes
 );
 
 app.delete(
   "/api/treinamentos/participantes/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   deleteParticipanteTreinamento
 );
 
 app.post(
   "/api/treinamentos/participantes/excluir-lote",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   deleteParticipantesTreinamentoBulk
 );
 
 app.get(
   "/api/turma-aulas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   listTurmaAulas
 );
 
 app.get(
   "/api/turma-aulas/resumo/:treinamento_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   getResumoTurmaAulas
 );
 
 app.get(
   "/api/turma-aulas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   getTurmaAulaById
 );
 
 app.post(
   "/api/turma-aulas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   createTurmaAula
 );
 
 app.put(
   "/api/turma-aulas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   updateTurmaAula
 );
 
 app.delete(
   "/api/turma-aulas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   deleteTurmaAula
 );
 
 app.post(
   "/api/turma-aulas/gerar-cronograma",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   gerarCronogramaTurma
 );
 
 app.post(
   "/api/turma-aulas/duplicar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   duplicarPlanoAulas
 );
 
 app.get(
   "/api/presenca-aulas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   listarPresencaAula
 );
 
 app.post(
   "/api/presenca-aulas/inicializar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   inicializarPresencaAula
 );
 
 app.post(
   "/api/presenca-aulas/salvar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   salvarPresencaAula
 );
 
 app.get(
   "/api/presenca-aulas/resumo/:turma_aula_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   resumoPresencaAula
+);
+
+// Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026) — decisões 1-9 e
+// 13. Catálogo de salas é global (sem empresa_id, por design — ver
+// salasController.js/salaConflitoService.js): qualquer perfil autorizado
+// enxerga a mesma lista de salas de todos os tenants, e a checagem de
+// conflito de horário também é sempre cross-tenant. Decisão 13: cadastro/
+// edição/desativação de sala é só Super Admin (bypass automático do
+// authorizeRoles) e a Assistente de Treinamento — coordenador (e os demais
+// perfis que criam/editam turma) só CONSULTA o catálogo, pra escolher sala
+// no formulário; não administra.
+app.get(
+  "/api/salas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  listarSalas
+);
+
+app.get(
+  "/api/salas/disponibilidade",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  disponibilidadeSalas
+);
+
+app.post(
+  "/api/salas",
+  authRequired,
+  authorizeRoles("assistente_treinamento"),
+  criarSala
+);
+
+app.put(
+  "/api/salas/:id",
+  authRequired,
+  authorizeRoles("assistente_treinamento"),
+  atualizarSala
+);
+
+app.delete(
+  "/api/salas/:id",
+  authRequired,
+  authorizeRoles("assistente_treinamento"),
+  desativarSala
+);
+
+// Decisões 14/16/19: Presença Nominal / Reembolso de Transporte — restrito a
+// quem pode ver CPF (coordenador e a Assistente; super_admin sempre passa
+// pelo bypass do authorizeRoles). O controller filtra por tenant salvo para
+// a Assistente (crossTenantRoles interno), e audita toda visualização/
+// exportação via registrarAuditoria.
+app.get(
+  "/api/reembolso-transporte/turmas",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  listarTurmasAvaliacaoTecnica
+);
+
+app.get(
+  "/api/reembolso-transporte/:treinamento_id",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  obterListaNominal
+);
+
+app.get(
+  "/api/reembolso-transporte/:treinamento_id/exportar",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  exportarListaNominal
 );
 
 app.use(
