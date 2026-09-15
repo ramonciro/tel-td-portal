@@ -101,7 +101,17 @@ export default function LoginPage() {
         // Usuários de R&S vão direto para o módulo R&S
         const perfil = (data.user?.perfil || "").toLowerCase().trim();
         const rsPerfiles = ["coordenador_rs", "gestor_rs"];
-        router.push(rsPerfiles.includes(perfil) ? "/rs/rps" : "/inicio");
+        // Ajuste pós-entrega do Pacote Salas (15/09/2026): a Assistente de
+        // Treinamento não tem acesso a /inicio (não está entre os perfis
+        // liberados lá — ver PortalShell.js), então caía direto numa tela de
+        // "Acesso restrito" logo depois de logar. Manda ela para Salas, que
+        // já é uma das telas que ela de fato administra.
+        const destino = rsPerfiles.includes(perfil)
+          ? "/rs/rps"
+          : perfil === "assistente_treinamento"
+          ? "/salas"
+          : "/inicio";
+        router.push(destino);
       }
     } catch (err) {
       setErro(err.message || "Erro ao entrar");
