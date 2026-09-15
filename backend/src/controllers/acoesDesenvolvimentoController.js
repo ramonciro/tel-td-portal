@@ -105,7 +105,7 @@ async function criar(req, res) {
     // string era aceita), o que corrompe silenciosamente a agregação usada
     // depois para comprovação ao MPT. Agora valida contra a lista fixa
     // compartilhada com treinamentos.subtipo (ver lib/subtipos.js).
-    const subtipo = normalizeSubtipo(body.subtipo);
+    const subtipo = await normalizeSubtipo(body.subtipo);
     const publicoAlvo = String(body.publico_alvo || "").trim() || null;
     const obrigatoria = body.obrigatoria ? 1 : 0;
     const turmaId = body.turma_id ? Number(body.turma_id) : null;
@@ -232,7 +232,7 @@ async function atualizar(req, res) {
     // string era aceita), o que corrompe silenciosamente a agregação usada
     // depois para comprovação ao MPT. Agora valida contra a lista fixa
     // compartilhada com treinamentos.subtipo (ver lib/subtipos.js).
-    const subtipo = normalizeSubtipo(body.subtipo);
+    const subtipo = await normalizeSubtipo(body.subtipo);
     const publicoAlvo = String(body.publico_alvo || "").trim() || null;
     const obrigatoria = body.obrigatoria ? 1 : 0;
     const turmaId = body.turma_id ? Number(body.turma_id) : null;
