@@ -21,33 +21,20 @@ const EMPTY_FORM = {
   data_inicio: "",
   data_fim: "",
   modalidade: "",
-  sala: "",
   descricao: "",
-  // Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026): campos novos,
-  // distintos do "Sala" (texto livre acima, que só vira uma tag dentro de
-  // `descricao`). Aqui `sala_id` é uma reserva de verdade contra o catálogo
-  // global de salas (decisões 1/8/9 — checagem de conflito de horário no
-  // backend), e hora_inicio/hora_fim alimentam o cálculo automático da
-  // carga horária diária do cronograma (decisão 17/21).
+  // Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026): o antigo
+  // campo "Sala" (texto livre, virava uma tag dentro de `descricao`) foi
+  // removido a pedido do Ramon — a reserva de sala abaixo (sala_id, contra
+  // o catálogo global, com checagem de conflito de horário) o substitui.
+  // hora_inicio/hora_fim alimentam o cálculo automático da carga horária
+  // diária do cronograma (decisão 17/21). Reserva de sala só faz sentido
+  // pra modalidade presencial — ver bloqueio em setField() para "online".
   hora_inicio: "",
   hora_fim: "",
   sala_id: "",
   sala_outro_local: "",
   subtipo: "",
 };
-
-// Mesma lista fixa do backend (backend/src/lib/subtipos.js) — duplicada de
-// propósito (front não importa código do back), igual a outras
-// classificações já duplicadas nesta tela (ver normalizeStatus).
-const SUBTIPOS_OPCOES = [
-  "Prevenção ao Assédio Moral",
-  "Coaching de Coordenação e Gerência",
-  "Compliance e Ética",
-  "Desenvolvimento de Liderança",
-  "Treinamento Técnico",
-  "Avaliação Técnica",
-  "Outro",
-];
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -138,7 +125,12 @@ function parseMetadata(descricao) {
   const text = String(descricao || "");
   return {
     modalidade: text.match(/\[modalidade:([^\]]+)\]/i)?.[1]?.trim() || "",
-    sala: text.match(/\[sala:([^\]]*)\]/i)?.[1]?.trim() || "",
+    // O campo "Sala" (texto livre) foi removido do formulário (a reserva de
+    // sala real substituiu ele), mas turma antiga pode ainda ter a tag
+    // [sala:...] salva em `descricao` — continuamos removendo a tag daqui
+    // pra ela não aparecer crua em Observações; o valor em si não é mais
+    // usado em lugar nenhum e some de vez na próxima vez que a turma for
+    // salva.
     descricao: text.replace(/\[modalidade:[^\]]+\]\s*/gi, "").replace(/\[sala:[^\]]*\]\s*/gi, "").trim(),
   };
 }
@@ -146,7 +138,6 @@ function parseMetadata(descricao) {
 function buildDescricao(form) {
   const parts = [];
   if (form.modalidade) parts.push(`[modalidade:${form.modalidade}]`);
-  if (form.sala) parts.push(`[sala:${form.sala}]`);
   if (form.descricao) parts.push(String(form.descricao).trim());
   return parts.join(" ").trim();
 }
@@ -209,8 +200,20 @@ function Select({ value, onChange, options, placeholder, ...props }) {
   );
 }
 
-function TurmaCard({ item, necessidade, resumo, canEdit, canDelete, onEdit, onDelete }) {
-  const statusCode = resumo?.status_turma
+function TurmaCard({ item, necessidade, resumo, salaNome, canEdit, canDelete, onEdit, onDelete }) {
+  // /presenca-resumo (status_turma) tem mais estados do que esta tela usa
+  // ("Chamada pendente", "Sem cronograma", "Sem treinandos" — ver
+  // presencas/page.js, que trata os 7 estados). Desde que toda turma nova
+  // já nasce com cronograma (decisão "cronograma sempre"), "Chamada
+  // pendente" passou a aparecer bem mais cedo — inclusive para turma futura
+  // que só ainda não teve nenhum dia de aula. normalizeStatus() não
+  // reconhece esses estados extras e caía no default "planejado" mesmo
+  // quando a turma já estava em andamento (ou já tinha sido finalizada por
+  // data). Por isso: só confiamos no status_turma quando ele é um dos dois
+  // estados inequívocos (Concluída/Cancelada); para o resto, a data +
+  // status bruto da turma (getStatus) já resolvem "planejada vs. em
+  // andamento" corretamente e não dependem de a chamada ter sido lançada.
+  const statusCode = ["Concluída", "Cancelada"].includes(resumo?.status_turma)
     ? normalizeStatus(resumo.status_turma)
     : getStatus(item);
   const status = STATUS[statusCode] || STATUS.planejado;
@@ -260,7 +263,7 @@ function TurmaCard({ item, necessidade, resumo, canEdit, canDelete, onEdit, onDe
       <div style={cardBottom}>
         <div style={ownerLine}>
           <span>{item.instrutor || "Sem instrutor"}</span>
-          {meta.sala && <span>· {meta.sala}</span>}
+          {salaNome && <span>· {salaNome}</span>}
           {item.supervisor && <span>· {item.supervisor}</span>}
         </div>
         <div style={cardActions}>
@@ -294,6 +297,7 @@ function TreinamentosConteudo() {
   const [necessidades, setNecessidades] = useState([]);
   const [resumoPresenca, setResumoPresenca] = useState([]);
   const [salas, setSalas] = useState([]);
+  const [subtipos, setSubtipos] = useState([]);
   const [usuario, setUsuario] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -326,13 +330,14 @@ function TreinamentosConteudo() {
     try {
       setLoading(true);
       setError("");
-      const [turmasData, usuariosData, clientesData, resumoData, necessidadesData, salasData] = await Promise.all([
+      const [turmasData, usuariosData, clientesData, resumoData, necessidadesData, salasData, subtiposData] = await Promise.all([
         apiFetch("/treinamentos"),
         apiFetch("/usuarios").catch(() => []),
         apiFetch("/clientes").catch(() => []),
         apiFetch("/presenca-resumo").catch(() => null),
         apiFetch("/necessidades").catch(() => null),
         apiFetch("/salas").catch(() => []),
+        apiFetch("/subtipos").catch(() => []),
       ]);
       setTurmas(Array.isArray(turmasData) ? turmasData : []);
       setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
@@ -340,6 +345,7 @@ function TreinamentosConteudo() {
       setResumoPresenca(Array.isArray(resumoData?.itens) ? resumoData.itens : []);
       setNecessidades(normalizeNecessidades(necessidadesData));
       setSalas(Array.isArray(salasData) ? salasData.filter((s) => s.ativo) : []);
+      setSubtipos(Array.isArray(subtiposData) ? subtiposData : []);
     } catch (err) {
       setError(err.message || "Não foi possível carregar as turmas.");
     } finally {
@@ -355,6 +361,7 @@ function TreinamentosConteudo() {
 
   const resumoPorId = useMemo(() => new Map(resumoPresenca.map((x) => [Number(x.id), x])), [resumoPresenca]);
   const necessidadePorId = useMemo(() => new Map(necessidades.map((x) => [Number(x.id), x])), [necessidades]);
+  const salaNomePorId = useMemo(() => new Map(salas.map((x) => [Number(x.id), x.nome])), [salas]);
 
   const clientesOptions = useMemo(() => {
     const list = clientes.map((x) => x.nome).filter(Boolean).sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -456,7 +463,6 @@ function TreinamentosConteudo() {
       data_inicio: String(item.data_inicio || item.data || "").slice(0, 10),
       data_fim: String(item.data_fim || "").slice(0, 10),
       modalidade: meta.modalidade || "",
-      sala: meta.sala || "",
       descricao: meta.descricao || "",
       hora_inicio: String(item.hora_inicio || "").slice(0, 5),
       hora_fim: String(item.hora_fim || "").slice(0, 5),
@@ -498,6 +504,13 @@ function TreinamentosConteudo() {
     setForm((prev) => ({ ...prev, [name]: value }));
     setFormErrors((prev) => ({ ...prev, [name]: "" }));
     if (name === "cliente") setForm((prev) => ({ ...prev, cliente: value, necessidade_id: "" }));
+    // Turma online não usa sala física — ao selecionar essa modalidade, a
+    // reserva de sala (e o "outro local") é limpa e some do formulário, em
+    // vez de só desabilitar com um valor escondido ainda selecionado.
+    if (name === "modalidade" && value === "online") {
+      setForm((prev) => ({ ...prev, modalidade: value, sala_id: "", sala_outro_local: "" }));
+      setFormErrors((prev) => ({ ...prev, sala_outro_local: "" }));
+    }
   }
 
   function validate() {
@@ -624,7 +637,7 @@ function TreinamentosConteudo() {
       <section style={{ display: "grid", gap: 12 }}>
         {loading ? <div style={emptyState}><div style={spinner} />Carregando suas turmas...</div> : filtered.length === 0 ? (
           <div style={emptyState}><div style={emptyIcon}>🎓</div><strong>Nenhuma turma encontrada</strong><span>Ajuste os filtros ou crie uma nova turma para começar.</span>{canCreate && <button type="button" style={createButtonSmall} onClick={openCreate}>+ Criar nova turma</button>}</div>
-        ) : filtered.map((item) => <TurmaCard key={item.id} item={item} necessidade={necessidadePorId.get(Number(item.necessidade_id))} resumo={resumoPorId.get(Number(item.id))} canEdit={canEdit} canDelete={canDelete} onEdit={openEdit} onDelete={deleteTurma} />)}
+        ) : filtered.map((item) => <TurmaCard key={item.id} item={item} necessidade={necessidadePorId.get(Number(item.necessidade_id))} resumo={resumoPorId.get(Number(item.id))} salaNome={item.sala_outro_local || salaNomePorId.get(Number(item.sala_id)) || ""} canEdit={canEdit} canDelete={canDelete} onEdit={openEdit} onDelete={deleteTurma} />)}
       </section>
 
       {modalOpen && (
@@ -645,24 +658,27 @@ function TreinamentosConteudo() {
               <Field label="Data de início" required error={formErrors.data_inicio}><Input type="date" value={form.data_inicio} onChange={(e) => setField("data_inicio", e.target.value)} /></Field>
               <Field label="Data de fim" required error={formErrors.data_fim}><Input type="date" value={form.data_fim} onChange={(e) => setField("data_fim", e.target.value)} /></Field>
               <Field label="Modalidade" required error={formErrors.modalidade}><Select value={form.modalidade} onChange={(e) => setField("modalidade", e.target.value)} options={[{ value: "online", label: "Online" }, { value: "presencial", label: "Presencial" }]} placeholder="Selecione a modalidade" /></Field>
-              <Field label="Sala (anotação livre)" hint="Campo antigo, sem checagem de conflito — use a reserva de sala abaixo para bloquear horário."><Input value={form.sala} onChange={(e) => setField("sala", e.target.value)} placeholder="Ex.: Sala 01 / Lab 02" /></Field>
               <Field label="Horário de início" hint="Opcional — informe para o cronograma calcular a carga horária diária automaticamente."><Input type="time" value={form.hora_inicio} onChange={(e) => setField("hora_inicio", e.target.value)} /></Field>
               <Field label="Horário de fim" error={formErrors.hora_fim}><Input type="time" value={form.hora_fim} onChange={(e) => setField("hora_fim", e.target.value)} /></Field>
-              <Field label="Reserva de sala" hint="Verifica conflito de horário com outras turmas, de qualquer cliente.">
+              <Field
+                label="Reserva de sala"
+                hint={form.modalidade === "online" ? "Não se aplica a turma online." : "Verifica conflito de horário com outras turmas, de qualquer cliente."}
+              >
                 <Select
                   value={form.sala_id}
+                  disabled={form.modalidade === "online"}
                   onChange={(e) => setField("sala_id", e.target.value)}
                   options={[...salas.map((s) => ({ value: String(s.id), label: s.nome })), { value: "outro", label: "Outro local (fora do catálogo)" }]}
                   placeholder="Sem reserva de sala"
                 />
               </Field>
-              {form.sala_id === "outro" && (
+              {form.sala_id === "outro" && form.modalidade !== "online" && (
                 <Field label="Qual local?" required error={formErrors.sala_outro_local}>
                   <Input value={form.sala_outro_local} onChange={(e) => setField("sala_outro_local", e.target.value)} placeholder="Ex.: Auditório do cliente" />
                 </Field>
               )}
               <Field label="Subdivisão / subtipo" hint="Usado para comprovação de horas por subdivisão (ex.: MPT). Selecione &quot;Avaliação Técnica&quot; para habilitar a Presença Nominal/Reembolso de Transporte.">
-                <Select value={form.subtipo} onChange={(e) => setField("subtipo", e.target.value)} options={SUBTIPOS_OPCOES.map((x) => ({ value: x, label: x }))} placeholder="Sem subdivisão" />
+                <Select value={form.subtipo} onChange={(e) => setField("subtipo", e.target.value)} options={subtipos.map((x) => ({ value: x.nome, label: x.nome }))} placeholder="Sem subdivisão" />
               </Field>
               <Field label="Status"><Select value={form.status} onChange={(e) => setField("status", e.target.value)} options={Object.entries(STATUS).map(([value, x]) => ({ value, label: x.label }))} placeholder="Selecione o status" /></Field>
               <Field label="Observações"><textarea value={form.descricao} onChange={(e) => setField("descricao", e.target.value)} placeholder="Informações complementares" style={{ ...inputStyle, minHeight: 92, resize: "vertical" }} /></Field>
