@@ -18,14 +18,6 @@ function formatDate(value) {
   return formatDateBR(value, "-");
 }
 
-function normalizeStatus(status) {
-  const key = String(status || "").toLowerCase();
-  if (key.includes("concl")) return "Concluída";
-  if (key.includes("andamento")) return "Em andamento";
-  if (key.includes("cancel")) return "Cancelada";
-  return "Planejada";
-}
-
 function parseModalidade(descricao, modalidade) {
   if (modalidade === "presencial") return "Presencial";
   if (modalidade === "online") return "Online";
@@ -125,7 +117,12 @@ function buildNarrativa(kpis = {}, filters = {}) {
   if (filters.cliente) recortes.push(`cliente ${filters.cliente}`);
   if (filters.instrutor) recortes.push(`instrutor ${filters.instrutor}`);
   if (filters.supervisor) recortes.push(`supervisor ${filters.supervisor}`);
-  if (filters.status) recortes.push(`status ${normalizeStatus(filters.status)}`);
+  // filters.status já chega em Title Case direto do backend (ver
+  // statusCanonicoDaTurma em dashboardTreinamentosController.js) — não
+  // precisa mais de normalização própria aqui (essa normalização local é
+  // que colapsava "Chamada pendente" em "Planejada" — bug corrigido junto
+  // com a tabela "Turmas recentes" abaixo).
+  if (filters.status) recortes.push(`status ${filters.status}`);
   if (filters.modalidade) recortes.push(`modalidade ${filters.modalidade === "online" ? "Online" : "Presencial"}`);
 
   if (recortes.length) {
@@ -742,7 +739,7 @@ export default function DashboardPage() {
                         <td style={td}>{item.cliente || "-"}</td>
                         <td style={td}>{item.instrutor || "-"}</td>
                         <td style={td}>{parseModalidade(item.descricao, item.modalidade)}</td>
-                        <td style={td}>{normalizeStatus(item.status_canonico || item.status)}</td>
+                        <td style={td}>{item.status_canonico || "—"}</td>
                         <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
                         <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
                         <td style={td}>
