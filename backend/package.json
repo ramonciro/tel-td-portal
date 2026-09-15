@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "import:dashboard": "node src/scripts/importDashboardExcel.js"
+    "import:dashboard": "node src/scripts/importDashboardExcel.js",
+    "migrar:cronograma": "node src/scripts/migrarCronogramaRetroativo.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
