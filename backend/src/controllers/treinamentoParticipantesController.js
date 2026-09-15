@@ -220,9 +220,13 @@ async function importarParticipantesExcel(req, res) {
       });
     }
 
+    // Ajuste 15/09/2026 (fim de tarde): "matricula" saiu da lista de
+    // colunas obrigatórias — turma de Avaliação Técnica (Reembolso de
+    // Transporte) importa gente sem matrícula/login no RH de origem, só
+    // com CPF. A planilha agora só precisa ter matrícula OU cpf (pelo
+    // menos uma das duas colunas), não as duas.
     const colunasObrigatorias = [
       "nome",
-      "matricula",
       "cliente",
       "turma",
       "supervisor",
@@ -239,6 +243,13 @@ async function importarParticipantesExcel(req, res) {
       return res.status(400).json({
         ok: false,
         message: `Colunas obrigatórias ausentes: ${faltando.join(", ")}`,
+      });
+    }
+
+    if (!("matricula" in primeiraLinha) && !("cpf" in primeiraLinha)) {
+      return res.status(400).json({
+        ok: false,
+        message: "A planilha precisa ter pelo menos uma das colunas: matricula ou cpf.",
       });
     }
 
@@ -476,10 +487,27 @@ async function createParticipanteTreinamento(req, res) {
       cpf,
     } = req.body || {};
 
-    if (!treinamento_id || !String(nome || "").trim() || !String(matricula || "").trim()) {
+    const nomeTrim = String(nome || "").trim();
+    const matriculaTrim = String(matricula || "").trim();
+    const cpfNormalizado = normalizarCpf(cpf);
+
+    // Ajuste 15/09/2026 (fim de tarde): matrícula era obrigatória pra
+    // cadastrar qualquer participante, mas em turma de Avaliação Técnica
+    // (a mesma usada no Reembolso de Transporte) os colaboradores muitas
+    // vezes não têm matrícula/login no sistema de RH de origem — só CPF.
+    // Passa a exigir nome + PELO MENOS UM dos dois (matrícula OU CPF), não
+    // mais os dois obrigatoriamente.
+    if (!treinamento_id || !nomeTrim || (!matriculaTrim && !cpfNormalizado)) {
       return res.status(400).json({
         ok: false,
-        message: "Informe treinamento, nome e matrícula do participante",
+        message: "Informe treinamento, nome, e pelo menos matrícula ou CPF do participante",
+      });
+    }
+
+    if (cpf && !cpfNormalizado) {
+      return res.status(400).json({
+        ok: false,
+        message: "CPF inválido — informe os 11 dígitos, com ou sem pontuação",
       });
     }
 
@@ -488,20 +516,31 @@ async function createParticipanteTreinamento(req, res) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
+    // Dedup: só compara por matrícula/CPF quando o valor foi informado —
+    // antes, comparar sempre com `matricula = ?` fazia dois participantes
+    // SEM matrícula (string vazia) colidirem entre si e bloquear o
+    // cadastro do segundo, mesmo sendo pessoas diferentes (exatamente o
+    // caso de Avaliação Técnica, que agora cadastra vários participantes
+    // só com CPF, sem matrícula nenhuma).
+    const condicoesDup = ["nome = ?"];
+    const paramsDup = [nomeTrim];
+    if (matriculaTrim) { condicoesDup.push("matricula = ?"); paramsDup.push(matriculaTrim); }
+    if (cpfNormalizado) { condicoesDup.push("cpf = ?"); paramsDup.push(cpfNormalizado); }
+
     const [existentes] = await db.query(
       `
       SELECT id
       FROM treinamento_participantes
-      WHERE treinamento_id = ? AND (matricula = ? OR nome = ?)
+      WHERE treinamento_id = ? AND (${condicoesDup.join(" OR ")})
       LIMIT 1
       `,
-      [treinamento_id, String(matricula).trim(), String(nome).trim()]
+      [treinamento_id, ...paramsDup]
     );
 
     if (existentes.length) {
       return res.status(409).json({
         ok: false,
-        message: "Já existe participante com esta matrícula ou nome nesta turma",
+        message: "Já existe participante com este nome, matrícula ou CPF nesta turma",
       });
     }
 
@@ -525,14 +564,14 @@ async function createParticipanteTreinamento(req, res) {
       `,
       [
         treinamento_id,
-        String(nome || "").trim(),
-        String(matricula || "").trim(),
+        nomeTrim,
+        matriculaTrim,
         String(cliente || "").trim(),
         String(turma || "").trim(),
         String(supervisor || "").trim(),
         String(operacao || "").trim(),
         formatExcelDateToMySQL(data_admissao),
-        normalizarCpf(cpf),
+        cpfNormalizado,
         "pendente",
         null,
       ]
