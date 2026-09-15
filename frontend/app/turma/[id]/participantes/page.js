@@ -10,7 +10,14 @@ import { colors }                           from "../../../../lib/theme";
 function formatDate(v) { return formatDateBR(v); }
 
 function emptyForm(cliente = "", turma = "", supervisor = "") {
-  return { nome: "", matricula: "", cliente, turma, supervisor, operacao: "", data_admissao: "" };
+  return { nome: "", matricula: "", cpf: "", cliente, turma, supervisor, operacao: "", data_admissao: "" };
+}
+
+function formatCpf(cpf) {
+  if (!cpf) return "—";
+  const digits = String(cpf).replace(/\D/g, "");
+  if (digits.length !== 11) return cpf;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
 /* ─── STATUS de presença → estilo ─── */
@@ -101,15 +108,19 @@ export default function ParticipantesTurmaPage() {
   }
 
   async function adicionarParticipanteManual() {
-    if (!form.nome || !form.matricula || !form.cliente || !form.turma) {
-      setErro("Preencha nome, matrícula, cliente e turma."); return;
+    // Ajuste 15/09/2026 (fim de tarde): matrícula deixou de ser obrigatória
+    // — turma de Avaliação Técnica cadastra gente sem matrícula/login no RH
+    // de origem, identificada só pelo CPF. Agora exige nome, cliente, turma
+    // e pelo menos um dos dois (matrícula OU CPF).
+    if (!form.nome || !form.cliente || !form.turma || (!form.matricula && !form.cpf)) {
+      setErro("Preencha nome, cliente, turma, e pelo menos matrícula ou CPF."); return;
     }
     try {
       setSalvando(true); setErro(""); setSucesso("");
       await apiFetch(`/treinamentos/${id}/participantes`, {
         method: "POST",
         body: JSON.stringify({
-          nome: form.nome, matricula: form.matricula, cliente: form.cliente,
+          nome: form.nome, matricula: form.matricula, cpf: form.cpf, cliente: form.cliente,
           turma: form.turma, supervisor: form.supervisor,
           operacao: form.operacao, data_admissao: form.data_admissao || "",
         }),
@@ -160,7 +171,7 @@ export default function ParticipantesTurmaPage() {
     const t = busca.trim().toLowerCase();
     if (!t) return participantes;
     return participantes.filter((p) =>
-      [p.nome, p.matricula, p.operacao, p.supervisor]
+      [p.nome, p.matricula, p.cpf, p.operacao, p.supervisor]
         .join(" ").toLowerCase().includes(t)
     );
   }, [participantes, busca]);
@@ -226,9 +237,11 @@ export default function ParticipantesTurmaPage() {
             </button>
           </div>
           <p style={helperText}>
-            Colunas obrigatórias: <strong>nome</strong>, <strong>matricula</strong>,{" "}
-            <strong>cliente</strong>, <strong>turma</strong>, <strong>supervisor</strong>,{" "}
-            <strong>operacao</strong>, <strong>data_admissao</strong>.
+            Colunas obrigatórias: <strong>nome</strong>, <strong>cliente</strong>,{" "}
+            <strong>turma</strong>, <strong>supervisor</strong>,{" "}
+            <strong>operacao</strong>, <strong>data_admissao</strong>, e pelo menos uma
+            das duas: <strong>matricula</strong> ou <strong>cpf</strong> (em turma de
+            Avaliação Técnica, sem matrícula/login no RH de origem, use a coluna cpf).
           </p>
         </div>
       )}
@@ -241,7 +254,8 @@ export default function ParticipantesTurmaPage() {
           <div style={formGrid}>
             {[
               { key: "nome",          label: "Nome",          placeholder: "Nome completo" },
-              { key: "matricula",     label: "Matrícula",     placeholder: "Matrícula" },
+              { key: "matricula",     label: "Matrícula",     placeholder: "Matrícula (ou deixe em branco se só tiver CPF)" },
+              { key: "cpf",           label: "CPF",           placeholder: "Somente números" },
               { key: "cliente",       label: "Cliente",       placeholder: "Cliente" },
               { key: "turma",         label: "Turma",         placeholder: "Turma" },
               { key: "supervisor",    label: "Supervisor",    placeholder: "Supervisor" },
@@ -267,6 +281,11 @@ export default function ParticipantesTurmaPage() {
               />
             </div>
           </div>
+          <p style={helperText}>
+            Preencha matrícula, CPF, ou os dois — mas pelo menos um dos dois é obrigatório.
+            Em turma de Avaliação Técnica, onde o colaborador não tem login/matrícula no
+            sistema de RH de origem, cadastre só com o CPF.
+          </p>
           <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
             <button style={btnCoral} onClick={adicionarParticipanteManual} disabled={salvando}>
               {salvando ? "Salvando…" : "Adicionar participante"}
@@ -306,7 +325,7 @@ export default function ParticipantesTurmaPage() {
           <table style={table}>
             <thead>
               <tr>
-                {["Nome","Matrícula","Cliente","Supervisor","Operação","Admissão","Status","Freq.",""].map((h) => (
+                {["Nome","Matrícula","CPF","Cliente","Supervisor","Operação","Admissão","Status","Freq.",""].map((h) => (
                   <th key={h} style={th}>{h}</th>
                 ))}
               </tr>
@@ -314,7 +333,7 @@ export default function ParticipantesTurmaPage() {
             <tbody>
               {listaFiltrada.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={tdVazio}>
+                  <td colSpan={10} style={tdVazio}>
                     {busca ? "Nenhum participante encontrado para a busca." : "Nenhum participante importado ainda."}
                   </td>
                 </tr>
@@ -328,7 +347,8 @@ export default function ParticipantesTurmaPage() {
                   return (
                     <tr key={item.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
                       <td style={{ ...td, fontWeight: 600 }}>{item.nome}</td>
-                      <td style={{ ...td, color: "#64748b" }}>{item.matricula}</td>
+                      <td style={{ ...td, color: "#64748b" }}>{item.matricula || "—"}</td>
+                      <td style={{ ...td, color: "#64748b" }}>{formatCpf(item.cpf)}</td>
                       <td style={td}>{item.cliente}</td>
                       <td style={td}>{item.supervisor || "—"}</td>
                       <td style={td}>{item.operacao   || "—"}</td>
