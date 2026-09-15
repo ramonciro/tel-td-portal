@@ -19,8 +19,14 @@ const menuItems = [
   { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "map", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
   { href: "/necessidades",  label: "Necessidades",           icon: "target", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/trilhas",       label: "Trilhas",                icon: "compass", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/treinamentos",  label: "Treinamentos",           icon: "cap", roles: ["coordenador", "supervisor", "instrutor"] },
-  { href: "/presencas",     label: "Gestão de Turmas",       icon: "folder", roles: ["coordenador", "supervisor", "instrutor"] },
+  // Ajuste pós-entrega do Pacote Salas (15/09/2026): o backend já liberava
+  // Treinamentos e Presenças (Gestão de Turmas) para o perfil Assistente de
+  // Treinamento desde a Fase 1 (decisão 12 — acesso cross-tenant nessas duas
+  // telas), mas o menu nunca tinha sido atualizado porque não existia como
+  // criar um usuário com esse perfil. Sem isso, o usuário Assistente
+  // logaria e veria o menu lateral vazio, mesmo com acesso de API completo.
+  { href: "/treinamentos",  label: "Treinamentos",           icon: "cap", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento"] },
+  { href: "/presencas",     label: "Gestão de Turmas",       icon: "folder", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento"] },
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "backpack", roles: ["instrutor", "treinando"] },
   { href: "/meu-desempenho", label: "Meu Desempenho",        icon: "trending", roles: ["instrutor"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
@@ -107,9 +113,19 @@ export default function PortalShell({
 
   // Sprint 4: super_admin não pertence a nenhuma rota operacional.
   // Se cair em qualquer página que não seja /admin/*, redireciona.
+  // Exceção (ajuste pós-entrega do Pacote Salas, 15/09/2026, pedido do
+  // Ramon): /salas e /subtipos são catálogos GLOBAIS (sem empresa_id, o
+  // Super Admin já tem acesso de escrita neles no backend via bypass
+  // automático do authorizeRoles) — faz sentido ele conseguir abri-los
+  // direto, sem passar por /admin.
+  const ROTAS_GLOBAIS_LIBERADAS_SUPER_ADMIN = ["/salas", "/subtipos"];
   useEffect(() => {
     if (!user) return;
-    if (user.perfil === "super_admin" && !pathname.startsWith("/admin")) {
+    if (
+      user.perfil === "super_admin" &&
+      !pathname.startsWith("/admin") &&
+      !ROTAS_GLOBAIS_LIBERADAS_SUPER_ADMIN.some((rota) => isRouteActive(pathname, rota))
+    ) {
       router.replace("/admin");
       return;
     }
