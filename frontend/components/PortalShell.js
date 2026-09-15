@@ -33,8 +33,21 @@ const menuItems = [
   // sabendo a URL de cor. Restrito só a ela por enquanto (Coordenador e os
   // demais perfis continuam sem essas duas no menu — mesma decisão "definir
   // no final" que Ramon já tinha adiado; ele já acessa ambas por URL direta).
-  { href: "/salas",         label: "Salas",                  icon: "building", roles: ["assistente_treinamento"] },
-  { href: "/reembolso-transporte", label: "Reembolso de Transporte", icon: "bus", roles: ["assistente_treinamento"] },
+  //
+  // Reaplicado 15/09/2026 (auditoria — a separação abaixo tinha se perdido
+  // numa entrega anterior, deixando `roles` fazer as duas coisas ao mesmo
+  // tempo: quem decide o que aparece no MENU e quem decide o que a própria
+  // tela deixa abrir por URL direta — currentAllowed, mais abaixo). Como as
+  // duas telas são liberadas pro Coordenador também no backend
+  // (authorizeRoles("coordenador", "assistente_treinamento") em
+  // /api/salas e /api/reembolso-transporte, ver index.js), usar só `roles`
+  // com um único perfil bloqueava o Coordenador de abrir a URL direta —
+  // contrariando o próprio comentário acima ("ele já acessa ambas por URL
+  // direta"). `roles` volta a ser o controle de ACESSO de verdade (o mesmo
+  // conjunto liberado no backend); `menuRoles`, quando presente, é só quem
+  // vê o item no menu lateral — nunca mexe em currentAllowed.
+  { href: "/salas",         label: "Salas",                  icon: "building", roles: ["coordenador", "assistente_treinamento"], menuRoles: ["assistente_treinamento"] },
+  { href: "/reembolso-transporte", label: "Reembolso de Transporte", icon: "bus", roles: ["coordenador", "assistente_treinamento"], menuRoles: ["assistente_treinamento"] },
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "backpack", roles: ["instrutor", "treinando"] },
   { href: "/meu-desempenho", label: "Meu Desempenho",        icon: "trending", roles: ["instrutor"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
@@ -179,7 +192,10 @@ export default function PortalShell({
       return menuItems.filter((item) => item.roles.includes("super_admin"));
     }
     return menuItems.filter((item) => {
-      const roleOk = hasSomeRole(user, item.roles);
+      // menuRoles (quando presente) decide só a visibilidade no menu lateral
+      // — sempre um subconjunto de `roles`, nunca mais permissivo. Sem
+      // menuRoles, cai no comportamento de sempre (menu = acesso).
+      const roleOk = hasSomeRole(user, item.menuRoles || item.roles);
       if (!roleOk) return false;
       if (item.requiresOceanAccess) return hasOceanAccess(user);
       return true;
