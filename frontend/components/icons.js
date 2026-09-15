@@ -119,6 +119,18 @@ const ICONS = {
       <path d="m9.2 12 1.9 1.9 3.7-3.9" />
     </>
   ),
+  // Ajuste pós-entrega do Pacote Salas (15/09/2026): ícone novo para o item
+  // de menu de Reembolso de Transporte (Ramon pediu que o perfil Assistente
+  // de Treinamento passasse a ver essa página no menu).
+  bus: (
+    <>
+      <rect x="4" y="5" width="16" height="11" rx="2.5" />
+      <path d="M4 12h16" />
+      <path d="M7 5v7M17 5v7" />
+      <circle cx="8" cy="19" r="1.6" />
+      <circle cx="16" cy="19" r="1.6" />
+    </>
+  ),
 };
 
 export const HAS_ICON = (key) => Boolean(ICONS[key]);
