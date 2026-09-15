@@ -1,6 +1,39 @@
 const XLSX = require("xlsx");
 const db = require("../lib/db");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
+const { tenantScopeFor } = require("../lib/tenantScope");
+
+// Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
+// Assistente de Treinamento enxerga participantes/chamada de qualquer
+// tenant nesta tela (Gestão de Turmas) — decidido endpoint a endpoint via
+// tenantScopeFor, nunca no clientMiddleware (ver lib/tenantScope.js).
+const CROSS_TENANT_ROLES = ["assistente_treinamento"];
+
+// Decisão 14 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): CPF
+// é um campo novo, visível/exportável só para Assistente de Treinamento,
+// Coordenador e Super Admin. A coluna existe pra todo mundo (ver migrate.js);
+// o corte é feito aqui, no que a API devolve — supervisor/instrutor/
+// treinando continuam vendo os demais campos do participante normalmente,
+// só sem o CPF.
+const PERFIS_COM_ACESSO_CPF = ["coordenador", "assistente_treinamento", "super_admin"];
+
+function usuarioPodeVerCpf(req) {
+  const perfil = String(req.user?.perfil || "").toLowerCase().trim();
+  return PERFIS_COM_ACESSO_CPF.includes(perfil);
+}
+
+function removerCpfSeNecessario(req, linhas) {
+  if (usuarioPodeVerCpf(req)) return linhas;
+  return linhas.map((linha) => {
+    const { cpf, ...resto } = linha;
+    return resto;
+  });
+}
+
+function normalizarCpf(valor) {
+  const digitos = String(valor || "").replace(/\D/g, "");
+  return digitos.length === 11 ? digitos : null;
+}
 
 function parseLocalDate(dateValue) {
   if (!dateValue) return null;
@@ -80,8 +113,9 @@ async function getParticipantesByTreinamento(req, res) {
   try {
     const { id } = req.params;
     const dataChamada = req.query?.data || null;
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
 
-    if (!(await treinamentoPertenceAoTenant(db, id, req.empresaId, req))) {
+    if (!(await treinamentoPertenceAoTenant(db, id, empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -95,6 +129,7 @@ async function getParticipantesByTreinamento(req, res) {
           tp.treinamento_id,
           tp.nome,
           tp.matricula,
+          tp.cpf,
           tp.cliente,
           tp.turma,
           tp.supervisor,
@@ -122,6 +157,7 @@ async function getParticipantesByTreinamento(req, res) {
           treinamento_id,
           nome,
           matricula,
+          cpf,
           cliente,
           turma,
           supervisor,
@@ -139,7 +175,7 @@ async function getParticipantesByTreinamento(req, res) {
       rows = result;
     }
 
-    return res.json(rows);
+    return res.json(removerCpfSeNecessario(req, rows));
   } catch (error) {
     console.error("[treinamentoParticipantesController]", error.message || error);
     return res.status(500).json({
@@ -166,7 +202,8 @@ async function importarParticipantesExcel(req, res) {
       });
     }
 
-    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId, req))) {
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, empresaId, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -242,10 +279,11 @@ async function importarParticipantesExcel(req, res) {
             supervisor,
             operacao,
             data_admissao,
+            cpf,
             status_presenca,
             justificativa
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
           [
             treinamento_id,
@@ -256,6 +294,13 @@ async function importarParticipantesExcel(req, res) {
             String(linha.supervisor || "").trim(),
             String(linha.operacao || "").trim(),
             formatExcelDateToMySQL(linha.data_admissao),
+            // Coluna opcional na planilha — a maioria dos modelos hoje em
+            // uso não a tem, então nunca entra em `colunasObrigatorias`
+            // (ver mais acima); quando presente, precisa bater 11 dígitos
+            // ou é descartada silenciosamente (mesmo padrão defensivo do
+            // resto do importador, que também não rejeita a planilha
+            // inteira por uma célula individual mal formatada).
+            normalizarCpf(linha.cpf),
             "pendente",
             null,
           ]
@@ -316,8 +361,22 @@ async function salvarChamadaParticipantes(req, res) {
       });
     }
 
-    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId, req))) {
+    const { empresaId: empresaIdChamada, crossTenant } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, empresaIdChamada, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
+    // Quando quem está salvando é a Assistente (acesso cross-tenant), o
+    // `empresa_id` gravado na presença tem que ser o da TURMA (o tenant de
+    // verdade dono do registro), nunca o da própria conta da Assistente
+    // (que pode nem ter uma empresa própria) nem null — gravar errado aqui
+    // faria a chamada sumir da tela /presencas do tenant certo, o mesmo
+    // tipo de vazamento silencioso já corrigido na Fase 4 para este exato
+    // fluxo (ver comentário logo abaixo, "faltava gravar empresa_id").
+    let empresaIdParaGravar = req.empresaId || null;
+    if (crossTenant) {
+      const [[turmaReal]] = await db.query(`SELECT empresa_id FROM treinamentos WHERE id = ? LIMIT 1`, [treinamento_id]);
+      empresaIdParaGravar = turmaReal?.empresa_id ?? null;
     }
 
     for (const item of participantes) {
@@ -369,7 +428,7 @@ async function salvarChamadaParticipantes(req, res) {
             presente,
             status,
             item.justificativa || null,
-            req.empresaId || null,
+            empresaIdParaGravar,
           ]
         );
       }
@@ -414,6 +473,7 @@ async function createParticipanteTreinamento(req, res) {
       supervisor,
       operacao,
       data_admissao,
+      cpf,
     } = req.body || {};
 
     if (!treinamento_id || !String(nome || "").trim() || !String(matricula || "").trim()) {
@@ -423,7 +483,8 @@ async function createParticipanteTreinamento(req, res) {
       });
     }
 
-    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, req.empresaId, req))) {
+    const { empresaId: empresaIdParticipante } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    if (!(await treinamentoPertenceAoTenant(db, treinamento_id, empresaIdParticipante, req))) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
 
@@ -456,10 +517,11 @@ async function createParticipanteTreinamento(req, res) {
         supervisor,
         operacao,
         data_admissao,
+        cpf,
         status_presenca,
         justificativa
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         treinamento_id,
@@ -470,6 +532,7 @@ async function createParticipanteTreinamento(req, res) {
         String(supervisor || "").trim(),
         String(operacao || "").trim(),
         formatExcelDateToMySQL(data_admissao),
+        normalizarCpf(cpf),
         "pendente",
         null,
       ]
@@ -503,10 +566,11 @@ async function createParticipanteTreinamento(req, res) {
 async function deleteParticipanteTreinamento(req, res) {
   try {
     const { id } = req.params;
-    const tenantJoin = req.empresaId
+    const { empresaId: empresaIdDelete } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const tenantJoin = empresaIdDelete
       ? " AND EXISTS (SELECT 1 FROM treinamentos t WHERE t.id = tp.treinamento_id AND t.empresa_id = ?)"
       : "";
-    const params = req.empresaId ? [id, req.empresaId] : [id];
+    const params = empresaIdDelete ? [id, empresaIdDelete] : [id];
 
     // Pacote 3 (acesso restrito por cliente, generalizar): junta o cliente
     // do treinamento pra confirmar, abaixo, que instrutor/treinando só
@@ -572,10 +636,11 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
     }
 
     const placeholders = ids.map(() => "?").join(", ");
-    const tenantJoin = req.empresaId
+    const { empresaId: empresaIdBulk } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const tenantJoin = empresaIdBulk
       ? " AND EXISTS (SELECT 1 FROM treinamentos t WHERE t.id = tp.treinamento_id AND t.empresa_id = ?)"
       : "";
-    const params = req.empresaId ? [...ids, req.empresaId] : ids;
+    const params = empresaIdBulk ? [...ids, empresaIdBulk] : ids;
 
     // Pacote 3 (acesso restrito por cliente, generalizar): mesma junção com
     // o cliente do treinamento usada em deleteParticipanteTreinamento —

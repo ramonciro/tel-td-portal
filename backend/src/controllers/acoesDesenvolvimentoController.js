@@ -1,6 +1,7 @@
 const db = require("../lib/db");
 const XLSX = require("xlsx");
 const { usuarioPertenceAoTenant, treinamentoPertenceAoTenant } = require("../services/tenantValidation");
+const { normalizeSubtipo } = require("../lib/subtipos");
 
 function toNumber(value, fallback = 0) {
   const num = Number(value);
@@ -99,7 +100,12 @@ async function criar(req, res) {
     const horasPlanejadas = toNumber(body.horas_planejadas, 0);
     const horasRealizadas = toNumber(body.horas_realizadas, 0);
     const tipoAcao = normalizeTipoAcao(body.tipo_acao);
-    const subtipo = String(body.subtipo || "").trim() || null;
+    // Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026), achado da
+    // auditoria de riscos cruzados: subtipo nunca teve validação (qualquer
+    // string era aceita), o que corrompe silenciosamente a agregação usada
+    // depois para comprovação ao MPT. Agora valida contra a lista fixa
+    // compartilhada com treinamentos.subtipo (ver lib/subtipos.js).
+    const subtipo = normalizeSubtipo(body.subtipo);
     const publicoAlvo = String(body.publico_alvo || "").trim() || null;
     const obrigatoria = body.obrigatoria ? 1 : 0;
     const turmaId = body.turma_id ? Number(body.turma_id) : null;
@@ -221,7 +227,12 @@ async function atualizar(req, res) {
     const horasPlanejadas = toNumber(body.horas_planejadas, 0);
     const horasRealizadas = toNumber(body.horas_realizadas, 0);
     const tipoAcao = normalizeTipoAcao(body.tipo_acao);
-    const subtipo = String(body.subtipo || "").trim() || null;
+    // Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026), achado da
+    // auditoria de riscos cruzados: subtipo nunca teve validação (qualquer
+    // string era aceita), o que corrompe silenciosamente a agregação usada
+    // depois para comprovação ao MPT. Agora valida contra a lista fixa
+    // compartilhada com treinamentos.subtipo (ver lib/subtipos.js).
+    const subtipo = normalizeSubtipo(body.subtipo);
     const publicoAlvo = String(body.publico_alvo || "").trim() || null;
     const obrigatoria = body.obrigatoria ? 1 : 0;
     const turmaId = body.turma_id ? Number(body.turma_id) : null;

@@ -1,4 +1,12 @@
 const pool = require("../lib/db");
+const { montarLinhasCronograma, toDateOnly: toDateOnlyGerador } = require("../lib/cronogramaGenerator");
+const { tenantScopeFor } = require("../lib/tenantScope");
+
+// Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
+// Assistente de Treinamento enxerga o cronograma de qualquer tenant nesta
+// tela (Gestão de Turmas) — decidido aqui, por chamada, nunca no
+// clientMiddleware (ver lib/tenantScope.js).
+const CROSS_TENANT_ROLES = ["assistente_treinamento"];
 
 function parseDateUTC(dateValue) {
   if (!dateValue) return null;
@@ -84,7 +92,8 @@ function normalizeStatus(value) {
 // entityCrud (multiTenant: true) no momento da criação da turma. Sem
 // empresaId (login legado/super_admin) o filtro não entra, preservando o
 // comportamento de hoje.
-function tenantJoinTreinamento(empresaId, alias = "t") {
+function tenantJoinTreinamento(req, alias = "t") {
+  const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
   return empresaId ? ` AND ${alias}.empresa_id = ${pool.escape(empresaId)}` : "";
 }
 
@@ -125,7 +134,7 @@ async function listTurmaAulas(req, res) {
         a.atualizado_em
       FROM turma_aulas a
       JOIN treinamentos t ON t.id = a.treinamento_id
-      WHERE a.treinamento_id = ?${tenantJoinTreinamento(req.empresaId)}
+      WHERE a.treinamento_id = ?${tenantJoinTreinamento(req)}
       ORDER BY a.dia_numero ASC, a.ordem ASC, a.id ASC
       `,
       [treinamento_id]
@@ -170,7 +179,7 @@ async function getTurmaAulaById(req, res) {
         a.atualizado_em
       FROM turma_aulas a
       JOIN treinamentos t ON t.id = a.treinamento_id
-      WHERE a.id = ?${tenantJoinTreinamento(req.empresaId)}
+      WHERE a.id = ?${tenantJoinTreinamento(req)}
       LIMIT 1
       `,
       [id]
@@ -223,7 +232,7 @@ async function createTurmaAula(req, res) {
     }
 
     const [treinamentoDono] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
       [treinamento_id]
     );
     if (!treinamentoDono.length) {
@@ -322,7 +331,7 @@ async function updateTurmaAula(req, res) {
     }
 
     const [aulaAtual] = await pool.query(
-      `SELECT a.id FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req.empresaId)} LIMIT 1`,
+      `SELECT a.id FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req)} LIMIT 1`,
       [id]
     );
     if (!aulaAtual.length) {
@@ -330,7 +339,7 @@ async function updateTurmaAula(req, res) {
     }
 
     const [treinamentoDestino] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
       [treinamento_id]
     );
     if (!treinamentoDestino.length) {
@@ -401,7 +410,7 @@ async function deleteTurmaAula(req, res) {
     const { id } = req.params;
 
     const [aulaAtual] = await pool.query(
-      `SELECT a.id FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req.empresaId)} LIMIT 1`,
+      `SELECT a.id FROM turma_aulas a JOIN treinamentos t ON t.id = a.treinamento_id WHERE a.id = ?${tenantJoinTreinamento(req)} LIMIT 1`,
       [id]
     );
     if (!aulaAtual.length) {
@@ -422,6 +431,48 @@ async function deleteTurmaAula(req, res) {
   }
 }
 
+// Insere as linhas já calculadas por montarLinhasCronograma() — usado tanto
+// pelo endpoint manual abaixo quanto pela geração automática na criação da
+// turma (decisão 21, ver gerarCronogramaAutomatico). Não faz nenhum cálculo
+// por conta própria — isso é responsabilidade única de cronogramaGenerator.js,
+// pra manual/automático/migração retroativa nunca divergirem.
+async function inserirLinhasCronograma(treinamentoId, linhas) {
+  for (const linha of linhas) {
+    await pool.query(
+      `
+      INSERT INTO turma_aulas
+      (
+        treinamento_id,
+        dia_numero,
+        data_aula,
+        ordem,
+        titulo,
+        objetivo,
+        conteudo_planejado,
+        metodologia,
+        carga_horaria_planejada,
+        instrutor_responsavel,
+        status_execucao
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        Number(treinamentoId),
+        linha.dia_numero,
+        linha.data_aula,
+        1,
+        linha.titulo,
+        linha.objetivo,
+        null,
+        null,
+        linha.carga_horaria_planejada,
+        linha.instrutor_responsavel,
+        linha.status_execucao,
+      ]
+    );
+  }
+}
+
 async function gerarCronogramaTurma(req, res) {
   try {
     const { treinamento_id } = req.body || {};
@@ -439,11 +490,15 @@ async function gerarCronogramaTurma(req, res) {
         id,
         tema,
         instrutor,
+        status,
         data,
         data_inicio,
-        data_fim
+        data_fim,
+        carga_horaria,
+        hora_inicio,
+        hora_fim
       FROM treinamentos
-      WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")}
+      WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")}
       LIMIT 1
       `,
       [treinamento_id]
@@ -457,17 +512,6 @@ async function gerarCronogramaTurma(req, res) {
     }
 
     const turma = treinamentos[0];
-    const inicio = toDateOnly(turma.data_inicio || turma.data);
-    const fim = toDateOnly(turma.data_fim || turma.data_inicio || turma.data);
-
-    if (!inicio || !fim) {
-      return res.status(400).json({
-        ok: false,
-        message: "A turma precisa ter data de início e fim",
-      });
-    }
-
-    const totalDias = diffDaysInclusive(inicio, fim);
 
     const [existentes] = await pool.query(
       `SELECT COUNT(*) AS total FROM turma_aulas WHERE treinamento_id = ?`,
@@ -481,60 +525,68 @@ async function gerarCronogramaTurma(req, res) {
       });
     }
 
-    let diaNumero = 1;
+    const hojeISO = toDateOnlyGerador(new Date());
+    const { linhas, pulada, motivoPulo } = montarLinhasCronograma({ turma, hojeISO });
 
-    for (let i = 0; i < totalDias; i += 1) {
-      const dataAula = addDays(inicio, i);
-
-      if (!dataAula) continue;
-      if (isSunday(dataAula)) continue;
-
-      await pool.query(
-        `
-        INSERT INTO turma_aulas
-        (
-          treinamento_id,
-          dia_numero,
-          data_aula,
-          ordem,
-          titulo,
-          objetivo,
-          conteudo_planejado,
-          metodologia,
-          carga_horaria_planejada,
-          instrutor_responsavel,
-          status_execucao
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          Number(treinamento_id),
-          diaNumero,
-          dataAula,
-          1,
-          `Aula do Dia ${diaNumero}`,
-          `Execução do Dia ${diaNumero} da turma ${turma.tema || ""}`.trim(),
-          null,
-          null,
-          0,
-          turma.instrutor || null,
-          "planejada",
-        ]
-      );
-
-      diaNumero += 1;
+    if (pulada) {
+      return res.status(400).json({
+        ok: false,
+        message: `Não foi possível gerar o cronograma: ${motivoPulo}.`,
+      });
     }
+
+    await inserirLinhasCronograma(treinamento_id, linhas);
 
     return res.json({
       ok: true,
       message: "Cronograma base gerado com sucesso",
-      total_dias: diaNumero - 1,
+      total_dias: linhas.length,
     });
   } catch (error) {
     console.error("[turmaAulasController]", error.message || error);
     return res.status(500).json({
       ok: false,
       message: "Erro ao gerar cronograma da turma"});
+  }
+}
+
+// Decisão 21 ("cronograma sempre") — chamado pelo afterWrite do CRUD
+// genérico de /api/treinamentos logo após criar a turma. Nunca lança: uma
+// falha aqui não pode impedir a turma de ser criada (ela já foi gravada),
+// só fica sem cronograma automático — o botão manual "Gerar cronograma"
+// continua disponível como caminho de recuperação, e o log abaixo avisa no
+// servidor pra não passar despercebido.
+async function gerarCronogramaAutomatico({ id, data }) {
+  try {
+    const [existentes] = await pool.query(
+      `SELECT COUNT(*) AS total FROM turma_aulas WHERE treinamento_id = ?`,
+      [id]
+    );
+    if (Number(existentes[0]?.total || 0) > 0) return;
+
+    const turma = {
+      tema: data.tema,
+      instrutor: data.instrutor,
+      status: data.status,
+      data: data.data,
+      data_inicio: data.data_inicio,
+      data_fim: data.data_fim,
+      carga_horaria: data.carga_horaria,
+      hora_inicio: data.hora_inicio,
+      hora_fim: data.hora_fim,
+    };
+
+    const hojeISO = toDateOnlyGerador(new Date());
+    const { linhas, pulada, motivoPulo } = montarLinhasCronograma({ turma, hojeISO });
+
+    if (pulada) {
+      console.warn(`[cronograma automático] turma #${id} sem cronograma gerado: ${motivoPulo}`);
+      return;
+    }
+
+    await inserirLinhasCronograma(id, linhas);
+  } catch (error) {
+    console.error(`[cronograma automático] falhou para a turma #${id}:`, error.message || error);
   }
 }
 
@@ -550,11 +602,11 @@ async function duplicarPlanoAulas(req, res) {
     }
 
     const [origemTreinamento] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
       [treinamento_origem_id]
     );
     const [destinoTreinamento] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
       [treinamento_destino_id]
     );
     if (!origemTreinamento.length || !destinoTreinamento.length) {
@@ -660,7 +712,7 @@ async function getResumoTurmaAulas(req, res) {
     const { treinamento_id } = req.params;
 
     const [treinamentoDono] = await pool.query(
-      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req.empresaId, "treinamentos")} LIMIT 1`,
+      `SELECT id FROM treinamentos WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")} LIMIT 1`,
       [treinamento_id]
     );
     if (!treinamentoDono.length) {
@@ -847,6 +899,12 @@ module.exports = {
   updateTurmaAula,
   deleteTurmaAula,
   gerarCronogramaTurma,
+  gerarCronogramaAutomatico,
   duplicarPlanoAulas,
   getResumoTurmaAulas,
+  // Exportado para uso exclusivo do script de migração retroativa
+  // (scripts/migrarCronogramaRetroativo.js) — reaproveita o mesmo INSERT que
+  // os dois outros chamadores usam, para os três nunca divergirem em como
+  // uma linha de turma_aulas é gravada.
+  inserirLinhasCronograma,
 };

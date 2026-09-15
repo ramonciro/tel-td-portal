@@ -1,4 +1,11 @@
 const pool = require("../lib/db");
+const { tenantScopeFor } = require("../lib/tenantScope");
+
+// Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
+// Assistente de Treinamento enxerga presença de qualquer tenant nesta tela
+// (Gestão de Turmas) — decidido aqui, por chamada, nunca no
+// clientMiddleware (ver lib/tenantScope.js).
+const CROSS_TENANT_ROLES = ["assistente_treinamento"];
 
 function normalizeStatus(value) {
   const text = String(value || "").toLowerCase().trim();
@@ -37,7 +44,7 @@ async function listarPresencaAula(req, res) {
       });
     }
 
-    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, req.empresaId))) {
+    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES }).empresaId))) {
       return res.status(404).json({ ok: false, message: "Aula não encontrada" });
     }
 
@@ -80,7 +87,7 @@ async function inicializarPresencaAula(req, res) {
       });
     }
 
-    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, req.empresaId))) {
+    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES }).empresaId))) {
       return res.status(404).json({ ok: false, message: "Aula não encontrada" });
     }
 
@@ -200,7 +207,7 @@ async function salvarPresencaAula(req, res) {
       });
     }
 
-    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, req.empresaId))) {
+    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES }).empresaId))) {
       return res.status(404).json({ ok: false, message: "Aula não encontrada" });
     }
 
@@ -289,7 +296,7 @@ async function resumoPresencaAula(req, res) {
   try {
     const { turma_aula_id } = req.params;
 
-    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, req.empresaId))) {
+    if (!(await turmaAulaPertenceAoTenant(turma_aula_id, tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES }).empresaId))) {
       return res.status(404).json({ ok: false, message: "Aula não encontrada" });
     }
 
