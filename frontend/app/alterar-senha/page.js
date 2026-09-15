@@ -43,7 +43,12 @@ export default function AlterarSenhaPage() {
       setNovaSenha("");
       setConfirmacao("");
 
-      setTimeout(() => router.push("/inicio"), 1200);
+      // Ajuste pós-entrega do Pacote Salas (15/09/2026): mesmo raciocínio do
+      // login e do primeiro acesso — Assistente de Treinamento não tem
+      // acesso a /inicio, então volta para Salas em vez de cair numa tela de
+      // "Acesso restrito" logo depois de trocar a própria senha.
+      const perfil = String(user?.perfil || "").toLowerCase().trim();
+      setTimeout(() => router.push(perfil === "assistente_treinamento" ? "/salas" : "/inicio"), 1200);
     } catch (error) {
       setErro(error.message || "Erro ao alterar senha");
     } finally {
