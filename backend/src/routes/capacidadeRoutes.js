@@ -10,6 +10,10 @@ const controller = require("../controllers/capacidadeController");
 router.get("/painel", controller.getPainel);
 router.get("/capacity-consumido", controller.getCapacity);
 router.get("/ranking", controller.getRankingHandler);
+// Capacidade por instrutor x cliente (16/09/2026) — visão cruzada pedida
+// pelo Ramon: quanto de cada instrutor foi pra cada cliente, ao lado da
+// capacidade/ocupação total do instrutor no período.
+router.get("/por-cliente", controller.getPorCliente);
 router.get("/aderencia-por-tema", controller.getAderencia);
 router.get("/distribuicao-por-operacao", controller.getDistribuicao);
 router.get("/alertas", controller.getAlertasHandler);
