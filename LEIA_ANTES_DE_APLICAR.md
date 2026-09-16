@@ -1,27 +1,26 @@
-# Correção — capacidade do instrutor (CH do mês) — 16/09/2026
+[Uploading LEIA_ANTES_DE_APLICAR.md…]()
+# Correção — ocupação por CH poluída por NPS/avaliação + instrutores desligados — 16/09/2026
 
-Você apontou dois problemas na tela de Capacidade x Realizado: o valor fixo de 156h por instrutor não bate com o praticado, e o "HC" (headcount) não faz sentido como base de cálculo, já que turmas têm tamanhos diferentes.
+Você apontou três coisas depois do pacote anterior: NPS/avaliação ainda influenciavam a "ocupação por CH", instrutores que já saíram continuavam aparecendo em mais lugares, e a janela de 90 dias não tinha uma visão de só o mês atual.
 
-## 1. Substituir estes 5 arquivos no seu repositório (mesmo caminho)
+## 1. Substituir estes 3 arquivos no seu repositório (mesmo caminho)
 
 - `backend/src/services/capacidadeResolver.js`
-- `backend/src/controllers/capacidadeController.js`
-- `backend/src/controllers/atividadesInstrutorController.js`
-- `backend/src/database/migrate.js`
-- `frontend/app/capacidade/page.js`
+- `backend/src/services/desempenhoInstrutorResolver.js`
+- `frontend/app/capacidade/page.js` (se você já aplicou o pacote de capacidade de hoje mais cedo, esta versão substitui aquela — já inclui as duas mudanças)
 
-## 2. O que muda
+## 2. O que estava errado
 
-- **Cálculo da capacidade automática:** antes era "dias úteis do mês (contados no calendário, só excluindo domingo) × horas/dia" — isso dava ~26 dias, e com 6h/dia batia exatamente nos 156h que você viu. Agora é uma conta fixa: **dias trabalhados no mês × horas por dia trabalhado**, os dois configuráveis, sem depender do calendário de cada mês. Com o padrão que você passou (6h/dia, 22 dias/mês) a capacidade automática de cada instrutor fica em **132h/mês**.
-- **HC saiu da conta e da tela:** o campo "HC (turmas) por dia" na regra padrão e "Capacidade (HC)" no ajuste manual por instrutor foram removidos — na prática eles nunca entravam em nenhum cálculo real de capacidade, só ficavam guardados e exibidos. As colunas continuam existindo no banco (sem migração destrutiva), só não são mais usadas.
-- **Onde editar:** mesmo lugar de antes — tela **Capacidade x Realizado → "⚙ Configurar regra automática e exceções por instrutor"**. Lá tem duas opções:
-  - **Regra automática padrão:** horas por dia trabalhado + dias trabalhados no mês. Isso já vem preenchido com 6h/22 dias, mas você pode ajustar a qualquer momento — a tela mostra ao lado quanto isso dá de capacidade mensal por instrutor.
-  - **Ajuste manual por instrutor/mês:** pra quando um instrutor específico tem uma carga diferente da regra padrão naquele mês (licença parcial, redução, etc.) — sobrescreve só aquele instrutor naquele mês, sem mexer na regra geral.
+**Ocupação por CH puxada por NPS/avaliação:** a média de ocupação do time (mostrada no Scorecard e no resumo do Oceano) era calculada sobre "todo instrutor com algum dado no período" — e "algum dado" incluía ter uma turma com avaliação lançada ou NPS respondido, mesmo sem nenhuma hora real trabalhada. Isso acontecia, por exemplo, quando o instrutor tinha uma turma ainda **planejada** (nem começou) no mês: ela conta como "turma no período" pra avaliação, mas não conta como hora real de CH — só que ele ainda entrava na média de ocupação com 0%, puxando o número geral pra baixo sem motivo real. Corrigido: a média de ocupação agora só considera quem teve hora real de CH no período. Os outros indicadores (frequência, NPS, índice geral) continuam usando o critério mais amplo de antes, sem mudança.
 
-## 3. Ação manual necessária
+**Instrutores que já saíram ainda apareciam:** a correção anterior (pacote de ontem) já tirava quem saiu do dropdown de filtro e dos alertas do mês atual, mas duas telas ainda mostravam: a visão "time todo" do Scorecard/Oceano (contava todo instrutor já conhecido, incluindo desligados) e a tabela "Capacity x consumido — por instrutor" (pré-cadastrava todo instrutor conhecido, então quem saiu há muito tempo e não tem nenhuma hora na janela aparecia com uma linha de 0h/0%). As duas foram corrigidas com o mesmo critério de sempre: só sai de quem está confirmadamente desligado (usuário inativo com perfil instrutor) E não tem nenhuma hora real no recorte — quem tem hora real (mesmo tendo saído depois) continua aparecendo normalmente, histórico intacto.
 
-Nenhuma migração destrutiva, mas **é preciso conferir/ajustar a regra padrão depois de aplicar este pacote** — ela é criada com um valor herdado do que já estava configurado (ou 6h/22 dias se nunca foi configurada antes). Entre em Capacidade → Configurar regra e confirme se 6h/dia e 22 dias/mês são os números certos pra sua operação, ou ajuste.
+**Sem visão de mês, só 90 dias:** acrescentei "Mês atual" como opção no filtro de período da tela de Capacidade (ao lado de 90 dias/6 meses/12 meses) — agora dá pra ver a tabela "Capacity x consumido" e o "Ranking" olhando só o mês corrente, sem o acumulado de 90 dias diluindo o número.
 
-## 4. O que foi testado
+## 3. O que foi testado
 
-Ambiente local: ajustei a regra para 6h/22 dias e confirmei que a capacidade por instrutor no painel saiu exatamente 132h (antes: 156h); testei um ajuste manual por instrutor sem informar HC (não é mais pedido); testei que a listagem de ajustes não expõe mais HC; devolvi a regra do ambiente de teste ao valor que já estava antes de testar. `npm run build` do frontend rodou sem erros, todas as rotas geradas normalmente.
+Ambiente local: criei um instrutor ativo com uma turma só planejada no mês (sem hora real) e confirmei que ele entra na contagem de "considerados" mas NÃO puxa a média de ocupação do time pra baixo (média ficou igual, com ou sem ele). Criei um instrutor desligado (usuário inativo) sem nenhuma hora na janela recente e confirmei que ele some do Scorecard, do "Capacity x consumido" e do dropdown — e continua aparecendo normalmente num mês antigo em que ele de fato trabalhou. `npm run build` do frontend rodou sem erros. Dados de teste removidos do banco ao final.
+
+## 4. Ação manual necessária
+
+Nenhuma — sem migração de banco, sem mudança de schema.
