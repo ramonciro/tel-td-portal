@@ -29,7 +29,11 @@ const STATUS_LABEL = {
   sem_capacidade: "Sem capacidade definida",
 };
 
-const MESES_OPCOES = [3, 6, 12];
+// "1" foi acrescentado a pedido do Ramon (16/09/2026): as tabelas "Capacity
+// x consumido" e "Ranking" só tinham janelas de 90 dias pra cima, sem opção
+// de ver só o mês corrente — o que dificultava separar "baixo no acumulado"
+// de "baixo neste mês específico".
+const MESES_OPCOES = [1, 3, 6, 12];
 
 // Next.js exige que useSearchParams() fique dentro de um <Suspense> em rota
 // client component — mesmo padrão já usado em /treinamentos (deep-link de
@@ -246,7 +250,7 @@ function CapacidadePageInner() {
   }
 
   const ind = painel?.indicadores || {};
-  const janela = mesesFiltro === 3 ? "90 dias" : `${mesesFiltro} meses`;
+  const janela = mesesFiltro === 1 ? "mês atual" : mesesFiltro === 3 ? "90 dias" : `${mesesFiltro} meses`;
 
   const rankingComMedalha = useMemo(() => {
     const medalhas = ["🥇", "🥈", "🥉"];
@@ -297,7 +301,7 @@ function CapacidadePageInner() {
           actions={
             <div style={{ display: "flex", gap: 8 }}>
               <select value={mesesFiltro} onChange={(e) => setMesesFiltro(Number(e.target.value))} style={selectFiltro}>
-                {MESES_OPCOES.map((m) => <option key={m} value={m}>Últimos {m} meses</option>)}
+                {MESES_OPCOES.map((m) => <option key={m} value={m}>{m === 1 ? "Mês atual" : `Últimos ${m} meses`}</option>)}
               </select>
               <select value={operacaoFiltro} onChange={(e) => setOperacaoFiltro(e.target.value)} style={selectFiltro}>
                 <option value="">Todas as operações</option>
