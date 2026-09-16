@@ -168,7 +168,7 @@ function tenantFonteHorasParam(empresaId) {
 async function getRegraPadrao(empresaId) {
   if (empresaId) {
     const [rows] = await pool.query(
-      `SELECT id, horas_dia_padrao, hc_dia_padrao, considerar_domingo, atualizado_em
+      `SELECT id, horas_dia_padrao, dias_mes_padrao, atualizado_em
        FROM capacidade_regra_padrao WHERE empresa_id = ? LIMIT 1`,
       [empresaId]
     );
@@ -177,23 +177,39 @@ async function getRegraPadrao(empresaId) {
   // Sem empresaId (super admin, chamada interna sem tenant) ou tenant sem
   // regra própria ainda configurada → cai no valor padrão global.
   const [globalRows] = await pool.query(
-    `SELECT id, horas_dia_padrao, hc_dia_padrao, considerar_domingo, atualizado_em
+    `SELECT id, horas_dia_padrao, dias_mes_padrao, atualizado_em
      FROM capacidade_regra_padrao WHERE empresa_id IS NULL ORDER BY id ASC LIMIT 1`
   );
   if (globalRows[0]) return globalRows[0];
-  return { id: null, horas_dia_padrao: 6, hc_dia_padrao: 30, considerar_domingo: 0, atualizado_em: null };
+  return { id: null, horas_dia_padrao: 6, dias_mes_padrao: 22, atualizado_em: null };
 }
 
-async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDomingo, empresaId }) {
+// Correção (16/09/2026, pedido do Ramon): a capacidade automática de um
+// instrutor no mês usava "dias úteis do mês" contado pelo calendário (todo
+// dia da semana exceto domingo, ~26/mês) × horas/dia — isso gerava um valor
+// (156h) que Ramon apontou como não condizente com o praticado. A conta
+// certa, como ele descreveu, é uma média fixa de dias TRABALHADOS no mês
+// (22) × horas/dia (6) = 132h, configurável nesta mesma regra, sem depender
+// do calendário de cada mês. dias_mes_padrao substitui o antigo cálculo por
+// diasUteisDoMes()/considerar_domingo no caminho automático (a função e a
+// coluna considerar_domingo continuam existindo, sem uso, pra não exigir
+// migração destrutiva).
+//
+// hc_dia_padrao/hc_capacidade também saíram da conta (e da tela): Ramon
+// apontou que "HC" (quantidade de pessoas por turma) não é uma base válida
+// de capacidade do instrutor, já que turmas têm tamanhos diferentes — e o
+// campo nunca foi, de fato, usado em nenhum cálculo de capacidade real,
+// só ficava armazenado e exibido. As colunas continuam no banco (sem
+// migração destrutiva), só não são mais lidas/escritas por aqui.
+async function atualizarRegraPadrao({ horasDiaPadrao, diasMesPadrao, empresaId }) {
   if (empresaId) {
     await pool.query(
-      `INSERT INTO capacidade_regra_padrao (empresa_id, horas_dia_padrao, hc_dia_padrao, considerar_domingo)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO capacidade_regra_padrao (empresa_id, horas_dia_padrao, dias_mes_padrao)
+       VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE
          horas_dia_padrao = VALUES(horas_dia_padrao),
-         hc_dia_padrao = VALUES(hc_dia_padrao),
-         considerar_domingo = VALUES(considerar_domingo)`,
-      [empresaId, Number(horasDiaPadrao), Number(hcDiaPadrao), considerarDomingo ? 1 : 0]
+         dias_mes_padrao = VALUES(dias_mes_padrao)`,
+      [empresaId, Number(horasDiaPadrao), Number(diasMesPadrao)]
     );
     return getRegraPadrao(empresaId);
   }
@@ -206,15 +222,15 @@ async function atualizarRegraPadrao({ horasDiaPadrao, hcDiaPadrao, considerarDom
   if (globalRows[0]) {
     await pool.query(
       `UPDATE capacidade_regra_padrao
-       SET horas_dia_padrao = ?, hc_dia_padrao = ?, considerar_domingo = ?
+       SET horas_dia_padrao = ?, dias_mes_padrao = ?
        WHERE id = ?`,
-      [Number(horasDiaPadrao), Number(hcDiaPadrao), considerarDomingo ? 1 : 0, globalRows[0].id]
+      [Number(horasDiaPadrao), Number(diasMesPadrao), globalRows[0].id]
     );
   } else {
     await pool.query(
-      `INSERT INTO capacidade_regra_padrao (empresa_id, horas_dia_padrao, hc_dia_padrao, considerar_domingo)
-       VALUES (NULL, ?, ?, ?)`,
-      [Number(horasDiaPadrao), Number(hcDiaPadrao), considerarDomingo ? 1 : 0]
+      `INSERT INTO capacidade_regra_padrao (empresa_id, horas_dia_padrao, dias_mes_padrao)
+       VALUES (NULL, ?, ?)`,
+      [Number(horasDiaPadrao), Number(diasMesPadrao)]
     );
   }
   return getRegraPadrao();
@@ -234,7 +250,7 @@ async function listarOverrides({ instrutor, ano, empresaId } = {}) {
   if (empresaId) { conditions.push("empresa_id = ?"); params.push(empresaId); }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const [rows] = await pool.query(
-    `SELECT id, instrutor, ano, mes, horas_capacidade, hc_capacidade, observacoes, criado_por, criado_em, atualizado_em
+    `SELECT id, instrutor, ano, mes, horas_capacidade, observacoes, criado_por, criado_em, atualizado_em
      FROM capacidade_instrutor_mensal ${where}
      ORDER BY ano DESC, mes DESC, instrutor ASC`,
     params
@@ -242,17 +258,20 @@ async function listarOverrides({ instrutor, ano, empresaId } = {}) {
   return rows;
 }
 
-async function salvarOverride({ instrutor, ano, mes, horasCapacidade, hcCapacidade, observacoes, criadoPor, empresaId }) {
+// hc_capacidade saiu do ajuste manual pelo mesmo motivo da regra padrão
+// (ver comentário acima de atualizarRegraPadrao): não é uma base válida de
+// capacidade do instrutor. A coluna continua no banco (default 0), só não é
+// mais preenchida por aqui.
+async function salvarOverride({ instrutor, ano, mes, horasCapacidade, observacoes, criadoPor, empresaId }) {
   await pool.query(
     `INSERT INTO capacidade_instrutor_mensal
-       (instrutor, ano, mes, horas_capacidade, hc_capacidade, observacoes, criado_por, empresa_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       (instrutor, ano, mes, horas_capacidade, observacoes, criado_por, empresa_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        horas_capacidade = VALUES(horas_capacidade),
-       hc_capacidade = VALUES(hc_capacidade),
        observacoes = VALUES(observacoes),
        criado_por = VALUES(criado_por)`,
-    [instrutor, Number(ano), Number(mes), Number(horasCapacidade || 0), Number(hcCapacidade || 0), observacoes || null, criadoPor || null, empresaId || null]
+    [instrutor, Number(ano), Number(mes), Number(horasCapacidade || 0), observacoes || null, criadoPor || null, empresaId || null]
   );
 }
 
@@ -370,7 +389,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
   const overrideTenantCheck = empresaId ? " AND empresa_id = ?" : "";
   const overrideTenantParam = empresaId ? [empresaId] : [];
   const [overridesRows] = await pool.query(
-    `SELECT instrutor, ano, mes, horas_capacidade, hc_capacidade
+    `SELECT instrutor, ano, mes, horas_capacidade
      FROM capacidade_instrutor_mensal
      WHERE instrutor IN (${placeholdersInstrutores}) AND ano IN (${anos.map(() => "?").join(",")})${overrideTenantCheck}`,
     [...instrutores, ...anos, ...overrideTenantParam]
@@ -398,7 +417,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
       const override = mapaOverrides.get(chave);
       const capacidadeHoras = override
         ? Number(override.horas_capacidade)
-        : Number((diasUteisDoMes(anoRef, mesRef, !!regra.considerar_domingo) * Number(regra.horas_dia_padrao)).toFixed(2));
+        : Number((Number(regra.dias_mes_padrao) * Number(regra.horas_dia_padrao)).toFixed(2));
 
       const ocupacaoPct = capacidadeHoras > 0 ? Number(((horasRealizadas / capacidadeHoras) * 100).toFixed(1)) : null;
       const { status, emoji } = statusOcupacao(ocupacaoPct);
@@ -463,7 +482,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
   const capacidadeTotalPeriodo = linhasPorMes.reduce((acc, l) => acc + l.capacidade_nominal, 0);
   const hcRealizadoPeriodo = linhasPorMes.reduce((acc, l) => acc + l.hc_realizado, 0);
   const capacidadePorInstrutorMes = instrutores.length
-    ? Number((diasUteisDoMes(meses[meses.length - 1].ano, meses[meses.length - 1].mes, !!regra.considerar_domingo) * Number(regra.horas_dia_padrao)).toFixed(2))
+    ? Number((Number(regra.dias_mes_padrao) * Number(regra.horas_dia_padrao)).toFixed(2))
     : 0;
 
   return {
