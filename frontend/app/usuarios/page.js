@@ -48,6 +48,14 @@ const PERFIL_TOM = {
   // perfil pela tela — faltava aqui.
   assistente_treinamento: chart.orange,
   treinando: colors.neutral,
+  // Achado ao revisar o Pacote 3 (16/09/2026): usuários do módulo R&S são
+  // criados por uma tela dedicada (Configurações R&S), não por aqui — mas
+  // eles aparecem nesta listagem geral igual a qualquer outro usuário, e
+  // como não estavam mapeados, caíam no cinza neutro (badge quase invisível)
+  // e ficavam de fora da contagem "Distribuição por perfil". Reaproveitando
+  // tons já usados (mesma ideia de "coordenador" e "metodologia").
+  coordenador_rs: chart.blue,
+  gestor_rs: chart.cyan,
 };
 function tomPerfil(perfil) {
   return PERFIL_TOM[String(perfil || "").toLowerCase()] || colors.neutral;
@@ -74,6 +82,7 @@ const PERFIL_LABEL = {
   treinando: "Treinando", superintendente: "Superintendente",
   coaching: "Coaching", metodologia: "Metodologia",
   assistente_treinamento: "Assistente de Treinamento",
+  coordenador_rs: "Coordenador R&S", gestor_rs: "Gestor R&S",
 };
 
 /* ── Opções fixas ── */
@@ -86,6 +95,9 @@ const PERFIL_OPTIONS = [
   { value: "coaching",        label: "Coaching"         },
   { value: "metodologia",     label: "Metodologia"      },
   { value: "assistente_treinamento", label: "Assistente de Treinamento" },
+  // Incluídos no Pacote 3 (16/09/2026) — ver nota em PERFIL_TOM acima.
+  { value: "coordenador_rs",  label: "Coordenador R&S"  },
+  { value: "gestor_rs",       label: "Gestor R&S"       },
 ];
 
 /* ═══════════════════════════════════════════════
