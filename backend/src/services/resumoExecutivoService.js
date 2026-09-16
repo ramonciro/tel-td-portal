@@ -50,13 +50,16 @@ function fraseCapacidade(itens) {
   return `${itens.length} instrutores estão com ocupação fora da faixa saudável, entre eles ${itens[0].instrutor} (${itens[0].ocupacao_pct}%).`;
 }
 
+// NPS saiu do alerta de desempenho em 16/09/2026 (pedido do Ramon) — os
+// itens que chegam aqui hoje são só de frequência, então a frase não cita
+// mais NPS.
 function fraseDesempenho(itens) {
   if (!itens.length) return null;
   if (itens.length === 1) {
     const i = itens[0];
-    return `${i.instrutor} está fora da faixa saudável de frequência/NPS este mês (${i.motivo}).`;
+    return `${i.instrutor} está fora da faixa saudável de frequência este mês (${i.motivo}).`;
   }
-  return `${itens.length} instrutores estão fora da faixa saudável de frequência ou NPS este mês.`;
+  return `${itens.length} instrutores estão fora da faixa saudável de frequência este mês.`;
 }
 
 /**

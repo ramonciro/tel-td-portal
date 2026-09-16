@@ -262,12 +262,39 @@ async function excluirOverride(id, empresaId) {
   await pool.query(`DELETE FROM capacidade_instrutor_mensal WHERE id = ?${tenantCheck}`, params);
 }
 
-async function listarInstrutoresConhecidos(empresaId) {
+// Correção (16/09/2026): "instrutor" nunca foi ligado a usuarios — é texto
+// livre em treinamentos.instrutor/turma_aulas.instrutor_responsavel — então
+// excluir/desativar o usuário nunca tirava o nome dele desta lista, nem do
+// histórico (que é o comportamento certo: o histórico não deve mudar). O
+// pedido do Ramon foi "manter no histórico, sumir da lista de ativos" — ou
+// seja, o problema é só a lista usada para ESCOLHER/ALERTAR sobre instrutor
+// hoje (dropdown de filtro, criação de override, alertas do mês atual), não
+// as visões de tendência/histórico (painel, capacity-consumido, ranking),
+// que continuam somando as horas reais de qualquer instrutor, ativo ou não.
+// apenasAtivos faz o match por nome (case/espaço-insensitive) contra
+// usuarios com perfil instrutor — só exclui quando existe uma correspondência
+// explicitamente inativa; um nome sem nenhum usuário correspondente (ex.:
+// instrutor externo, nunca teve login) continua aparecendo, porque não dá
+// pra confirmar que ele "saiu".
+async function listarInstrutoresConhecidos(empresaId, { apenasAtivos = false } = {}) {
   const tenantTreinamentos = empresaId ? " AND empresa_id = ?" : "";
   const tenantAulas = empresaId
     ? " AND EXISTS (SELECT 1 FROM treinamentos t2 WHERE t2.id = turma_aulas.treinamento_id AND t2.empresa_id = ?)"
     : "";
   const params = empresaId ? [empresaId, empresaId] : [];
+
+  const tenantUsuario = empresaId ? " AND u.empresa_id = ?" : "";
+  const filtroAtivos = apenasAtivos
+    ? `WHERE NOT EXISTS (
+         SELECT 1 FROM usuarios u
+         WHERE LOWER(TRIM(u.nome)) = LOWER(TRIM(todos.nome))
+           AND LOWER(TRIM(u.perfil)) = 'instrutor'
+           AND u.ativo = 0
+           ${tenantUsuario}
+       )`
+    : "";
+  const paramsFiltro = apenasAtivos && empresaId ? [empresaId] : [];
+
   const [rows] = await pool.query(
     `
     SELECT nome FROM (
@@ -275,9 +302,10 @@ async function listarInstrutoresConhecidos(empresaId) {
       UNION
       SELECT DISTINCT TRIM(instrutor_responsavel) AS nome FROM turma_aulas WHERE instrutor_responsavel IS NOT NULL AND TRIM(instrutor_responsavel) <> ''${tenantAulas}
     ) todos
+    ${filtroAtivos}
     ORDER BY nome ASC
   `,
-    params
+    [...params, ...paramsFiltro]
   );
   return rows.map((r) => r.nome);
 }
@@ -294,12 +322,31 @@ async function listarOperacoesConhecidas(empresaId) {
   return rows.map((r) => r.cliente);
 }
 
+// Nomes de instrutor com um usuário correspondente explicitamente inativo
+// (perfil instrutor, ativo = 0). Usado só para não gerar "linha fantasma"
+// (0h, 0%, status ocioso) de alguém que já saiu num mês em que ele
+// realmente não trabalhou — sem isso, um instrutor desligado há meses
+// continuava aparecendo pra sempre em toda tela que lista "todo mundo x
+// mês", mesmo sem nenhuma hora real registrada. Um mês em que ele REALMENTE
+// tem hora aplicada continua aparecendo normalmente (histórico intacto).
+async function buscarInstrutoresInativos(empresaId) {
+  const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+  const params = empresaId ? [empresaId] : [];
+  const [rows] = await pool.query(
+    `SELECT DISTINCT LOWER(TRIM(nome)) AS nome FROM usuarios
+     WHERE LOWER(TRIM(perfil)) = 'instrutor' AND ativo = 0${tenantCheck}`,
+    params
+  );
+  return new Set(rows.map((r) => r.nome));
+}
+
 async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInicio, dataFim, empresaId } = {}) {
   const meses = mesesNoIntervalo({ ano, mes, dataInicio, dataFim });
   const anos = [...new Set(meses.map((m) => m.ano))];
 
   const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos(empresaId);
   if (!instrutores.length) return [];
+  const instrutoresInativos = instrutor ? new Set() : await buscarInstrutoresInativos(empresaId);
 
   const placeholdersInstrutores = instrutores.map(() => "?").join(",");
   const placeholdersMeses = meses.map(() => "(?, ?)").join(",");
@@ -337,9 +384,16 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
 
   const resultado = [];
   for (const nomeInstrutor of instrutores) {
+    const estaInativo = instrutoresInativos.has(String(nomeInstrutor).trim().toLowerCase());
     for (const { ano: anoRef, mes: mesRef } of meses) {
       const chave = `${nomeInstrutor}|${chaveMes(anoRef, mesRef)}`;
       const horasRealizadas = Number((mapaHoras.get(chave) || 0).toFixed(2));
+
+      // Instrutor confirmadamente desligado (usuário inativo) e sem nenhuma
+      // hora real neste mês específico → não gera linha fantasma (0h,
+      // "ocioso"). Um mês em que ele tem hora real continua aparecendo
+      // normalmente — é o histórico dele de verdade.
+      if (estaInativo && horasRealizadas === 0) continue;
 
       const override = mapaOverrides.get(chave);
       const capacidadeHoras = override
@@ -369,7 +423,12 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
 async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const regra = await getRegraPadrao(empresaId);
-  const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos(empresaId);
+  // "capacidade_mensal_time" abaixo é capacidade PLANEJADA do time hoje — usa
+  // só instrutor ativo (quem já saiu não conta capacidade daqui pra frente).
+  // capacidade_nominal_periodo (por mês, logo abaixo) já vem correta sozinha,
+  // porque soma os itens de getCapacidadeVsRealizado, que já não gera linha
+  // fantasma pra instrutor inativo sem hora real naquele mês.
+  const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos(empresaId, { apenasAtivos: true });
 
   const linhasPorMes = [];
   for (const { ano, mes } of meses) {
@@ -551,6 +610,89 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses, empresaId } = {})
   return { itens, total_horas: Number(total.toFixed(2)) };
 }
 
+// Capacidade por instrutor × cliente (16/09/2026, pedido do Ramon: "minha
+// visão é por produto, ou seja, eu preciso calcular a capacidade instrutor
+// por produto"). Até aqui, capacidade só existia como um total único por
+// instrutor cruzando todos os clientes juntos — dava pra filtrar "um cliente
+// de cada vez", mas não pra ver lado a lado quanto de cada instrutor foi
+// pra cada cliente.
+//
+// Importante sobre o que "capacidade por cliente" significa aqui: a
+// capacidade nominal (dias úteis × horas/dia da regra, ou override manual) é
+// uma coisa só por instrutor/mês — não existe uma "capacidade do cliente X"
+// separada, porque a agenda do instrutor não é fatiada por cliente de
+// antemão. Por isso esta visão mostra, por instrutor: quanto de hora real
+// foi pra cada cliente (a fatia real, essa sim por produto) ao lado da
+// capacidade TOTAL do instrutor no período e da ocupação geral — em vez de
+// inventar uma capacidade "por cliente" arbitrária (ex.: dividida
+// igualmente entre os clientes atendidos), o que distorceria mais do que
+// ajudaria.
+//
+// Escopo só instrutor ativo (mesmo raciocínio do getPainel): é uma visão de
+// planejamento de carga atual, não uma auditoria histórica — quem já saiu
+// não entra na distribuição de capacidade do time hoje.
+async function getCapacidadePorInstrutorCliente({ meses: totalMeses = 3, empresaId } = {}) {
+  const meses = ultimosNMeses(Number(totalMeses));
+  const instrutores = await listarInstrutoresConhecidos(empresaId, { apenasAtivos: true });
+  if (!instrutores.length) return { meses: meses.map((m) => `${m.ano}-${pad2(m.mes)}`), clientes: [], itens: [] };
+
+  const placeholdersInstrutores = instrutores.map(() => "?").join(",");
+  const placeholdersMeses = meses.map(() => "(?, ?)").join(",");
+  const mesesParams = meses.flatMap((m) => [m.ano, m.mes]);
+
+  const [rows] = await pool.query(
+    `SELECT fonte_horas.instrutor AS instrutor,
+            COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação') AS cliente,
+            SUM(fonte_horas.horas_real) AS horas
+     FROM ${FONTE_HORAS_SQL}
+     WHERE fonte_horas.instrutor IN (${placeholdersInstrutores})
+       AND (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses})
+       ${tenantFonteHoras(empresaId)}
+     GROUP BY fonte_horas.instrutor, cliente`,
+    [...instrutores, ...mesesParams, ...tenantFonteHorasParam(empresaId)]
+  );
+
+  // Capacidade total do instrutor no período — soma dos mesmos meses,
+  // reaproveitando o cálculo já existente (regra automática ou override).
+  const capacidadePorInstrutor = new Map(instrutores.map((nome) => [nome, 0]));
+  for (const { ano, mes } of meses) {
+    const itens = await getCapacidadeVsRealizado({ ano, mes, empresaId });
+    for (const item of itens) {
+      if (capacidadePorInstrutor.has(item.instrutor)) {
+        capacidadePorInstrutor.set(item.instrutor, capacidadePorInstrutor.get(item.instrutor) + item.capacidade_horas);
+      }
+    }
+  }
+
+  const clientesSet = new Set();
+  const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, por_cliente: {}, total_realizado: 0 }]));
+  for (const r of rows) {
+    clientesSet.add(r.cliente);
+    const linha = porInstrutor.get(r.instrutor);
+    if (!linha) continue;
+    const horas = Number(Number(r.horas).toFixed(2));
+    linha.por_cliente[r.cliente] = horas;
+    linha.total_realizado += horas;
+  }
+
+  const clientes = Array.from(clientesSet).sort();
+  const itens = Array.from(porInstrutor.values())
+    .filter((linha) => linha.total_realizado > 0)
+    .map((linha) => {
+      const capacidadeTotal = Number((capacidadePorInstrutor.get(linha.instrutor) || 0).toFixed(2));
+      return {
+        instrutor: linha.instrutor,
+        por_cliente: linha.por_cliente,
+        total_realizado: Number(linha.total_realizado.toFixed(2)),
+        capacidade_total: capacidadeTotal,
+        ocupacao_pct: capacidadeTotal > 0 ? Number(((linha.total_realizado / capacidadeTotal) * 100).toFixed(1)) : null,
+      };
+    })
+    .sort((a, b) => b.total_realizado - a.total_realizado);
+
+  return { meses: meses.map((m) => `${m.ano}-${pad2(m.mes)}`), clientes, itens };
+}
+
 // Horas aplicadas (realizadas) por turma individual — mesma fonte única
 // (FONTE_HORAS_SQL) usada pela tela de Capacidade, só que agrupada por
 // treinamento_id em vez de instrutor/tema/operação. Criada para a Gestão de
@@ -690,7 +832,16 @@ async function getHorasAplicadasPorInstrutor({ empresaId, cliente, dataInicio, d
 async function getAlertas(empresaId) {
   const hoje = new Date();
   const itens = await getCapacidadeVsRealizado({ ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1, empresaId });
-  const alertas = itens
+
+  // Alerta é sobre o time atual — instrutor desligado não deve aparecer como
+  // "ocioso" no mês corrente (ver comentário em listarInstrutoresConhecidos).
+  // Filtrado depois de calcular (em vez de já entrar em getCapacidadeVsRealizado
+  // com a lista restrita) pra não mexer no cálculo em si, só em quem aparece
+  // no alerta.
+  const instrutoresAtivos = new Set(await listarInstrutoresConhecidos(empresaId, { apenasAtivos: true }));
+  const itensAtivos = itens.filter((item) => instrutoresAtivos.has(item.instrutor));
+
+  const alertas = itensAtivos
     .filter((item) => item.status_ocupacao !== "saudavel")
     .map((item) => ({
       instrutor: item.instrutor,
@@ -700,7 +851,7 @@ async function getAlertas(empresaId) {
     }))
     .sort((a, b) => (b.ocupacao_pct || 0) - (a.ocupacao_pct || 0));
 
-  return { itens: alertas, todos: itens };
+  return { itens: alertas, todos: itensAtivos };
 }
 
 module.exports = {
@@ -715,6 +866,7 @@ module.exports = {
   getPainel,
   getCapacityConsumido,
   getRanking,
+  getCapacidadePorInstrutorCliente,
   getAderenciaPorTema,
   getDistribuicaoPorOperacao,
   getHorasAplicadasPorTreinamento,

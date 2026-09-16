@@ -271,52 +271,32 @@ async function getFrequenciaPorInstrutor({ instrutores, meses, empresaId }) {
 }
 
 // Pesos do índice geral — ver ressalva (2) no topo do arquivo sobre por que
-// avaliação fica de fora da conta. Ajustado com o Ramon em 07/09/2026 (o
-// índice geral ainda não é muito usado por enquanto, então frequência pesa
-// bem mais que NPS). Ajustável aqui caso a proporção mude — não é
-// lançamento de dado, é constante do código, igual às faixas de ocupação em
-// capacidadeResolver.
-const PESO_FREQUENCIA = 0.9;
-const PESO_NPS = 0.1;
-
-function calcularIndiceGeral({ frequenciaPct, npsScore }) {
-  const partes = [];
-  if (frequenciaPct !== null && frequenciaPct !== undefined) {
-    partes.push({ peso: PESO_FREQUENCIA, valor: frequenciaPct });
-  }
-  if (npsScore !== null && npsScore !== undefined) {
-    // NPS vai de -100 a 100; normaliza pra 0-100 pra ficar na mesma escala da frequência.
-    partes.push({ peso: PESO_NPS, valor: (npsScore + 100) / 2 });
-  }
-  if (!partes.length) return null;
-  const pesoTotal = partes.reduce((acc, p) => acc + p.peso, 0);
-  const soma = partes.reduce((acc, p) => acc + p.peso * p.valor, 0);
-  return arredonda(soma / pesoTotal);
+// avaliação fica de fora da conta. Ajustado com o Ramon em 07/09/2026 (peso
+// 90% frequência / 10% NPS) e revisto em 16/09/2026, a pedido dele: NPS saiu
+// de vez do cálculo ("não posso contar como capacidade" — na prática, ele
+// não quer o NPS influenciando o índice de desempenho do instrutor). Índice
+// geral agora é 100% frequência. NPS continua sendo calculado e mostrado na
+// tela como informação separada — só não entra mais nesta conta.
+function calcularIndiceGeral({ frequenciaPct }) {
+  if (frequenciaPct === null || frequenciaPct === undefined) return null;
+  return arredonda(frequenciaPct);
 }
 
-// --- Faixas de saúde para o resumo executivo (item 5 — "plugar no Oceano").
-//     Mesma linguagem de tom (saudável/atenção/crítico) já usada em
-//     statusOcupacao (capacidadeResolver) e nos badges de presença do
-//     frontend (getBadgeStyleByTax: >=90 ok, >=80 atenção, abaixo crítico).
-//     NPS usa a convenção de mercado (>=50 excelente, 0-49 razoável, <0
-//     precisa de atenção). Constantes de código, ajustáveis aqui — não são
-//     lançamento de dado. ---
+// --- Faixa de saúde de frequência para o resumo executivo (item 5 —
+//     "plugar no Oceano"). Mesma linguagem de tom (saudável/atenção/crítico)
+//     já usada em statusOcupacao (capacidadeResolver) e nos badges de
+//     presença do frontend (getBadgeStyleByTax: >=90 ok, >=80 atenção,
+//     abaixo crítico). Constante de código, ajustável aqui — não é
+//     lançamento de dado. NPS tinha uma faixa equivalente aqui
+//     (statusNps/NPS_SAUDAVEL_MIN/NPS_ATENCAO_MIN) até 16/09/2026, quando
+//     saiu do alerta a pedido do Ramon — removida por não ter mais uso. ---
 const FREQUENCIA_SAUDAVEL_MIN = 90;
 const FREQUENCIA_ATENCAO_MIN = 80;
-const NPS_SAUDAVEL_MIN = 50;
-const NPS_ATENCAO_MIN = 0;
 
 function statusFrequencia(pct) {
   if (pct === null || pct === undefined) return { status: "sem_dados", emoji: "—" };
   if (pct >= FREQUENCIA_SAUDAVEL_MIN) return { status: "saudavel", emoji: "🟢" };
   if (pct >= FREQUENCIA_ATENCAO_MIN) return { status: "atencao", emoji: "🟡" };
-  return { status: "critico", emoji: "🔴" };
-}
-
-function statusNps(score) {
-  if (score === null || score === undefined) return { status: "sem_dados", emoji: "—" };
-  if (score >= NPS_SAUDAVEL_MIN) return { status: "saudavel", emoji: "🟢" };
-  if (score >= NPS_ATENCAO_MIN) return { status: "atencao", emoji: "🟡" };
   return { status: "critico", emoji: "🔴" };
 }
 
@@ -354,7 +334,7 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
       frequencia,
       avaliacao,
       nps,
-      indice_geral: calcularIndiceGeral({ frequenciaPct: frequencia.media_pct, npsScore: nps.nps_score }),
+      indice_geral: calcularIndiceGeral({ frequenciaPct: frequencia.media_pct }),
     };
   });
 
@@ -412,8 +392,11 @@ async function getResumoExecutivo({ empresaId } = {}) {
   });
 
   // Mesmo critério de "teve atividade" do getScorecardInstrutor — não faz
-  // sentido apontar alerta de frequência/NPS pra quem não deu nenhuma
-  // turma no mês.
+  // sentido apontar alerta de frequência pra quem não deu nenhuma turma no
+  // mês. NPS saiu do alerta em 16/09/2026 (pedido do Ramon, "tirar dos
+  // dois" — do índice geral do scorecard E daqui): continua sendo mostrado
+  // como informação (nps_media abaixo), só não decide mais quem está "fora
+  // da faixa saudável".
   const considerados = scorecard.itens.filter((i) =>
     i.frequencia.turmas_consideradas > 0 || i.nps.total_respostas > 0
   );
@@ -421,21 +404,12 @@ async function getResumoExecutivo({ empresaId } = {}) {
   const foraFaixaSaudavel = considerados
     .map((i) => {
       const freq = statusFrequencia(i.frequencia.media_pct);
-      const nps = statusNps(i.nps.nps_score);
-      const motivos = [];
-      if (freq.status === "atencao" || freq.status === "critico") {
-        motivos.push(`frequência em ${i.frequencia.media_pct}%`);
-      }
-      if (nps.status === "atencao" || nps.status === "critico") {
-        motivos.push(`NPS em ${i.nps.nps_score}`);
-      }
-      if (!motivos.length) return null;
-      const critico = freq.status === "critico" || nps.status === "critico";
+      if (freq.status !== "atencao" && freq.status !== "critico") return null;
       return {
         instrutor: i.instrutor,
-        motivo: motivos.join(" e "),
-        status: critico ? "critico" : "atencao",
-        status_emoji: critico ? "🔴" : "🟡",
+        motivo: `frequência em ${i.frequencia.media_pct}%`,
+        status: freq.status,
+        status_emoji: freq.status === "critico" ? "🔴" : "🟡",
       };
     })
     .filter(Boolean)
