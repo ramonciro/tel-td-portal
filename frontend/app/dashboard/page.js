@@ -584,7 +584,7 @@ export default function DashboardPage() {
                      arredondava pra inteiro ao terminar de animar, trocando o
                      dado exibido, não só a forma (achado ao revisar Indicadores/
                      Capacidade, que tinham o mesmo padrão de dado). */}
-                  <StatCard title="Índice geral médio" value={desempenhoResumo.indice_geral_medio != null ? <ContadorAnimado valor={desempenhoResumo.indice_geral_medio} decimais={1} revelado={revelado} /> : "—"} subtitle="90% frequência + 10% NPS" accent={colors.primary} />
+                  <StatCard title="Índice geral médio" value={desempenhoResumo.indice_geral_medio != null ? <ContadorAnimado valor={desempenhoResumo.indice_geral_medio} decimais={1} revelado={revelado} /> : "—"} subtitle="100% frequência" accent={colors.primary} />
                   <StatCard title="Frequência média" value={<ContadorAnimado valor={desempenhoResumo.frequencia_media} decimais={1} sufixo="%" revelado={revelado} />} subtitle="Média do time" accent={colors.success} />
                   <StatCard title="NPS médio" value={desempenhoResumo.nps_media != null ? <ContadorAnimado valor={desempenhoResumo.nps_media} decimais={1} revelado={revelado} /> : "—"} subtitle="Média do time" accent={chart.pink} />
                 </div>
@@ -826,9 +826,15 @@ const heroTitle = { fontSize: 30, lineHeight: 1.15, margin: "12px 0 10px" };
 const heroText = { color: "#dbeafe", lineHeight: 1.7, margin: 0 };
 const heroMiniGrid = { display: "grid", gap: 12 };
 const heroMiniCard = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, display: "grid", gap: 4, boxShadow: "0 10px 24px rgba(15,23,42,.05)" };
-const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 };
+// Bugfix (16/09/2026): os campos de filtro "estouravam" a coluna do grid em
+// telas menores — faltava boxSizing: border-box, então padding+border eram
+// somados por cima dos 100% de largura (mesmo padrão já correto em
+// treinamentos/page.js). Aproveitado pra trocar as 3 colunas fixas por
+// auto-fit/minmax (mesmo padrão do kpiGrid abaixo), que se adapta melhor no
+// mobile em vez de espremer 3 campos numa tela estreita.
+const filtersGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 };
 const fieldLabel = { display: "grid", gap: 6, color: "#334155", fontSize: 13, fontWeight: 700 };
-const inputStyle = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 12, padding: "10px 12px", background: "#fff", color: "#0f172a" };
+const inputStyle = { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 12, padding: "10px 12px", background: "#fff", color: "#0f172a" };
 const buttonSecondary = { border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
 const linkBotao = { border: "1px solid #cbd5e1", background: "#fff", color: "#1d4ed8", borderRadius: 12, padding: "10px 14px", fontWeight: 700, textDecoration: "none", fontSize: 13, whiteSpace: "nowrap" };
 const kpiGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
