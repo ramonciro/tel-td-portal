@@ -199,6 +199,12 @@ export default function GestaoPresencasPage() {
   const [filtroStatus,  setFiltroStatus]  = useState("todos");
   const [filtroCliente, setFiltroCliente] = useState("todos");
   const [busca,         setBusca]         = useState("");
+  // Seleção de período (pedido do Ramon, 16/09/2026): antes só dava pra
+  // exportar o histórico inteiro de turmas. Os dois campos abaixo filtram
+  // a mesma lista que já alimenta os KPIs, os cartões e a exportação —
+  // então selecionar um período recorta a tela inteira, não só o Excel.
+  const [periodoInicio, setPeriodoInicio] = useState("");
+  const [periodoFim,    setPeriodoFim]    = useState("");
 
   /* ── carregamento ── */
   useEffect(() => {
@@ -267,14 +273,15 @@ export default function GestaoPresencasPage() {
   const turmasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     return turmas.filter((item) => {
-      const okStatus  = filtroStatus === "todos" || item.statusTurma === filtroStatus;
-      const okCliente = filtroCliente === "todos" || String(item.cliente || "") === filtroCliente;
+      const okStatus   = filtroStatus === "todos" || item.statusTurma === filtroStatus;
+      const okCliente  = filtroCliente === "todos" || String(item.cliente || "") === filtroCliente;
       const alvo = [item.tema, item.cliente, item.instrutor, item.supervisor, item.publico]
         .filter(Boolean).join(" ").toLowerCase();
-      const okBusca = !termo || alvo.includes(termo);
-      return okStatus && okCliente && okBusca;
+      const okBusca    = !termo || alvo.includes(termo);
+      const okPeriodo  = dentroDoPeriodo(item);
+      return okStatus && okCliente && okBusca && okPeriodo;
     });
-  }, [turmas, filtroStatus, filtroCliente, busca]);
+  }, [turmas, filtroStatus, filtroCliente, busca, periodoInicio, periodoFim]);
 
   /* ── KPIs agregados (da lista filtrada) ── */
   const kpi = useMemo(() => {
@@ -309,6 +316,30 @@ export default function GestaoPresencasPage() {
     setFiltroStatus("todos");
     setFiltroCliente("todos");
     setBusca("");
+    setPeriodoInicio("");
+    setPeriodoFim("");
+  }
+
+  // Compara só a parte "AAAA-MM-DD" — datas vindas da API podem chegar como
+  // ISO completo ("2026-08-15T00:00:00.000Z"); os campos <input type="date">
+  // já mandam só "AAAA-MM-DD", então normalizando os dois dá pra comparar
+  // como texto sem risco de fuso horário.
+  function soData(v) {
+    return v ? String(v).slice(0, 10) : null;
+  }
+
+  // Sobreposição de intervalo: a turma entra se qualquer parte dela cair
+  // dentro do período escolhido — não só a data de início. Assim uma turma
+  // que começou em julho e terminou em agosto aparece no relatório de
+  // qualquer um dos dois meses, em vez de sumir do mês em que só terminou.
+  function dentroDoPeriodo(item) {
+    if (!periodoInicio && !periodoFim) return true;
+    const inicioTurma = soData(item.data_inicio || item.data);
+    const fimTurma     = soData(item.data_fim || item.data_inicio || item.data);
+    if (!inicioTurma) return true; // turma sem data cadastrada — não excluir pelo período
+    if (periodoInicio && fimTurma && fimTurma < periodoInicio) return false;
+    if (periodoFim && inicioTurma > periodoFim) return false;
+    return true;
   }
 
   /* ─────────────────────────────────────────
@@ -370,7 +401,13 @@ export default function GestaoPresencasPage() {
     const ws = XLSX.utils.json_to_sheet(dados);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Relatório Presença");
-    XLSX.writeFile(wb, "relatorio_presenca.xlsx");
+    // Nome do arquivo carrega o período escolhido, quando houver, pra ficar
+    // claro qual recorte foi exportado (evita confundir com o histórico
+    // completo de outra exportação salva na mesma pasta).
+    const sufixoPeriodo = periodoInicio || periodoFim
+      ? `_${periodoInicio || "inicio"}_a_${periodoFim || "hoje"}`
+      : "";
+    XLSX.writeFile(wb, `relatorio_presenca${sufixoPeriodo}.xlsx`);
   }
 
   /* ══════════════════════════════════════════
@@ -474,8 +511,32 @@ export default function GestaoPresencasPage() {
                 />
               </div>
 
+              {/* Período (Pacote, 16/09/2026): recorta a tela e a exportação
+                  por data de início/fim da turma, em vez de sempre trazer o
+                  histórico completo. */}
+              <div style={periodoGroup}>
+                <span style={periodoLabel}>Período:</span>
+                <input
+                  type="date"
+                  value={periodoInicio}
+                  onChange={(e) => setPeriodoInicio(e.target.value)}
+                  max={periodoFim || undefined}
+                  style={dateInput}
+                  aria-label="Início do período"
+                />
+                <span style={periodoLabel}>até</span>
+                <input
+                  type="date"
+                  value={periodoFim}
+                  onChange={(e) => setPeriodoFim(e.target.value)}
+                  min={periodoInicio || undefined}
+                  style={dateInput}
+                  aria-label="Fim do período"
+                />
+              </div>
+
               <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-                {(filtroStatus !== "todos" || filtroCliente !== "todos" || busca) && (
+                {(filtroStatus !== "todos" || filtroCliente !== "todos" || busca || periodoInicio || periodoFim) && (
                   <button style={btnLimpar} onClick={limparFiltros}>
                     Limpar
                   </button>
@@ -746,6 +807,30 @@ const searchInput = {
   color: "#334155",
   fontSize: 14,
   outline: "none",
+};
+
+const periodoGroup = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "0 4px",
+};
+
+const periodoLabel = {
+  fontSize: 13,
+  fontWeight: 600,
+  color: "#64748b",
+  whiteSpace: "nowrap",
+};
+
+const dateInput = {
+  height: 38,
+  padding: "0 10px",
+  borderRadius: 10,
+  border: "1px solid #e2e8f0",
+  background: "#f8fafc",
+  color: "#334155",
+  fontSize: 13,
 };
 
 const btnLimpar = {
