@@ -634,9 +634,10 @@ export default function MapaDesenvolvimentoPage() {
     { key: "usuarios", label: "usuários", path: "/acoes-desenvolvimento/responsaveis-disponiveis", setter: setUsuarios },
     { key: "participantes", label: "participantes", path: "/jornada-participantes", setter: setParticipantesJornada },
     // Endpoint dedicado do Oceano (não /api/treinamentos) para não depender
-    // das permissões da página de Turmas — aqui basta o acesso ao Oceano do
-    // Desenvolvimento (authorizeOceanAccess), já garantido pelo restante da
-    // página, e o payload é enxuto (só os campos usados no pré-preenchimento).
+    // das permissões da página de Turmas — aqui basta o acesso ao módulo
+    // Metodologia e Desenvolvimento (authorizeRoles("metodologia")), já
+    // garantido pelo restante da página, e o payload é enxuto (só os campos
+    // usados no pré-preenchimento).
     { key: "turmas", label: "turmas", path: "/acoes-desenvolvimento/turmas-disponiveis", setter: setTurmas },
   ];
 
