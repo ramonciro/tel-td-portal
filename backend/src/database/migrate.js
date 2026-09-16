@@ -1221,6 +1221,20 @@ async function runMigrations() {
     // diferente do dono original. Ver reembolsoTransporteController.js.
     await ensureColumn("dados_bancarios_colaborador", "empresa_id", "INT NULL");
 
+    // 38. Correção de cálculo de capacidade (16/09/2026, pedido do Ramon): a
+    // capacidade automática de um instrutor no mês era "dias úteis do mês"
+    // contado pelo calendário (todo dia da semana exceto domingo, ~26/mês)
+    // × horas/dia da regra — isso gerava ~156h/mês, um número que Ramon
+    // apontou como não condizente com o praticado. A conta certa, como ele
+    // descreveu, é uma média fixa de dias TRABALHADOS no mês (22), não uma
+    // contagem de calendário — 22 × 6h = 132h. dias_mes_padrao é esse valor,
+    // configurável na mesma tela de sempre (Capacidade → Configurar regra
+    // automática). hc_dia_padrao/hc_capacidade saem de uso (Ramon: HC não é
+    // uma base válida, turmas têm tamanhos diferentes) — as colunas
+    // continuam no banco, sem migração destrutiva, só não são mais lidas.
+    // Ver capacidadeResolver.js.
+    await ensureColumn("capacidade_regra_padrao", "dias_mes_padrao", "INT NOT NULL DEFAULT 22");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
