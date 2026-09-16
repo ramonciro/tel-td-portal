@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiFetch, getStoredUser, hasSomeRole } from "../../services/api";
+import { apiFetch, apiDownload, getStoredUser, hasSomeRole } from "../../services/api";
 import { colors, chart } from "../../lib/theme";
 import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
@@ -187,6 +187,25 @@ function Field({ label, required, children, hint, error }) {
   );
 }
 
+// Blocos do formulário de turma (Pacote 3, 16/09/2026): os mesmos 18 campos
+// de sempre, só reorganizados em 3 seções — Identificação → Cronograma/Local
+// → Classificação/observações — para reduzir a sensação de formulário longo.
+// Nenhum campo foi removido.
+function FormSection({ step, title, hint, children }) {
+  return (
+    <section style={formSection}>
+      <div style={formSectionHeader}>
+        <span style={formSectionBadge}>{step}</span>
+        <div>
+          <h3 style={formSectionTitle}>{title}</h3>
+          {hint && <p style={formSectionHint}>{hint}</p>}
+        </div>
+      </div>
+      <div style={formGrid}>{children}</div>
+    </section>
+  );
+}
+
 function Input({ value, onChange, ...props }) {
   return <input {...props} value={value ?? ""} onChange={onChange} style={inputStyle} />;
 }
@@ -200,7 +219,7 @@ function Select({ value, onChange, options, placeholder, ...props }) {
   );
 }
 
-function TurmaCard({ item, necessidade, resumo, salaNome, canEdit, canDelete, onEdit, onDelete }) {
+function TurmaCard({ item, necessidade, resumo, salaNome, sala, canEdit, canDelete, onEdit, onDelete, selectMode, selected, onToggleSelect }) {
   // /presenca-resumo (status_turma) tem mais estados do que esta tela usa
   // ("Chamada pendente", "Sem cronograma", "Sem treinandos" — ver
   // presencas/page.js, que trata os 7 estados). Desde que toda turma nova
@@ -224,10 +243,25 @@ function TurmaCard({ item, necessidade, resumo, salaNome, canEdit, canDelete, on
   const previstos = Number(item.participantes || item.participantes_previstos || 0);
   const progresso = previstos > 0 ? Math.min(100, Math.round((confirmados / previstos) * 100)) : 0;
 
+  // Pacote 3 (redesign, 16/09/2026): ocupação da sala (previstos vs.
+  // capacidade cadastrada em /salas) — antes o cartão só mostrava o nome da
+  // sala, sem dar noção de se a turma cabe nela.
+  const capacidadeSala = sala?.capacidade != null ? Number(sala.capacidade) : null;
+  const ocupacaoSalaPct = capacidadeSala > 0 && previstos > 0 ? Math.round((previstos / capacidadeSala) * 100) : null;
+
   return (
-    <article style={card}>
+    <article style={{ ...card, ...(selected ? cardSelecionado : null) }}>
       <div style={cardTop}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          {selectMode && (
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={onToggleSelect}
+              style={cardCheckbox}
+              aria-label={`Selecionar turma ${item.tema || ""}`}
+            />
+          )}
           <div style={clientMark}>{String(item.cliente || "T").slice(0, 1).toUpperCase()}</div>
           <div style={{ minWidth: 0 }}>
             <div style={clientName}>{item.cliente || "Sem cliente"}</div>
@@ -251,6 +285,19 @@ function TurmaCard({ item, necessidade, resumo, salaNome, canEdit, canDelete, on
         <div><span style={metricLabel}>Participantes</span><strong>{fmt(previstos)}{resumo ? ` · ${fmt(confirmados)} confirmados` : ""}</strong></div>
         <div><span style={metricLabel}>Carga</span><strong>{parseHoras(item.carga_horaria)}h{resumo && resumo.horas_aplicadas != null ? ` · ${resumo.horas_aplicadas}h aplicadas` : ""}</strong></div>
         <div><span style={metricLabel}>Formato</span><strong>{meta.modalidade === "presencial" ? "Presencial" : meta.modalidade === "online" ? "Online" : "—"}</strong></div>
+        {salaNome && (
+          <div>
+            <span style={metricLabel}>Sala</span>
+            <strong>
+              {salaNome}
+              {ocupacaoSalaPct != null && (
+                <span style={{ ...ocupacaoPill, ...(ocupacaoSalaPct > 100 ? ocupacaoPillEstourou : ocupacaoSalaPct >= 80 ? ocupacaoPillAtencao : ocupacaoPillOk) }}>
+                  {fmt(previstos)}/{fmt(capacidadeSala)} · {ocupacaoSalaPct}%
+                </span>
+              )}
+            </strong>
+          </div>
+        )}
       </div>
 
       {previstos > 0 && resumo && (
@@ -263,7 +310,6 @@ function TurmaCard({ item, necessidade, resumo, salaNome, canEdit, canDelete, on
       <div style={cardBottom}>
         <div style={ownerLine}>
           <span>{item.instrutor || "Sem instrutor"}</span>
-          {salaNome && <span>· {salaNome}</span>}
           {item.supervisor && <span>· {item.supervisor}</span>}
         </div>
         <div style={cardActions}>
@@ -312,6 +358,13 @@ function TreinamentosConteudo() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState({});
+
+  // Pacote 3 (redesign, 16/09/2026): modo de seleção múltipla, pra
+  // exportar/agir em várias turmas de uma vez em vez de uma por uma.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selecionadas, setSelecionadas] = useState(new Set());
+  const [exportando, setExportando] = useState(false);
+  const [excluindoLote, setExcluindoLote] = useState(false);
 
   const perfil = String(usuario?.perfil || "").toLowerCase();
   const clienteLogado = usuario?.cliente || "";
@@ -362,6 +415,10 @@ function TreinamentosConteudo() {
   const resumoPorId = useMemo(() => new Map(resumoPresenca.map((x) => [Number(x.id), x])), [resumoPresenca]);
   const necessidadePorId = useMemo(() => new Map(necessidades.map((x) => [Number(x.id), x])), [necessidades]);
   const salaNomePorId = useMemo(() => new Map(salas.map((x) => [Number(x.id), x.nome])), [salas]);
+  // Pacote 3 (redesign, 16/09/2026): o cartão não mostrava a proporção de
+  // ocupação da sala (previstos vs. capacidade cadastrada) — só o nome.
+  // `salas` já vem com `capacidade` da API (GET /api/salas), só faltava usar.
+  const salaPorId = useMemo(() => new Map(salas.map((x) => [Number(x.id), x])), [salas]);
 
   const clientesOptions = useMemo(() => {
     const list = clientes.map((x) => x.nome).filter(Boolean).sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -579,6 +636,57 @@ function TreinamentosConteudo() {
     } catch (err) { setError(err.message || "Não foi possível excluir a turma."); }
   }
 
+  function toggleSelectMode() {
+    setSelectMode((v) => !v);
+    setSelecionadas(new Set());
+  }
+
+  function toggleSelecionada(id) {
+    setSelecionadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selecionarTodosVisiveis() {
+    setSelecionadas(new Set(filtered.map((item) => item.id)));
+  }
+
+  async function exportarSelecionadas() {
+    if (!selecionadas.size) return;
+    try {
+      setExportando(true);
+      setError("");
+      await apiDownload(`/treinamentos/exportar-selecionadas?ids=${[...selecionadas].join(",")}`, "turmas-selecionadas.xlsx");
+    } catch (err) {
+      setError(err.message || "Não foi possível exportar as turmas selecionadas.");
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  async function excluirSelecionadas() {
+    if (!canDelete || !selecionadas.size) return;
+    if (!window.confirm(`Excluir ${selecionadas.size} turma(s) selecionada(s)? Essa ação remove os dados relacionados de cada uma.`)) return;
+    try {
+      setExcluindoLote(true);
+      setError("");
+      for (const id of selecionadas) {
+        await apiFetch(`/treinamentos/${id}`, { method: "DELETE" });
+      }
+      setSuccess(`${selecionadas.size} turma(s) excluída(s) com sucesso.`);
+      setSelecionadas(new Set());
+      setSelectMode(false);
+      await carregar();
+    } catch (err) {
+      setError(err.message || "Não foi possível excluir todas as turmas selecionadas.");
+      await carregar();
+    } finally {
+      setExcluindoLote(false);
+    }
+  }
+
   return (
     <PortalShell>
       <main style={page}>
@@ -618,9 +726,28 @@ function TreinamentosConteudo() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" style={mineToggle(onlyMine)} onClick={() => setOnlyMine((v) => !v)}>{onlyMine ? "Somente minhas" : "Mostrar minhas"}</button>
+            <button type="button" style={mineToggle(selectMode)} onClick={toggleSelectMode}>{selectMode ? "Cancelar seleção" : "Selecionar turmas"}</button>
             {canCreate && <button type="button" style={btnNovo} onClick={openCreate}>+ Criar nova turma</button>}
           </div>
         </div>
+
+        {selectMode && (
+          <div style={selectionBar}>
+            <span style={selectionCount}>{selecionadas.size} de {filtered.length} selecionada(s)</span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" style={ghostButton} onClick={selecionarTodosVisiveis}>Selecionar visíveis</button>
+              <button type="button" style={ghostButton} onClick={() => setSelecionadas(new Set())}>Limpar</button>
+              <button type="button" style={primarySmall} disabled={!selecionadas.size || exportando} onClick={exportarSelecionadas}>
+                {exportando ? "Exportando..." : "Exportar Excel"}
+              </button>
+              {canDelete && (
+                <button type="button" style={dangerGhost} disabled={!selecionadas.size || excluindoLote} onClick={excluirSelecionadas}>
+                  {excluindoLote ? "Excluindo..." : "Excluir selecionadas"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <div style={filtersGrid}>
           <div style={searchWrap}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round">
@@ -637,14 +764,31 @@ function TreinamentosConteudo() {
       <section style={{ display: "grid", gap: 12 }}>
         {loading ? <div style={emptyState}><div style={spinner} />Carregando suas turmas...</div> : filtered.length === 0 ? (
           <div style={emptyState}><div style={emptyIcon}>🎓</div><strong>Nenhuma turma encontrada</strong><span>Ajuste os filtros ou crie uma nova turma para começar.</span>{canCreate && <button type="button" style={createButtonSmall} onClick={openCreate}>+ Criar nova turma</button>}</div>
-        ) : filtered.map((item) => <TurmaCard key={item.id} item={item} necessidade={necessidadePorId.get(Number(item.necessidade_id))} resumo={resumoPorId.get(Number(item.id))} salaNome={item.sala_outro_local || salaNomePorId.get(Number(item.sala_id)) || ""} canEdit={canEdit} canDelete={canDelete} onEdit={openEdit} onDelete={deleteTurma} />)}
+        ) : filtered.map((item) => (
+          <TurmaCard
+            key={item.id}
+            item={item}
+            necessidade={necessidadePorId.get(Number(item.necessidade_id))}
+            resumo={resumoPorId.get(Number(item.id))}
+            salaNome={item.sala_outro_local || salaNomePorId.get(Number(item.sala_id)) || ""}
+            sala={item.sala_id ? salaPorId.get(Number(item.sala_id)) : null}
+            canEdit={canEdit}
+            canDelete={canDelete}
+            onEdit={openEdit}
+            onDelete={deleteTurma}
+            selectMode={selectMode}
+            selected={selecionadas.has(item.id)}
+            onToggleSelect={() => toggleSelecionada(item.id)}
+          />
+        ))}
       </section>
 
       {modalOpen && (
         <Modal title={editingId ? "Editar turma" : "Criar nova turma"} subtitle="Preencha os dados essenciais. A necessidade pode ser vinculada agora ou posteriormente." onClose={() => !saving && setModalOpen(false)}>
           <form onSubmit={save}>
             <div style={optionalNotice}><span style={noticeIcon}>🎯</span><div><strong>Necessidade de treinamento <span style={{ fontWeight: 500, color: colors.textMuted }}>(opcional)</span></strong><span>Se houver uma necessidade formal, você pode vinculá-la agora. A turma também pode ser criada sem esse vínculo.</span></div></div>
-            <div style={formGrid}>
+
+            <FormSection step="1" title="Identificação" hint="O que é a turma, para quem, e quem conduz.">
               <Field label="Necessidade (opcional)" hint="Você pode vincular uma necessidade agora ou deixar para depois.">
                 <Select value={form.necessidade_id} onChange={(e) => setField("necessidade_id", e.target.value)} options={necessidadesDisponiveis.map((n) => ({ value: String(n.id), label: `${n.cliente} — ${n.tema} · ${n.horas_atendidas || 0}h / ${n.horas_necessarias || "?"}h` }))} placeholder="Nenhuma necessidade selecionada" />
               </Field>
@@ -653,6 +797,9 @@ function TreinamentosConteudo() {
               <Field label="Público"><Input value={form.publico} onChange={(e) => setField("publico", e.target.value)} placeholder="Ex.: Operação, onboarding, reciclagem" /></Field>
               <Field label="Instrutor" required error={formErrors.instrutor}><Select value={form.instrutor} disabled={isInstructor} onChange={(e) => setField("instrutor", e.target.value)} options={instrutores.map((x) => ({ value: x.nome, label: usuarioLabel(x) }))} placeholder="Selecione o instrutor" /></Field>
               <Field label="Supervisor"><Select value={form.supervisor} disabled={perfil === "supervisor"} onChange={(e) => setField("supervisor", e.target.value)} options={supervisores.map((x) => ({ value: x.nome, label: usuarioLabel(x) }))} placeholder="Selecione o supervisor" /></Field>
+            </FormSection>
+
+            <FormSection step="2" title="Cronograma / Local" hint="Quando acontece, carga horária e onde (sala ou local externo).">
               <Field label="Carga horária"><Input value={form.carga_horaria} onChange={(e) => setField("carga_horaria", e.target.value)} placeholder="Ex.: 20h" /></Field>
               <Field label="Treinandos previstos"><Input type="number" min="0" value={form.participantes} onChange={(e) => setField("participantes", e.target.value)} placeholder="Quantidade prevista" /></Field>
               <Field label="Data de início" required error={formErrors.data_inicio}><Input type="date" value={form.data_inicio} onChange={(e) => setField("data_inicio", e.target.value)} /></Field>
@@ -677,12 +824,16 @@ function TreinamentosConteudo() {
                   <Input value={form.sala_outro_local} onChange={(e) => setField("sala_outro_local", e.target.value)} placeholder="Ex.: Auditório do cliente" />
                 </Field>
               )}
+            </FormSection>
+
+            <FormSection step="3" title="Classificação / observações" hint="Subdivisão para comprovação de horas, status da turma e notas livres.">
               <Field label="Subdivisão / subtipo" hint="Usado para comprovação de horas por subdivisão (ex.: MPT). Selecione &quot;Avaliação Técnica&quot; para habilitar a Presença Nominal/Reembolso de Transporte.">
                 <Select value={form.subtipo} onChange={(e) => setField("subtipo", e.target.value)} options={subtipos.map((x) => ({ value: x.nome, label: x.nome }))} placeholder="Sem subdivisão" />
               </Field>
               <Field label="Status"><Select value={form.status} onChange={(e) => setField("status", e.target.value)} options={Object.entries(STATUS).map(([value, x]) => ({ value, label: x.label }))} placeholder="Selecione o status" /></Field>
               <Field label="Observações"><textarea value={form.descricao} onChange={(e) => setField("descricao", e.target.value)} placeholder="Informações complementares" style={{ ...inputStyle, minHeight: 92, resize: "vertical" }} /></Field>
-            </div>
+            </FormSection>
+
             <div style={modalFooter}><span style={requiredFooter}>A necessidade de treinamento é opcional.</span><div style={{ display: "flex", gap: 10 }}><button type="button" disabled={saving} style={secondaryButton} onClick={() => setModalOpen(false)}>Cancelar</button><button type="submit" disabled={saving} style={createButton}>{saving ? "Salvando..." : editingId ? "Salvar alterações" : "Criar turma"}</button></div></div>
           </form>
         </Modal>
@@ -707,6 +858,10 @@ const toolbarTop = { display: "flex", alignItems: "center", justifyContent: "spa
 const sectionTitle = { margin: 0, fontSize: 18, fontWeight: 850, color: "#0f172a", letterSpacing: "-.02em" };
 const sectionSubtitle = { margin: "3px 0 0", color: "#94a3b8", fontSize: 12 };
 const mineToggle = (active) => ({ border: `1px solid ${active ? "#bfdbfe" : "#e2e8f0"}`, background: active ? "#eff6ff" : "#fff", color: active ? "#1d4ed8" : "#475569", borderRadius: 10, padding: "8px 11px", fontWeight: 800, cursor: "pointer" });
+// Barra de ações em lote (Pacote 3, 16/09/2026) — aparece só em modo de
+// seleção múltipla, acima da lista de cartões.
+const selectionBar = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 14, padding: "10px 14px", borderRadius: 14, background: "#eff6ff", border: "1px solid #bfdbfe" };
+const selectionCount = { fontSize: 13, fontWeight: 800, color: "#1d4ed8" };
 const filtersGrid = { display: "grid", gridTemplateColumns: "minmax(240px,2fr) repeat(3,minmax(145px,1fr))", gap: 9 };
 const searchWrap = { display: "flex", alignItems: "center", gap: 8, padding: "0 12px", height: 40, border: "1px solid #e2e8f0", borderRadius: 11, background: "#f8fafc", color: "#64748b" };
 const searchInput = { width: "100%", border: 0, outline: 0, background: "transparent", fontSize: 13, color: "#0f172a" };
@@ -719,8 +874,19 @@ const statusBadge = { borderRadius: 999, padding: "6px 9px", fontSize: 11, fontW
 const needLine = { display: "flex", gap: 9, alignItems: "center", marginTop: 14, padding: "10px 12px", borderRadius: 12, background: "#faf5ff", border: "1px solid #ede9fe" };
 const needCaption = { display: "block", fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".07em", color: "#8b5cf6" };
 const needText = { display: "block", marginTop: 1, fontSize: 12, color: "#4c1d95" };
-const metricsRow = { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 15 };
+// auto-fit (não repeat(4) fixo): o 5º item opcional (Sala, quando a turma
+// tem sala reservada) precisa caber sem espremer as outras 4 colunas.
+const metricsRow = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 10, marginTop: 15 };
 const metricLabel = { display: "block", fontSize: 10, color: "#94a3b8", marginBottom: 3 };
+// Ocupação da sala (Pacote 3, 16/09/2026): previstos vs. capacidade
+// cadastrada — reaproveita a paleta semântica success/warning/danger já
+// usada no resto do sistema (não é cor "inventada").
+const ocupacaoPill = { display: "inline-block", marginLeft: 6, borderRadius: 999, padding: "1px 7px", fontSize: 10, fontWeight: 800 };
+const ocupacaoPillOk = { background: colors.successLight, color: colors.successText };
+const ocupacaoPillAtencao = { background: colors.warningLight, color: colors.warningText };
+const ocupacaoPillEstourou = { background: colors.dangerLight, color: colors.dangerText };
+const cardSelecionado = { border: "1.5px solid #2563eb", boxShadow: "0 0 0 3px rgba(37,99,235,.12)" };
+const cardCheckbox = { width: 18, height: 18, marginRight: 2, cursor: "pointer", flexShrink: 0, accentColor: "#2563eb" };
 const progressHeader = { display: "flex", justifyContent: "space-between", fontSize: 10, color: "#64748b", marginBottom: 5 };
 const progressTrack = { height: 5, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" };
 const progressBar = { height: "100%", borderRadius: 999, background: "#2563eb" };
@@ -745,7 +911,15 @@ const closeButton = { width: 34, height: 34, borderRadius: 10, border: "1px soli
 const requiredNotice = { display: "flex", gap: 11, margin: "18px 24px 0", padding: "12px 13px", borderRadius: 13, background: "#f5f3ff", border: "1px solid #ddd6fe", color: "#4c1d95" };
 const optionalNotice = { ...requiredNotice, background: '#f8fafc', border: `1px solid ${colors.border}` };
 const noticeIcon = { width: 32, height: 32, borderRadius: 10, display: "grid", placeItems: "center", background: "#ede9fe", flexShrink: 0 };
-const formGrid = { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 14, padding: 24 };
+const formGrid = { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 14 };
+// Blocos do formulário de turma (Pacote 3, 16/09/2026): Identificação →
+// Cronograma/Local → Classificação/observações. Cada bloco é a mesma grid
+// de sempre, só com um cabeçalho numerado e um traço separador acima.
+const formSection = { padding: "20px 24px", borderTop: "1px solid #eef2f7" };
+const formSectionHeader = { display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 15 };
+const formSectionBadge = { width: 26, height: 26, borderRadius: "50%", background: colors.primaryLight, color: colors.primary, fontWeight: 900, fontSize: 12, display: "grid", placeItems: "center", flexShrink: 0 };
+const formSectionTitle = { margin: 0, fontSize: 14, fontWeight: 850, color: "#0f172a" };
+const formSectionHint = { margin: "2px 0 0", fontSize: 11, color: "#94a3b8" };
 const fieldWrap = { display: "grid", gap: 6, minWidth: 0 };
 const fieldLabel = { fontSize: 11, fontWeight: 800, color: "#334155" };
 const fieldHint = { fontSize: 10, color: "#94a3b8", lineHeight: 1.4 };
