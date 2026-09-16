@@ -64,57 +64,78 @@ async function getDesempenhoExportar(req, res) {
   try {
     const filtros = resolverFiltros(req);
     const resultado = await getScorecardInstrutor(filtros);
-    const XLSX = require("xlsx");
-    const wb = XLSX.utils.book_new();
+    const { novoWorkbook, adicionarTabela, estilizarCabecalho, escreverCelula } = require("../lib/excelExport");
+    const wb = novoWorkbook();
 
-    const linhas = [
-      [
-        "Instrutor", "Posição no time", "Índice geral (freq./NPS)",
-        "CH realizada (h)", "Capacidade (h)", "Ocupação (%)",
-        "Frequência média (%)", "Turmas c/ chamada lançada",
-        "Nota prova (média)", "Nota qualidade (média)", "Cobertura avaliação (%)", "Turmas avaliadas / total",
-        "NPS score", "NPS nota média", "Promotores", "Neutros", "Detratores", "Respostas NPS",
+    adicionarTabela(wb, {
+      nomeAba: "Scorecard instrutores",
+      colunas: [
+        { titulo: "Instrutor", chave: "instrutor", largura: 26 },
+        { titulo: "Posição no time", chave: "posicao", largura: 15 },
+        { titulo: "Índice geral (freq./NPS)", chave: "indice_geral", largura: 16, formato: "decimal1" },
+        { titulo: "CH realizada (h)", chave: "horas_realizadas", largura: 14, formato: "decimal1" },
+        { titulo: "Capacidade (h)", chave: "capacidade_horas", largura: 13, formato: "decimal1" },
+        { titulo: "Ocupação (%)", chave: "ocupacao_pct", largura: 12, formato: "percentual" },
+        { titulo: "Frequência média (%)", chave: "frequencia_media_pct", largura: 15, formato: "percentual" },
+        { titulo: "Turmas c/ chamada lançada", chave: "turmas_consideradas", largura: 16, formato: "inteiro" },
+        { titulo: "Nota prova (média)", chave: "nota_prova_media", largura: 14, formato: "decimal1" },
+        { titulo: "Nota qualidade (média)", chave: "nota_qualidade_media", largura: 15, formato: "decimal1" },
+        { titulo: "Cobertura avaliação (%)", chave: "cobertura_pct", largura: 16, formato: "percentual" },
+        { titulo: "Turmas avaliadas / total", chave: "turmas_avaliadas_total", largura: 16 },
+        { titulo: "NPS score", chave: "nps_score", largura: 11, formato: "decimal1" },
+        { titulo: "NPS nota média", chave: "nps_nota_media", largura: 12, formato: "decimal1" },
+        { titulo: "Promotores", chave: "promotores", largura: 11, formato: "inteiro" },
+        { titulo: "Neutros", chave: "neutros", largura: 10, formato: "inteiro" },
+        { titulo: "Detratores", chave: "detratores", largura: 11, formato: "inteiro" },
+        { titulo: "Respostas NPS", chave: "total_respostas", largura: 12, formato: "inteiro" },
       ],
-      ...resultado.itens.map((i) => [
-        i.instrutor,
-        i.posicao_no_time ? `${i.posicao_no_time}º de ${i.total_no_ranking}` : "—",
-        i.indice_geral,
-        i.ch.horas_realizadas,
-        i.ch.capacidade_horas,
-        i.ch.ocupacao_pct,
-        i.frequencia.media_pct,
-        i.frequencia.turmas_consideradas,
-        i.avaliacao.nota_prova_media,
-        i.avaliacao.nota_qualidade_media,
-        i.avaliacao.cobertura_pct,
-        `${i.avaliacao.turmas_com_avaliacao} / ${i.avaliacao.turmas_no_periodo}`,
-        i.nps.nps_score,
-        i.nps.nota_media,
-        i.nps.promotores,
-        i.nps.neutros,
-        i.nps.detratores,
-        i.nps.total_respostas,
-      ]),
-    ];
-
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), "Scorecard instrutores");
+      linhas: resultado.itens.map((i) => ({
+        instrutor: i.instrutor,
+        posicao: i.posicao_no_time ? `${i.posicao_no_time}º de ${i.total_no_ranking}` : "—",
+        indice_geral: i.indice_geral,
+        horas_realizadas: i.ch.horas_realizadas,
+        capacidade_horas: i.ch.capacidade_horas,
+        ocupacao_pct: i.ch.ocupacao_pct,
+        frequencia_media_pct: i.frequencia.media_pct,
+        turmas_consideradas: i.frequencia.turmas_consideradas,
+        nota_prova_media: i.avaliacao.nota_prova_media,
+        nota_qualidade_media: i.avaliacao.nota_qualidade_media,
+        cobertura_pct: i.avaliacao.cobertura_pct,
+        turmas_avaliadas_total: `${i.avaliacao.turmas_com_avaliacao} / ${i.avaliacao.turmas_no_periodo}`,
+        nps_score: i.nps.nps_score,
+        nps_nota_media: i.nps.nota_media,
+        promotores: i.nps.promotores,
+        neutros: i.nps.neutros,
+        detratores: i.nps.detratores,
+        total_respostas: i.nps.total_respostas,
+      })),
+    });
 
     if (resultado.medias_time) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ["Média do time", ""],
-        ["Ocupação (%)", resultado.medias_time.ocupacao_pct],
-        ["Frequência (%)", resultado.medias_time.frequencia_pct],
-        ["NPS score", resultado.medias_time.nps_score],
-        ["Índice geral", resultado.medias_time.indice_geral],
-        ["Instrutores considerados", resultado.medias_time.instrutores_considerados],
-      ]), "Média do time");
+      const wsMedia = wb.addWorksheet("Média do time");
+      wsMedia.columns = [{ width: 26 }, { width: 16 }];
+      wsMedia.getCell(1, 1).value = "Média do time";
+      wsMedia.getCell(1, 2).value = "";
+      estilizarCabecalho(wsMedia, 1, 2);
+      const linhasMedia = [
+        ["Ocupação (%)", resultado.medias_time.ocupacao_pct, "percentual"],
+        ["Frequência (%)", resultado.medias_time.frequencia_pct, "percentual"],
+        ["NPS score", resultado.medias_time.nps_score, "decimal1"],
+        ["Índice geral", resultado.medias_time.indice_geral, "decimal1"],
+        ["Instrutores considerados", resultado.medias_time.instrutores_considerados, "inteiro"],
+      ];
+      linhasMedia.forEach(([label, valor, formato], index) => {
+        const row = index + 2;
+        wsMedia.getCell(row, 1).value = label;
+        escreverCelula(wsMedia, row, 2, valor, formato);
+      });
     }
 
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const buf = await wb.xlsx.writeBuffer();
     const nomeArquivo = `desempenho_instrutor_${labelPeriodo(resultado.periodo).replace(/[^0-9a-zA-Z]+/g, "_")}.xlsx`;
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${nomeArquivo}"`);
-    return res.send(buf);
+    return res.send(Buffer.from(buf));
   } catch (error) {
     console.error("[desempenho-instrutor] getDesempenhoExportar:", error);
     return res.status(error.status || 500).json({ ok: false, message: error.message || "Erro ao exportar desempenho do instrutor." });

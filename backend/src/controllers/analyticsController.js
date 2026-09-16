@@ -481,8 +481,8 @@ async function exportarIndicadores(req, res) {
   try {
     const eId = req.empresaId ?? null;
     const aba = String(req.query.aba || 'horas');
-    const XLSX = require('xlsx');
-    const wb = XLSX.utils.book_new();
+    const { novoWorkbook, adicionarTabela, estilizarCabecalho, escreverCelula } = require('../lib/excelExport');
+    const wb = novoWorkbook();
 
     if (aba === 'horas') {
       // Mesma fonte única de horas aplicadas usada pela tela (getHoras) e
@@ -492,14 +492,24 @@ async function exportarIndicadores(req, res) {
         getHorasAplicadasPorCliente({ empresaId: eId, cliente: req.query.cliente, dataInicio: req.query.data_inicio, dataFim: req.query.data_fim, limit: 10 }),
         getHorasAplicadasPorInstrutor({ empresaId: eId, cliente: req.query.cliente, dataInicio: req.query.data_inicio, dataFim: req.query.data_fim, limit: 10 }),
       ]);
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ["Cliente/Operação", "Turmas", "Horas"],
-        ...porCliente.map((r) => [r.cliente, Number(r.turmas), Number(r.horas)]),
-      ]), "Por cliente");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ["Instrutor", "Turmas", "Horas"],
-        ...porInstrutor.map((r) => [r.instrutor, Number(r.turmas), Number(r.horas)]),
-      ]), "Por instrutor");
+      adicionarTabela(wb, {
+        nomeAba: "Por cliente",
+        colunas: [
+          { titulo: "Cliente/Operação", chave: "cliente", largura: 34 },
+          { titulo: "Turmas", chave: "turmas", largura: 12, formato: "inteiro" },
+          { titulo: "Horas", chave: "horas", largura: 12, formato: "decimal1" },
+        ],
+        linhas: porCliente.map((r) => ({ cliente: r.cliente, turmas: r.turmas, horas: r.horas })),
+      });
+      adicionarTabela(wb, {
+        nomeAba: "Por instrutor",
+        colunas: [
+          { titulo: "Instrutor", chave: "instrutor", largura: 30 },
+          { titulo: "Turmas", chave: "turmas", largura: 12, formato: "inteiro" },
+          { titulo: "Horas", chave: "horas", largura: 12, formato: "decimal1" },
+        ],
+        linhas: porInstrutor.map((r) => ({ instrutor: r.instrutor, turmas: r.turmas, horas: r.horas })),
+      });
     } else if (aba === 'nps') {
       const filtro = filtroRecorte(req.query, 't');
       const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
@@ -510,10 +520,16 @@ async function exportarIndicadores(req, res) {
          GROUP BY t.id, t.tema, t.cliente ORDER BY respostas DESC`,
         filtro.params
       );
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ["Turma", "Cliente", "Respostas", "NPS médio"],
-        ...porTurma.map((r) => [r.tema, r.cliente, Number(r.respostas), r.media != null ? Number(r.media) : ""]),
-      ]), "NPS por turma");
+      adicionarTabela(wb, {
+        nomeAba: "NPS por turma",
+        colunas: [
+          { titulo: "Turma", chave: "tema", largura: 34 },
+          { titulo: "Cliente", chave: "cliente", largura: 22 },
+          { titulo: "Respostas", chave: "respostas", largura: 12, formato: "inteiro" },
+          { titulo: "NPS médio", chave: "media", largura: 12, formato: "decimal1" },
+        ],
+        linhas: porTurma.map((r) => ({ tema: r.tema, cliente: r.cliente, respostas: r.respostas, media: r.media })),
+      });
     } else if (aba === 'efetividade') {
       const filtro = filtroRecorte(req.query, 't');
       const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
@@ -528,15 +544,25 @@ async function exportarIndicadores(req, res) {
          WHERE ${where} GROUP BY t.cliente ORDER BY turmas DESC`,
         filtro.params
       );
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ["Cliente/Operação", "Turmas", "Avaliados", "Nota média", "Aprovados", "% Aprovados"],
-        ...porCliente.map((r) => [
-          r.cliente, Number(r.turmas), Number(r.avaliados || 0),
-          r.media_prova != null ? Number(r.media_prova) : "",
-          Number(r.aprovados || 0),
-          Number(r.avaliados) > 0 ? Math.round((Number(r.aprovados) / Number(r.avaliados)) * 100) : "",
-        ]),
-      ]), "Efetividade por cliente");
+      adicionarTabela(wb, {
+        nomeAba: "Efetividade por cliente",
+        colunas: [
+          { titulo: "Cliente/Operação", chave: "cliente", largura: 30 },
+          { titulo: "Turmas", chave: "turmas", largura: 10, formato: "inteiro" },
+          { titulo: "Avaliados", chave: "avaliados", largura: 12, formato: "inteiro" },
+          { titulo: "Nota média", chave: "media_prova", largura: 12, formato: "decimal1" },
+          { titulo: "Aprovados", chave: "aprovados", largura: 12, formato: "inteiro" },
+          { titulo: "% Aprovados", chave: "pct_aprovados", largura: 13, formato: "percentual" },
+        ],
+        linhas: porCliente.map((r) => ({
+          cliente: r.cliente,
+          turmas: r.turmas,
+          avaliados: r.avaliados || 0,
+          media_prova: r.media_prova,
+          aprovados: r.aprovados || 0,
+          pct_aprovados: Number(r.avaliados) > 0 ? Math.round((Number(r.aprovados) / Number(r.avaliados)) * 100) : "",
+        })),
+      });
     } else if (aba === 'roi') {
       const filtro = filtroRecorte(req.query);
       const where = `${tenantWhere(eId)}${filtro.sql}`;
@@ -557,25 +583,34 @@ async function exportarIndicadores(req, res) {
       ]);
       const pessoas = Number(dados.pessoas_impactadas || 0);
       const custo = horas * pessoas * custoPorHora;
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ["Indicador", "Valor"],
-        ["Turmas totais", Number(dados.turmas_total || 0)],
-        ["Turmas concluídas", Number(dados.turmas_concluidas || 0)],
-        ["Horas previstas", Number(dados.horas_total || 0)],
-        ["Horas realizadas", horas],
-        ["Pessoas impactadas", pessoas],
-        ["Pessoas previstas", Number(dados.pessoas_previstas || 0)],
-        ["Custo por hora (R$)", custoPorHora],
-        ["Custo estimado (R$)", custo],
-      ]), "ROI");
+      const ws = wb.addWorksheet("ROI");
+      ws.columns = [{ width: 26 }, { width: 18 }];
+      const linhasRoi = [
+        ["Turmas totais", Number(dados.turmas_total || 0), "inteiro"],
+        ["Turmas concluídas", Number(dados.turmas_concluidas || 0), "inteiro"],
+        ["Horas previstas", Number(dados.horas_total || 0), "decimal1"],
+        ["Horas realizadas", horas, "decimal1"],
+        ["Pessoas impactadas", pessoas, "inteiro"],
+        ["Pessoas previstas", Number(dados.pessoas_previstas || 0), "inteiro"],
+        ["Custo por hora", custoPorHora, "moeda"],
+        ["Custo estimado", custo, "moeda"],
+      ];
+      ws.getCell(1, 1).value = "Indicador";
+      ws.getCell(1, 2).value = "Valor";
+      estilizarCabecalho(ws, 1, 2);
+      linhasRoi.forEach(([label, valor, formato], index) => {
+        const row = index + 2;
+        ws.getCell(row, 1).value = label;
+        escreverCelula(ws, row, 2, valor, formato);
+      });
     } else {
       return res.status(400).json({ ok: false, message: "Aba inválida." });
     }
 
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const buf = await wb.xlsx.writeBuffer();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="indicadores_${aba}.xlsx"`);
-    return res.send(buf);
+    return res.send(Buffer.from(buf));
   } catch (error) {
     console.error('[analytics] exportarIndicadores:', error.message);
     return res.status(500).json({ ok: false, message: 'Erro ao exportar indicadores'});

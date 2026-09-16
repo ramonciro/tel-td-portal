@@ -553,36 +553,48 @@ async function getDashboardTreinamentos(req, res) {
 async function exportarTreinamentos(req, res) {
   try {
     const { enriched } = await carregarTurmasEnriquecidas(req);
-    const XLSX = require("xlsx");
+    const { novoWorkbook, adicionarTabela } = require("../lib/excelExport");
 
-    const linhas = enriched.map((item) => [
-      item.tema || "-",
-      item.cliente || "-",
-      item.instrutor || "-",
-      parseModalidadeFromDescricao(item.descricao) === "online" ? "Online"
-        : parseModalidadeFromDescricao(item.descricao) === "presencial" ? "Presencial" : "-",
+    const linhas = enriched.map((item) => ({
+      tema: item.tema || "-",
+      cliente: item.cliente || "-",
+      instrutor: item.instrutor || "-",
+      modalidade:
+        parseModalidadeFromDescricao(item.descricao) === "online" ? "Online"
+          : parseModalidadeFromDescricao(item.descricao) === "presencial" ? "Presencial" : "-",
       // Bug real (mesma raiz do filtro/tabela): usava normalizeStatus(item.status)
       // — texto cru do banco, nunca refletia cronograma/chamada pendente.
       // Excel exportado dizia "Planejada" pra turma que já estava rodando.
-      item.status_canonico,
-      item.data_inicio || item.data || "",
-      item.presenca.baseParticipantes,
-      item.presenca.taxaPresenca,
-      item.presenca.diasPresente,
-      item.presenca.diasPendente,
-    ]);
+      status: item.status_canonico,
+      data: item.data_inicio || item.data || null,
+      base: item.presenca.baseParticipantes,
+      presenca_pct: item.presenca.taxaPresenca,
+      presentes: item.presenca.diasPresente,
+      pendentes: item.presenca.diasPendente,
+    }));
 
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([
-      ["Turma", "Cliente", "Instrutor", "Modalidade", "Status", "Data", "Base", "Presença %", "Presentes", "Pendentes"],
-      ...linhas,
-    ]);
-    XLSX.utils.book_append_sheet(wb, ws, "Turmas");
+    const wb = novoWorkbook();
+    adicionarTabela(wb, {
+      nomeAba: "Turmas",
+      colunas: [
+        { titulo: "Turma", chave: "tema", largura: 32 },
+        { titulo: "Cliente", chave: "cliente", largura: 22 },
+        { titulo: "Instrutor", chave: "instrutor", largura: 24 },
+        { titulo: "Modalidade", chave: "modalidade", largura: 14 },
+        { titulo: "Status", chave: "status", largura: 18 },
+        { titulo: "Data", chave: "data", largura: 13, formato: "data" },
+        { titulo: "Base", chave: "base", largura: 10, formato: "inteiro" },
+        { titulo: "Presença %", chave: "presenca_pct", largura: 13, formato: "percentual" },
+        { titulo: "Presentes", chave: "presentes", largura: 12, formato: "inteiro" },
+        { titulo: "Pendentes", chave: "pendentes", largura: 12, formato: "inteiro" },
+      ],
+      linhas,
+    });
 
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const buf = await wb.xlsx.writeBuffer();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", 'attachment; filename="dashboard-turmas.xlsx"');
-    return res.send(buf);
+    return res.send(Buffer.from(buf));
   } catch (error) {
     console.error("[dashboard] exportarTreinamentos:", error.message);
     return res.status(500).json({

@@ -1,5 +1,4 @@
 const db = require("../lib/db");
-const XLSX = require("xlsx");
 const { usuarioPertenceAoTenant, treinamentoPertenceAoTenant } = require("../services/tenantValidation");
 const { normalizeSubtipo } = require("../lib/subtipos");
 
@@ -464,84 +463,82 @@ async function exportarEvidencias(req, res) {
       return x.subdivisao.localeCompare(y.subdivisao, "pt-BR");
     });
 
-    const wb = XLSX.utils.book_new();
+    const { novoWorkbook, adicionarTabela } = require("../lib/excelExport");
+    const wb = novoWorkbook();
 
-    const resumoLinhas = [
-      ["Cliente", "Subdivisão", "Qtd. registros", "Horas planejadas", "Horas realizadas"],
-      ...resumo.map((r) => [
-        r.cliente,
-        r.subdivisao,
-        r.qtd,
-        r.horasPlanejadas,
-        r.horasRealizadas,
-      ]),
-    ];
-    const resumoSheet = XLSX.utils.aoa_to_sheet(resumoLinhas);
-    XLSX.utils.book_append_sheet(wb, resumoSheet, "Resumo por cliente");
-
-    const acoesLinhas = [
-      [
-        "Cliente",
-        "Jornada",
-        "Subdivisão",
-        "Ação",
-        "Status",
-        "Responsável",
-        "Data início",
-        "Data fim",
-        "Horas planejadas",
-        "Horas realizadas",
-        "Participantes previstos",
-        "Participantes realizados",
+    adicionarTabela(wb, {
+      nomeAba: "Resumo por cliente",
+      colunas: [
+        { titulo: "Cliente", chave: "cliente", largura: 24 },
+        { titulo: "Subdivisão", chave: "subdivisao", largura: 30 },
+        { titulo: "Qtd. registros", chave: "qtd", largura: 14, formato: "inteiro" },
+        { titulo: "Horas planejadas", chave: "horasPlanejadas", largura: 15, formato: "decimal1" },
+        { titulo: "Horas realizadas", chave: "horasRealizadas", largura: 15, formato: "decimal1" },
       ],
-      ...acoes.map((a) => [
-        a.cliente || "Não informado",
-        a.jornada_nome || "",
-        a.subtipo || "Não classificada",
-        a.tema || "",
-        a.status || "",
-        a.responsavel_nome || "",
-        a.data_inicio || "",
-        a.data_fim || "",
-        Number(a.horas_planejadas || 0),
-        Number(a.horas_realizadas || 0),
-        Number(a.participantes_previstos || 0),
-        Number(a.participantes_realizados || 0),
-      ]),
-    ];
-    const acoesSheet = XLSX.utils.aoa_to_sheet(acoesLinhas);
-    XLSX.utils.book_append_sheet(wb, acoesSheet, "Ações");
+      linhas: resumo,
+    });
 
-    const coachingLinhas = [
-      [
-        "Cliente",
-        "Jornada",
-        "Tipo",
-        "Título",
-        "Status",
-        "Responsável",
-        "Data início",
-        "Data fim",
-        "Horas planejadas",
-        "Horas realizadas",
+    adicionarTabela(wb, {
+      nomeAba: "Ações",
+      colunas: [
+        { titulo: "Cliente", chave: "cliente", largura: 22 },
+        { titulo: "Jornada", chave: "jornada", largura: 22 },
+        { titulo: "Subdivisão", chave: "subdivisao", largura: 26 },
+        { titulo: "Ação", chave: "tema", largura: 28 },
+        { titulo: "Status", chave: "status", largura: 14 },
+        { titulo: "Responsável", chave: "responsavel", largura: 22 },
+        { titulo: "Data início", chave: "data_inicio", largura: 13, formato: "data" },
+        { titulo: "Data fim", chave: "data_fim", largura: 13, formato: "data" },
+        { titulo: "Horas planejadas", chave: "horas_planejadas", largura: 15, formato: "decimal1" },
+        { titulo: "Horas realizadas", chave: "horas_realizadas", largura: 15, formato: "decimal1" },
+        { titulo: "Participantes previstos", chave: "participantes_previstos", largura: 16, formato: "inteiro" },
+        { titulo: "Participantes realizados", chave: "participantes_realizados", largura: 17, formato: "inteiro" },
       ],
-      ...coachings.map((c) => [
-        c.cliente || "Não informado",
-        c.jornada_nome || "",
-        c.tipo_coaching || "",
-        c.titulo || "",
-        c.status || "",
-        c.responsavel_nome || "",
-        c.data_inicio || "",
-        c.data_fim || "",
-        Number(c.horas_planejadas || 0),
-        Number(c.horas_totais || 0),
-      ]),
-    ];
-    const coachingSheet = XLSX.utils.aoa_to_sheet(coachingLinhas);
-    XLSX.utils.book_append_sheet(wb, coachingSheet, "Coaching e mentoria");
+      linhas: acoes.map((a) => ({
+        cliente: a.cliente || "Não informado",
+        jornada: a.jornada_nome || "",
+        subdivisao: a.subtipo || "Não classificada",
+        tema: a.tema || "",
+        status: a.status || "",
+        responsavel: a.responsavel_nome || "",
+        data_inicio: a.data_inicio || null,
+        data_fim: a.data_fim || null,
+        horas_planejadas: Number(a.horas_planejadas || 0),
+        horas_realizadas: Number(a.horas_realizadas || 0),
+        participantes_previstos: Number(a.participantes_previstos || 0),
+        participantes_realizados: Number(a.participantes_realizados || 0),
+      })),
+    });
 
-    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    adicionarTabela(wb, {
+      nomeAba: "Coaching e mentoria",
+      colunas: [
+        { titulo: "Cliente", chave: "cliente", largura: 22 },
+        { titulo: "Jornada", chave: "jornada", largura: 22 },
+        { titulo: "Tipo", chave: "tipo", largura: 22 },
+        { titulo: "Título", chave: "titulo", largura: 28 },
+        { titulo: "Status", chave: "status", largura: 14 },
+        { titulo: "Responsável", chave: "responsavel", largura: 22 },
+        { titulo: "Data início", chave: "data_inicio", largura: 13, formato: "data" },
+        { titulo: "Data fim", chave: "data_fim", largura: 13, formato: "data" },
+        { titulo: "Horas planejadas", chave: "horas_planejadas", largura: 15, formato: "decimal1" },
+        { titulo: "Horas realizadas", chave: "horas_realizadas", largura: 15, formato: "decimal1" },
+      ],
+      linhas: coachings.map((c) => ({
+        cliente: c.cliente || "Não informado",
+        jornada: c.jornada_nome || "",
+        tipo: c.tipo_coaching || "",
+        titulo: c.titulo || "",
+        status: c.status || "",
+        responsavel: c.responsavel_nome || "",
+        data_inicio: c.data_inicio || null,
+        data_fim: c.data_fim || null,
+        horas_planejadas: Number(c.horas_planejadas || 0),
+        horas_realizadas: Number(c.horas_totais || 0),
+      })),
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
 
     res.setHeader(
       "Content-Disposition",
@@ -551,7 +548,7 @@ async function exportarEvidencias(req, res) {
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
-    return res.send(buffer);
+    return res.send(Buffer.from(buffer));
   } catch (error) {
     console.error("Erro ao exportar evidências do Mapa de Desenvolvimento:", error);
     return res.status(500).json({ error: "Erro ao exportar evidências do Mapa de Desenvolvimento." });

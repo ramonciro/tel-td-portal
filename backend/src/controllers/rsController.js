@@ -275,49 +275,136 @@ const exportar = async (req, res) => {
   if (!mes) return res.status(400).json({ error: "Parâmetro mes é obrigatório" });
 
   try {
-    const XLSX = require("xlsx");
+    const { novoWorkbook, adicionarTabela, escreverTabela } = require("../lib/excelExport");
     const bw   = "empresa_id=? AND DATE_FORMAT(mes_referencia,'%Y-%m')=?";
     const [rpsOp] = await db.query(`SELECT * FROM rps WHERE ${bw} AND setor='OPERACIONAL' ORDER BY site, produto`, [empresa_id, mes]);
     const [rpsEs] = await db.query(`SELECT * FROM rps WHERE ${bw} AND setor LIKE 'ESTRAT%' ORDER BY site, cargo`, [empresa_id, mes]);
 
-    const fd  = v => v ? new Date(v).toLocaleDateString("pt-BR") : "";
     const fm  = v => { if(!v) return ""; const m=["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"]; return m[new Date(v).getMonth()]; };
     const sum = (arr, f) => arr.reduce((s,r)=>s+(Number(r[f])||0), 0);
 
-    const opData = [
-      ["MÊS","SITE","SETOR","CHAMADO","PRODUTO","DATA RECEBIMENTO RP","STATUS","INICIO DA AV. TÉCNICA","FINAL DA AV. TECNICA","HC'S","HC'S COM TO","HC'S APROVADOS","QTD ENTREGUE"],
-      ...rpsOp.map(r=>[fm(r.mes_referencia),r.site,r.setor,r.chamado||"",r.produto,fd(r.data_recebimento),r.status,fd(r.inicio_av_tecnica),fd(r.final_av_tecnica),r.hcs,r.hcs_com_to,r.hcs_aprovados,r.qtd_entregue]),
-      ["TOTAL","","","","","","","","",sum(rpsOp,"hcs"),sum(rpsOp,"hcs_com_to"),sum(rpsOp,"hcs_aprovados"),sum(rpsOp,"qtd_entregue")],
-    ];
-    const esData = [
-      ["MÊS","SITE","SETOR","CHAMADO","PRODUTO","CARGO","DATA RECEBIMENTO RP","STATUS","DATA FECHAMENTO DA VAGA","HC'S","HC'S COM TO","HC'S APROVADOS","QTD ENTREGUE"],
-      ...rpsEs.map(r=>[fm(r.mes_referencia),r.site,r.setor,r.chamado||"",r.produto,r.cargo||"",fd(r.data_recebimento),r.status,fd(r.data_fechamento_vaga),r.hcs,r.hcs_com_to,r.hcs_aprovados,r.qtd_entregue]),
-      ["TOTAL","","","","","","","","",sum(rpsEs,"hcs"),sum(rpsEs,"hcs_com_to"),sum(rpsEs,"hcs_aprovados"),sum(rpsEs,"qtd_entregue")],
-    ];
+    const wb = novoWorkbook();
 
+    const colunasOp = [
+      { titulo: "MÊS", chave: "mes", largura: 12 },
+      { titulo: "SITE", chave: "site", largura: 14 },
+      { titulo: "SETOR", chave: "setor", largura: 14 },
+      { titulo: "CHAMADO", chave: "chamado", largura: 12 },
+      { titulo: "PRODUTO", chave: "produto", largura: 20 },
+      { titulo: "DATA RECEBIMENTO RP", chave: "data_recebimento", largura: 16, formato: "data" },
+      { titulo: "STATUS", chave: "status", largura: 16 },
+      { titulo: "INICIO DA AV. TÉCNICA", chave: "inicio_av_tecnica", largura: 16, formato: "data" },
+      { titulo: "FINAL DA AV. TECNICA", chave: "final_av_tecnica", largura: 16, formato: "data" },
+      { titulo: "HC'S", chave: "hcs", largura: 8, formato: "inteiro" },
+      { titulo: "HC'S COM TO", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
+      { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", largura: 14, formato: "inteiro" },
+      { titulo: "QTD ENTREGUE", chave: "qtd_entregue", largura: 13, formato: "inteiro" },
+    ];
+    adicionarTabela(wb, {
+      nomeAba: "OPERACIONAL",
+      colunas: colunasOp,
+      linhas: rpsOp.map(r => ({
+        mes: fm(r.mes_referencia), site: r.site, setor: r.setor, chamado: r.chamado || "", produto: r.produto,
+        data_recebimento: r.data_recebimento, status: r.status,
+        inicio_av_tecnica: r.inicio_av_tecnica, final_av_tecnica: r.final_av_tecnica,
+        hcs: r.hcs, hcs_com_to: r.hcs_com_to, hcs_aprovados: r.hcs_aprovados, qtd_entregue: r.qtd_entregue,
+      })),
+      linhaTotal: {
+        mes: "TOTAL",
+        hcs: sum(rpsOp, "hcs"), hcs_com_to: sum(rpsOp, "hcs_com_to"),
+        hcs_aprovados: sum(rpsOp, "hcs_aprovados"), qtd_entregue: sum(rpsOp, "qtd_entregue"),
+      },
+    });
+
+    const colunasEs = [
+      { titulo: "MÊS", chave: "mes", largura: 12 },
+      { titulo: "SITE", chave: "site", largura: 14 },
+      { titulo: "SETOR", chave: "setor", largura: 14 },
+      { titulo: "CHAMADO", chave: "chamado", largura: 12 },
+      { titulo: "PRODUTO", chave: "produto", largura: 20 },
+      { titulo: "CARGO", chave: "cargo", largura: 20 },
+      { titulo: "DATA RECEBIMENTO RP", chave: "data_recebimento", largura: 16, formato: "data" },
+      { titulo: "STATUS", chave: "status", largura: 16 },
+      { titulo: "DATA FECHAMENTO DA VAGA", chave: "data_fechamento_vaga", largura: 18, formato: "data" },
+      { titulo: "HC'S", chave: "hcs", largura: 8, formato: "inteiro" },
+      { titulo: "HC'S COM TO", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
+      { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", largura: 14, formato: "inteiro" },
+      { titulo: "QTD ENTREGUE", chave: "qtd_entregue", largura: 13, formato: "inteiro" },
+    ];
+    adicionarTabela(wb, {
+      nomeAba: "ESTRATÉGICO",
+      colunas: colunasEs,
+      linhas: rpsEs.map(r => ({
+        mes: fm(r.mes_referencia), site: r.site, setor: r.setor, chamado: r.chamado || "", produto: r.produto, cargo: r.cargo || "",
+        data_recebimento: r.data_recebimento, status: r.status, data_fechamento_vaga: r.data_fechamento_vaga,
+        hcs: r.hcs, hcs_com_to: r.hcs_com_to, hcs_aprovados: r.hcs_aprovados, qtd_entregue: r.qtd_entregue,
+      })),
+      linhaTotal: {
+        mes: "TOTAL",
+        hcs: sum(rpsEs, "hcs"), hcs_com_to: sum(rpsEs, "hcs_com_to"),
+        hcs_aprovados: sum(rpsEs, "hcs_aprovados"), qtd_entregue: sum(rpsEs, "qtd_entregue"),
+      },
+    });
+
+    // Aba "DASHBOARD": três mini-tabelas empilhadas na mesma planilha (por
+    // site, operacional por produto, estratégico por cargo) — mantém o
+    // mesmo layout de sempre, só com o cabeçalho/números formatados.
     const siteCount={};
     [...rpsOp,...rpsEs].forEach(r=>{siteCount[r.site]=(siteCount[r.site]||0)+1;});
-    const sitePivot=[["SITE","TOTAL RPs"],...Object.entries(siteCount).map(([k,v])=>[k,v])];
     const prodMap={};
     rpsOp.forEach(r=>{if(!prodMap[r.produto])prodMap[r.produto]={hcs:0,ha:0,qe:0};prodMap[r.produto].hcs+=r.hcs||0;prodMap[r.produto].ha+=r.hcs_aprovados||0;prodMap[r.produto].qe+=r.qtd_entregue||0;});
-    const prodPivot=[["PRODUTO","HC'S","HC'S APROVADOS","QTD ENTREGUE"],...Object.entries(prodMap).map(([k,v])=>[k,v.hcs,v.ha,v.qe]),["TOTAL",sum(rpsOp,"hcs"),sum(rpsOp,"hcs_aprovados"),sum(rpsOp,"qtd_entregue")]];
     const cargoMap={};
     rpsEs.forEach(r=>{const c=r.cargo||"(sem cargo)";if(!cargoMap[c])cargoMap[c]={hcs:0,ha:0,qe:0};cargoMap[c].hcs+=r.hcs||0;cargoMap[c].ha+=r.hcs_aprovados||0;cargoMap[c].qe+=r.qtd_entregue||0;});
-    const cargoPivot=[["CARGO","HC'S","HC'S APROVADOS","QTD ENTREGUE"],...Object.entries(cargoMap).map(([k,v])=>[k,v.hcs,v.ha,v.qe]),["TOTAL",sum(rpsEs,"hcs"),sum(rpsEs,"hcs_aprovados"),sum(rpsEs,"qtd_entregue")]];
-    const dashData=[["DASHBOARD — "+mes.replace("-","/")],[],["POR SITE"],...sitePivot,[],["OPERACIONAL — POR PRODUTO"],...prodPivot,[],["ESTRATÉGICO — POR CARGO"],...cargoPivot];
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(opData),   "OPERACIONAL");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(esData),   "ESTRATÉGICO");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dashData), "DASHBOARD");
+    const wsDash = wb.addWorksheet("DASHBOARD");
+    wsDash.columns = [{ width: 26 }, { width: 16 }, { width: 16 }, { width: 14 }];
+    wsDash.getCell(1, 1).value = `DASHBOARD — ${mes.replace("-", "/")}`;
+    wsDash.getCell(1, 1).font = { bold: true, size: 14 };
 
-    const buf = XLSX.write(wb, { type:"buffer", bookType:"xlsx" });
+    let linha = 3;
+    linha = escreverTabela(wsDash, {
+      startRow: linha,
+      titulo: "POR SITE",
+      colunas: [
+        { titulo: "SITE", chave: "site" },
+        { titulo: "TOTAL RPs", chave: "total", formato: "inteiro" },
+      ],
+      linhas: Object.entries(siteCount).map(([site, total]) => ({ site, total })),
+    }) + 1;
+
+    linha = escreverTabela(wsDash, {
+      startRow: linha,
+      titulo: "OPERACIONAL — POR PRODUTO",
+      colunas: [
+        { titulo: "PRODUTO", chave: "produto" },
+        { titulo: "HC'S", chave: "hcs", formato: "inteiro" },
+        { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", formato: "inteiro" },
+        { titulo: "QTD ENTREGUE", chave: "qtd_entregue", formato: "inteiro" },
+      ],
+      linhas: Object.entries(prodMap).map(([produto, v]) => ({ produto, hcs: v.hcs, hcs_aprovados: v.ha, qtd_entregue: v.qe })),
+      linhaTotal: { produto: "TOTAL", hcs: sum(rpsOp, "hcs"), hcs_aprovados: sum(rpsOp, "hcs_aprovados"), qtd_entregue: sum(rpsOp, "qtd_entregue") },
+    }) + 1;
+
+    escreverTabela(wsDash, {
+      startRow: linha,
+      titulo: "ESTRATÉGICO — POR CARGO",
+      colunas: [
+        { titulo: "CARGO", chave: "cargo" },
+        { titulo: "HC'S", chave: "hcs", formato: "inteiro" },
+        { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", formato: "inteiro" },
+        { titulo: "QTD ENTREGUE", chave: "qtd_entregue", formato: "inteiro" },
+      ],
+      linhas: Object.entries(cargoMap).map(([cargo, v]) => ({ cargo, hcs: v.hcs, hcs_aprovados: v.ha, qtd_entregue: v.qe })),
+      linhaTotal: { cargo: "TOTAL", hcs: sum(rpsEs, "hcs"), hcs_aprovados: sum(rpsEs, "hcs_aprovados"), qtd_entregue: sum(rpsEs, "qtd_entregue") },
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition",`attachment; filename="relatorio_rs_${mes.replace("-","_")}.xlsx"`);
-    return res.send(buf);
+    return res.send(Buffer.from(buf));
   } catch (err) {
     console.error("[rsController.exportar]", err);
-    if (err.code === "MODULE_NOT_FOUND") return res.status(500).json({ error: "xlsx não instalado — rodar: npm install xlsx" });
+    if (err.code === "MODULE_NOT_FOUND") return res.status(500).json({ error: "exceljs não instalado — rodar: npm install exceljs" });
     return res.status(500).json({ error: "Erro ao gerar exportação" });
   }
 };
