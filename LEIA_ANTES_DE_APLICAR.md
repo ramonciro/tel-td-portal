@@ -1,54 +1,31 @@
-# Pacote A + B — Segurança e pendências (15/09/2026)
+# Módulo Metodologia e Desenvolvimento — 16/09/2026
 
-Este zip só tem o que muda ou é novo nesta rodada. Aplique assim:
+Este zip só tem o que muda nesta rodada. Aplique assim:
 
-## 1. Substituir estes 8 arquivos no seu repositório (mesmo caminho)
+## 1. Substituir estes 9 arquivos no seu repositório (mesmo caminho)
 
-- `backend/src/database/migrate.js`
-- `backend/src/controllers/reembolsoTransporteController.js`
-- `backend/src/controllers/treinamentoParticipantesController.js`
-- `backend/src/services/muralResolver.js`
-- `backend/src/controllers/muralController.js`
-- `backend/src/controllers/materiaisAvaliativosController.js`
-- `backend/src/controllers/turmaAulasController.js`
+- `backend/src/middlewares/auth.js`
+- `backend/src/index.js`
+- `backend/src/routes/jornadasDesenvolvimentoRoutes.js`
+- `backend/src/routes/jornadaParticipantesRoutes.js`
+- `frontend/services/api.js`
 - `frontend/components/PortalShell.js`
+- `frontend/app/trilhas/page.js`
+- `frontend/app/mapa-desenvolvimento/page.js`
+- `frontend/app/usuarios/page.js`
 
-## 2. Apagar estes arquivos/pastas do repositório (limpeza de código morto — Pacote B.2)
+## 2. Ação manual depois de subir — IMPORTANTE
 
-Backend:
-- `backend/src/routes/index.js`
-- `backend/src/controllers/authController.js`
-- `backend/src/controllers/dashboardController.js`
-- `backend/src/controllers/clientesController.js`
-- `backend/src/controllers/usersController.js`
-- `backend/src/controllers/treinamentosController.js`
-- `backend/src/controllers/presencasController.js`
-- `backend/src/controllers/avaliacoesController.js`
-- `backend/src/controllers/trilhasController.js`
-- `backend/src/controllers/avaliacoesResultadosController.js`
-- `backend/src/db.js`
-- `backend/src/database.js`
-- `backend/src/logo-td.png`
+Este pacote troca o controle de acesso do Mapa de Desenvolvimento e da Trilhas de:
+- "perfil Coordenador/Superintendente + flag liberada manualmente", e
+- "perfil Coordenador/Supervisor/Instrutor/Treinando" (Trilhas),
 
-Frontend:
-- pasta `frontend/patches/` inteira (4 arquivos)
+para um único perfil dedicado: **`metodologia`**.
 
-Raiz do projeto:
-- `INSTRUCOES.md`
-- `LEIA-ME.md`
-- `LEIA_PRIMEIRO.md`
-- `LEIA_PRIMEIRO.txt`
-- `README.txt`
-- `README_APLICAR.md`
-- `README_APLICAR.txt`
-- `README_ATUALIZACAO.txt`
+**Qualquer usuário que hoje acessa o Mapa de Desenvolvimento ou a Trilhas precisa ser reatribuído para o perfil "Metodologia" em Gestão de Usuários depois do deploy** — sem isso, ele perde o acesso a essas duas telas (o antigo toggle "Mapa de Desenvolvimento: Liberado/Bloqueado" também saiu da tela de usuários, porque não tem mais efeito nenhum). O perfil "Metodologia" já existia como opção no formulário de usuários (você mesmo já tinha cadastrado essa opção antes), só nunca tinha sido conectado a nada — é o que este pacote conecta.
 
-(Mantenha o `README.md` da raiz — esse é o real, não é lixo.)
+Nenhuma migração de banco é necessária — `perfil` é texto livre, não um enum fixo.
 
-## 3. Depois de subir
+## 3. Nada mais muda
 
-A migration nova (`dados_bancarios_colaborador.empresa_id`) roda sozinha no próximo deploy do backend — não precisa rodar nada manualmente.
-
-Nenhuma dessas mudanças pede migração de dado manual nem afeta layout de tela — são todas correções de acesso no backend + a reintrodução do `menuRoles` no menu lateral (frontend).
-
-Detalhes de cada item, o que foi testado e como, estão no relatório em anexo/no projeto: `claude/relatorio-pacote-ab-seguranca-2026-09-15.md`.
+Sem migração automática nova, sem mudança de schema. É só controle de acesso (backend) + reorganização de menu (frontend).
