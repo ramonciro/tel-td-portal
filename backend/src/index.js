@@ -424,6 +424,100 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
   return dados;
 }
 
+// Redesign da Gestão de Usuários (16/09/2026): exportação em Excel formatado
+// (mesmo padrão do Pacote 3 — excelExport.js), pedida junto com o redesign
+// visual da tela. Registrada ANTES do mount genérico abaixo, senão o router
+// de CRUD trataria "exportar" como um :id.
+//
+// Rótulos de perfil espelham PERFIL_LABEL do frontend
+// (frontend/app/usuarios/page.js) — perfil é texto livre no banco, então
+// mantenha os dois em sincronia se um novo perfil for criado.
+const PERFIL_LABEL_EXPORT = {
+  coordenador: "Coordenador",
+  supervisor: "Supervisor",
+  instrutor: "Instrutor",
+  treinando: "Treinando",
+  superintendente: "Superintendente",
+  coaching: "Coaching",
+  metodologia: "Metodologia",
+  assistente_treinamento: "Assistente de Treinamento",
+  coordenador_rs: "Coordenador R&S",
+  gestor_rs: "Gestor R&S",
+  super_admin: "Super Admin",
+};
+
+app.get(
+  "/api/usuarios/exportar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia"),
+  async (req, res) => {
+    try {
+      const { empresaId } = tenantScopeFor(req, {});
+      const ids = String(req.query.ids || "")
+        .split(",")
+        .map((v) => Number(v.trim()))
+        .filter((v) => Number.isInteger(v) && v > 0);
+
+      const condicoes = [];
+      const params = [];
+      if (empresaId !== null && empresaId !== undefined) {
+        condicoes.push("empresa_id = ?");
+        params.push(empresaId);
+      }
+      if (ids.length) {
+        condicoes.push(`id IN (${ids.map(() => "?").join(",")})`);
+        params.push(...ids);
+      }
+      const where = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+
+      const [linhas] = await pool.query(
+        `SELECT nome, email, perfil, cliente, ativo, criado_em
+         FROM usuarios ${where}
+         ORDER BY nome`,
+        params
+      );
+
+      const { novoWorkbook, adicionarTabela } = require("./lib/excelExport");
+      const wb = novoWorkbook();
+      adicionarTabela(wb, {
+        nomeAba: "Usuários",
+        colunas: [
+          { titulo: "Nome", chave: "nome" },
+          { titulo: "E-mail", chave: "email" },
+          { titulo: "Perfil", chave: "perfil" },
+          { titulo: "Operações vinculadas", chave: "operacoes" },
+          { titulo: "Status", chave: "status" },
+          { titulo: "Criado em", chave: "criado_em", formato: "data" },
+        ],
+        linhas: linhas.map((u) => ({
+          nome: u.nome,
+          email: u.email,
+          perfil: PERFIL_LABEL_EXPORT[String(u.perfil || "").toLowerCase()] || u.perfil || "-",
+          operacoes: u.cliente || "-",
+          status: u.ativo ? "Ativo" : "Inativo",
+          criado_em: u.criado_em,
+        })),
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      registrarAuditoria({
+        usuario: req.user,
+        acao: "exportar",
+        entidade: "usuario",
+        entidadeId: ids.length === 1 ? ids[0] : null,
+        resumo: `${req.user?.nome || "Alguém"} exportou ${linhas.length} usuário(s) em Gestão de Usuários${ids.length ? ` (ids: ${ids.join(",")})` : ""}`,
+        ip: req.ip,
+      });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", 'attachment; filename="usuarios.xlsx"');
+      return res.send(Buffer.from(buf));
+    } catch (error) {
+      console.error("[usuarios] exportar:", error.message);
+      return res.status(500).json({ ok: false, message: "Erro ao exportar usuários" });
+    }
+  }
+);
+
 app.use(
   "/api/usuarios",
   createCrudRouter({
