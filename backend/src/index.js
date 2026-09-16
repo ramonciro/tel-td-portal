@@ -9,7 +9,7 @@ const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
-const { authRequired, authorizeRoles, authorizeOceanAccess, requireSuperAdmin } = require("./middlewares/auth");
+const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
 
 // Fase 2 (roadmap de competitividade): automações por e-mail — resumo diário
@@ -1226,10 +1226,18 @@ app.post(
 
 // Sprint 3: Trilhas relacionais — rotas dedicadas (substituem entityCrud)
 // Etapas agora são registros em trilha_etapas, não mais JSON em trilhas_aprendizagem.etapas
+//
+// Módulo Metodologia e Desenvolvimento (16/09/2026): Trilhas saiu do escopo
+// de Treinamento e virou, junto com o Mapa de Desenvolvimento, um módulo à
+// parte — "módulo fica só pra gestão" (Ramon): treinando e instrutor
+// perderam o acesso (inclusive a marcar etapa concluída/ver progresso), e
+// coordenador/supervisor só acessam através do novo perfil dedicado
+// "metodologia" (mesmo padrão do R&S — perfil próprio, não reaproveita os
+// perfis de Treinamento).
 app.get(
   "/api/trilhas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("metodologia"),
   listTrilhas
 );
 // Precisa vir ANTES de "/api/trilhas/:id" — senão "progresso" seria
@@ -1237,49 +1245,49 @@ app.get(
 app.get(
   "/api/trilhas/progresso",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("metodologia"),
   getProgressoBulk
 );
 app.get(
   "/api/trilhas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("metodologia"),
   getTrilha
 );
 app.post(
   "/api/trilhas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("metodologia"),
   createTrilha
 );
 app.put(
   "/api/trilhas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("metodologia"),
   updateTrilha
 );
 app.delete(
   "/api/trilhas/:id",
   authRequired,
-  authorizeRoles("coordenador"),
+  authorizeRoles("metodologia"),
   deleteTrilha
 );
 app.get(
   "/api/trilhas/:id/progresso",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("metodologia"),
   getProgresso
 );
 app.get(
   "/api/trilhas/:id/progresso/exportar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("metodologia"),
   exportarProgresso
 );
 app.post(
   "/api/trilhas/:id/etapas/:etapaId/concluir",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("metodologia"),
   marcarEtapaConcluida
 );
 
@@ -1507,13 +1515,18 @@ app.delete("/api/admin/empresas/:id",            authRequired, requireSuperAdmin
 // excluir etapas de jornada. O isolamento por empresa continuava valendo
 // (não vazava dado de outro tenant), mas o controle de acesso ao módulo
 // Oceano em si estava furado para este uma rota.
-app.use("/api/jornadas-etapas", authRequired, authorizeOceanAccess, jornadasEtapasRoutes);
-app.use("/api/jornadas-desenvolvimento", authRequired, authorizeOceanAccess, jornadasDesenvolvimentoRoutes);
-app.use("/api/acoes-desenvolvimento", authRequired, authorizeOceanAccess, acoesDesenvolvimentoRoutes);
-app.use("/api/coaching-planos", authRequired, authorizeOceanAccess, coachingPlanosRoutes);
+//
+// Módulo Metodologia e Desenvolvimento (16/09/2026): authorizeOceanAccess
+// (perfil coordenador/superintendente + flag pode_acessar_oceano_desenvolvimento)
+// foi substituído por authorizeRoles("metodologia") — perfil dedicado, sem
+// flag, mesmo padrão do módulo R&S.
+app.use("/api/jornadas-etapas", authRequired, authorizeRoles("metodologia"), jornadasEtapasRoutes);
+app.use("/api/jornadas-desenvolvimento", authRequired, authorizeRoles("metodologia"), jornadasDesenvolvimentoRoutes);
+app.use("/api/acoes-desenvolvimento", authRequired, authorizeRoles("metodologia"), acoesDesenvolvimentoRoutes);
+app.use("/api/coaching-planos", authRequired, authorizeRoles("metodologia"), coachingPlanosRoutes);
 
 // FIX 1: rota de jornada-participantes registrada junto com as rotas do Oceano
-app.use("/api/jornada-participantes", authRequired, authorizeOceanAccess, jornadaParticipantesRoutes);
+app.use("/api/jornada-participantes", authRequired, authorizeRoles("metodologia"), jornadaParticipantesRoutes);
 
 // Capacidade x Realizado (CH por instrutor / CH efetiva do time) — o
 // controller e a migration já existiam, mas nunca tinham sido conectados:
