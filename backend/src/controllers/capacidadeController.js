@@ -23,6 +23,7 @@ const {
   getPainel: resolverGetPainel,
   getCapacityConsumido,
   getRanking,
+  getCapacidadePorInstrutorCliente,
   getAderenciaPorTema,
   getDistribuicaoPorOperacao,
   getAlertas: resolverGetAlertas,
@@ -161,7 +162,12 @@ async function deleteOverride(req, res) {
 
 async function getInstrutores(req, res) {
   try {
-    const instrutores = await listarInstrutoresConhecidos(req.empresaId);
+    // Correção (16/09/2026): esta lista alimenta o dropdown de filtro/criação
+    // de override em Capacidade e o seletor de instrutor do Scorecard — em
+    // ambos os casos não faz sentido oferecer pra escolher alguém já
+    // desligado. O histórico dele continua intacto nas telas que já mostram
+    // dado por instrutor (ver comentário em listarInstrutoresConhecidos).
+    const instrutores = await listarInstrutoresConhecidos(req.empresaId, { apenasAtivos: true });
     return res.json({ ok: true, instrutores });
   } catch (error) {
     console.error("[capacidadeController]", error.message || error);
@@ -224,6 +230,17 @@ async function getRankingHandler(req, res) {
   }
 }
 
+async function getPorCliente(req, res) {
+  try {
+    const q = req.query || {};
+    const resultado = await getCapacidadePorInstrutorCliente({ meses: q.meses ? Number(q.meses) : undefined, empresaId: req.empresaId });
+    return res.json({ ok: true, ...resultado });
+  } catch (error) {
+    console.error("[capacidade] getPorCliente:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar capacidade por instrutor x cliente."});
+  }
+}
+
 async function getAderencia(req, res) {
   try {
     const q = req.query || {};
@@ -275,6 +292,7 @@ module.exports = {
   getPainel,
   getCapacity,
   getRankingHandler,
+  getPorCliente,
   getAderencia,
   getDistribuicao,
   getAlertasHandler,
