@@ -49,7 +49,13 @@ const etapaVazia = () => ({ titulo: "", descricao: "", tipo: "conteudo", turma_i
 export default function TrilhasPage() {
   const user = getStoredUser();
   const perfil = normalize(user?.perfil);
-  const isGestor = ["coordenador", "supervisor"].includes(perfil);
+  // Módulo Metodologia e Desenvolvimento (16/09/2026): esta página só é
+  // alcançável pelo perfil dedicado "metodologia" (ver PortalShell.js /
+  // index.js) — coordenador/supervisor/instrutor/treinando perderam o
+  // acesso, então a visão "gestor" é a única em uso agora. Mantido o check
+  // por perfil (em vez de sempre `true`) para não quebrar se algum dia a
+  // rota for reaberta para outro perfil de gestão.
+  const isGestor = ["metodologia", "coordenador", "supervisor"].includes(perfil);
 
   const [trilhas,       setTrilhas]       = useState([]);
   const [progresso,     setProgresso]     = useState({});   // { [trilha_id]: { percentual, concluidas, total } }
