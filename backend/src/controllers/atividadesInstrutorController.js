@@ -18,7 +18,6 @@
 
 const pool = require("../lib/db");
 const {
-  diasUteisDoMes,
   statusOcupacao,
   getRegraPadrao,
   listarInstrutoresConhecidos,
@@ -329,8 +328,12 @@ async function getPainel(req, res) {
 
     const capacidadeTotalPeriodo = linhasPorMes.reduce((acc, l) => acc + l.capacidade_nominal, 0);
     const hcRealizadoPeriodo = linhasPorMes.reduce((acc, l) => acc + l.hc_realizado, 0);
+    // Correção (16/09/2026, pedido do Ramon): capacidade mensal por
+    // instrutor passou a usar a mesma regra fixa (dias trabalhados no mês ×
+    // horas/dia) do resto do módulo de Capacidade, em vez de contar dias de
+    // calendário — ver capacidadeResolver.js/getRegraPadrao.
     const capacidadePorInstrutorMes = instrutores.length
-      ? Number((diasUteisDoMes(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, !!regra.considerar_domingo) * Number(regra.horas_dia_padrao)).toFixed(2))
+      ? Number((Number(regra.dias_mes_padrao) * Number(regra.horas_dia_padrao)).toFixed(2))
       : 0;
 
     const [[hcProgramadoRow]] = await pool.query(

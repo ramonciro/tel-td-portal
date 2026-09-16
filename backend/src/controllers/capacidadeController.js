@@ -84,14 +84,13 @@ async function getRegra(req, res) {
 
 async function putRegra(req, res) {
   try {
-    const { horas_dia_padrao, hc_dia_padrao, considerar_domingo } = req.body || {};
-    if (horas_dia_padrao == null || hc_dia_padrao == null) {
-      return res.status(400).json({ ok: false, message: "Informe horas_dia_padrao e hc_dia_padrao." });
+    const { horas_dia_padrao, dias_mes_padrao } = req.body || {};
+    if (horas_dia_padrao == null || dias_mes_padrao == null) {
+      return res.status(400).json({ ok: false, message: "Informe horas_dia_padrao e dias_mes_padrao." });
     }
     const regra = await atualizarRegraPadrao({
       horasDiaPadrao: horas_dia_padrao,
-      hcDiaPadrao: hc_dia_padrao,
-      considerarDomingo: !!considerar_domingo,
+      diasMesPadrao: dias_mes_padrao,
       empresaId: req.empresaId,
     });
     return res.json({ ok: true, regra, message: "Regra padrão atualizada com sucesso." });
@@ -120,7 +119,7 @@ async function getOverrides(req, res) {
 
 async function postOverride(req, res) {
   try {
-    const { instrutor, ano, mes, horas_capacidade, hc_capacidade, observacoes } = req.body || {};
+    const { instrutor, ano, mes, horas_capacidade, observacoes } = req.body || {};
     if (!instrutor || !ano || !mes) {
       return res.status(400).json({ ok: false, message: "Informe instrutor, ano e mês." });
     }
@@ -132,7 +131,6 @@ async function postOverride(req, res) {
       ano,
       mes,
       horasCapacidade: horas_capacidade || 0,
-      hcCapacidade: hc_capacidade || 0,
       observacoes,
       criadoPor: req.user?.nome || req.user?.email || null,
       // Fase 4: sem isso, o UNIQUE KEY (instrutor+ano+mes) fazia um
