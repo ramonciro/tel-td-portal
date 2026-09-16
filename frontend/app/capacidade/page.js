@@ -52,6 +52,7 @@ function CapacidadePageInner() {
   const [capacity, setCapacity] = useState(null);
   const [ranking, setRanking] = useState([]);
   const [distribuicao, setDistribuicao] = useState(null);
+  const [porCliente, setPorCliente] = useState(null);
   const [temas, setTemas] = useState([]);
   const [alertas, setAlertas] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -152,10 +153,14 @@ function CapacidadePageInner() {
         apiFetch(`/capacidade/aderencia-por-tema${qsTema}`),
         apiFetch("/capacidade/alertas"),
       ]);
-      // distribuição por operação não recebe o filtro de operação (é o gráfico que mostra todas)
+      // distribuição por operação e capacidade por cliente não recebem o
+      // filtro de operação — são justamente as visões que cruzam todos os
+      // clientes lado a lado.
       const d = await apiFetch(`/capacidade/distribuicao-por-operacao${qsDist}`);
+      const pc = await apiFetch(`/capacidade/por-cliente${qsDist}`);
       setPainel(p); setCapacity(c); setRanking(r?.itens || []);
       setDistribuicao(d); setTemas(t?.itens || []); setAlertas(a);
+      setPorCliente(pc);
     } catch (e) {
       setErro(
         e.message?.includes("404") || e.message?.includes("Erro 404")
@@ -401,6 +406,42 @@ function CapacidadePageInner() {
                   ))}
                   {(!capacity?.itens || capacity.itens.length === 0) && (
                     <tr><td style={td} colSpan={99}>Nenhuma turma ou cronograma encontrado para o período.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, marginTop: 20, animationDelay: ".12s" }}>
+            <div style={cardTitle}>Capacidade por instrutor × cliente ({janela})</div>
+            <p style={{ fontSize: 12.5, color: "#94a3b8", marginTop: -6, marginBottom: 12 }}>
+              Quanto de cada instrutor foi pra cada cliente no período — capacidade e ocupação continuam sendo do instrutor como um todo (não existe uma "capacidade" separada por cliente, só a hora realizada é fatiada por cliente).
+            </p>
+            <div style={{ overflowX: "auto" }}>
+              <table style={table}>
+                <thead>
+                  <tr style={theadRow}>
+                    <th style={th}>Instrutor</th>
+                    {(porCliente?.clientes || []).map((c) => <th key={c} style={{ ...th, textAlign: "right" }}>{c}</th>)}
+                    <th style={{ ...th, textAlign: "right" }}>Total realizado</th>
+                    <th style={{ ...th, textAlign: "right" }}>Capacidade</th>
+                    <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(porCliente?.itens || []).map((row) => (
+                    <tr key={row.instrutor} style={tr}>
+                      <td style={{ ...td, fontWeight: 700 }}>{row.instrutor}</td>
+                      {(porCliente?.clientes || []).map((c) => (
+                        <td key={c} style={{ ...td, textAlign: "right" }}>{fmt(row.por_cliente[c] || 0)}</td>
+                      ))}
+                      <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmt(row.total_realizado)}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{fmt(row.capacidade_total)}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{fmtPct(row.ocupacao_pct)}</td>
+                    </tr>
+                  ))}
+                  {(!porCliente?.itens || porCliente.itens.length === 0) && (
+                    <tr><td style={td} colSpan={99}>Nenhuma hora realizada por instrutor ativo no período.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -669,7 +710,7 @@ function ScorecardInstrutor({
           </button>
         </div>
         <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 10, marginBottom: 0 }}>
-          Índice geral pondera frequência (peso maior) e NPS — a nota de avaliação aparece à parte, com a cobertura de lançamento, porque não tem uma escala fixa hoje (a "nota máx." de cada prova é livre).
+          Índice geral é 100% frequência — NPS e nota de avaliação aparecem à parte, como informação, sem entrar nessa conta (NPS por decisão do Ramon; avaliação porque não tem uma escala fixa hoje, a "nota máx." de cada prova é livre).
         </p>
       </div>
 
