@@ -23,23 +23,50 @@ function normalizarClientes(valor) {
   return String(valor).split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-/* ── Cores por perfil ── */
-const PERFIL_COR = {
-  coordenador:    { bg: "#dbeafe", text: "#1d4ed8", avatar: "#1d4ed8" },
-  supervisor:     { bg: "#ede9fe", text: "#6d28d9", avatar: "#6d28d9" },
-  instrutor:      { bg: "#dcfce7", text: "#166534", avatar: "#16a34a" },
-  treinando:      { bg: "#f1f5f9", text: "#475569", avatar: "#64748b" },
-  superintendente:{ bg: "#fef3c7", text: "#92400e", avatar: "#d97706" },
-  coaching:       { bg: "#fce7f3", text: "#9d174d", avatar: "#db2777" },
-  metodologia:    { bg: "#e0f2fe", text: "#0369a1", avatar: "#0284c7" },
+/* ── Cor por perfil (Pacote 3 — redesign, 16/09/2026) ──────────────────────
+   Antes: cada linha desta tela carregava até 5 elementos coloridos
+   diferentes (avatar, badge de perfil, chips de operação, status, botões
+   de ação), com uma paleta de ~50 cores distintas usadas só nessa tela —
+   cada bg/text/avatar escolhido a dedo, perfil por perfil, sem reaproveitar
+   nenhum padrão do resto do sistema.
+
+   Agora: 1 tom por perfil, escolhido da paleta categórica que já existe em
+   lib/theme.js (`chart`) — a mesma que o design-system.md recomenda para
+   "métricas sem semântica de bom/ruim". O bg claro do badge/avatar não é
+   mais um hex escolhido à parte: é derivado do próprio tom (corBadge),
+   então um perfil = uma cor, em vez de três. */
+const PERFIL_TOM = {
+  coordenador: chart.blue,
+  supervisor: chart.purple,
+  superintendente: chart.orange,
+  instrutor: chart.teal,
+  coaching: chart.pink,
+  metodologia: chart.cyan,
   // Ajuste pós-entrega do Pacote Salas (15/09/2026): o perfil já existia no
   // backend desde a Fase 1 (authorizeRoles em várias rotas já aceitava
   // "assistente_treinamento"), mas não dava pra criar um usuário com esse
   // perfil pela tela — faltava aqui.
-  assistente_treinamento: { bg: "#ffedd5", text: "#9a3412", avatar: "#ea580c" },
+  assistente_treinamento: chart.orange,
+  treinando: colors.neutral,
 };
+function tomPerfil(perfil) {
+  return PERFIL_TOM[String(perfil || "").toLowerCase()] || colors.neutral;
+}
+function hexParaRgba(hex, alpha) {
+  const limpo = String(hex || "").replace("#", "");
+  const bigint = parseInt(limpo.length === 3 ? limpo.split("").map((c) => c + c).join("") : limpo, 16);
+  const r = (bigint >> 16) & 255, g = (bigint >> 8) & 255, b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+// Badge único reaproveitado em qualquer lugar da tela que precise mostrar
+// "cor por perfil" (badge de perfil, distribuição, legenda) — sempre a
+// mesma fórmula (bg = tom a 14% de opacidade, texto = tom sólido).
+function corBadge(tom) {
+  return { bg: hexParaRgba(tom, 0.14), text: tom, border: `1px solid ${hexParaRgba(tom, 0.32)}` };
+}
 function perfilCor(perfil) {
-  return PERFIL_COR[String(perfil || "").toLowerCase()] || { bg: "#f1f5f9", text: "#475569", avatar: "#64748b" };
+  const tom = tomPerfil(perfil);
+  return { ...corBadge(tom), avatar: tom };
 }
 
 const PERFIL_LABEL = {
@@ -634,7 +661,7 @@ export default function UsuariosPage() {
                         {/* Ações */}
                         <td style={{ ...td, textAlign: "right" }}>
                           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                            <button style={btnAcao("#dbeafe","#1d4ed8")}
+                            <button style={btnAcao(colors.primaryLight, colors.primary)}
                               onClick={() => setModal({ modo: "editar", usuario: u })}>
                               Editar
                             </button>
@@ -721,7 +748,7 @@ const tdVazio    = { padding: "28px 14px", textAlign: "center", color: "#94a3b8"
 const trHover    = { transition: "background .1s" };
 
 const badgeBase  = { display: "inline-block", padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 800 };
-const chipOp     = { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: 999, padding: "3px 8px", fontSize: 11, fontWeight: 700 };
+const chipOp     = { background: colors.primaryLight, color: colors.primary, border: `1px solid ${colors.primary}55`, borderRadius: 999, padding: "3px 8px", fontSize: 11, fontWeight: 700 };
 const btnAcao    = (bg, cor) => ({ background: bg, color: cor, border: 0, borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" });
 
 /* Modal */
@@ -738,5 +765,5 @@ const mInput      = { height: 38, borderRadius: 10, border: "1px solid #e2e8f0",
 const errBox      = { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 14 };
 const btnSalvar   = { background: colors.accent, color: "#fff", border: 0, borderRadius: 10, padding: "10px 22px", cursor: "pointer", fontWeight: 800, fontSize: 14 };
 const btnCancelar = { background: "#f8fafc", color: "#64748b", border: "1px solid #e9eef4", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontWeight: 600, fontSize: 14 };
-const chipRemovivel = { display: "inline-flex", alignItems: "center", gap: 5, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: 999, padding: "4px 10px", fontSize: 12, fontWeight: 700 };
-const btnChipRemove = { background: "none", border: "none", cursor: "pointer", color: "#1d4ed8", fontWeight: 900, fontSize: 11, padding: 0, lineHeight: 1 };
+const chipRemovivel = { display: "inline-flex", alignItems: "center", gap: 5, background: colors.primaryLight, color: colors.primary, border: `1px solid ${colors.primary}55`, borderRadius: 999, padding: "4px 10px", fontSize: 12, fontWeight: 700 };
+const btnChipRemove = { background: "none", border: "none", cursor: "pointer", color: colors.primary, fontWeight: 900, fontSize: 11, padding: 0, lineHeight: 1 };
