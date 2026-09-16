@@ -304,7 +304,16 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
   const periodoResolvido = resolverMesesPeriodo({ periodo, ano, mes, trimestre });
   const { meses } = periodoResolvido;
 
-  const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos(empresaId);
+  // Correção (16/09/2026, pedido do Ramon): a visão "time todo" (sem filtro
+  // de instrutor) listava todo instrutor já conhecido pelo portal, incluindo
+  // quem já saiu do setor — mesmo bug já corrigido em CH por Instrutor
+  // (capacidadeResolver.listarInstrutoresConhecidos). Um instrutor
+  // específico continua acessível por nome (ex.: link direto), já que o
+  // histórico dele não deve sumir — só a listagem "time" some pra quem já
+  // não é mais instrutor ativo.
+  const instrutores = instrutor
+    ? [instrutor]
+    : await listarInstrutoresConhecidos(empresaId, { apenasAtivos: true });
   if (!instrutores.length) {
     return { periodo: periodoResolvido, itens: [], medias_time: null };
   }
@@ -345,6 +354,19 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
     i.ch.horas_realizadas > 0 || i.frequencia.turmas_consideradas > 0 || i.nps.total_respostas > 0 || i.avaliacao.turmas_no_periodo > 0
   );
 
+  // Correção (16/09/2026, pedido do Ramon): "ocupação por CH" não pode ser
+  // puxada pra baixo por NPS/avaliação. Antes, a média do time usava
+  // comAtividade inteiro — que inclui qualquer instrutor com NPS respondido
+  // ou turma com avaliação lançada, MESMO sem nenhuma hora real no período
+  // (ex.: turma "planejada"/cancelada conta pra avaliacao.turmas_no_periodo,
+  // que não tem filtro de status). Um instrutor ativo sem hora real vira
+  // 0% de ocupação (capacidade > 0, horas = 0) e entrava na média só por
+  // causa de NPS/avaliação — mesmo sem ter de fato trabalhado no período.
+  // A média de ocupação agora considera só quem teve hora real (CH) no
+  // período; os demais indicadores (frequência, NPS, índice geral) seguem
+  // usando comAtividade normalmente.
+  const comAtividadeCH = itens.filter((i) => i.ch.horas_realizadas > 0);
+
   const ranking = comAtividade
     .filter((i) => i.indice_geral !== null)
     .sort((a, b) => b.indice_geral - a.indice_geral)
@@ -356,18 +378,18 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
     item.total_no_ranking = ranking.length;
   }
 
-  function media(campo, obterValor) {
-    const valores = comAtividade.map(obterValor).filter((v) => v !== null && v !== undefined);
+  function media(lista, obterValor) {
+    const valores = lista.map(obterValor).filter((v) => v !== null && v !== undefined);
     if (!valores.length) return null;
     return arredonda(valores.reduce((acc, v) => acc + v, 0) / valores.length);
   }
 
   const mediasTime = comAtividade.length
     ? {
-        ocupacao_pct: media("ocupacao_pct", (i) => i.ch.ocupacao_pct),
-        frequencia_pct: media("frequencia_pct", (i) => i.frequencia.media_pct),
-        nps_score: media("nps_score", (i) => i.nps.nps_score),
-        indice_geral: media("indice_geral", (i) => i.indice_geral),
+        ocupacao_pct: media(comAtividadeCH, (i) => i.ch.ocupacao_pct),
+        frequencia_pct: media(comAtividade, (i) => i.frequencia.media_pct),
+        nps_score: media(comAtividade, (i) => i.nps.nps_score),
+        indice_geral: media(comAtividade, (i) => i.indice_geral),
         instrutores_considerados: comAtividade.length,
       }
     : null;
