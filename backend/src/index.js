@@ -593,6 +593,100 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   return dados;
 }
 
+// GET /api/treinamentos/exportar-selecionadas?ids=1,2,3 — Pacote 3 (redesign,
+// 16/09/2026): a seleção múltipla de Gestão de Turmas usa esta rota pra
+// exportar só as turmas marcadas, no mesmo padrão formatado dos outros
+// exports (ver lib/excelExport.js). Precisa ficar ANTES do mount de
+// createCrudRouter (linha abaixo) — senão a rota genérica de :id do CRUD
+// capturaria "exportar-selecionadas" como se fosse um id.
+app.get("/api/treinamentos/exportar-selecionadas", authRequired, async (req, res) => {
+  try {
+    const ids = String(req.query.ids || "")
+      .split(",")
+      .map((v) => Number(v.trim()))
+      .filter((v) => Number.isInteger(v) && v > 0);
+    if (!ids.length) {
+      return res.status(400).json({ ok: false, message: "Informe ao menos um id em ?ids=" });
+    }
+
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] });
+    const tenantCheck = empresaId ? " AND empresa_id = ?" : "";
+    const placeholders = ids.map(() => "?").join(",");
+    const params = empresaId ? [...ids, empresaId] : ids;
+
+    const [linhas] = await pool.query(
+      `SELECT id, tema, cliente, instrutor, supervisor, publico, subtipo, status,
+              data_inicio, data, data_fim, carga_horaria, participantes, sala_id, sala_outro_local
+       FROM treinamentos WHERE id IN (${placeholders})${tenantCheck}
+       ORDER BY COALESCE(data_inicio, data) DESC`,
+      params
+    );
+
+    const salaIds = [...new Set(linhas.map((l) => l.sala_id).filter(Boolean))];
+    const salaNomePorId = new Map();
+    if (salaIds.length) {
+      const [salas] = await pool.query(
+        `SELECT id, nome FROM salas WHERE id IN (${salaIds.map(() => "?").join(",")})`,
+        salaIds
+      );
+      salas.forEach((s) => salaNomePorId.set(s.id, s.nome));
+    }
+
+    const { novoWorkbook, adicionarTabela } = require("./lib/excelExport");
+    const wb = novoWorkbook();
+    adicionarTabela(wb, {
+      nomeAba: "Turmas selecionadas",
+      colunas: [
+        { titulo: "Turma", chave: "tema", largura: 30 },
+        { titulo: "Cliente", chave: "cliente", largura: 20 },
+        { titulo: "Instrutor", chave: "instrutor", largura: 22 },
+        { titulo: "Supervisor", chave: "supervisor", largura: 22 },
+        { titulo: "Público", chave: "publico", largura: 18 },
+        { titulo: "Subtipo", chave: "subtipo", largura: 20 },
+        { titulo: "Status", chave: "status", largura: 16 },
+        { titulo: "Sala", chave: "sala", largura: 18 },
+        { titulo: "Data início", chave: "data_inicio", largura: 13, formato: "data" },
+        { titulo: "Data fim", chave: "data_fim", largura: 13, formato: "data" },
+        { titulo: "Carga horária", chave: "carga_horaria", largura: 13, formato: "decimal1" },
+        { titulo: "Participantes previstos", chave: "participantes", largura: 16, formato: "inteiro" },
+      ],
+      linhas: linhas.map((l) => ({
+        tema: l.tema || "-",
+        cliente: l.cliente || "-",
+        instrutor: l.instrutor || "-",
+        supervisor: l.supervisor || "-",
+        publico: l.publico || "-",
+        subtipo: l.subtipo || "-",
+        status: l.status || "-",
+        sala: l.sala_outro_local || salaNomePorId.get(l.sala_id) || "-",
+        data_inicio: l.data_inicio || l.data || null,
+        data_fim: l.data_fim || null,
+        carga_horaria: Number(l.carga_horaria || 0),
+        participantes: Number(l.participantes || 0),
+      })),
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
+    registrarAuditoria({
+      usuario: req.user,
+      acao: "exportar",
+      entidade: "treinamento",
+      // entidade_id no banco é int único — com várias turmas selecionadas
+      // não há um id único pra gravar ali, então deixamos null e colocamos
+      // a lista completa de ids no resumo (texto) pra manter a rastreabilidade.
+      entidadeId: ids.length === 1 ? ids[0] : null,
+      resumo: `${req.user?.nome || "Alguém"} exportou ${linhas.length} turma(s) selecionada(s) em Gestão de Turmas (ids: ${ids.join(",")})`,
+      ip: req.ip,
+    });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="turmas-selecionadas.xlsx"');
+    return res.send(Buffer.from(buf));
+  } catch (error) {
+    console.error("[treinamentos] exportarSelecionadas:", error.message);
+    return res.status(500).json({ ok: false, message: "Erro ao exportar as turmas selecionadas" });
+  }
+});
+
 app.use(
   "/api/treinamentos",
   createCrudRouter({
