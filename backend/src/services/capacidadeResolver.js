@@ -520,6 +520,17 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId 
     }
   }
 
+  // Correção (16/09/2026, pedido do Ramon): esta tabela pré-cadastra TODO
+  // instrutor já conhecido (pra poder somar hora real de quem saiu no meio
+  // da janela — histórico não pode sumir), mas isso também criava uma linha
+  // de 0h/0% pra todo instrutor desligado sem nenhuma hora real na janela
+  // toda, inflando a lista sem necessidade (e passando a falsa impressão de
+  // "ocupação baixa"). Mesmo critério de "linha fantasma" já usado em
+  // getCapacidadeVsRealizado: só cai fora quem está confirmadamente inativo
+  // E não tem nenhuma hora real na janela; quem tem hora real (mesmo tendo
+  // saído depois) continua aparecendo normalmente.
+  const instrutoresInativos = await buscarInstrutoresInativos(empresaId);
+
   const linhas = Array.from(porInstrutor.values())
     .map((linha) => ({
       ...linha,
@@ -528,6 +539,7 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId 
       ocupacao_pct: linha.capacidade_90d > 0 ? Number(((linha.total_90d / linha.capacidade_90d) * 100).toFixed(1)) : 0,
     }))
     .filter((linha) => !cliente || linha.total_90d > 0)
+    .filter((linha) => linha.total_90d > 0 || !instrutoresInativos.has(String(linha.instrutor).trim().toLowerCase()))
     .sort((a, b) => b.total_90d - a.total_90d);
 
   return { meses: meses.map((m) => `${m.ano}-${pad2(m.mes)}`), itens: linhas };
