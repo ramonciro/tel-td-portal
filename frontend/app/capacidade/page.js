@@ -62,14 +62,14 @@ function CapacidadePageInner() {
   const [configAberta,   setConfigAberta]   = useState(false);
   const [instrutores,    setInstrutores]    = useState([]);
   const [regra,          setRegra]          = useState(null);
-  const [regraForm,      setRegraForm]      = useState({ horas_dia_padrao: "", hc_dia_padrao: "", considerar_domingo: false });
+  const [regraForm,      setRegraForm]      = useState({ horas_dia_padrao: "", dias_mes_padrao: "" });
   const [regraSalvando,  setRegraSalvando]  = useState(false);
   const [regraMsg,       setRegraMsg]       = useState({ tipo: "", texto: "" });
 
   const [overrides,      setOverrides]      = useState([]);
   const anoAtual = new Date().getFullYear();
   const [overrideForm,   setOverrideForm]   = useState({
-    instrutor: "", ano: String(anoAtual), mes: "", horas_capacidade: "", hc_capacidade: "", observacoes: "",
+    instrutor: "", ano: String(anoAtual), mes: "", horas_capacidade: "", observacoes: "",
   });
   const [overrideSalvando, setOverrideSalvando] = useState(false);
   const [overrideMsg,      setOverrideMsg]      = useState({ tipo: "", texto: "" });
@@ -182,8 +182,7 @@ function CapacidadePageInner() {
         setRegra(regraData.regra);
         setRegraForm({
           horas_dia_padrao: String(regraData.regra.horas_dia_padrao ?? ""),
-          hc_dia_padrao: String(regraData.regra.hc_dia_padrao ?? ""),
-          considerar_domingo: !!regraData.regra.considerar_domingo,
+          dias_mes_padrao: String(regraData.regra.dias_mes_padrao ?? ""),
         });
       }
       setOverrides(overridesData?.itens || []);
@@ -193,16 +192,15 @@ function CapacidadePageInner() {
   async function salvarRegra() {
     try {
       setRegraSalvando(true); setRegraMsg({ tipo: "", texto: "" });
-      if (regraForm.horas_dia_padrao === "" || regraForm.hc_dia_padrao === "") {
-        setRegraMsg({ tipo: "erro", texto: "Informe horas/dia e HC/dia." });
+      if (regraForm.horas_dia_padrao === "" || regraForm.dias_mes_padrao === "") {
+        setRegraMsg({ tipo: "erro", texto: "Informe horas por dia e dias trabalhados no mês." });
         return;
       }
       await apiFetch("/capacidade/regra", {
         method: "PUT",
         body: JSON.stringify({
           horas_dia_padrao: Number(regraForm.horas_dia_padrao),
-          hc_dia_padrao: Number(regraForm.hc_dia_padrao),
-          considerar_domingo: regraForm.considerar_domingo,
+          dias_mes_padrao: Number(regraForm.dias_mes_padrao),
         }),
       });
       setRegraMsg({ tipo: "ok", texto: "Regra padrão atualizada." });
@@ -216,7 +214,7 @@ function CapacidadePageInner() {
   async function salvarOverride() {
     try {
       setOverrideSalvando(true); setOverrideMsg({ tipo: "", texto: "" });
-      const { instrutor, ano, mes, horas_capacidade, hc_capacidade, observacoes } = overrideForm;
+      const { instrutor, ano, mes, horas_capacidade, observacoes } = overrideForm;
       if (!instrutor || !ano || !mes) {
         setOverrideMsg({ tipo: "erro", texto: "Selecione instrutor, ano e mês." });
         return;
@@ -226,12 +224,11 @@ function CapacidadePageInner() {
         body: JSON.stringify({
           instrutor, ano: Number(ano), mes: Number(mes),
           horas_capacidade: Number(horas_capacidade || 0),
-          hc_capacidade: Number(hc_capacidade || 0),
           observacoes: observacoes || null,
         }),
       });
       setOverrideMsg({ tipo: "ok", texto: "Capacidade do instrutor salva." });
-      setOverrideForm({ instrutor: "", ano: String(anoAtual), mes: "", horas_capacidade: "", hc_capacidade: "", observacoes: "" });
+      setOverrideForm({ instrutor: "", ano: String(anoAtual), mes: "", horas_capacidade: "", observacoes: "" });
       await carregarConfig();
       await carregar();
     } catch (e) {
@@ -538,27 +535,28 @@ function CapacidadePageInner() {
                   <div>
                     <div style={cardTitle}>Regra automática padrão</div>
                     <p style={{ fontSize: 12, color: "#64748b", marginTop: -8, marginBottom: 12 }}>
-                      Usada para calcular a capacidade de todo instrutor que não tem um ajuste manual no mês.
+                      Usada para calcular a capacidade de todo instrutor que não tem um ajuste manual no mês —
+                      capacidade do mês = horas por dia × dias trabalhados no mês (uma média fixa, não a contagem de dias do calendário).
                     </p>
                     {regraMsg.texto && (
                       <div style={regraMsg.tipo === "erro" ? msgErro : msgOk}>{regraMsg.texto}</div>
                     )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      <CField label="Horas por dia">
+                      <CField label="Horas por dia trabalhado">
                         <input type="number" step="0.5" value={regraForm.horas_dia_padrao}
                           onChange={(e) => setRegraForm((p) => ({ ...p, horas_dia_padrao: e.target.value }))}
                           style={cInput} />
                       </CField>
-                      <CField label="HC (turmas) por dia">
-                        <input type="number" step="1" value={regraForm.hc_dia_padrao}
-                          onChange={(e) => setRegraForm((p) => ({ ...p, hc_dia_padrao: e.target.value }))}
+                      <CField label="Dias trabalhados no mês">
+                        <input type="number" step="1" value={regraForm.dias_mes_padrao}
+                          onChange={(e) => setRegraForm((p) => ({ ...p, dias_mes_padrao: e.target.value }))}
                           style={cInput} />
                       </CField>
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#334155" }}>
-                        <input type="checkbox" checked={regraForm.considerar_domingo}
-                          onChange={(e) => setRegraForm((p) => ({ ...p, considerar_domingo: e.target.checked }))} />
-                        Considerar domingo como dia útil
-                      </label>
+                      {regraForm.horas_dia_padrao !== "" && regraForm.dias_mes_padrao !== "" && (
+                        <span style={{ fontSize: 12, color: "#64748b" }}>
+                          Capacidade automática por instrutor: {fmt(Number(regraForm.horas_dia_padrao) * Number(regraForm.dias_mes_padrao))}h/mês
+                        </span>
+                      )}
                       <button style={btnCoral} onClick={salvarRegra} disabled={regraSalvando}>
                         {regraSalvando ? "Salvando…" : "Salvar regra padrão"}
                       </button>
@@ -602,10 +600,6 @@ function CapacidadePageInner() {
                         <input type="number" value={overrideForm.horas_capacidade}
                           onChange={(e) => setOverrideForm((p) => ({ ...p, horas_capacidade: e.target.value }))} style={cInput} />
                       </CField>
-                      <CField label="Capacidade (HC)">
-                        <input type="number" value={overrideForm.hc_capacidade}
-                          onChange={(e) => setOverrideForm((p) => ({ ...p, hc_capacidade: e.target.value }))} style={cInput} />
-                      </CField>
                       <CField label="Observações" full>
                         <input value={overrideForm.observacoes}
                           onChange={(e) => setOverrideForm((p) => ({ ...p, observacoes: e.target.value }))}
@@ -626,7 +620,7 @@ function CapacidadePageInner() {
                           <div key={o.id} style={overrideItem}>
                             <div>
                               <strong>{o.instrutor}</strong> — {String(o.mes).padStart(2, "0")}/{o.ano}
-                              <span style={{ color: "#64748b" }}> · {fmt(o.horas_capacidade)}h / {fmt(o.hc_capacidade)} HC</span>
+                              <span style={{ color: "#64748b" }}> · {fmt(o.horas_capacidade)}h</span>
                               {o.observacoes && <div style={{ fontSize: 12, color: "#94a3b8" }}>{o.observacoes}</div>}
                             </div>
                             <button style={btnExcluirOverride} onClick={() => excluirOverride(o.id)}>remover</button>
