@@ -211,7 +211,6 @@ function emptyForm() {
   return {
     nome: "", email: "", senha: "", perfil: "", cliente: "",
     ativo: "1", troca_senha_obrigatoria: "1",
-    pode_acessar_oceano_desenvolvimento: "0",
   };
 }
 
@@ -220,7 +219,6 @@ function ModalUsuario({ modo, usuario, clientes, onSalvar, onFechar }) {
     ? { ...emptyForm(), ...usuario,
         ativo: String(usuario.ativo ?? "1"),
         troca_senha_obrigatoria: String(usuario.troca_senha_obrigatoria ?? "1"),
-        pode_acessar_oceano_desenvolvimento: String(usuario.pode_acessar_oceano_desenvolvimento ?? "0"),
         senha: "",
       }
     : emptyForm()
@@ -245,7 +243,6 @@ function ModalUsuario({ modo, usuario, clientes, onSalvar, onFechar }) {
         cliente: form.cliente || "",
         ativo:   Number(form.ativo),
         troca_senha_obrigatoria: Number(form.troca_senha_obrigatoria),
-        pode_acessar_oceano_desenvolvimento: Number(form.pode_acessar_oceano_desenvolvimento),
       };
       if (form.senha) payload.senha = form.senha;
 
@@ -337,12 +334,6 @@ function ModalUsuario({ modo, usuario, clientes, onSalvar, onFechar }) {
             <select value={form.troca_senha_obrigatoria} onChange={campo("troca_senha_obrigatoria")} style={mInput}>
               <option value="1">Sim</option>
               <option value="0">Não</option>
-            </select>
-          </MField>
-          <MField label="Mapa de Desenvolvimento" full>
-            <select value={form.pode_acessar_oceano_desenvolvimento} onChange={campo("pode_acessar_oceano_desenvolvimento")} style={mInput}>
-              <option value="0">Bloqueado</option>
-              <option value="1">Liberado</option>
             </select>
           </MField>
         </div>
@@ -451,8 +442,8 @@ export default function UsuariosPage() {
     const inativos    = total - ativos;
     const semOperacao = usuarios.filter((u) => normalizarClientes(u.cliente).length === 0).length;
     const multiOp     = usuarios.filter((u) => normalizarClientes(u.cliente).length > 1).length;
-    const oceano      = usuarios.filter((u) => String(u.pode_acessar_oceano_desenvolvimento) === "1").length;
-    return { total, ativos, inativos, semOperacao, multiOperacao: multiOp, oceano };
+    const metodologia = usuarios.filter((u) => String(u.perfil || "").toLowerCase() === "metodologia").length;
+    return { total, ativos, inativos, semOperacao, multiOperacao: multiOp, metodologia };
   }, [usuarios]);
 
   /* ── lista filtrada ── */
@@ -509,7 +500,7 @@ export default function UsuariosPage() {
         <StatCard title="Ativos"   value={fmt(kpis.ativos)}  subtitle="com acesso liberado"  accent={colors.success} />
         <StatCard title="Inativos" value={fmt(kpis.inativos)}
           subtitle="sem acesso" accent={kpis.inativos > 0 ? colors.danger : colors.neutral} />
-        <StatCard title="Mapa de Desenvolvimento" value={fmt(kpis.oceano)}  subtitle="acesso liberado"      accent={chart.cyan}    />
+        <StatCard title="Metodologia" value={fmt(kpis.metodologia)}  subtitle="acesso ao módulo"      accent={chart.cyan}    />
       </div>
 
       {/* ── Barra de distribuição ── */}
@@ -571,14 +562,14 @@ export default function UsuariosPage() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Usuário","Perfil","Operações","Vínculo","Status","Mapa",""].map((h) => (
+                  {["Usuário","Perfil","Operações","Vínculo","Status",""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {listaFiltrada.length === 0 ? (
-                  <tr><td colSpan={7} style={tdVazio}>
+                  <tr><td colSpan={6} style={tdVazio}>
                     {busca || filtroExtra || filtroPerfil !== "todos"
                       ? "Nenhum usuário encontrado para os filtros aplicados."
                       : "Nenhum usuário cadastrado."}
@@ -587,7 +578,6 @@ export default function UsuariosPage() {
                   listaFiltrada.map((u) => {
                     const clientes = normalizarClientes(u.cliente);
                     const vinculo  = vinculos.get(u.id);
-                    const oceano   = String(u.pode_acessar_oceano_desenvolvimento) === "1";
                     return (
                       <tr key={u.id} style={trHover}>
                         {/* Usuário */}
@@ -639,18 +629,6 @@ export default function UsuariosPage() {
                             loading={toggling.has(u.id)}
                             onChange={() => toggleAtivo(u)}
                           />
-                        </td>
-
-                        {/* Mapa de Desenvolvimento */}
-                        <td style={td}>
-                          <span style={{
-                            ...badgeBase,
-                            background: oceano ? "#ecfeff" : "#f8fafc",
-                            color:      oceano ? "#0f766e" : "#94a3b8",
-                            border:     `1px solid ${oceano ? "#99f6e4" : "#e2e8f0"}`,
-                          }}>
-                            {oceano ? "Liberado" : "Bloqueado"}
-                          </span>
                         </td>
 
                         {/* Ações */}
