@@ -14,6 +14,22 @@ function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
 }
 
+// Pacote 3 (redesign, 16/09/2026): o Dashboard era "cartões soltos" numa
+// pilha só — sem separar visualmente "Equipe" de "Oceano", por exemplo,
+// como Ramon apontou. Este cabeçalho de seção agrupa os blocos existentes
+// (nenhum bloco foi removido, só reorganizado sob um título).
+function GroupHeader({ title, subtitle }) {
+  return (
+    <div style={groupHeader}>
+      <div style={groupHeaderTop}>
+        <span style={groupHeaderTitle}>{title}</span>
+        <span style={groupHeaderLine} />
+      </div>
+      {subtitle && <p style={groupHeaderSubtitle}>{subtitle}</p>}
+    </div>
+  );
+}
+
 function formatDate(value) {
   return formatDateBR(value, "-");
 }
@@ -455,6 +471,7 @@ export default function DashboardPage() {
             </div>
           </SectionCard>
 
+          <GroupHeader title="Visão geral" />
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={kpiGrid}>
             <StatCard title="Turmas" value={<ContadorAnimado valor={kpis.treinamentos} revelado={revelado} />} subtitle="Base no recorte" accent={chart.blue} />
             <StatCard title="Previstos" value={<ContadorAnimado valor={kpis.participantes_previstos} revelado={revelado} />} subtitle="Capacidade cadastrada" accent={chart.cyan} />
@@ -478,6 +495,7 @@ export default function DashboardPage() {
             )}
           </div>
 
+          <GroupHeader title="Equipe" subtitle="Capacidade e desempenho de quem está ministrando as turmas." />
           <SectionCard
             title="Capacidade da equipe (CH por instrutor)"
             subtitle={`Calculado automaticamente a partir das turmas e do cronograma já registrados${filters.cliente ? ` — recorte: ${filters.cliente}` : " — todas as operações"}. Nenhum lançamento manual extra para o time.`}
@@ -617,6 +635,8 @@ export default function DashboardPage() {
             )}
           </SectionCard>
 
+          <GroupHeader title="Leitura do dia" subtitle="O resumo automático e os sinais que ajudam a interpretar o cenário agora." />
+
           {resumoExecutivo?.texto && (
             <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ animationDelay: ".02s" }}>
               <SectionCard
@@ -649,6 +669,7 @@ export default function DashboardPage() {
             </SectionCard>
           </div>
 
+          <GroupHeader title="Comparativos" subtitle="Onde a operação está mais firme e onde precisa de suporte." />
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ ...twoColumns, animationDelay: ".1s" }}>
             <SectionCard title="Saúde por cliente" subtitle="Ajuda a comparar rapidamente onde a operação está mais firme e onde precisa de suporte.">
               {presencaPorCliente.length ? (
@@ -683,6 +704,7 @@ export default function DashboardPage() {
             </SectionCard>
           </div>
 
+          <GroupHeader title="Oceano" subtitle="Resumo executivo do Oceano do Desenvolvimento e progresso da tripulação." />
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ ...twoColumns, animationDelay: ".15s" }}>
             <SectionCard title="Oceano em resumo" subtitle="Uma leitura curta para conectar o dashboard ao fluxo de desenvolvimento.">
               <div style={oceanoGrid}>
@@ -716,43 +738,43 @@ export default function DashboardPage() {
             }
           >
             {ultimasTurmas.length ? (
-              <div style={{ overflowX: "auto" }}>
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Turma</th>
-                      <th style={th}>Cliente</th>
-                      <th style={th}>Instrutor</th>
-                      <th style={th}>Modalidade</th>
-                      <th style={th}>Status</th>
-                      <th style={th}>Data</th>
-                      <th style={th}>Base</th>
-                      <th style={th}>Presença</th>
-                      <th style={th}>Presentes</th>
-                      <th style={th}>Pendentes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ultimasTurmas.map((item) => (
-                      <tr key={item.id} onClick={() => abrirDrillDown(item)} style={{ cursor: "pointer" }} title="Clique para ver a frequência por pessoa">
-                        <td style={td}>{item.tema || "-"}</td>
-                        <td style={td}>{item.cliente || "-"}</td>
-                        <td style={td}>{item.instrutor || "-"}</td>
-                        <td style={td}>{parseModalidade(item.descricao, item.modalidade)}</td>
-                        <td style={td}>{item.status_canonico || "—"}</td>
-                        <td style={td}>{formatDate(item.data || item.data_inicio)}</td>
-                        <td style={td}>{fmt(item.base_ativa || item.treinados || 0)}</td>
-                        <td style={td}>
-                          {item.taxa_presenca > 0
-                            ? <span style={{ ...getBadgeStyleByTax(item.taxa_presenca), padding: "3px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700 }}>{item.taxa_presenca}%</span>
-                            : <span style={{ color: "#94a3b8" }}>—</span>}
-                        </td>
-                        <td style={td}>{fmt(item.presentes || 0)}</td>
-                        <td style={td}>{fmt(item.pendentes || 0)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={cardsGrid}>
+                {ultimasTurmas.map((item) => (
+                  <article
+                    key={item.id}
+                    style={turmaCard}
+                    onClick={() => abrirDrillDown(item)}
+                    title="Clique para ver a frequência por pessoa"
+                  >
+                    <div style={turmaCardTop}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                        <div style={turmaCardMark}>{String(item.cliente || "T").slice(0, 1).toUpperCase()}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={turmaCardClient}>{item.cliente || "Sem cliente"}</div>
+                          <h4 style={turmaCardTitle}>{item.tema || "-"}</h4>
+                        </div>
+                      </div>
+                      {item.taxa_presenca > 0 ? (
+                        <span style={{ ...getBadgeStyleByTax(item.taxa_presenca), ...turmaCardBadge }}>{item.taxa_presenca}%</span>
+                      ) : (
+                        <span style={turmaCardBadgeNeutro}>—</span>
+                      )}
+                    </div>
+
+                    <div style={turmaCardMetrics}>
+                      <div><span style={turmaCardMetricLabel}>Instrutor</span><strong>{item.instrutor || "-"}</strong></div>
+                      <div><span style={turmaCardMetricLabel}>Modalidade</span><strong>{parseModalidade(item.descricao, item.modalidade)}</strong></div>
+                      <div><span style={turmaCardMetricLabel}>Status</span><strong>{item.status_canonico || "—"}</strong></div>
+                      <div><span style={turmaCardMetricLabel}>Data</span><strong>{formatDate(item.data || item.data_inicio)}</strong></div>
+                    </div>
+
+                    <div style={turmaCardFooter}>
+                      <span>{fmt(item.base_ativa || item.treinados || 0)} na base</span>
+                      <span>{fmt(item.presentes || 0)} presentes</span>
+                      <span>{fmt(item.pendentes || 0)} pendentes</span>
+                    </div>
+                  </article>
+                ))}
               </div>
             ) : (
               <div style={emptyState}>Não apareceu nenhuma turma nesse recorte.</div>
@@ -862,10 +884,29 @@ const oceanoGrid = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 
 const miniStatCard = { borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", padding: 14 };
 const miniStatLabel = { fontSize: 11, color: "#64748b", textTransform: "uppercase", fontWeight: 800 };
 const miniStatValue = { marginTop: 6, fontSize: 22, fontWeight: 900, color: "#0f172a" };
-const table = { width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 860 };
-const th = { textAlign: "left", padding: "12px 14px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" };
-const td = { padding: "12px 14px", borderBottom: "1px solid #eef2f7", color: "#334155", fontSize: 14 };
 const emptyState = { padding: 18, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", color: "#64748b" };
+
+const groupHeader = { marginTop: 4 };
+const groupHeaderTop = { display: "flex", alignItems: "center", gap: 10 };
+const groupHeaderTitle = { fontSize: 12.5, fontWeight: 850, color: "#64748b", textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" };
+const groupHeaderLine = { flex: 1, height: 1, background: "#e2e8f0" };
+const groupHeaderSubtitle = { margin: "3px 0 0", fontSize: 12.5, color: "#94a3b8" };
+
+// "Turmas recentes" virou cartões (Pacote 3, redesign, 16/09/2026) — antes
+// era uma tabela HTML de 10 colunas ("cara de planilha", como Ramon
+// descreveu); segue a mesma linguagem visual de cartão já usada em
+// Gestão de Turmas (treinamentos/page.js).
+const cardsGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 };
+const turmaCard = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: "14px 16px", boxShadow: "0 4px 14px rgba(15,23,42,.035)", cursor: "pointer" };
+const turmaCardTop = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 };
+const turmaCardMark = { width: 32, height: 32, borderRadius: 10, display: "grid", placeItems: "center", background: "#eef2ff", color: "#4338ca", fontWeight: 900, fontSize: 13, flexShrink: 0 };
+const turmaCardClient = { fontSize: 10, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".06em" };
+const turmaCardTitle = { margin: "2px 0 0", fontSize: 14, color: "#0f172a", letterSpacing: "-.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const turmaCardBadge = { padding: "4px 9px", borderRadius: 999, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" };
+const turmaCardBadgeNeutro = { ...{ padding: "4px 9px", borderRadius: 999, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }, color: "#94a3b8", background: "#f1f5f9" };
+const turmaCardMetrics = { display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8, marginTop: 12 };
+const turmaCardMetricLabel = { display: "block", fontSize: 10, color: "#94a3b8", marginBottom: 2 };
+const turmaCardFooter = { display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12, paddingTop: 10, borderTop: "1px solid #f1f5f9", fontSize: 11, color: "#64748b" };
 
 // ---------------------------------------------------------------------------
 // Bloco de alertas — "o que precisa de atenção hoje", antes de qualquer
