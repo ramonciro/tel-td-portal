@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { clearSession, getStoredUser, hasSomeRole, hasOceanAccess } from "../services/api";
+import { clearSession, getStoredUser, hasSomeRole } from "../services/api";
 import NavIcon from "./icons";
 import { colors } from "../lib/theme";
 
@@ -16,9 +16,7 @@ const menuItems = [
   // Menu operacional
   { href: "/inicio",        label: "Início",                 icon: "home", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/dashboard",     label: "Dashboard",              icon: "chart", roles: ["coordenador", "supervisor"] },
-  { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "map", roles: ["coordenador", "superintendente"], requiresOceanAccess: true },
   { href: "/necessidades",  label: "Necessidades",           icon: "target", roles: ["coordenador", "supervisor", "superintendente"] },
-  { href: "/trilhas",       label: "Trilhas",                icon: "compass", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   // Ajuste pós-entrega do Pacote Salas (15/09/2026): o backend já liberava
   // Treinamentos e Presenças (Gestão de Turmas) para o perfil Assistente de
   // Treinamento desde a Fase 1 (decisão 12 — acesso cross-tenant nessas duas
@@ -62,6 +60,13 @@ const menuItems = [
   { href: "/rs/rps",       label: "Requisições",          icon: "users", roles: ["coordenador_rs", "gestor_rs"] },
   { href: "/rs/relatorio",      label: "Relatório Mensal",  icon: "trending", roles: ["coordenador_rs", "gestor_rs"] },
   { href: "/rs/configuracoes", label: "Configurações R&S", icon: "settings", roles: ["coordenador_rs"] },
+  // Módulo Metodologia e Desenvolvimento (16/09/2026) — Mapa de
+  // Desenvolvimento e Trilhas fundidos num módulo à parte, fora do escopo de
+  // Treinamento, com perfil dedicado ("metodologia"), mesmo padrão do R&S
+  // acima. Coordenador/supervisor/instrutor/treinando perderam o acesso —
+  // módulo é só para o time de Metodologia e Desenvolvimento.
+  { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "map", roles: ["metodologia"] },
+  { href: "/trilhas",       label: "Trilhas",                icon: "compass", roles: ["metodologia"] },
 ];
 // Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
 // ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
@@ -156,6 +161,16 @@ export default function PortalShell({
       router.replace("/rs/rps");
       return;
     }
+    // Módulo Metodologia e Desenvolvimento: mesmo padrão do R&S acima —
+    // quem tem o perfil dedicado só transita entre as próprias telas.
+    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas"];
+    if (
+      user.perfil === "metodologia" &&
+      !METODOLOGIA_ROTAS.some((rota) => isRouteActive(pathname, rota))
+    ) {
+      router.replace("/mapa-desenvolvimento");
+      return;
+    }
     // Bugfix: troca de senha obrigatória (primeiro acesso) só era aplicada no
     // redirect logo após o login (ver frontend/app/login/page.js) — depois
     // disso, nada impedia o usuário de clicar em qualquer item do menu, usar
@@ -197,7 +212,6 @@ export default function PortalShell({
       // menuRoles, cai no comportamento de sempre (menu = acesso).
       const roleOk = hasSomeRole(user, item.menuRoles || item.roles);
       if (!roleOk) return false;
-      if (item.requiresOceanAccess) return hasOceanAccess(user);
       return true;
     });
   }, [user, isSuperAdmin]);
@@ -215,7 +229,6 @@ export default function PortalShell({
     if (isSuperAdmin) return true;
     const roleOk = hasSomeRole(user, currentItem.roles);
     if (!roleOk) return false;
-    if (currentItem.requiresOceanAccess) return hasOceanAccess(user);
     return true;
   }, [currentItem, user, isSuperAdmin]);
 
