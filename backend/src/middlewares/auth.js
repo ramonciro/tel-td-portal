@@ -46,35 +46,15 @@ function authRequired(req, res, next) {
   }
 }
 
-// 4. Regras de Negócio (Mantidas Intactas)
-function hasOceanAccess(user) {
-  const perfil = String(user?.perfil || "").trim().toLowerCase();
-  const allowedPerfis = ["coordenador", "superintendente"];
-  const flag = Number(user?.pode_acessar_oceano_desenvolvimento || 0) === 1;
-  return allowedPerfis.includes(perfil) && flag;
-}
-
-function authorizeOceanAccess(req, res, next) {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ ok: false, message: "Usuário não autenticado" });
-    }
-
-    if (!hasOceanAccess(req.user)) {
-      return res.status(403).json({
-        ok: false,
-        message: "Acesso restrito ao Oceano do Desenvolvimento",
-      });
-    }
-
-    return next();
-  } catch (error) {
-    console.error("[auth]", error.message || error);
-    return res.status(500).json({
-      ok: false,
-      message: "Erro ao validar acesso ao Oceano do Desenvolvimento"});
-  }
-}
+// Módulo Metodologia e Desenvolvimento (16/09/2026): Mapa de Desenvolvimento
+// e Trilhas viraram um módulo à parte, fora do escopo de Treinamento, com
+// perfil dedicado — mesmo padrão do módulo R&S (ver "coordenador_rs"/
+// "gestor_rs" em index.js). O controle antigo (hasOceanAccess/
+// authorizeOceanAccess: perfil coordenador/superintendente + flag
+// pode_acessar_oceano_desenvolvimento) foi substituído por
+// authorizeRoles("metodologia") direto nas rotas — sem flag, sem perfis
+// emprestados de Treinamento. A coluna pode_acessar_oceano_desenvolvimento
+// continua existindo no banco (inofensiva, não é mais lida em lugar nenhum).
 
 function authorizeRoles(...allowedRoles) {
   return (req, res, next) => {
@@ -127,7 +107,5 @@ module.exports = {
   signToken,
   authRequired,
   authorizeRoles,
-  hasOceanAccess,
-  authorizeOceanAccess,
   requireSuperAdmin,
 };
