@@ -94,7 +94,7 @@ function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTur
 
   if (Number(oceano.jornadas || 0) > 0) {
     items.push({
-      title: "Oceano em movimento",
+      title: "Desenvolvimento em andamento",
       text: `${fmt(oceano.jornadas)} jornada(s), ${fmt(oceano.acoes)} ação(ões) e ${fmt(oceano.tripulacao)} pessoa(s) já estão no fluxo do desenvolvimento.`,
       tone: "ok",
     });
@@ -704,18 +704,18 @@ export default function DashboardPage() {
             </SectionCard>
           </div>
 
-          <GroupHeader title="Oceano" subtitle="Resumo executivo do Oceano do Desenvolvimento e progresso da tripulação." />
+          <GroupHeader title="Desenvolvimento" subtitle="Resumo executivo do Desenvolvimento e progresso dos participantes." />
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ ...twoColumns, animationDelay: ".15s" }}>
-            <SectionCard title="Oceano em resumo" subtitle="Uma leitura curta para conectar o dashboard ao fluxo de desenvolvimento.">
+            <SectionCard title="Desenvolvimento em resumo" subtitle="Uma leitura curta para conectar o dashboard ao fluxo de desenvolvimento.">
               <div style={oceanoGrid}>
                 <MiniStat label="Jornadas" value={fmt(oceano.jornadas || 0)} />
                 <MiniStat label="Ações" value={fmt(oceano.acoes || 0)} />
                 <MiniStat label="Sustentações" value={fmt(oceano.sustentacoes || 0)} />
-                <MiniStat label="Tripulação" value={fmt(oceano.tripulacao || 0)} />
+                <MiniStat label="Participantes" value={fmt(oceano.tripulacao || 0)} />
               </div>
             </SectionCard>
 
-            <SectionCard title="Progresso da tripulação" subtitle="Ajuda a enxergar se o oceano está só bonito ou realmente em movimento.">
+            <SectionCard title="Progresso dos participantes" subtitle="Ajuda a enxergar se o desenvolvimento está só no papel ou realmente em andamento.">
               {(() => {
                 const prog = oceano.progresso_tripulacao || {};
                 const fatias = [
