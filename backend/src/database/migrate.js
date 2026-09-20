@@ -1358,6 +1358,46 @@ async function runMigrations() {
       );
     `);
 
+    // 42. Clientes da Metodologia (20/09/2026, pedido do Ramon): a tela de
+    // Mapa de Desenvolvimento tinha "Cliente" como texto livre tanto na
+    // jornada quanto no participante — sem lista nenhuma por trás, cada
+    // pessoa digitava o nome do jeito que lembrava (ex.: "Safra", "SAFRA
+    // Bank", "Banco Safra" viravam 3 clientes diferentes nos filtros e nos
+    // agrupamentos por cliente). A correção óbvia seria reaproveitar a
+    // tabela `clientes` que a Treinamento já tem — mas Ramon foi explícito:
+    // "não quero a lista de clientes vinculada a clientes de treinamento,
+    // precisa ter uma lista de clientes exclusiva para metodologia". Por
+    // isso esta é uma tabela nova e independente, sem FK nem overlap com
+    // `clientes` — mesmo que o nome cadastrado aqui coincida com um nome já
+    // usado lá, são dois cadastros sem nenhuma relação no banco. Os campos
+    // `cliente` em jornadas_desenvolvimento, jornada_participantes e
+    // trilhas_aprendizagem continuam VARCHAR livre (não viraram FK para não
+    // quebrar dado histórico já digitado) — o que muda é que agora o
+    // frontend só oferece nomes desta lista num <select>, em vez de deixar
+    // digitar qualquer coisa.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS metodologia_clientes (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        nome        VARCHAR(255) NOT NULL,
+        status      VARCHAR(20) NOT NULL DEFAULT 'ativo',
+        observacoes TEXT NULL,
+        empresa_id  INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_metodologia_clientes_empresa (empresa_id)
+      );
+    `);
+
+    // 43. trilha_id em jornadas_etapas (20/09/2026, pedido do Ramon): as
+    // etapas da jornada ("portos", com prazo — data_fim alimenta o KPI
+    // "Adesão ao Cronograma") ganharam um vínculo opcional com uma trilha
+    // do catálogo de Trilhas, pra quem quiser usar uma trilha como o
+    // conteúdo/autoestudo de uma etapa específica. Sem FK, mesmo padrão já
+    // usado no restante do módulo (ex.: jornada_participante_id em
+    // coaching_individual) — a etapa não deixa de existir se a trilha for
+    // excluída depois.
+    await ensureColumn("jornadas_etapas", "trilha_id", "INT NULL");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
