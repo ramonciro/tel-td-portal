@@ -129,17 +129,24 @@ export default function TripulacaoPage() {
   const [perfilExpandido, setPerfilExpandido] = useState(null);
   const [perfilForm, setPerfilForm] = useState(perfilFormVazio);
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
+  // Lista de clientes exclusiva da Metodologia (20/09/2026) — mesma lista
+  // usada no Mapa de Desenvolvimento, ver migrate.js passo 42. Só pra
+  // popular o <select> de Cliente do coaching individual, sem duplicar
+  // cadastro nenhum.
+  const [metodologiaClientes, setMetodologiaClientes] = useState([]);
 
   async function carregar() {
     setCarregando(true);
-    const [pResult, cResult, perfilResult] = await Promise.allSettled([
+    const [pResult, cResult, perfilResult, clientesResult] = await Promise.allSettled([
       apiFetch("/jornada-participantes"),
       apiFetch("/coaching-individual"),
       apiFetch("/perfis-comportamentais"),
+      apiFetch("/metodologia-clientes"),
     ]);
     if (pResult.status === "fulfilled") setParticipantes(pResult.value);
     if (cResult.status === "fulfilled") setCoachings(cResult.value);
     if (perfilResult.status === "fulfilled") setPerfis(perfilResult.value);
+    if (clientesResult.status === "fulfilled") setMetodologiaClientes(clientesResult.value);
     if (pResult.status === "rejected" && cResult.status === "rejected") {
       setErro("Não foi possível carregar a tripulação.");
     } else {
@@ -174,6 +181,23 @@ export default function TripulacaoPage() {
     () => linhas.filter((l) => l.vinculo === "jornada"),
     [linhas]
   );
+
+  // Mesma lógica de "injeta o valor atual se não estiver mais na lista
+  // ativa" usada em mapa-desenvolvimento/page.js — o campo cliente do
+  // coaching individual continua VARCHAR livre no banco, então um valor já
+  // salvo antes desta lista existir (ou depois renomeado/desativado) não
+  // pode simplesmente sumir do <select>.
+  const opcoesClienteCoaching = useMemo(() => {
+    const nomes = metodologiaClientes
+      .filter((item) => (item.status || "ativo") === "ativo")
+      .map((item) => item.nome)
+      .sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const atual = String(form.cliente || "").trim();
+    if (atual && !nomes.includes(atual)) {
+      return [...nomes, atual];
+    }
+    return nomes;
+  }, [metodologiaClientes, form.cliente]);
 
   async function abrirEncontros(coachingId) {
     if (expandido === coachingId) {
@@ -334,11 +358,18 @@ export default function TripulacaoPage() {
             </label>
             <label style={campoLabel}>
               Cliente
-              <input
+              <select
                 style={campoInput}
                 value={form.cliente}
                 onChange={(e) => setForm({ ...form, cliente: e.target.value })}
-              />
+              >
+                <option value="">Selecione</option>
+                {opcoesClienteCoaching.map((nome) => (
+                  <option key={nome} value={nome}>
+                    {nome}
+                  </option>
+                ))}
+              </select>
             </label>
             <label style={campoLabel}>
               Cargo
