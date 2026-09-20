@@ -12,6 +12,15 @@ import { colors, radius, estiloBadgeClassificacao } from "../../lib/theme";
 // quem está em coaching individual, ou nos dois. Os dois vínculos nunca se
 // misturam num só número (ver claude/framework-kpis-metodologia-2026-09-20.md)
 // — aqui eles só aparecem lado a lado, na mesma linha da mesma pessoa.
+//
+// Perfil comportamental (mesmo dia, mesmo pedido do Ramon) — Lobo, Gato,
+// Tubarão, Águia + DISC — mora aqui também, não numa página própria:
+// cadastro manual por linha (ver perfilComportamentalController.js e o
+// comentário do passo 41 em migrate.js pra fonte/critério de escolha do
+// mapeamento) e, quando a pessoa também tem coaching individual, a
+// orientação de abordagem sugerida aparece dentro do próprio painel de
+// encontros — é isso que faz o perfil "orientar o coaching", como o Ramon
+// pediu, em vez de só ficar registrado na ficha da pessoa.
 
 const FILTROS = [
   { key: "todos", label: "Todos" },
@@ -19,6 +28,37 @@ const FILTROS = [
   { key: "coaching", label: "Coaching individual" },
   { key: "ambos", label: "Ambos" },
 ];
+
+const PERFIL_OPCOES = [
+  { key: "lobo", label: "Lobo" },
+  { key: "gato", label: "Gato" },
+  { key: "tubarao", label: "Tubarão" },
+  { key: "aguia", label: "Águia" },
+];
+
+const PERFIL_META = {
+  lobo: { label: "Lobo", cor: colors.primary, fundo: colors.primaryLight },
+  gato: { label: "Gato", cor: colors.successText, fundo: colors.successLight },
+  tubarao: { label: "Tubarão", cor: colors.dangerText, fundo: colors.dangerLight },
+  aguia: { label: "Águia", cor: colors.accentText, fundo: colors.accentLight },
+};
+
+const perfilFormVazio = {
+  perfil_animal: "",
+  perfil_animal_secundario: "",
+  disc_letra_dominante: "",
+  observacoes: "",
+};
+
+function buildPerfilMaps(perfis) {
+  const porJornadaParticipante = new Map();
+  const porCoaching = new Map();
+  (perfis || []).forEach((perfil) => {
+    if (perfil.jornada_participante_id) porJornadaParticipante.set(perfil.jornada_participante_id, perfil);
+    if (perfil.coaching_individual_id) porCoaching.set(perfil.coaching_individual_id, perfil);
+  });
+  return { porJornadaParticipante, porCoaching };
+}
 
 function farolInfo(coaching) {
   if (!coaching) return null;
@@ -76,6 +116,7 @@ const formVazio = { nome: "", cliente: "", cargo: "", cadencia_dias: 30, jornada
 export default function TripulacaoPage() {
   const [participantes, setParticipantes] = useState([]);
   const [coachings, setCoachings] = useState([]);
+  const [perfis, setPerfis] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [filtro, setFiltro] = useState("todos");
@@ -85,15 +126,20 @@ export default function TripulacaoPage() {
   const [formAberto, setFormAberto] = useState(false);
   const [form, setForm] = useState(formVazio);
   const [salvando, setSalvando] = useState(false);
+  const [perfilExpandido, setPerfilExpandido] = useState(null);
+  const [perfilForm, setPerfilForm] = useState(perfilFormVazio);
+  const [salvandoPerfil, setSalvandoPerfil] = useState(false);
 
   async function carregar() {
     setCarregando(true);
-    const [pResult, cResult] = await Promise.allSettled([
+    const [pResult, cResult, perfilResult] = await Promise.allSettled([
       apiFetch("/jornada-participantes"),
       apiFetch("/coaching-individual"),
+      apiFetch("/perfis-comportamentais"),
     ]);
     if (pResult.status === "fulfilled") setParticipantes(pResult.value);
     if (cResult.status === "fulfilled") setCoachings(cResult.value);
+    if (perfilResult.status === "fulfilled") setPerfis(perfilResult.value);
     if (pResult.status === "rejected" && cResult.status === "rejected") {
       setErro("Não foi possível carregar a tripulação.");
     } else {
@@ -111,6 +157,18 @@ export default function TripulacaoPage() {
     () => (filtro === "todos" ? linhas : linhas.filter((l) => l.vinculo === filtro)),
     [linhas, filtro]
   );
+  const { porJornadaParticipante: perfilPorJornada, porCoaching: perfilPorCoaching } = useMemo(
+    () => buildPerfilMaps(perfis),
+    [perfis]
+  );
+
+  function perfilDaLinha(linha) {
+    if (linha.coaching && perfilPorCoaching.has(linha.coaching.id)) return perfilPorCoaching.get(linha.coaching.id);
+    if (linha.jornadaParticipanteId && perfilPorJornada.has(linha.jornadaParticipanteId)) {
+      return perfilPorJornada.get(linha.jornadaParticipanteId);
+    }
+    return null;
+  }
 
   const participantesSemCoaching = useMemo(
     () => linhas.filter((l) => l.vinculo === "jornada"),
@@ -185,6 +243,60 @@ export default function TripulacaoPage() {
       alert(err.message || "Não foi possível criar o coaching individual.");
     } finally {
       setSalvando(false);
+    }
+  }
+
+  function abrirPerfil(linha) {
+    if (perfilExpandido === linha.key) {
+      setPerfilExpandido(null);
+      return;
+    }
+    const existente = perfilDaLinha(linha);
+    setPerfilForm(
+      existente
+        ? {
+            perfil_animal: existente.perfil_animal || "",
+            perfil_animal_secundario: existente.perfil_animal_secundario || "",
+            disc_letra_dominante: existente.disc_letra_dominante || "",
+            observacoes: existente.observacoes || "",
+          }
+        : perfilFormVazio
+    );
+    setPerfilExpandido(linha.key);
+  }
+
+  async function salvarPerfil(linha) {
+    setSalvandoPerfil(true);
+    try {
+      const existente = perfilDaLinha(linha);
+      const payload = {
+        nome: linha.nome,
+        cliente: linha.cliente,
+        jornada_participante_id: linha.jornadaParticipanteId || null,
+        coaching_individual_id: linha.coaching?.id || null,
+        perfil_animal: perfilForm.perfil_animal || null,
+        perfil_animal_secundario: perfilForm.perfil_animal_secundario || null,
+        disc_letra_dominante: perfilForm.disc_letra_dominante || null,
+        observacoes: perfilForm.observacoes || null,
+      };
+
+      if (existente) {
+        await apiFetch(`/perfis-comportamentais/${existente.id}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiFetch("/perfis-comportamentais", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+      setPerfilExpandido(null);
+      carregar();
+    } catch (err) {
+      alert(err.message || "Não foi possível salvar o perfil comportamental.");
+    } finally {
+      setSalvandoPerfil(false);
     }
   }
 
@@ -296,12 +408,15 @@ export default function TripulacaoPage() {
               <span>Pessoa</span>
               <span>Cliente</span>
               <span>Vínculo</span>
+              <span>Perfil</span>
               <span>Coaching</span>
               <span></span>
             </div>
             {linhasFiltradas.map((linha) => {
               const farol = farolInfo(linha.coaching);
               const badge = badgeFarol(farol);
+              const perfil = perfilDaLinha(linha);
+              const perfilMeta = perfil?.perfil_animal ? PERFIL_META[perfil.perfil_animal] : null;
               return (
                 <div key={linha.key}>
                   <div style={linhaTabela}>
@@ -309,6 +424,20 @@ export default function TripulacaoPage() {
                     <div style={{ color: colors.textSecondary, fontSize: 13.5 }}>{linha.cliente}</div>
                     <div>
                       <span style={badgeVinculo(linha.vinculo)}>{vinculoLabel(linha.vinculo)}</span>
+                    </div>
+                    <div>
+                      <div style={{ marginBottom: 4 }}>
+                        {perfilMeta ? (
+                          <span style={{ ...pillBase, background: perfilMeta.fundo, color: perfilMeta.cor }}>
+                            {perfilMeta.label}
+                          </span>
+                        ) : (
+                          <span style={{ color: colors.textMuted, fontSize: 12.5 }}>—</span>
+                        )}
+                      </div>
+                      <button style={linkBotaoPequeno} onClick={() => abrirPerfil(linha)}>
+                        {perfilExpandido === linha.key ? "Fechar" : perfilMeta ? "Editar perfil" : "+ Perfil"}
+                      </button>
                     </div>
                     <div>{farol ? <span style={badge}>{farol.label}</span> : <span style={{ color: colors.textMuted }}>—</span>}</div>
                     <div style={{ textAlign: "right" }}>
@@ -324,6 +453,82 @@ export default function TripulacaoPage() {
                     </div>
                   </div>
 
+                  {perfilExpandido === linha.key && (
+                    <div style={painelExpandido}>
+                      <div style={{ fontSize: 12.5, color: colors.textSecondary, marginBottom: 10, fontWeight: 700 }}>
+                        Perfil comportamental — {linha.nome}
+                      </div>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          salvarPerfil(linha);
+                        }}
+                        style={formGrid}
+                      >
+                        <label style={campoLabel}>
+                          Perfil (animal)
+                          <select
+                            style={campoInput}
+                            value={perfilForm.perfil_animal}
+                            onChange={(e) => setPerfilForm({ ...perfilForm, perfil_animal: e.target.value })}
+                          >
+                            <option value="">Não registrado</option>
+                            {PERFIL_OPCOES.map((p) => (
+                              <option key={p.key} value={p.key}>
+                                {p.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label style={campoLabel}>
+                          Perfil secundário (opcional)
+                          <select
+                            style={campoInput}
+                            value={perfilForm.perfil_animal_secundario}
+                            onChange={(e) => setPerfilForm({ ...perfilForm, perfil_animal_secundario: e.target.value })}
+                          >
+                            <option value="">Nenhum</option>
+                            {PERFIL_OPCOES.map((p) => (
+                              <option key={p.key} value={p.key}>
+                                {p.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label style={campoLabel}>
+                          DISC dominante (opcional)
+                          <select
+                            style={campoInput}
+                            value={perfilForm.disc_letra_dominante}
+                            onChange={(e) => setPerfilForm({ ...perfilForm, disc_letra_dominante: e.target.value })}
+                          >
+                            <option value="">—</option>
+                            <option value="D">D — Dominância</option>
+                            <option value="I">I — Influência</option>
+                            <option value="S">S — Estabilidade</option>
+                            <option value="C">C — Conformidade</option>
+                          </select>
+                        </label>
+                        <label style={{ ...campoLabel, gridColumn: "1 / -1" }}>
+                          Observações
+                          <textarea
+                            style={{ ...campoInput, minHeight: 60, fontFamily: "inherit" }}
+                            value={perfilForm.observacoes}
+                            onChange={(e) => setPerfilForm({ ...perfilForm, observacoes: e.target.value })}
+                          />
+                        </label>
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                          <button type="submit" style={botaoPrimario} disabled={salvandoPerfil}>
+                            {salvandoPerfil ? "Salvando…" : "Salvar perfil"}
+                          </button>
+                          <button type="button" style={botaoSecundario} onClick={() => setPerfilExpandido(null)}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
                   {linha.coaching && expandido === linha.coaching.id && (
                     <div style={painelExpandido}>
                       <div style={{ fontSize: 12.5, color: colors.textSecondary, marginBottom: 10 }}>
@@ -331,7 +536,26 @@ export default function TripulacaoPage() {
                         {linha.coaching.responsavel_nome ? ` · Coach: ${linha.coaching.responsavel_nome}` : ""}
                       </div>
 
-                      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                      {perfil?.orientacao_coaching ? (
+                        <div style={{ ...avisoOrientacao, borderLeftColor: perfilMeta?.cor || colors.primary }}>
+                          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                            Abordagem sugerida — perfil {perfil.orientacao_coaching.label}
+                            {perfil.disc_letra_dominante ? ` · DISC ${perfil.disc_letra_dominante}` : ""}
+                          </div>
+                          <div style={{ marginBottom: 4 }}>{perfil.orientacao_coaching.descricao}</div>
+                          <div>{perfil.orientacao_coaching.abordagemCoaching}</div>
+                        </div>
+                      ) : (
+                        <div style={avisoSemPerfil}>
+                          Nenhum perfil comportamental registrado ainda —{" "}
+                          <button style={linkBotaoInline} onClick={() => abrirPerfil(linha)}>
+                            cadastrar perfil
+                          </button>{" "}
+                          pra receber uma sugestão de abordagem aqui.
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", gap: 8, margin: "12px 0" }}>
                         <input
                           type="date"
                           style={campoInput}
@@ -388,7 +612,7 @@ function badgeVinculo(vinculo) {
 
 const linhaCabecalho = {
   display: "grid",
-  gridTemplateColumns: "1.4fr 1fr 1.1fr 1.2fr 0.9fr",
+  gridTemplateColumns: "1.3fr 0.9fr 1fr 0.9fr 1.1fr 0.9fr",
   gap: 12,
   padding: "8px 4px 12px",
   borderBottom: `1.5px solid ${colors.border}`,
@@ -401,11 +625,58 @@ const linhaCabecalho = {
 
 const linhaTabela = {
   display: "grid",
-  gridTemplateColumns: "1.4fr 1fr 1.1fr 1.2fr 0.9fr",
+  gridTemplateColumns: "1.3fr 0.9fr 1fr 0.9fr 1.1fr 0.9fr",
   gap: 12,
   alignItems: "center",
   padding: "12px 4px",
   borderBottom: `1px solid ${colors.border}`,
+};
+
+const pillBase = {
+  display: "inline-block",
+  padding: "4px 10px",
+  borderRadius: radius.pill,
+  fontWeight: 700,
+  fontSize: 11,
+};
+
+const linkBotaoPequeno = {
+  border: "none",
+  background: "transparent",
+  color: colors.primary,
+  fontWeight: 700,
+  fontSize: 11.5,
+  cursor: "pointer",
+  padding: 0,
+};
+
+const linkBotaoInline = {
+  border: "none",
+  background: "transparent",
+  color: colors.primary,
+  fontWeight: 700,
+  fontSize: "inherit",
+  cursor: "pointer",
+  padding: 0,
+  textDecoration: "underline",
+};
+
+const avisoOrientacao = {
+  background: "#fff",
+  borderLeft: "3px solid",
+  borderRadius: radius.sm,
+  padding: "10px 12px",
+  fontSize: 12.5,
+  color: colors.textSecondary,
+  lineHeight: 1.5,
+};
+
+const avisoSemPerfil = {
+  background: colors.surfaceMuted,
+  borderRadius: radius.sm,
+  padding: "10px 12px",
+  fontSize: 12.5,
+  color: colors.textSecondary,
 };
 
 const painelExpandido = {
