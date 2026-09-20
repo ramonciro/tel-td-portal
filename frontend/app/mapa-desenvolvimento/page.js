@@ -555,6 +555,42 @@ const participantInitial = {
   status_jornada: "em_percurso",
 };
 
+// Etapas da jornada / "portos" (20/09/2026, pedido do Ramon): o back-end já
+// existia (jornadasEtapasController.js) mas nunca teve tela — e é o
+// data_fim de cada etapa que alimenta o KPI "Adesão ao Cronograma"
+// (metodologiaKpisController.js), então sem esta tela aquele card ficava
+// sempre vazio. tipo é VARCHAR livre no banco (sem enum), a lista abaixo é
+// só uma sugestão pra padronizar o cadastro.
+const etapaInitial = {
+  id: null,
+  jornada_id: "",
+  nome: "",
+  tipo: "treinamento",
+  objetivo: "",
+  status: "planejada",
+  data_inicio: "",
+  data_fim: "",
+  responsavel_id: "",
+  carga_horaria_prevista: "",
+  carga_horaria_realizada: "",
+  observacoes: "",
+  trilha_id: "",
+};
+
+const ETAPA_TIPOS = [
+  { value: "treinamento", label: "Treinamento" },
+  { value: "avaliacao", label: "Avaliação" },
+  { value: "pratica", label: "Prática / aplicação" },
+  { value: "checkpoint", label: "Checkpoint" },
+  { value: "outro", label: "Outro" },
+];
+
+// Clientes da Metodologia (20/09/2026, pedido do Ramon): lista exclusiva,
+// sem nenhum vínculo com a tabela `clientes` da Treinamento — ver
+// migrate.js passo 42. Existe só pra parar de deixar "Cliente" como campo
+// de texto livre nos formulários deste módulo.
+const clienteMetInitial = { id: null, nome: "", status: "ativo", observacoes: "" };
+
 const PARTICIPANTE_STATUS_OPTIONS = [
   { value: "nao_iniciado", label: "Não iniciado" },
   { value: "em_percurso", label: "Em percurso" },
@@ -585,6 +621,14 @@ export default function MapaDesenvolvimentoPage() {
   // individual" no card da jornada — o acompanhamento de verdade (farol,
   // cadência, encontros) vive em /tripulacao.
   const [coachingIndividual, setCoachingIndividual] = useState([]);
+  // Etapas da jornada / portos e Clientes da Metodologia (20/09/2026) — ver
+  // comentários de etapaInitial e clienteMetInitial acima.
+  const [etapasJornada, setEtapasJornada] = useState([]);
+  const [metodologiaClientes, setMetodologiaClientes] = useState([]);
+  // Catálogo de Trilhas, usado só pro <select> de "trilha vinculada" no
+  // cadastro de etapa — não precisa de tratamento de erro próprio, já cai
+  // no Promise.allSettled do loadAll() como as demais fontes.
+  const [trilhasCatalogo, setTrilhasCatalogo] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -604,6 +648,8 @@ export default function MapaDesenvolvimentoPage() {
   const [coachingForm, setCoachingForm] = useState(coachingInitial);
   const [participanteForm, setParticipanteForm] = useState(participantInitial);
   const [arquivoTripulacao, setArquivoTripulacao] = useState(null);
+  const [etapaForm, setEtapaForm] = useState(etapaInitial);
+  const [clienteMetForm, setClienteMetForm] = useState(clienteMetInitial);
 
   useEffect(() => {
     loadAll();
@@ -646,6 +692,12 @@ export default function MapaDesenvolvimentoPage() {
     // usados no pré-preenchimento).
     { key: "turmas", label: "turmas", path: "/acoes-desenvolvimento/turmas-disponiveis", setter: setTurmas },
     { key: "coachingIndividual", label: "coaching individual", path: "/coaching-individual", setter: setCoachingIndividual },
+    { key: "etapasJornada", label: "etapas da jornada", path: "/jornadas-etapas", setter: setEtapasJornada },
+    { key: "metodologiaClientes", label: "clientes da metodologia", path: "/metodologia-clientes", setter: setMetodologiaClientes },
+    // Reaproveita /api/trilhas (já restrito a authorizeRoles("metodologia"))
+    // só para popular o <select> de "trilha vinculada" da etapa — não
+    // duplica lógica de acesso nem cria endpoint novo pra isso.
+    { key: "trilhasCatalogo", label: "trilhas", path: "/trilhas", setter: setTrilhasCatalogo },
   ];
 
   async function loadAll() {
@@ -987,6 +1039,8 @@ export default function MapaDesenvolvimentoPage() {
         jornada: `/jornadas-desenvolvimento/${id}`,
         acao: `/acoes-desenvolvimento/${id}`,
         coaching: `/coaching-planos/${id}`,
+        etapa: `/jornadas-etapas/${id}`,
+        clienteMetodologia: `/metodologia-clientes/${id}`,
       };
 
       await apiFetch(pathMap[tipo], { method: "DELETE" });
@@ -995,6 +1049,157 @@ export default function MapaDesenvolvimentoPage() {
       await loadAll();
     } catch (error) {
       setErro(extrairMensagemErro(error, "Erro ao excluir registro."));
+    }
+  }
+
+  async function saveEtapa(event) {
+    event.preventDefault();
+    setSaving(true);
+    setErro("");
+    setNotice("");
+
+    if (!etapaForm.jornada_id) {
+      setErro("Selecione a jornada da etapa.");
+      setSaving(false);
+      return;
+    }
+
+    if (!String(etapaForm.nome || "").trim()) {
+      setErro("Informe o nome da etapa.");
+      setSaving(false);
+      return;
+    }
+
+    if (!isValidDateRange(etapaForm.data_inicio, etapaForm.data_fim)) {
+      setErro("O prazo final da etapa não pode ser menor que o início.");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        jornada_id: Number(etapaForm.jornada_id),
+        nome: etapaForm.nome,
+        objetivo: etapaForm.objetivo || null,
+        tipo: etapaForm.tipo || "treinamento",
+        status: etapaForm.status || "planejada",
+        responsavel_id: etapaForm.responsavel_id ? Number(etapaForm.responsavel_id) : null,
+        data_inicio: etapaForm.data_inicio || null,
+        data_fim: etapaForm.data_fim || null,
+        carga_horaria_prevista: Number(etapaForm.carga_horaria_prevista || 0),
+        carga_horaria_realizada: Number(etapaForm.carga_horaria_realizada || 0),
+        observacoes: etapaForm.observacoes || null,
+        trilha_id: etapaForm.trilha_id ? Number(etapaForm.trilha_id) : null,
+      };
+
+      if (etapaForm.id) {
+        await apiFetch(`/jornadas-etapas/${etapaForm.id}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        setNotice("Etapa atualizada com sucesso.");
+      } else {
+        await apiFetch("/jornadas-etapas", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setNotice("Etapa registrada com sucesso.");
+      }
+
+      setEtapaForm((prev) => ({ ...etapaInitial, jornada_id: prev.jornada_id }));
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao salvar etapa da jornada."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function editEtapa(item) {
+    setEtapaForm({
+      id: item.id,
+      jornada_id: item.jornada_id ? String(item.jornada_id) : "",
+      nome: item.nome || "",
+      tipo: item.tipo || "treinamento",
+      objetivo: item.objetivo || "",
+      status: canonicalStatus(item.status) || "planejada",
+      data_inicio: toDateInputLocal(item.data_inicio),
+      data_fim: toDateInputLocal(item.data_fim),
+      responsavel_id: item.responsavel_id ? String(item.responsavel_id) : "",
+      carga_horaria_prevista: String(item.carga_horaria_prevista || ""),
+      carga_horaria_realizada: String(item.carga_horaria_realizada || ""),
+      observacoes: item.observacoes || "",
+      trilha_id: item.trilha_id ? String(item.trilha_id) : "",
+    });
+  }
+
+  async function saveClienteMetodologia(event) {
+    event.preventDefault();
+    setSaving(true);
+    setErro("");
+    setNotice("");
+
+    if (!String(clienteMetForm.nome || "").trim()) {
+      setErro("Informe o nome do cliente.");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        nome: clienteMetForm.nome,
+        status: clienteMetForm.status || "ativo",
+        observacoes: clienteMetForm.observacoes || null,
+      };
+
+      if (clienteMetForm.id) {
+        await apiFetch(`/metodologia-clientes/${clienteMetForm.id}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        setNotice("Cliente atualizado com sucesso.");
+      } else {
+        await apiFetch("/metodologia-clientes", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setNotice("Cliente cadastrado com sucesso.");
+      }
+
+      setClienteMetForm(clienteMetInitial);
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao salvar cliente da metodologia."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function editClienteMetodologia(item) {
+    setClienteMetForm({
+      id: item.id,
+      nome: item.nome || "",
+      status: item.status || "ativo",
+      observacoes: item.observacoes || "",
+    });
+  }
+
+  async function alternarStatusCliente(item) {
+    const novoStatus = item.status === "ativo" ? "inativo" : "ativo";
+    try {
+      await apiFetch(`/metodologia-clientes/${item.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          nome: item.nome,
+          status: novoStatus,
+          observacoes: item.observacoes || null,
+        }),
+      });
+      setNotice(novoStatus === "ativo" ? "Cliente reativado com sucesso." : "Cliente desativado com sucesso.");
+      setErro("");
+      await loadAll();
+    } catch (error) {
+      setErro(extrairMensagemErro(error, "Erro ao atualizar status do cliente."));
     }
   }
 
@@ -1100,6 +1305,47 @@ export default function MapaDesenvolvimentoPage() {
       return acc;
     }, {});
   }, [participantesEnriquecidos]);
+
+  const etapasPorJornada = useMemo(() => {
+    return etapasJornada.reduce((acc, item) => {
+      const key = String(item.jornada_id || "");
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {});
+  }, [etapasJornada]);
+
+  // Só clientes ativos entram como opção nos formulários — inativos
+  // continuam existindo (e visíveis na seção de gestão) só não aparecem
+  // mais pra evitar cadastro novo em cima de um nome "desligado".
+  const metodologiaClientesAtivos = useMemo(() => {
+    return metodologiaClientes
+      .filter((item) => (item.status || "ativo") === "ativo")
+      .slice()
+      .sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+  }, [metodologiaClientes]);
+
+  // Os campos "cliente" continuam VARCHAR livre no banco (histórico), então
+  // se o valor já salvo não estiver mais na lista ativa (renomeado,
+  // desativado, ou de antes desta lista existir) ele é injetado como opção
+  // extra — senão o <select> mostraria em branco e o usuário acharia que o
+  // dado sumiu.
+  function opcoesCliente(valorAtual) {
+    const nomes = metodologiaClientesAtivos.map((item) => item.nome);
+    const atual = String(valorAtual || "").trim();
+    if (atual && !nomes.includes(atual)) {
+      return [...nomes, atual];
+    }
+    return nomes;
+  }
+
+  const trilhasMap = useMemo(() => {
+    const map = {};
+    trilhasCatalogo.forEach((item) => {
+      map[String(item.id)] = item.titulo;
+    });
+    return map;
+  }, [trilhasCatalogo]);
 
   const jornadasEnriquecidas = useMemo(() => {
     return jornadas.map((jornada) => {
@@ -1673,6 +1919,102 @@ export default function MapaDesenvolvimentoPage() {
         {activeTab === "jornadas" && (
           <>
             <SectionCard
+              title="Clientes da Metodologia"
+              subtitle="Lista de clientes exclusiva deste módulo — não é a mesma lista de clientes da Treinamento. Cadastre aqui os nomes que vão aparecer nos formulários de jornada, participante e trilha."
+            >
+              <details style={detailsCard}>
+                <summary style={detailsSummary}>
+                  {clienteMetForm.id ? "Editar cliente" : "Cadastrar cliente"}
+                </summary>
+
+                <form
+                  onSubmit={saveClienteMetodologia}
+                  style={{ display: "grid", gap: 12, marginTop: 14 }}
+                >
+                  <div style={formGrid}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
+                      Nome do cliente
+                      <input
+                        value={clienteMetForm.nome}
+                        onChange={(e) =>
+                          setClienteMetForm((prev) => ({ ...prev, nome: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                        required
+                      />
+                    </label>
+
+                    {clienteMetForm.id ? (
+                      <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                        Status
+                        <select
+                          value={clienteMetForm.status}
+                          onChange={(e) =>
+                            setClienteMetForm((prev) => ({ ...prev, status: e.target.value }))
+                          }
+                          style={compactInputStyle()}
+                        >
+                          <option value="ativo">Ativo</option>
+                          <option value="inativo">Inativo</option>
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {clienteMetForm.id ? "Atualizar cliente" : "Cadastrar cliente"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setClienteMetForm(clienteMetInitial);
+                        setErro("");
+                        setNotice("");
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
+
+              <div style={{ marginTop: 14 }}>
+                {metodologiaClientes.length === 0 ? (
+                  emptyCard("Nenhum cliente cadastrado ainda.")
+                ) : (
+                  <div style={crewPillRow}>
+                    {metodologiaClientes.map((item) => (
+                      <div key={item.id} style={crewPill}>
+                        <div style={crewPillName}>{item.nome}</div>
+                        <div style={{ ...buttonRow, marginTop: 6 }}>
+                          <span style={badgeStyle(item.status === "inativo" ? "inativo" : "ativo")}>
+                            {item.status === "inativo" ? "Inativo" : "Ativo"}
+                          </span>
+                          <button
+                            type="button"
+                            style={buttonSecondaryStyle()}
+                            onClick={() => editClienteMetodologia(item)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            style={buttonSecondaryStyle()}
+                            onClick={() => alternarStatusCliente(item)}
+                          >
+                            {item.status === "inativo" ? "Reativar" : "Desativar"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard
               title="Cadastro de jornada"
               subtitle="Estruture a jornada de desenvolvimento."
             >
@@ -1695,13 +2037,20 @@ export default function MapaDesenvolvimentoPage() {
 
                     <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
                       Cliente
-                      <input
+                      <select
                         value={jornadaForm.cliente}
                         onChange={(e) =>
                           setJornadaForm((prev) => ({ ...prev, cliente: e.target.value }))
                         }
                         style={compactInputStyle()}
-                      />
+                      >
+                        <option value="">Selecione</option>
+                        {opcoesCliente(jornadaForm.cliente).map((nome) => (
+                          <option key={nome} value={nome}>
+                            {nome}
+                          </option>
+                        ))}
+                      </select>
                     </label>
 
                     <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
@@ -1794,6 +2143,296 @@ export default function MapaDesenvolvimentoPage() {
             </SectionCard>
 
             <SectionCard
+              title="Etapas da jornada (portos)"
+              subtitle="Divida a jornada em etapas com prazo — é o data_fim de cada etapa que alimenta o indicador Adesão ao Cronograma. Uma etapa pode, opcionalmente, usar uma trilha do catálogo como conteúdo de apoio."
+            >
+              <details open style={detailsCard}>
+                <summary style={detailsSummary}>
+                  {etapaForm.id ? "Editar etapa" : "Registrar etapa"}
+                </summary>
+
+                <form onSubmit={saveEtapa} style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                  <div style={formGrid}>
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Jornada
+                      <select
+                        value={etapaForm.jornada_id}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({ ...prev, jornada_id: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                        required
+                      >
+                        <option value="">Selecione</option>
+                        {jornadas.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome || item.titulo}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.xl }}>
+                      Nome da etapa
+                      <input
+                        value={etapaForm.nome}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({ ...prev, nome: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                        required
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Tipo
+                      <select
+                        value={etapaForm.tipo}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({ ...prev, tipo: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        {ETAPA_TIPOS.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Trilha vinculada (opcional)
+                      <select
+                        value={etapaForm.trilha_id}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({ ...prev, trilha_id: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="">Nenhuma</option>
+                        {trilhasCatalogo.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.titulo}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+                      Responsável
+                      <select
+                        value={etapaForm.responsavel_id}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({ ...prev, responsavel_id: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="">Selecione</option>
+                        {usuarios.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Status
+                      <select
+                        value={etapaForm.status}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({ ...prev, status: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      >
+                        <option value="planejada">Planejada</option>
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="concluida">Concluída</option>
+                        <option value="cancelada">Cancelada</option>
+                      </select>
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Prazo início
+                      <input
+                        type="date"
+                        value={etapaForm.data_inicio}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({ ...prev, data_inicio: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Prazo fim
+                      <input
+                        type="date"
+                        value={etapaForm.data_fim}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({ ...prev, data_fim: e.target.value }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Carga horária prevista
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={etapaForm.carga_horaria_prevista}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({
+                            ...prev,
+                            carga_horaria_prevista: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+
+                    <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                      Carga horária realizada
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={etapaForm.carga_horaria_realizada}
+                        onChange={(e) =>
+                          setEtapaForm((prev) => ({
+                            ...prev,
+                            carga_horaria_realizada: e.target.value,
+                          }))
+                        }
+                        style={compactInputStyle()}
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
+                    Objetivo da etapa
+                    <textarea
+                      value={etapaForm.objetivo}
+                      onChange={(e) =>
+                        setEtapaForm((prev) => ({ ...prev, objetivo: e.target.value }))
+                      }
+                      style={textareaStyle(72)}
+                    />
+                  </label>
+
+                  <label style={{ ...labelStyle(), ...fieldSpan.full }}>
+                    Observações
+                    <textarea
+                      value={etapaForm.observacoes}
+                      onChange={(e) =>
+                        setEtapaForm((prev) => ({ ...prev, observacoes: e.target.value }))
+                      }
+                      style={textareaStyle(72)}
+                    />
+                  </label>
+
+                  <div style={buttonRow}>
+                    <button type="submit" style={buttonPrimaryStyle(saving)} disabled={saving}>
+                      {etapaForm.id ? "Atualizar etapa" : "Salvar etapa"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondaryStyle()}
+                      onClick={() => {
+                        setEtapaForm((prev) => ({ ...etapaInitial, jornada_id: prev.jornada_id }));
+                        setErro("");
+                        setNotice("");
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+              </details>
+
+              <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+                {filteredJornadas.length === 0 ? (
+                  emptyCard("Cadastre uma jornada para começar a definir etapas.")
+                ) : (
+                  filteredJornadas.map((jornada) => {
+                    const etapas = (etapasPorJornada[String(jornada.id)] || []).slice().sort(
+                      (a, b) => Number(a.ordem || 0) - Number(b.ordem || 0)
+                    );
+
+                    return (
+                      <div key={`etapas-${jornada.id}`} style={crewJourneyCard}>
+                        <div style={crewJourneyHeader}>
+                          <div>
+                            <div style={crewJourneyTitle}>{jornada.nome}</div>
+                            <div style={crewJourneyMeta}>
+                              {fmtNumber(etapas.length)} etapa(s) cadastrada(s)
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            style={buttonSecondaryStyle()}
+                            onClick={() =>
+                              setEtapaForm((prev) => ({ ...prev, jornada_id: String(jornada.id) }))
+                            }
+                          >
+                            Usar esta jornada
+                          </button>
+                        </div>
+
+                        <div style={crewListGrid}>
+                          {etapas.length ? (
+                            etapas.map((etapa) => {
+                              const prazoEtapa = getPrazoInfo(etapa);
+                              return (
+                                <div key={etapa.id} style={crewListCard}>
+                                  <div style={crewListName}>{etapa.nome}</div>
+                                  <div style={crewListMeta}>
+                                    {ETAPA_TIPOS.find((t) => t.value === etapa.tipo)?.label || etapa.tipo}
+                                    {etapa.trilha_id
+                                      ? ` • Trilha: ${trilhasMap[String(etapa.trilha_id)] || etapa.trilha_titulo || "—"}`
+                                      : ""}
+                                  </div>
+                                  <div style={crewListMeta}>
+                                    Prazo: {etapa.data_fim ? formatDate(etapa.data_fim) : "Não definido"}
+                                  </div>
+                                  <div style={buttonRow}>
+                                    <span style={badgeStyle(etapa.status)}>{displayStatus(etapa.status)}</span>
+                                    <span style={prazoBadge(prazoEtapa.tone)}>{prazoEtapa.label}</span>
+                                  </div>
+                                  <div style={buttonRow}>
+                                    <button
+                                      type="button"
+                                      style={buttonSecondaryStyle()}
+                                      onClick={() => editEtapa(etapa)}
+                                    >
+                                      Editar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={buttonDangerStyle()}
+                                      onClick={() => removeRegistro("etapa", etapa.id)}
+                                    >
+                                      Excluir
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div style={timelineEmpty}>Nenhuma etapa cadastrada para esta jornada.</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard
               title="Participantes da jornada"
               subtitle="Vincule pessoas manualmente ou importe os participantes da jornada por planilha."
             >
@@ -1880,13 +2519,20 @@ export default function MapaDesenvolvimentoPage() {
 
                       <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                         Cliente
-                        <input
+                        <select
                           value={participanteForm.cliente}
                           onChange={(e) =>
                             setParticipanteForm((prev) => ({ ...prev, cliente: e.target.value }))
                           }
                           style={compactInputStyle()}
-                        />
+                        >
+                          <option value="">Selecione</option>
+                          {opcoesCliente(participanteForm.cliente).map((nome) => (
+                            <option key={nome} value={nome}>
+                              {nome}
+                            </option>
+                          ))}
+                        </select>
                       </label>
 
                       <label style={{ ...labelStyle(), ...fieldSpan.md }}>
