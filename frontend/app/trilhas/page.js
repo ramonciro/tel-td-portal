@@ -3,23 +3,31 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
+import SectionCard from "../../components/SectionCard";
+import StatCard    from "../../components/StatCard";
 import { apiFetch, apiDownload, getStoredUser } from "../../services/api";
-import { colors } from "../../lib/theme";
+import { colors, radius } from "../../lib/theme";
 
 /* ─── utils ──────────────────────────────────────────────────────────────────── */
 function normalize(v) { return String(v || "").trim().toLowerCase(); }
 
+// Restruturação (20/09/2026, pedido do Ramon): "trilhas devem ser
+// independentes dos outros módulos" — o tipo de etapa "Turma" foi retirado
+// (ele existia só pra vincular uma etapa a uma turma real da Treinamento,
+// via /api/treinamentos, o que é exatamente o acoplamento que ele pediu pra
+// tirar). Quem quiser ligar uma trilha a algo da jornada de desenvolvimento
+// agora faz isso pelo lado de lá — "Trilha vinculada" no cadastro de Etapas
+// da jornada, em Mapa de Desenvolvimento — não daqui.
 function tipoLabel(tipo) {
-  return { conteudo: "Conteúdo", turma: "Turma", avaliacao: "Avaliação", pratica: "Prática" }[tipo] || tipo;
+  return { conteudo: "Conteúdo", avaliacao: "Avaliação", pratica: "Prática" }[tipo] || tipo;
 }
 
 function tipoCor(tipo) {
   return {
-    conteudo:  { bg: "#dbeafe", text: "#1d4ed8" },
-    turma:     { bg: "#dcfce7", text: "#166534" },
-    avaliacao: { bg: "#fef3c7", text: "#92400e" },
-    pratica:   { bg: "#fce7f3", text: "#9d174d" },
-  }[tipo] || { bg: "#f3f4f6", text: "#374151" };
+    conteudo:  { bg: colors.primaryLight, text: colors.primary },
+    avaliacao: { bg: colors.warningLight, text: colors.warningText },
+    pratica:   { bg: colors.successLight, text: colors.successText },
+  }[tipo] || { bg: colors.surfaceMuted, text: colors.textSecondary };
 }
 
 // Melhoria: status agora é um campo real gravado no banco (trilha.status),
@@ -36,14 +44,14 @@ function statusLabel(status) {
 }
 
 function statusCor(status) {
-  if (status === "estruturada") return { bg: "#dcfce7", text: "#166534" };
-  if (status === "ativa")       return { bg: "#dbeafe", text: "#1d4ed8" };
-  return                               { bg: "#ffedd5", text: "#9a3412" };
+  if (status === "estruturada") return { bg: colors.successLight, text: colors.successText };
+  if (status === "ativa")       return { bg: colors.primaryLight, text: colors.primary };
+  return                               { bg: colors.warningLight, text: colors.warningText };
 }
 
-const TIPOS_ETAPA = ["conteudo", "turma", "avaliacao", "pratica"];
+const TIPOS_ETAPA = ["conteudo", "avaliacao", "pratica"];
 
-const etapaVazia = () => ({ titulo: "", descricao: "", tipo: "conteudo", turma_id: "" });
+const etapaVazia = () => ({ titulo: "", descricao: "", tipo: "conteudo" });
 
 /* ─── componente principal ──────────────────────────────────────────────────── */
 export default function TrilhasPage() {
@@ -59,7 +67,11 @@ export default function TrilhasPage() {
 
   const [trilhas,       setTrilhas]       = useState([]);
   const [progresso,     setProgresso]     = useState({});   // { [trilha_id]: { percentual, concluidas, total } }
-  const [treinamentos,  setTreinamentos]  = useState([]);
+  // Clientes da Metodologia (20/09/2026) — lista exclusiva, sem nenhum
+  // vínculo com a Treinamento (ver migrate.js passo 42). Substitui o antigo
+  // fetch de /treinamentos, que só existia pra alimentar o select de
+  // "Vincular turma" removido junto com o tipo de etapa "Turma".
+  const [metodologiaClientes, setMetodologiaClientes] = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(false);
   const [exportando,    setExportando]    = useState(false);
@@ -83,12 +95,12 @@ export default function TrilhasPage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const [tData, trData] = await Promise.all([
+      const [tData, clientesData] = await Promise.all([
         apiFetch("/trilhas").catch(() => []),
-        isGestor ? apiFetch("/treinamentos").catch(() => []) : Promise.resolve([]),
+        isGestor ? apiFetch("/metodologia-clientes").catch(() => []) : Promise.resolve([]),
       ]);
       setTrilhas(Array.isArray(tData) ? tData : []);
-      setTreinamentos(Array.isArray(trData) ? trData : []);
+      setMetodologiaClientes(Array.isArray(clientesData) ? clientesData : []);
 
       // Melhoria: antes buscava o progresso de CADA trilha com uma requisição
       // paralela por trilha (Promise.allSettled em cima de todos os ids) —
@@ -112,6 +124,23 @@ export default function TrilhasPage() {
     const vals = [...new Set(trilhas.map((t) => t.cliente || "GLOBAL"))].sort();
     return vals;
   }, [trilhas]);
+
+  // Só clientes ativos entram como opção no formulário — mesmo padrão usado
+  // em mapa-desenvolvimento/page.js e tripulacao/page.js. Se o valor já
+  // salvo na trilha não estiver mais na lista ativa (renomeado, desativado,
+  // ou cadastrado antes desta lista existir), ele entra como opção extra
+  // pra não sumir do <select> ao editar uma trilha antiga.
+  const opcoesCliente = useMemo(() => {
+    const nomes = metodologiaClientes
+      .filter((item) => (item.status || "ativo") === "ativo")
+      .map((item) => item.nome)
+      .sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const atual = String(form.cliente || "").trim();
+    if (atual && !nomes.includes(atual)) {
+      return [...nomes, atual];
+    }
+    return nomes;
+  }, [metodologiaClientes, form.cliente]);
 
   const filtradas = useMemo(() => {
     const term = normalize(searchTerm);
@@ -277,24 +306,17 @@ export default function TrilhasPage() {
     <PortalShell>
       <div style={page}>
         <PageHero
+          eyebrow="Ambiente Metodologia"
           title="Trilhas de Aprendizagem"
-          subtitle="Jornadas estruturadas de desenvolvimento — etapas, progresso e conclusão"
-          icon="🧭"
+          subtitle="Catálogo de autoestudo — conteúdo, avaliação e prática — independente da jornada coletiva. Progresso é rastreado pelo login de quem acessa o portal."
         />
 
         {/* KPIs */}
-        <div style={kpiRow}>
-          {[
-            { label: "Trilhas", value: kpis.total },
-            { label: "Estruturadas", value: kpis.estruturadas },
-            { label: "Em estruturação", value: kpis.emEstruturacao },
-            { label: "Total de etapas", value: kpis.totalEtapas },
-          ].map(({ label, value }) => (
-            <div key={label} style={kpiCard}>
-              <div style={kpiValue}>{value}</div>
-              <div style={kpiLabel}>{label}</div>
-            </div>
-          ))}
+        <div style={kpiGrid}>
+          <StatCard title="Trilhas" value={kpis.total} accent={colors.primary} />
+          <StatCard title="Estruturadas" value={kpis.estruturadas} accent={colors.success} />
+          <StatCard title="Em estruturação" value={kpis.emEstruturacao} accent={colors.warning} />
+          <StatCard title="Total de etapas" value={kpis.totalEtapas} accent={colors.accent} />
         </div>
 
         {/* Feedback */}
@@ -306,14 +328,17 @@ export default function TrilhasPage() {
           <div style={tabBar}>
             <button style={tab(activeTab === "catalogo")} onClick={() => setActiveTab("catalogo")}>Catálogo</button>
             <button style={tab(activeTab === "editor")}   onClick={() => abrirEditor()}>
-              {editingId ? "✏️ Editando" : "+ Nova Trilha"}
+              {editingId ? "Editando" : "+ Nova Trilha"}
             </button>
           </div>
         )}
 
         {/* ── CATÁLOGO ─────────────────────────────────────────────────────── */}
         {activeTab === "catalogo" && (
-          <div>
+          <SectionCard
+            title="Catálogo de trilhas"
+            subtitle="Busque, filtre por cliente e acompanhe estruturação e progresso de cada trilha."
+          >
             {/* Filtros */}
             <div style={filterRow}>
               <input
@@ -377,7 +402,7 @@ export default function TrilhasPage() {
                             );
                           })}
                           {etapas.length > 4 && (
-                            <span style={{ ...tipoChip, background: "#f3f4f6", color: "#6b7280" }}>
+                            <span style={{ ...tipoChip, background: colors.surfaceMuted, color: colors.textSecondary }}>
                               +{etapas.length - 4}
                             </span>
                           )}
@@ -400,17 +425,16 @@ export default function TrilhasPage() {
                 })}
               </div>
             )}
-          </div>
+          </SectionCard>
         )}
 
         {/* ── EDITOR ──────────────────────────────────────────────────────── */}
         {activeTab === "editor" && isGestor && (
-          <div style={editorWrap}>
-            <div style={editorHeader}>
-              <h2 style={editorTitle}>{editingId ? "Editar Trilha" : "Nova Trilha"}</h2>
-              <button style={btnSecundary} onClick={fecharEditor}>← Voltar ao catálogo</button>
-            </div>
-
+          <SectionCard
+            title={editingId ? "Editar trilha" : "Nova trilha"}
+            subtitle="Etapas de conteúdo, avaliação ou prática — sem vínculo com turmas da Treinamento."
+            action={<button style={btnSecundary} onClick={fecharEditor}>← Voltar ao catálogo</button>}
+          >
             <div style={formGrid}>
               <div style={fieldFull}>
                 <label style={lbl}>Título da trilha *</label>
@@ -419,10 +443,14 @@ export default function TrilhasPage() {
                   placeholder="Ex.: Trilha de Onboarding Operacional" />
               </div>
               <div>
-                <label style={lbl}>Cliente / Operação</label>
-                <input style={input} value={form.cliente}
-                  onChange={(e) => setForm({ ...form, cliente: e.target.value })}
-                  placeholder="Ex.: Agibank" />
+                <label style={lbl}>Cliente</label>
+                <select style={input} value={form.cliente}
+                  onChange={(e) => setForm({ ...form, cliente: e.target.value })}>
+                  <option value="">Selecione</option>
+                  {opcoesCliente.map((nome) => (
+                    <option key={nome} value={nome}>{nome}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label style={lbl}>Status</label>
@@ -463,22 +491,13 @@ export default function TrilhasPage() {
                     <div style={etapaControls}>
                       <button style={iconBtn} onClick={() => moveEtapa(idx, -1)} disabled={idx === 0} title="Mover para cima">↑</button>
                       <button style={iconBtn} onClick={() => moveEtapa(idx, 1)} disabled={idx === etapas.length - 1} title="Mover para baixo">↓</button>
-                      <button style={{ ...iconBtn, color: colors.danger || "#ef4444" }} onClick={() => removeEtapa(idx)} title="Remover etapa">✕</button>
+                      <button style={{ ...iconBtn, color: colors.danger }} onClick={() => removeEtapa(idx)} title="Remover etapa">✕</button>
                     </div>
                   </div>
                   <textarea style={{ ...inputSm, minHeight: 52 }}
                     placeholder="Descrição da etapa (opcional)"
                     value={e.descricao || ""}
                     onChange={(ev) => updateEtapa(idx, "descricao", ev.target.value)} />
-                  {e.tipo === "turma" && (
-                    <select style={selSm} value={e.turma_id || ""}
-                      onChange={(ev) => updateEtapa(idx, "turma_id", ev.target.value)}>
-                      <option value="">— Vincular turma (opcional) —</option>
-                      {treinamentos.map((t) => (
-                        <option key={t.id} value={t.id}>{t.tema} ({t.cliente || "?"})</option>
-                      ))}
-                    </select>
-                  )}
                 </div>
               ))}
             </div>
@@ -489,7 +508,7 @@ export default function TrilhasPage() {
                 {saving ? "Salvando…" : editingId ? "Salvar alterações" : "Criar trilha"}
               </button>
             </div>
-          </div>
+          </SectionCard>
         )}
       </div>
 
@@ -516,7 +535,7 @@ export default function TrilhasPage() {
                   </div>
                   <span style={progPct}>{progresso[detalhe.id].percentual}%</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>
                   {progresso[detalhe.id].concluidas} de {progresso[detalhe.id].total} etapas concluídas
                 </div>
               </div>
@@ -535,17 +554,17 @@ export default function TrilhasPage() {
                       <div style={etapaItemTop}>
                         <span style={etapaNumSm}>{idx + 1}</span>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 700, color: concluido ? "#6b7280" : "#0B1220",
+                          <div style={{ fontWeight: 700, color: concluido ? colors.textMuted : colors.textPrimary,
                             textDecoration: concluido ? "line-through" : "none", fontSize: 14 }}>
                             {e.titulo}
                           </div>
-                          {e.descricao && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{e.descricao}</div>}
+                          {e.descricao && <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{e.descricao}</div>}
                         </div>
                         <span style={{ ...tipoChip, background: tc.bg, color: tc.text }}>{tipoLabel(e.tipo)}</span>
                         {!isGestor && (
                           <button
-                            style={{ ...btnMinitoggle, background: concluido ? "#dcfce7" : "#f3f4f6",
-                              color: concluido ? "#166534" : "#374151" }}
+                            style={{ ...btnMinitoggle, background: concluido ? colors.successLight : colors.surfaceMuted,
+                              color: concluido ? colors.successText : colors.textSecondary }}
                             onClick={() => handleConcluirEtapa(detalhe.id, e.id, !concluido)}>
                             {concluido ? "✓ Concluída" : "Marcar"}
                           </button>
@@ -575,96 +594,89 @@ export default function TrilhasPage() {
 }
 
 /* ─── styles ──────────────────────────────────────────────────────────────── */
-const page       = { padding: "28px 32px", maxWidth: 1200, margin: "0 auto" };
-const kpiRow     = { display: "flex", gap: 16, margin: "24px 0" };
-const kpiCard    = { flex: 1, background: "#fff", borderRadius: 12, padding: "18px 20px",
-                     boxShadow: "0 1px 4px rgba(0,0,0,.06)", textAlign: "center" };
-const kpiValue   = { fontSize: 32, fontWeight: 900, color: "#0B1220" };
-const kpiLabel   = { fontSize: 12, color: "#6b7280", marginTop: 4, fontWeight: 600 };
-const alertErr   = { background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca",
-                     borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 14 };
-const alertOk    = { background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0",
-                     borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 14 };
-const tabBar     = { display: "flex", gap: 8, marginBottom: 24 };
+const page       = { padding: "28px 32px", maxWidth: 1200, margin: "0 auto", display: "grid", gap: 20 };
+const kpiGrid    = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 };
+const alertErr   = { background: colors.dangerLight, color: colors.dangerText, border: `1px solid ${colors.dangerText}33`,
+                     borderRadius: radius.sm, padding: "12px 16px", fontSize: 14, fontWeight: 700 };
+const alertOk    = { background: colors.successLight, color: colors.successText, border: `1px solid ${colors.successText}33`,
+                     borderRadius: radius.sm, padding: "12px 16px", fontSize: 14, fontWeight: 700 };
+const tabBar     = { display: "flex", gap: 8 };
 const tab        = (active) => ({
-  padding: "10px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14,
-  background: active ? "#0B1220" : "#f3f4f6", color: active ? "#fff" : "#374151",
+  padding: "10px 20px", borderRadius: radius.sm, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14,
+  background: active ? colors.navy : colors.surfaceMuted, color: active ? "#fff" : colors.textSecondary,
 });
-const filterRow  = { display: "flex", gap: 12, marginBottom: 20 };
-const search     = { flex: 1, padding: "10px 14px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14 };
-const sel        = { padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, background: "#fff" };
-const empty      = { textAlign: "center", color: "#9ca3af", padding: "48px 0", fontSize: 14 };
+const filterRow  = { display: "flex", gap: 12, marginBottom: 16 };
+const search     = { flex: 1, padding: "10px 14px", border: `1px solid ${colors.border}`, borderRadius: radius.sm, fontSize: 14 };
+const sel        = { padding: "10px 12px", border: `1px solid ${colors.border}`, borderRadius: radius.sm, fontSize: 14, background: colors.surface };
+const empty      = { textAlign: "center", color: colors.textMuted, padding: "48px 0", fontSize: 14 };
 const grid       = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 20 };
-const card       = { background: "#fff", borderRadius: 14, padding: 20,
-                     boxShadow: "0 1px 4px rgba(0,0,0,.06)", border: "1px solid #f3f4f6" };
+const card       = { background: colors.surface, borderRadius: radius.lg, padding: 20,
+                     boxShadow: "0 1px 4px rgba(0,0,0,.06)", border: `1px solid ${colors.surfaceMuted}` };
 const cardTop    = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 };
-const cardTitulo = { fontWeight: 800, fontSize: 15, color: "#0B1220" };
+const cardTitulo = { fontWeight: 800, fontSize: 15, color: colors.textPrimary };
 const cardCliente = { fontSize: 12, color: colors.accent, fontWeight: 600, marginTop: 2 };
-const cardDesc   = { fontSize: 13, color: "#6b7280", marginBottom: 12, lineHeight: 1.5 };
-const badge      = { fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 999, whiteSpace: "nowrap" };
+const cardDesc   = { fontSize: 13, color: colors.textSecondary, marginBottom: 12, lineHeight: 1.5 };
+const badge      = { fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: radius.pill, whiteSpace: "nowrap" };
 const etapasRow  = { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 };
-const tipoChip   = { fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6 };
+const tipoChip   = { fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: radius.sm };
 const cardActions = { display: "flex", gap: 8, marginTop: 12 };
 const progRow    = { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 };
-const progBar    = { flex: 1, height: 6, background: "#f3f4f6", borderRadius: 999 };
-const progFill   = { height: "100%", background: colors.accent, borderRadius: 999, transition: "width .3s" };
-const progPct    = { fontSize: 12, fontWeight: 700, color: "#374151", minWidth: 36 };
+const progBar    = { flex: 1, height: 6, background: colors.surfaceMuted, borderRadius: radius.pill };
+const progFill   = { height: "100%", background: colors.accent, borderRadius: radius.pill, transition: "width .3s" };
+const progPct    = { fontSize: 12, fontWeight: 700, color: colors.textSecondary, minWidth: 36 };
 
 // Editor
-const editorWrap    = { background: "#fff", borderRadius: 14, padding: 28, boxShadow: "0 1px 4px rgba(0,0,0,.08)" };
-const editorHeader  = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 };
-const editorTitle   = { fontSize: 20, fontWeight: 900, color: "#0B1220", margin: 0 };
 const formGrid      = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 28 };
 const fieldFull     = { gridColumn: "1 / -1" };
-const lbl           = { display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6 };
-const input         = { width: "100%", padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8,
-                        fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
-const inputSm       = { width: "100%", padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 8,
+const lbl           = { display: "block", fontSize: 12, fontWeight: 700, color: colors.textSecondary, marginBottom: 6 };
+const input         = { width: "100%", padding: "10px 12px", border: `1px solid ${colors.border}`, borderRadius: radius.sm,
+                        fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit", background: colors.surface };
+const inputSm       = { width: "100%", padding: "8px 10px", border: `1px solid ${colors.border}`, borderRadius: radius.sm,
                         fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
-const selSm         = { padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13,
-                        background: "#fff", width: "100%" };
+const selSm         = { padding: "8px 10px", border: `1px solid ${colors.border}`, borderRadius: radius.sm, fontSize: 13,
+                        background: colors.surface, width: "100%" };
 const etapasEditor       = { marginBottom: 24 };
 const etapasEditorHeader = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 };
-const etapasEditorTitle  = { fontSize: 15, fontWeight: 800, color: "#0B1220", margin: 0 };
-const etapaCard     = { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14,
+const etapasEditorTitle  = { fontSize: 15, fontWeight: 800, color: colors.textPrimary, margin: 0 };
+const etapaCard     = { background: colors.surfaceMuted, border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: 14,
                         marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 };
 const etapaCardTop  = { display: "flex", alignItems: "center", gap: 10 };
 const etapaControls = { display: "flex", gap: 4 };
-const etapaNum      = { width: 28, height: 28, background: "#0B1220", color: "#fff", borderRadius: 999,
+const etapaNum      = { width: 28, height: 28, background: colors.navy, color: "#fff", borderRadius: radius.pill,
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 12, fontWeight: 900, flexShrink: 0 };
-const iconBtn       = { padding: "4px 8px", border: "1px solid #e5e7eb", borderRadius: 6, cursor: "pointer",
-                        background: "#fff", fontSize: 14, lineHeight: 1 };
+const iconBtn       = { padding: "4px 8px", border: `1px solid ${colors.border}`, borderRadius: radius.sm, cursor: "pointer",
+                        background: colors.surface, fontSize: 14, lineHeight: 1 };
 const editorFooter  = { display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 16,
-                        borderTop: "1px solid #f3f4f6" };
+                        borderTop: `1px solid ${colors.surfaceMuted}` };
 
 // Modal
 const overlay    = { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 9000,
                      display: "flex", alignItems: "center", justifyContent: "center", padding: 24 };
-const modal      = { background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 640,
+const modal      = { background: colors.surface, borderRadius: radius.lg, padding: 28, width: "100%", maxWidth: 640,
                      maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.2)" };
 const modalHeader = { display: "flex", justifyContent: "space-between", alignItems: "flex-start",
                       marginBottom: 16, gap: 16 };
-const modalTitulo = { fontSize: 20, fontWeight: 900, color: "#0B1220", margin: 0 };
-const modalDesc   = { color: "#6b7280", fontSize: 14, lineHeight: 1.6, marginBottom: 16 };
-const modalClose  = { background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#9ca3af", padding: 4 };
-const modalProgresso = { background: "#f9fafb", borderRadius: 10, padding: "12px 16px", marginBottom: 16 };
+const modalTitulo = { fontSize: 20, fontWeight: 900, color: colors.textPrimary, margin: 0 };
+const modalDesc   = { color: colors.textSecondary, fontSize: 14, lineHeight: 1.6, marginBottom: 16 };
+const modalClose  = { background: "none", border: "none", cursor: "pointer", fontSize: 20, color: colors.textMuted, padding: 4 };
+const modalProgresso = { background: colors.surfaceMuted, borderRadius: radius.md, padding: "12px 16px", marginBottom: 16 };
 const modalEtapas = { display: "flex", flexDirection: "column", gap: 8 };
-const etapaItem   = { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 };
+const etapaItem   = { background: colors.surfaceMuted, border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: 12 };
 const etapaItemTop = { display: "flex", alignItems: "center", gap: 10 };
-const etapaNumSm  = { width: 24, height: 24, background: "#0B1220", color: "#fff", borderRadius: 999,
+const etapaNumSm  = { width: 24, height: 24, background: colors.navy, color: "#fff", borderRadius: radius.pill,
                       display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, flexShrink: 0 };
-const btnMinitoggle = { padding: "4px 10px", border: "none", borderRadius: 6, cursor: "pointer",
+const btnMinitoggle = { padding: "4px 10px", border: "none", borderRadius: radius.sm, cursor: "pointer",
                         fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" };
 const modalFooter = { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20, paddingTop: 16,
-                      borderTop: "1px solid #f3f4f6" };
+                      borderTop: `1px solid ${colors.surfaceMuted}` };
 
 // Buttons
 const btnPrimary  = { padding: "9px 18px", background: colors.accent, color: "#fff", border: "none",
-                      borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
-const btnSecundary = { padding: "9px 18px", background: "#f3f4f6", color: "#374151", border: "none",
-                       borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
-const btnDanger   = { padding: "9px 18px", background: "#fef2f2", color: "#dc2626", border: "none",
-                      borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 };
-const btnSave     = { padding: "10px 24px", background: "#0B1220", color: "#fff", border: "none",
-                      borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 800 };
+                      borderRadius: radius.sm, cursor: "pointer", fontSize: 13, fontWeight: 700 };
+const btnSecundary = { padding: "9px 18px", background: colors.surfaceMuted, color: colors.textSecondary, border: "none",
+                       borderRadius: radius.sm, cursor: "pointer", fontSize: 13, fontWeight: 700 };
+const btnDanger   = { padding: "9px 18px", background: colors.dangerLight, color: colors.dangerText, border: "none",
+                      borderRadius: radius.sm, cursor: "pointer", fontSize: 13, fontWeight: 700 };
+const btnSave     = { padding: "10px 24px", background: colors.navy, color: "#fff", border: "none",
+                      borderRadius: radius.sm, cursor: "pointer", fontSize: 14, fontWeight: 800 };
