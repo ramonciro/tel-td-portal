@@ -1235,6 +1235,72 @@ async function runMigrations() {
     // Ver capacidadeResolver.js.
     await ensureColumn("capacidade_regra_padrao", "dias_mes_padrao", "INT NOT NULL DEFAULT 22");
 
+    // 39. Coaching individual (20/09/2026, pedido do Ramon): o Ambiente
+    // Metodologia até aqui só media jornada COLETIVA (jornadas_desenvolvimento
+    // → jornadas_etapas → jornada_participantes). Coaching, quando existia
+    // (coaching_planos), era um PLANO agregado (público-alvo em texto livre,
+    // sessões contadas em número, sem pessoa nem data) — não dava pra saber
+    // se uma pessoa específica estava em dia com o coach dela. Ramon pediu
+    // uma trilha à parte, pessoa a pessoa, com cadência própria por
+    // relacionamento, que alcança além da tripulação (gerência, coordenação,
+    // diretoria) e que NUNCA entra no cálculo de adesão ao cronograma da
+    // jornada coletiva — por isso é tabela nova, não uma coluna a mais em
+    // coaching_planos.
+    //
+    // jornada_participante_id é opcional e sem FK (mesmo padrão de
+    // acoes_desenvolvimento.etapa_id/turma_id): cobre tanto quem já está
+    // numa jornada de cliente (ex.: Ana Souza, jornada + coaching) quanto
+    // quem não tem jornada nenhuma associada (ex.: um diretor que só tem
+    // coaching) — é exatamente o gap de schema que o framework de KPIs
+    // (claude/framework-kpis-metodologia-2026-09-20.md) documentou como
+    // bloqueio #3. cadencia_dias é a cadência COMBINADA daquele
+    // relacionamento específico (não um padrão fixo do sistema) — o farol
+    // de atraso é calculado comparando isso com o último registro em
+    // coaching_encontros (ver função calcularFarolCoaching em
+    // coachingIndividualController.js), nunca um corte global.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS coaching_individual (
+        id                        INT AUTO_INCREMENT PRIMARY KEY,
+        nome                      VARCHAR(255) NOT NULL,
+        matricula                 VARCHAR(100) NULL,
+        cliente                   VARCHAR(255) NULL,
+        cargo                     VARCHAR(255) NULL,
+        jornada_participante_id   INT NULL,
+        responsavel_id            INT NULL,
+        cadencia_dias             INT NOT NULL DEFAULT 30,
+        status                    VARCHAR(20) NOT NULL DEFAULT 'ativo',
+        data_inicio               DATE NULL,
+        data_fim                  DATE NULL,
+        observacoes               TEXT NULL,
+        empresa_id                INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_coaching_individual_jornada_participante (jornada_participante_id),
+        INDEX idx_coaching_individual_responsavel (responsavel_id),
+        INDEX idx_coaching_individual_empresa (empresa_id)
+      );
+    `);
+
+    // 40. Log datado de encontros de coaching individual — sem isso não dá
+    // pra saber a data real do último encontro (coaching_planos só tinha
+    // contagem de sessões previstas/realizadas, nunca datas). Cada linha é
+    // um encontro registrado; "último encontro" e o farol de atraso vêm de
+    // MAX(data_encontro) por coaching_individual_id, calculado em runtime
+    // (não guardado numa coluna, pra nunca dessincronizar).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS coaching_encontros (
+        id                        INT AUTO_INCREMENT PRIMARY KEY,
+        coaching_individual_id    INT NOT NULL,
+        data_encontro             DATE NOT NULL,
+        observacoes               TEXT NULL,
+        registrado_por_id         INT NULL,
+        empresa_id                INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_coaching_encontros_coaching (coaching_individual_id),
+        INDEX idx_coaching_encontros_empresa (empresa_id)
+      );
+    `);
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
