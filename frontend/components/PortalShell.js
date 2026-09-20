@@ -67,6 +67,12 @@ const menuItems = [
   // módulo é só para o time de Metodologia e Desenvolvimento.
   { href: "/mapa-desenvolvimento", label: "Mapa de Desenvolvimento", icon: "map", roles: ["metodologia"] },
   { href: "/trilhas",       label: "Trilhas",                icon: "compass", roles: ["metodologia"] },
+  // KPIs + Tripulação (20/09/2026) — framework de indicadores do Ambiente
+  // Metodologia (claude/framework-kpis-metodologia-2026-09-20.md): adesão ao
+  // cronograma, cobertura por cliente e coaching individual, mais a
+  // listagem única de todo mundo acompanhado (jornada e/ou coaching).
+  { href: "/kpis-desenvolvimento", label: "KPIs",      icon: "trending", roles: ["metodologia"] },
+  { href: "/tripulacao",           label: "Tripulação", icon: "users",    roles: ["metodologia"] },
 ];
 // Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
 // ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
@@ -163,7 +169,7 @@ export default function PortalShell({
     }
     // Módulo Metodologia e Desenvolvimento: mesmo padrão do R&S acima —
     // quem tem o perfil dedicado só transita entre as próprias telas.
-    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas"];
+    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao"];
     if (
       user.perfil === "metodologia" &&
       !METODOLOGIA_ROTAS.some((rota) => isRouteActive(pathname, rota))
