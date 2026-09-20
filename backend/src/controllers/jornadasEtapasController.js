@@ -10,10 +10,12 @@ exports.listar = async (req, res) => {
       `
       SELECT je.*,
              jd.nome AS jornada_nome,
-             u.nome AS responsavel_nome
+             u.nome AS responsavel_nome,
+             ta.titulo AS trilha_titulo
       FROM jornadas_etapas je
       LEFT JOIN jornadas_desenvolvimento jd ON jd.id = je.jornada_id
       LEFT JOIN usuarios u ON u.id = je.responsavel_id
+      LEFT JOIN trilhas_aprendizagem ta ON ta.id = je.trilha_id
       ${tenantWhere}
       ORDER BY je.jornada_id ASC, je.ordem ASC, je.id ASC
       `,
@@ -37,10 +39,12 @@ exports.buscarPorId = async (req, res) => {
       `
       SELECT je.*,
              jd.nome AS jornada_nome,
-             u.nome AS responsavel_nome
+             u.nome AS responsavel_nome,
+             ta.titulo AS trilha_titulo
       FROM jornadas_etapas je
       LEFT JOIN jornadas_desenvolvimento jd ON jd.id = je.jornada_id
       LEFT JOIN usuarios u ON u.id = je.responsavel_id
+      LEFT JOIN trilhas_aprendizagem ta ON ta.id = je.trilha_id
       WHERE je.id = ?${tenantCheck}
       `,
       params
@@ -73,12 +77,29 @@ exports.criar = async (req, res) => {
       carga_horaria_prevista,
       carga_horaria_realizada,
       observacoes,
+      trilha_id,
     } = req.body;
 
     if (!jornada_id || !nome) {
       return res.status(400).json({
         error: "Jornada e nome da etapa são obrigatórios.",
       });
+    }
+
+    // Vínculo opcional com uma trilha do catálogo (passo 43 de migrate.js) —
+    // sem FK, mas validamos que a trilha existe e é do mesmo tenant, senão
+    // um id inválido/de outra empresa entraria quieto no banco.
+    const trilhaIdNum = trilha_id ? Number(trilha_id) : null;
+    if (trilhaIdNum) {
+      const tenantCheckTrilha = req.empresaId ? " AND empresa_id = ?" : "";
+      const trilhaParams = req.empresaId ? [trilhaIdNum, req.empresaId] : [trilhaIdNum];
+      const [trilha] = await db.query(
+        `SELECT id FROM trilhas_aprendizagem WHERE id = ?${tenantCheckTrilha}`,
+        trilhaParams
+      );
+      if (!trilha.length) {
+        return res.status(404).json({ error: "Trilha vinculada não encontrada." });
+      }
     }
 
     const tenantCheckJornada = req.empresaId ? " AND empresa_id = ?" : "";
@@ -114,9 +135,10 @@ exports.criar = async (req, res) => {
         carga_horaria_prevista,
         carga_horaria_realizada,
         observacoes,
+        trilha_id,
         empresa_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         Number(jornada_id),
@@ -132,6 +154,7 @@ exports.criar = async (req, res) => {
         Number(carga_horaria_prevista || 0),
         Number(carga_horaria_realizada || 0),
         observacoes || null,
+        trilhaIdNum,
         req.empresaId ?? null,
       ]
     );
@@ -165,6 +188,7 @@ exports.atualizar = async (req, res) => {
       carga_horaria_prevista,
       carga_horaria_realizada,
       observacoes,
+      trilha_id,
     } = req.body;
 
     const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
@@ -190,6 +214,19 @@ exports.atualizar = async (req, res) => {
       }
     }
 
+    const trilhaIdNum = trilha_id ? Number(trilha_id) : null;
+    if (trilhaIdNum) {
+      const tenantCheckTrilha = req.empresaId ? " AND empresa_id = ?" : "";
+      const trilhaParams = req.empresaId ? [trilhaIdNum, req.empresaId] : [trilhaIdNum];
+      const [trilha] = await db.query(
+        `SELECT id FROM trilhas_aprendizagem WHERE id = ?${tenantCheckTrilha}`,
+        trilhaParams
+      );
+      if (!trilha.length) {
+        return res.status(404).json({ error: "Trilha vinculada não encontrada." });
+      }
+    }
+
     // Fase 4 (isolamento multi-tenant): idem ao criar() acima.
     if (responsavel_id && !(await usuarioPertenceAoTenant(responsavel_id, req.empresaId))) {
       return res.status(400).json({ error: "O responsável informado não pertence à sua empresa." });
@@ -209,6 +246,7 @@ exports.atualizar = async (req, res) => {
       Number(carga_horaria_prevista || 0),
       Number(carga_horaria_realizada || 0),
       observacoes || null,
+      trilhaIdNum,
       id,
     ];
     if (req.empresaId) updateParams.push(req.empresaId);
@@ -228,7 +266,8 @@ exports.atualizar = async (req, res) => {
           data_fim = ?,
           carga_horaria_prevista = ?,
           carga_horaria_realizada = ?,
-          observacoes = ?
+          observacoes = ?,
+          trilha_id = ?
       WHERE id = ?${tenantCheck}
       `,
       updateParams
