@@ -1301,6 +1301,63 @@ async function runMigrations() {
       );
     `);
 
+    // 41. Perfil comportamental (20/09/2026, pedido do Ramon): Lobo, Gato,
+    // Tubarão, Águia + DISC. Ramon pediu pra registrar o perfil de forma
+    // manual por enquanto, mas com o schema pronto pra um questionário
+    // pontuado dentro do portal no futuro (por isso disc_d/i/s/c em
+    // colunas próprias, 0-100, e não só a letra — um questionário
+    // preenche as quatro; um cadastro manual de hoje preenche só a letra
+    // dominante e deixa as quatro em branco), e que o perfil também
+    // oriente o coaching individual (orientacaoPerfil() em
+    // perfilComportamentalController.js).
+    //
+    // Tabela nova e independente — não é coluna em coaching_individual —
+    // porque perfil comportamental é atributo da PESSOA, não do vínculo:
+    // alguém que só está numa jornada coletiva (sem coaching ainda) também
+    // pode ter o perfil registrado, e o vínculo de coaching pode começar
+    // ou terminar sem apagar o perfil. jornada_participante_id e
+    // coaching_individual_id são os dois opcionais e sem FK, mesmo padrão
+    // de coaching_individual.jornada_participante_id (passo 39) — uma
+    // pessoa pode estar ligada a um, a outro, aos dois, ou (por enquanto)
+    // a nenhum.
+    //
+    // A relação entre os 4 animais e as letras do DISC não é uma
+    // equivalência científica única e fechada — as fontes pesquisadas
+    // divergem entre si nos detalhes. O que ficou consistente entre elas,
+    // e o que foi adotado aqui: Tubarão ~ D (Dominância), Gato ~ I
+    // (Influência), Águia ~ I com traços de D (visão/ideação), Lobo ~ C
+    // (Conformidade) com traços de S (Estabilidade). Por isso
+    // disc_letra_dominante fica solto, não é gerado a partir de
+    // perfil_animal — são dois registros independentes, um popular e um
+    // técnico, que o coach pode preencher com o que souber.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pessoas_metodologia (
+        id                         INT AUTO_INCREMENT PRIMARY KEY,
+        nome                       VARCHAR(255) NOT NULL,
+        matricula                  VARCHAR(100) NULL,
+        cliente                    VARCHAR(255) NULL,
+        cargo                      VARCHAR(255) NULL,
+        jornada_participante_id    INT NULL,
+        coaching_individual_id     INT NULL,
+        perfil_animal              VARCHAR(20) NULL,
+        perfil_animal_secundario   VARCHAR(20) NULL,
+        disc_letra_dominante       VARCHAR(1) NULL,
+        disc_d                     INT NULL,
+        disc_i                     INT NULL,
+        disc_s                     INT NULL,
+        disc_c                     INT NULL,
+        origem                     VARCHAR(20) NOT NULL DEFAULT 'manual',
+        observacoes                TEXT NULL,
+        registrado_por_id          INT NULL,
+        empresa_id                 INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_pessoas_metodologia_jornada_participante (jornada_participante_id),
+        INDEX idx_pessoas_metodologia_coaching_individual (coaching_individual_id),
+        INDEX idx_pessoas_metodologia_empresa (empresa_id)
+      );
+    `);
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
