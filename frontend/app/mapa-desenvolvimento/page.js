@@ -579,6 +579,12 @@ export default function MapaDesenvolvimentoPage() {
   const [usuarios, setUsuarios] = useState([]);
   const [participantesJornada, setParticipantesJornada] = useState([]);
   const [turmas, setTurmas] = useState([]);
+  // Coaching individual (20/09/2026) — trilha à parte, pessoa a pessoa, que
+  // nunca entra no total_coachings acima (esse é o plano/ação coletiva de
+  // coaching, coaching_planos). Só usado aqui pra mostrar "+N em coaching
+  // individual" no card da jornada — o acompanhamento de verdade (farol,
+  // cadência, encontros) vive em /tripulacao.
+  const [coachingIndividual, setCoachingIndividual] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -639,6 +645,7 @@ export default function MapaDesenvolvimentoPage() {
     // garantido pelo restante da página, e o payload é enxuto (só os campos
     // usados no pré-preenchimento).
     { key: "turmas", label: "turmas", path: "/acoes-desenvolvimento/turmas-disponiveis", setter: setTurmas },
+    { key: "coachingIndividual", label: "coaching individual", path: "/coaching-individual", setter: setCoachingIndividual },
   ];
 
   async function loadAll() {
@@ -1121,13 +1128,21 @@ export default function MapaDesenvolvimentoPage() {
         total_coachings: coachingsDaJornada.length,
         total_tripulantes: (participantesPorJornada[String(jornada.id)] || []).length,
         tripulacao_preview: (participantesPorJornada[String(jornada.id)] || []).slice(0, 4),
+        // Coaching individual é indexado pelo jornada_id do participante
+        // vinculado (coaching_individual.jornada_participante_id →
+        // jornada_participantes.jornada_id), não por um jornada_id direto
+        // na própria tabela — por isso o filtro passa por
+        // jornada_participante_jornada_id, que o backend já traz pronto.
+        total_coaching_individual: coachingIndividual.filter(
+          (c) => String(c.jornada_participante_jornada_id || "") === String(jornada.id)
+        ).length,
         horas_totais: horasTotais,
         prazo_info: getPrazoInfo(jornada),
         attention_info: getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada),
         status_canonico: canonicalStatus(jornada.status),
       };
     });
-  }, [jornadas, acoes, coachings, participantesPorJornada]);
+  }, [jornadas, acoes, coachings, participantesPorJornada, coachingIndividual]);
 
   const acoesEnriquecidas = useMemo(() => {
     return acoes.map((acao) => {
@@ -1543,6 +1558,7 @@ export default function MapaDesenvolvimentoPage() {
                                 <MetricBox label="Ações" value={fmtNumber(jornada.acoesDaJornada.length)} />
                                 <MetricBox label="Coaching" value={fmtNumber(jornada.coachingsDaJornada.length)} />
                                 <MetricBox label="Participantes" value={fmtNumber(jornada.total_tripulantes || 0)} />
+                                <MetricBox label="Coaching individual" value={fmtNumber(jornada.total_coaching_individual || 0)} />
                                 <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                                 <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                               </div>
@@ -2039,6 +2055,7 @@ export default function MapaDesenvolvimentoPage() {
                           <MetricBox label="Ações" value={fmtNumber(jornada.acoesDaJornada.length)} />
                           <MetricBox label="Coaching" value={fmtNumber(jornada.coachingsDaJornada.length)} />
                           <MetricBox label="Participantes" value={fmtNumber(jornada.total_tripulantes || 0)} />
+                          <MetricBox label="Coaching individual" value={fmtNumber(jornada.total_coaching_individual || 0)} />
                           <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
                           <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                         </div>
