@@ -8,7 +8,7 @@ import StatCard from "../../components/StatCard";
 import { apiFetch, apiDownload } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
 import { colors, chart } from "../../lib/theme";
-import { ContadorAnimado, Donut, BarraHorizontal } from "../../components/Charts";
+import { ContadorAnimado, BarraHorizontal } from "../../components/Charts";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -63,7 +63,7 @@ function corPorPresenca(value) {
   return colors.danger;
 }
 
-function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTurmas = [], desempenhoResumo = null) {
+function buildFarois(kpis = {}, presencaPorCliente = [], ultimasTurmas = [], desempenhoResumo = null) {
   const items = [];
 
   if (Number(kpis.pendentes || 0) > 0) {
@@ -89,14 +89,6 @@ function buildFarois(kpis = {}, oceano = {}, presencaPorCliente = [], ultimasTur
       title: "Turma com pendência aberta",
       text: `${turmaPendente.tema || "Turma sem título"} ainda tem ${fmt(turmaPendente.pendentes)} pendência(s) para fechamento.`,
       tone: Number(turmaPendente.pendentes || 0) > 5 ? "danger" : "attention",
-    });
-  }
-
-  if (Number(oceano.jornadas || 0) > 0) {
-    items.push({
-      title: "Desenvolvimento em andamento",
-      text: `${fmt(oceano.jornadas)} jornada(s), ${fmt(oceano.acoes)} ação(ões) e ${fmt(oceano.tripulacao)} pessoa(s) já estão no fluxo do desenvolvimento.`,
-      tone: "ok",
     });
   }
 
@@ -338,11 +330,10 @@ export default function DashboardPage() {
   const presencaPorCliente = dados?.presenca_por_cliente || [];
   const rankingInstrutores = dados?.ranking_instrutores || [];
   const ultimasTurmas = dados?.ultimas_turmas || [];
-  const oceano = dados?.oceano || {};
 
   const farois = useMemo(
-    () => buildFarois(kpis, oceano, presencaPorCliente, ultimasTurmas, desempenhoResumo),
-    [kpis, oceano, presencaPorCliente, ultimasTurmas, desempenhoResumo]
+    () => buildFarois(kpis, presencaPorCliente, ultimasTurmas, desempenhoResumo),
+    [kpis, presencaPorCliente, ultimasTurmas, desempenhoResumo]
   );
   const narrativa = useMemo(() => buildNarrativa(kpis, filters), [kpis, filters]);
 
@@ -704,30 +695,6 @@ export default function DashboardPage() {
             </SectionCard>
           </div>
 
-          <GroupHeader title="Desenvolvimento" subtitle="Resumo executivo do Desenvolvimento e progresso dos participantes." />
-          <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={{ ...twoColumns, animationDelay: ".15s" }}>
-            <SectionCard title="Desenvolvimento em resumo" subtitle="Uma leitura curta para conectar o dashboard ao fluxo de desenvolvimento.">
-              <div style={oceanoGrid}>
-                <MiniStat label="Jornadas" value={fmt(oceano.jornadas || 0)} />
-                <MiniStat label="Ações" value={fmt(oceano.acoes || 0)} />
-                <MiniStat label="Sustentações" value={fmt(oceano.sustentacoes || 0)} />
-                <MiniStat label="Participantes" value={fmt(oceano.tripulacao || 0)} />
-              </div>
-            </SectionCard>
-
-            <SectionCard title="Progresso dos participantes" subtitle="Ajuda a enxergar se o desenvolvimento está só no papel ou realmente em andamento.">
-              {(() => {
-                const prog = oceano.progresso_tripulacao || {};
-                const fatias = [
-                  { label: "Em percurso", valor: Number(prog.em_percurso || 0), cor: chart.blue },
-                  { label: "Concluídos", valor: Number(prog.concluido || 0), cor: colors.success },
-                  { label: "Em sustentação", valor: Number(prog.em_sustentacao || 0), cor: chart.purple },
-                ];
-                return <Donut fatias={fatias} total={Number(oceano.tripulacao || 0)} revelado={revelado} />;
-              })()}
-            </SectionCard>
-          </div>
-
           <SectionCard
             title="Turmas recentes"
             subtitle="As últimas turmas. O Excel exporta o recorte completo, não só as exibidas aqui."
@@ -830,15 +797,6 @@ export default function DashboardPage() {
   );
 }
 
-function MiniStat({ label, value }) {
-  return (
-    <div style={miniStatCard}>
-      <div style={miniStatLabel}>{label}</div>
-      <div style={miniStatValue}>{value}</div>
-    </div>
-  );
-}
-
 const loadingBox = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, color: "#475569", fontWeight: 700 };
 const errorBox = { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 18, padding: 16, fontWeight: 700 };
 const heroWrap = { display: "grid", gridTemplateColumns: "1.45fr .9fr", gap: 16 };
@@ -880,10 +838,6 @@ const listRow = { display: "flex", justifyContent: "space-between", alignItems: 
 const rowTitle = { fontWeight: 900, color: "#0f172a" };
 const rowMeta = { marginTop: 4, color: "#64748b", fontSize: 13, lineHeight: 1.45 };
 const pill = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "6px 10px", borderRadius: 999, fontWeight: 800, fontSize: 12, whiteSpace: "nowrap" };
-const oceanoGrid = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 };
-const miniStatCard = { borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", padding: 14 };
-const miniStatLabel = { fontSize: 11, color: "#64748b", textTransform: "uppercase", fontWeight: 800 };
-const miniStatValue = { marginTop: 6, fontSize: 22, fontWeight: 900, color: "#0f172a" };
 const emptyState = { padding: 18, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", color: "#64748b" };
 
 const groupHeader = { marginTop: 4 };
