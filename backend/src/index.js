@@ -55,6 +55,8 @@ const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes"
 // Coaching individual + KPIs do Ambiente Metodologia (20/09/2026)
 const coachingIndividualRoutes = require("./routes/coachingIndividualRoutes");
 const metodologiaKpisRoutes = require("./routes/metodologiaKpisRoutes");
+// Perfil comportamental (Lobo/Gato/Tubarão/Águia + DISC) — mesmo pacote, pedido do Ramon
+const perfilComportamentalRoutes = require("./routes/perfilComportamentalRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
 const {
   getDesempenho: getDesempenhoInstrutor,
@@ -1632,6 +1634,7 @@ app.use("/api/jornada-participantes", authRequired, authorizeRoles("metodologia"
 // provisório). Mesmo padrão de acesso do resto do módulo.
 app.use("/api/coaching-individual", authRequired, authorizeRoles("metodologia"), coachingIndividualRoutes);
 app.use("/api/metodologia-kpis", authRequired, authorizeRoles("metodologia"), metodologiaKpisRoutes);
+app.use("/api/perfis-comportamentais", authRequired, authorizeRoles("metodologia"), perfilComportamentalRoutes);
 
 // Capacidade x Realizado (CH por instrutor / CH efetiva do time) — o
 // controller e a migration já existiam, mas nunca tinham sido conectados:
