@@ -1,82 +1,96 @@
-# Pacote — KPIs do Ambiente Metodologia + Coaching Individual + Tripulação (20/09/2026)
+# Pacote — Perfil Comportamental (Lobo/Gato/Tubarão/Águia + DISC) (20/09/2026)
 
-Implementa, no código real, o que fechamos no protótipo: framework de KPIs
-(`claude/framework-kpis-metodologia-2026-09-20.md`), o novo modelo de
-coaching individual (pessoa a pessoa, independente de jornada) e a tela de
-Tripulação. Não mexe em nada do módulo de Treinamento, só no Ambiente
-Metodologia (perfil `metodologia`).
+Implementa o pedido de incluir perfil comportamental (Lobo, Gato, Tubarão,
+Águia) e DISC no processo de coaching. Registro manual por enquanto, com o
+banco pronto pra um questionário pontuado dentro do portal mais pra frente.
+Não cria página nova nem item de menu — tudo mora dentro da tela de
+Tripulação, que já existe.
 
-## Arquivos deste pacote (10 no total)
+## Arquivos deste pacote (5 no total)
 
 **Backend — substituir:**
 - `backend/src/database/migrate.js`
 - `backend/src/index.js`
 
 **Backend — novos (criar):**
-- `backend/src/controllers/coachingIndividualController.js`
-- `backend/src/controllers/metodologiaKpisController.js`
-- `backend/src/routes/coachingIndividualRoutes.js`
-- `backend/src/routes/metodologiaKpisRoutes.js`
+- `backend/src/controllers/perfilComportamentalController.js`
+- `backend/src/routes/perfilComportamentalRoutes.js`
 
 **Frontend — substituir:**
-- `frontend/app/mapa-desenvolvimento/page.js`
-- `frontend/components/PortalShell.js`
-
-**Frontend — novos (criar):**
-- `frontend/app/kpis-desenvolvimento/page.js`
 - `frontend/app/tripulacao/page.js`
+
+## De onde veio a definição do perfil
+
+Você pediu pra eu pesquisar e definir a melhor versão, já que não é um
+framework único e padronizado de mercado. Fiz busca na web (IBC Coaching,
+que credita o modelo a uma adaptação da Teoria da Dominância Cerebral de Ned
+Herrmann, e mais 3-4 artigos de RH/coaching sobre o mesmo teste) e cheguei
+numa versão consolidada, mantendo só o que era consistente entre as fontes:
+
+- **Tubarão** — direto, competitivo, orientado a resultado, decide rápido.
+  DISC aproximado: **D (Dominância)**.
+- **Gato** — comunicador, empático, gosta de grupo, evita conflito. DISC
+  aproximado: **I (Influência)**, com traços de S.
+- **Águia** — visionária, criativa, foca no panorama geral, perde detalhe.
+  DISC aproximado: **I (Influência)**, com traços de D.
+- **Lobo** — metódico, detalhista, confiável, avesso a risco e a pressão.
+  DISC aproximado: **C (Conformidade)**, com traços de S.
+
+Importante: essa relação animal↔DISC **não é uma equivalência científica
+fechada** — as fontes divergem em detalhe entre si, e o próprio blog do
+Método DISC avisa que analogias com animais "podem facilitar uma conversa
+inicial, mas não substituem uma metodologia estruturada". Por isso o sistema
+trata os dois como registros independentes (você pode preencher só o
+animal, só a letra DISC, ou os dois) — nunca um gerado automaticamente a
+partir do outro.
 
 ## O que muda pra você, na prática
 
-- Duas telas novas no menu do perfil Metodologia: **KPIs** e **Tripulação**.
-- **KPIs**: adesão ao cronograma (farol ≥90% saudável / 80–89% atenção /
-  <80% crítico — mesmo corte que você já usa em frequência), cobertura por
-  cliente, coaching individual (em dia/atrasado) e um card de Comprovação
-  MPT **provisório** (ver pendência abaixo).
-- **Tripulação**: lista única de todo mundo acompanhado — jornada coletiva,
-  coaching individual, ou os dois — com filtro por vínculo. De lá dá pra
-  cadastrar um coaching individual novo (vinculado a alguém já numa jornada,
-  ou solto, tipo um diretor sem jornada nenhuma) e registrar os encontros
-  (a data de cada um, não só uma contagem).
-- **Mapa de Desenvolvimento**: cada card de jornada ganhou um indicador
-  "Coaching individual" ao lado de "Participantes" — mostra quantas pessoas
-  daquela jornada também têm coaching individual, sem entrar na conta de
-  adesão.
+- Na tela de **Tripulação**, cada pessoa ganhou uma coluna **Perfil**: um
+  selo colorido (Lobo/Gato/Tubarão/Águia) se já cadastrado, ou um botão
+  "+ Perfil" pra cadastrar agora. O cadastro é rápido: perfil principal,
+  perfil secundário (opcional, muita gente é uma mistura), letra DISC
+  dominante (opcional) e observações livres.
+- **A parte que orienta o coaching**: ao abrir "Ver encontros" de alguém que
+  já tem coaching individual, se essa pessoa tiver perfil cadastrado
+  aparece um quadro **"Abordagem sugerida"** com a característica do perfil
+  e uma orientação prática de como abordar aquela pessoa no encontro (ex.:
+  pra um Lobo, "leve dados prontos, evite surpresas"; pra um Tubarão, "vá
+  direto ao ponto, dê autonomia"). Se a pessoa ainda não tem perfil
+  cadastrado, aparece um aviso com um atalho pra cadastrar ali mesmo.
 
 ## Banco de dados
 
-Duas tabelas novas, criadas automaticamente pelo `migrate.js` na próxima
-subida do backend (`CREATE TABLE IF NOT EXISTS`, sem risco pro que já
-existe): `coaching_individual` e `coaching_encontros`. Não precisa rodar
-nada manualmente no Railway — só subir o `index.js`/`migrate.js` novos e o
-backend cria as tabelas sozinho ao iniciar.
+Uma tabela nova, criada automaticamente pelo `migrate.js` na próxima subida
+do backend: `pessoas_metodologia`. Independente de `coaching_individual` e
+de `jornada_participantes` — o perfil é da PESSOA, não do vínculo — mas com
+link opcional pros dois (sem FK, mesmo padrão já usado no coaching
+individual), então dá pra cadastrar perfil de quem só está em jornada
+coletiva, sem coaching ainda.
 
 ## Ordem de aplicação
 
-1. Backend primeiro (os 6 arquivos) — reinicie o backend no Railway pra
-   `migrate.js` rodar e criar as tabelas novas.
-2. Frontend depois (os 4 arquivos) — pode subir junto ou logo em seguida,
-   sem problema de ordem entre eles.
+1. Backend primeiro (os 4 arquivos) — reinicie o backend no Railway pra
+   `migrate.js` rodar e criar a tabela nova.
+2. Frontend depois (o `tripulacao/page.js`) — pode subir junto ou logo em
+   seguida.
 
-## Pendência que continua em aberto (não travou esta entrega)
-
-O card "Comprovação MPT" no KPIs é **provisório**: conta ações de
-desenvolvimento vencidas (prazo passado, não concluídas) por subdivisão —
-não é um cálculo de horas exigidas, porque essa regra ainda não foi
-definida. Assim que você bater o martelo em quantas horas cada subdivisão
-exige, troco esse card pelo cálculo de verdade.
+Nenhuma rota nova de página, nenhum item de menu novo — não precisa mexer
+em `PortalShell.js` nem no guard `METODOLOGIA_ROTAS` desta vez.
 
 ## O que foi testado
 
 - `node -c` em todos os arquivos de backend alterados/novos — sintaxe OK.
-- `npx next build` do frontend — sucesso, 45 rotas geradas (as 43 de antes +
-  `/kpis-desenvolvimento` + `/tripulacao`), sem erro.
-- Revisão do guard de rotas em `PortalShell.js` — as duas telas novas foram
-  adicionadas à lista `METODOLOGIA_ROTAS`, senão o usuário do perfil
-  Metodologia seria redirecionado de volta pro Mapa de Desenvolvimento ao
-  tentar abri-las (bug fácil de cometer, documentado pela própria
-  investigação que fiz antes de escrever o código).
+- `npx next build` do frontend — sucesso, continuam as mesmas 45 rotas de
+  antes (não criei página nova, só editei a de Tripulação) — sem erro.
 
-Não testei contra um banco MySQL real rodando localmente (o ambiente aqui
-não tem um) — a validação foi sintática e de build. Se algo se comportar
-diferente do esperado assim que subir, me manda o erro que eu corrijo.
+Não testei contra um banco MySQL real (o ambiente aqui não tem um) — a
+validação foi sintática e de build. Se algo se comportar diferente do
+esperado assim que subir, me manda o erro que eu corrijo.
+
+## Pendência em aberto
+
+Hoje o cadastro é manual, um por vez, direto na tela de Tripulação — como
+combinamos. O questionário dentro do portal pra pontuar DISC automaticamente
+(campos `disc_d`/`disc_i`/`disc_s`/`disc_c` já existem no banco pra isso)
+fica pra quando você quiser entrar nessa etapa.
