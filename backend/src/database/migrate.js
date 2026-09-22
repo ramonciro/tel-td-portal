@@ -86,6 +86,83 @@ async function ensureNoTenantDefault(table, column) {
   console.log(`  ↳ removido DEFAULT perigoso: ${table}.${column} (era DEFAULT ${info.COLUMN_DEFAULT})`);
 }
 
+// Cadastro único de pessoas (Fase 0, 22/09/2026) — helpers específicos desta
+// migração. Ver pessoasService.js para a lógica de casamento de identidade;
+// aqui é só schema.
+async function ensurePessoaIndex(table) {
+  const indexName = `idx_${table}_pessoa`;
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+    [table, indexName]
+  );
+  if (rows[0].c > 0) return;
+  await pool.query(`ALTER TABLE ${table} ADD INDEX ${indexName} (pessoa_id)`);
+  console.log(`  ↳ índice adicionado: ${indexName}`);
+}
+
+// FK real (diferente do padrão solto usado em jornada_participante_id/
+// coaching_individual_id entre tabelas-irmãs do módulo Metodologia): aqui
+// `pessoas` é pra ser a fonte de verdade central, então vale a pena a
+// garantia de integridade referencial. ON DELETE SET NULL — apagar uma
+// pessoa nunca apaga o histórico de turma/jornada/coaching, só desvincula.
+async function ensurePessoaForeignKey(table) {
+  const fkName = `fk_${table}_pessoa`;
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'`,
+    [table, fkName]
+  );
+  if (rows[0].c > 0) return;
+  try {
+    await pool.query(
+      `ALTER TABLE ${table} ADD CONSTRAINT ${fkName} FOREIGN KEY (pessoa_id) REFERENCES pessoas(id) ON DELETE SET NULL`
+    );
+    console.log(`  ↳ FK adicionada: ${fkName}`);
+  } catch (error) {
+    // Mesma cautela do ensureColumn: corrida entre instâncias, ou (mais
+    // provável aqui) linhas pré-existentes com pessoa_id apontando pra um
+    // id que não existe em pessoas — nesse segundo caso a FK não entra e
+    // fica registrado no log em vez de derrubar o boot do backend; precisa
+    // de saneamento manual dos dados antes de reaplicar.
+    console.warn(`  ⚠ não foi possível adicionar ${fkName}: ${error.message}`);
+  }
+}
+
+// Corrige dados_bancarios_colaborador de PRIMARY KEY (cpf) — colide entre
+// empresas diferentes com colaborador de mesmo CPF, achado durante a
+// proposta de cadastro único (22/09/2026) — para PRIMARY KEY (empresa_id,
+// cpf). Só executa quando não há nenhuma linha com empresa_id NULL: se
+// houver, são registros de antes da coluna empresa_id existir e precisam de
+// backfill manual (ver relatório de 22/09/2026) antes de apertar a chave —
+// a migração audita e avisa em vez de adivinhar o dono.
+async function ensureDadosBancariosComposedKey() {
+  const [pkRows] = await pool.query(
+    `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dados_bancarios_colaborador'
+       AND CONSTRAINT_NAME = 'PRIMARY'
+     ORDER BY ORDINAL_POSITION`
+  );
+  const pkCols = pkRows.map((r) => r.COLUMN_NAME);
+  if (pkCols.length === 2 && pkCols[0] === "empresa_id" && pkCols[1] === "cpf") return; // já migrado
+
+  const [nullRows] = await pool.query(
+    `SELECT COUNT(*) AS c FROM dados_bancarios_colaborador WHERE empresa_id IS NULL`
+  );
+  if (nullRows[0].c > 0) {
+    console.warn(
+      `  ⚠ dados_bancarios_colaborador tem ${nullRows[0].c} linha(s) com empresa_id NULL — ` +
+      `chave composta (empresa_id, cpf) NÃO aplicada automaticamente. Backfill manual do dono ` +
+      `necessário antes desta migração poder rodar (ver relatório de 22/09/2026).`
+    );
+    return;
+  }
+
+  await pool.query(`ALTER TABLE dados_bancarios_colaborador MODIFY empresa_id INT NOT NULL`);
+  await pool.query(`ALTER TABLE dados_bancarios_colaborador DROP PRIMARY KEY, ADD PRIMARY KEY (empresa_id, cpf)`);
+  console.log(`  ↳ chave primária de dados_bancarios_colaborador corrigida para (empresa_id, cpf)`);
+}
+
 async function runMigrations() {
   try {
     console.log("🔄 Verificando e aplicando migrações no MySQL...");
@@ -1397,6 +1474,77 @@ async function runMigrations() {
     // coaching_individual) — a etapa não deixa de existir se a trilha for
     // excluída depois.
     await ensureColumn("jornadas_etapas", "trilha_id", "INT NULL");
+
+    // 44. Cadastro único de pessoas — Fase 0 (22/09/2026, pedido do Ramon:
+    // "precisamos reestruturar todas as páginas de cadastro... todo o
+    // portal precisa ser um só nesse sentido"). Fundação da unificação de
+    // identidade entre turmas, jornadas, coaching e usuários — ver proposta
+    // e plano no projeto Portal T&D (Claude). `pessoas` é a nova fonte de
+    // verdade sobre "quem é quem", por empresa; as tabelas antigas mantêm
+    // nome/matricula/cliente como retrato histórico daquele cadastro e
+    // ganham uma coluna pessoa_id (passo 45) apontando pra cá — nenhuma
+    // delas perde dado, nenhuma tela para de funcionar com esta migração
+    // sozinha.
+    //
+    // status_identidade distingue uma pessoa resolvida por CPF
+    // ("confirmada") de uma criada só por matrícula+nome ou sem nenhum dos
+    // dois ("provisoria") — nunca bloqueia um cadastro de turma/jornada por
+    // falta de CPF, só marca a pessoa pra enriquecimento futuro (ex.:
+    // quando um CPF aparecer pra ela em outra tela). Duas das seis tabelas
+    // duplicadas (jornada_participantes, coaching_individual/
+    // pessoas_metodologia) nunca tiveram coluna de CPF — a maioria das
+    // pessoas que nascerem a partir delas vai começar como provisória, e
+    // isso é esperado, não um erro do backfill.
+    //
+    // UNIQUE(empresa_id, cpf) permite múltiplas pessoas com cpf NULL na
+    // mesma empresa (MySQL/MariaDB não considera NULL colidente em índice
+    // único) — o casamento de quem não tem CPF é feito por matrícula+nome
+    // na aplicação (resolverPessoa(), em services/pessoasService.js), não
+    // por constraint de banco.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pessoas (
+        id                INT AUTO_INCREMENT PRIMARY KEY,
+        empresa_id        INT NOT NULL,
+        cpf               VARCHAR(11) NULL,
+        matricula         VARCHAR(100) NULL,
+        nome              VARCHAR(255) NOT NULL,
+        cliente           VARCHAR(255) NULL,
+        status_identidade VARCHAR(20) NOT NULL DEFAULT 'provisoria',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_pessoas_empresa_cpf (empresa_id, cpf),
+        INDEX idx_pessoas_empresa_matricula (empresa_id, matricula),
+        INDEX idx_pessoas_empresa_nome (empresa_id, nome),
+        CONSTRAINT fk_pessoas_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id) ON DELETE CASCADE
+      );
+    `);
+
+    // 45. pessoa_id nas seis tabelas que hoje duplicam identidade —
+    // opcional a princípio (ver plano: backfill primeiro, NOT NULL só
+    // depois de medir cobertura real em produção). Índice + FK real em cada
+    // uma (ver ensurePessoaForeignKey acima) — diferente do padrão sem FK
+    // usado entre as tabelas-irmãs do módulo Metodologia, porque `pessoas`
+    // é pra ser a âncora central, não mais um vínculo solto.
+    const TABELAS_COM_PESSOA = [
+      "treinamento_participantes",
+      "jornada_participantes",
+      "coaching_individual",
+      "pessoas_metodologia",
+      "dados_bancarios_colaborador",
+      "usuarios",
+    ];
+    for (const tabela of TABELAS_COM_PESSOA) {
+      await ensureColumn(tabela, "pessoa_id", "INT NULL");
+      await ensurePessoaIndex(tabela);
+      await ensurePessoaForeignKey(tabela);
+    }
+
+    // 46. Corrige a chave de dados_bancarios_colaborador (achado durante a
+    // investigação da proposta de 22/09/2026): hoje é PRIMARY KEY (cpf) sem
+    // empresa_id — duas empresas diferentes com um colaborador de mesmo CPF
+    // colidem no INSERT. Ver ensureDadosBancariosComposedKey() acima para a
+    // condição de segurança (só roda se não houver empresa_id NULL).
+    await ensureDadosBancariosComposedKey();
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
