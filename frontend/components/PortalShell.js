@@ -53,7 +53,13 @@ const menuItems = [
   { href: "/capacidade",   label: "CH por Instrutor",        icon: "clock", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/biblioteca",    label: "Biblioteca",             icon: "book", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/clientes",      label: "Clientes",               icon: "building", roles: ["coordenador", "supervisor"] },
-  { href: "/usuarios",      label: "Gestão de Usuários",     icon: "users", roles: ["coordenador", "supervisor"] },
+  // Fase 1 (padronização de gestão de usuários, 22/09/2026): coordenador_rs
+  // e metodologia também acessam esta tela agora, mas só enxergam/mexem nos
+  // usuários do próprio módulo — o recorte é feito no backend (ver
+  // lib/perfilScope.js em /api/usuarios), não aqui. Antes, coordenador_rs
+  // só tinha o atalho isolado em RS → Configurações; metodologia não tinha
+  // nenhuma forma de ajustar usuário nenhum.
+  { href: "/usuarios",      label: "Gestão de Usuários",     icon: "users", roles: ["coordenador", "supervisor", "coordenador_rs", "metodologia"] },
   { href: "/auditoria",     label: "Auditoria",              icon: "shield", roles: ["coordenador", "superintendente"] },
   // Módulo R&S — Recrutamento & Seleção
   { href: "/rs",           label: "Dashboard R&S",       icon: "chart", roles: ["coordenador_rs", "gestor_rs"] },
