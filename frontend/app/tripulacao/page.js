@@ -126,6 +126,16 @@ export default function TripulacaoPage() {
   const [formAberto, setFormAberto] = useState(false);
   const [form, setForm] = useState(formVazio);
   const [salvando, setSalvando] = useState(false);
+  // Editar/excluir por vínculo (22/09/2026, pedido do Ramon) — coachingEmEdicao
+  // guarda o registro inteiro de coaching_individual sendo editado (não só o
+  // id), pra preservar no PUT os campos que este formulário não mostra
+  // (matrícula, responsável, status, datas, observações) e nunca apagá-los
+  // sem querer — o PUT do backend substitui o registro inteiro.
+  const [coachingEmEdicao, setCoachingEmEdicao] = useState(null);
+  const [confirmarExcluirCoaching, setConfirmarExcluirCoaching] = useState(null);
+  const [confirmarExcluirJornada, setConfirmarExcluirJornada] = useState(null);
+  const [excluindoCoaching, setExcluindoCoaching] = useState(false);
+  const [excluindoJornada, setExcluindoJornada] = useState(false);
   const [perfilExpandido, setPerfilExpandido] = useState(null);
   const [perfilForm, setPerfilForm] = useState(perfilFormVazio);
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
@@ -231,6 +241,7 @@ export default function TripulacaoPage() {
   }
 
   function abrirNovoForm(linhaJornada) {
+    setCoachingEmEdicao(null);
     if (linhaJornada) {
       setForm({
         nome: linhaJornada.nome,
@@ -245,28 +256,104 @@ export default function TripulacaoPage() {
     setFormAberto(true);
   }
 
+  // Editar/excluir por vínculo (22/09/2026, pedido do Ramon) — abre o mesmo
+  // formulário de "Novo coaching individual", pré-preenchido, em modo edição.
+  function abrirEditarCoaching(coaching) {
+    setCoachingEmEdicao(coaching);
+    setForm({
+      nome: coaching.nome || "",
+      cliente: coaching.cliente || "",
+      cargo: coaching.cargo || "",
+      cadencia_dias: coaching.cadencia_dias || 30,
+      jornada_participante_id: coaching.jornada_participante_id ? String(coaching.jornada_participante_id) : "",
+    });
+    setFormAberto(true);
+  }
+
+  function fecharFormCoaching() {
+    setFormAberto(false);
+    setForm(formVazio);
+    setCoachingEmEdicao(null);
+  }
+
+  // GET devolve data_inicio/data_fim como ISO completo ("2026-01-10T00:00:00.000Z"),
+  // porque é assim que o driver serializa colunas DATE. Reenviar esse valor
+  // inteiro no PUT quebra a atualização (a coluna é DATE, não aceita o
+  // sufixo "T...Z" — testado localmente e confirmado). Corta pra "YYYY-MM-DD".
+  function apenasData(valor) {
+    if (!valor) return null;
+    return String(valor).slice(0, 10);
+  }
+
   async function salvarNovoCoaching(e) {
     e.preventDefault();
     if (!form.nome.trim()) return;
     setSalvando(true);
     try {
-      await apiFetch("/coaching-individual", {
-        method: "POST",
-        body: JSON.stringify({
-          nome: form.nome,
-          cliente: form.cliente || null,
-          cargo: form.cargo || null,
-          cadencia_dias: Number(form.cadencia_dias || 30),
-          jornada_participante_id: form.jornada_participante_id || null,
-        }),
-      });
-      setFormAberto(false);
-      setForm(formVazio);
+      if (coachingEmEdicao) {
+        // PUT substitui o registro inteiro no backend — por isso reenviamos
+        // aqui os campos que este formulário não edita, com o valor que já
+        // estava salvo, em vez de deixá-los de fora (o que os zeraria).
+        await apiFetch(`/coaching-individual/${coachingEmEdicao.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            matricula: coachingEmEdicao.matricula || null,
+            responsavel_id: coachingEmEdicao.responsavel_id || null,
+            status: coachingEmEdicao.status || "ativo",
+            data_inicio: apenasData(coachingEmEdicao.data_inicio),
+            data_fim: apenasData(coachingEmEdicao.data_fim),
+            observacoes: coachingEmEdicao.observacoes || null,
+            nome: form.nome,
+            cliente: form.cliente || null,
+            cargo: form.cargo || null,
+            cadencia_dias: Number(form.cadencia_dias || 30),
+            jornada_participante_id: form.jornada_participante_id || null,
+          }),
+        });
+      } else {
+        await apiFetch("/coaching-individual", {
+          method: "POST",
+          body: JSON.stringify({
+            nome: form.nome,
+            cliente: form.cliente || null,
+            cargo: form.cargo || null,
+            cadencia_dias: Number(form.cadencia_dias || 30),
+            jornada_participante_id: form.jornada_participante_id || null,
+          }),
+        });
+      }
+      fecharFormCoaching();
       carregar();
     } catch (err) {
-      alert(err.message || "Não foi possível criar o coaching individual.");
+      alert(err.message || `Não foi possível ${coachingEmEdicao ? "atualizar" : "criar"} o coaching individual.`);
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function excluirCoaching(coachingId) {
+    setExcluindoCoaching(true);
+    try {
+      await apiFetch(`/coaching-individual/${coachingId}`, { method: "DELETE" });
+      setConfirmarExcluirCoaching(null);
+      carregar();
+    } catch (err) {
+      alert(err.message || "Não foi possível excluir este coaching individual.");
+    } finally {
+      setExcluindoCoaching(false);
+    }
+  }
+
+  async function excluirJornada(participanteId) {
+    setExcluindoJornada(true);
+    try {
+      await apiFetch(`/jornada-participantes/${participanteId}`, { method: "DELETE" });
+      setConfirmarExcluirJornada(null);
+      carregar();
+    } catch (err) {
+      alert(err.message || "Não foi possível excluir este vínculo de jornada.");
+    } finally {
+      setExcluindoJornada(false);
     }
   }
 
@@ -345,7 +432,15 @@ export default function TripulacaoPage() {
       {erro && <div style={avisoErro}>{erro}</div>}
 
       {formAberto && (
-        <SectionCard title="Novo coaching individual" subtitle="Pode ser uma pessoa já em jornada, ou alguém sem jornada nenhuma (ex.: diretoria)">
+        <SectionCard
+          title={coachingEmEdicao ? "Editar coaching individual" : "Novo coaching individual"}
+          subtitle={
+            coachingEmEdicao
+              ? "Ajuste os dados deste coaching. O vínculo com a jornada coletiva também pode ser mudado aqui."
+              : "Pode ser uma pessoa já em jornada, ou alguém sem jornada nenhuma (ex.: diretoria)"
+          }
+        >
+
           <form onSubmit={salvarNovoCoaching} style={formGrid}>
             <label style={campoLabel}>
               Nome
@@ -406,9 +501,9 @@ export default function TripulacaoPage() {
             </label>
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
               <button type="submit" style={botaoPrimario} disabled={salvando}>
-                {salvando ? "Salvando…" : "Salvar"}
+                {salvando ? "Salvando…" : coachingEmEdicao ? "Salvar alterações" : "Salvar"}
               </button>
-              <button type="button" style={botaoSecundario} onClick={() => setFormAberto(false)}>
+              <button type="button" style={botaoSecundario} onClick={fecharFormCoaching}>
                 Cancelar
               </button>
             </div>
@@ -441,7 +536,7 @@ export default function TripulacaoPage() {
               <span>Vínculo</span>
               <span>Perfil</span>
               <span>Coaching</span>
-              <span></span>
+              <span style={{ textAlign: "right" }}>Ações</span>
             </div>
             {linhasFiltradas.map((linha) => {
               const farol = farolInfo(linha.coaching);
@@ -471,7 +566,7 @@ export default function TripulacaoPage() {
                       </button>
                     </div>
                     <div>{farol ? <span style={badge}>{farol.label}</span> : <span style={{ color: colors.textMuted }}>—</span>}</div>
-                    <div style={{ textAlign: "right" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
                       {linha.coaching ? (
                         <button style={linkBotao} onClick={() => abrirEncontros(linha.coaching.id)}>
                           {expandido === linha.coaching.id ? "Fechar" : "Ver encontros"}
@@ -480,6 +575,65 @@ export default function TripulacaoPage() {
                         <button style={linkBotao} onClick={() => abrirNovoForm(linha)}>
                           + Coaching
                         </button>
+                      )}
+
+                      {linha.coaching && (
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          {linha.vinculo === "ambos" && <span style={rotuloAcao}>Coaching:</span>}
+                          {confirmarExcluirCoaching === linha.coaching.id ? (
+                            <>
+                              <button
+                                style={linkBotaoPequeno}
+                                onClick={() => excluirCoaching(linha.coaching.id)}
+                                disabled={excluindoCoaching}
+                              >
+                                {excluindoCoaching ? "Excluindo…" : "Confirmar"}
+                              </button>
+                              <button style={linkBotaoPequeno} onClick={() => setConfirmarExcluirCoaching(null)}>
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button style={linkBotaoPequeno} onClick={() => abrirEditarCoaching(linha.coaching)}>
+                                Editar
+                              </button>
+                              <button
+                                style={{ ...linkBotaoPequeno, color: colors.dangerText }}
+                                onClick={() => setConfirmarExcluirCoaching(linha.coaching.id)}
+                              >
+                                Excluir
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {linha.jornadaParticipanteId && (
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          {linha.vinculo === "ambos" && <span style={rotuloAcao}>Jornada:</span>}
+                          {confirmarExcluirJornada === linha.jornadaParticipanteId ? (
+                            <>
+                              <button
+                                style={linkBotaoPequeno}
+                                onClick={() => excluirJornada(linha.jornadaParticipanteId)}
+                                disabled={excluindoJornada}
+                              >
+                                {excluindoJornada ? "Excluindo…" : "Confirmar"}
+                              </button>
+                              <button style={linkBotaoPequeno} onClick={() => setConfirmarExcluirJornada(null)}>
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              style={{ ...linkBotaoPequeno, color: colors.dangerText }}
+                              onClick={() => setConfirmarExcluirJornada(linha.jornadaParticipanteId)}
+                            >
+                              Excluir vínculo
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -669,6 +823,13 @@ const pillBase = {
   borderRadius: radius.pill,
   fontWeight: 700,
   fontSize: 11,
+};
+
+const rotuloAcao = {
+  fontSize: 10.5,
+  color: colors.textMuted,
+  fontWeight: 700,
+  textTransform: "uppercase",
 };
 
 const linkBotaoPequeno = {
