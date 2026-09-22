@@ -167,15 +167,28 @@ export default function PortalShell({
       router.replace("/admin");
       return;
     }
-    // Módulo R&S: redireciona para a área correta se tentar acessar T&D
+    // Módulo R&S: redireciona para a área correta se tentar acessar T&D.
+    // Fase 1 (padronização de gestão de usuários, 22/09/2026): este redirect
+    // roda em TODA troca de rota, antes de qualquer coisa — é mais forte que
+    // o `roles` do item de menu (que só decide o que aparece/currentAllowed).
+    // Só liberar "/usuarios" no array `roles` do menuItems (mais abaixo)
+    // não bastava: sem esta exceção aqui, coordenador_rs era jogado de volta
+    // para /rs/rps assim que a rota mudava para /usuarios, mesmo já
+    // autorizado lá — é exatamente o bug que o Ramon reportou. gestor_rs
+    // continua sem acesso a Gestão de Usuários (não ganhou essa exceção),
+    // só coordenador_rs.
     const rsPerfiles = ["coordenador_rs", "gestor_rs"];
-    if (rsPerfiles.includes(user.perfil) && !pathname.startsWith("/rs")) {
+    const coordenadorRsEmUsuarios = user.perfil === "coordenador_rs" && pathname.startsWith("/usuarios");
+    if (rsPerfiles.includes(user.perfil) && !pathname.startsWith("/rs") && !coordenadorRsEmUsuarios) {
       router.replace("/rs/rps");
       return;
     }
     // Módulo Metodologia e Desenvolvimento: mesmo padrão do R&S acima —
     // quem tem o perfil dedicado só transita entre as próprias telas.
-    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao"];
+    // "/usuarios" (Fase 1, 22/09/2026) entrou na lista pelo mesmo motivo do
+    // comentário acima — sem isso, o próprio redirect empurrava metodologia
+    // de volta para /mapa-desenvolvimento ao tentar abrir Gestão de Usuários.
+    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao", "/usuarios"];
     if (
       user.perfil === "metodologia" &&
       !METODOLOGIA_ROTAS.some((rota) => isRouteActive(pathname, rota))
