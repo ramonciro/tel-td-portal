@@ -11,6 +11,7 @@ const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
+const { escopoPerfilFor } = require("./lib/perfilScope");
 
 // Fase 2 (roadmap de competitividade): automações por e-mail — resumo diário
 // de pendências para coordenadores e lembrete de aula do dia seguinte para
@@ -410,6 +411,46 @@ app.use(
  * dedicados) — ficava em texto plano no banco entre a edição e o próximo
  * login (que faz o "upgrade" automático do hash). Agora já sai hasheada.
  */
+/**
+ * Fase 1 (padronização de gestão de usuários, 22/09/2026): "coordenadores
+ * de módulo" (hoje coordenador_rs para R&S, metodologia para o módulo de
+ * Metodologia — ver lib/perfilScope.js) ganharam acesso a esta mesma rota
+ * pela Gestão de Usuários, no lugar de atalhos isolados (ex.:
+ * rsController.criarUsuarioRS) que inseriam direto na tabela sem passar
+ * por essas mesmas validações. Acesso "à mesma tela" não pode virar acesso
+ * a usuário de fora do próprio módulo — por isso, quando o ator tem um
+ * escopo de perfil definido, barramos aqui: criar fora do escopo, editar
+ * um usuário que hoje está fora do escopo, ou mudar o perfil de alguém
+ * para fora do escopo. A listagem (quem aparece) é filtrada à parte, no
+ * `listFiltro` da rota — este hook só cobre escrita.
+ */
+function validarEscopoPerfil(dados, req, ctx) {
+  const escopo = escopoPerfilFor(req);
+  if (!escopo) return; // ator sem escopo (coordenador/supervisor/superintendente) — sem restrição
+
+  const perfilAtualDoAlvo = ctx.antes ? String(ctx.antes.perfil || "").toLowerCase() : null;
+
+  if (ctx.operation === "update" && perfilAtualDoAlvo && !escopo.includes(perfilAtualDoAlvo)) {
+    const erro = new Error("Você não tem permissão para editar este usuário.");
+    erro.status = 403;
+    throw erro;
+  }
+
+  if ("perfil" in dados) {
+    const perfilNovo = String(dados.perfil || "").toLowerCase();
+    if (!escopo.includes(perfilNovo)) {
+      const erro = new Error("Você só pode atribuir perfis do seu próprio módulo.");
+      erro.status = 403;
+      throw erro;
+    }
+  } else if (ctx.operation === "create") {
+    // Criar sem perfil nenhum ficaria sem dono de escopo — exige explícito.
+    const erro = new Error("Selecione o perfil do usuário.");
+    erro.status = 400;
+    throw erro;
+  }
+}
+
 async function sanitizarEscritaUsuario(data, req, ctx) {
   const dados = { ...data };
   const perfilAtor = String(req.user?.perfil || "").toLowerCase();
@@ -424,6 +465,8 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
     }
   }
 
+  validarEscopoPerfil(dados, req, ctx);
+
   if (ctx.operation === "update" && "empresa_id" in dados && !atorEhSuperAdmin) {
     // Só o super_admin pode mover um usuário entre empresas por esta rota.
     delete dados.empresa_id;
@@ -434,6 +477,21 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
   }
 
   return dados;
+}
+
+/**
+ * Fase 1 (22/09/2026) — mesma régua de escopo, agora para exclusão (não
+ * passa por beforeWrite). Ver validarEscopoPerfil acima.
+ */
+function bloquearExclusaoForaDoEscopo(antes, req) {
+  const escopo = escopoPerfilFor(req);
+  if (!escopo) return;
+  const perfilAlvo = String(antes?.perfil || "").toLowerCase();
+  if (!escopo.includes(perfilAlvo)) {
+    const erro = new Error("Você não tem permissão para excluir este usuário.");
+    erro.status = 403;
+    throw erro;
+  }
 }
 
 app.use(
@@ -452,12 +510,23 @@ app.use(
       "empresa_id",
     ],
     multiTenant: true, // Sprint 1
-    beforeWrite: sanitizarEscritaUsuario, // Fase 4
+    beforeWrite: sanitizarEscritaUsuario, // Fase 4 (+ escopo por perfil, Fase 1 22/09/2026)
+    beforeDelete: bloquearExclusaoForaDoEscopo, // Fase 1 (22/09/2026)
+    // Fase 1 (22/09/2026): coordenador_rs e metodologia só listam usuários
+    // do próprio módulo por esta rota — ver lib/perfilScope.js. Quem não
+    // tem escopo definido (coordenador, supervisor, instrutor,
+    // superintendente, coaching) continua vendo a lista inteira do tenant,
+    // sem nenhuma mudança de comportamento.
+    listFiltro: (req) => {
+      const escopo = escopoPerfilFor(req);
+      if (!escopo || !escopo.length) return null;
+      return { sql: `perfil IN (${escopo.map(() => "?").join(",")})`, params: escopo };
+    },
     hideFields: ["senha"], // Fase 4 — hash da senha nunca sai na listagem
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente")],
-    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente", "coordenador_rs", "metodologia")],
     auditoria: {
       entidade: "usuario",
       resumoCriar: (dados) => `Criou o usuário "${dados.nome || "?"}" (${dados.perfil || "sem perfil"})`,
