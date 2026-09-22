@@ -52,6 +52,9 @@ const coachingPlanosRoutes = require("./routes/coachingPlanosRoutes");
 // FIX 1: importar a rota de jornada-participantes (estava faltando)
 const jornadaParticipantesRoutes = require("./routes/jornadaParticipantesRoutes");
 
+// Cadastro único de pessoas — Fase 0 (22/09/2026)
+const pessoasRoutes = require("./routes/pessoasRoutes");
+
 // Coaching individual + KPIs do Ambiente Metodologia (20/09/2026)
 const coachingIndividualRoutes = require("./routes/coachingIndividualRoutes");
 const metodologiaKpisRoutes = require("./routes/metodologiaKpisRoutes");
@@ -1630,6 +1633,15 @@ app.use("/api/coaching-planos", authRequired, authorizeRoles("metodologia"), coa
 
 // FIX 1: rota de jornada-participantes registrada junto com as rotas do Oceano
 app.use("/api/jornada-participantes", authRequired, authorizeRoles("metodologia"), jornadaParticipantesRoutes);
+
+// Cadastro único de pessoas — Fase 0 (22/09/2026): só a busca por enquanto,
+// preparação pra Fase 2 (nenhuma tela chama isto ainda). Sem
+// authorizeRoles porque precisa ficar disponível pra qualquer tela de
+// cadastro do portal (Turmas, Mapa de Desenvolvimento, Tripulação,
+// Usuários, RS) — o filtro por empresa vem do clientMiddleware
+// (req.empresaId, aplicado globalmente acima) e o CPF já sai mascarado
+// para quem não tem perfil autorizado (ver pessoasController.js).
+app.use("/api/pessoas", authRequired, pessoasRoutes);
 
 // Coaching individual + KPIs do Ambiente Metodologia (20/09/2026, pedido do
 // Ramon) — trilha à parte, pessoa a pessoa, e o endpoint de agregação dos
