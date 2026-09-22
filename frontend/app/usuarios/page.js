@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
-import { apiFetch } from "../../services/api";
+import { apiFetch, getStoredUser } from "../../services/api";
 import { colors, chart } from "../../lib/theme";
 
 /* ═══════════════════════════════════════════════
@@ -100,6 +100,23 @@ const PERFIL_OPTIONS = [
   { value: "coordenador_rs",  label: "Coordenador R&S"  },
   { value: "gestor_rs",       label: "Gestor R&S"       },
 ];
+
+// Fase 1 (padronização de gestão de usuários, 22/09/2026): espelho, só
+// para a interface (mostrar/esconder opção no formulário), do
+// PERFIL_ESCOPOS que já manda de verdade no backend
+// (backend/src/lib/perfilScope.js) — quem decide o que é aceito é sempre a
+// API; isto aqui só evita oferecer no dropdown um perfil que o backend vai
+// recusar. Um perfil ausente daqui (coordenador, supervisor,
+// superintendente) continua vendo o dropdown inteiro, sem restrição.
+const PERFIL_ESCOPOS_UI = {
+  coordenador_rs: ["coordenador_rs", "gestor_rs"],
+  metodologia: ["metodologia"],
+};
+function escopoPerfilDoUsuarioLogado() {
+  const usuario = getStoredUser();
+  const perfil = String(usuario?.perfil || "").toLowerCase();
+  return PERFIL_ESCOPOS_UI[perfil] || null;
+}
 
 /* ═══════════════════════════════════════════════
    AVATAR
@@ -254,15 +271,24 @@ function emptyForm() {
   };
 }
 
-function ModalUsuario({ modo, usuario, clientes, onSalvar, onFechar }) {
-  const [form,     setForm]     = useState(() => modo === "editar" && usuario
-    ? { ...emptyForm(), ...usuario,
+function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onFechar }) {
+  const opcoesPerfil = perfisPermitidos
+    ? PERFIL_OPTIONS.filter((p) => perfisPermitidos.includes(p.value))
+    : PERFIL_OPTIONS;
+
+  const [form,     setForm]     = useState(() => {
+    if (modo === "editar" && usuario) {
+      return { ...emptyForm(), ...usuario,
         ativo: String(usuario.ativo ?? "1"),
         troca_senha_obrigatoria: String(usuario.troca_senha_obrigatoria ?? "1"),
         senha: "",
-      }
-    : emptyForm()
-  );
+      };
+    }
+    const base = emptyForm();
+    // Só uma opção possível (ex.: metodologia) — já vem selecionada.
+    if (opcoesPerfil.length === 1) base.perfil = opcoesPerfil[0].value;
+    return base;
+  });
   const [salvando, setSalvando] = useState(false);
   const [erro,     setErro]     = useState("");
 
@@ -331,7 +357,7 @@ function ModalUsuario({ modo, usuario, clientes, onSalvar, onFechar }) {
           <MField label="Perfil *">
             <select value={form.perfil} onChange={campo("perfil")} style={mInput}>
               <option value="">Selecione…</option>
-              {PERFIL_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+              {opcoesPerfil.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
           </MField>
 
@@ -772,6 +798,7 @@ export default function UsuariosPage() {
           modo={modal.modo}
           usuario={modal.usuario}
           clientes={clientes}
+          perfisPermitidos={escopoPerfilDoUsuarioLogado()}
           onSalvar={() => { setModal(null); carregar(); }}
           onFechar={() => setModal(null)}
         />
