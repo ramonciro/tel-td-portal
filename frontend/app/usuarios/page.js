@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
-import { apiFetch, apiDownload, getStoredUser, hasSomeRole } from "../../services/api";
+import { apiFetch } from "../../services/api";
 import { colors, chart } from "../../lib/theme";
 
 /* ═══════════════════════════════════════════════
@@ -48,14 +48,13 @@ const PERFIL_TOM = {
   // perfil pela tela — faltava aqui.
   assistente_treinamento: chart.orange,
   treinando: colors.neutral,
-  // Achado ao revisar o Pacote 3 (16/09/2026): usuários do módulo R&S são
-  // criados por uma tela dedicada (Configurações R&S), não por aqui — mas
-  // eles aparecem nesta listagem geral igual a qualquer outro usuário, e
-  // como não estavam mapeados, caíam no cinza neutro (badge quase invisível)
-  // e ficavam de fora da contagem "Distribuição por perfil". Reaproveitando
-  // tons já usados (mesma ideia de "coordenador" e "metodologia").
-  coordenador_rs: chart.blue,
-  gestor_rs: chart.cyan,
+  // Fase 1 (unificação de cadastro de usuários, 22/09/2026): usuários do
+  // módulo R&S (hoje só criados/vistos em RS → Configurações) passam a
+  // aparecer também aqui — mesma tabela `usuarios`, sem migração de dados,
+  // só faltava a tela reconhecer esses dois perfis. Tons novos (não fazem
+  // parte da paleta `chart`, que já não tinha mais cor livre sem repetir).
+  coordenador_rs: "#4f46e5",
+  gestor_rs: "#a16207",
 };
 function tomPerfil(perfil) {
   return PERFIL_TOM[String(perfil || "").toLowerCase()] || colors.neutral;
@@ -82,7 +81,9 @@ const PERFIL_LABEL = {
   treinando: "Treinando", superintendente: "Superintendente",
   coaching: "Coaching", metodologia: "Metodologia",
   assistente_treinamento: "Assistente de Treinamento",
-  coordenador_rs: "Coordenador R&S", gestor_rs: "Gestor R&S",
+  // Fase 1 — ver nota em PERFIL_TOM.
+  coordenador_rs: "Coordenador R&S",
+  gestor_rs: "Gestor R&S",
 };
 
 /* ── Opções fixas ── */
@@ -95,7 +96,7 @@ const PERFIL_OPTIONS = [
   { value: "coaching",        label: "Coaching"         },
   { value: "metodologia",     label: "Metodologia"      },
   { value: "assistente_treinamento", label: "Assistente de Treinamento" },
-  // Incluídos no Pacote 3 (16/09/2026) — ver nota em PERFIL_TOM acima.
+  // Fase 1 (22/09/2026) — ver nota em PERFIL_TOM.
   { value: "coordenador_rs",  label: "Coordenador R&S"  },
   { value: "gestor_rs",       label: "Gestor R&S"       },
 ];
@@ -103,11 +104,7 @@ const PERFIL_OPTIONS = [
 /* ═══════════════════════════════════════════════
    AVATAR
 ═══════════════════════════════════════════════ */
-// Redesign (16/09/2026): anel colorido em volta do avatar, no mesmo tom do
-// badge de perfil — dá pra reconhecer o tipo de usuário até de relance, sem
-// precisar ler o badge de texto ao lado. Só um toque de estilo por cima do
-// avatar que já existia, sem mudar nome/e-mail/iniciais.
-function Avatar({ nome, perfil, size = 38, anel = true }) {
+function Avatar({ nome, perfil, size = 38 }) {
   const cor = perfilCor(perfil);
   return (
     <div style={{
@@ -117,7 +114,6 @@ function Avatar({ nome, perfil, size = 38, anel = true }) {
       flexShrink: 0,
       fontSize: size * 0.38, fontWeight: 800, color: "#fff",
       letterSpacing: "-.02em",
-      boxShadow: anel ? `0 0 0 3px ${hexParaRgba(cor.avatar, 0.18)}` : "none",
     }}>
       {iniciais(nome)}
     </div>
@@ -403,85 +399,6 @@ function MField({ label, children, full = false }) {
 }
 
 /* ═══════════════════════════════════════════════
-   CARTÃO DE USUÁRIO (visão em cartões — redesign 16/09/2026)
-   Mesmos dados da linha da tabela, só reorganizados como cartão: avatar
-   maior no topo, nome/e-mail, badge de perfil, operações, vínculo (quando
-   houver) e as mesmas ações de sempre no rodapé.
-═══════════════════════════════════════════════ */
-function UsuarioCard({
-  usuario, vinculo, canEdit, canDelete,
-  selectMode, selected, onToggleSelect,
-  toggling, onToggleAtivo, onEditar,
-  confirmandoExclusao, onIniciarExclusao, onExcluir, onCancelarExclusao,
-}) {
-  const clientesVinculados = normalizarClientes(usuario.cliente);
-  const cor = perfilCor(usuario.perfil);
-  return (
-    <div style={{ ...cardUsuario, ...(selected ? cardUsuarioSelecionado : null) }}>
-      <div style={cardUsuarioTop}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          {selectMode && (
-            <input
-              type="checkbox"
-              checked={!!selected}
-              onChange={onToggleSelect}
-              style={cardCheckbox}
-              aria-label={`Selecionar ${usuario.nome}`}
-            />
-          )}
-          <Avatar nome={usuario.nome} perfil={usuario.perfil} size={44} />
-          <div style={{ minWidth: 0 }}>
-            <div style={cardUsuarioNome} title={usuario.nome}>{usuario.nome}</div>
-            <div style={cardUsuarioEmail} title={usuario.email}>{usuario.email}</div>
-          </div>
-        </div>
-        <span style={{ ...badgeBase, background: cor.bg, color: cor.text, flexShrink: 0 }}>
-          {PERFIL_LABEL[String(usuario.perfil).toLowerCase()] || usuario.perfil || "—"}
-        </span>
-      </div>
-
-      <div style={cardUsuarioMeio}>
-        <div>
-          <div style={cardUsuarioCaption}>Operações</div>
-          {clientesVinculados.length ? (
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {clientesVinculados.map((c) => <span key={c} style={chipOp}>{c}</span>)}
-            </div>
-          ) : (
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>Sem operação</span>
-          )}
-        </div>
-        {vinculo && (
-          <div>
-            <div style={cardUsuarioCaption}>Vínculo</div>
-            <span style={{ fontSize: 12, color: "#334155" }}>{vinculo}</span>
-          </div>
-        )}
-      </div>
-
-      <div style={cardUsuarioRodape}>
-        <ToggleAtivo ativo={usuario.ativo} loading={toggling} onChange={onToggleAtivo} />
-        <div style={{ display: "flex", gap: 6 }}>
-          {canEdit && (
-            <button style={btnAcao(colors.primaryLight, colors.primary)} onClick={onEditar}>Editar</button>
-          )}
-          {canDelete && (
-            confirmandoExclusao ? (
-              <>
-                <button style={btnAcao(colors.dangerLight, colors.dangerText)} onClick={onExcluir}>Confirmar</button>
-                <button style={btnAcao("#f1f5f9", "#64748b")} onClick={onCancelarExclusao}>Cancelar</button>
-              </>
-            ) : (
-              <button style={btnAcao(colors.dangerLight, colors.dangerText)} onClick={onIniciarExclusao}>Excluir</button>
-            )
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
    PÁGINA PRINCIPAL
 ═══════════════════════════════════════════════ */
 export default function UsuariosPage() {
@@ -496,26 +413,22 @@ export default function UsuariosPage() {
   const [filtroPerfil,setFiltroPerfil]= useState("todos");
   const [filtroExtra, setFiltroExtra] = useState(null); // "inativos" | "sem-operacao"
 
+  // Paginação (Fase 1, 22/09/2026) — pedido do Ramon para o portal aguentar
+  // "todos os usuários do portal" em banco sem virar uma lista infinita na
+  // tela. Por ora é paginação client-side (sobre a lista já filtrada — os
+  // KPIs e a barra de distribuição continuam olhando para a base inteira,
+  // sem mudar comportamento), com 10/25/50 por página, à escolha.
+  const [tamanhoPagina, setTamanhoPagina] = useState(10);
+  const [paginaAtual,   setPaginaAtual]   = useState(1);
+
   const [modal,   setModal]   = useState(null);  // null | { modo: "criar"|"editar", usuario? }
   const [excluindo, setExcluindo] = useState(null);
 
-  // Redesign da tela (16/09/2026): visão em cartões (além da tabela que já
-  // existia), modo de seleção múltipla com ações em lote e exportação em
-  // Excel — mesma linguagem já usada em Gestão de Turmas.
-  const [viewMode, setViewMode] = useState("lista"); // "lista" | "cartoes"
-  const [selectMode, setSelectMode] = useState(false);
-  const [selecionados, setSelecionados] = useState(new Set());
-  const [exportando, setExportando] = useState(false);
-  const [processandoLote, setProcessandoLote] = useState(false);
-
-  const usuarioLogado = useMemo(() => getStoredUser(), []);
-  // Espelha exatamente o gate do backend (index.js, mount de /api/usuarios)
-  // — assim o botão só aparece pra quem a ação realmente vai funcionar.
-  const canCreate = hasSomeRole(usuarioLogado, ["coordenador", "supervisor", "superintendente"]);
-  const canEdit   = hasSomeRole(usuarioLogado, ["coordenador", "supervisor", "superintendente"]);
-  const canDelete = hasSomeRole(usuarioLogado, ["coordenador", "superintendente"]);
-
   useEffect(() => { carregar(); }, []);
+
+  // Qualquer mudança de filtro/busca/tamanho de página volta para a página 1
+  // — evita cair numa página vazia depois de filtrar.
+  useEffect(() => { setPaginaAtual(1); }, [busca, filtroPerfil, filtroExtra, tamanhoPagina]);
 
   async function carregar() {
     try {
@@ -574,73 +487,6 @@ export default function UsuariosPage() {
     } catch (e) { setErro(e.message || "Erro ao excluir."); }
   }
 
-  /* ── seleção múltipla e ações em lote (redesign 16/09/2026) ── */
-  function toggleSelectMode() {
-    setSelectMode((v) => !v);
-    setSelecionados(new Set());
-  }
-  function toggleSelecionado(id) {
-    setSelecionados((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-  function selecionarTodosVisiveis() {
-    setSelecionados(new Set(listaFiltrada.map((u) => u.id)));
-  }
-
-  // Reaproveita o mesmo PUT /api/usuarios/:id (parcial — só manda o campo
-  // "ativo") já usado no toggle individual, em loop — mesmo raciocínio do
-  // pacote de Gestão de Turmas: sem SQL de lote novo pra uma ação sensível,
-  // só repete a chamada já testada uma vez por usuário selecionado.
-  async function alterarStatusSelecionados(novoAtivo) {
-    if (!canEdit || !selecionados.size) return;
-    setProcessandoLote(true);
-    try {
-      const ids = [...selecionados];
-      await Promise.all(ids.map((id) =>
-        apiFetch(`/usuarios/${id}`, { method: "PUT", body: JSON.stringify({ ativo: novoAtivo }) })
-      ));
-      setUsuarios((prev) => prev.map((u) => ids.includes(u.id) ? { ...u, ativo: novoAtivo } : u));
-    } catch (e) {
-      setErro(e.message || "Erro ao atualizar usuários selecionados.");
-    } finally {
-      setProcessandoLote(false);
-    }
-  }
-
-  async function excluirSelecionados() {
-    if (!canDelete || !selecionados.size) return;
-    if (!window.confirm(`Excluir ${selecionados.size} usuário(s) selecionado(s)? Essa ação não pode ser desfeita.`)) return;
-    setProcessandoLote(true);
-    try {
-      const ids = [...selecionados];
-      for (const id of ids) {
-        await apiFetch(`/usuarios/${id}`, { method: "DELETE" });
-      }
-      setUsuarios((prev) => prev.filter((u) => !ids.includes(u.id)));
-      setSelecionados(new Set());
-    } catch (e) {
-      setErro(e.message || "Erro ao excluir usuários selecionados.");
-    } finally {
-      setProcessandoLote(false);
-    }
-  }
-
-  async function exportarUsuarios(apenasSelecionados) {
-    setExportando(true);
-    try {
-      const ids = apenasSelecionados ? [...selecionados] : [];
-      const query = ids.length ? `?ids=${ids.join(",")}` : "";
-      await apiDownload(`/usuarios/exportar${query}`, "usuarios.xlsx");
-    } catch (e) {
-      setErro(e.message || "Erro ao exportar usuários.");
-    } finally {
-      setExportando(false);
-    }
-  }
-
   /* ── KPIs ── */
   const kpis = useMemo(() => {
     const total       = usuarios.length;
@@ -666,6 +512,13 @@ export default function UsuariosPage() {
       return okPerfil && okExtra && okBusca;
     });
   }, [usuarios, filtroPerfil, filtroExtra, busca]);
+
+  const totalPaginas = Math.max(1, Math.ceil(listaFiltrada.length / tamanhoPagina));
+  const paginaSegura = Math.min(paginaAtual, totalPaginas);
+  const listaPaginada = useMemo(() => {
+    const inicio = (paginaSegura - 1) * tamanhoPagina;
+    return listaFiltrada.slice(inicio, inicio + tamanhoPagina);
+  }, [listaFiltrada, paginaSegura, tamanhoPagina]);
 
   function onFiltrar(tipo) {
     setFiltroExtra((prev) => prev === tipo ? null : tipo);
@@ -739,214 +592,112 @@ export default function UsuariosPage() {
         )}
       </div>
 
-      {/* ── Barra de controle (redesign 16/09/2026: card único, busca +
-           alternância lista/cartões + seleção + exportar + novo usuário) ── */}
-      <div style={toolbarCard}>
-        <div style={controlBar}>
-          <div style={{ position: "relative", flex: 1, minWidth: 220, maxWidth: 340 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8"
-              strokeWidth="2.2" strokeLinecap="round"
-              style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}>
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-            </svg>
-            <input value={busca} onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar por nome, e-mail ou perfil…"
-              style={{ ...searchInput, paddingLeft: 32 }} />
-          </div>
-          <span style={{ fontSize: 13, color: "#94a3b8", whiteSpace: "nowrap" }}>
-            {listaFiltrada.length} de {usuarios.length}
-          </span>
-
-          <div style={viewToggleWrap}>
-            <button
-              onClick={() => setViewMode("lista")}
-              style={{ ...viewToggleBtn, ...(viewMode === "lista" ? viewToggleBtnAtivo : null) }}
-              title="Visão em lista"
-            >
-              ☰ Lista
-            </button>
-            <button
-              onClick={() => setViewMode("cartoes")}
-              style={{ ...viewToggleBtn, ...(viewMode === "cartoes" ? viewToggleBtnAtivo : null) }}
-              title="Visão em cartões"
-            >
-              ▦ Cartões
-            </button>
-          </div>
-
-          <button style={mineToggle(selectMode)} onClick={toggleSelectMode}>
-            {selectMode ? "Cancelar seleção" : "Selecionar usuários"}
-          </button>
-
-          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-            <button style={btnExportarLista} disabled={exportando} onClick={() => exportarUsuarios(false)}>
-              {exportando ? "Exportando…" : "Exportar Excel"}
-            </button>
-            {canCreate && (
-              <button style={btnNovoUsuario} onClick={() => setModal({ modo: "criar" })}>
-                + Novo usuário
-              </button>
-            )}
-          </div>
+      {/* ── Barra de controle ── */}
+      <div style={controlBar}>
+        <div style={{ position: "relative", flex: 1, maxWidth: 340 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8"
+            strokeWidth="2.2" strokeLinecap="round"
+            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}>
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input value={busca} onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por nome, e-mail ou perfil…"
+            style={{ ...searchInput, paddingLeft: 32 }} />
         </div>
-
-        {/* ── Barra de seleção em lote ── */}
-        {selectMode && (
-          <div style={selectionBar}>
-            <span style={selectionCount}>{selecionados.size} de {listaFiltrada.length} selecionado(s)</span>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button style={ghostButton} onClick={selecionarTodosVisiveis}>Selecionar visíveis</button>
-              <button style={ghostButton} onClick={() => setSelecionados(new Set())}>Limpar</button>
-              <button style={primarySmall} disabled={!selecionados.size || exportando} onClick={() => exportarUsuarios(true)}>
-                {exportando ? "Exportando…" : "Exportar selecionados"}
-              </button>
-              {canEdit && (
-                <>
-                  <button style={ghostButton} disabled={!selecionados.size || processandoLote} onClick={() => alterarStatusSelecionados(1)}>
-                    Ativar selecionados
-                  </button>
-                  <button style={ghostButton} disabled={!selecionados.size || processandoLote} onClick={() => alterarStatusSelecionados(0)}>
-                    Desativar selecionados
-                  </button>
-                </>
-              )}
-              {canDelete && (
-                <button style={dangerGhost} disabled={!selecionados.size || processandoLote} onClick={excluirSelecionados}>
-                  {processandoLote ? "Processando…" : "Excluir selecionados"}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+        <span style={{ fontSize: 13, color: "#94a3b8" }}>
+          {listaFiltrada.length} de {usuarios.length}
+        </span>
+        <button style={btnNovoUsuario} onClick={() => setModal({ modo: "criar" })}>
+          + Novo usuário
+        </button>
       </div>
 
-      {/* ── Lista de usuários (tabela ou cartões) ── */}
+      {/* ── Tabela ── */}
       {loading ? (
         <div style={loadingBox}>Carregando usuários…</div>
-      ) : listaFiltrada.length === 0 ? (
-        <div style={emptyState}>
-          <div style={emptyIcon}>👥</div>
-          <strong>Nenhum usuário encontrado</strong>
-          <span>
-            {busca || filtroExtra || filtroPerfil !== "todos"
-              ? "Ajuste os filtros ou a busca para ver outros usuários."
-              : "Nenhum usuário cadastrado ainda."}
-          </span>
-        </div>
-      ) : viewMode === "cartoes" ? (
-        <div style={cardsGrid}>
-          {listaFiltrada.map((u) => (
-            <UsuarioCard
-              key={u.id}
-              usuario={u}
-              vinculo={vinculos.get(u.id)}
-              canEdit={canEdit}
-              canDelete={canDelete}
-              selectMode={selectMode}
-              selected={selecionados.has(u.id)}
-              onToggleSelect={() => toggleSelecionado(u.id)}
-              toggling={toggling.has(u.id)}
-              onToggleAtivo={() => toggleAtivo(u)}
-              onEditar={() => setModal({ modo: "editar", usuario: u })}
-              confirmandoExclusao={excluindo === u.id}
-              onIniciarExclusao={() => setExcluindo(u.id)}
-              onExcluir={() => excluir(u.id)}
-              onCancelarExclusao={() => setExcluindo(null)}
-            />
-          ))}
-        </div>
       ) : (
         <div style={tabelaCard}>
           <div style={tableWrap}>
             <table style={table}>
               <thead>
                 <tr>
-                  {selectMode && <th style={{ ...th, width: 34 }}></th>}
                   {["Usuário","Perfil","Operações","Vínculo","Status",""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {listaFiltrada.map((u) => {
-                  const clientes = normalizarClientes(u.cliente);
-                  const vinculo  = vinculos.get(u.id);
-                  const selecionado = selecionados.has(u.id);
-                  return (
-                    <tr key={u.id} style={{ ...trHover, ...(selecionado ? trSelecionada : null) }}>
-                      {selectMode && (
+                {listaFiltrada.length === 0 ? (
+                  <tr><td colSpan={6} style={tdVazio}>
+                    {busca || filtroExtra || filtroPerfil !== "todos"
+                      ? "Nenhum usuário encontrado para os filtros aplicados."
+                      : "Nenhum usuário cadastrado."}
+                  </td></tr>
+                ) : (
+                  listaPaginada.map((u) => {
+                    const clientes = normalizarClientes(u.cliente);
+                    const vinculo  = vinculos.get(u.id);
+                    return (
+                      <tr key={u.id} style={trHover}>
+                        {/* Usuário */}
                         <td style={td}>
-                          <input
-                            type="checkbox"
-                            checked={selecionado}
-                            onChange={() => toggleSelecionado(u.id)}
-                            style={cardCheckbox}
-                            aria-label={`Selecionar ${u.nome}`}
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <Avatar nome={u.nome} perfil={u.perfil} />
+                            <div>
+                              <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 14 }}>{u.nome}</div>
+                              <div style={{ fontSize: 12, color: "#64748b" }}>{u.email}</div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Perfil */}
+                        <td style={td}>
+                          <span style={{
+                            ...badgeBase,
+                            background: perfilCor(u.perfil).bg,
+                            color: perfilCor(u.perfil).text,
+                          }}>
+                            {PERFIL_LABEL[String(u.perfil).toLowerCase()] || u.perfil || "—"}
+                          </span>
+                        </td>
+
+                        {/* Operações */}
+                        <td style={td}>
+                          {clientes.length ? (
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                              {clientes.map((c) => (
+                                <span key={c} style={chipOp}>{c}</span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: 12, color: "#94a3b8" }}>Sem operação</span>
+                          )}
+                        </td>
+
+                        {/* Vínculo */}
+                        <td style={td}>
+                          <span style={{ fontSize: 12, color: vinculo ? "#334155" : "#cbd5e1" }}>
+                            {vinculo || "—"}
+                          </span>
+                        </td>
+
+                        {/* Toggle ativo */}
+                        <td style={td}>
+                          <ToggleAtivo
+                            ativo={u.ativo}
+                            loading={toggling.has(u.id)}
+                            onChange={() => toggleAtivo(u)}
                           />
                         </td>
-                      )}
-                      {/* Usuário */}
-                      <td style={td}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <Avatar nome={u.nome} perfil={u.perfil} />
-                          <div>
-                            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 14 }}>{u.nome}</div>
-                            <div style={{ fontSize: 12, color: "#64748b" }}>{u.email}</div>
-                          </div>
-                        </div>
-                      </td>
 
-                      {/* Perfil */}
-                      <td style={td}>
-                        <span style={{
-                          ...badgeBase,
-                          background: perfilCor(u.perfil).bg,
-                          color: perfilCor(u.perfil).text,
-                        }}>
-                          {PERFIL_LABEL[String(u.perfil).toLowerCase()] || u.perfil || "—"}
-                        </span>
-                      </td>
-
-                      {/* Operações */}
-                      <td style={td}>
-                        {clientes.length ? (
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                            {clientes.map((c) => (
-                              <span key={c} style={chipOp}>{c}</span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: 12, color: "#94a3b8" }}>Sem operação</span>
-                        )}
-                      </td>
-
-                      {/* Vínculo */}
-                      <td style={td}>
-                        <span style={{ fontSize: 12, color: vinculo ? "#334155" : "#cbd5e1" }}>
-                          {vinculo || "—"}
-                        </span>
-                      </td>
-
-                      {/* Toggle ativo */}
-                      <td style={td}>
-                        <ToggleAtivo
-                          ativo={u.ativo}
-                          loading={toggling.has(u.id)}
-                          onChange={() => toggleAtivo(u)}
-                        />
-                      </td>
-
-                      {/* Ações */}
-                      <td style={{ ...td, textAlign: "right" }}>
-                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          {canEdit && (
+                        {/* Ações */}
+                        <td style={{ ...td, textAlign: "right" }}>
+                          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                             <button style={btnAcao(colors.primaryLight, colors.primary)}
                               onClick={() => setModal({ modo: "editar", usuario: u })}>
                               Editar
                             </button>
-                          )}
-                          {canDelete && (
-                            excluindo === u.id ? (
+                            {excluindo === u.id ? (
                               <>
                                 <button style={btnAcao(colors.dangerLight, colors.dangerText)}
                                   onClick={() => excluir(u.id)}>
@@ -962,16 +713,56 @@ export default function UsuariosPage() {
                                 onClick={() => setExcluindo(u.id)}>
                                 Excluir
                               </button>
-                            )
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* ── Paginação ── */}
+          {listaFiltrada.length > 0 && (
+            <div style={paginacaoBar}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "#64748b" }}>
+                  Mostrando {(paginaSegura - 1) * tamanhoPagina + 1}
+                  –{Math.min(paginaSegura * tamanhoPagina, listaFiltrada.length)} de {listaFiltrada.length}
+                </span>
+                <select
+                  value={tamanhoPagina}
+                  onChange={(e) => setTamanhoPagina(Number(e.target.value))}
+                  style={selectPagina}
+                >
+                  {[10, 25, 50].map((n) => (
+                    <option key={n} value={n}>{n} por página</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button
+                  style={btnPagina(paginaSegura <= 1)}
+                  disabled={paginaSegura <= 1}
+                  onClick={() => setPaginaAtual((p) => Math.max(1, p - 1))}
+                >
+                  ‹ Anterior
+                </button>
+                <span style={{ fontSize: 12, color: "#64748b", fontWeight: 700, padding: "0 4px" }}>
+                  Página {paginaSegura} de {totalPaginas}
+                </span>
+                <button
+                  style={btnPagina(paginaSegura >= totalPaginas)}
+                  disabled={paginaSegura >= totalPaginas}
+                  onClick={() => setPaginaAtual((p) => Math.min(totalPaginas, p + 1))}
+                >
+                  Próxima ›
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1028,12 +819,21 @@ const td         = { padding: "12px 14px", borderBottom: "1px solid #f8fafc", ve
 const tdVazio    = { padding: "28px 14px", textAlign: "center", color: "#94a3b8", fontSize: 13 };
 const trHover    = { transition: "background .1s" };
 
+/* Paginação */
+const paginacaoBar = { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, padding: "12px 14px", borderTop: "1px solid #f1f5f9", background: "#fafafa" };
+const selectPagina = { height: 30, borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, color: "#334155", padding: "0 8px", outline: "none", cursor: "pointer" };
+const btnPagina = (desabilitado) => ({
+  height: 30, padding: "0 12px", borderRadius: 8, border: "1px solid #e2e8f0",
+  background: desabilitado ? "#f8fafc" : "#fff", color: desabilitado ? "#cbd5e1" : "#334155",
+  fontSize: 12, fontWeight: 700, cursor: desabilitado ? "not-allowed" : "pointer",
+});
+
 const badgeBase  = { display: "inline-block", padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 800 };
 const chipOp     = { background: colors.primaryLight, color: colors.primary, border: `1px solid ${colors.primary}55`, borderRadius: 999, padding: "3px 8px", fontSize: 11, fontWeight: 700 };
 const btnAcao    = (bg, cor) => ({ background: bg, color: cor, border: 0, borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" });
 
 /* Modal */
-const overlay    = { position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 16 };
+const overlay    = { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 16 };
 const modal      = { background: "#fff", borderRadius: 20, padding: 24, width: "100%", maxWidth: 620, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" };
 const modalHeader = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 };
 const modalTitulo = { fontSize: 18, fontWeight: 800, color: "#0f172a" };
@@ -1048,41 +848,3 @@ const btnSalvar   = { background: colors.accent, color: "#fff", border: 0, borde
 const btnCancelar = { background: "#f8fafc", color: "#64748b", border: "1px solid #e9eef4", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontWeight: 600, fontSize: 14 };
 const chipRemovivel = { display: "inline-flex", alignItems: "center", gap: 5, background: colors.primaryLight, color: colors.primary, border: `1px solid ${colors.primary}55`, borderRadius: 999, padding: "4px 10px", fontSize: 12, fontWeight: 700 };
 const btnChipRemove = { background: "none", border: "none", cursor: "pointer", color: colors.primary, fontWeight: 900, fontSize: 11, padding: 0, lineHeight: 1 };
-
-/* ── Redesign da tela (16/09/2026): toolbar, seleção em lote, cartões ── */
-
-// Toolbar única (busca + alternância de visão + seleção + exportar + novo
-// usuário) num único cartão — antes era uma linha solta sem container,
-// destoando do padrão já usado em Gestão de Turmas.
-const toolbarCard = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 16, padding: 14, marginBottom: 14 };
-
-const viewToggleWrap = { display: "flex", border: "1px solid #e2e8f0", borderRadius: 10, padding: 2, background: "#f8fafc" };
-const viewToggleBtn = { border: 0, background: "transparent", color: "#64748b", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
-const viewToggleBtnAtivo = { background: "#fff", color: colors.accent, boxShadow: "0 1px 4px rgba(15,23,42,.08)" };
-
-const mineToggle = (active) => ({ border: `1px solid ${active ? "#bfdbfe" : "#e2e8f0"}`, background: active ? "#eff6ff" : "#fff", color: active ? "#1d4ed8" : "#475569", borderRadius: 10, padding: "8px 12px", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" });
-
-const btnExportarLista = { height: 38, padding: "0 16px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#334155", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" };
-
-// Barra de ações em lote — mesmo padrão visual já usado em Gestão de Turmas.
-const selectionBar = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 12, padding: "10px 14px", borderRadius: 12, background: "#eff6ff", border: "1px solid #bfdbfe" };
-const selectionCount = { fontSize: 13, fontWeight: 800, color: "#1d4ed8" };
-const ghostButton = { border: "1px solid #e2e8f0", background: "#fff", color: "#475569", borderRadius: 9, padding: "8px 11px", fontWeight: 750, fontSize: 12, cursor: "pointer" };
-const primarySmall = { border: 0, background: colors.accent, color: "#fff", borderRadius: 9, padding: "8px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" };
-const dangerGhost = { ...ghostButton, color: "#b91c1c", borderColor: "#fecaca" };
-const trSelecionada = { background: "#eff6ff" };
-const cardCheckbox = { width: 17, height: 17, cursor: "pointer", accentColor: colors.accent, flexShrink: 0 };
-
-const emptyState = { display: "grid", placeItems: "center", gap: 7, minHeight: 220, background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 16, color: "#64748b", textAlign: "center", padding: 24 };
-const emptyIcon = { width: 48, height: 48, borderRadius: 14, display: "grid", placeItems: "center", background: "#f1f5f9", fontSize: 21, marginBottom: 4 };
-
-/* Visão em cartões */
-const cardsGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 14 };
-const cardUsuario = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 16, padding: 16, boxShadow: "0 4px 14px rgba(15,23,42,.03)", display: "flex", flexDirection: "column", gap: 14 };
-const cardUsuarioSelecionado = { border: `1.5px solid ${colors.accent}`, boxShadow: `0 0 0 3px ${colors.primary}22` };
-const cardUsuarioTop = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 };
-const cardUsuarioNome = { fontWeight: 800, color: "#0f172a", fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 170 };
-const cardUsuarioEmail = { fontSize: 12, color: "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 170 };
-const cardUsuarioMeio = { display: "flex", flexDirection: "column", gap: 10, paddingTop: 12, borderTop: "1px solid #f1f5f9" };
-const cardUsuarioCaption = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "#94a3b8", marginBottom: 4 };
-const cardUsuarioRodape = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, paddingTop: 12, borderTop: "1px solid #f1f5f9" };
