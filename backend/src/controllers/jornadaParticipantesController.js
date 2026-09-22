@@ -140,6 +140,20 @@ async function remove(req, res) {
       return res.status(404).json({ error: "Participante não encontrado." });
     }
 
+    // 22/09/2026 (Editar/excluir por vínculo, pedido do Ramon — Tripulação):
+    // não existe FK entre coaching_individual.jornada_participante_id e esta
+    // tabela, então excluir o vínculo de jornada de uma pessoa que também
+    // está em coaching individual ("ambos" na Tripulação) deixaria o
+    // coaching apontando pra um participante que não existe mais — e ele
+    // sumiria da tela inteira, mesmo sem ter sido excluído. Por isso,
+    // desvincula (nunca apaga) o coaching antes de remover o participante:
+    // ele passa a aparecer como coaching individual "solo", com todo o
+    // histórico de encontros e perfil comportamental preservado.
+    await db.query(
+      `UPDATE coaching_individual SET jornada_participante_id = NULL WHERE jornada_participante_id = ?${tenantCheck}`,
+      checkParams
+    );
+
     await db.query(`DELETE FROM jornada_participantes WHERE id = ?${tenantCheck}`, checkParams);
     return res.json({ ok: true, message: "Participante removido com sucesso." });
   } catch (error) {
