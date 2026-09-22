@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import PortalShell from "../../../components/PortalShell";
 import PageHero    from "../../../components/PageHero";
 import { apiFetch } from "../../../services/api";
@@ -14,12 +15,15 @@ export default function RSConfiguracoes() {
   const [resultado, setResultado] = useState(null);
 
   // ── Usuários R&S ─────────────────────────────────────────────────
+  // 22/09/2026 (pedido do Ramon): o formulário de criação que existia aqui
+  // foi retirado — a Gestão de Usuários (/usuarios) já cobre a criação e
+  // edição de usuários do R&S, com o mesmo escopo restrito automático
+  // (coordenador_rs só vê/mexe em coordenador_rs e gestor_rs), sem os
+  // problemas do atalho antigo (não gravava vínculo de cliente/operação e
+  // sempre pulava a obrigatoriedade de troca de senha). A lista abaixo
+  // continua só como consulta rápida.
   const [usuarios, setUsuarios] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
-  const [formUser, setFormUser] = useState({ nome: "", email: "", senha: "", perfil: "gestor_rs" });
-  const [criandoUser, setCriandoUser] = useState(false);
-  const [erroUser, setErroUser] = useState("");
-  const [okUser, setOkUser] = useState("");
 
   const carregarUsuarios = async () => {
     setLoadingUsers(true);
@@ -49,24 +53,6 @@ export default function RSConfiguracoes() {
       setResultado({ ok: false, error: e.message });
     } finally {
       setImportando(false);
-    }
-  };
-
-  // ── Criar usuário ─────────────────────────────────────────────────
-  const handleCriarUser = async () => {
-    if (!formUser.nome || !formUser.email || !formUser.senha) {
-      setErroUser("Nome, e-mail e senha são obrigatórios."); return;
-    }
-    setCriandoUser(true); setErroUser(""); setOkUser("");
-    try {
-      await apiFetch("/rs/usuarios", { method: "POST", body: JSON.stringify(formUser) });
-      setOkUser(`Usuário "${formUser.nome}" criado com sucesso.`);
-      setFormUser({ nome: "", email: "", senha: "", perfil: "gestor_rs" });
-      carregarUsuarios();
-    } catch (e) {
-      setErroUser(e.message || "Erro ao criar usuário.");
-    } finally {
-      setCriandoUser(false);
     }
   };
 
@@ -181,51 +167,33 @@ export default function RSConfiguracoes() {
         <div style={card}>
           <h2 style={cardTitle}>👥 Usuários do Módulo R&S</h2>
           <p style={cardDesc}>
-            Crie usuários com acesso exclusivo ao módulo R&S. Eles <strong>não verão</strong> nenhuma
+            Usuários com acesso exclusivo ao módulo R&S — eles <strong>não veem</strong> nenhuma
             funcionalidade de T&D.
           </p>
 
-          {/* Formulário de criação */}
+          {/* 22/09/2026 (pedido do Ramon): formulário de criação retirado —
+              criar/editar usuário do R&S agora é só pela Gestão de Usuários,
+              que já aplica o mesmo escopo restrito automaticamente. */}
           <div style={{
-            background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12,
-            padding: "18px 20px", marginBottom: 20,
+            background: colors.primaryLight || "#eef2ff", border: `1px solid ${colors.border || "#e2e8f0"}`,
+            borderRadius: 12, padding: "16px 20px", marginBottom: 20,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            flexWrap: "wrap", gap: 12,
           }}>
-            <p style={{ margin: "0 0 14px", fontSize: 12, fontWeight: 800, color: colors.textMuted,
-                        textTransform: "uppercase", letterSpacing: ".04em" }}>Novo usuário</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
-              <div>
-                <label style={labelSt}>Nome *</label>
-                <input value={formUser.nome} onChange={e => setFormUser(f=>({...f,nome:e.target.value}))}
-                  placeholder="Nome completo" style={inputSt} />
-              </div>
-              <div>
-                <label style={labelSt}>E-mail *</label>
-                <input value={formUser.email} onChange={e => setFormUser(f=>({...f,email:e.target.value}))}
-                  placeholder="email@telcc.com.br" type="email" style={inputSt} />
-              </div>
-              <div>
-                <label style={labelSt}>Senha inicial *</label>
-                <input value={formUser.senha} onChange={e => setFormUser(f=>({...f,senha:e.target.value}))}
-                  placeholder="Mínimo 6 caracteres" type="password" style={inputSt} />
-              </div>
-              <div>
-                <label style={labelSt}>Perfil</label>
-                <select value={formUser.perfil} onChange={e => setFormUser(f=>({...f,perfil:e.target.value}))} style={inputSt}>
-                  <option value="coordenador_rs">Coordenador R&S (edita)</option>
-                  <option value="gestor_rs">Gestor R&S (só visualiza)</option>
-                </select>
-              </div>
-            </div>
-            {erroUser && <p style={{ marginTop: 10, color: colors.dangerText, fontSize: 13 }}>⚠ {erroUser}</p>}
-            {okUser   && <p style={{ marginTop: 10, color: colors.success, fontSize: 13 }}>✓ {okUser}</p>}
-            <button onClick={handleCriarUser} disabled={criandoUser}
+            <p style={{ margin: 0, fontSize: 13, color: colors.textSecondary, lineHeight: 1.5 }}>
+              Criar ou editar usuários do R&S agora é feito pela <strong>Gestão de Usuários</strong> —
+              já com escopo automático pro módulo (só R&S, sem acesso a T&D).
+            </p>
+            <Link
+              href="/usuarios"
               style={{
-                marginTop: 14, background: colors.accent, color: "#fff",
-                border: "none", borderRadius: 8, padding: "9px 20px",
-                fontWeight: 700, fontSize: 13, cursor: criandoUser ? "not-allowed" : "pointer",
-              }}>
-              {criandoUser ? "Criando..." : "+ Criar Usuário"}
-            </button>
+                background: colors.accent, color: "#fff", textDecoration: "none",
+                borderRadius: 8, padding: "9px 20px", fontWeight: 700, fontSize: 13,
+                whiteSpace: "nowrap",
+              }}
+            >
+              Ir para Gestão de Usuários →
+            </Link>
           </div>
 
           {/* Lista de usuários existentes */}
