@@ -182,7 +182,7 @@ export default function RSConfiguracoes() {
           }}>
             <p style={{ margin: 0, fontSize: 13, color: colors.textSecondary, lineHeight: 1.5 }}>
               Criar ou editar usuários do R&S agora é feito pela <strong>Gestão de Usuários</strong> —
-              já com escopo automático pro módulo (só R&S, sem acesso a T&D).
+              já com escopo automático para o módulo.
             </p>
             <Link
               href="/usuarios"
