@@ -166,6 +166,15 @@ function createCrudRouter({
   // para a razão completa. Vazio por padrão: zero mudança de comportamento
   // para toda outra tabela que usa este router genérico.
   crossTenantRoles = [],
+  // Fase 1 (padronização de gestão de usuários, 22/09/2026): hook opcional
+  // que roda ANTES do DELETE, com (antes, req) — simétrico ao beforeWrite,
+  // mas para exclusão (que não tinha nenhum ponto de extensão até então).
+  // Hoje usado por /api/usuarios para impedir que um "coordenador de
+  // módulo" (ex.: coordenador_rs) exclua um usuário de fora do próprio
+  // módulo — ver lib/perfilScope.js. Lança um erro com `.status`/`.message`
+  // para bloquear a exclusão com essa resposta; null por padrão, sem
+  // nenhuma mudança para as demais tabelas.
+  beforeDelete = null,
 }) {
   const router = express.Router();
   const { tenantScopeFor } = require("../lib/tenantScope");
@@ -385,7 +394,7 @@ function createCrudRouter({
         const empresaId = empresaIdEfetivo(req);
 
         let antes = null;
-        if (auditoria || (multiTenant && empresaId)) {
+        if (auditoria || (multiTenant && empresaId) || beforeDelete) {
           const tenantCheck = multiTenant && empresaId
             ? ` AND empresa_id = ${pool.escape(empresaId)}`
             : "";
@@ -396,6 +405,14 @@ function createCrudRouter({
           antes = linhas[0] || null;
           if (!antes) {
             return res.status(404).json({ message: "Registro não encontrado." });
+          }
+        }
+
+        if (beforeDelete) {
+          try {
+            await beforeDelete(antes, req);
+          } catch (err) {
+            return res.status(err.status || 400).json({ message: err.message || "Não é possível excluir este registro." });
           }
         }
 
