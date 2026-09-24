@@ -273,14 +273,18 @@ app.use(clientMiddleware);
 app.get(
   "/api/dashboard/treinamentos",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  // Pacote Superintendente (24/09/2026): adicionado "superintendente" — ela
+  // vê o Dashboard de todos os tenants (getDashboardTreinamentos já usa
+  // tenantScopeFor). Sem isso ela recebia 403 antes mesmo de chegar ao
+  // controller.
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
   getDashboardTreinamentos
 );
 
 app.get(
   "/api/dashboard/treinamentos/exportar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
   exportarTreinamentos
 );
 
@@ -289,13 +293,16 @@ app.get(
 app.get(
   "/api/presenca-resumo",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento"),
+  // Pacote Superintendente: ela vê a Gestão de Turmas de todos os tenants
+  // (presencaResumoController.js já tem "superintendente" no
+  // CROSS_TENANT_ROLES, junto com assistente_treinamento).
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "superintendente"),
   listarResumoGeral
 );
 app.get(
   "/api/presenca-resumo/:treinamento_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
   obterResumoPorTreinamento
 );
 
@@ -374,10 +381,17 @@ app.get("/api", async (req, res) => {
 
 app.use("/api/auth", authRoutes);
 
+// ATENÇÃO: este app.use(prefixo) roda para QUALQUER rota que comece com
+// /api/dashboard, incluindo /api/dashboard/resumo-executivo (definida mais
+// abaixo, linha ~1944) — não só a rota "/" de dashboardRoutes. Achado no
+// Pacote Superintendente (24/09/2026): "superintendente" faltava aqui, então
+// ela recebia 403 nesse gate antes mesmo de chegar na rota de
+// resumo-executivo (que já autorizava "superintendente" há mais tempo, mas
+// nunca era alcançada por causa deste gate anterior).
 app.use(
   "/api/dashboard",
   authRequired,
-  authorizeRoles("coordenador", "supervisor"),
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
   dashboardRoutes
 );
 
@@ -1262,7 +1276,12 @@ app.use(
 app.get(
   "/api/frequencia-individual",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  // Pacote Superintendente (24/09/2026): adicionado "superintendente" — ela
+  // clica numa turma a partir do Dashboard (que já é cross-tenant pra ela) e
+  // esta rota, sem essa liberação, respondia 403 para turmas de outro
+  // tenant. Ver tenantScopeFor em frequenciaIndividualController.js para o
+  // isolamento de dados correspondente.
+  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente"),
   getFrequenciaIndividual
 );
 
@@ -1941,7 +1960,14 @@ app.get(
   authorizeRoles("coordenador", "supervisor", "superintendente"),
   async (req, res) => {
     try {
-      const empresaId = req.empresaId || null;
+      // Pacote Superintendente (24/09/2026): montarResumoEmpresa(null) já
+      // agrega todos os tenants corretamente (delega para getAlertas/
+      // getResumoExecutivo/getResumoPresenca, os mesmos resolvers usados nas
+      // outras 3 telas, todos cientes de empresaId=null). O cache diário
+      // (resumos_executivos_diarios) já tinha uma linha própria pra
+      // empresa_id NULL (mesma usada por super_admin) — a superintendente
+      // agora reaproveita essa mesma linha global.
+      const { empresaId } = tenantScopeFor(req, { crossTenantRoles: ["superintendente"] });
       const cacheado = await getResumoCacheadoDoDia(empresaId);
       if (cacheado) {
         return res.json({ texto: cacheado.texto, gerado_em: cacheado.gerado_em, cache: true });
