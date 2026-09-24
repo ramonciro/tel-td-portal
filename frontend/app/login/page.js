@@ -106,10 +106,19 @@ export default function LoginPage() {
         // liberados lá — ver PortalShell.js), então caía direto numa tela de
         // "Acesso restrito" logo depois de logar. Manda ela para Salas, que
         // já é uma das telas que ela de fato administra.
+        //
+        // Pacote Superintendente (24/09/2026): mesmo problema, mesma causa —
+        // "superintendente" também não está nos perfis liberados de /inicio
+        // (ver PortalShell.js) e caía em "Acesso restrito" ao logar. Manda
+        // ela direto para o Dashboard, que é o motivo de ela ter ganhado
+        // visão cross-tenant nas 4 telas (Indicadores, CH por Instrutor,
+        // Dashboard e Gestão de Turmas).
         const destino = rsPerfiles.includes(perfil)
           ? "/rs/rps"
           : perfil === "assistente_treinamento"
           ? "/salas"
+          : perfil === "superintendente"
+          ? "/dashboard"
           : "/inicio";
         router.push(destino);
       }
