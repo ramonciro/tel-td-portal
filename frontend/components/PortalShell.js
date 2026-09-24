@@ -15,7 +15,12 @@ const menuItems = [
   { href: "/admin",         label: "Painel Super Admin",     icon: "settings", roles: ["super_admin"] },
   // Menu operacional
   { href: "/inicio",        label: "Início",                 icon: "home", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
-  { href: "/dashboard",     label: "Dashboard",              icon: "chart", roles: ["coordenador", "supervisor"] },
+  // Pacote Superintendente (24/09/2026): backend já liberava o Dashboard
+  // cross-tenant pra ela, mas o `roles` daqui (que também é o controle de
+  // ACESSO de verdade — currentAllowed, mais abaixo) nunca tinha sido
+  // atualizado. Sem isso, ela caía direto em "Acesso restrito" ao tentar
+  // abrir /dashboard, mesmo com a API já pronta.
+  { href: "/dashboard",     label: "Dashboard",              icon: "chart", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/necessidades",  label: "Necessidades",           icon: "target", roles: ["coordenador", "supervisor", "superintendente"] },
   // Ajuste pós-entrega do Pacote Salas (15/09/2026): o backend já liberava
   // Treinamentos e Presenças (Gestão de Turmas) para o perfil Assistente de
@@ -24,7 +29,10 @@ const menuItems = [
   // criar um usuário com esse perfil. Sem isso, o usuário Assistente
   // logaria e veria o menu lateral vazio, mesmo com acesso de API completo.
   { href: "/treinamentos",  label: "Treinamentos",           icon: "cap", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento"] },
-  { href: "/presencas",     label: "Gestão de Turmas",       icon: "folder", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento"] },
+  // Pacote Superintendente (24/09/2026): mesma correção do Dashboard acima —
+  // "Gestão de Turmas" é uma das 4 telas cross-tenant dela (backend já
+  // pronto em presencaResumoController.js), faltava só liberar aqui.
+  { href: "/presencas",     label: "Gestão de Turmas",       icon: "folder", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"] },
   // Ajuste pós-entrega do Pacote Salas (15/09/2026), pedido do Ramon: o
   // perfil Assistente de Treinamento também precisa ver Salas e Reembolso de
   // Transporte no próprio menu — sem isso, ela só alcançava essas telas
