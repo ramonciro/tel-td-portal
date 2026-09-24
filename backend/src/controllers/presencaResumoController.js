@@ -8,10 +8,17 @@ const { tenantScopeFor } = require("../lib/tenantScope");
 // dashboardTreinamentosController.js e desempenhoInstrutorController.js,
 // que continuam chamando com req.empresaId diretamente (sem passar por
 // tenantScopeFor) — se a exceção tivesse sido posta dentro de
-// getResumoPresenca(), ela vazaria pra essas duas telas, que NÃO fazem
-// parte do escopo cross-tenant da Assistente. Ver claude/auditoria-riscos-
-// cruzados-pacote-salas-2026-09.md.
-const CROSS_TENANT_ROLES = ["assistente_treinamento"];
+// getResumoPresenca(), ela vazaria pra essas telas de forma implícita. Ver
+// claude/auditoria-riscos-cruzados-pacote-salas-2026-09.md.
+//
+// Pacote Superintendente (24/09/2026): a superintendente também precisa ver
+// o resumo de presença de todos os tenants (tela Gestão de Turmas). Como o
+// Dashboard TAMBÉM está no escopo cross-tenant dela (diferente da
+// Assistente), foi adicionado o mesmo tenantScopeFor com "superintendente"
+// diretamente em dashboardTreinamentosController.js (que não importa este
+// arquivo — ele chama getResumoPresenca diretamente), então não há
+// duplicidade nem vazamento cruzado entre os dois pacotes.
+const CROSS_TENANT_ROLES = ["assistente_treinamento", "superintendente"];
 
 // Sprint 1 fix: passa req.empresaId para filtrar por tenant automaticamente.
 // Sem req.empresaId (super_admin ou migration pendente) → retorna tudo.

@@ -2,8 +2,10 @@
  * analyticsController.js — Sprint 5: Analytics & KPIs
  *
  * Motor de cálculo de todos os indicadores do Portal T&D.
- * Todas as queries são filtradas por empresa_id (req.empresaId).
+ * Todas as queries são filtradas por empresa_id, via tenantScopeFor().
  * super_admin (empresaId = null) recebe dados globais de todos os tenants.
+ * superintendente também (Pacote Superintendente, 24/09/2026) — ver
+ * CROSS_TENANT_ROLES abaixo.
  *
  * Endpoints:
  *   GET /api/analytics/resumo       → getResumo
@@ -20,6 +22,16 @@ const {
   getHorasAplicadasPorCliente,
   getHorasAplicadasPorInstrutor,
 } = require('../services/capacidadeResolver');
+const { tenantScopeFor } = require('../lib/tenantScope');
+
+// Pacote Superintendente (24/09/2026): a superintendente é chefe dos
+// coordenadores e precisa ver Indicadores de todos os tenants, sem escolher
+// um tenant no login (cada conta já tem um empresa_id fixo — a seleção no
+// login é só validação visual, não um filtro em runtime). Mesmo mecanismo já
+// usado para a Assistente de Treinamento (ver tenantScope.js e
+// claude/auditoria-riscos-cruzados-pacote-salas-2026-09.md): decidido aqui,
+// por endpoint, nunca no clientMiddleware global.
+const CROSS_TENANT_ROLES = ['superintendente'];
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -90,7 +102,7 @@ function asDec(v) { return v != null ? Number(Number(v).toFixed(1)) : null; }
 /* ─── GET /api/analytics/resumo ────────────────────────────────────────────── */
 async function getResumo(req, res) {
   try {
-    const eId  = req.empresaId ?? null;
+    const { empresaId: eId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const tw   = tenantWhere(eId);
     const filtro = filtroRecorte(req.query);
     const where = `${tw}${filtro.sql}`;
@@ -220,7 +232,7 @@ async function getResumo(req, res) {
 /* ─── GET /api/analytics/horas ─────────────────────────────────────────────── */
 async function getHoras(req, res) {
   try {
-    const eId = req.empresaId ?? null;
+    const { empresaId: eId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const cliente = req.query.cliente;
     const dataInicio = req.query.data_inicio;
     const dataFim = req.query.data_fim;
@@ -252,7 +264,7 @@ async function getHoras(req, res) {
 /* ─── GET /api/analytics/nps ───────────────────────────────────────────────── */
 async function getNps(req, res) {
   try {
-    const eId = req.empresaId ?? null;
+    const { empresaId: eId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const filtro = filtroRecorte(req.query, 't');
     const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
 
@@ -332,7 +344,7 @@ async function getNps(req, res) {
 /* ─── GET /api/analytics/efetividade ───────────────────────────────────────── */
 async function getEfetividade(req, res) {
   try {
-    const eId = req.empresaId ?? null;
+    const { empresaId: eId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const filtro = filtroRecorte(req.query, 't');
     const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
 
@@ -409,7 +421,7 @@ async function getEfetividade(req, res) {
 /* ─── GET /api/analytics/roi ───────────────────────────────────────────────── */
 async function getRoi(req, res) {
   try {
-    const eId = req.empresaId ?? null;
+    const { empresaId: eId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const filtro = filtroRecorte(req.query);
     const where = `${tenantWhere(eId)}${filtro.sql}`;
     const custoPorHora = await getCustoPorHora(eId);
@@ -479,7 +491,7 @@ async function getRoi(req, res) {
 // respeitando o mesmo filtro de cliente/período usado na tela.
 async function exportarIndicadores(req, res) {
   try {
-    const eId = req.empresaId ?? null;
+    const { empresaId: eId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const aba = String(req.query.aba || 'horas');
     const { novoWorkbook, adicionarTabela, estilizarCabecalho, escreverCelula } = require('../lib/excelExport');
     const wb = novoWorkbook();

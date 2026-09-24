@@ -20,6 +20,12 @@
  */
 
 const { getScorecardInstrutor, getResumoExecutivo } = require("../services/desempenhoInstrutorResolver");
+const { tenantScopeFor } = require("../lib/tenantScope");
+
+// Pacote Superintendente (24/09/2026): scorecard e resumo executivo são
+// leitura pura (nenhum dos dois grava nada) — cross-tenant liberado por
+// inteiro para a superintendente, mesmo mecanismo usado nas demais telas.
+const CROSS_TENANT_ROLES = ["superintendente"];
 
 function resolverFiltros(req) {
   const perfil = String(req.user?.perfil || "").toLowerCase();
@@ -34,13 +40,15 @@ function resolverFiltros(req) {
     instrutor = nomeUsuario;
   }
 
+  const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+
   return {
     instrutor,
     periodo: q.periodo === "trimestral" ? "trimestral" : "mensal",
     ano: q.ano ? Number(q.ano) : undefined,
     mes: q.mes ? Number(q.mes) : undefined,
     trimestre: q.trimestre ? Number(q.trimestre) : undefined,
-    empresaId: req.empresaId,
+    empresaId,
   };
 }
 
@@ -150,7 +158,8 @@ async function getDesempenhoExportar(req, res) {
 // /capacidade/alertas.
 async function getResumoExecutivoController(req, res) {
   try {
-    const resultado = await getResumoExecutivo({ empresaId: req.empresaId });
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const resultado = await getResumoExecutivo({ empresaId });
     return res.json({ ok: true, ...resultado });
   } catch (error) {
     console.error("[desempenho-instrutor] getResumoExecutivo:", error);

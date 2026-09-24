@@ -28,10 +28,25 @@ const {
   getDistribuicaoPorOperacao,
   getAlertas: resolverGetAlertas,
 } = require("../services/capacidadeResolver");
+const { tenantScopeFor } = require("../lib/tenantScope");
+
+// Pacote Superintendente (24/09/2026): a superintendente vê Capacidade/CH por
+// Instrutor de todos os tenants, sem escolher tenant no login. Aplicado só
+// nas LEITURAS desta tela (painel, capacidade x realizado, ranking,
+// distribuição, alertas, instrutores/operações conhecidas, e a própria
+// leitura da regra padrão). As ESCRITAS (salvar regra padrão, criar/excluir
+// override de capacidade) continuam usando req.empresaId normal, nunca
+// tenantScopeFor: essas gravações usam empresaId como chave de partição dos
+// dados (não como filtro de um registro já existente), então gravar com
+// empresaId=null corromperia a regra padrão global ou criaria overrides sem
+// tenant nenhum. Ramon pediu que ela "veja" os dados de todos — não que
+// grave configuração cross-tenant.
+const CROSS_TENANT_ROLES = ["superintendente"];
 
 async function getCapacidade(req, res) {
   try {
     const { ano, mes, instrutor, cliente, data_inicio, data_fim } = req.query || {};
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const resultado = await getCapacidadeVsRealizado({
       ano: ano ? Number(ano) : undefined,
       mes: mes ? Number(mes) : undefined,
@@ -39,7 +54,7 @@ async function getCapacidade(req, res) {
       cliente: cliente || undefined,
       dataInicio: data_inicio || undefined,
       dataFim: data_fim || undefined,
-      empresaId: req.empresaId,
+      empresaId,
     });
 
     const totais = resultado.reduce(
@@ -73,8 +88,11 @@ async function getRegra(req, res) {
     // Item B da Fase 4, resolvido: regra padrão agora é por empresa (com
     // fallback pro valor global quando o tenant ainda não tem a própria) —
     // ver capacidadeResolver.js. Super admin (req.empresaId null) lê/edita
-    // o valor global de fallback, não um tenant específico.
-    const regra = await getRegraPadrao(req.empresaId);
+    // o valor global de fallback, não um tenant específico. superintendente
+    // (leitura, cross-tenant): recebe o mesmo fallback global ao navegar sem
+    // tenant fixo — apenas leitura, nunca grava neste modo (ver putRegra).
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const regra = await getRegraPadrao(empresaId);
     return res.json({ ok: true, regra });
   } catch (error) {
     console.error("[capacidadeController]", error.message || error);
@@ -105,10 +123,13 @@ async function getOverrides(req, res) {
     const { instrutor, ano } = req.query || {};
     // Fase 4 (isolamento multi-tenant): antes não passava req.empresaId —
     // qualquer coordenador via os overrides de capacidade de todas as empresas.
+    // Pacote Superintendente: esta é a listagem (leitura) — cross-tenant.
+    // postOverride/deleteOverride (gravação) continuam por tenant próprio.
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const itens = await listarOverrides({
       instrutor: instrutor || undefined,
       ano: ano ? Number(ano) : undefined,
-      empresaId: req.empresaId || undefined,
+      empresaId: empresaId || undefined,
     });
     return res.json({ ok: true, itens });
   } catch (error) {
@@ -165,7 +186,8 @@ async function getInstrutores(req, res) {
     // ambos os casos não faz sentido oferecer pra escolher alguém já
     // desligado. O histórico dele continua intacto nas telas que já mostram
     // dado por instrutor (ver comentário em listarInstrutoresConhecidos).
-    const instrutores = await listarInstrutoresConhecidos(req.empresaId, { apenasAtivos: true });
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const instrutores = await listarInstrutoresConhecidos(empresaId, { apenasAtivos: true });
     return res.json({ ok: true, instrutores });
   } catch (error) {
     console.error("[capacidadeController]", error.message || error);
@@ -175,7 +197,8 @@ async function getInstrutores(req, res) {
 
 async function getOperacoes(req, res) {
   try {
-    const operacoes = await listarOperacoesConhecidas(req.empresaId);
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const operacoes = await listarOperacoesConhecidas(empresaId);
     return res.json({ ok: true, operacoes });
   } catch (error) {
     console.error("[capacidadeController]", error.message || error);
@@ -193,11 +216,12 @@ async function getOperacoes(req, res) {
 async function getPainel(req, res) {
   try {
     const q = req.query || {};
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const painel = await resolverGetPainel({
       meses: q.meses ? Number(q.meses) : undefined,
       instrutor: q.instrutor || undefined,
       cliente: q.cliente || undefined,
-      empresaId: req.empresaId,
+      empresaId,
     });
     return res.json({ ok: true, ...painel });
   } catch (error) {
@@ -209,7 +233,8 @@ async function getPainel(req, res) {
 async function getCapacity(req, res) {
   try {
     const q = req.query || {};
-    const resultado = await getCapacityConsumido({ meses: q.meses ? Number(q.meses) : undefined, cliente: q.cliente || undefined, empresaId: req.empresaId });
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const resultado = await getCapacityConsumido({ meses: q.meses ? Number(q.meses) : undefined, cliente: q.cliente || undefined, empresaId });
     return res.json({ ok: true, ...resultado });
   } catch (error) {
     console.error("[capacidade] getCapacity:", error);
@@ -220,7 +245,8 @@ async function getCapacity(req, res) {
 async function getRankingHandler(req, res) {
   try {
     const q = req.query || {};
-    const itens = await getRanking({ meses: q.meses ? Number(q.meses) : undefined, cliente: q.cliente || undefined, empresaId: req.empresaId });
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const itens = await getRanking({ meses: q.meses ? Number(q.meses) : undefined, cliente: q.cliente || undefined, empresaId });
     return res.json({ ok: true, itens });
   } catch (error) {
     console.error("[capacidade] getRanking:", error);
@@ -231,7 +257,8 @@ async function getRankingHandler(req, res) {
 async function getPorCliente(req, res) {
   try {
     const q = req.query || {};
-    const resultado = await getCapacidadePorInstrutorCliente({ meses: q.meses ? Number(q.meses) : undefined, empresaId: req.empresaId });
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const resultado = await getCapacidadePorInstrutorCliente({ meses: q.meses ? Number(q.meses) : undefined, empresaId });
     return res.json({ ok: true, ...resultado });
   } catch (error) {
     console.error("[capacidade] getPorCliente:", error);
@@ -242,13 +269,14 @@ async function getPorCliente(req, res) {
 async function getAderencia(req, res) {
   try {
     const q = req.query || {};
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const itens = await getAderenciaPorTema({
       cliente: q.cliente || undefined,
       ano: q.ano ? Number(q.ano) : undefined,
       mes: q.mes ? Number(q.mes) : undefined,
       dataInicio: q.data_inicio || undefined,
       dataFim: q.data_fim || undefined,
-      empresaId: req.empresaId,
+      empresaId,
     });
     return res.json({ ok: true, itens });
   } catch (error) {
@@ -260,7 +288,8 @@ async function getAderencia(req, res) {
 async function getDistribuicao(req, res) {
   try {
     const q = req.query || {};
-    const resultado = await getDistribuicaoPorOperacao({ meses: q.meses ? Number(q.meses) : undefined, empresaId: req.empresaId });
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const resultado = await getDistribuicaoPorOperacao({ meses: q.meses ? Number(q.meses) : undefined, empresaId });
     return res.json({ ok: true, ...resultado });
   } catch (error) {
     console.error("[capacidade] getDistribuicao:", error);
@@ -270,7 +299,8 @@ async function getDistribuicao(req, res) {
 
 async function getAlertasHandler(req, res) {
   try {
-    const resultado = await resolverGetAlertas(req.empresaId);
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const resultado = await resolverGetAlertas(empresaId);
     return res.json({ ok: true, ...resultado });
   } catch (error) {
     console.error("[capacidade] getAlertas:", error);

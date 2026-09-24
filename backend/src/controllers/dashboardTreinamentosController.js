@@ -1,5 +1,14 @@
 const pool = require("../lib/db");
 const { getResumoPresenca } = require("../services/presencaResolver");
+const { tenantScopeFor } = require("../lib/tenantScope");
+
+// Pacote Superintendente (24/09/2026): o Dashboard é leitura pura (nenhum
+// endpoint deste arquivo grava nada) — cross-tenant liberado por inteiro
+// para a superintendente, nos 3 pontos que hoje leem req.empresaId
+// diretamente: o filtro principal de turmas (buildFiltroTreinamentos), o
+// resumo de presença (que este arquivo busca direto do resolver, sem passar
+// por presencaResumoController.js) e o bloco "Oceano".
+const CROSS_TENANT_ROLES = ["superintendente"];
 
 function parseHorasTexto(valor) {
   if (valor === null || valor === undefined || valor === "") return 0;
@@ -109,11 +118,13 @@ function buildFiltroTreinamentos(req) {
 
   // Isolamento por tenant: sem este filtro, o dashboard somava turmas,
   // participantes, presenças e NPS de TODAS as empresas na mesma tela —
-  // era o vazamento mais visível do sistema. req.empresaId nulo (super_admin
-  // ou usuário legado sem empresa atribuída) mantém o comportamento antigo.
-  if (req.empresaId) {
+  // era o vazamento mais visível do sistema. empresaId nulo (super_admin,
+  // superintendente — Pacote Superintendente, 24/09/2026 — ou usuário legado
+  // sem empresa atribuída) mantém o comportamento antigo de ver tudo.
+  const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+  if (empresaId) {
     conditions.push("t.empresa_id = ?");
-    params.push(req.empresaId);
+    params.push(empresaId);
   }
 
   if (query.cliente) {
@@ -269,7 +280,8 @@ async function carregarTurmasEnriquecidas(req) {
     // status abaixo, que depende dele.
     let resumoPresencaPorId = new Map();
     try {
-      const resumoPresenca = await getResumoPresenca({ empresaId: req.empresaId });
+      const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+      const resumoPresenca = await getResumoPresenca({ empresaId });
       resumoPresencaPorId = new Map(resumoPresenca.map((item) => [Number(item.id), item]));
     } catch (err) {
       console.warn("[dashboard] resumo de presença indisponível:", err.message);
@@ -455,9 +467,11 @@ async function getDashboardTreinamentos(req, res) {
 
     try {
       // Isolamento por tenant no bloco "Oceano" — mesmas colunas empresa_id
-      // adicionadas em database/migrate.js (passo 17).
-      const oceanoWhere = req.empresaId ? "WHERE empresa_id = ?" : "";
-      const oceanoParams = req.empresaId ? [req.empresaId] : [];
+      // adicionadas em database/migrate.js (passo 17). empresaId nulo também
+      // cobre a superintendente (cross-tenant, Pacote Superintendente).
+      const { empresaId: oceanoEmpresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+      const oceanoWhere = oceanoEmpresaId ? "WHERE empresa_id = ?" : "";
+      const oceanoParams = oceanoEmpresaId ? [oceanoEmpresaId] : [];
 
       const [[jornadas]] = await pool.query(`SELECT COUNT(*) AS total FROM jornadas_desenvolvimento ${oceanoWhere}`, oceanoParams);
       const [[acoes]] = await pool.query(`SELECT COUNT(*) AS total FROM acoes_desenvolvimento ${oceanoWhere}`, oceanoParams);
