@@ -2,6 +2,8 @@ const XLSX = require("xlsx");
 const db = require("../lib/db");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { tenantScopeFor } = require("../lib/tenantScope");
+const { resolverPessoa } = require("../services/pessoasService");
+const { garantirUsuarioTreinando } = require("../services/provisionamentoUsuariosService");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga participantes/chamada de qualquer
@@ -107,6 +109,21 @@ async function treinamentoPertenceAoTenant(db, treinamentoId, empresaId, req = n
   if (!rows.length) return false;
   if (!req) return true;
   return usuarioTemAcessoAoCliente(req, rows[0].cliente);
+}
+
+// Inclusão de usuários (treinandos), 25/09/2026: resolverPessoa() e a
+// criação de conta precisam do empresa_id REAL da turma — nunca do
+// `empresaId` que vem de tenantScopeFor(), que é null de propósito para
+// quem tem visão cross-tenant (ex.: assistente_treinamento). Uma pessoa/
+// conta criada a partir de uma importação sempre tem que pertencer ao
+// tenant DONO da turma, nunca a "todos os tenants" — mesmo cuidado já
+// tomado nas gravações de Capacidade (ver capacidadeController.js).
+async function empresaRealDoTreinamento(db, treinamentoId) {
+  const [rows] = await db.query(
+    `SELECT empresa_id FROM treinamentos WHERE id = ? LIMIT 1`,
+    [treinamentoId]
+  );
+  return rows[0]?.empresa_id || null;
 }
 
 async function getParticipantesByTreinamento(req, res) {
@@ -283,8 +300,16 @@ async function importarParticipantesExcel(req, res) {
     // ficava sem os participantes antigos (já apagados) E sem os novos
     // (importação incompleta), sem nenhuma forma de desfazer. Envolvido numa
     // transação: ou a planilha inteira entra, ou nada muda.
+    // Inclusão de usuários (treinandos), 25/09/2026: identidade e conta
+    // sempre presas ao tenant DONO da turma, nunca ao empresaId de quem
+    // está importando (ver empresaRealDoTreinamento acima).
+    const empresaIdTurma = await empresaRealDoTreinamento(db, treinamento_id);
+
     const conn = await db.getConnection();
     let totalImportados = 0;
+    let contasCriadas = 0;
+    let contasAtualizadas = 0;
+    let semIdentificadorLogin = 0;
     try {
       await conn.beginTransaction();
 
@@ -302,6 +327,19 @@ async function importarParticipantesExcel(req, res) {
         const nome = String(linha.nome || "").trim();
         if (!nome) continue;
 
+        const matriculaLinha = String(linha.matricula || "").trim();
+        const clienteLinha = String(linha.cliente || "").trim();
+        const cpfLinha = normalizarCpf(linha.cpf);
+
+        // Cadastro Único de Pessoas (Fase 0) — mesma função central usada
+        // em qualquer outro cadastro daqui pra frente: casa por CPF, senão
+        // por matrícula+nome, senão cria pessoa nova (provisória). Nunca
+        // bloqueia a importação por falta de CPF/matrícula.
+        const { pessoa } = await resolverPessoa(
+          { empresaId: empresaIdTurma, nome, cpf: cpfLinha, matricula: matriculaLinha, cliente: clienteLinha },
+          conn
+        );
+
         await conn.query(
           `
           INSERT INTO treinamento_participantes
@@ -316,15 +354,16 @@ async function importarParticipantesExcel(req, res) {
             data_admissao,
             cpf,
             status_presenca,
-            justificativa
+            justificativa,
+            pessoa_id
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
           [
             treinamento_id,
             nome,
-            String(linha.matricula || "").trim(),
-            String(linha.cliente || "").trim(),
+            matriculaLinha,
+            clienteLinha,
             String(linha.turma || "").trim(),
             String(linha.supervisor || "").trim(),
             String(linha.operacao || "").trim(),
@@ -335,13 +374,24 @@ async function importarParticipantesExcel(req, res) {
             // ou é descartada silenciosamente (mesmo padrão defensivo do
             // resto do importador, que também não rejeita a planilha
             // inteira por uma célula individual mal formatada).
-            normalizarCpf(linha.cpf),
+            cpfLinha,
             "pendente",
             null,
+            pessoa.id,
           ]
         );
 
         totalImportados += 1;
+
+        // Decisão 2 do Ramon (25/09/2026): contas de treinando nascem em
+        // lote, aqui na importação — ver provisionamentoUsuariosService.js.
+        const provisionamento = await garantirUsuarioTreinando(
+          { pessoa, empresaId: empresaIdTurma, cliente: clienteLinha },
+          conn
+        );
+        if (provisionamento.criado) contasCriadas += 1;
+        else if (provisionamento.atualizado) contasAtualizadas += 1;
+        else if (provisionamento.motivo === "sem_cpf_matricula") semIdentificadorLogin += 1;
       }
 
       await conn.query(
@@ -361,6 +411,9 @@ async function importarParticipantesExcel(req, res) {
       ok: true,
       message: "Participantes importados com sucesso",
       total: totalImportados,
+      contas_criadas: contasCriadas,
+      contas_atualizadas: contasAtualizadas,
+      sem_identificador_login: semIdentificadorLogin,
     });
   } catch (error) {
     console.error("[participantes] importarExcel:", error.message);
@@ -568,6 +621,23 @@ async function createParticipanteTreinamento(req, res) {
       });
     }
 
+    const clienteTrim = String(cliente || "").trim();
+
+    // Inclusão de usuários (treinandos), 25/09/2026: mesmo tratamento de
+    // identidade/conta da importação em lote, agora pro cadastro manual de
+    // um participante só — pra ninguém ficar sem conta só por ter sido
+    // cadastrado à mão em vez de via Excel. Sempre no tenant DONO da turma
+    // (nunca no empresaId de quem está cadastrando — ver
+    // empresaRealDoTreinamento acima).
+    const empresaIdTurma = await empresaRealDoTreinamento(db, treinamento_id);
+    const { pessoa } = await resolverPessoa({
+      empresaId: empresaIdTurma,
+      nome: nomeTrim,
+      cpf: cpfNormalizado,
+      matricula: matriculaTrim,
+      cliente: clienteTrim,
+    });
+
     const [result] = await db.query(
       `
       INSERT INTO treinamento_participantes
@@ -582,15 +652,16 @@ async function createParticipanteTreinamento(req, res) {
         data_admissao,
         cpf,
         status_presenca,
-        justificativa
+        justificativa,
+        pessoa_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         treinamento_id,
         nomeTrim,
         matriculaTrim,
-        String(cliente || "").trim(),
+        clienteTrim,
         String(turma || "").trim(),
         String(supervisor || "").trim(),
         String(operacao || "").trim(),
@@ -598,8 +669,15 @@ async function createParticipanteTreinamento(req, res) {
         cpfNormalizado,
         "pendente",
         null,
+        pessoa.id,
       ]
     );
+
+    const provisionamento = await garantirUsuarioTreinando({
+      pessoa,
+      empresaId: empresaIdTurma,
+      cliente: clienteTrim,
+    });
 
     const [[countRow]] = await db.query(
       `SELECT COUNT(*) AS total FROM treinamento_participantes WHERE treinamento_id = ?`,
@@ -617,6 +695,7 @@ async function createParticipanteTreinamento(req, res) {
       ok: true,
       id: result.insertId,
       message: "Participante adicionado com sucesso",
+      conta_criada: !!provisionamento.criado,
     });
   } catch (error) {
     console.error("[treinamentoParticipantesController]", error.message || error);
