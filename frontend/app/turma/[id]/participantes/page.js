@@ -96,8 +96,23 @@ export default function ParticipantesTurmaPage() {
       const fd = new FormData();
       fd.append("arquivo", arquivo);
       fd.append("treinamento_id", String(id));
-      await apiFetch("/treinamentos/importar-participantes", { method: "POST", body: fd });
-      setSucesso("Participantes importados com sucesso.");
+      const resultado = await apiFetch("/treinamentos/importar-participantes", { method: "POST", body: fd });
+
+      // Inclusão de usuários (treinandos), 25/09/2026: a importação agora
+      // também gera acesso ao portal em lote (Decisão 2 do Ramon) — mostra
+      // pro coordenador quantas contas nasceram e quantos participantes
+      // ficaram sem login (sem CPF/matrícula na planilha).
+      const partesResumo = ["Participantes importados com sucesso."];
+      if (resultado?.contas_criadas) {
+        partesResumo.push(`${resultado.contas_criadas} conta(s) de acesso criada(s).`);
+      }
+      if (resultado?.contas_atualizadas) {
+        partesResumo.push(`${resultado.contas_atualizadas} conta(s) existente(s) atualizada(s) com este cliente.`);
+      }
+      if (resultado?.sem_identificador_login) {
+        partesResumo.push(`${resultado.sem_identificador_login} participante(s) sem CPF/matrícula ficaram sem login.`);
+      }
+      setSucesso(partesResumo.join(" "));
       setArquivo(null); setAbrirImport(false);
       await carregarTudo();
     } catch (err) {
