@@ -31,7 +31,11 @@ export default function LoginPage() {
   const [empresaSelecionada, setEmpresaSelecionada] = useState(null); // null = ainda escolhendo / pulou
   const [mostrarSeletor, setMostrarSeletor] = useState(false);
 
-  const [email, setEmail] = useState("");
+  // Inclusão de usuários (treinandos), 25/09/2026 — Decisão 1 do Ramon:
+  // login por e-mail, CPF ou matrícula. O campo continua um único input;
+  // o backend decide o tipo pelo formato (tem "@" → e-mail, senão CPF/
+  // matrícula — ver routes/authRoutes.js).
+  const [identificador, setIdentificador] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
@@ -78,7 +82,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          identificador,
           senha,
           empresa_codigo: empresaSelecionada?.codigo || undefined,
         }),
@@ -87,6 +91,14 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (!response.ok) {
+        // Login por CPF/matrícula sem empresa selecionada, e mais de uma
+        // conta bateu com o identificador (a mesma pessoa/CPF pode existir
+        // em empresas diferentes do portal) — pede pra escolher o ambiente
+        // em vez de simplesmente falhar sem explicação.
+        if (response.status === 409 && data.precisa_selecionar_empresa) {
+          setMostrarSeletor(true);
+          setEmpresaSelecionada(null);
+        }
         throw new Error(data.message || "Falha no login");
       }
 
@@ -186,7 +198,7 @@ export default function LoginPage() {
         ) : (
           <form onSubmit={login} style={loginCard}>
             <h2 style={loginTitle}>Acessar plataforma</h2>
-            <p style={loginSubtitle}>Utilize seu e-mail corporativo para acessar o portal.</p>
+            <p style={loginSubtitle}>Utilize seu e-mail, CPF ou matrícula para acessar o portal.</p>
 
             {empresaSelecionada && (
               <div style={empresaChip}>
@@ -199,11 +211,11 @@ export default function LoginPage() {
 
             {erro && <div style={errorBox}>{erro}</div>}
 
-            <label style={fieldLabel}>E-mail</label>
+            <label style={fieldLabel}>E-mail, CPF ou matrícula</label>
             <input
-              placeholder="voce@telcc.com.br"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="voce@telcc.com.br, CPF ou matrícula"
+              value={identificador}
+              onChange={(e) => setIdentificador(e.target.value)}
               style={input}
               required
             />
