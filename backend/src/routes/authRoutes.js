@@ -115,13 +115,22 @@ router.get("/ambientes", async (req, res) => {
 /* ─── LOGIN ─────────────────────────────────────────────────────────────── */
 router.post("/login", async (req, res) => {
   try {
-    const { email, senha, empresa_codigo } = req.body || {};
+    // Inclusão de usuários (treinandos), 25/09/2026 — Decisão 1 do Ramon:
+    // login por CPF ou matrícula, além do e-mail que já existia. `email`
+    // continua aceito por compatibilidade (é o que o front sempre mandou);
+    // `identificador` é o campo novo, mais honesto pra quem loga com CPF —
+    // os dois caem na mesma variável, então nada muda pra quem já loga por
+    // e-mail. A variável continua se chamando `emailNorm` só pra minimizar
+    // o diff no resto desta rota (rate limiting, mensagens de erro) — não
+    // é mais necessariamente um e-mail.
+    const { email, identificador, senha, empresa_codigo } = req.body || {};
+    const loginInput = String(identificador || email || "").trim();
 
-    if (!email || !senha) {
-      return res.status(400).json({ message: "Informe e-mail e senha" });
+    if (!loginInput || !senha) {
+      return res.status(400).json({ message: "Informe seu e-mail, CPF ou matrícula, e a senha" });
     }
 
-    const emailNorm = String(email).trim().toLowerCase();
+    const emailNorm = loginInput.toLowerCase();
 
     const bloqueioRestante = minutosBloqueioRestantes(emailNorm);
     if (bloqueioRestante > 0) {
@@ -130,23 +139,73 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // SELECT * — resiliente a migrations pendentes (empresa_id, super_admin
-    // serão undefined se as colunas ainda não existirem; tratados com ??)
-    // Bugfix: era "WHERE email = ?" (sensível a maiúsculas/minúsculas) — um
-    // e-mail cadastrado com uma letra maiúscula diferente da digitada dava
-    // "Usuário não encontrado" mesmo com senha certa. "esqueci-senha" logo
-    // abaixo já usa LOWER(email) — login ficou de fora até agora.
-    const [rows] = await pool.query(
-      "SELECT * FROM usuarios WHERE LOWER(email) = LOWER(?) LIMIT 1",
-      [emailNorm]
-    );
+    const usaEmail = loginInput.includes("@");
+    let rows;
+
+    if (usaEmail) {
+      // SELECT * — resiliente a migrations pendentes (empresa_id, super_admin
+      // serão undefined se as colunas ainda não existirem; tratados com ??)
+      // Bugfix: era "WHERE email = ?" (sensível a maiúsculas/minúsculas) — um
+      // e-mail cadastrado com uma letra maiúscula diferente da digitada dava
+      // "Usuário não encontrado" mesmo com senha certa. "esqueci-senha" logo
+      // abaixo já usa LOWER(email) — login ficou de fora até agora.
+      [rows] = await pool.query(
+        "SELECT * FROM usuarios WHERE LOWER(email) = LOWER(?) LIMIT 1",
+        [emailNorm]
+      );
+    } else {
+      // Login por CPF ou matrícula (Cadastro Único de Pessoas — Inclusão de
+      // usuários/treinandos, 25/09/2026): não duplicamos CPF/matrícula em
+      // `usuarios` — a identidade mora em `pessoas` (ver pessoasService.js)
+      // e a conta só participa disso via `usuarios.pessoa_id`. Só funciona
+      // pra conta já ligada a uma pessoa, que é como toda conta gerada em
+      // lote na importação de turma nasce (ver
+      // provisionamentoUsuariosService.js) — uma conta antiga, criada à mão
+      // sem pessoa_id, continua logando só por e-mail, sem quebrar nada.
+      //
+      // CPF pode aparecer em pessoas de empresas diferentes (achado real da
+      // Fase 0 do Cadastro Único — duas empresas distintas do portal podem
+      // ter, cada uma, uma pessoa com o mesmo CPF). Por isso, se o login
+      // veio com uma empresa selecionada (empresa_codigo, do seletor de
+      // ambiente), usamos pra restringir a busca; sem isso, se mais de uma
+      // conta bater com o mesmo identificador, NUNCA escolhemos uma sozinhos
+      // — devolvemos um pedido explícito pra selecionar o ambiente.
+      const apenasDigitos = loginInput.replace(/\D/g, "");
+      const usaCpf = apenasDigitos.length === 11;
+      const condEmpresa = empresa_codigo ? "AND emp.codigo = ?" : "";
+      const paramsEmpresa = empresa_codigo ? [String(empresa_codigo).trim().toLowerCase()] : [];
+
+      try {
+        [rows] = await pool.query(
+          `SELECT u.* FROM usuarios u
+           JOIN pessoas p ON p.id = u.pessoa_id
+           LEFT JOIN empresas emp ON emp.id = u.empresa_id
+           WHERE p.${usaCpf ? "cpf" : "matricula"} = ? ${condEmpresa}`,
+          [usaCpf ? apenasDigitos : loginInput, ...paramsEmpresa]
+        );
+      } catch (error) {
+        // Resiliente a migration pendente (tabela `pessoas` ainda não
+        // existe neste ambiente) — mesmo padrão de cautela já usado no
+        // resto deste arquivo (ex.: /ambientes acima).
+        console.warn("[auth] login por CPF/matrícula indisponível:", error.message);
+        rows = [];
+      }
+
+      if (rows.length > 1) {
+        registrarTentativaFalha(emailNorm);
+        return res.status(409).json({
+          message: "Encontramos mais de uma conta com esse CPF/matrícula. Selecione sua empresa para continuar.",
+          precisa_selecionar_empresa: true,
+        });
+      }
+    }
 
     // Melhoria: mensagem unificada pra "usuário não encontrado" e "senha
     // incorreta" — antes eram mensagens distintas, o que ajuda quem tenta
     // adivinhar e-mails cadastrados por tentativa e erro.
     if (!rows.length) {
       registrarTentativaFalha(emailNorm);
-      return res.status(401).json({ message: "E-mail ou senha inválidos" });
+      return res.status(401).json({ message: "E-mail, CPF/matrícula ou senha inválidos" });
     }
 
     const user = rows[0];
