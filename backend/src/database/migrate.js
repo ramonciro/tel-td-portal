@@ -163,6 +163,26 @@ async function ensureDadosBancariosComposedKey() {
   console.log(`  ↳ chave primária de dados_bancarios_colaborador corrigida para (empresa_id, cpf)`);
 }
 
+// Inclusão de usuários (treinandos), 25/09/2026 — Decisão 1 do Ramon (login
+// por CPF/matrícula em vez de só e-mail): contas geradas em lote a partir da
+// importação de turma não têm e-mail nenhum (a planilha de participantes
+// nunca teve essa coluna) e não devem ganhar um e-mail inventado só pra
+// satisfazer a constraint. `email` era UNIQUE NOT NULL desde a tabela
+// original — em MySQL/MariaDB, UNIQUE permite múltiplos NULL (não são
+// considerados iguais entre si), então relaxar pra NULL não abre brecha de
+// duplicidade entre quem continua logando por e-mail. Idempotente: só roda
+// a ALTER se a coluna ainda estiver NOT NULL.
+async function ensureEmailNullableUsuarios() {
+  const [rows] = await pool.query(
+    `SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'email'
+     LIMIT 1`
+  );
+  if (!rows.length || rows[0].IS_NULLABLE === "YES") return;
+  await pool.query(`ALTER TABLE usuarios MODIFY COLUMN email VARCHAR(150) NULL`);
+  console.log(`  ↳ usuarios.email agora aceita NULL (contas sem e-mail, login por CPF/matrícula)`);
+}
+
 async function runMigrations() {
   try {
     console.log("🔄 Verificando e aplicando migrações no MySQL...");
@@ -1545,6 +1565,10 @@ async function runMigrations() {
     // colidem no INSERT. Ver ensureDadosBancariosComposedKey() acima para a
     // condição de segurança (só roda se não houver empresa_id NULL).
     await ensureDadosBancariosComposedKey();
+
+    // 47. Inclusão de usuários (treinandos), 25/09/2026 — ver
+    // ensureEmailNullableUsuarios() acima.
+    await ensureEmailNullableUsuarios();
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
