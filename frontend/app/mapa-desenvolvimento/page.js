@@ -276,6 +276,7 @@ export default function MapaDesenvolvimentoPage() {
         jornada_id: Number(participanteForm.jornada_id),
         nome: participanteForm.nome,
         matricula: participanteForm.matricula || null,
+        cpf: participanteForm.cpf ? participanteForm.cpf.replace(/\D/g, "") : null,
         cliente: participanteForm.cliente || null,
         turma: participanteForm.turma || null,
         cargo: participanteForm.cargo || null,
