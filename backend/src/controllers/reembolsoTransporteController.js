@@ -45,6 +45,7 @@ const pool = require("../lib/db");
 const { getFrequenciaPorParticipante } = require("../services/presencaResolver");
 const { registrarAuditoria } = require("../services/auditoria");
 const { tenantScopeFor } = require("../lib/tenantScope");
+const { resolverPessoa } = require("../services/pessoasService");
 
 const CROSS_TENANT_ROLES = ["assistente_treinamento"];
 const SUBTIPO_AVALIACAO_TECNICA = "Avaliação Técnica";
@@ -238,6 +239,20 @@ async function salvarDadosBancarios(req, res) {
     // legítimo "reserva" esse CPF pro próprio tenant — a gravação legítima
     // seguinte fica bloqueada (visível, auditada) em vez de silenciosamente
     // sobrescrita, que já elimina o risco de vazamento/hijack de PIX.
+    // Cadastro único de pessoas (Fase 2, item 1 do plano — 28/09/2026): dono
+    // real da linha é sempre o tenant dono da turma (turma.empresa_id nunca
+    // é null), não o empresaId derivado do escopo (que é null de propósito
+    // pra Assistente de Treinamento, papel cross-tenant — ver comentário
+    // acima sobre a checagem de bloqueio, que continua usando o empresaId
+    // do escopo). Gravar null direto no INSERT deixaria de funcionar assim
+    // que dados_bancarios_colaborador tiver sua chave primária apertada
+    // para (empresa_id, cpf) NOT NULL (migrate.js, ensureDadosBancariosComposedKey) —
+    // e continuar gravando null é justamente o que impede essa migração de
+    // rodar (ela só aperta a chave quando não sobra nenhuma linha com
+    // empresa_id NULL). Mesmo padrão já usado em
+    // treinamentoParticipantesController.js (empresaRealDoTreinamento).
+    const empresaReal = turma.empresa_id;
+
     let salvos = 0;
     const bloqueados = [];
     for (const item of itens) {
@@ -256,17 +271,40 @@ async function salvarDadosBancarios(req, res) {
         }
       }
 
+      // Liga esta linha de dados bancários à mesma `pessoa` já usada pelas
+      // outras telas (participantes, jornada, coaching etc.), pelo mesmo
+      // CPF, dentro do tenant real da turma. `item.nome` vem sempre
+      // preenchido aqui — é o mesmo nome já exibido na lista nominal,
+      // originado de treinamento_participantes (ver montarListaNominal) —
+      // mas por segurança nunca deixa a gravação de banco/PIX falhar por
+      // causa disso: se resolverPessoa não puder rodar, grava sem
+      // pessoa_id (como sempre foi até aqui).
+      let pessoaId = null;
+      const nomeItem = item.nome && String(item.nome).trim();
+      if (nomeItem) {
+        try {
+          const { pessoa } = await resolverPessoa(
+            { empresaId: empresaReal, nome: nomeItem, cpf, cliente: turma.cliente },
+            pool
+          );
+          pessoaId = pessoa.id;
+        } catch (erroPessoa) {
+          console.error("[reembolsoTransporteController] resolverPessoa falhou:", erroPessoa.message || erroPessoa);
+        }
+      }
+
       await pool.query(
         `
         INSERT INTO dados_bancarios_colaborador
-          (cpf, nome, banco, agencia, operacao, conta, dv, tipo_chave_pix, chave_pix, atualizado_por, empresa_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (cpf, nome, banco, agencia, operacao, conta, dv, tipo_chave_pix, chave_pix, atualizado_por, empresa_id, pessoa_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           nome = COALESCE(VALUES(nome), nome),
           banco = VALUES(banco), agencia = VALUES(agencia), operacao = VALUES(operacao),
           conta = VALUES(conta), dv = VALUES(dv), tipo_chave_pix = VALUES(tipo_chave_pix),
           chave_pix = VALUES(chave_pix), atualizado_por = VALUES(atualizado_por),
-          empresa_id = COALESCE(dados_bancarios_colaborador.empresa_id, VALUES(empresa_id))
+          empresa_id = COALESCE(dados_bancarios_colaborador.empresa_id, VALUES(empresa_id)),
+          pessoa_id = COALESCE(VALUES(pessoa_id), dados_bancarios_colaborador.pessoa_id)
         `,
         [
           cpf,
@@ -279,7 +317,8 @@ async function salvarDadosBancarios(req, res) {
           item.tipo_chave_pix || null,
           item.chave_pix || null,
           req.user?.nome || null,
-          empresaId || null,
+          empresaReal,
+          pessoaId,
         ]
       );
       salvos += 1;
