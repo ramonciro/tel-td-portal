@@ -53,11 +53,18 @@ const perfilFormVazio = {
 function buildPerfilMaps(perfis) {
   const porJornadaParticipante = new Map();
   const porCoaching = new Map();
+  // Cadastro Único de Pessoas (Fase 2, item 5 — 28/09/2026): perfil também
+  // passa a ser encontrado pela identidade real (pessoa_id), não só pelo
+  // vínculo exato de onde foi cadastrado — mesma pessoa vista pela jornada
+  // ou pelo coaching (ver buildLinhas) agora enxerga o mesmo perfil dos dois
+  // lados, mesmo que o perfil tenha sido registrado a partir do outro.
+  const porPessoaId = new Map();
   (perfis || []).forEach((perfil) => {
     if (perfil.jornada_participante_id) porJornadaParticipante.set(perfil.jornada_participante_id, perfil);
     if (perfil.coaching_individual_id) porCoaching.set(perfil.coaching_individual_id, perfil);
+    if (perfil.pessoa_id) porPessoaId.set(perfil.pessoa_id, perfil);
   });
-  return { porJornadaParticipante, porCoaching };
+  return { porJornadaParticipante, porCoaching, porPessoaId };
 }
 
 function farolInfo(coaching) {
@@ -77,14 +84,30 @@ function badgeFarol(info) {
 
 function buildLinhas(participantes, coachings) {
   const porParticipanteId = new Map();
+  // Cadastro Único de Pessoas (Fase 2, item 5 — 28/09/2026): além do vínculo
+  // explícito por jornada_participante_id (quando alguém usa o campo
+  // "Vincular a alguém já em jornada" no cadastro do coaching), agora
+  // também casamos jornada + coaching pela identidade real (pessoa_id),
+  // resolvida via CPF em qualquer uma das duas pontas — ver
+  // coachingIndividualController.js e jornadaParticipantesController.js.
+  // Isso cobre o caso de alguém que entrou no coaching como "solo" (sem usar
+  // aquele campo) mas é a mesma pessoa, mesmo CPF, de uma jornada coletiva:
+  // antes apareciam como duas linhas soltas; agora aparecem como "ambos".
+  const porPessoaId = new Map();
   const semJornada = [];
   (coachings || []).forEach((c) => {
     if (c.jornada_participante_id) porParticipanteId.set(c.jornada_participante_id, c);
+    else if (c.pessoa_id) porPessoaId.set(c.pessoa_id, c);
     else semJornada.push(c);
   });
 
+  const jaUsados = new Set();
   const linhasJornada = (participantes || []).map((p) => {
-    const coaching = porParticipanteId.get(p.id) || null;
+    let coaching = porParticipanteId.get(p.id) || null;
+    if (!coaching && p.pessoa_id && porPessoaId.has(p.pessoa_id)) {
+      coaching = porPessoaId.get(p.pessoa_id);
+      jaUsados.add(coaching.id);
+    }
     return {
       key: `jp-${p.id}`,
       nome: p.nome,
@@ -93,25 +116,30 @@ function buildLinhas(participantes, coachings) {
       jornadaNome: p.jornada_nome,
       statusJornada: p.status_jornada,
       coaching,
+      pessoaId: p.pessoa_id || coaching?.pessoa_id || null,
+      cpf: p.cpf || coaching?.cpf || null,
       vinculo: coaching ? "ambos" : "jornada",
     };
   });
 
-  const linhasCoachingSolo = semJornada.map((c) => ({
-    key: `ci-${c.id}`,
-    nome: c.nome,
-    cliente: c.cliente || "Sem cliente",
-    jornadaParticipanteId: null,
-    jornadaNome: null,
-    statusJornada: null,
-    coaching: c,
-    vinculo: "coaching",
-  }));
+  const linhasCoachingSolo = semJornada
+    .concat([...porPessoaId.values()].filter((c) => !jaUsados.has(c.id)))
+    .map((c) => ({
+      key: `ci-${c.id}`,
+      nome: c.nome,
+      cliente: c.cliente || "Sem cliente",
+      jornadaParticipanteId: null,
+      jornadaNome: null,
+      statusJornada: null,
+      coaching: c,
+      pessoaId: c.pessoa_id || null,
+      vinculo: "coaching",
+    }));
 
   return [...linhasJornada, ...linhasCoachingSolo].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
-const formVazio = { nome: "", cliente: "", cargo: "", cadencia_dias: 30, jornada_participante_id: "" };
+const formVazio = { nome: "", cliente: "", cargo: "", cadencia_dias: 30, jornada_participante_id: "", cpf: "" };
 
 export default function TripulacaoPage() {
   const [participantes, setParticipantes] = useState([]);
@@ -174,16 +202,18 @@ export default function TripulacaoPage() {
     () => (filtro === "todos" ? linhas : linhas.filter((l) => l.vinculo === filtro)),
     [linhas, filtro]
   );
-  const { porJornadaParticipante: perfilPorJornada, porCoaching: perfilPorCoaching } = useMemo(
-    () => buildPerfilMaps(perfis),
-    [perfis]
-  );
+  const {
+    porJornadaParticipante: perfilPorJornada,
+    porCoaching: perfilPorCoaching,
+    porPessoaId: perfilPorPessoa,
+  } = useMemo(() => buildPerfilMaps(perfis), [perfis]);
 
   function perfilDaLinha(linha) {
     if (linha.coaching && perfilPorCoaching.has(linha.coaching.id)) return perfilPorCoaching.get(linha.coaching.id);
     if (linha.jornadaParticipanteId && perfilPorJornada.has(linha.jornadaParticipanteId)) {
       return perfilPorJornada.get(linha.jornadaParticipanteId);
     }
+    if (linha.pessoaId && perfilPorPessoa.has(linha.pessoaId)) return perfilPorPessoa.get(linha.pessoaId);
     return null;
   }
 
@@ -249,6 +279,11 @@ export default function TripulacaoPage() {
         cargo: "",
         cadencia_dias: 30,
         jornada_participante_id: String(linhaJornada.jornadaParticipanteId),
+        // Cadastro Único de Pessoas (Fase 2, item 5 — 28/09/2026): ao abrir a
+        // partir de uma linha de jornada, o CPF dela (se já tiver) vem junto
+        // — não precisa digitar de novo, e o backend também reaproveita esse
+        // CPF mesmo se este campo ficar vazio (ver resolverIdentidadeCoaching).
+        cpf: linhaJornada.cpf || "",
       });
     } else {
       setForm(formVazio);
@@ -266,6 +301,7 @@ export default function TripulacaoPage() {
       cargo: coaching.cargo || "",
       cadencia_dias: coaching.cadencia_dias || 30,
       jornada_participante_id: coaching.jornada_participante_id ? String(coaching.jornada_participante_id) : "",
+      cpf: coaching.cpf || "",
     });
     setFormAberto(true);
   }
@@ -308,6 +344,7 @@ export default function TripulacaoPage() {
             cargo: form.cargo || null,
             cadencia_dias: Number(form.cadencia_dias || 30),
             jornada_participante_id: form.jornada_participante_id || null,
+            cpf: form.cpf ? form.cpf.replace(/\D/g, "") : null,
           }),
         });
       } else {
@@ -319,6 +356,7 @@ export default function TripulacaoPage() {
             cargo: form.cargo || null,
             cadencia_dias: Number(form.cadencia_dias || 30),
             jornada_participante_id: form.jornada_participante_id || null,
+            cpf: form.cpf ? form.cpf.replace(/\D/g, "") : null,
           }),
         });
       }
@@ -482,6 +520,16 @@ export default function TripulacaoPage() {
                 style={campoInput}
                 value={form.cadencia_dias}
                 onChange={(e) => setForm({ ...form, cadencia_dias: e.target.value })}
+              />
+            </label>
+            <label style={campoLabel}>
+              CPF (opcional)
+              <input
+                style={campoInput}
+                value={form.cpf}
+                onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                placeholder="Somente números"
+                maxLength={14}
               />
             </label>
             <label style={campoLabel}>
