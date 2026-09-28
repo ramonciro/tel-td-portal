@@ -1674,6 +1674,19 @@ async function runMigrations() {
     // cadastro por falta dela.
     await ensureColumn("jornada_participantes", "cpf", "VARCHAR(11) NULL");
 
+    // 51. Cadastro único de pessoas — Fase 2, item 5 (28/09/2026): Tripulação
+    // (Metodologia) → Coaching individual + Perfil comportamental. Mesmo
+    // padrão do passo 50: `coaching_individual` e `pessoas_metodologia` já
+    // tinham `pessoa_id` desde a Fase 0 (passo 45), nunca preenchido — nenhum
+    // dos dois formulários tinha campo de CPF. Adiciona `cpf` (opcional) só
+    // em coaching_individual — pessoas_metodologia nunca teve formulário de
+    // criação independente (o perfil comportamental só é criado a partir de
+    // uma linha já existente na Tripulação, jornada ou coaching), então seu
+    // pessoa_id passa a ser herdado do vínculo (coaching_individual_id ou
+    // jornada_participante_id) em vez de exigir CPF de novo — ver
+    // perfilComportamentalController.js.
+    await ensureColumn("coaching_individual", "cpf", "VARCHAR(11) NULL");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
