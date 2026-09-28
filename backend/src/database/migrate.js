@@ -183,6 +183,75 @@ async function ensureEmailNullableUsuarios() {
   console.log(`  ↳ usuarios.email agora aceita NULL (contas sem e-mail, login por CPF/matrícula)`);
 }
 
+// Achado durante o teste local do item "Em seguida" de pessoa_id (25/09/2026,
+// mesmo dia da entrega de inclusão de usuários): respostas_avaliativas tem
+// UNIQUE KEY (material_id, treinando_nome) — uma trava de banco, não só de
+// aplicação. Simulei dois treinandos homônimos respondendo a MESMA prova: o
+// segundo "INSERT ... ON DUPLICATE KEY UPDATE" (ver
+// respostasAvaliativasController.js) bateu nessa chave por nome igual e
+// SOBRESCREVEU silenciosamente a resposta do primeiro — os dois receberam
+// "sucesso", mas só a nota do segundo sobrou no banco. Mais grave que o
+// vazamento de leitura que este pacote fecha: aqui era perda de dado.
+//
+// Correção: chave nova por identidade (material_id, pessoa_id) protege quem
+// já tem pessoa_id (não colide mais por coincidência de nome). A chave
+// antiga não pode simplesmente sair — continua sendo a única proteção contra
+// duplicidade para conta antiga sem pessoa_id — então vira uma chave sobre
+// uma coluna gerada (treinando_nome_legado) que só carrega o nome quando
+// pessoa_id é NULL; para linha com pessoa_id preenchido ela mesma é NULL, e
+// MySQL/MariaDB não considera múltiplos NULL colidentes num índice único —
+// ou seja, linhas de pessoas diferentes nunca mais colidem só por
+// coincidência de nome, e linhas antigas continuam protegidas do jeito que
+// já estavam.
+async function ensureRespostasAvaliativasChavePorPessoa() {
+  const [colunaGerada] = await pool.query(
+    `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'respostas_avaliativas'
+       AND COLUMN_NAME = 'treinando_nome_legado'`
+  );
+  if (colunaGerada[0].c === 0) {
+    await pool.query(
+      `ALTER TABLE respostas_avaliativas
+       ADD COLUMN treinando_nome_legado VARCHAR(255)
+       GENERATED ALWAYS AS (CASE WHEN pessoa_id IS NULL THEN treinando_nome ELSE NULL END) VIRTUAL`
+    );
+    console.log(`  ↳ coluna gerada adicionada: respostas_avaliativas.treinando_nome_legado`);
+  }
+
+  const [chaveAntiga] = await pool.query(
+    `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'respostas_avaliativas'
+       AND INDEX_NAME = 'uniq_material_treinando'`
+  );
+  if (chaveAntiga[0].c > 0) {
+    await pool.query(`ALTER TABLE respostas_avaliativas DROP INDEX uniq_material_treinando`);
+  }
+
+  const [chaveLegado] = await pool.query(
+    `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'respostas_avaliativas'
+       AND INDEX_NAME = 'uniq_material_treinando_legado'`
+  );
+  if (chaveLegado[0].c === 0) {
+    await pool.query(
+      `ALTER TABLE respostas_avaliativas ADD UNIQUE KEY uniq_material_treinando_legado (material_id, treinando_nome_legado)`
+    );
+    console.log(`  ↳ chave única adicionada: respostas_avaliativas (material_id, treinando_nome_legado)`);
+  }
+
+  const [chavePessoa] = await pool.query(
+    `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'respostas_avaliativas'
+       AND INDEX_NAME = 'uniq_material_pessoa'`
+  );
+  if (chavePessoa[0].c === 0) {
+    await pool.query(
+      `ALTER TABLE respostas_avaliativas ADD UNIQUE KEY uniq_material_pessoa (material_id, pessoa_id)`
+    );
+    console.log(`  ↳ chave única adicionada: respostas_avaliativas (material_id, pessoa_id)`);
+  }
+}
+
 async function runMigrations() {
   try {
     console.log("🔄 Verificando e aplicando migrações no MySQL...");
@@ -1569,6 +1638,31 @@ async function runMigrations() {
     // 47. Inclusão de usuários (treinandos), 25/09/2026 — ver
     // ensureEmailNullableUsuarios() acima.
     await ensureEmailNullableUsuarios();
+
+    // 48. pessoa_id em avaliacoes_treinandos e respostas_avaliativas
+    // (25/09/2026, "Em seguida" combinado com o Ramon depois da entrega de
+    // inclusão de usuários) — essas duas tabelas guardam `treinando_nome`
+    // como string solta e os controllers usavam essa string pra decidir "é
+    // este treinando mesmo?" (isolar as respostas de NPS/prova de um
+    // treinando das dos colegas). Duas pessoas com o mesmo nome, em
+    // qualquer uma das duas tabelas, colidiam nessa comparação — isso já
+    // estava sinalizado como risco de LGPD no relatório de 25/09/2026 e não
+    // fazia parte das três decisões daquela entrega. Mesmo padrão das seis
+    // tabelas do passo 45: pessoa_id fica opcional (linha antiga sem
+    // pessoa_id continua funcionando pelo nome, ver comparação nos
+    // controllers), nunca sobrescreve treinando_nome (que continua sendo o
+    // retrato exibido na tela).
+    const TABELAS_AVALIACAO_COM_PESSOA = ["avaliacoes_treinandos", "respostas_avaliativas"];
+    for (const tabela of TABELAS_AVALIACAO_COM_PESSOA) {
+      await ensureColumn(tabela, "pessoa_id", "INT NULL");
+      await ensurePessoaIndex(tabela);
+      await ensurePessoaForeignKey(tabela);
+    }
+
+    // 49. Chave única de respostas_avaliativas por identidade, não mais por
+    // nome — ver ensureRespostasAvaliativasChavePorPessoa() acima (achado
+    // testando o passo 48, mesmo dia).
+    await ensureRespostasAvaliativasChavePorPessoa();
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
