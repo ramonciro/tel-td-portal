@@ -1664,6 +1664,16 @@ async function runMigrations() {
     // testando o passo 48, mesmo dia).
     await ensureRespostasAvaliativasChavePorPessoa();
 
+    // 50. Cadastro único de pessoas — Fase 2, item 4 (28/09/2026): Mapa de
+    // Desenvolvimento → Jornada (Tripulação). `jornada_participantes` já
+    // tinha `pessoa_id` desde a Fase 0 (passo 45), mas nunca era
+    // preenchido — o formulário e a planilha de importação não tinham
+    // campo de CPF nenhum (só nome/matrícula), então não tinha como
+    // resolver a pessoa com confiança. Adiciona a coluna `cpf`, opcional,
+    // mesmo padrão de treinamento_participantes: nunca bloqueia o
+    // cadastro por falta dela.
+    await ensureColumn("jornada_participantes", "cpf", "VARCHAR(11) NULL");
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
