@@ -374,6 +374,15 @@ export default function PortalShell({
                   <strong style={envValue}>Gestão Executiva de T&amp;D</strong>
                 </div>
 
+                {/* Achado na revisão página a época 07/09/2026 (item 5,
+                    pendencias-revisao-paginas-2026-09.md): a tela de trocar
+                    senha existia e funcionava, mas não tinha nenhum link de
+                    acesso em lugar nenhum do app. Colocado aqui, junto do
+                    resto da área de conta do usuário. */}
+                <Link href="/alterar-senha" style={accountLinkMobile}>
+                  Alterar senha
+                </Link>
+
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -439,6 +448,14 @@ export default function PortalShell({
                 </>
               )}
             </div>
+
+            {/* Mesmo achado da versão mobile acima (item 5,
+                pendencias-revisao-paginas-2026-09.md) — link de acesso à
+                troca de senha, que antes só existia digitando a URL de
+                cabeça. */}
+            <Link href="/alterar-senha" style={accountLink}>
+              Alterar senha
+            </Link>
 
             <button
               type="button"
@@ -576,6 +593,20 @@ const logoutButton = {
   padding: "12px 14px",
   cursor: "pointer",
   fontWeight: 800,
+};
+
+// Item 5, pendencias-revisao-paginas-2026-09.md — link discreto pra troca de
+// senha, junto do "Sair do portal" na área de conta do usuário.
+const accountLink = {
+  display: "block",
+  textAlign: "center",
+  textDecoration: "none",
+  border: "1px solid transparent",
+  borderRadius: 14,
+  color: "rgba(255,255,255,0.72)",
+  padding: "10px 14px",
+  fontWeight: 600,
+  fontSize: 13,
 };
 
 const main = {
@@ -723,4 +754,16 @@ const logoutButtonMobile = {
   padding: "12px 14px",
   cursor: "pointer",
   fontWeight: 800,
+};
+
+const accountLinkMobile = {
+  display: "block",
+  textAlign: "center",
+  textDecoration: "none",
+  border: "1px solid transparent",
+  borderRadius: 14,
+  color: "rgba(255,255,255,0.72)",
+  padding: "10px 14px",
+  fontWeight: 600,
+  fontSize: 13,
 };
