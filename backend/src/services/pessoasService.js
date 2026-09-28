@@ -115,4 +115,20 @@ async function resolverPessoa({ empresaId, nome, cpf, matricula, cliente }, conn
   return { pessoa: novaPessoa[0], criada: true, casadaPor: null };
 }
 
-module.exports = { resolverPessoa, normalizarCpf, normalizarNome };
+/**
+ * pessoaIdDoUsuario() — 25/09/2026, item "Em seguida" da entrega de
+ * inclusão de usuários (treinandos). Resolve o pessoa_id da conta logada
+ * (usuarios.pessoa_id) a partir do id do usuário que já vem no JWT
+ * (req.user.id) — usado pelos controllers de avaliação (NPS, provas) pra
+ * comparar identidade do treinando por pessoa_id em vez de nome exato.
+ * Retorna null pra conta antiga sem pessoa_id (criada antes da Fase 0 ou à
+ * mão, sem passar pela importação de turma) — quem chama deve cair de volta
+ * na comparação por nome nesse caso, exatamente como já funcionava.
+ */
+async function pessoaIdDoUsuario(userId, conn = pool) {
+  if (!userId) return null;
+  const [rows] = await conn.query("SELECT pessoa_id FROM usuarios WHERE id = ? LIMIT 1", [userId]);
+  return rows[0]?.pessoa_id || null;
+}
+
+module.exports = { resolverPessoa, normalizarCpf, normalizarNome, pessoaIdDoUsuario };
