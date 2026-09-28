@@ -2,8 +2,9 @@ const XLSX = require("xlsx");
 const db = require("../lib/db");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { tenantScopeFor } = require("../lib/tenantScope");
-const { resolverPessoa } = require("../services/pessoasService");
+const { resolverPessoa, pessoaIdDoUsuario } = require("../services/pessoasService");
 const { garantirUsuarioTreinando } = require("../services/provisionamentoUsuariosService");
+const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga participantes/chamada de qualquer
@@ -146,14 +147,20 @@ async function getParticipantesByTreinamento(req, res) {
     // participantes — dado pessoal (LGPD) sem necessidade. Mesmo padrão de
     // "não é você, não vê" já usado em NPS/avaliações: sem matrícula na
     // turma, 404 (igual a turma não encontrada, não revela que ela existe).
+    // 25/09/2026: casamento trocado de nome exato pra pessoa_id quando a
+    // conta logada tem um (ver identidadeTreinando.js) — mesmo motivo do
+    // NPS/provas: nome sozinho deixava dois treinandos homônimos se
+    // confundirem nesta checagem.
     if (perfil === "treinando") {
       const nomeUsuario = String(req.user?.nome || "").trim();
       if (!nomeUsuario) {
         return res.status(400).json({ ok: false, message: "Usuário não identificado" });
       }
+      const pessoaId = await pessoaIdDoUsuario(req.user?.id);
+      const condTp = condicaoIdentidade("tp", "nome", pessoaId, nomeUsuario);
       const [matriculado] = await db.query(
-        `SELECT id FROM treinamento_participantes WHERE treinamento_id = ? AND nome = ? LIMIT 1`,
-        [id, nomeUsuario]
+        `SELECT tp.id FROM treinamento_participantes tp WHERE tp.treinamento_id = ? AND ${condTp.sql} LIMIT 1`,
+        [id, ...condTp.params]
       );
       if (!matriculado.length) {
         return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });

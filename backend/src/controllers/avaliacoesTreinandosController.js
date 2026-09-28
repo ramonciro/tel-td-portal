@@ -1,4 +1,6 @@
 const pool = require("../lib/db");
+const { pessoaIdDoUsuario } = require("../services/pessoasService");
+const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 
 async function listAvaliacoesTreinandos(req, res) {
   try {
@@ -31,12 +33,18 @@ async function listAvaliacoesTreinandos(req, res) {
     // cliente, mesmo que a tela só mostre esse dado pra coordenador/
     // supervisor/instrutor. Agora, pro perfil treinando, a consulta só
     // retorna as respostas que ele mesmo enviou.
+    //
+    // 25/09/2026: comparação trocada de nome exato pra pessoa_id (ver
+    // identidadeTreinando.js) — fecha o risco de dois treinandos com o
+    // mesmo nome verem a resposta um do outro.
     if (perfil === "treinando") {
       if (!nomeUsuario) {
         return res.status(400).json({ ok: false, message: "Usuário não identificado" });
       }
-      wheres.push("at.treinando_nome = ?");
-      params.push(nomeUsuario);
+      const pessoaId = await pessoaIdDoUsuario(req.user?.id);
+      const condicao = condicaoIdentidade("at", "treinando_nome", pessoaId, nomeUsuario);
+      wheres.push(condicao.sql);
+      params.push(...condicao.params);
     }
 
     const whereClause = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
@@ -82,10 +90,16 @@ async function listNpsDisponivel(req, res) {
       });
     }
 
-    // Para treinando: só mostra turmas em que ele participa e ainda não respondeu
+    // Para treinando: só mostra turmas em que ele participa e ainda não
+    // respondeu. 25/09/2026: os dois casamentos (participa da turma / já
+    // respondeu) agora preferem pessoa_id a nome exato (ver
+    // identidadeTreinando.js) — mesma trava de LGPD do GET acima.
     if (perfil === "treinando") {
+      const pessoaId = await pessoaIdDoUsuario(req.user?.id);
+      const condTp = condicaoIdentidade("tp", "nome", pessoaId, nomeUsuario);
+      const condAt = condicaoIdentidade("at", "treinando_nome", pessoaId, nomeUsuario);
       const tenantWhere = req.empresaId ? " AND t.empresa_id = ?" : "";
-      const params = req.empresaId ? [nomeUsuario, nomeUsuario, req.empresaId] : [nomeUsuario, nomeUsuario];
+      const params = [...condTp.params, ...condAt.params, ...(req.empresaId ? [req.empresaId] : [])];
 
       const [rows] = await pool.query(
         `
@@ -100,10 +114,10 @@ async function listNpsDisponivel(req, res) {
         FROM treinamentos t
         INNER JOIN treinamento_participantes tp
           ON tp.treinamento_id = t.id
-         AND tp.nome = ?
+         AND ${condTp.sql}
         LEFT JOIN avaliacoes_treinandos at
           ON at.treinamento_id = t.id
-         AND at.treinando_nome = ?
+         AND ${condAt.sql}
         WHERE at.id IS NULL${tenantWhere}
         ORDER BY COALESCE(t.data_fim, t.data_inicio, t.data) DESC, t.id DESC
         `,
@@ -150,8 +164,16 @@ async function createAvaliacaoTreinando(req, res) {
 
     let { treinamento_id, treinando_nome, nota_nps, comentario } = req.body || {};
 
+    // 25/09/2026: pessoa_id só é gravado quando é o próprio treinando se
+    // auto-registrando (é o único caso em que sabemos, com certeza, que
+    // "quem está logado" e "de quem é este registro" são a mesma pessoa —
+    // quando um coordenador registra em nome de um treinando via nome
+    // digitado, continuamos sem essa garantia, então pessoa_id fica NULL
+    // como já era o comportamento até aqui).
+    let pessoaId = null;
     if (perfil === "treinando") {
       treinando_nome = nomeUsuario;
+      pessoaId = await pessoaIdDoUsuario(req.user?.id);
     }
 
     if (!treinamento_id || !treinando_nome || nota_nps === undefined || nota_nps === null) {
@@ -180,16 +202,18 @@ async function createAvaliacaoTreinando(req, res) {
       }
     }
 
-    // Se for treinando, valida se ele realmente pertence à turma
+    // Se for treinando, valida se ele realmente pertence à turma (pessoa_id
+    // quando disponível, nome como antes pra conta/participante antigo).
     if (perfil === "treinando") {
+      const condTp = condicaoIdentidade("tp", "nome", pessoaId, nomeUsuario);
       const [participa] = await pool.query(
         `
-        SELECT id
-        FROM treinamento_participantes
-        WHERE treinamento_id = ? AND nome = ?
+        SELECT id AS id
+        FROM treinamento_participantes tp
+        WHERE tp.treinamento_id = ? AND ${condTp.sql}
         LIMIT 1
         `,
-        [treinamento_id, nomeUsuario]
+        [treinamento_id, ...condTp.params]
       );
 
       if (!participa.length) {
@@ -200,15 +224,22 @@ async function createAvaliacaoTreinando(req, res) {
       }
     }
 
+    // Checagem de duplicidade: usa pessoa_id quando a submissão é do
+    // próprio treinando (mesma lógica de identidade acima); pra registro
+    // feito por coordenador em nome de alguém, continua pelo nome exato,
+    // como sempre foi.
+    const condDuplicado = pessoaId
+      ? condicaoIdentidade("avaliacoes_treinandos", "treinando_nome", pessoaId, treinando_nome)
+      : { sql: "avaliacoes_treinandos.treinando_nome = ?", params: [treinando_nome] };
     const [duplicado] = await pool.query(
       `
       SELECT id
       FROM avaliacoes_treinandos
       WHERE treinamento_id = ?
-        AND treinando_nome = ?
+        AND ${condDuplicado.sql}
       LIMIT 1
       `,
-      [treinamento_id, treinando_nome]
+      [treinamento_id, ...condDuplicado.params]
     );
 
     if (duplicado.length) {
@@ -221,10 +252,10 @@ async function createAvaliacaoTreinando(req, res) {
     const [result] = await pool.query(
       `
       INSERT INTO avaliacoes_treinandos
-      (treinamento_id, treinando_nome, nota_nps, comentario)
-      VALUES (?, ?, ?, ?)
+      (treinamento_id, treinando_nome, nota_nps, comentario, pessoa_id)
+      VALUES (?, ?, ?, ?, ?)
       `,
-      [treinamento_id, treinando_nome, nota_nps, comentario || null]
+      [treinamento_id, treinando_nome, nota_nps, comentario || null, pessoaId]
     );
 
     return res.status(201).json({

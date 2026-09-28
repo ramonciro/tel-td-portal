@@ -1,5 +1,7 @@
 const pool = require("../lib/db");
 const { usuarioTemAcessoAoCliente, filtroClientesSQL } = require("../lib/acessoCliente");
+const { pessoaIdDoUsuario } = require("../services/pessoasService");
+const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 
 // materiais_avaliativos não tem empresa_id própria — isolamento via JOIN
 // até treinamentos, mesmo padrão do restante do módulo de avaliações.
@@ -89,8 +91,15 @@ async function listMateriaisAvaliativosDisponiveis(req, res) {
         return res.status(400).json({ ok: false, message: "Usuário não identificado" });
       }
 
+      // 25/09/2026: os dois casamentos (participa da turma / já respondeu)
+      // preferem pessoa_id a nome exato quando a conta logada tem um (ver
+      // identidadeTreinando.js) — mesma trava de LGPD do NPS.
+      const pessoaId = await pessoaIdDoUsuario(req.user?.id);
+      const condTp = condicaoIdentidade("tp", "nome", pessoaId, nomeUsuario);
+      const condRa = condicaoIdentidade("ra", "treinando_nome", pessoaId, nomeUsuario);
+
       const filtros = [];
-      const params = [nomeUsuario, nomeUsuario];
+      const params = [...condTp.params, ...condRa.params];
       if (req.empresaId) { filtros.push("t.empresa_id = ?"); params.push(req.empresaId); }
       if (treinamentoIdFiltro) { filtros.push("m.treinamento_id = ?"); params.push(treinamentoIdFiltro); }
       const where = filtros.length ? ` AND ${filtros.join(" AND ")}` : "";
@@ -103,8 +112,8 @@ async function listMateriaisAvaliativosDisponiveis(req, res) {
           t.tema, t.cliente
         FROM materiais_avaliativos m
         INNER JOIN treinamentos t ON t.id = m.treinamento_id
-        INNER JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND tp.nome = ?
-        LEFT JOIN respostas_avaliativas ra ON ra.material_id = m.id AND ra.treinando_nome = ?
+        INNER JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND ${condTp.sql}
+        LEFT JOIN respostas_avaliativas ra ON ra.material_id = m.id AND ${condRa.sql}
         WHERE ra.id IS NULL${where}
         ORDER BY m.id DESC
         `,

@@ -1,4 +1,6 @@
 const pool = require("../lib/db");
+const { pessoaIdDoUsuario } = require("../services/pessoasService");
+const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 
 // Isolamento por tenant via JOIN até treinamentos (respostas_avaliativas não
 // tem empresa_id própria). Sem isso, respostas de prova de outras empresas
@@ -47,10 +49,19 @@ async function listRespostasAvaliativas(req, res) {
     // as dos colegas (respostas_json inclusive). Sem isso, qualquer
     // treinando autenticado que chamasse este endpoint recebia as respostas
     // de todos os treinandos da empresa.
-    const filtroTreinando =
-      perfil === "treinando"
-        ? ` AND ra.treinando_nome = ${pool.escape(nomeUsuario)}`
-        : "";
+    //
+    // 25/09/2026: comparação trocada de nome exato pra pessoa_id quando
+    // disponível (ver identidadeTreinando.js / relatório desta entrega) —
+    // esta função monta SQL com valores escapados inline (pool.escape),
+    // não com "?", então a condição é montada aqui em vez de reusar
+    // condicaoIdentidade() (que devolve placeholders).
+    let filtroTreinando = "";
+    if (perfil === "treinando") {
+      const pessoaId = await pessoaIdDoUsuario(req.user?.id);
+      filtroTreinando = pessoaId
+        ? ` AND (ra.pessoa_id = ${pool.escape(pessoaId)} OR (ra.pessoa_id IS NULL AND ra.treinando_nome = ${pool.escape(nomeUsuario)}))`
+        : ` AND ra.treinando_nome = ${pool.escape(nomeUsuario)}`;
+    }
 
     const [rows] = await pool.query(`
       SELECT
@@ -99,11 +110,16 @@ async function createRespostaAvaliativa(req, res) {
     // Mesma trava de identidade já usada no NPS (avaliacoesTreinandosController):
     // treinando não escolhe em nome de quem responde, é sempre o próprio
     // usuário logado — evita um treinando registrar resposta em nome de outro.
+    // 25/09/2026: pessoa_id só é gravado neste caso de auto-registro, pelo
+    // mesmo motivo do NPS — é o único caso em que "logado" e "dono do
+    // registro" são garantidamente a mesma pessoa.
+    let pessoaId = null;
     if (perfil === "treinando") {
       if (!nomeUsuario) {
         return res.status(400).json({ ok: false, message: "Usuário não identificado" });
       }
       treinando_nome = nomeUsuario;
+      pessoaId = await pessoaIdDoUsuario(req.user?.id);
     }
 
     if (!material_id || !treinamento_id || !treinando_nome) {
@@ -122,10 +138,12 @@ async function createRespostaAvaliativa(req, res) {
     }
 
     if (perfil === "treinando") {
-      // Valida se o treinando realmente participa da turma — mesma regra do NPS.
+      // Valida se o treinando realmente participa da turma — mesma regra do
+      // NPS, pessoa_id quando disponível (ver identidadeTreinando.js).
+      const condTp = condicaoIdentidade("tp", "nome", pessoaId, nomeUsuario);
       const [participa] = await pool.query(
-        `SELECT id FROM treinamento_participantes WHERE treinamento_id = ? AND nome = ? LIMIT 1`,
-        [treinamento_id, nomeUsuario]
+        `SELECT tp.id FROM treinamento_participantes tp WHERE tp.treinamento_id = ? AND ${condTp.sql} LIMIT 1`,
+        [treinamento_id, ...condTp.params]
       );
       if (!participa.length) {
         return res.status(403).json({
@@ -135,9 +153,10 @@ async function createRespostaAvaliativa(req, res) {
       }
 
       // Uma tentativa por prova/simulado — evita refazer até acertar tudo.
+      const condDup = condicaoIdentidade("respostas_avaliativas", "treinando_nome", pessoaId, nomeUsuario);
       const [duplicado] = await pool.query(
-        `SELECT id FROM respostas_avaliativas WHERE material_id = ? AND treinando_nome = ? LIMIT 1`,
-        [material_id, nomeUsuario]
+        `SELECT id FROM respostas_avaliativas WHERE material_id = ? AND ${condDup.sql} LIMIT 1`,
+        [material_id, ...condDup.params]
       );
       if (duplicado.length) {
         return res.status(400).json({
@@ -158,15 +177,17 @@ async function createRespostaAvaliativa(req, res) {
         acertos,
         total_questoes,
         percentual,
-        nota_final
+        nota_final,
+        pessoa_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         respostas_json = VALUES(respostas_json),
         acertos = VALUES(acertos),
         total_questoes = VALUES(total_questoes),
         percentual = VALUES(percentual),
         nota_final = VALUES(nota_final),
+        pessoa_id = VALUES(pessoa_id),
         atualizado_em = CURRENT_TIMESTAMP
       `,
       [
@@ -180,6 +201,7 @@ async function createRespostaAvaliativa(req, res) {
         Number(total_questoes || 0),
         Number(percentual || 0),
         Number(nota_final || 0),
+        pessoaId,
       ]
     );
 

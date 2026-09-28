@@ -191,6 +191,17 @@ async function createEmpresa(req, res) {
       return res.status(400).json({ ok: false, message: 'nome, admin_nome e admin_email são obrigatórios.' });
     }
 
+    // Achado na revisão página a página de 07/09/2026 (item 4,
+    // pendencias-revisao-paginas-2026-09.md): só a senha *gerada*
+    // automaticamente (gerarSenha()) tinha um padrão de tamanho — uma senha
+    // digitada manualmente aqui não passava por nenhuma validação, dava pra
+    // criar um tenant com senha de administrador de 1 caractere só. Mesmo
+    // mínimo já usado em POST /auth/alterar-senha (6+ caracteres).
+    if (admin_senha && String(admin_senha).length < 6) {
+      await conn.rollback(); conn.release();
+      return res.status(400).json({ ok: false, message: 'A senha do administrador deve ter pelo menos 6 caracteres.' });
+    }
+
     // 1. Cria empresa com colunas mínimas garantidas
     const [empResult] = await conn.query(
       'INSERT INTO empresas (nome, ativo) VALUES (?, 1)',
