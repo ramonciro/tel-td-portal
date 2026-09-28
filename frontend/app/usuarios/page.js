@@ -268,6 +268,13 @@ function emptyForm() {
   return {
     nome: "", email: "", senha: "", perfil: "", cliente: "",
     ativo: "1", troca_senha_obrigatoria: "1",
+    // Cadastro único de pessoas (Fase 2, item 2 — 28/09/2026): CPF opcional,
+    // qualquer perfil — quando preenchido, o backend liga esta conta à
+    // pessoa correspondente (cria se não existir). `usuarios` não guarda
+    // CPF nenhum, então ao editar uma conta já vinculada este campo volta
+    // vazio (não hoje mostramos o CPF já vinculado) — deixar em branco não
+    // desfaz nem altera um vínculo já existente.
+    cpf: "",
   };
 }
 
@@ -311,6 +318,7 @@ function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onF
         troca_senha_obrigatoria: Number(form.troca_senha_obrigatoria),
       };
       if (form.senha) payload.senha = form.senha;
+      if (form.cpf && form.cpf.replace(/\D/g, "")) payload.cpf = form.cpf.replace(/\D/g, "");
 
       if (modo === "editar") {
         await apiFetch(`/usuarios/${usuario.id}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -359,6 +367,15 @@ function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onF
               <option value="">Selecione…</option>
               {opcoesPerfil.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
+          </MField>
+          <MField label="CPF (opcional)">
+            <input
+              value={form.cpf}
+              onChange={campo("cpf")}
+              style={mInput}
+              placeholder="Somente números"
+              maxLength={14}
+            />
           </MField>
 
           <MField label="Operações vinculadas" full>
