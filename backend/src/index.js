@@ -12,6 +12,7 @@ const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
 const { escopoPerfilFor } = require("./lib/perfilScope");
+const { resolverPessoa } = require("./services/pessoasService");
 
 // Fase 2 (roadmap de competitividade): automações por e-mail — resumo diário
 // de pendências para coordenadores e lembrete de aula do dia seguinte para
@@ -470,6 +471,12 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
   const perfilAtor = String(req.user?.perfil || "").toLowerCase();
   const atorEhSuperAdmin = perfilAtor === "super_admin";
 
+  // `pessoa_id` só pode ser escrito por este próprio hook (ver mais abaixo,
+  // a partir do CPF) — nunca aceito direto do corpo da requisição, senão
+  // qualquer chamada à API conseguiria ligar a conta a qualquer pessoa de
+  // qualquer empresa só informando o id.
+  delete dados.pessoa_id;
+
   if ("perfil" in dados) {
     const perfilNovo = String(dados.perfil || "").toLowerCase();
     if (perfilNovo === "super_admin" && !atorEhSuperAdmin) {
@@ -489,6 +496,36 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
   if ("senha" in dados && dados.senha) {
     dados.senha = await bcrypt.hash(String(dados.senha), 10);
   }
+
+  // Cadastro único de pessoas (Fase 2, item 2 — 28/09/2026): campo opcional
+  // de CPF na Gestão de Usuários (qualquer perfil — decisão do Ramon).
+  // `cpf` nunca é coluna de `usuarios` (por isso não está em `fields`,
+  // logo nunca vai pro INSERT/UPDATE sozinho) — serve só, de passagem,
+  // pra resolver/ligar a pessoa correspondente via `resolverPessoa()`,
+  // o mesmo mecanismo já usado no resto do Cadastro Único. Sem CPF
+  // informado, nada muda: conta continua sem pessoa_id, login por e-mail,
+  // exatamente como sempre foi.
+  const cpfInformado = dados.cpf != null ? String(dados.cpf).replace(/\D/g, "") : "";
+  if (cpfInformado) {
+    const nomeParaResolver = ("nome" in dados ? dados.nome : ctx.antes?.nome) || null;
+    if (nomeParaResolver && req.empresaId) {
+      try {
+        const { pessoa } = await resolverPessoa(
+          {
+            empresaId: req.empresaId,
+            nome: nomeParaResolver,
+            cpf: cpfInformado,
+            cliente: "cliente" in dados ? dados.cliente : ctx.antes?.cliente,
+          },
+          pool
+        );
+        dados.pessoa_id = pessoa.id;
+      } catch (erroPessoa) {
+        console.error("[usuarios] resolverPessoa falhou:", erroPessoa.message || erroPessoa);
+      }
+    }
+  }
+  delete dados.cpf;
 
   return dados;
 }
@@ -522,6 +559,12 @@ app.use(
       "troca_senha_obrigatoria",
       "pode_acessar_oceano_desenvolvimento",
       "empresa_id",
+      // Cadastro único de pessoas (Fase 2, item 2 — 28/09/2026): ligação
+      // com `pessoas`, resolvida em sanitizarEscritaUsuario() a partir do
+      // CPF opcional do formulário — nunca vem direto do corpo da
+      // requisição (não seria seguro deixar o front escolher o pessoa_id
+      // de qualquer jeito), só o próprio beforeWrite escreve aqui.
+      "pessoa_id",
     ],
     multiTenant: true, // Sprint 1
     beforeWrite: sanitizarEscritaUsuario, // Fase 4 (+ escopo por perfil, Fase 1 22/09/2026)
