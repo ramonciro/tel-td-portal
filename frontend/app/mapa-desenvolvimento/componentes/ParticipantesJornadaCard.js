@@ -99,6 +99,19 @@ export default function ParticipantesJornadaCard({
               </label>
 
               <label style={{ ...labelStyle(), ...fieldSpan.md }}>
+                CPF (opcional)
+                <input
+                  value={participanteForm.cpf}
+                  onChange={(e) =>
+                    setParticipanteForm((prev) => ({ ...prev, cpf: e.target.value }))
+                  }
+                  style={compactInputStyle()}
+                  placeholder="Somente números"
+                  maxLength={14}
+                />
+              </label>
+
+              <label style={{ ...labelStyle(), ...fieldSpan.md }}>
                 Turma
                 <input
                   value={participanteForm.turma}
@@ -197,7 +210,7 @@ export default function ParticipantesJornadaCard({
             </label>
 
             <div style={importHintCard}>
-              Colunas aceitas: nome, matricula, cliente, turma, cargo, supervisor e status_jornada.
+              Colunas aceitas: nome, matricula, cpf (opcional), cliente, turma, cargo, supervisor e status_jornada.
             </div>
 
             <div style={buttonRow}>

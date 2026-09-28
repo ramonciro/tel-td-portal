@@ -446,6 +446,7 @@ export const participantInitial = {
   jornada_id: "",
   nome: "",
   matricula: "",
+  cpf: "",
   cliente: "",
   turma: "",
   cargo: "",
