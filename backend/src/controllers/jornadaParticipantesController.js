@@ -1,5 +1,14 @@
 const XLSX = require("xlsx");
 const db = require("../lib/db");
+const { resolverPessoa } = require("../services/pessoasService");
+
+// Cadastro Único de Pessoas (Fase 2, item 4 — 28/09/2026): mesma
+// normalização usada em todo o resto do Cadastro Único (ver
+// pessoasService.js e treinamentoParticipantesController.js).
+function normalizarCpf(valor) {
+  const digits = String(valor || "").replace(/\D/g, "");
+  return digits.length === 11 ? digits : null;
+}
 
 function normalizeHeader(value) {
   return String(value || "")
@@ -80,6 +89,7 @@ async function create(req, res) {
     const supervisor = String(req.body?.supervisor || "").trim() || null;
     const status_jornada = normalizeStatus(req.body?.status_jornada);
     const origem_importacao = "manual";
+    const cpfNormalizado = normalizarCpf(req.body?.cpf);
 
     if (!jornada_id) {
       return res.status(400).json({ error: "Informe a jornada." });
@@ -87,6 +97,10 @@ async function create(req, res) {
 
     if (!nome) {
       return res.status(400).json({ error: "Informe o nome da pessoa." });
+    }
+
+    if (req.body?.cpf && !cpfNormalizado) {
+      return res.status(400).json({ error: "CPF inválido — informe os 11 dígitos, com ou sem pontuação." });
     }
 
     if (req.empresaId) {
@@ -99,13 +113,49 @@ async function create(req, res) {
       }
     }
 
+    // Cadastro Único de Pessoas (Fase 2, item 4 — 28/09/2026): quando o CPF
+    // vem preenchido, bloqueia duplicidade também por CPF dentro da mesma
+    // jornada — além da checagem por nome+matrícula que a UNIQUE KEY do
+    // banco já cobre (a de baixo, no catch de ER_DUP_ENTRY). Sem isso, a
+    // mesma pessoa poderia entrar duas vezes na jornada bastando digitar o
+    // nome ou a matrícula um pouco diferente.
+    if (cpfNormalizado) {
+      const [duplicadoCpf] = await db.query(
+        `SELECT id FROM jornada_participantes WHERE jornada_id = ? AND cpf = ? LIMIT 1`,
+        [jornada_id, cpfNormalizado]
+      );
+      if (duplicadoCpf.length) {
+        return res.status(400).json({ error: "Esta pessoa (mesmo CPF) já está vinculada a esta jornada." });
+      }
+    }
+
+    // Cadastro Único de Pessoas (Fase 2, item 4 — 28/09/2026): mesma função
+    // central usada em todo o resto do sistema (ver pessoasService.js) —
+    // casa por CPF, senão por matrícula+nome, senão cria pessoa nova
+    // (provisória, mesmo sem CPF nenhum — é o caso mais comum aqui, já que
+    // a maioria das planilhas de Metodologia nunca teve CPF). Só roda
+    // quando `req.empresaId` está definido (tenant identificado); sem
+    // isso, participante é cadastrado igual a antes, sem pessoa_id.
+    let pessoaId = null;
+    if (req.empresaId) {
+      try {
+        const { pessoa } = await resolverPessoa(
+          { empresaId: req.empresaId, nome, cpf: cpfNormalizado, matricula, cliente },
+          db
+        );
+        pessoaId = pessoa.id;
+      } catch (erroPessoa) {
+        console.error("[jornada-participantes] resolverPessoa falhou:", erroPessoa.message || erroPessoa);
+      }
+    }
+
     await db.query(
       `
       INSERT INTO jornada_participantes (
-        jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, empresa_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, empresa_id, cpf, pessoa_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, req.empresaId ?? null]
+      [jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, req.empresaId ?? null, cpfNormalizado, pessoaId]
     );
 
     return res.status(201).json({ ok: true, message: "Participante vinculado com sucesso." });
@@ -166,8 +216,19 @@ async function remove(req, res) {
 // (jornada_id, nome, matricula), mas o MySQL trata NULL != NULL — então ela
 // não pega duplicatas quando a matrícula vem vazia (comum em planilhas sem
 // essa coluna). Tratamos matrícula vazia como parte normal da chave aqui.
-function chaveParticipante(nome, matricula) {
-  return `${String(nome || "").trim().toLowerCase()}|${String(matricula || "").trim().toLowerCase()}`;
+//
+// Cadastro Único de Pessoas (Fase 2, item 4 — 28/09/2026): quando o CPF
+// está disponível (na planilha ou já cadastrado nesta jornada), a chave
+// passa a ser o CPF — identidade real, não string de nome — então duas
+// linhas da mesma pessoa com nome digitado ligeiramente diferente (ou
+// matrícula preenchida numa e não na outra) deixam de contar como duas
+// pessoas distintas. Sem CPF em nenhum dos dois lados, cai no
+// nome+matrícula de sempre — nenhuma mudança de comportamento pra quem já
+// importa sem essa coluna.
+function chaveParticipante(nome, matricula, cpf) {
+  const cpfNormalizado = normalizarCpf(cpf);
+  if (cpfNormalizado) return `cpf:${cpfNormalizado}`;
+  return `nm:${String(nome || "").trim().toLowerCase()}|${String(matricula || "").trim().toLowerCase()}`;
 }
 
 async function importExcel(req, res) {
@@ -205,11 +266,14 @@ async function importExcel(req, res) {
     // Bugfix: duplicatas silenciosas quando a mesma planilha é importada mais
     // de uma vez sem matrícula preenchida — dedupe feito aqui, contra quem já
     // está na jornada E contra repetições dentro da própria planilha.
+    // Cadastro Único de Pessoas (Fase 2, item 4 — 28/09/2026): busca também
+    // o cpf já cadastrado, pra chaveParticipante() poder preferir identidade
+    // real quando disponível (ver comentário da função).
     const [existentes] = await conn.query(
-      `SELECT nome, matricula FROM jornada_participantes WHERE jornada_id = ?`,
+      `SELECT nome, matricula, cpf FROM jornada_participantes WHERE jornada_id = ?`,
       [jornada_id]
     );
-    const jaExistentes = new Set(existentes.map((e) => chaveParticipante(e.nome, e.matricula)));
+    const jaExistentes = new Set(existentes.map((e) => chaveParticipante(e.nome, e.matricula, e.cpf)));
     const vistosNestaPlanilha = new Set();
 
     const linhasValidas = linhas.filter((l) => String(l.nome || "").trim());
@@ -218,21 +282,43 @@ async function importExcel(req, res) {
     for (const linha of linhasValidas) {
       const nome = String(linha.nome || "").trim();
       const matricula = String(linha.matricula || "").trim() || null;
-      const k = chaveParticipante(nome, matricula);
+      const cliente = String(linha.cliente || "").trim() || null;
+      const cpfLinha = normalizarCpf(linha.cpf);
+      const k = chaveParticipante(nome, matricula, cpfLinha);
       if (jaExistentes.has(k) || vistosNestaPlanilha.has(k)) continue;
       vistosNestaPlanilha.add(k);
+
+      // Cadastro Único de Pessoas (Fase 2, item 4 — 28/09/2026): mesma
+      // função central do resto do sistema — casa por CPF, senão por
+      // matrícula+nome, senão cria pessoa nova (provisória). Planilhas de
+      // Metodologia sem CPF nenhum continuam funcionando, só nascem como
+      // pessoa provisória (esperado, não é erro).
+      let pessoaId = null;
+      if (req.empresaId) {
+        try {
+          const { pessoa } = await resolverPessoa(
+            { empresaId: req.empresaId, nome, cpf: cpfLinha, matricula, cliente },
+            conn
+          );
+          pessoaId = pessoa.id;
+        } catch (erroPessoa) {
+          console.error("[jornada-participantes] resolverPessoa falhou na importação:", erroPessoa.message || erroPessoa);
+        }
+      }
 
       paraInserir.push([
         jornada_id,
         nome,
         matricula,
-        String(linha.cliente || "").trim() || null,
+        cliente,
         String(linha.turma || "").trim() || null,
         String(linha.cargo || "").trim() || null,
         String(linha.supervisor || "").trim() || null,
         normalizeStatus(linha.status_jornada),
         "planilha",
         req.empresaId ?? null,
+        cpfLinha,
+        pessoaId,
       ]);
     }
 
@@ -246,7 +332,7 @@ async function importExcel(req, res) {
       try {
         await conn.query(
           `INSERT INTO jornada_participantes
-           (jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, empresa_id)
+           (jornada_id, nome, matricula, cliente, turma, cargo, supervisor, status_jornada, origem_importacao, empresa_id, cpf, pessoa_id)
            VALUES ?`,
           [paraInserir]
         );
