@@ -57,6 +57,35 @@ function orientacaoPerfil(perfilAnimal) {
   return ORIENTACOES_PERFIL[perfilAnimal] || null;
 }
 
+// Cadastro Único de Pessoas (Fase 2, item 5 — 28/09/2026): perfil
+// comportamental nunca teve campo de CPF próprio — ele só é criado a partir
+// de uma linha já existente na Tripulação (jornada ou coaching), então
+// herda o pessoa_id de qualquer um dos dois vínculos que já tiver resolvido
+// identidade (coaching_individual.pessoa_id ou jornada_participantes.pessoa_id
+// — ver os itens 4 e 5 deste mesmo plano). Prioriza coaching quando os dois
+// estão presentes (vínculo mais específico, 1 pessoa por coaching).
+async function resolverPessoaIdVinculado(req, { jornada_participante_id, coaching_individual_id }) {
+  if (!req.empresaId) return null;
+
+  if (coaching_individual_id) {
+    const [rows] = await db.query(
+      `SELECT pessoa_id FROM coaching_individual WHERE id = ? AND empresa_id = ? LIMIT 1`,
+      [coaching_individual_id, req.empresaId]
+    );
+    if (rows.length && rows[0].pessoa_id) return rows[0].pessoa_id;
+  }
+
+  if (jornada_participante_id) {
+    const [rows] = await db.query(
+      `SELECT pessoa_id FROM jornada_participantes WHERE id = ? AND empresa_id = ? LIMIT 1`,
+      [jornada_participante_id, req.empresaId]
+    );
+    if (rows.length && rows[0].pessoa_id) return rows[0].pessoa_id;
+  }
+
+  return null;
+}
+
 async function validarPertencimentoTenant(req, { jornada_participante_id, coaching_individual_id }) {
   if (!req.empresaId) return null;
 
@@ -180,13 +209,18 @@ async function criar(req, res) {
       return res.status(404).json({ error: erroTenant });
     }
 
+    const pessoaId = await resolverPessoaIdVinculado(req, {
+      jornada_participante_id: jornadaParticipanteIdNum,
+      coaching_individual_id: coachingIndividualIdNum,
+    });
+
     const [result] = await db.query(
       `
       INSERT INTO pessoas_metodologia
       (nome, matricula, cliente, cargo, jornada_participante_id, coaching_individual_id,
        perfil_animal, perfil_animal_secundario, disc_letra_dominante,
-       disc_d, disc_i, disc_s, disc_c, origem, observacoes, registrado_por_id, empresa_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)
+       disc_d, disc_i, disc_s, disc_c, origem, observacoes, registrado_por_id, empresa_id, pessoa_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?)
       `,
       [
         nome,
@@ -205,6 +239,7 @@ async function criar(req, res) {
         observacoes || null,
         req.user?.id || null,
         req.empresaId ?? null,
+        pessoaId,
       ]
     );
 
@@ -269,6 +304,11 @@ async function atualizar(req, res) {
       return res.status(404).json({ error: erroTenant });
     }
 
+    const pessoaId = await resolverPessoaIdVinculado(req, {
+      jornada_participante_id: jornadaParticipanteIdNum,
+      coaching_individual_id: coachingIndividualIdNum,
+    });
+
     const updateParams = [
       nome,
       matricula || null,
@@ -284,6 +324,7 @@ async function atualizar(req, res) {
       disc_s != null && disc_s !== "" ? Number(disc_s) : null,
       disc_c != null && disc_c !== "" ? Number(disc_c) : null,
       observacoes || null,
+      pessoaId,
       id,
     ];
     if (req.empresaId) updateParams.push(req.empresaId);
@@ -294,7 +335,7 @@ async function atualizar(req, res) {
       SET nome = ?, matricula = ?, cliente = ?, cargo = ?,
           jornada_participante_id = ?, coaching_individual_id = ?,
           perfil_animal = ?, perfil_animal_secundario = ?, disc_letra_dominante = ?,
-          disc_d = ?, disc_i = ?, disc_s = ?, disc_c = ?, observacoes = ?
+          disc_d = ?, disc_i = ?, disc_s = ?, disc_c = ?, observacoes = ?, pessoa_id = ?
       WHERE id = ?${tenantCheck}
       `,
       updateParams

@@ -1,4 +1,5 @@
 const db = require("../lib/db");
+const { resolverPessoa } = require("../services/pessoasService");
 
 // Coaching individual (20/09/2026, pedido do Ramon): trilha à parte da
 // jornada coletiva, pessoa a pessoa, com cadência própria por
@@ -7,6 +8,51 @@ const db = require("../lib/db");
 // aqui NUNCA entra no cálculo de adesão ao cronograma da jornada coletiva
 // (metodologiaKpisController.js) — são dois números que ficam separados de
 // propósito.
+
+// Cadastro Único de Pessoas (Fase 2, item 5 — 28/09/2026): mesma
+// normalização usada no resto do Cadastro Único (ver pessoasService.js e
+// jornadaParticipantesController.js).
+function normalizarCpf(valor) {
+  const digits = String(valor || "").replace(/\D/g, "");
+  return digits.length === 11 ? digits : null;
+}
+
+// Resolve a identidade da pessoa por trás de um coaching individual.
+// Prioridade: (1) CPF informado neste cadastro; (2) sem CPF aqui, mas
+// vinculado a alguém já em jornada — reaproveita o pessoa_id (e o CPF, se
+// existir) que a jornada já resolveu, em vez de tratar como uma pessoa nova
+// só porque este formulário não pediu CPF de novo; (3) nenhum dos dois —
+// resolverPessoa() decide (provavelmente pessoa provisória, já que este
+// formulário não tem campo de matrícula).
+async function resolverIdentidadeCoaching(req, { nome, cpf, matricula, cliente, jornada_participante_id }) {
+  let cpfNormalizado = normalizarCpf(cpf);
+
+  if (!cpfNormalizado && jornada_participante_id && req.empresaId) {
+    const [rows] = await db.query(
+      `SELECT cpf, pessoa_id FROM jornada_participantes WHERE id = ? AND empresa_id = ? LIMIT 1`,
+      [jornada_participante_id, req.empresaId]
+    );
+    if (rows.length) {
+      if (rows[0].pessoa_id) {
+        return { pessoaId: rows[0].pessoa_id, cpf: rows[0].cpf || null };
+      }
+      cpfNormalizado = normalizarCpf(rows[0].cpf);
+    }
+  }
+
+  if (!req.empresaId) return { pessoaId: null, cpf: cpfNormalizado };
+
+  try {
+    const { pessoa } = await resolverPessoa(
+      { empresaId: req.empresaId, nome, cpf: cpfNormalizado, matricula, cliente },
+      db
+    );
+    return { pessoaId: pessoa.id, cpf: cpfNormalizado };
+  } catch (erroPessoa) {
+    console.error("[coaching-individual] resolverPessoa falhou:", erroPessoa.message || erroPessoa);
+    return { pessoaId: null, cpf: cpfNormalizado };
+  }
+}
 
 // Mesmo padrão de validação de tenant já usado em coachingPlanosController.js
 // e acoesDesenvolvimentoController.js.
@@ -140,6 +186,7 @@ async function criar(req, res) {
       data_inicio,
       data_fim,
       observacoes,
+      cpf,
     } = req.body;
 
     if (!nome) {
@@ -149,6 +196,10 @@ async function criar(req, res) {
     const jornadaParticipanteIdNum = jornada_participante_id ? Number(jornada_participante_id) : null;
     const responsavelIdNum = responsavel_id ? Number(responsavel_id) : null;
 
+    if (cpf && !normalizarCpf(cpf)) {
+      return res.status(400).json({ error: "CPF inválido — informe os 11 dígitos, com ou sem pontuação." });
+    }
+
     const erroTenant = await validarPertencimentoTenant(req, {
       jornada_participante_id: jornadaParticipanteIdNum,
       responsavel_id: responsavelIdNum,
@@ -157,12 +208,41 @@ async function criar(req, res) {
       return res.status(404).json({ error: erroTenant });
     }
 
+    // Cadastro Único de Pessoas (Fase 2, item 5 — 28/09/2026): resolve a
+    // identidade antes de checar duplicidade — se não veio CPF aqui mas a
+    // pessoa já está vinculada a uma jornada com CPF, o CPF dela é
+    // reaproveitado (ver resolverIdentidadeCoaching), então a checagem de
+    // duplicidade abaixo enxerga o CPF certo mesmo quando o formulário não
+    // pediu de novo.
+    const { pessoaId, cpf: cpfResolvido } = await resolverIdentidadeCoaching(req, {
+      nome,
+      cpf,
+      matricula,
+      cliente,
+      jornada_participante_id: jornadaParticipanteIdNum,
+    });
+
+    // Duas entradas de coaching ativas para a mesma pessoa (mesmo CPF) quase
+    // sempre é duplicidade de cadastro, não duas pessoas diferentes — um
+    // coaching encerrado não bloqueia um novo (reengajamento é um caso real).
+    if (cpfResolvido) {
+      const dupParams = req.empresaId ? [cpfResolvido, req.empresaId] : [cpfResolvido];
+      const dupWhere = req.empresaId ? "cpf = ? AND empresa_id = ?" : "cpf = ?";
+      const [duplicado] = await db.query(
+        `SELECT id FROM coaching_individual WHERE ${dupWhere} AND status != 'encerrado' LIMIT 1`,
+        dupParams
+      );
+      if (duplicado.length) {
+        return res.status(400).json({ error: "Esta pessoa (mesmo CPF) já tem um coaching individual ativo." });
+      }
+    }
+
     const [result] = await db.query(
       `
       INSERT INTO coaching_individual
       (nome, matricula, cliente, cargo, jornada_participante_id, responsavel_id,
-       cadencia_dias, status, data_inicio, data_fim, observacoes, empresa_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       cadencia_dias, status, data_inicio, data_fim, observacoes, empresa_id, cpf, pessoa_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         nome,
@@ -177,6 +257,8 @@ async function criar(req, res) {
         data_fim || null,
         observacoes || null,
         req.empresaId ?? null,
+        cpfResolvido,
+        pessoaId,
       ]
     );
 
@@ -204,6 +286,7 @@ async function atualizar(req, res) {
       data_inicio,
       data_fim,
       observacoes,
+      cpf,
     } = req.body;
 
     const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
@@ -217,12 +300,36 @@ async function atualizar(req, res) {
     const jornadaParticipanteIdNum = jornada_participante_id ? Number(jornada_participante_id) : null;
     const responsavelIdNum = responsavel_id ? Number(responsavel_id) : null;
 
+    if (cpf && !normalizarCpf(cpf)) {
+      return res.status(400).json({ error: "CPF inválido — informe os 11 dígitos, com ou sem pontuação." });
+    }
+
     const erroTenant = await validarPertencimentoTenant(req, {
       jornada_participante_id: jornadaParticipanteIdNum,
       responsavel_id: responsavelIdNum,
     });
     if (erroTenant) {
       return res.status(404).json({ error: erroTenant });
+    }
+
+    const { pessoaId, cpf: cpfResolvido } = await resolverIdentidadeCoaching(req, {
+      nome,
+      cpf,
+      matricula,
+      cliente,
+      jornada_participante_id: jornadaParticipanteIdNum,
+    });
+
+    if (cpfResolvido) {
+      const dupParams = req.empresaId ? [cpfResolvido, req.empresaId, id] : [cpfResolvido, id];
+      const dupWhere = req.empresaId ? "cpf = ? AND empresa_id = ?" : "cpf = ?";
+      const [duplicado] = await db.query(
+        `SELECT id FROM coaching_individual WHERE ${dupWhere} AND status != 'encerrado' AND id != ? LIMIT 1`,
+        dupParams
+      );
+      if (duplicado.length) {
+        return res.status(400).json({ error: "Esta pessoa (mesmo CPF) já tem um coaching individual ativo." });
+      }
     }
 
     const updateParams = [
@@ -237,6 +344,8 @@ async function atualizar(req, res) {
       data_inicio || null,
       data_fim || null,
       observacoes || null,
+      cpfResolvido,
+      pessoaId,
       id,
     ];
     if (req.empresaId) updateParams.push(req.empresaId);
@@ -246,7 +355,8 @@ async function atualizar(req, res) {
       UPDATE coaching_individual
       SET nome = ?, matricula = ?, cliente = ?, cargo = ?,
           jornada_participante_id = ?, responsavel_id = ?, cadencia_dias = ?,
-          status = ?, data_inicio = ?, data_fim = ?, observacoes = ?
+          status = ?, data_inicio = ?, data_fim = ?, observacoes = ?,
+          cpf = ?, pessoa_id = ?
       WHERE id = ?${tenantCheck}
       `,
       updateParams
