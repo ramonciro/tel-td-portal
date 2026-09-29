@@ -383,9 +383,16 @@ export default function ParticipantesTurmaPage() {
                         )}
                       </td>
                       <td style={td}>
-                        <button style={btnRemover} onClick={() => removerParticipante(item)}>
-                          Remover
-                        </button>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end" }}>
+                          {item.pessoa_id && (
+                            <a href={`/pessoas/${item.pessoa_id}`} style={linkPerfil} title="Ver perfil completo">
+                              Perfil
+                            </a>
+                          )}
+                          <button style={btnRemover} onClick={() => removerParticipante(item)}>
+                            Remover
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -406,6 +413,7 @@ const successBox = { background: colors.successLight, color: colors.successText,
 const kpiRow  = { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 };
 const kpiChip = { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, background: "#fff", border: "1px solid #e9eef4", borderRadius: 12, padding: "10px 16px" };
 
+const linkPerfil = { color: colors.accent, fontWeight: 700, fontSize: 12, textDecoration: "none", whiteSpace: "nowrap" };
 const btnCoral   = { background: colors.accent, color: "#fff", border: 0, borderRadius: 10, padding: "9px 18px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
 const btnOutline = { background: "#fff", color: "#334155", border: "1px solid #e2e8f0", borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 };
 const btnGhost   = { background: "#f8fafc", color: "#94a3b8", border: "1px solid #e9eef4", borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 };
