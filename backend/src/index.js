@@ -100,6 +100,7 @@ const {
 const {
   listarResumoGeral,
   obterResumoPorTreinamento,
+  exportarRelatorioPresenca,
 } = require("./controllers/presencaResumoController");
 
 const { registrarAuditoria } = require("./services/auditoria");
@@ -122,6 +123,7 @@ const {
 const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
+  baixarModeloImportacaoParticipantes,
   salvarChamadaParticipantes,
   createParticipanteTreinamento,   // FIX: estava exportada no controller mas nunca importada
   deleteParticipanteTreinamento,
@@ -305,6 +307,17 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
   obterResumoPorTreinamento
+);
+
+// Pedido do Ramon (29/09/2026): relatório da tela Gestão de Turmas
+// (Presenças) "melhor estruturado" — recebe as linhas já filtradas/calculadas
+// pelo front (mesma lógica de sempre) e devolve um .xlsx com cabeçalho
+// agrupado, tipos de verdade e cor por status/faixa de presença.
+app.post(
+  "/api/presenca-resumo/exportar-relatorio",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
+  exportarRelatorioPresenca
 );
 
 app.get(
@@ -997,6 +1010,16 @@ app.post(
   authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
   comUploadTratado(upload.single("arquivo")),
   importarParticipantesExcel
+);
+
+// Pedido do Ramon (29/09/2026): "Excel base para importação dos treinandos
+// nas turmas" — modelo pronto pra baixar, já com Cliente/Turma/Supervisor
+// desta turma preenchidos (ver baixarModeloImportacaoParticipantes).
+app.get(
+  "/api/treinamentos/:id/modelo-importacao-participantes",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  baixarModeloImportacaoParticipantes
 );
 
 app.post(
