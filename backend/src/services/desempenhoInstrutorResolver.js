@@ -100,24 +100,41 @@ function tenantWhereTreinamentos(empresaId, alias = "t") {
 
 // --- CH (programada x realizada) — soma os meses do período, por instrutor,
 //     reaproveitando exatamente o mesmo cálculo da tela de Capacidade. ---
+// Decisão de 29/09/2026 (opção 3 do relatório de diagnóstico da Ocupação CH,
+// confirmada pelo Ramon): "% de ocupação" só existe pra instrutor com meta
+// manual cadastrada (override) em algum mês do período — sem isso, vira
+// volume absoluto (horas_realizadas/turmas), sem comparar contra o teto
+// automático de 132h, que nunca foi uma meta real (ver capacidadeResolver.js
+// e proposta-revisao-ocupacao-capacidade-2026-09-28.md no projeto).
 async function getChPorInstrutor({ instrutores, meses, empresaId }) {
-  const acumulado = new Map(instrutores.map((nome) => [nome, { horas_realizadas: 0, capacidade_horas: 0 }]));
+  const acumulado = new Map(
+    instrutores.map((nome) => [nome, { horas_realizadas: 0, capacidade_horas: 0, horas_com_meta: 0, turmas: 0, tem_meta: false }])
+  );
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, empresaId });
     for (const item of itens) {
       const acc = acumulado.get(item.instrutor);
       if (!acc) continue;
       acc.horas_realizadas += item.horas_realizadas;
-      acc.capacidade_horas += item.capacidade_horas;
+      acc.turmas += item.turmas || 0;
+      if (item.tem_meta) {
+        acc.capacidade_horas += item.capacidade_horas;
+        acc.horas_com_meta += item.horas_realizadas;
+        acc.tem_meta = true;
+      }
     }
   }
   const mapa = new Map();
   for (const [instrutor, acc] of acumulado) {
     const horasRealizadas = arredonda(acc.horas_realizadas, 2);
-    const capacidadeHoras = arredonda(acc.capacidade_horas, 2);
-    const ocupacaoPct = capacidadeHoras > 0 ? arredonda((horasRealizadas / capacidadeHoras) * 100) : null;
+    const turmas = acc.turmas;
+    const capacidadeHoras = acc.tem_meta ? arredonda(acc.capacidade_horas, 2) : null;
+    const horasComMeta = acc.tem_meta ? arredonda(acc.horas_com_meta, 2) : null;
+    const ocupacaoPct = acc.tem_meta && capacidadeHoras > 0 ? arredonda((horasComMeta / capacidadeHoras) * 100) : null;
     mapa.set(instrutor, {
       horas_realizadas: horasRealizadas,
+      turmas,
+      tem_meta: acc.tem_meta,
       capacidade_horas: capacidadeHoras,
       ocupacao_pct: ocupacaoPct,
       ...statusOcupacao(ocupacaoPct),
@@ -326,7 +343,7 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
   ]);
 
   const itens = instrutores.map((nome) => {
-    const ch = chMap.get(nome) || { horas_realizadas: 0, capacidade_horas: 0, ocupacao_pct: null, status: "sem_capacidade", emoji: "—" };
+    const ch = chMap.get(nome) || { horas_realizadas: 0, turmas: 0, tem_meta: false, capacidade_horas: null, ocupacao_pct: null, status: "sem_capacidade", emoji: "—" };
     const avaliacao = avaliacaoMap.get(nome) || { turmas_no_periodo: 0, turmas_com_avaliacao: 0, cobertura_pct: null, lancamentos: 0, nota_prova_media: null, nota_qualidade_media: null };
     const nps = npsMap.get(nome) || { total_respostas: 0, nota_media: null, promotores: 0, neutros: 0, detratores: 0, nps_score: null };
     const frequencia = frequenciaMap.get(nome) || { media_pct: null, turmas_consideradas: 0 };
@@ -335,6 +352,8 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
       instrutor: nome,
       ch: {
         horas_realizadas: ch.horas_realizadas,
+        turmas: ch.turmas,
+        tem_meta: ch.tem_meta,
         capacidade_horas: ch.capacidade_horas,
         ocupacao_pct: ch.ocupacao_pct,
         status_ocupacao: ch.status,
@@ -384,9 +403,17 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
     return arredonda(valores.reduce((acc, v) => acc + v, 0) / valores.length);
   }
 
+  // instrutores_com_meta: de quem teve hora real (comAtividadeCH), quantos
+  // têm meta cadastrada — a média de ocupação acima já só usa esses (media()
+  // filtra null), mas o front precisa do "de quantos" pra não passar a
+  // impressão de que é a média do time inteiro.
+  const instrutoresComMetaCH = comAtividadeCH.filter((i) => i.ch.tem_meta).length;
+
   const mediasTime = comAtividade.length
     ? {
         ocupacao_pct: media(comAtividadeCH, (i) => i.ch.ocupacao_pct),
+        instrutores_com_meta: instrutoresComMetaCH,
+        instrutores_com_atividade_ch: comAtividadeCH.length,
         frequencia_pct: media(comAtividade, (i) => i.frequencia.media_pct),
         nps_score: media(comAtividade, (i) => i.nps.nps_score),
         indice_geral: media(comAtividade, (i) => i.indice_geral),

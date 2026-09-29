@@ -373,8 +373,13 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
   const clienteSql = cliente ? "AND fonte_horas.cliente = ?" : "";
   const clienteParams = cliente ? [cliente] : [];
 
+  // turmas: COUNT(DISTINCT treinamento_id) junto da soma de horas — usado
+  // como volume alternativo ("Xh em sala / Y turmas") para quem não tem meta
+  // cadastrada (ver decisão de 29/09/2026 logo abaixo).
   const [horasRows] = await pool.query(
-    `SELECT fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes, SUM(fonte_horas.horas_real) AS horas
+    `SELECT fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes,
+            SUM(fonte_horas.horas_real) AS horas,
+            COUNT(DISTINCT CASE WHEN fonte_horas.horas_real > 0 THEN fonte_horas.treinamento_id END) AS turmas
      FROM ${FONTE_HORAS_SQL}
      WHERE fonte_horas.instrutor IN (${placeholdersInstrutores})
        AND (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses})
@@ -395,10 +400,9 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
     [...instrutores, ...anos, ...overrideTenantParam]
   );
 
-  const regra = await getRegraPadrao(empresaId);
-
   const chaveMes = (a, m) => `${a}-${pad2(m)}`;
   const mapaHoras = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas)]));
+  const mapaTurmas = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.turmas)]));
   const mapaOverrides = new Map(overridesRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, r]));
 
   const resultado = [];
@@ -407,6 +411,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
     for (const { ano: anoRef, mes: mesRef } of meses) {
       const chave = `${nomeInstrutor}|${chaveMes(anoRef, mesRef)}`;
       const horasRealizadas = Number((mapaHoras.get(chave) || 0).toFixed(2));
+      const turmas = Number(mapaTurmas.get(chave) || 0);
 
       // Instrutor confirmadamente desligado (usuário inativo) e sem nenhuma
       // hora real neste mês específico → não gera linha fantasma (0h,
@@ -415,11 +420,26 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
       if (estaInativo && horasRealizadas === 0) continue;
 
       const override = mapaOverrides.get(chave);
-      const capacidadeHoras = override
-        ? Number(override.horas_capacidade)
-        : Number((Number(regra.dias_mes_padrao) * Number(regra.horas_dia_padrao)).toFixed(2));
 
-      const ocupacaoPct = capacidadeHoras > 0 ? Number(((horasRealizadas / capacidadeHoras) * 100).toFixed(1)) : null;
+      // Decisão de 29/09/2026 (opção 3 do relatório de diagnóstico —
+      // proposta-revisao-ocupacao-capacidade-2026-09-28.md, confirmada pelo
+      // Ramon): a regra automática de 132h/mês (dias_mes_padrao ×
+      // horas_dia_padrao) nunca foi pensada como uma meta real — ela assume
+      // 100% do tempo do instrutor em sala, o que nenhuma função de
+      // instrutor tem de fato (sobra preparação, coaching, avaliação,
+      // administrativo). Comparar "horas em sala" contra esse teto gerava um
+      // "% de ocupação" enganoso (ex.: 4,5%) que parecia ociosidade sem ser.
+      // A partir de agora: só existe "% de ocupação" para quem tem uma meta
+      // MANUAL cadastrada (override em capacidade_instrutor_mensal) — quem
+      // não tem meta aparece com o volume absoluto (horas em sala + turmas),
+      // sem nenhuma porcentagem contra um teto genérico. A regra automática
+      // (getRegraPadrao) continua existindo só para quem opta por configurá-la
+      // como a própria meta, via override.
+      const temMeta = Boolean(override);
+      const capacidadeHoras = temMeta ? Number(Number(override.horas_capacidade).toFixed(2)) : null;
+      const ocupacaoPct = temMeta && capacidadeHoras > 0
+        ? Number(((horasRealizadas / capacidadeHoras) * 100).toFixed(1))
+        : null;
       const { status, emoji } = statusOcupacao(ocupacaoPct);
 
       resultado.push({
@@ -427,8 +447,10 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
         ano: anoRef,
         mes: mesRef,
         horas_realizadas: horasRealizadas,
+        turmas,
+        tem_meta: temMeta,
         capacidade_horas: capacidadeHoras,
-        fonte_capacidade: override ? "override" : "automatica",
+        fonte_capacidade: temMeta ? "override" : "sem_meta",
         ocupacao_pct: ocupacaoPct,
         status_ocupacao: status,
         status_emoji: emoji,
@@ -441,27 +463,35 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
 
 async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
-  const regra = await getRegraPadrao(empresaId);
-  // "capacidade_mensal_time" abaixo é capacidade PLANEJADA do time hoje — usa
-  // só instrutor ativo (quem já saiu não conta capacidade daqui pra frente).
-  // capacidade_nominal_periodo (por mês, logo abaixo) já vem correta sozinha,
-  // porque soma os itens de getCapacidadeVsRealizado, que já não gera linha
-  // fantasma pra instrutor inativo sem hora real naquele mês.
+  // "capacidade_nominal"/"ocupação" por mês, abaixo, agora só somam quem tem
+  // meta cadastrada (override) — mesma decisão de 29/09/2026 aplicada em
+  // getCapacidadeVsRealizado: o teto automático de 132h nunca foi uma meta de
+  // verdade, então não deve virar "capacidade do time" num gráfico. Quem não
+  // tem meta entra à parte, como volume (hc_sem_meta), sem prometer um % que
+  // não existe.
   const instrutores = instrutor ? [instrutor] : await listarInstrutoresConhecidos(empresaId, { apenasAtivos: true });
 
   const linhasPorMes = [];
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, empresaId });
-    const capacidadeNominal = itens.reduce((acc, i) => acc + i.capacidade_horas, 0);
-    const hcRealizado = itens.reduce((acc, i) => acc + i.horas_realizadas, 0);
-    const desvio = Number((hcRealizado - capacidadeNominal).toFixed(2));
-    const ocupacaoPct = capacidadeNominal > 0 ? Number(((hcRealizado / capacidadeNominal) * 100).toFixed(1)) : 0;
-    const { emoji } = statusOcupacao(capacidadeNominal > 0 ? ocupacaoPct : null);
+    const comMeta = itens.filter((i) => i.tem_meta);
+    const semMeta = itens.filter((i) => !i.tem_meta);
+    const capacidadeNominal = comMeta.reduce((acc, i) => acc + i.capacidade_horas, 0);
+    const hcRealizadoComMeta = comMeta.reduce((acc, i) => acc + i.horas_realizadas, 0);
+    const hcRealizadoSemMeta = semMeta.reduce((acc, i) => acc + i.horas_realizadas, 0);
+    const hcRealizado = hcRealizadoComMeta + hcRealizadoSemMeta;
+    const desvio = capacidadeNominal > 0 ? Number((hcRealizadoComMeta - capacidadeNominal).toFixed(2)) : null;
+    const ocupacaoPct = capacidadeNominal > 0 ? Number(((hcRealizadoComMeta / capacidadeNominal) * 100).toFixed(1)) : null;
+    const { emoji } = statusOcupacao(ocupacaoPct);
     linhasPorMes.push({
       mes: `${ano}-${pad2(mes)}`,
       mes_extenso: new Date(Date.UTC(ano, mes - 1, 1)).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }),
       capacidade_nominal: Number(capacidadeNominal.toFixed(2)),
       hc_realizado: Number(hcRealizado.toFixed(2)),
+      hc_realizado_com_meta: Number(hcRealizadoComMeta.toFixed(2)),
+      hc_realizado_sem_meta: Number(hcRealizadoSemMeta.toFixed(2)),
+      instrutores_com_meta: comMeta.length,
+      instrutores_sem_meta: semMeta.length,
       desvio,
       ocupacao_pct: ocupacaoPct,
       status_emoji: emoji,
@@ -481,24 +511,26 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
 
   const capacidadeTotalPeriodo = linhasPorMes.reduce((acc, l) => acc + l.capacidade_nominal, 0);
   const hcRealizadoPeriodo = linhasPorMes.reduce((acc, l) => acc + l.hc_realizado, 0);
-  const capacidadePorInstrutorMes = instrutores.length
-    ? Number((Number(regra.dias_mes_padrao) * Number(regra.horas_dia_padrao)).toFixed(2))
-    : 0;
+  const hcRealizadoComMetaPeriodo = linhasPorMes.reduce((acc, l) => acc + l.hc_realizado_com_meta, 0);
+  // "instrutores com/sem meta" do painel = olhando o mês mais recente da
+  // janela (situação atual do time), não uma soma ao longo dos meses.
+  const ultimaLinha = linhasPorMes[linhasPorMes.length - 1];
 
   return {
     periodo: { meses: linhasPorMes.map((l) => l.mes) },
     indicadores: {
       capacidade_nominal_periodo: Number(capacidadeTotalPeriodo.toFixed(2)),
-      capacidade_mensal_time: instrutores.length ? Number((capacidadePorInstrutorMes * instrutores.length).toFixed(2)) : 0,
-      capacidade_por_instrutor: capacidadePorInstrutorMes,
       hc_programado_periodo: Number(Number(programadoRow.total).toFixed(2)),
       hc_realizado_periodo: Number(hcRealizadoPeriodo.toFixed(2)),
       aderencia_geral_pct: Number(programadoRow.total) > 0
         ? Number(((hcRealizadoPeriodo / Number(programadoRow.total)) * 100).toFixed(1))
         : null,
       ocupacao_time_pct: capacidadeTotalPeriodo > 0
-        ? Number(((hcRealizadoPeriodo / capacidadeTotalPeriodo) * 100).toFixed(1))
-        : 0,
+        ? Number(((hcRealizadoComMetaPeriodo / capacidadeTotalPeriodo) * 100).toFixed(1))
+        : null,
+      instrutores_com_meta: ultimaLinha ? ultimaLinha.instrutores_com_meta : 0,
+      instrutores_sem_meta: ultimaLinha ? ultimaLinha.instrutores_sem_meta : 0,
+      instrutores_total: instrutores.length,
     },
     por_mes: linhasPorMes,
   };
@@ -507,7 +539,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
 async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const instrutores = await listarInstrutoresConhecidos(empresaId);
-  const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, meses: {}, total_90d: 0, capacidade_90d: 0 }]));
+  const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, meses: {}, total_90d: 0, capacidade_90d: 0, tem_meta: false }]));
 
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, cliente, empresaId });
@@ -516,7 +548,10 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId 
       if (!linha) continue;
       linha.meses[`${ano}-${pad2(mes)}`] = item.horas_realizadas;
       linha.total_90d += item.horas_realizadas;
-      linha.capacidade_90d += item.capacidade_horas;
+      if (item.tem_meta) {
+        linha.capacidade_90d += item.capacidade_horas;
+        linha.tem_meta = true;
+      }
     }
   }
 
@@ -535,8 +570,10 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId 
     .map((linha) => ({
       ...linha,
       total_90d: Number(linha.total_90d.toFixed(2)),
-      capacidade_90d: Number(linha.capacidade_90d.toFixed(2)),
-      ocupacao_pct: linha.capacidade_90d > 0 ? Number(((linha.total_90d / linha.capacidade_90d) * 100).toFixed(1)) : 0,
+      capacidade_90d: linha.tem_meta ? Number(linha.capacidade_90d.toFixed(2)) : null,
+      ocupacao_pct: linha.tem_meta && linha.capacidade_90d > 0
+        ? Number(((linha.total_90d / linha.capacidade_90d) * 100).toFixed(1))
+        : null,
     }))
     .filter((linha) => !cliente || linha.total_90d > 0)
     .filter((linha) => linha.total_90d > 0 || !instrutoresInativos.has(String(linha.instrutor).trim().toLowerCase()))
@@ -551,19 +588,29 @@ async function getRanking({ meses: totalMeses = 3, cliente, empresaId } = {}) {
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, cliente, empresaId });
     for (const item of itens) {
-      const atual = acumulado.get(item.instrutor) || { instrutor: item.instrutor, horas: 0, capacidade: 0 };
+      const atual = acumulado.get(item.instrutor) || { instrutor: item.instrutor, horas: 0, capacidade: 0, turmas: 0, temMeta: false };
       atual.horas += item.horas_realizadas;
-      atual.capacidade += item.capacidade_horas;
+      atual.turmas += item.turmas || 0;
+      if (item.tem_meta) {
+        atual.capacidade += item.capacidade_horas;
+        atual.temMeta = true;
+      }
       acumulado.set(item.instrutor, atual);
     }
   }
 
+  // Ranking continua ordenado por volume (horas_realizadas) — isso sempre foi
+  // uma medida honesta. pct_capacidade só existe pra quem tem meta cadastrada
+  // em algum mês da janela; sem meta, vai null (frontend mostra turmas/horas
+  // em vez de %) em vez do antigo 0% contra o teto automático.
   return Array.from(acumulado.values())
     .filter((item) => item.horas > 0)
     .map((item) => ({
       instrutor: item.instrutor,
       horas_realizadas: Number(item.horas.toFixed(2)),
-      pct_capacidade: item.capacidade > 0 ? Number(((item.horas / item.capacidade) * 100).toFixed(1)) : 0,
+      turmas: item.turmas,
+      tem_meta: item.temMeta,
+      pct_capacidade: item.temMeta && item.capacidade > 0 ? Number(((item.horas / item.capacidade) * 100).toFixed(1)) : null,
     }))
     .sort((a, b) => b.horas_realizadas - a.horas_realizadas)
     .map((item, index) => ({ posicao: index + 1, ...item }));
@@ -683,14 +730,16 @@ async function getCapacidadePorInstrutorCliente({ meses: totalMeses = 3, empresa
     [...instrutores, ...mesesParams, ...tenantFonteHorasParam(empresaId)]
   );
 
-  // Capacidade total do instrutor no período — soma dos mesmos meses,
-  // reaproveitando o cálculo já existente (regra automática ou override).
+  // Capacidade total do instrutor no período — soma dos mesmos meses, só de
+  // quem tem meta cadastrada (override); ver decisão de 29/09/2026.
   const capacidadePorInstrutor = new Map(instrutores.map((nome) => [nome, 0]));
+  const temMetaPorInstrutor = new Map(instrutores.map((nome) => [nome, false]));
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, empresaId });
     for (const item of itens) {
-      if (capacidadePorInstrutor.has(item.instrutor)) {
+      if (capacidadePorInstrutor.has(item.instrutor) && item.tem_meta) {
         capacidadePorInstrutor.set(item.instrutor, capacidadePorInstrutor.get(item.instrutor) + item.capacidade_horas);
+        temMetaPorInstrutor.set(item.instrutor, true);
       }
     }
   }
@@ -710,13 +759,15 @@ async function getCapacidadePorInstrutorCliente({ meses: totalMeses = 3, empresa
   const itens = Array.from(porInstrutor.values())
     .filter((linha) => linha.total_realizado > 0)
     .map((linha) => {
-      const capacidadeTotal = Number((capacidadePorInstrutor.get(linha.instrutor) || 0).toFixed(2));
+      const temMeta = temMetaPorInstrutor.get(linha.instrutor) || false;
+      const capacidadeTotal = temMeta ? Number((capacidadePorInstrutor.get(linha.instrutor) || 0).toFixed(2)) : null;
       return {
         instrutor: linha.instrutor,
         por_cliente: linha.por_cliente,
         total_realizado: Number(linha.total_realizado.toFixed(2)),
+        tem_meta: temMeta,
         capacidade_total: capacidadeTotal,
-        ocupacao_pct: capacidadeTotal > 0 ? Number(((linha.total_realizado / capacidadeTotal) * 100).toFixed(1)) : null,
+        ocupacao_pct: temMeta && capacidadeTotal > 0 ? Number(((linha.total_realizado / capacidadeTotal) * 100).toFixed(1)) : null,
       };
     })
     .sort((a, b) => b.total_realizado - a.total_realizado);
@@ -872,8 +923,13 @@ async function getAlertas(empresaId) {
   const instrutoresAtivos = new Set(await listarInstrutoresConhecidos(empresaId, { apenasAtivos: true }));
   const itensAtivos = itens.filter((item) => instrutoresAtivos.has(item.instrutor));
 
+  // Decisão de 29/09/2026: sem meta cadastrada não é "alerta" — é só a
+  // ausência de uma meta configurada, o que hoje é a maioria do time. Sem
+  // este filtro, status_ocupacao "sem_capacidade" (que statusOcupacao(null)
+  // devolve pra quem não tem override) entraria aqui como se fosse um
+  // problema de ocupação, inflando a lista sem necessidade.
   const alertas = itensAtivos
-    .filter((item) => item.status_ocupacao !== "saudavel")
+    .filter((item) => item.tem_meta && item.status_ocupacao !== "saudavel")
     .map((item) => ({
       instrutor: item.instrutor,
       ocupacao_pct: item.ocupacao_pct,
