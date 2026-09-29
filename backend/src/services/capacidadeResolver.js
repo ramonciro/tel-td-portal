@@ -509,6 +509,27 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
     [...mesesParams, ...clienteParams, ...tenantFonteHorasParam(empresaId)]
   );
 
+  // Programado por mês, do time inteiro (não só quem tem meta cadastrada) —
+  // pedido do Ramon em 29/09/2026: o gráfico "Capacidade × realizado" só
+  // comparava quem tinha meta (12% do time, no exemplo dele), então o total
+  // real do time (a mesma conta que já aparece em "CH programada"/"CH
+  // realizada" acima) ficava sem visão mês a mês. Mesma fonte/filtros do
+  // `programadoRow` do período inteiro, só que agrupado por mês.
+  const [porMesGeralRows] = await pool.query(
+    `SELECT fonte_horas.ano, fonte_horas.mes,
+            COALESCE(SUM(fonte_horas.horas_planejada), 0) AS programado
+     FROM ${FONTE_HORAS_SQL}
+     WHERE (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses}) ${clienteSql} ${tenantFonteHoras(empresaId)}
+     GROUP BY fonte_horas.ano, fonte_horas.mes`,
+    [...mesesParams, ...clienteParams, ...tenantFonteHorasParam(empresaId)]
+  );
+  const programadoPorMes = new Map(
+    porMesGeralRows.map((r) => [`${r.ano}-${pad2(r.mes)}`, Number(r.programado)])
+  );
+  for (const linha of linhasPorMes) {
+    linha.hc_programado = Number((programadoPorMes.get(linha.mes) || 0).toFixed(2));
+  }
+
   const capacidadeTotalPeriodo = linhasPorMes.reduce((acc, l) => acc + l.capacidade_nominal, 0);
   const hcRealizadoPeriodo = linhasPorMes.reduce((acc, l) => acc + l.hc_realizado, 0);
   const hcRealizadoComMetaPeriodo = linhasPorMes.reduce((acc, l) => acc + l.hc_realizado_com_meta, 0);
