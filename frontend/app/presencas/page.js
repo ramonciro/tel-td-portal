@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import PortalShell from "../../components/PortalShell";
 import StatCard    from "../../components/StatCard";
 import PageHero    from "../../components/PageHero";
-import { apiFetch }         from "../../services/api";
+import { apiFetch, apiDownloadPost } from "../../services/api";
 import { formatDateBR }     from "../../lib/date";
 import {
   colors,
@@ -195,6 +194,8 @@ export default function GestaoPresencasPage() {
   const [treinamentos, setTreinamentos] = useState([]);
   const [erro,         setErro]         = useState("");
   const [loading,      setLoading]      = useState(true);
+  const [exportando,   setExportando]   = useState(false);
+  const [exportErro,   setExportErro]   = useState("");
 
   const [filtroStatus,  setFiltroStatus]  = useState("todos");
   const [filtroCliente, setFiltroCliente] = useState("todos");
@@ -370,44 +371,69 @@ export default function GestaoPresencasPage() {
     return 0;
   }
 
-  function exportarRelatorio() {
-    const dados = turmasFiltradas.map((item) => {
-      const totalRealizado =
-        Number(item.presentes || 0) + Number(item.ausentes || 0) + Number(item.justificados || 0);
-      return {
-        Turma:                     item.tema        || "-",
-        Cliente:                   item.cliente     || "-",
-        Instrutor:                 item.instrutor   || "-",
-        Supervisor:                item.supervisor  || "-",
-        Status:                    item.statusTurma || "-",
-        Início:                    fmtDate(item.data_inicio || item.data),
-        Fim:                       fmtDate(item.data_fim || item.data_inicio || item.data),
-        "Treinandos previstos":    Number(item.treinandos             || 0),
-        "Treinandos confirmados":  Number(item.treinandos_confirmados || 0),
-        "Aulas planejadas":        Number(item.diasPlanejados         || 0),
-        "Base esperada":           Number(item.baseEsperada           || 0),
-        "Total realizado":         totalRealizado,
-        Presentes:                 Number(item.presentes    || 0),
-        Ausentes:                  Number(item.ausentes     || 0),
-        Justificados:              Number(item.justificados || 0),
-        Pendentes:                 Number(item.pendentes    || 0),
-        "Taxa presença (%)":       Number(item.taxaPresenca  || 0),
-        "Taxa execução (%)":       Number(item.taxaExecucao  || 0),
-        "Origem frequência":       item.origemFrequencia    || "-",
-        "Carga horária":           item.carga_horaria       || "0h",
-        "CH realizada":            `${calcularCHRealizada(item)}h`,
-      };
-    });
-    const ws = XLSX.utils.json_to_sheet(dados);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Relatório Presença");
-    // Nome do arquivo carrega o período escolhido, quando houver, pra ficar
-    // claro qual recorte foi exportado (evita confundir com o histórico
-    // completo de outra exportação salva na mesma pasta).
-    const sufixoPeriodo = periodoInicio || periodoFim
-      ? `_${periodoInicio || "inicio"}_a_${periodoFim || "hoje"}`
-      : "";
-    XLSX.writeFile(wb, `relatorio_presenca${sufixoPeriodo}.xlsx`);
+  // Redesign do relatório (pedido do Ramon, 29/09/2026: "ainda parece
+  // confuso... preciso que esteja melhor estruturado"). A lógica de
+  // filtro/cálculo continua toda aqui (turmasFiltradas, calcularCHRealizada,
+  // kpi) — só a MONTAGEM do arquivo passou a ser feita no backend
+  // (exceljs), que sabe formatar data/percentual de verdade, agrupar as
+  // colunas por seção e colorir por status/faixa de presença, igual ao
+  // resto da tela. Ver backend/src/controllers/presencaResumoController.js.
+  async function exportarRelatorio() {
+    try {
+      setExportando(true);
+      setExportErro("");
+      const linhas = turmasFiltradas.map((item) => {
+        const totalRealizado =
+          Number(item.presentes || 0) + Number(item.ausentes || 0) + Number(item.justificados || 0);
+        return {
+          turma:                    item.tema        || "-",
+          cliente:                  item.cliente     || "-",
+          instrutor:                item.instrutor   || "-",
+          supervisor:               item.supervisor  || "-",
+          status:                   item.statusTurma || "-",
+          inicio:                   item.data_inicio || item.data || null,
+          fim:                      item.data_fim || item.data_inicio || item.data || null,
+          treinandosPrevistos:      Number(item.treinandos             || 0),
+          treinandosConfirmados:    Number(item.treinandos_confirmados || 0),
+          aulasPlanejadas:          Number(item.diasPlanejados         || 0),
+          baseEsperada:             Number(item.baseEsperada           || 0),
+          cargaHoraria:             parseHoras(item.carga_horaria),
+          totalRealizado,
+          presentes:                Number(item.presentes    || 0),
+          ausentes:                 Number(item.ausentes     || 0),
+          justificados:             Number(item.justificados || 0),
+          pendentes:                Number(item.pendentes    || 0),
+          chRealizada:              calcularCHRealizada(item),
+          taxaPresenca:             Number(item.taxaPresenca  || 0),
+          taxaExecucao:             Number(item.taxaExecucao  || 0),
+          origemFrequencia:         item.origemFrequencia    || "-",
+        };
+      });
+
+      // Nome do arquivo carrega o período escolhido, quando houver, pra
+      // ficar claro qual recorte foi exportado.
+      const sufixoPeriodo = periodoInicio || periodoFim
+        ? `_${periodoInicio || "inicio"}_a_${periodoFim || "hoje"}`
+        : "";
+
+      await apiDownloadPost(
+        "/presenca-resumo/exportar-relatorio",
+        {
+          linhas,
+          kpi,
+          periodo: { inicio: periodoInicio || null, fim: periodoFim || null },
+        },
+        `relatorio_presenca${sufixoPeriodo}.xlsx`
+      );
+    } catch (error) {
+      // Erro próprio da exportação (não usa `erro`/setErro da página — esse
+      // estado, quando preenchido, esconde a tela inteira e mostra só a
+      // caixa de erro; um erro de exportação não pode derrubar a tela que
+      // o usuário já está vendo).
+      setExportErro(error.message || "Erro ao exportar relatório.");
+    } finally {
+      setExportando(false);
+    }
   }
 
   /* ══════════════════════════════════════════
@@ -535,21 +561,26 @@ export default function GestaoPresencasPage() {
                 />
               </div>
 
-              <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-                {(filtroStatus !== "todos" || filtroCliente !== "todos" || busca || periodoInicio || periodoFim) && (
-                  <button style={btnLimpar} onClick={limparFiltros}>
-                    Limpar
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, marginLeft: "auto" }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {(filtroStatus !== "todos" || filtroCliente !== "todos" || busca || periodoInicio || periodoFim) && (
+                    <button style={btnLimpar} onClick={limparFiltros}>
+                      Limpar
+                    </button>
+                  )}
+                  <button style={btnExportar} onClick={exportarRelatorio} disabled={exportando}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    {exportando ? "Exportando…" : "Exportar relatório"}
                   </button>
+                </div>
+                {exportErro && (
+                  <span style={{ fontSize: 12, color: colors.dangerText, fontWeight: 600 }}>{exportErro}</span>
                 )}
-                <button style={btnExportar} onClick={exportarRelatorio}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                  Exportar relatório
-                </button>
               </div>
             </div>
           </div>
