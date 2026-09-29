@@ -680,6 +680,25 @@ app.delete(
   }
 );
 
+// Correção de 29/09/2026 (achado ao investigar o pedido do Ramon sobre CH):
+// "Carga horária" é um campo de texto livre no formulário ("Ex.: 20h"), e o
+// banco guarda em uma coluna DECIMAL. Sem normalizar, um valor digitado no
+// formato brasileiro (vírgula decimal, ex.: "0,4") ou com a unidade junto
+// ("20h") quebra o UPDATE inteiro da turma com "Incorrect decimal value" —
+// erro que Ramon bateu ao tentar salvar uma edição (turma #232, carga_horaria
+// = "0,4"). Converte vírgula em ponto e descarta sufixos como "h" antes de
+// gravar; se não achar nenhum número no texto, deixa como veio (o UPDATE
+// então falha do mesmo jeito, mas por um valor realmente inválido, não por
+// formatação regional).
+function normalizarCargaHoraria(valor) {
+  if (valor === null || valor === undefined || valor === "") return valor;
+  const texto = String(valor).trim().replace(",", ".");
+  const match = texto.match(/-?\d+(\.\d+)?/);
+  if (!match) return valor;
+  const numero = Number(match[0]);
+  return Number.isFinite(numero) ? numero : valor;
+}
+
 /**
  * Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026) — beforeWrite de
  * /api/treinamentos:
@@ -692,12 +711,18 @@ app.delete(
  *      conflito nesse caso é só um dado histórico, não um problema real de
  *      agenda (a mesma regra que o painel de disponibilidade usa, ver
  *      salaConflitoService.js).
+ *   4. Normaliza carga_horaria (vírgula/unidade) antes de gravar — achado de
+ *      29/09/2026, ver normalizarCargaHoraria acima.
  */
 async function sanitizarEscritaTreinamento(data, req, ctx) {
   const dados = { ...data };
 
   if ("subtipo" in dados) {
     dados.subtipo = await normalizeSubtipo(dados.subtipo);
+  }
+
+  if ("carga_horaria" in dados) {
+    dados.carga_horaria = normalizarCargaHoraria(dados.carga_horaria);
   }
 
   const horaInicio = dados.hora_inicio ?? ctx.antes?.hora_inicio ?? null;
