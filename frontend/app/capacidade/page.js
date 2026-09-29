@@ -305,9 +305,29 @@ function CapacidadePageInner() {
   // agrupadas, e os meses sem ninguém com meta cadastrada (instrutores_com_meta
   // === 0) não desenham mais um "zero" ao lado dos meses com dado real — isso
   // fazia a meta parecer ter saído de zero e disparado. Ver `semMetaCadastrada`.
+  //
+  // Segunda revisão, mesmo dia (novo feedback do Ramon, depois de ver a
+  // primeira versão no ar): o gráfico comparava só quem tem meta cadastrada
+  // (2 de 17 instrutores, 12% do time) — então "realizado" no gráfico dava
+  // ~1h, muito longe das 756,92h que "CH efetiva realizada" mostra lá em
+  // cima, e ele não fazia sentido de bater um número com o outro. A causa:
+  // o gráfico e os cards de topo usavam POPULAÇÕES diferentes por padrão.
+  // Fix: o gráfico agora abre em "Time todo" (hc_programado × hc_realizado,
+  // exatamente a mesma fonte/filtro da "Aderência ao cronograma" acima —
+  // os dois batem por construção), com "Só quem tem meta cadastrada" como
+  // opção alternativa (o comportamento da primeira versão, preservado).
+  const [escopoGrafico, setEscopoGrafico] = useState("time"); // "time" | "meta"
   const tendenciaCapacidade = painel?.por_mes || [];
   const semMetaCadastrada = (d) => Number(d?.instrutores_com_meta || 0) === 0;
   const hcRealizadoSemMetaPeriodo = (painel?.por_mes || []).reduce((s, m) => s + (m.hc_realizado_sem_meta || 0), 0);
+  const gruposGraficoTime = [
+    { key: "hc_programado", label: "CH programada", cor: colors.neutral, sufixo: "h" },
+    { key: "hc_realizado", label: "CH realizada", cor: colors.success, sufixo: "h" },
+  ];
+  const gruposGraficoMeta = [
+    { key: "capacidade_nominal", label: "Meta cadastrada", cor: colors.neutral, sufixo: "h" },
+    { key: "hc_realizado_com_meta", label: "Realizada (com meta)", cor: colors.success, sufixo: "h" },
+  ];
 
   return (
     <PortalShell>
@@ -404,15 +424,19 @@ function CapacidadePageInner() {
           <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, animationDelay: ".05s" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
               <div>
-                <div style={cardTitle}>Capacidade (meta) × realizado — quem tem meta cadastrada</div>
+                <div style={cardTitle}>
+                  {escopoGrafico === "time" ? "CH programada × realizada — time todo" : "Capacidade (meta) × realizado — quem tem meta cadastrada"}
+                </div>
                 <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0" }}>
-                  Comparação mês a mês só entre instrutores com meta cadastrada naquele mês.
+                  {escopoGrafico === "time"
+                    ? "Mesma conta de \"Aderência ao cronograma\" acima, mês a mês — todo o time, com ou sem meta cadastrada."
+                    : "Comparação mês a mês só entre instrutores com meta cadastrada naquele mês."}
                 </p>
               </div>
               {/* Total real do time em destaque — antes só aparecia escondido numa
                  nota de rodapé, dando a impressão de que o time realizou quase
-                 nada (o gráfico acima só cobre quem tem meta, uma fatia pequena
-                 do total). Agora é uma métrica de primeira classe, ao lado do
+                 nada (a visão "meta cadastrada" cobre só uma fatia pequena do
+                 total). Agora é uma métrica de primeira classe, ao lado do
                  título, não uma ressalva em texto pequeno. */}
               <div style={{ textAlign: "right", flexShrink: 0 }}>
                 <div style={{ fontSize: 11, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".04em" }}>Realizado total do time</div>
@@ -422,21 +446,40 @@ function CapacidadePageInner() {
                 </div>
               </div>
             </div>
+
+            {/* Filtro de escopo — pedido do Ramon (29/09/2026): a meta
+               cadastrada pode ajudar a explicar o programado/realizado, mas
+               o gráfico deve mostrar o geral por padrão, com isso como opção,
+               não o contrário. */}
+            <div style={{ display: "flex", gap: 6, margin: "10px 0 14px" }}>
+              <button
+                style={escopoGrafico === "time" ? escopoBtnAtivo : escopoBtn}
+                onClick={() => setEscopoGrafico("time")}
+              >
+                Time todo
+              </button>
+              <button
+                style={escopoGrafico === "meta" ? escopoBtnAtivo : escopoBtn}
+                onClick={() => setEscopoGrafico("meta")}
+              >
+                Só quem tem meta cadastrada
+              </button>
+            </div>
+
             {tendenciaCapacidade.length > 0 ? (
               <GraficoBarraAgrupada
                 dados={tendenciaCapacidade}
-                grupos={[
-                  { key: "capacidade_nominal", label: "Meta cadastrada", cor: colors.neutral, sufixo: "h" },
-                  { key: "hc_realizado_com_meta", label: "Realizada (com meta)", cor: colors.success, sufixo: "h" },
-                ]}
-                semDado={semMetaCadastrada}
+                grupos={escopoGrafico === "time" ? gruposGraficoTime : gruposGraficoMeta}
+                semDado={escopoGrafico === "meta" ? semMetaCadastrada : undefined}
                 revelado={revelado}
               />
             ) : (
               <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem dados no período.</p>
             )}
             <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 12, marginBottom: 0 }}>
-              Meses marcados "sem meta" não tinham nenhum instrutor com meta de capacidade cadastrada — por isso não aparecem como zero, que sugeriria uma meta muito baixa em vez de nenhuma meta configurada.
+              {escopoGrafico === "time"
+                ? "\"CH programada\" soma o cronograma de todo instrutor ativo (com ou sem meta cadastrada) — é o mesmo número do card \"Aderência ao cronograma\" acima, mês a mês."
+                : "Meses marcados \"sem meta\" não tinham nenhum instrutor com meta de capacidade cadastrada — por isso não aparecem como zero, que sugeriria uma meta muito baixa em vez de nenhuma meta configurada."}
             </p>
           </div>
 
@@ -987,3 +1030,5 @@ const overrideItem = { display: "flex", justifyContent: "space-between", alignIt
 const btnExcluirOverride = { background: "none", border: "none", color: colors.dangerText, cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" };
 const abaBtn = { background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
 const abaBtnAtiva = { ...abaBtn, background: colors.accent, color: "#fff", border: `1px solid ${colors.accent}` };
+const escopoBtn = { background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 };
+const escopoBtnAtivo = { ...escopoBtn, background: colors.navy, color: "#fff", border: `1px solid ${colors.navy}` };
