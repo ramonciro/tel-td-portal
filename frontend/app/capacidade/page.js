@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
-import { BarraHorizontal, GraficoLinha, Donut, Funil, CORES } from "../../components/Charts";
+import { BarraHorizontal, GraficoBarraAgrupada, Donut, Funil, CORES } from "../../components/Charts";
 import { apiFetch, apiDownload } from "../../services/api";
 import { colors } from "../../lib/theme";
 
@@ -297,9 +297,17 @@ function CapacidadePageInner() {
     return resto > 0 ? [...principais, { label: "Outras", valor: resto, cor: colors.neutral }] : principais;
   }, [distribuicao]);
 
-  // Tendência de capacidade × CH realizada (painel.por_mes já vem no
-  // formato "AAAA-MM" que o GraficoLinha espera para extrair o rótulo).
+  // Capacidade × CH realizada por mês (painel.por_mes já vem no formato
+  // "AAAA-MM" que o GraficoBarraAgrupada espera para extrair o rótulo).
+  // Revisão de 29/09/2026 (feedback do Ramon): era um gráfico de linha, que
+  // sugeria uma trajetória contínua entre meses que não existe — cada mês é
+  // uma comparação discreta entre meta e realizado. Trocado por barras
+  // agrupadas, e os meses sem ninguém com meta cadastrada (instrutores_com_meta
+  // === 0) não desenham mais um "zero" ao lado dos meses com dado real — isso
+  // fazia a meta parecer ter saído de zero e disparado. Ver `semMetaCadastrada`.
   const tendenciaCapacidade = painel?.por_mes || [];
+  const semMetaCadastrada = (d) => Number(d?.instrutores_com_meta || 0) === 0;
+  const hcRealizadoSemMetaPeriodo = (painel?.por_mes || []).reduce((s, m) => s + (m.hc_realizado_sem_meta || 0), 0);
 
   return (
     <PortalShell>
@@ -394,21 +402,41 @@ function CapacidadePageInner() {
           </div>
 
           <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, animationDelay: ".05s" }}>
-            <div style={cardTitle}>Capacidade (meta) × realizado do time — quem tem meta cadastrada</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+              <div>
+                <div style={cardTitle}>Capacidade (meta) × realizado — quem tem meta cadastrada</div>
+                <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0" }}>
+                  Comparação mês a mês só entre instrutores com meta cadastrada naquele mês.
+                </p>
+              </div>
+              {/* Total real do time em destaque — antes só aparecia escondido numa
+                 nota de rodapé, dando a impressão de que o time realizou quase
+                 nada (o gráfico acima só cobre quem tem meta, uma fatia pequena
+                 do total). Agora é uma métrica de primeira classe, ao lado do
+                 título, não uma ressalva em texto pequeno. */}
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontSize: 11, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".04em" }}>Realizado total do time</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: colors.success }}>{fmt(ind.hc_realizado_periodo)}h</div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                  {fmt(hcRealizadoSemMetaPeriodo)}h vieram de quem não tem meta cadastrada
+                </div>
+              </div>
+            </div>
             {tendenciaCapacidade.length > 0 ? (
-              <GraficoLinha
+              <GraficoBarraAgrupada
                 dados={tendenciaCapacidade}
-                linhas={[
+                grupos={[
                   { key: "capacidade_nominal", label: "Meta cadastrada", cor: colors.neutral, sufixo: "h" },
                   { key: "hc_realizado_com_meta", label: "Realizada (com meta)", cor: colors.success, sufixo: "h" },
                 ]}
+                semDado={semMetaCadastrada}
                 revelado={revelado}
               />
             ) : (
               <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem dados no período.</p>
             )}
             <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 12, marginBottom: 0 }}>
-              Este comparativo é só de quem tem meta cadastrada em cada mês — o time inteiro realizou {fmt(ind.hc_realizado_periodo)}h no período, sendo {fmt((painel?.por_mes || []).reduce((s, m) => s + (m.hc_realizado_sem_meta || 0), 0))}h de instrutores sem meta (não entram na comparação acima, só no total geral).
+              Meses marcados "sem meta" não tinham nenhum instrutor com meta de capacidade cadastrada — por isso não aparecem como zero, que sugeriria uma meta muito baixa em vez de nenhuma meta configurada.
             </p>
           </div>
 
