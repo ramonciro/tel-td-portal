@@ -433,6 +433,153 @@ async function importarParticipantesExcel(req, res) {
   }
 }
 
+// Pedido do Ramon (29/09/2026): "Preciso do Excel base para importação dos
+// treinandos nas turmas". Até aqui não existia planilha-modelo nenhuma pra
+// baixar — a tela só mostrava um texto explicando as colunas (ver
+// frontend/app/turma/[id]/participantes/page.js). Gera o modelo aqui, no
+// backend, pra ele nunca desalinhar das colunas que `importarParticipantesExcel`
+// (acima) realmente aceita — normalizadas por `normalizeHeader`.
+async function baixarModeloImportacaoParticipantes(req, res) {
+  try {
+    const { id } = req.params;
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+
+    if (!(await treinamentoPertenceAoTenant(db, id, empresaId, req))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
+    const [rows] = await db.query(
+      `SELECT cliente, tema, supervisor FROM treinamentos WHERE id = ? LIMIT 1`,
+      [id]
+    );
+    const treinamento = rows[0] || {};
+    const cliente = String(treinamento.cliente || "Nome do cliente").trim();
+    // "turma" pro importador é o mesmo valor que a tela de participantes já
+    // usa pra pré-preencher o formulário manual: o tema do treinamento (ver
+    // emptyForm() em participantes/page.js) — não a coluna `turma` da
+    // tabela `treinamentos`, que é outra coisa.
+    const turma = String(treinamento.tema || "Nome da turma").trim();
+    const supervisor = String(treinamento.supervisor || "Nome do supervisor").trim();
+
+    const { novoWorkbook, estilizarCabecalho, FORMATO_DATA } = require("../lib/excelExport");
+    const wb = novoWorkbook();
+
+    const colunas = [
+      { titulo: "Nome *",           chave: "nome",           largura: 30 },
+      { titulo: "Cliente *",        chave: "cliente",        largura: 22 },
+      { titulo: "Turma *",          chave: "turma",          largura: 26 },
+      { titulo: "Supervisor *",     chave: "supervisor",     largura: 22 },
+      { titulo: "Operação *",       chave: "operacao",       largura: 20 },
+      { titulo: "Data Admissão *",  chave: "data_admissao",  largura: 16 },
+      { titulo: "Matrícula **",     chave: "matricula",      largura: 14 },
+      { titulo: "CPF **",           chave: "cpf",             largura: 16 },
+    ];
+
+    const wsModelo = wb.addWorksheet("Modelo");
+    wsModelo.columns = colunas.map((c) => ({ width: c.largura }));
+
+    // Cabeçalho na LINHA 1, de propósito: `importarParticipantesExcel` usa
+    // `XLSX.utils.sheet_to_json` puro, que sempre lê a primeira linha da
+    // planilha como cabeçalho — um título/legenda mesclados acima dele (como
+    // numa primeira versão deste modelo) fazem a importação de volta falhar
+    // com "colunas obrigatórias ausentes" nas 6 colunas, porque a "primeira
+    // linha" vira o título, não os nomes de coluna de verdade. Testado com
+    // reimportação de ponta a ponta antes de fechar o pacote.
+    const headerRow = 1;
+    colunas.forEach((c, i) => { wsModelo.getCell(headerRow, i + 1).value = c.titulo; });
+    estilizarCabecalho(wsModelo, headerRow, colunas.length);
+
+    wsModelo.getCell(headerRow, 1).note =
+      "* obrigatório\n** preencha pelo menos um dos dois: Matrícula ou CPF (ver aba \"Instruções\").";
+    wsModelo.getCell(headerRow, 7).note =
+      "Preencha pelo menos uma das duas: Matrícula ou CPF.";
+    wsModelo.getCell(headerRow, 8).note =
+      "Só é aceito com 11 dígitos. Turma de Avaliação Técnica, sem matrícula/login no RH de origem: preencha só o CPF.";
+
+    // Linhas de exemplo (itálico/cinza, pra ficar claro que são só ilustração
+    // e devem ser apagadas antes de importar) — uma com matrícula, outra só
+    // com CPF, cobrindo os dois casos que o importador aceita.
+    const agora = new Date();
+    const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+    const exemplos = [
+      { nome: "João da Silva", operacao: "Atendimento", matricula: "123456",     cpf: "" },
+      { nome: "Maria Souza",   operacao: "Cobrança",     matricula: "",          cpf: "98765432100" },
+    ];
+    exemplos.forEach((linha, idx) => {
+      const row = headerRow + 1 + idx;
+      const valores = { ...linha, cliente, turma, supervisor };
+      colunas.forEach((c, i) => {
+        const cell = wsModelo.getCell(row, i + 1);
+        if (c.chave === "data_admissao") {
+          cell.value = hoje;
+          cell.numFmt = FORMATO_DATA;
+        } else {
+          cell.value = valores[c.chave] ?? "";
+        }
+      });
+      wsModelo.getRow(row).font = { italic: true, color: { argb: "FF64748B" } };
+    });
+
+    // Algumas linhas em branco prontas pra preencher, já com Cliente/Turma/
+    // Supervisor desta turma — poupa o preenchimento repetitivo linha a linha.
+    for (let i = 0; i < 15; i++) {
+      const row = headerRow + 1 + exemplos.length + i;
+      wsModelo.getCell(row, 2).value = cliente;
+      wsModelo.getCell(row, 3).value = turma;
+      wsModelo.getCell(row, 4).value = supervisor;
+    }
+
+    wsModelo.autoFilter = { from: { row: headerRow, column: 1 }, to: { row: headerRow, column: colunas.length } };
+    wsModelo.views = [{ state: "frozen", ySplit: headerRow }];
+
+    // Aba "Instruções" — mesmas regras do texto de ajuda da tela, só que
+    // sempre à mão junto do arquivo (útil se alguém reenviar o modelo por
+    // e-mail sem o link da tela).
+    const wsInfo = wb.addWorksheet("Instruções");
+    wsInfo.columns = [{ width: 100 }];
+    const linhasInfo = [
+      { texto: "Como preencher esta planilha", bold: true, size: 13 },
+      { texto: `Modelo gerado para a turma "${turma}" — cliente ${cliente}.`, size: 10, color: "FF64748B" },
+      { texto: "" },
+      { texto: "Colunas obrigatórias: Nome, Cliente, Turma, Supervisor, Operação e Data Admissão." },
+      { texto: "Preencha pelo menos uma das colunas Matrícula ou CPF (as duas juntas também funcionam)." },
+      { texto: "Turma de Avaliação Técnica, sem matrícula/login no RH de origem: use só a coluna CPF (11 dígitos)." },
+      { texto: "Data Admissão: pode usar uma data do Excel (como nas duas linhas de exemplo da aba \"Modelo\") ou texto no formato DD/MM/AAAA." },
+      { texto: "" },
+      { texto: "A aba \"Modelo\" já vem com Cliente, Turma e Supervisor preenchidos com os dados desta turma — troque nome, operação, data de admissão e matrícula/CPF de cada treinando, apague as duas linhas de exemplo (em itálico) e adicione mais linhas se precisar." },
+      { texto: "" },
+      { texto: "Atenção", bold: true, color: "FFB45309" },
+      { texto: "Importar uma planilha para esta turma SUBSTITUI totalmente a lista atual de participantes e apaga os registros de presença/chamada já lançados para ela. Se a turma já tem chamada feita, revise com cuidado antes de reimportar — a importação não pode ser desfeita." },
+      { texto: "" },
+      { texto: "A importação também cria automaticamente o acesso (login) de cada treinando no portal, usando CPF ou matrícula como identificador (Decisão 2 do Ramon, 25/09/2026)." },
+    ];
+    linhasInfo.forEach((linha, idx) => {
+      const row = idx + 1;
+      const cell = wsInfo.getCell(row, 1);
+      cell.value = linha.texto;
+      cell.font = {
+        bold: !!linha.bold,
+        size: linha.size || 11,
+        color: linha.color ? { argb: linha.color } : undefined,
+      };
+      cell.alignment = { wrapText: true, vertical: "top" };
+      if (linha.texto) wsInfo.getRow(row).height = linha.bold ? 20 : undefined;
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const nomeArquivoTurma = turma.replace(/[^\p{L}\p{N}]+/gu, "_").replace(/^_+|_+$/g, "") || "turma";
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="modelo_importacao_participantes_${nomeArquivoTurma}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  } catch (error) {
+    console.error("[participantes] baixarModeloImportacao:", error.message || error);
+    return res.status(500).json({
+      ok: false,
+      message: "Erro ao gerar o modelo de importação",
+    });
+  }
+}
+
 async function salvarChamadaParticipantes(req, res) {
   try {
     const { treinamento_id, participantes, data_chamada } = req.body || {};
@@ -895,6 +1042,7 @@ function formatExcelDateToMySQL(value) {
 module.exports = {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
+  baixarModeloImportacaoParticipantes,
   salvarChamadaParticipantes,
   createParticipanteTreinamento,
   deleteParticipanteTreinamento,
