@@ -48,6 +48,7 @@ export default function ParticipantesTurmaPage() {
   const [form,          setForm]          = useState(emptyForm());
   const [loading,       setLoading]       = useState(true);
   const [importando,    setImportando]    = useState(false);
+  const [baixandoModelo, setBaixandoModelo] = useState(false);
   const [salvando,      setSalvando]      = useState(false);
   const [erro,          setErro]          = useState("");
   const [sucesso,       setSucesso]       = useState("");
@@ -119,6 +120,25 @@ export default function ParticipantesTurmaPage() {
       setErro(err.message || "Erro ao importar Excel.");
     } finally {
       setImportando(false);
+    }
+  }
+
+  // Pedido do Ramon (29/09/2026): "Preciso do Excel base para importação dos
+  // treinandos nas turmas" — modelo já vem com Cliente/Turma/Supervisor
+  // desta turma preenchidos (ver baixarModeloImportacaoParticipantes no
+  // backend), então só falta preencher nome, operação, data de admissão e
+  // matrícula/CPF de cada treinando.
+  async function baixarModelo() {
+    try {
+      setBaixandoModelo(true); setErro(""); setSucesso("");
+      await apiDownload(
+        `/treinamentos/${id}/modelo-importacao-participantes`,
+        `modelo-importacao-participantes-turma-${id}.xlsx`
+      );
+    } catch (err) {
+      setErro(err.message || "Erro ao baixar o modelo.");
+    } finally {
+      setBaixandoModelo(false);
     }
   }
 
@@ -240,6 +260,9 @@ export default function ParticipantesTurmaPage() {
               <div style={secaoTitulo}>Importar base via Excel</div>
               <div style={secaoSub}>Importe uma única vez e reutilize nas aulas do cronograma.</div>
             </div>
+            <button style={btnOutline} onClick={baixarModelo} disabled={baixandoModelo}>
+              {baixandoModelo ? "Gerando…" : "⬇ Baixar modelo"}
+            </button>
           </div>
           <div style={importRow}>
             <input
@@ -257,6 +280,13 @@ export default function ParticipantesTurmaPage() {
             <strong>operacao</strong>, <strong>data_admissao</strong>, e pelo menos uma
             das duas: <strong>matricula</strong> ou <strong>cpf</strong> (em turma de
             Avaliação Técnica, sem matrícula/login no RH de origem, use a coluna cpf).
+            Não sabe o formato? Use o botão <strong>Baixar modelo</strong> acima —
+            ele já vem com cliente, turma e supervisor preenchidos.
+          </p>
+          <p style={{ ...helperText, color: colors.dangerText, fontWeight: 600, marginTop: 6 }}>
+            Atenção: importar uma planilha substitui toda a lista de participantes
+            desta turma e apaga a chamada/presença já lançada para ela. Se a turma
+            já tem chamada feita, confira com cuidado antes de reimportar.
           </p>
         </div>
       )}
