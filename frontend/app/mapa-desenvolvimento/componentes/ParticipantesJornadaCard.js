@@ -257,6 +257,15 @@ export default function ParticipantesJornadaCard({
                     tripulacao.map((item) => (
                       <div key={item.id} style={crewListCard}>
                         <div style={crewListName}>{item.nome}</div>
+                        {item.pessoa_id && (
+                          <a
+                            href={`/pessoas/${item.pessoa_id}`}
+                            title="Ver perfil completo"
+                            style={{ display: "inline-block", marginTop: 2, marginBottom: 4, color: "#D97706", fontWeight: 700, fontSize: 11.5, textDecoration: "none" }}
+                          >
+                            Ver perfil completo
+                          </a>
+                        )}
                         <div style={crewListMeta}>
                           {item.turma || "Sem turma"} • {item.cargo || "Sem cargo"}
                         </div>
