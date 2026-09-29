@@ -689,6 +689,15 @@ export default function UsuariosPage() {
                             <div>
                               <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 14 }}>{u.nome}</div>
                               <div style={{ fontSize: 12, color: "#64748b" }}>{u.email}</div>
+                              {u.pessoa_id && (
+                                <a
+                                  href={`/pessoas/${u.pessoa_id}`}
+                                  title="Ver perfil completo"
+                                  style={{ display: "inline-block", marginTop: 2, color: colors.accent, fontWeight: 700, fontSize: 11, textDecoration: "none" }}
+                                >
+                                  Ver perfil completo
+                                </a>
+                              )}
                             </div>
                           </div>
                         </td>
