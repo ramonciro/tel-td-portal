@@ -22,12 +22,6 @@ function fmt(n) {
 function fmtDate(v) {
   return formatDateBR(v, "-");
 }
-function parseHoras(value) {
-  if (value === null || value === undefined || value === "") return 0;
-  const m = String(value).replace(",", ".").trim().match(/(\d+(\.\d+)?)/);
-  return m ? Number(m[1]) || 0 : 0;
-}
-
 /* ═══════════════════════════════════════════════
    COR DE SAÚDE DA TURMA (borda esquerda do card)
 ═══════════════════════════════════════════════ */
@@ -233,6 +227,16 @@ export default function GestaoPresencasPage() {
             statusTurma:         t.status_turma,
             usaCronograma:       !!t.usa_cronograma,
             origemFrequencia:    t.origem_frequencia,
+            // CH planejada/realizada de verdade (29/09/2026, pedido do Ramon):
+            // mesma fonte já usada na página Capacidade — soma o cronograma
+            // dia a dia (turma_aulas) quando ele existe, e só cai pro campo
+            // "Carga horária" digitado na criação da turma quando a turma não
+            // tem cronograma nenhum. Antes esta tela ignorava esses dois
+            // campos e recalculava a partir do texto digitado — agora não
+            // depende mais de o instrutor preencher nada à parte.
+            horasPlanejadas:     Number(t.horas_planejadas || 0),
+            horasAplicadas:      Number(t.horas_aplicadas  || 0),
+            origemHoras:         t.origem_horas,
           }))
         );
         setErro("");
@@ -304,7 +308,7 @@ export default function GestaoPresencasPage() {
       taxaMedia,
       turmasComDados: turmasComDados.length,
       participacoes:  turmasFiltradas.reduce((a, t) => a + t.presentes, 0),
-      horas:          turmasFiltradas.reduce((a, t) => a + calcularCHRealizada(t), 0),
+      horas:          turmasFiltradas.reduce((a, t) => a + t.horasAplicadas, 0),
     };
   }, [turmasFiltradas]);
 
@@ -346,38 +350,23 @@ export default function GestaoPresencasPage() {
   /* ─────────────────────────────────────────
      FUNÇÕES DE NEGÓCIO (preservadas dos fixes)
   ───────────────────────────────────────── */
-  function calcularCHRealizada(item) {
-    const carga = parseHoras(item.carga_horaria);
-    if (
-      item.statusTurma === "Planejada"     ||
-      item.statusTurma === "Cancelada"     ||
-      item.statusTurma === "Sem treinandos" ||
-      item.statusTurma === "Sem cronograma"
-    ) return 0;
-
-    const totalRealizado =
-      Number(item.presentes   || 0) +
-      Number(item.ausentes    || 0) +
-      Number(item.justificados || 0);
-
-    if (item.statusTurma === "Concluída") {
-      return totalRealizado === 0 ? 0 : carga;
-    }
-    if (item.diasPlanejados > 0) {
-      const base = Number(item.baseEsperada || 0);
-      const prop = base > 0 ? Math.min(totalRealizado / base, 1) : 0;
-      return Number((carga * prop).toFixed(1));
-    }
-    return 0;
-  }
+  // Correção de 29/09/2026 (Ramon): "Carga horária" e "CH realizada" não
+  // calculam mais nada por conta própria aqui — usam horasPlanejadas/
+  // horasAplicadas, que já vêm prontas do backend (mesma fonte da página
+  // Capacidade: soma o cronograma dia a dia quando ele existe, cai pro
+  // campo digitado na criação da turma só quando não há cronograma). Isso
+  // também unifica a regra entre turma "Concluída" (antes era tudo-ou-nada:
+  // 0 ou a carga cheia) e "Em andamento" (antes era proporcional) — agora as
+  // duas usam a mesma soma de horas por dia já executado, sem essa mistura
+  // de regras. A função antiga (calcularCHRealizada) foi removida.
 
   // Redesign do relatório (pedido do Ramon, 29/09/2026: "ainda parece
   // confuso... preciso que esteja melhor estruturado"). A lógica de
-  // filtro/cálculo continua toda aqui (turmasFiltradas, calcularCHRealizada,
-  // kpi) — só a MONTAGEM do arquivo passou a ser feita no backend
-  // (exceljs), que sabe formatar data/percentual de verdade, agrupar as
-  // colunas por seção e colorir por status/faixa de presença, igual ao
-  // resto da tela. Ver backend/src/controllers/presencaResumoController.js.
+  // filtro/cálculo continua toda aqui (turmasFiltradas, kpi) — só a
+  // MONTAGEM do arquivo passou a ser feita no backend (exceljs), que sabe
+  // formatar data/percentual de verdade, agrupar as colunas por seção e
+  // colorir por status/faixa de presença, igual ao resto da tela. Ver
+  // backend/src/controllers/presencaResumoController.js.
   async function exportarRelatorio() {
     try {
       setExportando(true);
@@ -397,13 +386,13 @@ export default function GestaoPresencasPage() {
           treinandosConfirmados:    Number(item.treinandos_confirmados || 0),
           aulasPlanejadas:          Number(item.diasPlanejados         || 0),
           baseEsperada:             Number(item.baseEsperada           || 0),
-          cargaHoraria:             parseHoras(item.carga_horaria),
+          cargaHoraria:             item.horasPlanejadas,
           totalRealizado,
           presentes:                Number(item.presentes    || 0),
           ausentes:                 Number(item.ausentes     || 0),
           justificados:             Number(item.justificados || 0),
           pendentes:                Number(item.pendentes    || 0),
-          chRealizada:              calcularCHRealizada(item),
+          chRealizada:              item.horasAplicadas,
           taxaPresenca:             Number(item.taxaPresenca  || 0),
           taxaExecucao:             Number(item.taxaExecucao  || 0),
           origemFrequencia:         item.origemFrequencia    || "-",
@@ -721,9 +710,9 @@ export default function GestaoPresencasPage() {
                         {" → "}
                         {fmtDate(item.data_fim || item.data_inicio || item.data)}
                       </span>
-                      {item.carga_horaria && (
+                      {item.horasPlanejadas > 0 && (
                         <span style={{ fontWeight: 700, color: "#334155" }}>
-                          {item.carga_horaria}
+                          {fmt(item.horasPlanejadas)}h
                         </span>
                       )}
                     </div>
