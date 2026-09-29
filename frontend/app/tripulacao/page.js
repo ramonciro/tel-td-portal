@@ -594,7 +594,14 @@ export default function TripulacaoPage() {
               return (
                 <div key={linha.key}>
                   <div style={linhaTabela}>
-                    <div style={{ fontWeight: 700, color: colors.textPrimary }}>{linha.nome}</div>
+                    <div>
+                      <div style={{ fontWeight: 700, color: colors.textPrimary }}>{linha.nome}</div>
+                      {linha.pessoaId && (
+                        <a href={`/pessoas/${linha.pessoaId}`} style={linkPerfilCompleto} title="Ver perfil completo">
+                          Ver perfil completo
+                        </a>
+                      )}
+                    </div>
                     <div style={{ color: colors.textSecondary, fontSize: 13.5 }}>{linha.cliente}</div>
                     <div>
                       <span style={badgeVinculo(linha.vinculo)}>{vinculoLabel(linha.vinculo)}</span>
@@ -978,6 +985,15 @@ const linkBotao = {
   fontWeight: 700,
   fontSize: 12.5,
   cursor: "pointer",
+};
+
+const linkPerfilCompleto = {
+  display: "inline-block",
+  marginTop: 2,
+  color: colors.accent,
+  fontWeight: 700,
+  fontSize: 11.5,
+  textDecoration: "none",
 };
 
 const formGrid = {
