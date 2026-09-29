@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
-import { BarraHorizontal, GraficoLinha, Donut, CORES } from "../../components/Charts";
+import { BarraHorizontal, GraficoLinha, Donut, Funil, CORES } from "../../components/Charts";
 import { apiFetch, apiDownload } from "../../services/api";
 import { colors } from "../../lib/theme";
 
@@ -21,12 +21,25 @@ function corPorAderencia(pct) {
   return colors.danger;
 }
 
+// Cor por faixa de ocupação — mesmos limiares de statusOcupacao() no backend
+// (capacidadeResolver.js): <40 ociosa, ≤100 saudável, ≤120 atenção, senão
+// sobrecarga. Só se aplica a quem TEM meta cadastrada (ver tem_meta abaixo) —
+// sem meta não existe "faixa", é só volume.
+function corPorOcupacao(pct) {
+  const n = Number(pct);
+  if (!Number.isFinite(n)) return colors.neutral;
+  if (n < 40) return colors.neutral;
+  if (n <= 100) return colors.success;
+  if (n <= 120) return colors.warning;
+  return colors.danger;
+}
+
 const STATUS_LABEL = {
   ocioso: "Ociosa",
   saudavel: "Saudável",
   atencao: "Atenção",
   sobrecarga: "Sobrecarga",
-  sem_capacidade: "Sem capacidade definida",
+  sem_capacidade: "Sem meta cadastrada",
 };
 
 // "1" foi acrescentado a pedido do Ramon (16/09/2026): as tabelas "Capacity
@@ -257,6 +270,13 @@ function CapacidadePageInner() {
     return ranking.map((r) => ({ ...r, medalha: medalhas[r.posicao - 1] || "▫️" }));
   }, [ranking]);
 
+  // Decisão de 29/09/2026: capacity.itens vem misturado (com e sem meta) —
+  // separado aqui pra virar dois gráficos distintos em vez de uma tabela só,
+  // já que "% de ocupação" e "horas em sala" não são comparáveis na mesma
+  // barra (um tem teto, o outro não).
+  const capacityComMeta = useMemo(() => (capacity?.itens || []).filter((r) => r.tem_meta), [capacity]);
+  const capacitySemMeta = useMemo(() => (capacity?.itens || []).filter((r) => !r.tem_meta && r.total_90d > 0), [capacity]);
+
   // Cascata de entrada — replay a cada recarregamento (troca de filtro),
   // mesmo padrão de /inicio, /rs, /dashboard e /indicadores.
   const [revelado, setRevelado] = useState(false);
@@ -331,123 +351,167 @@ function CapacidadePageInner() {
              exibido, não só a forma. A cascata de entrada (fade + slide)
              ainda se aplica normalmente, só o "contar" fica de fora. */}
           <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
-            <StatCard title="Capacidade nominal (período)" value={`${fmt(ind.capacidade_nominal_periodo)}h`} accent={colors.neutral} />
-            <StatCard title="Capacidade mensal do time" value={`${fmt(ind.capacidade_mensal_time)}h`} accent={colors.info} />
-            <StatCard title="Capacidade / instrutor (mês)" value={`${fmt(ind.capacidade_por_instrutor)}h`} accent={colors.info} />
+            <StatCard title="Instrutores com meta cadastrada" value={`${fmt(ind.instrutores_com_meta)} de ${fmt(ind.instrutores_total)}`} accent={colors.navy} />
+            <StatCard title="Ocupação (quem tem meta)" value={fmtPct(ind.ocupacao_time_pct)} accent={colors.info} />
             <StatCard title="CH programada (turmas)" value={`${fmt(ind.hc_programado_periodo)}h`} accent={colors.primary} />
             <StatCard title="CH efetiva realizada" value={`${fmt(ind.hc_realizado_periodo)}h`} accent={colors.success} />
             <StatCard title="Aderência geral" value={fmtPct(ind.aderencia_geral_pct)} accent={colors.accent} />
-            <StatCard title="Ocupação do time" value={fmtPct(ind.ocupacao_time_pct)} accent={colors.navy} />
+          </div>
+
+          {/* Decisão de 29/09/2026: "% de ocupação" só existe pra quem tem meta
+             cadastrada (ver proposta-revisao-ocupacao-capacidade-2026-09-28.md) —
+             por isso os dois funis abaixo, em vez de um único "% do time":
+             o primeiro mostra quantos instrutores têm meta pra comparar (a
+             lacuna de configuração), o segundo mostra o volume real entregue
+             (programado → realizado), que já é honesto por natureza. */}
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20, alignItems: "start", animationDelay: ".03s" }}>
+            <div style={card}>
+              <div style={cardTitle}>Cobertura de meta de capacidade</div>
+              <Funil
+                etapas={[
+                  { label: "Instrutores ativos", valor: ind.instrutores_total || 0, cor: colors.neutral },
+                  { label: "Com meta de capacidade cadastrada", valor: ind.instrutores_com_meta || 0, cor: colors.accent },
+                ]}
+                revelado={revelado}
+              />
+              <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 10, marginBottom: 0 }}>
+                Só quem tem uma meta cadastrada (ajuste manual, na configuração abaixo) aparece com % de ocupação nas telas — o restante do time é mostrado por volume (horas em sala / turmas), sem comparar contra um teto genérico.
+              </p>
+            </div>
+            <div style={card}>
+              <div style={cardTitle}>Aderência ao cronograma — programado × realizado</div>
+              <Funil
+                etapas={[
+                  { label: "CH programada", valor: ind.hc_programado_periodo || 0, cor: colors.neutral },
+                  { label: "CH realizada", valor: ind.hc_realizado_periodo || 0, cor: colors.success },
+                ]}
+                revelado={revelado}
+              />
+              <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 10, marginBottom: 0 }}>
+                Aderência geral: {fmtPct(ind.aderencia_geral_pct)} das horas programadas no cronograma foram de fato dadas no período.
+              </p>
+            </div>
           </div>
 
           <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, animationDelay: ".05s" }}>
-            <div style={cardTitle}>Capacity mensal do time × consumido</div>
-            {tendenciaCapacidade.length > 0 && (
-              <div style={{ marginBottom: 18 }}>
-                <GraficoLinha
-                  dados={tendenciaCapacidade}
-                  linhas={[
-                    { key: "capacidade_nominal", label: "Capacidade", cor: colors.neutral, sufixo: "h" },
-                    { key: "hc_realizado", label: "CH realizada", cor: colors.success, sufixo: "h" },
-                  ]}
+            <div style={cardTitle}>Capacidade (meta) × realizado do time — quem tem meta cadastrada</div>
+            {tendenciaCapacidade.length > 0 ? (
+              <GraficoLinha
+                dados={tendenciaCapacidade}
+                linhas={[
+                  { key: "capacidade_nominal", label: "Meta cadastrada", cor: colors.neutral, sufixo: "h" },
+                  { key: "hc_realizado_com_meta", label: "Realizada (com meta)", cor: colors.success, sufixo: "h" },
+                ]}
+                revelado={revelado}
+              />
+            ) : (
+              <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem dados no período.</p>
+            )}
+            <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 12, marginBottom: 0 }}>
+              Este comparativo é só de quem tem meta cadastrada em cada mês — o time inteiro realizou {fmt(ind.hc_realizado_periodo)}h no período, sendo {fmt((painel?.por_mes || []).reduce((s, m) => s + (m.hc_realizado_sem_meta || 0), 0))}h de instrutores sem meta (não entram na comparação acima, só no total geral).
+            </p>
+          </div>
+
+          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20, alignItems: "start", animationDelay: ".1s" }}>
+            <div style={card}>
+              <div style={cardTitle}>Com meta cadastrada — % de ocupação ({janela})</div>
+              {capacityComMeta.length > 0 ? (
+                <BarraHorizontal
+                  dados={capacityComMeta}
+                  labelKey="instrutor" valueKey="ocupacao_pct" sufixo="%" maxValor={140}
+                  corPorItem={(r) => corPorOcupacao(r.ocupacao_pct)}
+                  subtitulo={(r) => `${fmt(r.total_90d)}h / ${fmt(r.capacidade_90d)}h`}
                   revelado={revelado}
                 />
+              ) : (
+                <p style={{ fontSize: 13, color: "#94a3b8" }}>Nenhum instrutor com meta cadastrada neste período.</p>
+              )}
+            </div>
+            <div style={card}>
+              <div style={cardTitle}>Sem meta cadastrada — horas em sala ({janela})</div>
+              {capacitySemMeta.length > 0 ? (
+                <BarraHorizontal
+                  dados={capacitySemMeta}
+                  labelKey="instrutor" valueKey="total_90d" sufixo="h"
+                  cor={colors.primary}
+                  revelado={revelado}
+                />
+              ) : (
+                <p style={{ fontSize: 13, color: "#94a3b8" }}>Todo instrutor ativo já tem meta cadastrada neste período.</p>
+              )}
+            </div>
+          </div>
+
+          <details style={{ marginTop: 12 }}>
+            <summary style={detailsSummary}>Ver tabela completa — capacity x consumido por instrutor ({janela})</summary>
+            <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, marginTop: 10 }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={table}>
+                  <thead>
+                    <tr style={theadRow}>
+                      <th style={th}>Instrutor</th>
+                      {(capacity?.meses || []).map((m) => <th key={m} style={{ ...th, textAlign: "right" }}>{m}</th>)}
+                      <th style={{ ...th, textAlign: "right" }}>Total {mesesFiltro}m</th>
+                      <th style={{ ...th, textAlign: "right" }}>Cap. {mesesFiltro}m</th>
+                      <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(capacity?.itens || []).map((row) => (
+                      <tr key={row.instrutor} style={tr}>
+                        <td style={{ ...td, fontWeight: 700 }}>{row.instrutor}</td>
+                        {(capacity?.meses || []).map((m) => <td key={m} style={{ ...td, textAlign: "right" }}>{fmt(row.meses[m] || 0)}</td>)}
+                        <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmt(row.total_90d)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmt(row.capacidade_90d) : "—"}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmtPct(row.ocupacao_pct) : "sem meta"}</td>
+                      </tr>
+                    ))}
+                    {(!capacity?.itens || capacity.itens.length === 0) && (
+                      <tr><td style={td} colSpan={99}>Nenhuma turma ou cronograma encontrado para o período.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-            )}
-            <div style={{ overflowX: "auto" }}>
-              <table style={table}>
-                <thead>
-                  <tr style={theadRow}>
-                    <th style={th}>Mês</th>
-                    <th style={{ ...th, textAlign: "right" }}>Capacidade (h)</th>
-                    <th style={{ ...th, textAlign: "right" }}>CH Realizada (h)</th>
-                    <th style={{ ...th, textAlign: "right" }}>Desvio</th>
-                    <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
-                    <th style={th}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(painel?.por_mes || []).map((m) => (
-                    <tr key={m.mes} style={tr}>
-                      <td style={td}>{m.mes_extenso}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmt(m.capacidade_nominal)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmt(m.hc_realizado)}</td>
-                      <td style={{ ...td, textAlign: "right", color: m.desvio < 0 ? colors.dangerText : colors.successText }}>{fmt(m.desvio)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmtPct(m.ocupacao_pct)}</td>
-                      <td style={td}>{m.status_emoji}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
-          </div>
+          </details>
 
-          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, marginTop: 20, animationDelay: ".1s" }}>
-            <div style={cardTitle}>Capacity x consumido — por instrutor ({janela})</div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={table}>
-                <thead>
-                  <tr style={theadRow}>
-                    <th style={th}>Instrutor</th>
-                    {(capacity?.meses || []).map((m) => <th key={m} style={{ ...th, textAlign: "right" }}>{m}</th>)}
-                    <th style={{ ...th, textAlign: "right" }}>Total {mesesFiltro}m</th>
-                    <th style={{ ...th, textAlign: "right" }}>Cap. {mesesFiltro}m</th>
-                    <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(capacity?.itens || []).map((row) => (
-                    <tr key={row.instrutor} style={tr}>
-                      <td style={{ ...td, fontWeight: 700 }}>{row.instrutor}</td>
-                      {(capacity?.meses || []).map((m) => <td key={m} style={{ ...td, textAlign: "right" }}>{fmt(row.meses[m] || 0)}</td>)}
-                      <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmt(row.total_90d)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmt(row.capacidade_90d)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmtPct(row.ocupacao_pct)}</td>
+          <details style={{ marginTop: 20 }}>
+            <summary style={detailsSummary}>Ver detalhe — capacidade por instrutor × cliente ({janela})</summary>
+            <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, marginTop: 10 }}>
+              <p style={{ fontSize: 12.5, color: "#94a3b8", marginTop: -6, marginBottom: 12 }}>
+                Quanto de cada instrutor foi pra cada cliente no período — capacidade e ocupação continuam sendo do instrutor como um todo (não existe uma "capacidade" separada por cliente, só a hora realizada é fatiada por cliente). "% Ocupação" só aparece pra quem tem meta cadastrada.
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table style={table}>
+                  <thead>
+                    <tr style={theadRow}>
+                      <th style={th}>Instrutor</th>
+                      {(porCliente?.clientes || []).map((c) => <th key={c} style={{ ...th, textAlign: "right" }}>{c}</th>)}
+                      <th style={{ ...th, textAlign: "right" }}>Total realizado</th>
+                      <th style={{ ...th, textAlign: "right" }}>Capacidade</th>
+                      <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
                     </tr>
-                  ))}
-                  {(!capacity?.itens || capacity.itens.length === 0) && (
-                    <tr><td style={td} colSpan={99}>Nenhuma turma ou cronograma encontrado para o período.</td></tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {(porCliente?.itens || []).map((row) => (
+                      <tr key={row.instrutor} style={tr}>
+                        <td style={{ ...td, fontWeight: 700 }}>{row.instrutor}</td>
+                        {(porCliente?.clientes || []).map((c) => (
+                          <td key={c} style={{ ...td, textAlign: "right" }}>{fmt(row.por_cliente[c] || 0)}</td>
+                        ))}
+                        <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmt(row.total_realizado)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmt(row.capacidade_total) : "—"}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmtPct(row.ocupacao_pct) : "sem meta"}</td>
+                      </tr>
+                    ))}
+                    {(!porCliente?.itens || porCliente.itens.length === 0) && (
+                      <tr><td style={td} colSpan={99}>Nenhuma hora realizada por instrutor ativo no período.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-
-          <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, marginTop: 20, animationDelay: ".12s" }}>
-            <div style={cardTitle}>Capacidade por instrutor × cliente ({janela})</div>
-            <p style={{ fontSize: 12.5, color: "#94a3b8", marginTop: -6, marginBottom: 12 }}>
-              Quanto de cada instrutor foi pra cada cliente no período — capacidade e ocupação continuam sendo do instrutor como um todo (não existe uma "capacidade" separada por cliente, só a hora realizada é fatiada por cliente).
-            </p>
-            <div style={{ overflowX: "auto" }}>
-              <table style={table}>
-                <thead>
-                  <tr style={theadRow}>
-                    <th style={th}>Instrutor</th>
-                    {(porCliente?.clientes || []).map((c) => <th key={c} style={{ ...th, textAlign: "right" }}>{c}</th>)}
-                    <th style={{ ...th, textAlign: "right" }}>Total realizado</th>
-                    <th style={{ ...th, textAlign: "right" }}>Capacidade</th>
-                    <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(porCliente?.itens || []).map((row) => (
-                    <tr key={row.instrutor} style={tr}>
-                      <td style={{ ...td, fontWeight: 700 }}>{row.instrutor}</td>
-                      {(porCliente?.clientes || []).map((c) => (
-                        <td key={c} style={{ ...td, textAlign: "right" }}>{fmt(row.por_cliente[c] || 0)}</td>
-                      ))}
-                      <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmt(row.total_realizado)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmt(row.capacidade_total)}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{fmtPct(row.ocupacao_pct)}</td>
-                    </tr>
-                  ))}
-                  {(!porCliente?.itens || porCliente.itens.length === 0) && (
-                    <tr><td style={td} colSpan={99}>Nenhuma hora realizada por instrutor ativo no período.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          </details>
 
           <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginTop: 20, alignItems: "start", animationDelay: ".15s" }}>
             <div style={card}>
@@ -457,7 +521,7 @@ function CapacidadePageInner() {
                   dados={rankingComMedalha}
                   labelKey="instrutor" valueKey="horas_realizadas" sufixo="h"
                   cor={colors.primary} revelado={revelado}
-                  subtitulo={(r) => `${r.medalha} ${fmtPct(r.pct_capacidade)} da capacidade`}
+                  subtitulo={(r) => `${r.medalha} ${r.tem_meta ? `${fmtPct(r.pct_capacidade)} da meta` : "sem meta cadastrada"}`}
                 />
               ) : (
                 <p style={{ fontSize: 13, color: "#94a3b8" }}>Sem CH realizada no período.</p>
@@ -466,8 +530,11 @@ function CapacidadePageInner() {
 
             <div style={card}>
               <div style={cardTitle}>Alertas de ocupação (mês atual)</div>
+              <p style={{ fontSize: 11.5, color: "#94a3b8", marginTop: -8, marginBottom: 10 }}>
+                Só considera quem tem meta cadastrada — sem meta não há "faixa saudável" pra comparar.
+              </p>
               {(alertas?.itens || []).length === 0 ? (
-                <p style={{ color: "#64748b", fontSize: 13 }}>Nenhum instrutor fora da faixa saudável (40%–100%) neste momento.</p>
+                <p style={{ color: "#64748b", fontSize: 13 }}>Nenhum instrutor com meta cadastrada fora da faixa saudável (40%–100%) neste momento.</p>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {alertas.itens.map((a) => (
@@ -537,10 +604,9 @@ function CapacidadePageInner() {
 
                   {/* Regra padrão */}
                   <div>
-                    <div style={cardTitle}>Regra automática padrão</div>
+                    <div style={cardTitle}>Regra de referência (só um cálculo de apoio)</div>
                     <p style={{ fontSize: 12, color: "#64748b", marginTop: -8, marginBottom: 12 }}>
-                      Usada para calcular a capacidade de todo instrutor que não tem um ajuste manual no mês —
-                      capacidade do mês = horas por dia × dias trabalhados no mês (uma média fixa, não a contagem de dias do calendário).
+                      Desde 29/09/2026 este valor NÃO é mais aplicado automaticamente a ninguém — servia como teto padrão de 132h/mês pra todo instrutor sem ajuste manual, o que gerava um "% de ocupação" enganoso (parecia ociosidade sem ser). Agora é só uma referência de cálculo (horas por dia × dias trabalhados) pra ajudar a decidir o valor de uma meta manual ao lado. Quem não tem meta cadastrada aparece por volume (horas/turmas), sem porcentagem.
                     </p>
                     {regraMsg.texto && (
                       <div style={regraMsg.tipo === "erro" ? msgErro : msgOk}>{regraMsg.texto}</div>
@@ -574,9 +640,9 @@ function CapacidadePageInner() {
 
                   {/* Overrides manuais */}
                   <div>
-                    <div style={cardTitle}>Ajuste manual por instrutor/mês</div>
+                    <div style={cardTitle}>Meta de capacidade por instrutor/mês</div>
                     <p style={{ fontSize: 12, color: "#64748b", marginTop: -8, marginBottom: 12 }}>
-                      Use quando um instrutor específico tem capacidade diferente da regra padrão num mês (ex: carga reduzida, licença parcial).
+                      Esta é a única forma de um instrutor ganhar "% de ocupação" nas telas de Capacidade e Scorecard — cadastre aqui a meta real de horas em sala esperada dele no mês (ex.: 40h, não 132h) para comparar contra o realizado.
                     </p>
                     {overrideMsg.texto && (
                       <div style={overrideMsg.tipo === "erro" ? msgErro : msgOk}>{overrideMsg.texto}</div>
@@ -668,6 +734,7 @@ function ScorecardInstrutor({
   const medias = dados?.medias_time;
   const vendoTodos = !instrutor;
   const item = !vendoTodos ? itens.find((i) => i.instrutor === instrutor) : null;
+  const itensComIndice = itens.filter((i) => i.indice_geral !== null && i.indice_geral !== undefined);
 
   return (
     <>
@@ -722,46 +789,75 @@ function ScorecardInstrutor({
               <StatCard title="Índice geral (média do time)" value={medias.indice_geral ?? "—"} accent={colors.accent} />
               <StatCard title="Frequência média do time" value={fmtPct(medias.frequencia_pct)} accent={colors.primary} />
               <StatCard title="NPS médio do time" value={medias.nps_score ?? "—"} accent={colors.info} />
-              <StatCard title="Ocupação média do time" value={fmtPct(medias.ocupacao_pct)} accent={colors.navy} />
+              <StatCard
+                title="Ocupação média (quem tem meta)"
+                value={fmtPct(medias.ocupacao_pct)}
+                accent={colors.navy}
+              />
             </div>
           )}
+          {medias && (
+            <p style={{ fontSize: 12, color: "#94a3b8", marginTop: -12, marginBottom: 20 }}>
+              {medias.instrutores_com_meta} de {medias.instrutores_com_atividade_ch} instrutores com aula dada no período têm meta de capacidade cadastrada — a média de ocupação acima é só desses; os demais aparecem por volume (horas/turmas) na tabela abaixo.
+            </p>
+          )}
+
           <div className={`cap-cascade ${revelado ? "cap-play" : ""}`} style={{ ...card, animationDelay: ".05s" }}>
             <div style={cardTitle}>Ranking — índice geral por instrutor</div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={table}>
-                <thead>
-                  <tr style={theadRow}>
-                    <th style={th}>#</th><th style={th}>Instrutor</th>
-                    <th style={{ ...th, textAlign: "right" }}>Índice geral</th>
-                    <th style={{ ...th, textAlign: "right" }}>Frequência</th>
-                    <th style={{ ...th, textAlign: "right" }}>NPS</th>
-                    <th style={{ ...th, textAlign: "right" }}>Avaliação (cobertura)</th>
-                    <th style={{ ...th, textAlign: "right" }}>Ocupação CH</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {itens
-                    .slice()
-                    .sort((a, b) => (b.indice_geral ?? -Infinity) - (a.indice_geral ?? -Infinity))
-                    .map((i) => (
-                      <tr key={i.instrutor} style={tr}>
-                        <td style={td}>{i.posicao_no_time ?? "—"}</td>
-                        <td style={{ ...td, fontWeight: 700 }}>{i.instrutor}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{i.indice_geral ?? "—"}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{fmtPct(i.frequencia.media_pct)}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{i.nps.nps_score ?? "—"}</td>
-                        <td style={{ ...td, textAlign: "right" }}>
-                          {i.avaliacao.nota_prova_media != null ? fmt(i.avaliacao.nota_prova_media) : "—"}
-                          {" "}
-                          <span style={{ color: "#94a3b8" }}>({i.avaliacao.turmas_com_avaliacao}/{i.avaliacao.turmas_no_periodo})</span>
-                        </td>
-                        <td style={{ ...td, textAlign: "right" }}>{fmtPct(i.ch.ocupacao_pct)}</td>
-                      </tr>
-                    ))}
-                  {itens.length === 0 && <tr><td style={td} colSpan={7}>Nenhum instrutor com atividade nesse período.</td></tr>}
-                </tbody>
-              </table>
-            </div>
+            {itensComIndice.length > 0 ? (
+              <BarraHorizontal
+                dados={itensComIndice}
+                labelKey="instrutor" valueKey="indice_geral"
+                cor={colors.accent} maxValor={100}
+                subtitulo={(i) => `${i.posicao_no_time ?? "—"}º · freq. ${fmtPct(i.frequencia.media_pct)}`}
+                revelado={revelado}
+              />
+            ) : (
+              <p style={{ fontSize: 13, color: "#94a3b8" }}>Nenhum instrutor com índice geral calculado nesse período.</p>
+            )}
+
+            <details style={{ marginTop: 16 }}>
+              <summary style={detailsSummary}>Ver tabela completa (frequência, NPS, avaliação, ocupação)</summary>
+              <div style={{ overflowX: "auto", marginTop: 10 }}>
+                <table style={table}>
+                  <thead>
+                    <tr style={theadRow}>
+                      <th style={th}>#</th><th style={th}>Instrutor</th>
+                      <th style={{ ...th, textAlign: "right" }}>Índice geral</th>
+                      <th style={{ ...th, textAlign: "right" }}>Frequência</th>
+                      <th style={{ ...th, textAlign: "right" }}>NPS</th>
+                      <th style={{ ...th, textAlign: "right" }}>Avaliação (cobertura)</th>
+                      <th style={{ ...th, textAlign: "right" }}>Ocupação CH</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itens
+                      .slice()
+                      .sort((a, b) => (b.indice_geral ?? -Infinity) - (a.indice_geral ?? -Infinity))
+                      .map((i) => (
+                        <tr key={i.instrutor} style={tr}>
+                          <td style={td}>{i.posicao_no_time ?? "—"}</td>
+                          <td style={{ ...td, fontWeight: 700 }}>{i.instrutor}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{i.indice_geral ?? "—"}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{fmtPct(i.frequencia.media_pct)}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{i.nps.nps_score ?? "—"}</td>
+                          <td style={{ ...td, textAlign: "right" }}>
+                            {i.avaliacao.nota_prova_media != null ? fmt(i.avaliacao.nota_prova_media) : "—"}
+                            {" "}
+                            <span style={{ color: "#94a3b8" }}>({i.avaliacao.turmas_com_avaliacao}/{i.avaliacao.turmas_no_periodo})</span>
+                          </td>
+                          <td style={{ ...td, textAlign: "right" }}>
+                            {i.ch.tem_meta
+                              ? fmtPct(i.ch.ocupacao_pct)
+                              : <span style={{ color: "#94a3b8" }}>{fmt(i.ch.horas_realizadas)}h/{i.ch.turmas}t</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    {itens.length === 0 && <tr><td style={td} colSpan={7}>Nenhum instrutor com atividade nesse período.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </div>
         </>
       ) : !item ? (
@@ -776,13 +872,17 @@ function ScorecardInstrutor({
             />
             <StatCard title="Posição no time" value={item.posicao_no_time ? `${item.posicao_no_time}º de ${item.total_no_ranking}` : "—"} accent={colors.navy} />
             <StatCard title="Frequência das turmas" value={fmtPct(item.frequencia.media_pct)} accent={colors.primary} />
-            <StatCard title="Ocupação (CH)" value={fmtPct(item.ch.ocupacao_pct)} accent={colors.info} />
+            <StatCard
+              title={item.ch.tem_meta ? "Ocupação (CH)" : "CH realizada (sem meta cadastrada)"}
+              value={item.ch.tem_meta ? fmtPct(item.ch.ocupacao_pct) : `${fmt(item.ch.horas_realizadas)}h / ${item.ch.turmas} turma(s)`}
+              accent={colors.info}
+            />
             <StatCard title="NPS score" value={item.nps.nps_score ?? "—"} accent={colors.success} />
           </div>
 
           {medias && (
             <p style={{ fontSize: 12, color: "#64748b", marginTop: -8, marginBottom: 16 }}>
-              Média do time no período: índice geral {medias.indice_geral ?? "—"}, frequência {fmtPct(medias.frequencia_pct)}, NPS {medias.nps_score ?? "—"}, ocupação {fmtPct(medias.ocupacao_pct)}.
+              Média do time no período: índice geral {medias.indice_geral ?? "—"}, frequência {fmtPct(medias.frequencia_pct)}, NPS {medias.nps_score ?? "—"}, ocupação {fmtPct(medias.ocupacao_pct)} (só de quem tem meta cadastrada).
             </p>
           )}
 
@@ -845,6 +945,7 @@ const th = { padding: "8px 10px" };
 const tr = { borderBottom: "1px solid #eef2f7" };
 const td = { padding: "8px 10px", color: "#334155" };
 const errBox = { background: colors.dangerLight, color: colors.dangerText, padding: "10px 14px", borderRadius: 10, marginBottom: 16, fontSize: 13 };
+const detailsSummary = { cursor: "pointer", fontSize: 13, fontWeight: 700, color: colors.accent, userSelect: "none", padding: "4px 0" };
 const alertRow = { display: "flex", justifyContent: "space-between", fontSize: 13, padding: "8px 10px", background: "#f8fafc", borderRadius: 10 };
 const selectFiltro = { height: 38, borderRadius: 10, border: "1px solid rgba(255,255,255,.4)", padding: "0 10px", fontSize: 13, background: "rgba(255,255,255,.12)", color: "#fff" };
 
