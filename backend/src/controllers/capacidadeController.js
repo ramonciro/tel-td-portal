@@ -57,13 +57,26 @@ async function getCapacidade(req, res) {
       empresaId,
     });
 
+    // Decisão de 29/09/2026 (opção 3, confirmada pelo Ramon): capacidade_horas
+    // só existe por linha pra quem tem meta cadastrada (override) — os totais
+    // abaixo separam "com meta" (única base válida pra uma % de ocupação) de
+    // "sem meta" (só volume, sem comparar contra o teto automático de 132h).
+    const instrutoresComMeta = new Set();
+    const instrutoresSemMeta = new Set();
     const totais = resultado.reduce(
       (acc, r) => {
         acc.horas_realizadas += r.horas_realizadas;
-        acc.capacidade_horas += r.capacidade_horas;
+        if (r.tem_meta) {
+          acc.capacidade_horas += r.capacidade_horas;
+          acc.horas_com_meta += r.horas_realizadas;
+          instrutoresComMeta.add(r.instrutor);
+        } else {
+          acc.horas_sem_meta += r.horas_realizadas;
+          instrutoresSemMeta.add(r.instrutor);
+        }
         return acc;
       },
-      { horas_realizadas: 0, capacidade_horas: 0 }
+      { horas_realizadas: 0, capacidade_horas: 0, horas_com_meta: 0, horas_sem_meta: 0 }
     );
 
     return res.json({
@@ -71,10 +84,14 @@ async function getCapacidade(req, res) {
       itens: resultado,
       totais: {
         horas_realizadas: Math.round(totais.horas_realizadas * 10) / 10,
-        capacidade_horas: Math.round(totais.capacidade_horas * 10) / 10,
+        horas_com_meta: Math.round(totais.horas_com_meta * 10) / 10,
+        horas_sem_meta: Math.round(totais.horas_sem_meta * 10) / 10,
+        capacidade_horas: totais.capacidade_horas ? Math.round(totais.capacidade_horas * 10) / 10 : null,
         ocupacao_pct: totais.capacidade_horas
-          ? Math.round((totais.horas_realizadas / totais.capacidade_horas) * 1000) / 10
+          ? Math.round((totais.horas_com_meta / totais.capacidade_horas) * 1000) / 10
           : null,
+        instrutores_com_meta: instrutoresComMeta.size,
+        instrutores_sem_meta: instrutoresSemMeta.size,
       },
     });
   } catch (error) {
