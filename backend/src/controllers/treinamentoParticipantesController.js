@@ -183,6 +183,7 @@ async function getParticipantesByTreinamento(req, res) {
           tp.supervisor,
           tp.operacao,
           tp.data_admissao,
+          tp.pessoa_id,
           COALESCE(p.status, 'pendente') AS status_presenca,
           COALESCE(p.justificativa, '') AS justificativa,
           tp.created_at
@@ -211,6 +212,7 @@ async function getParticipantesByTreinamento(req, res) {
           supervisor,
           operacao,
           data_admissao,
+          pessoa_id,
           status_presenca,
           justificativa,
           created_at
