@@ -287,26 +287,35 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
       registrosAusentes = cron.registrosAusentes;
       registrosJustificados = cron.registrosJustificados;
       registrosPendentes = cron.registrosPendentes;
-      baseEsperada = treinandosPrevistos * diasPlanejados;
+      // Correção de 29/09/2026 (Ramon): "base esperada" usava treinandosPrevistos
+      // (estimativa digitada na criação da turma) em vez do roster real — se a
+      // turma fechasse com mais ou menos gente confirmada do que a estimativa
+      // original, a base esperada ficava presa num número velho e "total
+      // realizado" podia até passar dela. Agora usa treinadosConfirmados (o
+      // roster de verdade, o mesmo que já aparece na coluna "Treinandos
+      // confirmados").
+      treinadosConfirmados = cron.participantes;
+      baseEsperada = treinadosConfirmados * diasPlanejados;
 
       presentesPessoas = cron.presentesPessoas;
       ausentesPessoas = cron.ausentesPessoas;
       justificadosPessoas = cron.justificadosPessoas;
       pendentesPessoas = cron.pendentesPessoas;
-      treinadosConfirmados = cron.participantes;
     } else if (usarLegado && hist) {
       registrosPresentes = hist.registrosPresentes;
       registrosAusentes = hist.registrosAusentes;
       registrosJustificados = hist.registrosJustificados;
       registrosPendentes = hist.registrosPendentes;
       const totalLancadoLegado = registrosPresentes + registrosAusentes + registrosJustificados + registrosPendentes;
-      baseEsperada = totalLancadoLegado > 0 ? totalLancadoLegado : treinandosPrevistos;
+      // Mesma correção: fallback pro roster confirmado, não pra estimativa
+      // prevista, quando não há nada lançado ainda.
+      treinadosConfirmados = hist.participantes;
+      baseEsperada = totalLancadoLegado > 0 ? totalLancadoLegado : treinadosConfirmados;
 
       presentesPessoas = hist.presentesPessoas;
       ausentesPessoas = hist.ausentesPessoas;
       justificadosPessoas = hist.justificadosPessoas;
       pendentesPessoas = hist.pendentesPessoas;
-      treinadosConfirmados = hist.participantes;
     } else if (snap && n(snap.treinados) > 0) {
       // Último fallback: só snapshot existe (roster sem nenhuma chamada
       // registrada em cronograma ou legado).
