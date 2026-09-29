@@ -426,15 +426,38 @@ async function getRoi(req, res) {
     const where = `${tenantWhere(eId)}${filtro.sql}`;
     const custoPorHora = await getCustoPorHora(eId);
 
-    const [dados, horasAplicadas] = await Promise.all([
+    const [dados, participantesRow, horasAplicadas] = await Promise.all([
       pool.query(
         `SELECT
            COUNT(*)                                         AS turmas_total,
            SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
-           COALESCE(SUM(carga_horaria), 0)                  AS horas_total,
-           COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
-           COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
+           COALESCE(SUM(carga_horaria), 0)                  AS horas_total
          FROM treinamentos t WHERE ${where}`,
+        filtro.params
+      ).then(([rows]) => rows[0]),
+      // Pessoas impactadas/previstas — reaproveita o roster real de
+      // treinamento_participantes (mesma fonte de participantes_unicos já
+      // usada em getResumo()), em vez de treinamentos.participantes_presentes/
+      // participantes_previstos. Essas duas colunas são estáticas e quase
+      // nunca preenchidas na operação real (só por lançamento manual via
+      // CRUD genérico, ou pela importação legada de Excel — importDashboard
+      // Excel.js) — qualquer filtro de período que não caísse exatamente
+      // nas poucas turmas antigas com o campo preenchido zerava "Pessoas
+      // impactadas" por inteiro. Bug relatado pelo Ramon em 28/09/2026:
+      // selecionar um mês específico na aba ROI zerava o valor (e, por
+      // consequência, também "Custo estimado" e "Alcance da meta", que
+      // dependem dele). "Impactadas" = pessoas únicas (COUNT DISTINCT nome,
+      // já que a mesma pessoa pode repetir em mais de uma turma do período);
+      // "previstas" = total de matrículas/vagas registradas no período
+      // (COUNT das linhas de roster, sem distinct) — a base de comparação
+      // para "alcance da meta".
+      pool.query(
+        `SELECT
+           COUNT(DISTINCT tp.nome) AS pessoas_impactadas,
+           COUNT(tp.id)            AS pessoas_previstas
+         FROM treinamento_participantes tp
+         JOIN treinamentos t ON t.id = tp.treinamento_id
+         WHERE ${where}`,
         filtro.params
       ).then(([rows]) => rows[0]),
       // Horas aplicadas — mesma fonte única da Capacidade (aula a aula
@@ -450,7 +473,7 @@ async function getRoi(req, res) {
     ]);
 
     const horas      = horasAplicadas;
-    const pessoas    = asInt(dados.pessoas_impactadas);
+    const pessoas    = asInt(participantesRow.pessoas_impactadas);
     // Custo estimado: configurável por empresa (Admin → tenant → "Custo por
     // hora de treinamento"); sem valor definido, usa R$ 150/h como referência
     // (T&D Brasil 2024) — antes esse valor vinha sempre fixo em 150, mesmo
@@ -463,7 +486,7 @@ async function getRoi(req, res) {
       ? Number(((turmasConc / turmasTotal) * 100).toFixed(1))
       : 0;
 
-    const pessoasPrev = asInt(dados.pessoas_previstas);
+    const pessoasPrev = asInt(participantesRow.pessoas_previstas);
     const alcance     = pessoasPrev > 0
       ? Number(((pessoas / pessoasPrev) * 100).toFixed(1))
       : null;
@@ -579,21 +602,30 @@ async function exportarIndicadores(req, res) {
       const filtro = filtroRecorte(req.query);
       const where = `${tenantWhere(eId)}${filtro.sql}`;
       const custoPorHora = await getCustoPorHora(eId);
-      const [dados, horas] = await Promise.all([
+      const [dados, participantesRow, horas] = await Promise.all([
         pool.query(
           `SELECT
              COUNT(*)                                         AS turmas_total,
              SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
-             COALESCE(SUM(carga_horaria), 0)                  AS horas_total,
-             COALESCE(SUM(participantes_presentes), 0)        AS pessoas_impactadas,
-             COALESCE(SUM(participantes_previstos), 0)        AS pessoas_previstas
+             COALESCE(SUM(carga_horaria), 0)                  AS horas_total
            FROM treinamentos t WHERE ${where}`,
+          filtro.params
+        ).then(([rows]) => rows[0]),
+        // Mesma correção do getRoi() — roster real (treinamento_participantes)
+        // em vez das colunas estáticas participantes_presentes/previstos.
+        pool.query(
+          `SELECT
+             COUNT(DISTINCT tp.nome) AS pessoas_impactadas,
+             COUNT(tp.id)            AS pessoas_previstas
+           FROM treinamento_participantes tp
+           JOIN treinamentos t ON t.id = tp.treinamento_id
+           WHERE ${where}`,
           filtro.params
         ).then(([rows]) => rows[0]),
         // Mesma fonte única de horas aplicadas usada pela tela (getRoi).
         getHorasAplicadasTotal({ empresaId: eId, cliente: req.query.cliente, dataInicio: req.query.data_inicio, dataFim: req.query.data_fim }),
       ]);
-      const pessoas = Number(dados.pessoas_impactadas || 0);
+      const pessoas = Number(participantesRow.pessoas_impactadas || 0);
       const custo = horas * pessoas * custoPorHora;
       const ws = wb.addWorksheet("ROI");
       ws.columns = [{ width: 26 }, { width: 18 }];
@@ -603,7 +635,7 @@ async function exportarIndicadores(req, res) {
         ["Horas previstas", Number(dados.horas_total || 0), "decimal1"],
         ["Horas realizadas", horas, "decimal1"],
         ["Pessoas impactadas", pessoas, "inteiro"],
-        ["Pessoas previstas", Number(dados.pessoas_previstas || 0), "inteiro"],
+        ["Pessoas previstas", Number(participantesRow.pessoas_previstas || 0), "inteiro"],
         ["Custo por hora", custoPorHora, "moeda"],
         ["Custo estimado", custo, "moeda"],
       ];
