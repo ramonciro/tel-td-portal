@@ -62,6 +62,12 @@ function isSunday(dateValue) {
   return d.getUTCDay() === 0;
 }
 
+function isSaturday(dateValue) {
+  const d = parseDateUTC(dateValue);
+  if (!d || Number.isNaN(d.getTime())) return false;
+  return d.getUTCDay() === 6;
+}
+
 function diffDaysInclusive(start, end) {
   const d1 = parseDateUTC(start);
   const d2 = parseDateUTC(end);
@@ -71,7 +77,17 @@ function diffDaysInclusive(start, end) {
 }
 
 /**
- * Lista de datas úteis (pula domingo) entre início e fim, inclusive.
+ * Lista de datas úteis (pula sábado e domingo) entre início e fim, inclusive.
+ *
+ * Correção de 29/09/2026 (Ramon): a versão anterior só pulava domingo, então
+ * uma turma de segunda a sexta ganhava sábados "fantasma" no cronograma
+ * automático — inflando dias planejados, base esperada e CH programada em
+ * relatórios que passaram a usar esta fonte (Presença, Capacidade). Como o
+ * sistema não tem (ainda) um jeito de a turma dizer "eu rodo aos sábados",
+ * o padrão automático agora é só dia útil (segunda a sexta) — turmas que
+ * realmente acontecem aos sábados continuam podendo ter esse dia específico
+ * adicionado à mão pelo botão de editar cronograma (createTurmaAula), como
+ * já era feito pra qualquer ajuste fino do plano de aulas.
  */
 function listarDiasUteis(inicio, fim) {
   const totalDias = diffDaysInclusive(inicio, fim);
@@ -79,7 +95,7 @@ function listarDiasUteis(inicio, fim) {
   for (let i = 0; i < totalDias; i += 1) {
     const data = addDays(inicio, i);
     if (!data) continue;
-    if (isSunday(data)) continue;
+    if (isSunday(data) || isSaturday(data)) continue;
     dias.push(data);
   }
   return dias;
@@ -216,6 +232,7 @@ module.exports = {
   toDateOnly,
   addDays,
   isSunday,
+  isSaturday,
   diffDaysInclusive,
   listarDiasUteis,
   calcularHorasEntreHorarios,
