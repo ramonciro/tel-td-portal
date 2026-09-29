@@ -316,6 +316,137 @@ export function GraficoLinha({ dados = [], linhas = [], eixoX = "mes", revelado 
   );
 }
 
+// ─── Barras agrupadas (comparação categórica por mês) ─────────────────────
+// Pedido do Ramon em 29/09/2026, revendo o gráfico de Capacidade (meta ×
+// realizado): uma linha entre poucos pontos mensais sugere uma trajetória
+// contínua que não existe aqui — cada mês é uma comparação discreta entre
+// duas grandezas (meta vs. realizado), o que pede barras lado a lado, não
+// uma linha.
+//
+// `semDado(d)`: predicado opcional, chamado por mês. Quando verdadeiro
+// (ex.: nenhum instrutor tinha meta cadastrada naquele mês), o mês NÃO
+// desenha barras em zero — isso faria parecer que a meta "era zero e
+// decolou" no mês seguinte. Em vez disso mostra um retângulo tracejado
+// "sem meta", deixando explícito que não havia população comparável, sem
+// confundir ausência de dado com valor zero.
+export function GraficoBarraAgrupada({ dados = [], eixoX = "mes", grupos = [], semDado, revelado }) {
+  const show = useAutoRevelado(revelado);
+  const reduceMotion = usePrefersReducedMotion();
+  const [hover, setHover] = useState(null);
+
+  if (!dados.length) return <p style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center", padding: "24px 0" }}>Sem dados no período</p>;
+
+  const W = 560, H = 200, padL = 34, padR = 16, padT = 16, padB = 40;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+
+  const semDadoFn = semDado || (() => false);
+  const allVals = dados.flatMap((d) => (semDadoFn(d) ? [] : grupos.map((g) => Number(d[g.key] || 0))));
+  const maxVal = Math.max(...allVals, 1);
+
+  const groupW = innerW / dados.length;
+  const barGap = 3;
+  const groupPad = groupW * 0.16;
+  const barW = Math.max(6, (groupW - groupPad * 2 - barGap * (grupos.length - 1)) / Math.max(1, grupos.length));
+
+  const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  const label = (mes) => {
+    const [, m] = String(mes || "").split("-");
+    return meses[Number(m || 1) - 1] || mes;
+  };
+
+  const baseY = padT + innerH;
+  const yPos = (v) => baseY - (v / maxVal) * innerH;
+
+  return (
+    <div>
+      <div style={{ overflowX: "auto" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 320 }} onMouseLeave={() => setHover(null)}>
+          {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
+            <line key={i} x1={padL} x2={W - padR} y1={padT + innerH * (1 - t)} y2={padT + innerH * (1 - t)}
+              stroke={colors.border} strokeWidth={0.75} />
+          ))}
+          {dados.map((d, gi) => {
+            const groupX = padL + gi * groupW;
+            const faltaMeta = semDadoFn(d);
+            if (faltaMeta) {
+              const phH = 16;
+              const phW = groupW - groupPad * 2;
+              return (
+                <g key={gi} onMouseEnter={() => setHover(gi)} style={{ cursor: "default" }}>
+                  <rect
+                    x={groupX + groupPad} width={phW} rx={4}
+                    fill="none" stroke={colors.textMuted} strokeDasharray="3 3" strokeWidth={1.25}
+                    style={{
+                      y: baseY - phH, height: phH,
+                      opacity: show ? 0.75 : 0,
+                      transition: reduceMotion ? "none" : `opacity .5s ease ${gi * 0.05}s`,
+                    }}
+                  >
+                    <title>{`${label(d[eixoX])} — sem meta cadastrada (nenhum instrutor com meta neste mês)`}</title>
+                  </rect>
+                  <text x={groupX + groupW / 2} y={baseY - phH - 6} textAnchor="middle"
+                    style={{ fontSize: 9.5, fill: colors.textMuted, fontStyle: "italic" }}>
+                    sem meta
+                  </text>
+                </g>
+              );
+            }
+            return (
+              <g key={gi} onMouseEnter={() => setHover(gi)}>
+                {grupos.map((gr, bi) => {
+                  const val = Number(d[gr.key] || 0);
+                  const x = groupX + groupPad + bi * (barW + barGap);
+                  const h = baseY - yPos(val);
+                  const delay = gi * 0.05 + bi * 0.04;
+                  return (
+                    <rect
+                      key={gr.key}
+                      x={x} width={barW} rx={4} fill={gr.cor}
+                      style={{
+                        y: show ? yPos(val) : baseY,
+                        height: show ? h : 0,
+                        transition: reduceMotion ? "none" : `y .7s cubic-bezier(.22,1,.36,1) ${delay}s, height .7s cubic-bezier(.22,1,.36,1) ${delay}s`,
+                      }}
+                    >
+                      <title>{`${label(d[eixoX])} — ${gr.label}: ${fmt(val)}${gr.sufixo || ""}`}</title>
+                    </rect>
+                  );
+                })}
+              </g>
+            );
+          })}
+          <line x1={padL} x2={W - padR} y1={baseY} y2={baseY} stroke={colors.border} strokeWidth={1} />
+          {dados.map((d, i) => (
+            <text key={i} x={padL + i * groupW + groupW / 2} y={H - 10} textAnchor="middle"
+              style={{ fontSize: 10.5, fill: hover === i ? colors.textPrimary : colors.textSecondary, fontWeight: hover === i ? 700 : 400 }}
+              onMouseEnter={() => setHover(i)}>
+              {label(d[eixoX])}
+            </text>
+          ))}
+        </svg>
+      </div>
+      <div style={{ display: "flex", gap: 16, marginTop: 6, flexWrap: "wrap" }}>
+        {grupos.map((g) => {
+          const hoverSemMeta = hover !== null && semDadoFn(dados[hover]);
+          return (
+            <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: colors.textSecondary }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: g.cor, display: "inline-block" }} />
+              {g.label}
+              {hover !== null && !hoverSemMeta && (
+                <span style={{ fontWeight: 700, color: g.cor }}>· {fmt(dados[hover]?.[g.key])}{g.sufixo || ""}</span>
+              )}
+              {hoverSemMeta && (
+                <span style={{ fontWeight: 700, color: colors.textMuted, fontStyle: "italic" }}>· sem meta cadastrada</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Funil ─────────────────────────────────────────────────────────────────
 export function Funil({ etapas = [], revelado }) {
   const show = useAutoRevelado(revelado);
