@@ -6,6 +6,7 @@ import PortalShell from "../../../components/PortalShell";
 import PageHero    from "../../../components/PageHero";
 import { apiFetch, getStoredUser, hasSomeRole } from "../../../services/api";
 import { colors } from "../../../lib/theme";
+import { formatDateBR } from "../../../lib/date";
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -33,10 +34,7 @@ function getMesesDisponiveis() {
   });
 }
 
-const fmtDate = (v) => {
-  if (!v) return "—";
-  try { return new Date(v).toLocaleDateString("pt-BR"); } catch { return v; }
-};
+const fmtDate = formatDateBR;
 const fmtNum = (v) => (v == null || v === "" ? "—" : Number(v).toLocaleString("pt-BR"));
 
 // ─── Status badge ──────────────────────────────────────────────────
