@@ -183,6 +183,28 @@ async function ensureEmailNullableUsuarios() {
   console.log(`  ↳ usuarios.email agora aceita NULL (contas sem e-mail, login por CPF/matrícula)`);
 }
 
+// Achado em 08/10/2026 (bug reportado pelo Ramon: "Erro ao criar trilha" no
+// módulo Metodologia). O CREATE TABLE IF NOT EXISTS de trilhas_aprendizagem
+// (passo 20, acima) já declara `cliente VARCHAR(150) NULL` — uma trilha sem
+// cliente é uma trilha "GLOBAL", de propósito (ver clients/opcoesCliente em
+// frontend/app/trilhas/page.js). Mas IF NOT EXISTS nunca altera uma tabela
+// que já existia em produção antes dessa coluna virar opcional — mesma causa
+// raiz do hotfix de usuarios.criado_em (passo 30) e de usuarios.email (função
+// acima). Na prática: toda trilha criada sem selecionar um cliente (inclusive
+// quando a lista de Clientes da Metodologia ainda está vazia — ver passo 42)
+// quebrava com "Column 'cliente' cannot be null", porque o banco de produção
+// ainda tinha a coluna como NOT NULL de antes desta revisão do schema.
+async function ensureClienteNullableTrilhas() {
+  const [rows] = await pool.query(
+    `SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'trilhas_aprendizagem' AND COLUMN_NAME = 'cliente'
+     LIMIT 1`
+  );
+  if (!rows.length || rows[0].IS_NULLABLE === "YES") return;
+  await pool.query(`ALTER TABLE trilhas_aprendizagem MODIFY COLUMN cliente VARCHAR(150) NULL`);
+  console.log(`  ↳ trilhas_aprendizagem.cliente agora aceita NULL (trilha sem cliente = trilha GLOBAL)`);
+}
+
 // Achado durante o teste local do item "Em seguida" de pessoa_id (25/09/2026,
 // mesmo dia da entrega de inclusão de usuários): respostas_avaliativas tem
 // UNIQUE KEY (material_id, treinando_nome) — uma trava de banco, não só de
@@ -1686,6 +1708,10 @@ async function runMigrations() {
     // jornada_participante_id) em vez de exigir CPF de novo — ver
     // perfilComportamentalController.js.
     await ensureColumn("coaching_individual", "cpf", "VARCHAR(11) NULL");
+
+    // 52. Erro ao criar trilha no módulo Metodologia (08/10/2026, bug
+    // reportado pelo Ramon) — ver ensureClienteNullableTrilhas() acima.
+    await ensureClienteNullableTrilhas();
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
