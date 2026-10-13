@@ -214,10 +214,15 @@ export default function OficinaTalentosPage() {
 
   async function excluir(t) {
     limparMensagens();
-    if (!window.confirm(`Excluir a turma "${t.nome}"? Só é possível enquanto não houver inscrições.`)) return;
+    const qtd = turmaAtual && turmaAtual.id === t.id ? inscricoes.length : t.total_inscritos || 0;
+    const msg =
+      qtd > 0
+        ? `Excluir a turma "${t.nome}" e as ${qtd} inscrição(ões) dela? Isso apaga também o histórico dessas inscrições e não pode ser desfeito.`
+        : `Excluir a turma "${t.nome}"?`;
+    if (!window.confirm(msg)) return;
     try {
-      await apiFetch(`/oficina-talentos/turmas/${t.id}`, { method: "DELETE" });
-      setAviso("Turma excluída.");
+      await apiFetch(`/oficina-talentos/turmas/${t.id}${qtd > 0 ? "?confirmar=true" : ""}`, { method: "DELETE" });
+      setAviso(qtd > 0 ? `Turma e ${qtd} inscrição(ões) excluídas.` : "Turma excluída.");
       setTela("lista");
       setTurmaAtual(null);
       carregarTurmas();
