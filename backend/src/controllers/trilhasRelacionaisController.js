@@ -217,25 +217,38 @@ async function updateTrilha(req, res) {
         : [cliente || null, titulo, descricao || null, statusFinal, id]
     );
 
-    // Substitui etapas: deleta as existentes e insere as novas
-    await conn.query(`DELETE FROM trilha_etapas WHERE trilha_id = ?${tenantCheck}`, checkParams);
-
-    if (Array.isArray(etapas) && etapas.length) {
-      for (let i = 0; i < etapas.length; i++) {
-        const e = etapas[i];
+    // Etapas: quem já existe (mesmo id, da mesma trilha) é ATUALIZADA no lugar —
+    // assim o id da etapa não muda a cada edição e o que aponta para ela
+    // (progresso das pessoas, presença por etapa em Encontros e presença)
+    // continua valendo. Etapa nova é inserida; etapa que saiu da lista é
+    // removida junto com o progresso e o vínculo dos encontros (13/10/2026).
+    const [atuais] = await conn.query(`SELECT id FROM trilha_etapas WHERE trilha_id = ?${tenantCheck}`, checkParams);
+    const idsAtuais = new Set(atuais.map((x) => Number(x.id)));
+    const mantidos = new Set();
+    const lista = Array.isArray(etapas) ? etapas : [];
+    for (let i = 0; i < lista.length; i++) {
+      const e = lista[i];
+      const idEtapa = Number(e.id);
+      const titulo = e.titulo || `Etapa ${i + 1}`;
+      if (idEtapa && idsAtuais.has(idEtapa) && !mantidos.has(idEtapa)) {
+        await conn.query(
+          `UPDATE trilha_etapas SET ordem = ?, titulo = ?, descricao = ?, tipo = ?, turma_id = ? WHERE id = ? AND trilha_id = ?`,
+          [i, titulo, e.descricao || null, e.tipo || 'conteudo', e.turma_id || null, idEtapa, id]
+        );
+        mantidos.add(idEtapa);
+      } else {
         await conn.query(
           `INSERT INTO trilha_etapas (trilha_id, ordem, titulo, descricao, tipo, turma_id, empresa_id)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            id, i,
-            e.titulo || `Etapa ${i + 1}`,
-            e.descricao || null,
-            e.tipo || 'conteudo',
-            e.turma_id || null,
-            empresaId,
-          ]
+          [id, i, titulo, e.descricao || null, e.tipo || 'conteudo', e.turma_id || null, empresaId]
         );
       }
+    }
+    const removidos = [...idsAtuais].filter((x) => !mantidos.has(x));
+    if (removidos.length) {
+      await conn.query('DELETE FROM trilha_progresso WHERE etapa_id IN (?)', [removidos]);
+      await conn.query('UPDATE jornada_encontros SET trilha_etapa_id = NULL WHERE trilha_etapa_id IN (?)', [removidos]).catch(() => null);
+      await conn.query('DELETE FROM trilha_etapas WHERE id IN (?)', [removidos]);
     }
 
     await conn.commit();
@@ -271,7 +284,7 @@ async function deleteTrilha(req, res) {
     await conn.query('DELETE FROM trilha_progresso WHERE trilha_id = ?', [id]);
     // Trilhas da jornada (13/10/2026): sai da lista de cada jornada e os
     // encontros que apontavam para ela passam a "sem trilha" (a presença fica).
-    await conn.query('UPDATE jornada_encontros SET trilha_id = NULL WHERE trilha_id = ?', [id]).catch(() => null);
+    await conn.query('UPDATE jornada_encontros SET trilha_id = NULL, trilha_etapa_id = NULL WHERE trilha_id = ?', [id]).catch(() => null);
     await conn.query('DELETE FROM jornada_trilhas WHERE trilha_id = ?', [id]).catch(() => null);
     await conn.query(`DELETE FROM trilha_etapas WHERE trilha_id = ?${tenantCheck}`, checkParams);
     await conn.query(`DELETE FROM trilhas_aprendizagem WHERE id = ?${tenantCheck}`, checkParams);
