@@ -12,7 +12,7 @@ import Importacao from "./Importacao";
 import TrilhasJornada from "./TrilhasJornada";
 import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
-import { btnPrimario, btnSecundario, entrada, rotulo, gradeForm, painel, dica, acoes, vazio, avisoErro, avisoOk, fmtNum, selo, corDaTrilha, SEM_TRILHA } from "./estilos";
+import { btnPrimario, btnSecundario, btnMini, entrada, rotulo, gradeForm, painel, dica, acoes, vazio, avisoErro, avisoOk, fmtNum, selo, corDaTrilha, SEM_TRILHA } from "./estilos";
 
 // Mapa de Desenvolvimento → Encontros e presença (Fase 1, 13/10/2026; trilhas
 // vinculadas à jornada e aos encontros em 13/10/2026).
@@ -33,7 +33,8 @@ export default function PresencaJornadasPage() {
   const [painelAtivo, setPainelAtivo] = useState(null); // { tipo: "encontro", encontro? } | { tipo: "importar" } | { tipo: "config" }
   const [pendentes, setPendentes] = useState(() => new Set());
   const [filtros, setFiltros] = useState({ busca: "", turma: "", supervisor: "", abaixo: false, semLancamento: false });
-  const [trilhaFiltro, setTrilhaFiltro] = useState(""); // "" = todas · "0" = sem trilha · id da trilha
+  // "" = todas · "0" = sem trilha · "T" = trilha T · "T:E" = etapa E da trilha T ("T:0" = encontros da trilha sem etapa)
+  const [trilhaFiltro, setTrilhaFiltro] = useState("");
   const [editandoTrilhas, setEditandoTrilhas] = useState(false);
   const [cfg, setCfg] = useState({ presenca_minima_pct: "75", meta_horas: "", periodicidade_meses: "" });
   const timer = useRef(null);
@@ -185,8 +186,13 @@ export default function PresencaJornadasPage() {
   const escopoTrilha = trilhaFiltro !== "" && dados ? trilhaFiltro : "";
   const dadosVisiveis = useMemo(() => {
     if (!dados || !escopoTrilha) return dados;
-    const idTrilha = escopoTrilha === "0" ? null : Number(escopoTrilha);
-    const encontros = dados.encontros.filter((e) => (e.trilha_id || null) === idTrilha);
+    const [t, et] = escopoTrilha.split(":");
+    const idTrilha = t === "0" ? null : Number(t);
+    const encontros = dados.encontros.filter((e) => {
+      if ((e.trilha_id || null) !== idTrilha) return false;
+      if (et === undefined) return true;
+      return (e.trilha_etapa_id || 0) === Number(et);
+    });
     const ids = new Set(encontros.map((e) => e.id));
     return {
       ...dados,
@@ -201,7 +207,7 @@ export default function PresencaJornadasPage() {
     const q = filtros.busca.trim().toLowerCase();
     const base = dados.participantes.map((p) => {
       if (!escopoTrilha) return p;
-      const tt = p.totais_trilha?.[escopoTrilha] || { horas: 0, presentes: 0, justificados: 0, ausentes: 0, pendentes: 0, pct_presenca: null, farol: "cinza" };
+      const tt = (escopoTrilha.includes(":") ? p.totais_etapa?.[escopoTrilha] : p.totais_trilha?.[escopoTrilha]) || { horas: 0, presentes: 0, justificados: 0, ausentes: 0, pendentes: 0, pct_presenca: null, farol: "cinza" };
       return { ...p, totais: { ...p.totais, ...tt, meta_pct: null, atingiu_meta: null, reciclagem: null } };
     });
     return base.filter((p) => {
@@ -324,11 +330,12 @@ export default function PresencaJornadasPage() {
 
             {painelAtivo?.tipo === "encontro" && dados && (
               <EncontroForm
-                key={painelAtivo.encontro?.id || "novo"}
+                key={painelAtivo.encontro?.id || `novo-${painelAtivo.padrao?.trilha_id || 0}-${painelAtivo.padrao?.trilha_etapa_id || 0}`}
                 jornadaId={jornadaId}
                 etapas={dados.etapas}
                 trilhas={dados.trilhas}
                 onGerenciarTrilhas={() => setEditandoTrilhas(true)}
+                padrao={painelAtivo.padrao}
                 encontro={painelAtivo.encontro}
                 presencasDoEncontro={painelAtivo.encontro ? Object.keys(dados.presencas).filter((k) => k.startsWith(`${painelAtivo.encontro.id}:`)).length : 0}
                 setErro={setErro}
@@ -377,31 +384,96 @@ export default function PresencaJornadasPage() {
                   )}
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
-                  {[...dados.trilhas.map((t) => ({ ...t, chave: String(t.id) })), ...(dados.sem_trilha.encontros ? [{ id: null, chave: "0", titulo: "Sem trilha", encontros: dados.sem_trilha.encontros, horas_cadastradas: dados.sem_trilha.horas_cadastradas, semTrilha: true }] : [])].map((t) => {
-                    const cor = t.semTrilha ? SEM_TRILHA : corDaTrilha(dados.trilhas, t.id);
-                    const ativo = trilhaFiltro === t.chave;
+                <div style={{ display: "grid", gap: 14 }}>
+                  {dados.trilhas.map((t) => {
+                    const cor = corDaTrilha(dados.trilhas, t.id);
+                    const chave = String(t.id);
+                    const ativo = trilhaFiltro === chave;
                     return (
-                      <button
-                        key={t.chave}
-                        type="button"
-                        onClick={() => setTrilhaFiltro(ativo ? "" : t.chave)}
-                        style={{ textAlign: "left", padding: 12, borderRadius: 12, cursor: "pointer", background: ativo ? cor.bg : "#fff", border: `2px solid ${ativo ? cor.cor : colors.border}`, display: "grid", gap: 4 }}
-                      >
-                        <span style={{ ...selo, background: cor.bg, color: cor.cor, justifySelf: "start", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>{t.titulo}</span>
-                        <span style={{ fontSize: 12, color: colors.textSecondary }}>
-                          {t.semTrilha ? `${t.encontros} encontro(s)` : `${t.encontros_realizados}/${t.encontros} encontro(s) realizados`} · {fmtNum(t.horas_cadastradas)} h
-                        </span>
-                        {!t.semTrilha && (
+                      <div key={t.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 12, display: "grid", gap: 10, background: "#fff" }}>
+                        <button
+                          type="button"
+                          onClick={() => setTrilhaFiltro(ativo ? "" : chave)}
+                          title="Filtrar a grade por esta trilha"
+                          style={{ textAlign: "left", padding: 10, borderRadius: 10, cursor: "pointer", background: ativo ? cor.bg : colors.surfaceMuted, border: `2px solid ${ativo ? cor.cor : "transparent"}`, display: "grid", gap: 3 }}
+                        >
+                          <span style={{ ...selo, background: cor.bg, color: cor.cor, justifySelf: "start", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>{t.titulo}</span>
+                          <span style={{ fontSize: 12, color: colors.textSecondary }}>
+                            {t.etapas.length} etapa(s) · {t.encontros_realizados}/{t.encontros} encontro(s) realizados · {fmtNum(t.horas_cadastradas)} h
+                          </span>
                           <span style={{ fontSize: 12, fontWeight: 700, color: t.abaixo_do_minimo ? colors.dangerText : colors.textPrimary }}>
-                            {t.pct_medio === null ? "Sem presença lançada" : `Presença média ${fmtNum(t.pct_medio)}%`}
+                            {t.pct_medio === null ? "Sem presença lançada" : `Presença média da trilha ${fmtNum(t.pct_medio)}%`}
                             {t.abaixo_do_minimo ? ` · ${t.abaixo_do_minimo} abaixo do mínimo` : ""}
                           </span>
+                        </button>
+                        {t.etapas.length === 0 ? (
+                          <div style={dica}>Esta trilha ainda não tem etapas. Cadastre-as na página Trilhas para acompanhar a presença por etapa.</div>
+                        ) : (
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
+                            {t.etapas.map((et, i) => {
+                              const ch = `${t.id}:${et.id}`;
+                              const ativoEt = trilhaFiltro === ch;
+                              return (
+                                <div key={et.id} style={{ border: `2px solid ${ativoEt ? cor.cor : colors.border}`, background: ativoEt ? cor.bg : "#fff", borderRadius: 10, padding: 10, display: "grid", gap: 4 }}>
+                                  <button type="button" onClick={() => setTrilhaFiltro(ativoEt ? "" : ch)} title="Filtrar a grade por esta etapa" style={{ textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", display: "grid", gap: 2 }}>
+                                    <strong style={{ fontSize: 13, color: colors.textPrimary }}>
+                                      Etapa {i + 1} · {et.titulo}
+                                    </strong>
+                                    <span style={{ fontSize: 12, color: colors.textSecondary }}>
+                                      {et.encontros === 0 ? "Nenhum encontro ainda" : `${et.encontros_realizados}/${et.encontros} encontro(s) · ${fmtNum(et.horas_cadastradas)} h`}
+                                    </span>
+                                    {et.encontros > 0 && (
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: et.abaixo_do_minimo ? colors.dangerText : colors.textPrimary }}>
+                                        {et.pct_medio === null ? "Sem presença lançada" : `Presença média ${fmtNum(et.pct_medio)}%`}
+                                        {et.abaixo_do_minimo ? ` · ${et.abaixo_do_minimo} abaixo do mínimo` : ""}
+                                      </span>
+                                    )}
+                                  </button>
+                                  <div>
+                                    <button
+                                      type="button"
+                                      style={btnMini}
+                                      onClick={() => {
+                                        setEditandoTrilhas(false);
+                                        setPainelAtivo({ tipo: "encontro", padrao: { trilha_id: t.id, trilha_etapa_id: et.id, titulo: et.titulo } });
+                                        window.scrollTo({ top: 0, behavior: "smooth" });
+                                      }}
+                                    >
+                                      + Encontro desta etapa
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {t.sem_etapa.encontros > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setTrilhaFiltro(trilhaFiltro === `${t.id}:0` ? "" : `${t.id}:0`)}
+                                style={{ textAlign: "left", border: `2px solid ${trilhaFiltro === `${t.id}:0` ? cor.cor : colors.border}`, background: "#fff", borderRadius: 10, padding: 10, cursor: "pointer", display: "grid", gap: 2 }}
+                              >
+                                <strong style={{ fontSize: 13, color: colors.textPrimary }}>Sem etapa definida</strong>
+                                <span style={{ fontSize: 12, color: colors.textSecondary }}>
+                                  {t.sem_etapa.encontros} encontro(s) · {fmtNum(t.sem_etapa.horas_cadastradas)} h
+                                </span>
+                              </button>
+                            )}
+                          </div>
                         )}
-                        {!t.semTrilha && t.encontros === 0 && <span style={{ fontSize: 11, color: colors.textMuted }}>Nenhum encontro ainda — crie um e escolha esta trilha.</span>}
-                      </button>
+                      </div>
                     );
                   })}
+                  {dados.sem_trilha.encontros > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setTrilhaFiltro(trilhaFiltro === "0" ? "" : "0")}
+                      style={{ textAlign: "left", padding: 12, borderRadius: 12, cursor: "pointer", background: trilhaFiltro === "0" ? SEM_TRILHA.bg : "#fff", border: `2px solid ${trilhaFiltro === "0" ? SEM_TRILHA.cor : colors.border}`, display: "grid", gap: 3 }}
+                    >
+                      <span style={{ ...selo, background: SEM_TRILHA.bg, color: SEM_TRILHA.cor, justifySelf: "start" }}>Sem trilha</span>
+                      <span style={{ fontSize: 12, color: colors.textSecondary }}>
+                        {dados.sem_trilha.encontros} encontro(s) · {fmtNum(dados.sem_trilha.horas_cadastradas)} h
+                      </span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -443,11 +515,17 @@ export default function PresencaJornadasPage() {
                 <input style={{ ...entrada, width: 240 }} placeholder="Buscar nome ou matrícula" value={filtros.busca} onChange={(e) => setFiltros({ ...filtros, busca: e.target.value })} />
                 <select style={{ ...entrada, width: 220 }} value={trilhaFiltro} onChange={(e) => setTrilhaFiltro(e.target.value)}>
                   <option value="">Todas as trilhas</option>
-                  {dados.trilhas.map((t) => (
+                  {dados.trilhas.flatMap((t) => [
                     <option key={t.id} value={String(t.id)}>
                       {t.titulo}
-                    </option>
-                  ))}
+                    </option>,
+                    ...t.etapas.map((et, i) => (
+                      <option key={`${t.id}:${et.id}`} value={`${t.id}:${et.id}`}>
+                        {"   ↳ Etapa "}
+                        {i + 1} · {et.titulo}
+                      </option>
+                    )),
+                  ])}
                   {dados.sem_trilha.encontros > 0 && <option value="0">Sem trilha</option>}
                 </select>
                 <select style={{ ...entrada, width: 180 }} value={filtros.turma} onChange={(e) => setFiltros({ ...filtros, turma: e.target.value })}>
