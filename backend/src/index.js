@@ -67,6 +67,7 @@ const perfilComportamentalRoutes = require("./routes/perfilComportamentalRoutes"
 const metodologiaClientesRoutes = require("./routes/metodologiaClientesRoutes");
 const oficinaTalentosRoutes = require("./routes/oficinaTalentosRoutes");
 const oficinaTalentosPublicRoutes = require("./routes/oficinaTalentosPublicRoutes");
+const jornadaPresencaRoutes = require("./routes/jornadaPresencaRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
 const {
   getDesempenho: getDesempenhoInstrutor,
@@ -1838,6 +1839,11 @@ app.use("/api/metodologia-clientes", authRequired, authorizeRoles("metodologia")
 // é PÚBLICO e fica em /api/public/oficina, com limite de tentativas próprio.
 app.use("/api/oficina-talentos", authRequired, authorizeRoles("metodologia"), oficinaTalentosRoutes);
 app.use("/api/public/oficina", oficinaTalentosPublicRoutes);
+
+// Jornadas — encontros e presença por pessoa (Fase 1, 13/10/2026). Só a
+// Metodologia lança a chamada (decisão D do Ramon); super_admin passa pelo
+// authorizeRoles. Isolamento por empresa dentro do controller (via jornada).
+app.use("/api/jornada-presenca", authRequired, authorizeRoles("metodologia"), jornadaPresencaRoutes);
 
 // Capacidade x Realizado (CH por instrutor / CH efetiva do time) — o
 // controller e a migration já existiam, mas nunca tinham sido conectados:
