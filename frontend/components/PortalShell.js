@@ -87,6 +87,9 @@ const menuItems = [
   // listagem única de todo mundo acompanhado (jornada e/ou coaching).
   { href: "/kpis-desenvolvimento", label: "KPIs",      icon: "trending", roles: ["metodologia"] },
   { href: "/tripulacao",           label: "Tripulação", icon: "users",    roles: ["metodologia"] },
+  // Oficina de Talentos (13/10/2026) — oficina de formação de líderes, com
+  // link público de inscrição por matrícula + CPF. Só Metodologia.
+  { href: "/oficina-talentos",     label: "Oficina de Talentos", icon: "award", roles: ["metodologia"] },
 ];
 // Removidos do menu (agora vivem dentro da Turma, nas abas Avaliações/NPS,
 // ou como drill-down no Dashboard — ver frontend/components/TurmaTabs.js):
@@ -196,7 +199,7 @@ export default function PortalShell({
     // "/usuarios" (Fase 1, 22/09/2026) entrou na lista pelo mesmo motivo do
     // comentário acima — sem isso, o próprio redirect empurrava metodologia
     // de volta para /mapa-desenvolvimento ao tentar abrir Gestão de Usuários.
-    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao", "/usuarios"];
+    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao", "/oficina-talentos", "/usuarios"];
     if (
       user.perfil === "metodologia" &&
       !METODOLOGIA_ROTAS.some((rota) => isRouteActive(pathname, rota))
