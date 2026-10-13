@@ -2022,6 +2022,10 @@ async function runMigrations() {
     // 58. Trilhas vinculadas às jornadas e aos encontros — ver ensureJornadaTrilhas().
     await ensureJornadaTrilhas();
 
+    // 59. Grade de presença da turma (Treinamentos, 13/10/2026) — presença
+    // mínima configurável por turma (NULL = padrão 75%).
+    await ensureColumn("treinamentos", "presenca_minima_pct", "DECIMAL(5,2) NULL");
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
