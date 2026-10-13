@@ -5,6 +5,8 @@ import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
+import PresencaCertificados from "./PresencaCertificados";
+import Indicadores from "./Indicadores";
 import { apiFetch, apiDownload } from "../../services/api";
 import { colors, radius } from "../../lib/theme";
 import { formatDateBR } from "../../lib/date";
@@ -24,6 +26,7 @@ const STATUS_TURMA = {
 
 const STATUS_INSCRICAO = {
   confirmado: { label: "Confirmado", bg: colors.successLight, text: colors.successText },
+  concluido: { label: "Concluído", bg: colors.primaryLight, text: colors.primary },
   em_conferencia: { label: "Em conferência", bg: colors.warningLight, text: colors.warningText },
   lista_espera: { label: "Lista de espera", bg: colors.infoLight, text: "#0369a1" },
   cancelado: { label: "Cancelado", bg: colors.dangerLight, text: colors.dangerText },
@@ -46,10 +49,17 @@ const FORM_VAZIO = {
   status: "rascunho",
   cargos_elegiveis: "Operador(a)\nMonitor(a)\nInstrutor(a)",
   cargos_almejados: "Supervisor(a)\nInstrutor(a)\nMonitor(a)\nAnalista\nCoordenador(a)\nOutro",
+  presenca_minima: "100",
+  assinatura1_nome: "",
+  assinatura1_cargo: "Colaborador(a)",
+  assinatura2_nome: "",
+  assinatura2_cargo: "Coordenador(a) de T&D",
   modulos: [],
 };
 
 const moduloVazio = () => ({ titulo: "", data: "", hora_inicio: "", hora_fim: "", carga_horaria: "" });
+
+const fmtH = (v) => Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 
 function formatarCpf(cpf) {
   const d = String(cpf || "").replace(/\D/g, "");
@@ -77,7 +87,13 @@ function turmaParaForm(t) {
     status: t.status || "rascunho",
     cargos_elegiveis: (t.cargos_elegiveis || []).join("\n"),
     cargos_almejados: (t.cargos_almejados || []).join("\n"),
+    presenca_minima: t.presenca_minima === null || t.presenca_minima === undefined ? "100" : String(Number(t.presenca_minima)),
+    assinatura1_nome: t.assinatura1_nome || "",
+    assinatura1_cargo: t.assinatura1_cargo || "Colaborador(a)",
+    assinatura2_nome: t.assinatura2_nome || "",
+    assinatura2_cargo: t.assinatura2_cargo || "Coordenador(a) de T&D",
     modulos: (t.modulos || []).map((m) => ({
+      id: m.id,
       titulo: m.titulo || "",
       data: m.data || "",
       hora_inicio: m.hora_inicio || "",
@@ -93,7 +109,7 @@ export default function OficinaTalentosPage() {
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
 
-  // tela: 'lista' | 'form' | 'turma'
+  // tela: 'lista' | 'form' | 'turma' | 'indicadores'
   const [tela, setTela] = useState("lista");
   const [turmaAtual, setTurmaAtual] = useState(null); // detalhe (com módulos)
   const [inscricoes, setInscricoes] = useState([]);
@@ -101,6 +117,7 @@ export default function OficinaTalentosPage() {
   const [editandoId, setEditandoId] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  const [aba, setAba] = useState("inscritos"); // inscritos | presenca
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [busca, setBusca] = useState("");
 
@@ -160,6 +177,16 @@ export default function OficinaTalentosPage() {
     if (!turmaAtual) return;
     await abrirTurma(turmaAtual.id);
     carregarTurmas();
+  }
+
+  // Recarrega só a lista de inscrições da turma aberta (sem trocar de tela/aba),
+  // para o status "Concluído" aparecer na aba Inscritos depois de emitir certificados.
+  async function recarregarInscricoesSilencioso() {
+    if (!turmaAtual) return;
+    try {
+      const lista = await apiFetch(`/oficina-talentos/turmas/${turmaAtual.id}/inscricoes`);
+      setInscricoes(Array.isArray(lista) ? lista : []);
+    } catch {}
   }
 
   function novaTurma() {
@@ -271,7 +298,7 @@ export default function OficinaTalentosPage() {
   );
 
   const contagem = useMemo(() => {
-    const c = { confirmado: 0, em_conferencia: 0, lista_espera: 0, cancelado: 0, desistente: 0 };
+    const c = { confirmado: 0, concluido: 0, em_conferencia: 0, lista_espera: 0, cancelado: 0, desistente: 0 };
     inscricoes.forEach((i) => {
       if (c[i.status] !== undefined) c[i.status] += 1;
     });
@@ -304,8 +331,17 @@ export default function OficinaTalentosPage() {
           subtitle="Turmas, link de inscrição, conferência por matrícula + CPF, lista de espera e histórico de quem quer formar liderança."
           actions={
             tela === "lista" ? (
-              <button style={btnPrimario} onClick={novaTurma}>
-                + Nova turma
+              <div style={acoes}>
+                <button style={btnSecundario} onClick={() => { limparMensagens(); setTela("indicadores"); }}>
+                  Indicadores
+                </button>
+                <button style={btnPrimario} onClick={novaTurma}>
+                  + Nova turma
+                </button>
+              </div>
+            ) : tela === "indicadores" ? (
+              <button style={btnSecundario} onClick={() => { limparMensagens(); setTela("lista"); }}>
+                ← Turmas
               </button>
             ) : null
           }
@@ -313,6 +349,9 @@ export default function OficinaTalentosPage() {
 
         {erro && <div style={alertaErro}>{erro}</div>}
         {aviso && <div style={alertaOk}>{aviso}</div>}
+
+        {/* ───────────── INDICADORES (Fase 3) ───────────── */}
+        {tela === "indicadores" && <Indicadores turmas={turmas} setErro={setErro} />}
 
         {/* ───────────── LISTA ───────────── */}
         {tela === "lista" && (
@@ -333,7 +372,7 @@ export default function OficinaTalentosPage() {
                 <div style={gradeCards}>
                   {turmas.map((t) => {
                     const st = STATUS_TURMA[t.status] || STATUS_TURMA.rascunho;
-                    const ocupadas = t.confirmados + t.em_conferencia;
+                    const ocupadas = t.confirmados + t.em_conferencia + (t.concluidos || 0);
                     return (
                       <div key={t.id} style={cartao}>
                         <div style={cartaoTopo}>
@@ -350,12 +389,13 @@ export default function OficinaTalentosPage() {
                         <div style={numerosLinha}>
                           <Numero rotulo="Vagas" valor={t.vagas === null ? "—" : `${ocupadas}/${t.vagas}`} />
                           <Numero rotulo="Confirmados" valor={t.confirmados} />
+                          <Numero rotulo="Concluídos" valor={t.concluidos || 0} />
                           <Numero rotulo="Conferência" valor={t.em_conferencia} />
                           <Numero rotulo="Espera" valor={t.lista_espera} />
                         </div>
 
                         <div style={acoes}>
-                          <button style={btnPrimario} onClick={() => abrirTurma(t.id)}>
+                          <button style={btnPrimario} onClick={() => { setAba("inscritos"); abrirTurma(t.id); }}>
                             Abrir
                           </button>
                           <button style={btnSecundario} onClick={() => copiarLink(t)}>
@@ -448,6 +488,29 @@ export default function OficinaTalentosPage() {
               </div>
 
               <div style={gradeBloco}>
+                <h3 style={h3}>Certificado</h3>
+                <div style={gradeForm}>
+                  <Campo rotulo="Presença mínima para certificado (%)">
+                    <input type="number" min="0" max="100" step="1" style={entrada} value={form.presenca_minima} onChange={(e) => setForm({ ...form, presenca_minima: e.target.value })} />
+                    <span style={dica}>Percentual da carga horária da grade (ou dos módulos, se não houver carga horária). Padrão: 100%.</span>
+                  </Campo>
+                  <div />
+                  <Campo rotulo="1ª assinatura — nome">
+                    <input style={entrada} value={form.assinatura1_nome} onChange={(e) => setForm({ ...form, assinatura1_nome: e.target.value })} />
+                  </Campo>
+                  <Campo rotulo="1ª assinatura — cargo">
+                    <input style={entrada} value={form.assinatura1_cargo} onChange={(e) => setForm({ ...form, assinatura1_cargo: e.target.value })} />
+                  </Campo>
+                  <Campo rotulo="2ª assinatura — nome">
+                    <input style={entrada} value={form.assinatura2_nome} onChange={(e) => setForm({ ...form, assinatura2_nome: e.target.value })} />
+                  </Campo>
+                  <Campo rotulo="2ª assinatura — cargo">
+                    <input style={entrada} value={form.assinatura2_cargo} onChange={(e) => setForm({ ...form, assinatura2_cargo: e.target.value })} />
+                  </Campo>
+                </div>
+              </div>
+
+              <div style={gradeBloco}>
                 <div style={gradeBlocoTopo}>
                   <h3 style={h3}>Grade / programação</h3>
                   <button type="button" style={btnSecundario} onClick={() => setForm({ ...form, modulos: [...form.modulos, moduloVazio()] })}>
@@ -527,8 +590,9 @@ export default function OficinaTalentosPage() {
               </div>
 
               <div style={gradeKpi}>
-                <StatCard title="Vagas" value={turmaAtual.vagas === null ? "Sem limite" : `${contagem.confirmado + contagem.em_conferencia}/${turmaAtual.vagas}`} accent={colors.primary} />
+                <StatCard title="Vagas" value={turmaAtual.vagas === null ? "Sem limite" : `${contagem.confirmado + contagem.em_conferencia + contagem.concluido}/${turmaAtual.vagas}`} accent={colors.primary} />
                 <StatCard title="Confirmados" value={contagem.confirmado} accent={colors.success} />
+                <StatCard title="Concluídos" value={contagem.concluido} accent={colors.primary} />
                 <StatCard title="Em conferência" value={contagem.em_conferencia} accent={colors.warning} />
                 <StatCard title="Lista de espera" value={contagem.lista_espera} accent={colors.info} />
               </div>
@@ -536,14 +600,14 @@ export default function OficinaTalentosPage() {
               {turmaAtual.modulos?.length > 0 && (
                 <div style={{ marginTop: 18 }}>
                   <h3 style={h3}>
-                    Grade{turmaAtual.carga_horaria_prevista ? ` · ${Number(turmaAtual.carga_horaria_prevista)} h` : ""}
+                    Grade{turmaAtual.carga_horaria_prevista ? ` · ${fmtH(turmaAtual.carga_horaria_prevista)} h` : ""}
                   </h3>
                   <div style={{ display: "grid", gap: 6 }}>
                     {turmaAtual.modulos.map((m) => (
                       <div key={m.id} style={moduloResumo}>
                         <strong>{m.titulo}</strong>
                         <span style={{ color: colors.textSecondary }}>
-                          {[m.data ? formatDateBR(m.data) : null, m.hora_inicio && m.hora_fim ? `${m.hora_inicio}–${m.hora_fim}` : null, m.carga_horaria ? `${m.carga_horaria} h` : null].filter(Boolean).join(" · ")}
+                          {[m.data ? formatDateBR(m.data) : null, m.hora_inicio && m.hora_fim ? `${m.hora_inicio}–${m.hora_fim}` : null, m.carga_horaria ? `${fmtH(m.carga_horaria)} h` : null].filter(Boolean).join(" · ")}
                         </span>
                       </div>
                     ))}
@@ -569,6 +633,20 @@ export default function OficinaTalentosPage() {
               )}
             </SectionCard>
 
+            <div style={abas}>
+              <button style={aba === "inscritos" ? abaAtiva : abaInativa} onClick={() => setAba("inscritos")}>
+                Inscritos
+              </button>
+              <button style={aba === "presenca" ? abaAtiva : abaInativa} onClick={() => setAba("presenca")}>
+                Presença e certificados
+              </button>
+            </div>
+
+            {aba === "presenca" && (
+              <PresencaCertificados turmaId={turmaAtual.id} onMudou={() => { carregarTurmas(); recarregarInscricoesSilencioso(); }} setErro={setErro} setAviso={setAviso} />
+            )}
+
+            {aba === "inscritos" && (
             <SectionCard
               title="Inscritos"
               subtitle="“Em conferência” = matrícula + CPF não bateram com o cadastro ou o cargo está fora da lista elegível. Cargo almejado é visível só para a Metodologia."
@@ -631,17 +709,23 @@ export default function OficinaTalentosPage() {
                             </td>
                             <td style={td}>
                               <div style={acoes}>
-                                {i.status !== "confirmado" && (
+                                {i.status === "concluido" && <span style={tdSub}>Certificado emitido</span>}
+                                {i.pessoa_id && (
+                                  <a href={`/pessoas/${i.pessoa_id}`} style={linkHistorico} title="Abrir o perfil 360º com o histórico da pessoa">
+                                    Ver histórico
+                                  </a>
+                                )}
+                                {i.status !== "confirmado" && i.status !== "concluido" && (
                                   <button style={btnMini(colors.successLight, colors.successText)} onClick={() => alterarStatusInscricao(i, "confirmado")}>
                                     Confirmar
                                   </button>
                                 )}
-                                {i.status !== "lista_espera" && i.status !== "cancelado" && i.status !== "desistente" && (
+                                {i.status !== "lista_espera" && i.status !== "cancelado" && i.status !== "desistente" && i.status !== "concluido" && (
                                   <button style={btnMini(colors.infoLight, "#0369a1")} onClick={() => alterarStatusInscricao(i, "lista_espera")}>
                                     Espera
                                   </button>
                                 )}
-                                {i.status !== "cancelado" && (
+                                {i.status !== "cancelado" && i.status !== "concluido" && (
                                   <button style={btnMini(colors.dangerLight, colors.dangerText)} onClick={() => alterarStatusInscricao(i, "cancelado")}>
                                     Cancelar
                                   </button>
@@ -661,6 +745,7 @@ export default function OficinaTalentosPage() {
                 </div>
               )}
             </SectionCard>
+            )}
           </>
         )}
       </div>
@@ -694,7 +779,7 @@ const cartao = { background: colors.surface, border: `1px solid ${colors.border}
 const cartaoTopo = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 };
 const cartaoTitulo = { fontWeight: 800, fontSize: 15, color: colors.textPrimary };
 const cartaoSub = { fontSize: 12, color: colors.textSecondary, marginTop: 2 };
-const numerosLinha = { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "10px 0", borderTop: `1px solid ${colors.surfaceMuted}`, borderBottom: `1px solid ${colors.surfaceMuted}` };
+const numerosLinha = { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, padding: "10px 0", borderTop: `1px solid ${colors.surfaceMuted}`, borderBottom: `1px solid ${colors.surfaceMuted}` };
 const acoes = { display: "flex", gap: 8, flexWrap: "wrap" };
 const selo = { fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: radius.pill, whiteSpace: "nowrap", display: "inline-block" };
 const vazio = { textAlign: "center", color: colors.textMuted, padding: "40px 0", fontSize: 14 };
@@ -726,4 +811,9 @@ const btnPrimario = { padding: "9px 18px", background: colors.accent, color: "#f
 const btnSecundario = { padding: "9px 18px", background: colors.surfaceMuted, color: colors.textSecondary, border: `1px solid ${colors.border}`, borderRadius: radius.sm, cursor: "pointer", fontSize: 13, fontWeight: 700 };
 const btnPerigo = { padding: "9px 18px", background: colors.dangerLight, color: colors.dangerText, border: "none", borderRadius: radius.sm, cursor: "pointer", fontSize: 13, fontWeight: 700 };
 const btnSalvar = { padding: "10px 24px", background: colors.navy, color: "#fff", border: "none", borderRadius: radius.sm, cursor: "pointer", fontSize: 14, fontWeight: 800 };
+const linkHistorico = { padding: "4px 10px", borderRadius: radius.sm, background: colors.primaryLight, color: colors.primary, fontSize: 12, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" };
+const abas = { display: "flex", gap: 8 };
+const abaBase = { padding: "10px 20px", borderRadius: radius.sm, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14 };
+const abaAtiva = { ...abaBase, background: colors.navy, color: "#fff" };
+const abaInativa = { ...abaBase, background: colors.surfaceMuted, color: colors.textSecondary };
 const btnMini = (bg, cor) => ({ padding: "5px 10px", background: bg, color: cor, border: "none", borderRadius: radius.sm, cursor: "pointer", fontSize: 12, fontWeight: 700 });
