@@ -121,7 +121,7 @@ async function buscarEncontro(req, id) {
   const tenant = req.empresaId ? " AND e.empresa_id = ?" : "";
   const params = req.empresaId ? [encontroId, req.empresaId] : [encontroId];
   const [rows] = await db.query(
-    `SELECT e.id, e.empresa_id, e.jornada_id, e.etapa_id, e.titulo, DATE_FORMAT(e.data, '%Y-%m-%d') AS data,
+    `SELECT e.id, e.empresa_id, e.jornada_id, e.etapa_id, e.trilha_id, e.titulo, DATE_FORMAT(e.data, '%Y-%m-%d') AS data,
             e.hora_inicio, e.carga_horaria, e.responsavel, e.observacao
      FROM jornada_encontros e WHERE e.id = ?${tenant} LIMIT 1`,
     params
@@ -131,15 +131,34 @@ async function buscarEncontro(req, id) {
 
 async function carregarEncontros(jornadaId) {
   const [rows] = await db.query(
-    `SELECT e.id, e.jornada_id, e.etapa_id, e.titulo, DATE_FORMAT(e.data, '%Y-%m-%d') AS data,
-            e.hora_inicio, e.carga_horaria, e.responsavel, e.observacao, je.nome AS etapa_nome
+    `SELECT e.id, e.jornada_id, e.etapa_id, e.trilha_id, e.titulo, DATE_FORMAT(e.data, '%Y-%m-%d') AS data,
+            e.hora_inicio, e.carga_horaria, e.responsavel, e.observacao, je.nome AS etapa_nome, ta.titulo AS trilha_titulo
      FROM jornada_encontros e
      LEFT JOIN jornadas_etapas je ON je.id = e.etapa_id
+     LEFT JOIN trilhas_aprendizagem ta ON ta.id = e.trilha_id
      WHERE e.jornada_id = ?
      ORDER BY e.data ASC, e.hora_inicio ASC, e.id ASC`,
     [jornadaId]
   );
   return rows.map((e) => ({ ...e, carga_horaria: Number(e.carga_horaria) }));
+}
+
+// Trilhas vinculadas à jornada (tabela jornada_trilhas), com o título vindo do catálogo.
+async function carregarTrilhasDaJornada(jornadaId) {
+  const [rows] = await db.query(
+    `SELECT t.id, t.titulo, t.cliente, t.status
+     FROM jornada_trilhas jt
+     JOIN trilhas_aprendizagem t ON t.id = jt.trilha_id
+     WHERE jt.jornada_id = ?
+     ORDER BY jt.ordem ASC, t.titulo ASC, t.id ASC`,
+    [jornadaId]
+  );
+  return rows;
+}
+
+function normalizarTrilhas(encontros, trilhasVinculadas) {
+  const ids = new Set(trilhasVinculadas.map((t) => String(t.id)));
+  return encontros.map((e) => (e.trilha_id && !ids.has(String(e.trilha_id)) ? { ...e, trilha_id: null, trilha_titulo: null } : e));
 }
 
 async function carregarParticipantes(jornadaId) {
@@ -237,18 +256,36 @@ function totaisDaPessoa(encontros, situacaoPorEncontro, config, hoje) {
   };
 }
 
+// Totais da pessoa por trilha (sem meta/reciclagem) — extrato, impressão e exportação.
+function totaisPorTrilha(encontros, trilhasVinculadas, situacaoPorEncontro, config, hoje) {
+  const cfg = { ...config, meta_horas: null, periodicidade_meses: null };
+  const itens = trilhasVinculadas.map((t) => ({ id: t.id, titulo: t.titulo, lista: encontros.filter((e) => e.trilha_id === t.id) }));
+  const sem = encontros.filter((e) => !e.trilha_id);
+  if (sem.length) itens.push({ id: null, titulo: "Sem trilha", lista: sem });
+  return itens
+    .filter((i) => i.lista.length)
+    .map((i) => {
+      const t = totaisDaPessoa(i.lista, situacaoPorEncontro, cfg, hoje);
+      return { trilha_id: i.id, titulo: i.titulo, encontros: i.lista.length, horas: t.horas, presentes: t.presentes, justificados: t.justificados, ausentes: t.ausentes, pendentes: t.pendentes, pct_presenca: t.pct_presenca, farol: t.farol };
+    });
+}
+
 async function montarGrade(jornada) {
   const hoje = hojeBahia();
   const config = configDaJornada(jornada);
-  const [encontros, participantes, presencas, [etapas]] = await Promise.all([
+  const [encontrosBrutos, participantes, presencas, [etapas], trilhasVinculadas] = await Promise.all([
     carregarEncontros(jornada.id),
     carregarParticipantes(jornada.id),
     carregarPresencas(jornada.id),
     db.query(
-      `SELECT id, nome, ordem FROM jornadas_etapas WHERE jornada_id = ? ORDER BY ordem ASC, id ASC`,
+      `SELECT id, nome, ordem, trilha_id FROM jornadas_etapas WHERE jornada_id = ? ORDER BY ordem ASC, id ASC`,
       [jornada.id]
     ),
+    carregarTrilhasDaJornada(jornada.id),
   ]);
+
+  // Encontro cuja trilha já não pertence à jornada (ou saiu do catálogo) volta a "sem trilha".
+  const encontros = normalizarTrilhas(encontrosBrutos, trilhasVinculadas);
 
   const porPessoa = new Map();
   const celulas = {};
@@ -258,11 +295,46 @@ async function montarGrade(jornada) {
     celulas[`${p.encontro_id}:${p.participante_id}`] = p.situacao;
   }
 
-  const linhas = participantes.map((p) => ({
-    ...p,
-    vinculado: Boolean(p.pessoa_id),
-    totais: totaisDaPessoa(encontros, porPessoa.get(p.id) || new Map(), config, hoje),
-  }));
+  // Encontros agrupados por trilha ("0" = encontros sem trilha). Os totais por
+  // trilha usam a mesma regra dos totais da jornada, sem meta nem reciclagem
+  // (essas são da jornada inteira).
+  const configTrilha = { ...config, meta_horas: null, periodicidade_meses: null };
+  const grupos = new Map();
+  for (const e of encontros) {
+    const k = e.trilha_id ? String(e.trilha_id) : "0";
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(e);
+  }
+
+  const linhas = participantes.map((p) => {
+    const sits = porPessoa.get(p.id) || new Map();
+    const totaisTrilha = {};
+    for (const [k, lista] of grupos) {
+      const t = totaisDaPessoa(lista, sits, configTrilha, hoje);
+      totaisTrilha[k] = { horas: t.horas, presentes: t.presentes, justificados: t.justificados, ausentes: t.ausentes, pendentes: t.pendentes, pct_presenca: t.pct_presenca, farol: t.farol };
+    }
+    return {
+      ...p,
+      vinculado: Boolean(p.pessoa_id),
+      totais: totaisDaPessoa(encontros, sits, config, hoje),
+      totais_trilha: totaisTrilha,
+    };
+  });
+
+  // Resumo por trilha (cartões acima da grade). Inclui trilhas vinculadas sem
+  // encontro e, se houver, o grupo "Sem trilha".
+  const resumoTrilhas = trilhasVinculadas.map((t) => {
+    const lista = grupos.get(String(t.id)) || [];
+    const pcts = linhas.map((l) => l.totais_trilha[String(t.id)]?.pct_presenca).filter((v) => v !== null && v !== undefined);
+    return {
+      ...t,
+      encontros: lista.length,
+      encontros_realizados: lista.filter((e) => e.data <= hoje).length,
+      horas_cadastradas: arredondar(lista.reduce((sm, e) => sm + e.carga_horaria, 0)),
+      pct_medio: pcts.length ? arredondar(pcts.reduce((a, b) => a + b, 0) / pcts.length, 1) : null,
+      abaixo_do_minimo: linhas.filter((l) => l.totais_trilha[String(t.id)]?.farol === "vermelho").length,
+    };
+  });
 
   const porEncontro = encontros.map((e) => {
     let presentes = 0;
@@ -301,6 +373,11 @@ async function montarGrade(jornada) {
     jornada: { id: jornada.id, nome: jornada.nome, cliente: jornada.cliente, ...config },
     hoje,
     etapas,
+    trilhas: resumoTrilhas,
+    sem_trilha: {
+      encontros: (grupos.get("0") || []).length,
+      horas_cadastradas: arredondar((grupos.get("0") || []).reduce((sm, e) => sm + e.carga_horaria, 0)),
+    },
     encontros,
     participantes: linhas,
     presencas: celulas,
@@ -353,6 +430,91 @@ async function salvarConfig(req, res) {
   }
 }
 
+// ───────────────────────── endpoints: trilhas da jornada ─────────────────────────
+
+// Catálogo de trilhas que podem ser vinculadas à jornada: todas as do mesmo
+// ambiente (empresa). Não restringe por cliente de propósito — a mesma trilha
+// pode servir a várias jornadas, inclusive de clientes diferentes.
+async function catalogoParaJornada(req, jornada) {
+  const where = [];
+  const params = [];
+  if (jornada.empresa_id !== null && jornada.empresa_id !== undefined) {
+    where.push("t.empresa_id = ?");
+    params.push(jornada.empresa_id);
+  }
+  const [rows] = await db.query(
+    `SELECT t.id, t.titulo, t.cliente, t.status,
+            (SELECT COUNT(*) FROM trilha_etapas te WHERE te.trilha_id = t.id) AS qtd_etapas
+     FROM trilhas_aprendizagem t
+     ${where.length ? "WHERE " + where.join(" AND ") : ""}
+     ORDER BY t.titulo ASC, t.id ASC`,
+    params
+  );
+  return rows.map((t) => ({ ...t, qtd_etapas: Number(t.qtd_etapas) }));
+}
+
+// GET /jornadas/:jornadaId/trilhas → { vinculadas, disponiveis }
+async function listarTrilhas(req, res) {
+  try {
+    const jornada = await buscarJornada(req, req.params.jornadaId);
+    if (!jornada) return erro(res, 404, "Jornada não encontrada.");
+    const [vinculadas, catalogo] = await Promise.all([carregarTrilhasDaJornada(jornada.id), catalogoParaJornada(req, jornada)]);
+    const [contagens] = await db.query(
+      `SELECT trilha_id, COUNT(*) AS total FROM jornada_encontros WHERE jornada_id = ? AND trilha_id IS NOT NULL GROUP BY trilha_id`,
+      [jornada.id]
+    );
+    const porTrilha = new Map(contagens.map((c) => [Number(c.trilha_id), Number(c.total)]));
+    const ids = new Set(vinculadas.map((t) => t.id));
+    return res.json({
+      ok: true,
+      vinculadas: vinculadas.map((t) => ({ ...t, encontros: porTrilha.get(t.id) || 0 })),
+      disponiveis: catalogo.filter((t) => !ids.has(t.id)),
+    });
+  } catch (e) {
+    return falha(res, "carregar as trilhas da jornada", e);
+  }
+}
+
+// PUT /jornadas/:jornadaId/trilhas { trilha_ids: [..] } — define a lista completa.
+// Trilha retirada: os encontros que apontavam para ela passam a "sem trilha"
+// (a presença deles não é tocada).
+async function salvarTrilhas(req, res) {
+  try {
+    const jornada = await buscarJornada(req, req.params.jornadaId);
+    if (!jornada) return erro(res, 404, "Jornada não encontrada.");
+    const bruto = req.body?.trilha_ids;
+    if (!Array.isArray(bruto)) return erro(res, 400, "Informe a lista de trilhas (trilha_ids).");
+    const ids = [...new Set(bruto.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v > 0))];
+
+    const catalogo = await catalogoParaJornada(req, jornada);
+    const validos = new Set(catalogo.map((t) => t.id));
+    const invalida = ids.find((i) => !validos.has(i));
+    if (invalida) return erro(res, 404, "Uma das trilhas escolhidas não foi encontrada.");
+
+    const atuais = (await carregarTrilhasDaJornada(jornada.id)).map((t) => t.id);
+    const remover = atuais.filter((i) => !ids.includes(i));
+    const adicionar = ids.filter((i) => !atuais.includes(i));
+
+    let desvinculados = 0;
+    if (remover.length) {
+      const [r] = await db.query(`UPDATE jornada_encontros SET trilha_id = NULL WHERE jornada_id = ? AND trilha_id IN (?)`, [jornada.id, remover]);
+      desvinculados = r.affectedRows || 0;
+      await db.query(`DELETE FROM jornada_trilhas WHERE jornada_id = ? AND trilha_id IN (?)`, [jornada.id, remover]);
+    }
+    for (const id of adicionar) {
+      await db.query(`INSERT IGNORE INTO jornada_trilhas (empresa_id, jornada_id, trilha_id, ordem) VALUES (?, ?, ?, ?)`, [jornada.empresa_id ?? null, jornada.id, id, ids.indexOf(id)]);
+    }
+    // Ordem = ordem escolhida na lista.
+    for (let i = 0; i < ids.length; i += 1) {
+      await db.query(`UPDATE jornada_trilhas SET ordem = ? WHERE jornada_id = ? AND trilha_id = ?`, [i, jornada.id, ids[i]]);
+    }
+
+    return res.json({ ok: true, adicionadas: adicionar.length, removidas: remover.length, encontros_desvinculados: desvinculados, message: "Trilhas da jornada atualizadas." });
+  } catch (e) {
+    return falha(res, "salvar as trilhas da jornada", e);
+  }
+}
+
 // ───────────────────────── endpoints: encontros ─────────────────────────
 
 async function validarEncontro(body, jornada) {
@@ -363,6 +525,7 @@ async function validarEncontro(body, jornada) {
   const responsavel = String(body?.responsavel || "").trim() || null;
   const observacao = String(body?.observacao || "").trim() || null;
   const etapaId = body?.etapa_id ? Number(body.etapa_id) : null;
+  const trilhaId = body?.trilha_id ? Number(body.trilha_id) : null;
 
   if (!titulo) return { erro: "Informe o título do encontro." };
   if (titulo.length > 200) return { erro: "Título muito longo (máximo 200 caracteres)." };
@@ -377,7 +540,13 @@ async function validarEncontro(body, jornada) {
     if (!rows.length) return { erro: "A etapa escolhida não pertence a esta jornada." };
   }
 
-  return { valores: { titulo, data, carga, hora: hora || null, responsavel, observacao, etapaId } };
+  // A trilha do encontro precisa estar vinculada à jornada (vincule antes em "Trilhas da jornada").
+  if (trilhaId) {
+    const [rows] = await db.query(`SELECT id FROM jornada_trilhas WHERE jornada_id = ? AND trilha_id = ? LIMIT 1`, [jornada.id, trilhaId]);
+    if (!rows.length) return { erro: "A trilha escolhida não está vinculada a esta jornada. Vincule-a primeiro em “Trilhas da jornada”." };
+  }
+
+  return { valores: { titulo, data, carga, hora: hora || null, responsavel, observacao, etapaId, trilhaId } };
 }
 
 // POST /jornadas/:jornadaId/encontros
@@ -390,9 +559,9 @@ async function criarEncontro(req, res) {
     const x = v.valores;
 
     const [r] = await db.query(
-      `INSERT INTO jornada_encontros (empresa_id, jornada_id, etapa_id, titulo, data, hora_inicio, carga_horaria, responsavel, observacao, criado_por_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [jornada.empresa_id ?? null, jornada.id, x.etapaId, x.titulo, x.data, x.hora, x.carga, x.responsavel, x.observacao, req.user?.id ?? null]
+      `INSERT INTO jornada_encontros (empresa_id, jornada_id, etapa_id, trilha_id, titulo, data, hora_inicio, carga_horaria, responsavel, observacao, criado_por_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [jornada.empresa_id ?? null, jornada.id, x.etapaId, x.trilhaId, x.titulo, x.data, x.hora, x.carga, x.responsavel, x.observacao, req.user?.id ?? null]
     );
     return res.status(201).json({ ok: true, id: r.insertId, message: "Encontro criado." });
   } catch (e) {
@@ -421,8 +590,8 @@ async function atualizarEncontro(req, res) {
     }
 
     await db.query(
-      `UPDATE jornada_encontros SET etapa_id = ?, titulo = ?, data = ?, hora_inicio = ?, carga_horaria = ?, responsavel = ?, observacao = ? WHERE id = ?`,
-      [x.etapaId, x.titulo, x.data, x.hora, x.carga, x.responsavel, x.observacao, encontro.id]
+      `UPDATE jornada_encontros SET etapa_id = ?, trilha_id = ?, titulo = ?, data = ?, hora_inicio = ?, carga_horaria = ?, responsavel = ?, observacao = ? WHERE id = ?`,
+      [x.etapaId, x.trilhaId, x.titulo, x.data, x.hora, x.carga, x.responsavel, x.observacao, encontro.id]
     );
     return res.json({ ok: true, message: "Encontro atualizado." });
   } catch (e) {
@@ -451,9 +620,9 @@ async function duplicarEncontro(req, res) {
     const data = String(req.body?.data || "").slice(0, 10);
     if (!dataValida(data)) return erro(res, 400, "Informe a data do novo encontro.");
     const [r] = await db.query(
-      `INSERT INTO jornada_encontros (empresa_id, jornada_id, etapa_id, titulo, data, hora_inicio, carga_horaria, responsavel, observacao, criado_por_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [encontro.empresa_id, encontro.jornada_id, encontro.etapa_id, encontro.titulo, data, encontro.hora_inicio, encontro.carga_horaria, encontro.responsavel, encontro.observacao, req.user?.id ?? null]
+      `INSERT INTO jornada_encontros (empresa_id, jornada_id, etapa_id, trilha_id, titulo, data, hora_inicio, carga_horaria, responsavel, observacao, criado_por_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [encontro.empresa_id, encontro.jornada_id, encontro.etapa_id, encontro.trilha_id, encontro.titulo, data, encontro.hora_inicio, encontro.carga_horaria, encontro.responsavel, encontro.observacao, req.user?.id ?? null]
     );
     return res.status(201).json({ ok: true, id: r.insertId, message: "Encontro duplicado (sem presenças)." });
   } catch (e) {
@@ -930,7 +1099,7 @@ async function exportar(req, res) {
 
     // Aba 2 — encontros.
     const we = wb.addWorksheet("Encontros");
-    const colsE = ["Data", "Título", "Etapa", "Horário", "Carga horária (h)", "Responsável", "Presentes", "Justificados", "Ausentes", "Não lançados"];
+    const colsE = ["Data", "Título", "Trilha", "Etapa", "Horário", "Carga horária (h)", "Responsável", "Presentes", "Justificados", "Ausentes", "Não lançados"];
     colsE.forEach((c, i) => { we.getCell(1, i + 1).value = c; });
     estilizarCabecalho(we, 1, colsE.length);
     g.encontros.forEach((e, r) => {
@@ -939,16 +1108,16 @@ async function exportar(req, res) {
       const d = paraDate(e.data);
       we.getCell(linha, 1).value = d;
       we.getCell(linha, 1).numFmt = FORMATO_DATA;
-      [e.titulo, e.etapa_nome || "", e.hora_inicio || "", e.carga_horaria, e.responsavel || "", t.presentes, t.justificados, t.ausentes, t.nao_lancados].forEach((v, i) => {
+      [e.titulo, e.trilha_titulo || "", e.etapa_nome || "", e.hora_inicio || "", e.carga_horaria, e.responsavel || "", t.presentes, t.justificados, t.ausentes, t.nao_lancados].forEach((v, i) => {
         we.getCell(linha, i + 2).value = v;
       });
     });
-    we.columns = [12, 36, 26, 10, 16, 24, 11, 13, 10, 13].map((width) => ({ width }));
+    we.columns = [12, 36, 30, 26, 10, 16, 24, 11, 13, 10, 13].map((width) => ({ width }));
     we.views = [{ state: "frozen", ySplit: 1 }];
 
     // Aba 3 — registro individual (evidência por pessoa × encontro).
     const wr = wb.addWorksheet("Registro (evidência)");
-    const colsR = ["Nome", "Matrícula", "Data", "Encontro", "Etapa", "Carga horária (h)", "Situação", "Horas creditadas", "Registrado por", "Origem", "Atualizado em"];
+    const colsR = ["Nome", "Matrícula", "Data", "Encontro", "Trilha", "Etapa", "Carga horária (h)", "Situação", "Horas creditadas", "Registrado por", "Origem", "Atualizado em"];
     colsR.forEach((c, i) => { wr.getCell(1, i + 1).value = c; });
     estilizarCabecalho(wr, 1, colsR.length);
     let rr = 2;
@@ -962,6 +1131,7 @@ async function exportar(req, res) {
           p.matricula || "",
           paraDate(e.data),
           e.titulo,
+          e.trilha_titulo || "",
           e.etapa_nome || "",
           e.carga_horaria,
           ROTULO_SITUACAO[sit],
@@ -975,11 +1145,36 @@ async function exportar(req, res) {
         rr += 1;
       }
     }
-    wr.columns = [34, 14, 12, 34, 26, 16, 14, 16, 26, 18, 20].map((width) => ({ width }));
+    wr.columns = [34, 14, 12, 34, 30, 26, 16, 14, 16, 26, 18, 20].map((width) => ({ width }));
     wr.views = [{ state: "frozen", ySplit: 1 }];
     wr.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colsR.length } };
 
-    // Aba 4 — resumo e critérios.
+    // Aba 4 — por trilha (horas e presença da pessoa em cada trilha da jornada).
+    const wt = wb.addWorksheet("Por trilha");
+    const colsT = ["Nome", "Matrícula", "Trilha", "Encontros", "Horas realizadas", "Presentes", "Justificadas", "Ausências", "% Presença", "Situação da presença"];
+    colsT.forEach((c, i) => { wt.getCell(1, i + 1).value = c; });
+    estilizarCabecalho(wt, 1, colsT.length);
+    let rt = 2;
+    const trilhasVinc = g.trilhas.map((t) => ({ id: t.id, titulo: t.titulo }));
+    for (const p of g.participantes) {
+      const mapa = new Map();
+      for (const e of g.encontros) {
+        const sit = g.presencas[`${e.id}:${p.id}`];
+        if (sit) mapa.set(e.id, sit);
+      }
+      const blocos = totaisPorTrilha(g.encontros, trilhasVinc, mapa, cfg, g.hoje);
+      for (const b of blocos) {
+        const vals = [p.nome, p.matricula || "", b.titulo, b.encontros, b.horas, b.presentes, b.justificados, b.ausentes, b.pct_presenca === null ? "" : b.pct_presenca / 100, ROTULO_FAROL[b.farol] + ` (mín. ${cfg.presenca_minima_pct}%)`];
+        vals.forEach((v, i) => { wt.getCell(rt, i + 1).value = v; });
+        wt.getCell(rt, 9).numFmt = "0.0%";
+        rt += 1;
+      }
+    }
+    wt.columns = [34, 14, 36, 11, 16, 11, 13, 11, 12, 28].map((width) => ({ width }));
+    wt.views = [{ state: "frozen", ySplit: 1 }];
+    wt.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colsT.length } };
+
+    // Aba 5 — resumo e critérios.
     const wm = wb.addWorksheet("Resumo");
     const linhasResumo = [
       ["Jornada", cfg.nome],
@@ -994,6 +1189,7 @@ async function exportar(req, res) {
       ["Pessoas abaixo da presença mínima", g.resumo.abaixo_do_minimo],
       ["Pessoas com encontro realizado sem lançamento", g.resumo.sem_lancamento],
       ["Presença média", g.resumo.pct_medio === null ? "—" : `${g.resumo.pct_medio}%`],
+      ["Trilhas vinculadas", g.trilhas.length ? g.trilhas.map((t) => t.titulo).join("; ") : "nenhuma"],
       [],
       ["Como os números são calculados"],
       ["Horas realizadas = soma da carga horária dos encontros em que a pessoa esteve presente."],
@@ -1005,7 +1201,7 @@ async function exportar(req, res) {
       l.forEach((v, c) => { wm.getCell(i + 1, c + 1).value = v; });
       if (l.length === 2) wm.getCell(i + 1, 1).font = { bold: true };
     });
-    wm.getCell(14, 1).font = { bold: true };
+    wm.getCell(linhasResumo.findIndex((l) => l[0] === "Como os números são calculados") + 1, 1).font = { bold: true };
     wm.columns = [{ width: 46 }, { width: 50 }];
 
     const nomeArquivo = `presenca-${String(cfg.nome).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "jornada"}-${hojeBahia()}.xlsx`;
@@ -1037,7 +1233,8 @@ async function extratoParticipante(req, res) {
 
     const config = configDaJornada(jornada);
     const hoje = hojeBahia();
-    const encontros = await carregarEncontros(jornada.id);
+    const trilhasVinculadas = await carregarTrilhasDaJornada(jornada.id);
+    const encontros = normalizarTrilhas(await carregarEncontros(jornada.id), trilhasVinculadas);
     const [pres] = await db.query(
       `SELECT p.encontro_id, p.situacao FROM jornada_presencas p WHERE p.participante_id = ?`,
       [participanteId]
@@ -1050,6 +1247,7 @@ async function extratoParticipante(req, res) {
       participante: { id: participante.id, nome: participante.nome, matricula: participante.matricula, turma: participante.turma, cargo: participante.cargo, supervisor: participante.supervisor },
       encontros: encontros.map((e) => ({ ...e, situacao: mapa.get(e.id) || null, realizado: e.data <= hoje })),
       totais: totaisDaPessoa(encontros, mapa, config, hoje),
+      por_trilha: totaisPorTrilha(encontros, trilhasVinculadas, mapa, config, hoje),
     });
   } catch (e) {
     return falha(res, "carregar o extrato do participante", e);
@@ -1068,6 +1266,8 @@ module.exports = {
   importar,
   exportar,
   extratoParticipante,
+  listarTrilhas,
+  salvarTrilhas,
   // exportados para testes
   _totaisDaPessoa: totaisDaPessoa,
   _somarMeses: somarMeses,

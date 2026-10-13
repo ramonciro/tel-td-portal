@@ -269,6 +269,10 @@ async function deleteTrilha(req, res) {
     }
 
     await conn.query('DELETE FROM trilha_progresso WHERE trilha_id = ?', [id]);
+    // Trilhas da jornada (13/10/2026): sai da lista de cada jornada e os
+    // encontros que apontavam para ela passam a "sem trilha" (a presença fica).
+    await conn.query('UPDATE jornada_encontros SET trilha_id = NULL WHERE trilha_id = ?', [id]).catch(() => null);
+    await conn.query('DELETE FROM jornada_trilhas WHERE trilha_id = ?', [id]).catch(() => null);
     await conn.query(`DELETE FROM trilha_etapas WHERE trilha_id = ?${tenantCheck}`, checkParams);
     await conn.query(`DELETE FROM trilhas_aprendizagem WHERE id = ?${tenantCheck}`, checkParams);
 

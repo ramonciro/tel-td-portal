@@ -1,6 +1,16 @@
 const db = require("../lib/db");
 const { usuarioPertenceAoTenant } = require("../services/tenantValidation");
 
+// Etapa ligada a uma trilha → a trilha também passa a fazer parte da jornada
+// (13/10/2026, "Trilhas da jornada" em Encontros e presença). INSERT IGNORE: já
+// vinculada não duplica; falha aqui nunca derruba o salvamento da etapa.
+async function vincularTrilhaNaJornada(jornadaId, trilhaId, empresaId) {
+  if (!jornadaId || !trilhaId) return;
+  await db
+    .query(`INSERT IGNORE INTO jornada_trilhas (empresa_id, jornada_id, trilha_id, ordem) VALUES (?, ?, ?, 0)`, [empresaId ?? null, Number(jornadaId), Number(trilhaId)])
+    .catch(() => null);
+}
+
 exports.listar = async (req, res) => {
   try {
     const tenantWhere = req.empresaId ? "WHERE je.empresa_id = ?" : "";
@@ -159,6 +169,8 @@ exports.criar = async (req, res) => {
       ]
     );
 
+    await vincularTrilhaNaJornada(jornada_id, trilhaIdNum, req.empresaId);
+
     const [rows] = await db.query(
       `SELECT * FROM jornadas_etapas WHERE id = ?`,
       [result.insertId]
@@ -272,6 +284,8 @@ exports.atualizar = async (req, res) => {
       `,
       updateParams
     );
+
+    await vincularTrilhaNaJornada(jornada_id, trilhaIdNum, req.empresaId);
 
     const [rows] = await db.query(
       `SELECT * FROM jornadas_etapas WHERE id = ?`,
