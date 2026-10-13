@@ -430,6 +430,8 @@ async function ensureJornadaTrilhas() {
   `);
 
   await ensureColumn("jornada_encontros", "trilha_id", "INT NULL");
+  // Etapa da trilha a que o encontro pertence (presença por etapa da trilha — 13/10/2026).
+  await ensureColumn("jornada_encontros", "trilha_etapa_id", "INT NULL");
 
   if (!existia.length) {
     try {
