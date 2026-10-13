@@ -39,6 +39,11 @@ export default function Grade({ dados, linhas, pendentes, onCelula, onTodos, onE
                       {e.trilha_titulo || "Sem trilha"}
                     </span>
                   </div>
+                  {e.trilha_etapa_titulo && (
+                    <div title={`Etapa da trilha: ${e.trilha_etapa_titulo}`} style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, fontSize: 10, color: colors.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140, marginTop: 2 }}>
+                      Etapa: {e.trilha_etapa_titulo}
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 4 }}>
                     <button style={btnMini} disabled={futuro} title="Marcar presente quem ainda não foi lançado" onClick={() => onTodos(e)}>
                       Todos ✓
