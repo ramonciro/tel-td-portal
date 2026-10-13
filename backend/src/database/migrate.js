@@ -269,6 +269,65 @@ async function ensureOficinaTalentos() {
   `);
 }
 
+// 55. Oficina de Talentos, Fase 2 — presença por módulo, regra/assinaturas do
+// certificado e certificados emitidos (13/10/2026). Decisões do Ramon: o
+// certificado exige participação + presença + carga horária; presença mínima é
+// configurável por turma (padrão 100% da carga horária da grade); assinam
+// "Colaborador(a)" e "Coordenador(a) de T&D" (nomes digitados por turma).
+//  - oficina_presencas: uma linha = pessoa presente naquele módulo (credenciada).
+//  - oficina_certificados: um por inscrição (UNIQUE), com retrato do nome, da
+//    turma, da carga horária e das datas no momento da emissão, e um código
+//    público de validação. Tabela própria — a `certificados` existente é presa a
+//    `treinamento_id` e a Oficina fica separada da Treinamento (decisão 09/10).
+async function ensureOficinaFase2() {
+  await ensureColumn("oficina_turmas", "presenca_minima", "DECIMAL(5,2) NOT NULL DEFAULT 100");
+  await ensureColumn("oficina_turmas", "assinatura1_nome", "VARCHAR(150) NULL");
+  await ensureColumn("oficina_turmas", "assinatura1_cargo", "VARCHAR(150) NULL");
+  await ensureColumn("oficina_turmas", "assinatura2_nome", "VARCHAR(150) NULL");
+  await ensureColumn("oficina_turmas", "assinatura2_cargo", "VARCHAR(150) NULL");
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oficina_presencas (
+      id                INT AUTO_INCREMENT PRIMARY KEY,
+      turma_id          INT NOT NULL,
+      modulo_id         INT NOT NULL,
+      inscricao_id      INT NOT NULL,
+      registrado_por_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_oficina_presenca (modulo_id, inscricao_id),
+      INDEX idx_oficina_presencas_turma (turma_id),
+      INDEX idx_oficina_presencas_inscricao (inscricao_id),
+      CONSTRAINT fk_oficina_presencas_modulo FOREIGN KEY (modulo_id) REFERENCES oficina_modulos(id) ON DELETE CASCADE,
+      CONSTRAINT fk_oficina_presencas_inscricao FOREIGN KEY (inscricao_id) REFERENCES oficina_inscricoes(id) ON DELETE CASCADE
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oficina_certificados (
+      id                  INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id          INT NOT NULL,
+      turma_id            INT NOT NULL,
+      inscricao_id        INT NOT NULL,
+      pessoa_id           INT NULL,
+      codigo              VARCHAR(20) NOT NULL,
+      nome                VARCHAR(255) NOT NULL,
+      turma_nome          VARCHAR(255) NOT NULL,
+      carga_horaria       DECIMAL(6,2) NULL,
+      data_inicio         DATE NULL,
+      data_fim            DATE NULL,
+      percentual_presenca DECIMAL(5,2) NULL,
+      emitido_por_id      INT NULL,
+      emitido_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_oficina_cert_codigo (codigo),
+      UNIQUE KEY uk_oficina_cert_inscricao (inscricao_id),
+      INDEX idx_oficina_cert_turma (turma_id),
+      INDEX idx_oficina_cert_pessoa (pessoa_id),
+      CONSTRAINT fk_oficina_cert_turma FOREIGN KEY (turma_id) REFERENCES oficina_turmas(id) ON DELETE CASCADE,
+      CONSTRAINT fk_oficina_cert_inscricao FOREIGN KEY (inscricao_id) REFERENCES oficina_inscricoes(id) ON DELETE CASCADE
+    );
+  `);
+}
+
 // Achado em 13/10/2026 (bug reportado pelo Ramon: "Erro ao criar jornada" no
 // Mapa de Desenvolvimento; log de produção: "Data truncated for column
 // 'status' at row 1" em jornadasDesenvolvimentoController.criar). O controller
@@ -1827,6 +1886,9 @@ async function runMigrations() {
 
     // 53. Oficina de Talentos — Fase 1 (13/10/2026) — ver ensureOficinaTalentos().
     await ensureOficinaTalentos();
+
+    // 55. Oficina de Talentos — Fase 2 (presença e certificado) — ver ensureOficinaFase2().
+    await ensureOficinaFase2();
 
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
