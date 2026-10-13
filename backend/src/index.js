@@ -65,6 +65,8 @@ const perfilComportamentalRoutes = require("./routes/perfilComportamentalRoutes"
 // Lista de clientes exclusiva da Metodologia (20/09/2026, pedido do Ramon) —
 // nunca vinculada à tabela `clientes` da Treinamento, ver migrate.js passo 42.
 const metodologiaClientesRoutes = require("./routes/metodologiaClientesRoutes");
+const oficinaTalentosRoutes = require("./routes/oficinaTalentosRoutes");
+const oficinaTalentosPublicRoutes = require("./routes/oficinaTalentosPublicRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
 const {
   getDesempenho: getDesempenhoInstrutor,
@@ -1830,6 +1832,12 @@ app.use("/api/coaching-individual", authRequired, authorizeRoles("metodologia"),
 app.use("/api/metodologia-kpis", authRequired, authorizeRoles("metodologia"), metodologiaKpisRoutes);
 app.use("/api/perfis-comportamentais", authRequired, authorizeRoles("metodologia"), perfilComportamentalRoutes);
 app.use("/api/metodologia-clientes", authRequired, authorizeRoles("metodologia"), metodologiaClientesRoutes);
+
+// Oficina de Talentos (13/10/2026, pedido do Ramon) — turmas e inscrições da
+// Metodologia. A gestão exige login (perfil metodologia); o link de inscrição
+// é PÚBLICO e fica em /api/public/oficina, com limite de tentativas próprio.
+app.use("/api/oficina-talentos", authRequired, authorizeRoles("metodologia"), oficinaTalentosRoutes);
+app.use("/api/public/oficina", oficinaTalentosPublicRoutes);
 
 // Capacidade x Realizado (CH por instrutor / CH efetiva do time) — o
 // controller e a migration já existiam, mas nunca tinham sido conectados:
