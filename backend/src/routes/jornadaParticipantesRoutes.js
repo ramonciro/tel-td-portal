@@ -1,21 +1,24 @@
 const express = require("express");
 const multer = require("multer");
 const router = express.Router();
-const controller = require("../controllers/jornadaParticipantesController");
+const controller = require("../controllers/jornadaPresencaController");
 
-const upload = multer({ storage: multer.memoryStorage() });
+// authRequired + authorizeRoles("metodologia") já são aplicados no app.use()
+// de index.js (decisão D: só a Metodologia lança a chamada; super_admin passa).
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Bugfix (limpeza): authRequired + authorizeRoles("coordenador",
-// "superintendente") eram repetidos em cada rota aqui, mas o router inteiro
-// já é montado em index.js com `authRequired, authorizeRoles(...)` — que já
-// garante o controle de acesso ao módulo (hoje: perfil dedicado
-// "metodologia", ver index.js). A checagem por rota era 100% redundante e
-// nunca teria efeito prático — removida para bater com o padrão já usado em
-// acoesDesenvolvimentoRoutes.js e coachingPlanosRoutes.js, sem afrouxar o
-// controle de acesso.
-router.get("/", controller.list);
-router.post("/", controller.create);
-router.post("/importar", upload.single("arquivo"), controller.importExcel);
-router.delete("/:id", controller.remove);
+router.get("/jornadas/:jornadaId/grade", controller.grade);
+router.put("/jornadas/:jornadaId/config", controller.salvarConfig);
+router.post("/jornadas/:jornadaId/encontros", controller.criarEncontro);
+router.post("/jornadas/:jornadaId/importar", upload.single("arquivo"), controller.importar);
+router.get("/jornadas/:jornadaId/exportar", controller.exportar);
+
+router.put("/encontros/:id", controller.atualizarEncontro);
+router.delete("/encontros/:id", controller.excluirEncontro);
+router.post("/encontros/:id/duplicar", controller.duplicarEncontro);
+router.put("/encontros/:id/presenca", controller.registrarPresenca);
+router.post("/encontros/:id/presenca-lote", controller.presencaEmLote);
+
+router.get("/participantes/:id/presenca", controller.extratoParticipante);
 
 module.exports = router;
