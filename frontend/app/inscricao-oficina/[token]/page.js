@@ -13,6 +13,7 @@ import { formatDateBR } from "../../../lib/date";
 // então esta página não precisa saber nada sobre ambiente/login.
 
 const LOGO = "/logo-td.png";
+const fmtH = (v) => Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 
 const MODALIDADE = { presencial: "Presencial", online: "Online", hibrido: "Híbrido" };
 
@@ -144,7 +145,7 @@ export default function InscricaoOficinaPage() {
                 {periodo && <span>📅 {periodo}</span>}
                 {turma.horario && <span>🕒 {turma.horario}</span>}
                 {turma.modalidade && <span>🏷️ {MODALIDADE[turma.modalidade] || turma.modalidade}</span>}
-                {turma.carga_horaria_prevista ? <span>⏱️ {turma.carga_horaria_prevista} h</span> : null}
+                {turma.carga_horaria_prevista ? <span>⏱️ {fmtH(turma.carga_horaria_prevista)} h</span> : null}
               </div>
               {(turma.local_nome || turma.endereco) && (
                 <p style={heroLocal}>
@@ -171,7 +172,7 @@ export default function InscricaoOficinaPage() {
                         {[
                           m.data ? formatDateBR(m.data) : null,
                           m.hora_inicio && m.hora_fim ? `${m.hora_inicio} às ${m.hora_fim}` : null,
-                          m.carga_horaria ? `${m.carga_horaria} h` : null,
+                          m.carga_horaria ? `${fmtH(m.carga_horaria)} h` : null,
                         ]
                           .filter(Boolean)
                           .join(" · ")}
