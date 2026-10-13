@@ -210,6 +210,8 @@ async function remover(req, res) {
       return res.status(404).json({ error: "Jornada não encontrada." });
     }
 
+    // Encontros e presenças da jornada (13/10/2026) — a FK cobre presença → encontro.
+    await db.query(`DELETE FROM jornada_encontros WHERE jornada_id = ?`, [id]).catch(() => null);
     await db.query(`DELETE FROM jornada_participantes WHERE jornada_id = ?`, [id]).catch(() => null);
     await db.query(`DELETE FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, checkParams);
 

@@ -204,6 +204,10 @@ async function remove(req, res) {
       checkParams
     );
 
+    // Presença por encontro (13/10/2026): sem FK para esta tabela (ver
+    // ensureJornadaPresenca), então a limpeza é feita aqui.
+    await db.query(`DELETE FROM jornada_presencas WHERE participante_id = ?`, [id]).catch(() => null);
+
     await db.query(`DELETE FROM jornada_participantes WHERE id = ?${tenantCheck}`, checkParams);
     return res.json({ ok: true, message: "Participante removido com sucesso." });
   } catch (error) {

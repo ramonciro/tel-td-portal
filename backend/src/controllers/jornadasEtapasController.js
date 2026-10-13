@@ -300,6 +300,8 @@ exports.remover = async (req, res) => {
       return res.status(404).json({ error: "Etapa não encontrada." });
     }
 
+    // Encontros que apontavam para a etapa ficam sem etapa (a presença é mantida).
+    await db.query(`UPDATE jornada_encontros SET etapa_id = NULL WHERE etapa_id = ?`, [id]).catch(() => null);
     await db.query(`DELETE FROM jornadas_etapas WHERE id = ?${tenantCheck}`, checkParams);
 
     res.json({ success: true, message: "Etapa removida com sucesso." });
