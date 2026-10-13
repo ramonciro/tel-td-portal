@@ -399,6 +399,10 @@ async function duplicarTurma(req, res) {
   }
 }
 
+// Exclusão definitiva da turma. Com inscrições, exige ?confirmar=true (a tela
+// pergunta antes) e apaga junto inscrições e grade (ON DELETE CASCADE) — pedido
+// do Ramon em 13/10/2026 ("quero excluir mesmo com inscrição"). O histórico
+// dessas inscrições some; o cadastro da pessoa (`pessoas`) não é tocado.
 async function excluirTurma(req, res) {
   try {
     const turma = await buscarTurma(req, req.params.id);
@@ -407,14 +411,19 @@ async function excluirTurma(req, res) {
     const [[{ total }]] = await db.query(`SELECT COUNT(*) AS total FROM oficina_inscricoes WHERE turma_id = ?`, [
       turma.id,
     ]);
-    if (Number(total) > 0) {
+    const inscritos = Number(total);
+
+    if (inscritos > 0 && String(req.query.confirmar) !== "true") {
       return res.status(409).json({
-        error: "Esta turma já tem inscrições e não pode ser excluída. Encerre a turma para preservar o histórico.",
+        codigo: "TEM_INSCRICOES",
+        inscritos,
+        error: `Esta turma tem ${inscritos} inscrição(ões). Confirme a exclusão para apagar a turma e todas as inscrições.`,
       });
     }
 
     await db.query(`DELETE FROM oficina_turmas WHERE id = ?`, [turma.id]);
-    res.json({ ok: true });
+    console.log(`[oficina] turma ${turma.id} excluída por usuário ${req.user?.id ?? "?"} (${inscritos} inscrições removidas)`);
+    res.json({ ok: true, inscricoes_removidas: inscritos });
   } catch (error) {
     console.error("[oficina] excluirTurma:", error);
     res.status(500).json({ error: "Erro ao excluir a turma da Oficina." });
