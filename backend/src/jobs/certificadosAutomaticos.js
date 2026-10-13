@@ -113,9 +113,9 @@ async function rodarCertificadosAutomaticos() {
         try {
           const resultado = await calcularElegibilidade(turma.id, nome, empresa.id);
           if (!resultado) continue;
-          const { freqFinal, nota } = resultado;
+          const { freqFinal, nota, minimo } = resultado;
 
-          if (freqFinal != null && freqFinal < FREQUENCIA_MINIMA) {
+          if (freqFinal != null && freqFinal < (minimo ?? FREQUENCIA_MINIMA)) {
             ignoradosFrequencia++;
             continue;
           }
