@@ -463,8 +463,9 @@ export default function OficinaTalentosPage() {
                 <Campo rotulo="Vagas (vazio = sem limite)">
                   <input type="number" min="0" style={entrada} value={form.vagas} onChange={(e) => setForm({ ...form, vagas: e.target.value })} />
                 </Campo>
-                <Campo rotulo="Inscrições até (opcional)">
+                <Campo rotulo="Prazo final das inscrições (opcional)">
                   <input type="date" style={entrada} value={form.inscricoes_ate} onChange={(e) => setForm({ ...form, inscricoes_ate: e.target.value })} />
+                  <div style={dica}>Último dia em que o link aceita inscrições. Não é a data em que a pessoa se inscreveu — essa é registrada automaticamente.</div>
                 </Campo>
                 <Campo rotulo="Situação da turma" cheio>
                   <select style={entrada} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
@@ -563,6 +564,8 @@ export default function OficinaTalentosPage() {
             <SectionCard
               title={turmaAtual.nome}
               subtitle={`${periodoTurma(turmaAtual)}${turmaAtual.horario ? ` · ${turmaAtual.horario}` : ""}${
+                turmaAtual.inscricoes_ate ? ` · Inscrições até ${formatDateBR(turmaAtual.inscricoes_ate)}` : ""
+              }${
                 turmaAtual.local_nome ? ` · ${turmaAtual.local_nome}` : ""
               }`}
               action={
@@ -690,6 +693,7 @@ export default function OficinaTalentosPage() {
                             <td style={td}>
                               <strong>{i.nome}</strong>
                               <div style={tdSub}>{i.email}</div>
+                              <div style={tdSub}>Inscrito em {i.created_at ? new Date(i.created_at).toLocaleString("pt-BR", { timeZone: "America/Bahia", dateStyle: "short", timeStyle: "short" }) : "—"}</div>
                               <div style={tdSub}>
                                 {[i.escolaridade, i.horario_trabalho].filter(Boolean).join(" · ")}
                               </div>
