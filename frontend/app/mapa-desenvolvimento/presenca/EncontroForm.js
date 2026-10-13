@@ -6,7 +6,7 @@ import { colors } from "../../../lib/theme";
 import { btnPrimario, btnSecundario, btnPerigo, entrada, rotulo, gradeForm, painel, dica, acoes } from "./estilos";
 
 // Criar / editar / duplicar / excluir um encontro da jornada.
-export default function EncontroForm({ jornadaId, etapas, encontro, presencasDoEncontro, onFechar, onSalvou, setErro, setAviso }) {
+export default function EncontroForm({ jornadaId, etapas, trilhas, onGerenciarTrilhas, encontro, presencasDoEncontro, onFechar, onSalvou, setErro, setAviso }) {
   const novo = !encontro;
   const [f, setF] = useState({
     titulo: encontro?.titulo || "",
@@ -14,12 +14,20 @@ export default function EncontroForm({ jornadaId, etapas, encontro, presencasDoE
     hora_inicio: encontro?.hora_inicio || "",
     carga_horaria: encontro ? String(encontro.carga_horaria) : "",
     etapa_id: encontro?.etapa_id ? String(encontro.etapa_id) : "",
+    trilha_id: encontro?.trilha_id ? String(encontro.trilha_id) : "",
     responsavel: encontro?.responsavel || "",
     observacao: encontro?.observacao || "",
   });
   const [ocupado, setOcupado] = useState(false);
   const [dataCopia, setDataCopia] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  // Ao escolher a etapa, sugere a trilha ligada a ela (se já estiver na jornada e o campo estiver vazio).
+  function escolherEtapa(e) {
+    const etapa = etapas.find((x) => String(x.id) === e.target.value);
+    const sugerida = etapa?.trilha_id && trilhas.some((t) => t.id === etapa.trilha_id) ? String(etapa.trilha_id) : "";
+    setF({ ...f, etapa_id: e.target.value, trilha_id: f.trilha_id || sugerida });
+  }
 
   async function executar(fn, sucesso) {
     setErro("");
@@ -36,7 +44,7 @@ export default function EncontroForm({ jornadaId, etapas, encontro, presencasDoE
     }
   }
 
-  const corpo = () => ({ ...f, etapa_id: f.etapa_id || null, carga_horaria: f.carga_horaria.replace(",", ".") });
+  const corpo = () => ({ ...f, etapa_id: f.etapa_id || null, trilha_id: f.trilha_id || null, carga_horaria: f.carga_horaria.replace(",", ".") });
 
   const salvar = () =>
     executar(
@@ -83,8 +91,19 @@ export default function EncontroForm({ jornadaId, etapas, encontro, presencasDoE
           <input style={entrada} inputMode="decimal" value={f.carga_horaria} onChange={set("carga_horaria")} placeholder="Ex.: 4" />
         </label>
         <label style={rotulo}>
+          Trilha — opcional
+          <select style={entrada} value={f.trilha_id} onChange={set("trilha_id")}>
+            <option value="">Sem trilha</option>
+            {trilhas.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.titulo}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={rotulo}>
           Etapa (porto) — opcional
-          <select style={entrada} value={f.etapa_id} onChange={set("etapa_id")}>
+          <select style={entrada} value={f.etapa_id} onChange={escolherEtapa}>
             <option value="">Sem etapa</option>
             {etapas.map((e) => (
               <option key={e.id} value={e.id}>
@@ -102,7 +121,14 @@ export default function EncontroForm({ jornadaId, etapas, encontro, presencasDoE
           <input style={entrada} value={f.observacao} maxLength={255} onChange={set("observacao")} />
         </label>
       </div>
-      <div style={dica}>A carga horária é o que vira “horas realizadas” para quem estiver presente. A presença só pode ser lançada a partir da data do encontro.</div>
+      <div style={dica}>
+        A carga horária é o que vira “horas realizadas” para quem estiver presente. A presença só pode ser lançada a partir da data do encontro.{" "}
+        {trilhas.length === 0 ? "Esta jornada ainda não tem trilhas vinculadas. " : "Não achou a trilha? "}
+        <button type="button" onClick={onGerenciarTrilhas} style={{ background: "none", border: "none", padding: 0, color: colors.primary, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>
+          Vincular trilhas à jornada
+        </button>
+        .
+      </div>
       <div style={acoes}>
         <button style={btnPrimario} disabled={ocupado} onClick={salvar}>
           {novo ? "Criar encontro" : "Salvar alterações"}

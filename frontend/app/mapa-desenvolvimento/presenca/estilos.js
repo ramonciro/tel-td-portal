@@ -40,3 +40,19 @@ export const RECICLAGEM = {
 };
 
 export const fmtNum = (v, casas = 1) => (v === null || v === undefined ? "—" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: casas }));
+
+// Cor de identificação de cada trilha (pela ordem em que estão vinculadas à jornada).
+const CORES_TRILHA = [
+  { bg: "#dbeafe", cor: "#1e40af" },
+  { bg: "#ede9fe", cor: "#5b21b6" },
+  { bg: "#cffafe", cor: "#155e75" },
+  { bg: "#fce7f3", cor: "#9d174d" },
+  { bg: "#ffedd5", cor: "#9a3412" },
+  { bg: "#ecfccb", cor: "#3f6212" },
+];
+export const SEM_TRILHA = { bg: colors.neutralLight, cor: colors.neutral };
+export const corDaTrilha = (trilhas, trilhaId) => {
+  if (!trilhaId) return SEM_TRILHA;
+  const i = trilhas.findIndex((t) => t.id === trilhaId);
+  return i < 0 ? SEM_TRILHA : CORES_TRILHA[i % CORES_TRILHA.length];
+};

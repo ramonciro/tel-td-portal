@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { colors, radius } from "../../../lib/theme";
 import { formatDateBR } from "../../../lib/date";
-import { SITUACAO, FAROL, RECICLAGEM, btnMini, selo, fmtNum } from "./estilos";
+import { SITUACAO, FAROL, RECICLAGEM, btnMini, selo, fmtNum, corDaTrilha } from "./estilos";
 
 // Grade de chamada: pessoas nas linhas, encontros nas colunas. Clique na
 // célula alterna: vazio → presente → justificado → ausente → vazio.
-export default function Grade({ dados, linhas, pendentes, onCelula, onTodos, onEditarEncontro, onExtrato }) {
-  const { encontros, presencas, por_encontro: porEncontro, jornada, hoje } = dados;
+export default function Grade({ dados, linhas, pendentes, onCelula, onTodos, onEditarEncontro, onExtrato, escopoTrilha }) {
+  const { encontros, presencas, por_encontro: porEncontro, jornada, hoje, trilhas } = dados;
   const temMeta = Boolean(jornada.meta_horas);
   const temReciclagem = Boolean(jornada.periodicidade_meses);
   const resumoDe = Object.fromEntries(porEncontro.map((p) => [p.encontro_id, p]));
@@ -31,6 +31,14 @@ export default function Grade({ dados, linhas, pendentes, onCelula, onTodos, onE
                   <div style={{ textTransform: "none", letterSpacing: 0, fontWeight: 500, fontSize: 11 }}>
                     {fmtNum(e.carga_horaria)} h{futuro ? " · futuro" : ""}
                   </div>
+                  <div style={{ marginTop: 3 }}>
+                    <span
+                      title={e.trilha_titulo ? `Trilha: ${e.trilha_titulo}` : "Encontro sem trilha"}
+                      style={{ ...selo, ...corDaTrilha(trilhas, e.trilha_id), textTransform: "none", letterSpacing: 0, fontSize: 10, maxWidth: 134, overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "bottom" }}
+                    >
+                      {e.trilha_titulo || "Sem trilha"}
+                    </span>
+                  </div>
                   <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 4 }}>
                     <button style={btnMini} disabled={futuro} title="Marcar presente quem ainda não foi lançado" onClick={() => onTodos(e)}>
                       Todos ✓
@@ -42,8 +50,14 @@ export default function Grade({ dados, linhas, pendentes, onCelula, onTodos, onE
                 </th>
               );
             })}
-            <th style={{ ...thBase, textAlign: "center", minWidth: 96 }}>Horas{temMeta ? ` / ${fmtNum(jornada.meta_horas)}` : ""}</th>
-            <th style={{ ...thBase, textAlign: "center", minWidth: 120 }}>Presença (mín. {fmtNum(jornada.presenca_minima_pct, 0)}%)</th>
+            <th style={{ ...thBase, textAlign: "center", minWidth: 96 }}>
+              Horas{temMeta ? ` / ${fmtNum(jornada.meta_horas)}` : ""}
+              {escopoTrilha && <div style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, fontSize: 10 }}>só desta trilha</div>}
+            </th>
+            <th style={{ ...thBase, textAlign: "center", minWidth: 120 }}>
+              Presença (mín. {fmtNum(jornada.presenca_minima_pct, 0)}%)
+              {escopoTrilha && <div style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, fontSize: 10 }}>só desta trilha</div>}
+            </th>
             <th style={{ ...thBase, textAlign: "center", minWidth: 70 }} title="Encontros já realizados sem presença lançada">
               Pend.
             </th>
