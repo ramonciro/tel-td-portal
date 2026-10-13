@@ -6,6 +6,7 @@ const ABAS = [
   { key: "mural",        label: "Mural",       href: (id) => `/turma/${id}/mural`        },
   { key: "visao",        label: "Visão geral",  href: (id) => `/turma/${id}`              },
   { key: "cronograma",   label: "Cronograma",   href: (id) => `/turma/${id}/cronograma`   },
+  { key: "presenca",     label: "Presença",     href: (id) => `/presenca-turma?turma=${id}` },
   { key: "participantes",label: "Pessoas",      href: (id) => `/turma/${id}/participantes`},
   { key: "avaliacoes",   label: "Avaliações",   href: (id) => `/turma/${id}/avaliacoes`   },
   { key: "nps",          label: "NPS",          href: (id) => `/turma/${id}/nps`          },
