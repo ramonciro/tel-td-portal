@@ -342,6 +342,62 @@ async function ensureOficinaFase3() {
   await ensureColumn("oficina_inscricoes", "promovido_por_id", "INT NULL");
 }
 
+// 57. Jornadas — encontros e presença por pessoa (13/10/2026, pedido do Ramon:
+// "registrar as presenças e o desenvolvimento de cada pessoa nas jornadas e
+// nas trilhas"; proposta em claude/proposta-presenca-desenvolvimento-jornadas-
+// trilhas-2026-10-13.md, decisões A–E aprovadas). Fase 1:
+//  - jornadas_desenvolvimento ganha a configuração de acompanhamento:
+//    presenca_minima_pct (padrão 75), meta_horas (ex.: NR-17 Anexo II — mínimo
+//    de horas do treinamento inicial) e periodicidade_meses (reciclagem, ex.: 6).
+//  - jornada_encontros: a "aula/sessão" do dia (data, carga horária, etapa
+//    opcional).
+//  - jornada_presencas: encontro × participante com situação presente /
+//    justificado / ausente; sem linha = ainda não lançado. UNIQUE por par.
+// Sem FK para jornadas/jornada_participantes de propósito (as tabelas de
+// produção nasceram antes do CREATE do passo 28 e o tipo de id pode divergir —
+// mesmo risco dos hotfixes de status/email): a limpeza em cascata é feita pelos
+// controllers. FK só entre as duas tabelas novas, que nascem com o mesmo tipo.
+async function ensureJornadaPresenca() {
+  await ensureColumn("jornadas_desenvolvimento", "presenca_minima_pct", "DECIMAL(5,2) NOT NULL DEFAULT 75");
+  await ensureColumn("jornadas_desenvolvimento", "meta_horas", "DECIMAL(8,2) NULL");
+  await ensureColumn("jornadas_desenvolvimento", "periodicidade_meses", "INT NULL");
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jornada_encontros (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id     INT NULL,
+      jornada_id     INT NOT NULL,
+      etapa_id       INT NULL,
+      titulo         VARCHAR(200) NOT NULL,
+      data           DATE NOT NULL,
+      hora_inicio    VARCHAR(5) NULL,
+      carga_horaria  DECIMAL(6,2) NOT NULL DEFAULT 0,
+      responsavel    VARCHAR(150) NULL,
+      observacao     VARCHAR(255) NULL,
+      criado_por_id  INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_jornada_encontros_jornada (jornada_id, data),
+      INDEX idx_jornada_encontros_etapa (etapa_id),
+      INDEX idx_jornada_encontros_empresa (empresa_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jornada_presencas (
+      id                INT AUTO_INCREMENT PRIMARY KEY,
+      encontro_id       INT NOT NULL,
+      participante_id   INT NOT NULL,
+      situacao          VARCHAR(15) NOT NULL,
+      origem            VARCHAR(15) NOT NULL DEFAULT 'manual',
+      registrado_por_id INT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_jornada_presenca (encontro_id, participante_id),
+      INDEX idx_jornada_presencas_participante (participante_id),
+      CONSTRAINT fk_jornada_presencas_encontro FOREIGN KEY (encontro_id) REFERENCES jornada_encontros(id) ON DELETE CASCADE
+    );
+  `);
+}
+
 // Achado em 13/10/2026 (bug reportado pelo Ramon: "Erro ao criar jornada" no
 // Mapa de Desenvolvimento; log de produção: "Data truncated for column
 // 'status' at row 1" em jornadasDesenvolvimentoController.criar). O controller
@@ -1906,6 +1962,9 @@ async function runMigrations() {
 
     // 56. Oficina de Talentos — Fase 3 (promoção / indicadores) — ver ensureOficinaFase3().
     await ensureOficinaFase3();
+
+    // 57. Jornadas — encontros e presença por pessoa (Fase 1) — ver ensureJornadaPresenca().
+    await ensureJornadaPresenca();
 
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
