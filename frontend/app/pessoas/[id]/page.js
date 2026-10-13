@@ -50,6 +50,17 @@ function statusJornadaLabel(v) {
   }[String(v || "")] || (v || "—");
 }
 
+function statusOficinaLabel(v) {
+  return {
+    confirmado: { label: "Confirmado(a)", background: colors.successLight, color: colors.successText },
+    concluido: { label: "Concluído(a)", background: colors.primaryLight, color: colors.primary },
+    em_conferencia: { label: "Em conferência", background: colors.warningLight, color: colors.warningText },
+    lista_espera: { label: "Lista de espera", background: colors.infoLight, color: "#0369a1" },
+    cancelado: { label: "Cancelado(a)", background: colors.dangerLight, color: colors.dangerText },
+    desistente: { label: "Desistente", background: colors.neutralLight, color: colors.neutral },
+  }[String(v || "")] || { label: v || "—", background: colors.neutralLight, color: colors.neutral };
+}
+
 function farolCoaching({ status, cadenciaDias, ultimoEncontro }) {
   if (String(status).toLowerCase() !== "ativo") {
     return { label: "Encerrado", background: colors.neutralLight, color: colors.neutral };
@@ -111,7 +122,7 @@ export default function PerfilPessoaPage() {
     );
   }
 
-  const { pessoa, turmas = [], jornadas = [], coaching = [], metodologia, usuario, dados_bancarios: dadosBancarios } = dados;
+  const { pessoa, turmas = [], jornadas = [], coaching = [], metodologia, usuario, dados_bancarios: dadosBancarios, oficina } = dados;
   const selo = selosIdentidade(pessoa.status_identidade);
 
   return (
@@ -235,6 +246,86 @@ export default function PerfilPessoaPage() {
             </div>
           )}
         </section>
+
+        {oficina && (
+          <section style={{ ...card, marginTop: 16 }}>
+            <h2 style={sectionTitle}>
+              Oficina de Talentos ({oficina.inscricoes.length})
+              {oficina.resumo?.promovido && (
+                <span style={{ ...badge, background: colors.successLight, color: colors.successText, marginLeft: 10 }}>Promovido(a)</span>
+              )}
+            </h2>
+            {!oficina.inscricoes.length ? (
+              <p style={emptyHint}>Esta pessoa nunca se inscreveu na Oficina de Talentos.</p>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={table}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Oficina</th>
+                      <th style={th}>Período</th>
+                      <th style={th}>Situação</th>
+                      <th style={th}>Presença</th>
+                      <th style={th}>Certificado</th>
+                      <th style={th}>Cargo atual → almejado</th>
+                      <th style={th}>Promoção</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {oficina.inscricoes.map((o) => {
+                      const st = statusOficinaLabel(o.status);
+                      return (
+                        <tr key={o.inscricao_id}>
+                          <td style={td}>{o.turma_nome}</td>
+                          <td style={td}>
+                            {o.data_inicio ? formatDate(o.data_inicio) : "—"}
+                            {o.data_fim && o.data_fim !== o.data_inicio ? ` a ${formatDate(o.data_fim)}` : ""}
+                          </td>
+                          <td style={td}><span style={{ ...badge, background: st.background, color: st.color }}>{st.label}</span></td>
+                          <td style={td}>
+                            {o.percentual_presenca === null
+                              ? "—"
+                              : `${Number(o.percentual_presenca).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% (${o.modulos_presentes}/${o.modulos_total} módulos)`}
+                          </td>
+                          <td style={td}>
+                            {o.certificado ? (
+                              <>
+                                {o.certificado.codigo}
+                                {o.certificado.carga_horaria ? ` · ${Number(o.certificado.carga_horaria).toLocaleString("pt-BR")} h` : ""}
+                                <span style={{ display: "block", fontSize: 11, color: "#64748b" }}>
+                                  Emitido em {formatDate(o.certificado.emitido_em)}
+                                </span>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td style={td}>{o.cargo_atual || "—"} → <strong>{o.cargo_almejado}</strong></td>
+                          <td style={td}>
+                            {o.promocao ? (
+                              <>
+                                <strong>{o.promocao.cargo}</strong>
+                                <span style={{ display: "block", fontSize: 11, color: "#64748b" }}>{formatDate(o.promocao.data)}</span>
+                                {o.promocao.observacao && (
+                                  <span style={{ display: "block", fontSize: 11, color: "#64748b" }}>{o.promocao.observacao}</span>
+                                )}
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p style={{ ...emptyHint, marginTop: 10 }}>
+              Visível só para Metodologia, Coordenação de T&amp;D e Super Admin — cargo almejado e promoção não aparecem para a liderança direta.
+            </p>
+          </section>
+        )}
 
         <section style={{ ...card, marginTop: 16 }}>
           <h2 style={sectionTitle}>Perfil comportamental</h2>
