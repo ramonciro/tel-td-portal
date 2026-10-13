@@ -11,6 +11,7 @@
 // aqui, exatamente como antes — só a marcação JSX de cada aba foi movida
 // para fora, recebendo os dados já calculados e os handlers via props.
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
@@ -1059,14 +1060,22 @@ export default function MapaDesenvolvimentoPage() {
             { label: "coaching e mentoria", value: fmtNumber(kpis.coachings) },
           ]}
           actions={
-            <button
-              type="button"
-              style={buttonSecondaryStyle()}
-              onClick={handleExportarEvidencias}
-              disabled={exportando}
-            >
-              {exportando ? "Exportando..." : "⬇ Exportar evidência (MPT)"}
-            </button>
+            <>
+              <Link
+                href="/mapa-desenvolvimento/presenca"
+                style={{ ...buttonSecondaryStyle(), textDecoration: "none", display: "inline-block" }}
+              >
+                Encontros e presença →
+              </Link>
+              <button
+                type="button"
+                style={buttonSecondaryStyle()}
+                onClick={handleExportarEvidencias}
+                disabled={exportando}
+              >
+                {exportando ? "Exportando..." : "⬇ Exportar evidência (MPT)"}
+              </button>
+            </>
           }
         />
 
