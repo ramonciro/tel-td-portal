@@ -9,6 +9,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 
 router.get("/jornadas/:jornadaId/grade", controller.grade);
 router.put("/jornadas/:jornadaId/config", controller.salvarConfig);
+router.get("/jornadas/:jornadaId/trilhas", controller.listarTrilhas);
+router.put("/jornadas/:jornadaId/trilhas", controller.salvarTrilhas);
 router.post("/jornadas/:jornadaId/encontros", controller.criarEncontro);
 router.post("/jornadas/:jornadaId/importar", upload.single("arquivo"), controller.importar);
 router.get("/jornadas/:jornadaId/exportar", controller.exportar);
