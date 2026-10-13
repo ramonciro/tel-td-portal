@@ -89,7 +89,7 @@ export default function ImpressaoPresencaPage() {
             </tbody>
           </table>
           <div className="legenda">
-            Encontros: {dados.encontros.map((e) => `${formatDateBR(e.data).slice(0, 5)} — ${e.titulo}${e.trilha_titulo ? ` [${e.trilha_titulo}]` : ""} (${fmt(e.carga_horaria)} h)`).join("  ·  ")}
+            Encontros: {dados.encontros.map((e) => `${formatDateBR(e.data).slice(0, 5)} — ${e.titulo}${e.trilha_titulo ? ` [${e.trilha_titulo}${e.trilha_etapa_titulo ? ` › ${e.trilha_etapa_titulo}` : ""}]` : ""} (${fmt(e.carga_horaria)} h)`).join("  ·  ")}
           </div>
           <div className="legenda">
             P = presente · J = justificado · F = ausente · vazio = não lançado. Horas = soma da carga dos encontros em que esteve presente. % presença = presentes ÷ (presentes + ausentes); falta justificada não soma horas e fica fora do cálculo. Presença mínima: {fmt(dados.jornada.presenca_minima_pct, 0)}%.
@@ -126,7 +126,7 @@ export default function ImpressaoPresencaPage() {
                 <th>Data</th>
                 <th className="nome">Encontro</th>
                 <th>Trilha</th>
-                <th>Etapa</th>
+                <th>Etapa (porto)</th>
                 <th>Carga (h)</th>
                 <th>Situação</th>
                 <th>Horas creditadas</th>
@@ -137,7 +137,10 @@ export default function ImpressaoPresencaPage() {
                 <tr key={e.id}>
                   <td className="c">{formatDateBR(e.data)}</td>
                   <td className="nome">{e.titulo}</td>
-                  <td>{e.trilha_titulo || "—"}</td>
+                  <td>
+                    {e.trilha_titulo || "—"}
+                    {e.trilha_etapa_titulo ? <div className="sub">Etapa: {e.trilha_etapa_titulo}</div> : null}
+                  </td>
                   <td>{e.etapa_nome || "—"}</td>
                   <td className="c">{fmt(e.carga_horaria)}</td>
                   <td className={`c ${e.situacao || ""}`}>{e.situacao ? ROTULO[e.situacao] : e.realizado ? "Não lançado" : "Agendado"}</td>
@@ -166,11 +169,11 @@ export default function ImpressaoPresencaPage() {
               </tr>
             </tfoot>
           </table>
-          {extrato.por_trilha && extrato.por_trilha.length > 1 && (
+          {extrato.por_trilha && extrato.por_trilha.some((b) => b.nivel === "etapa" || extrato.por_trilha.length > 1) && (
             <table className="grade porTrilha">
               <thead>
                 <tr>
-                  <th className="nome">Por trilha</th>
+                  <th className="nome">Por trilha e etapa da trilha</th>
                   <th>Encontros</th>
                   <th>Horas</th>
                   <th>P</th>
@@ -181,8 +184,10 @@ export default function ImpressaoPresencaPage() {
               </thead>
               <tbody>
                 {extrato.por_trilha.map((b) => (
-                  <tr key={b.trilha_id ?? "sem"}>
-                    <td className="nome">{b.titulo}</td>
+                  <tr key={`${b.nivel}-${b.trilha_id ?? "sem"}-${b.trilha_etapa_id ?? 0}`} className={b.nivel === "trilha" ? "totalTrilha" : ""}>
+                    <td className="nome" style={b.nivel === "etapa" ? { paddingLeft: 18 } : undefined}>
+                      {b.nivel === "etapa" ? `↳ ${b.titulo}` : b.titulo}
+                    </td>
                     <td className="c">{b.encontros}</td>
                     <td className="c">{fmt(b.horas)}</td>
                     <td className="c">{b.presentes}</td>
@@ -244,6 +249,7 @@ const CSS = `
   table.grade .nome { text-align: left; }
   table.grade .c { text-align: center; }
   table.porTrilha { margin-top: 14px; }
+  table.porTrilha tr.totalTrilha td { background: #f1f5f9; font-weight: 700; }
   table.grade th.enc { min-width: 34px; }
   td.presente { background: #dcfce7; font-weight: 700; }
   td.justificado { background: #fef3c7; font-weight: 700; }
