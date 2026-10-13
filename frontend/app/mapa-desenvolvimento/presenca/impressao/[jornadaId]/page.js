@@ -89,7 +89,7 @@ export default function ImpressaoPresencaPage() {
             </tbody>
           </table>
           <div className="legenda">
-            Encontros: {dados.encontros.map((e) => `${formatDateBR(e.data).slice(0, 5)} — ${e.titulo} (${fmt(e.carga_horaria)} h)`).join("  ·  ")}
+            Encontros: {dados.encontros.map((e) => `${formatDateBR(e.data).slice(0, 5)} — ${e.titulo}${e.trilha_titulo ? ` [${e.trilha_titulo}]` : ""} (${fmt(e.carga_horaria)} h)`).join("  ·  ")}
           </div>
           <div className="legenda">
             P = presente · J = justificado · F = ausente · vazio = não lançado. Horas = soma da carga dos encontros em que esteve presente. % presença = presentes ÷ (presentes + ausentes); falta justificada não soma horas e fica fora do cálculo. Presença mínima: {fmt(dados.jornada.presenca_minima_pct, 0)}%.
@@ -125,6 +125,7 @@ export default function ImpressaoPresencaPage() {
               <tr>
                 <th>Data</th>
                 <th className="nome">Encontro</th>
+                <th>Trilha</th>
                 <th>Etapa</th>
                 <th>Carga (h)</th>
                 <th>Situação</th>
@@ -136,6 +137,7 @@ export default function ImpressaoPresencaPage() {
                 <tr key={e.id}>
                   <td className="c">{formatDateBR(e.data)}</td>
                   <td className="nome">{e.titulo}</td>
+                  <td>{e.trilha_titulo || "—"}</td>
                   <td>{e.etapa_nome || "—"}</td>
                   <td className="c">{fmt(e.carga_horaria)}</td>
                   <td className={`c ${e.situacao || ""}`}>{e.situacao ? ROTULO[e.situacao] : e.realizado ? "Não lançado" : "Agendado"}</td>
@@ -145,7 +147,7 @@ export default function ImpressaoPresencaPage() {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={5} className="nome">
+                <td colSpan={6} className="nome">
                   <b>Horas realizadas</b>
                   {extrato.jornada.meta_horas ? ` (meta ${fmt(extrato.jornada.meta_horas)} h)` : ""}
                 </td>
@@ -154,7 +156,7 @@ export default function ImpressaoPresencaPage() {
                 </td>
               </tr>
               <tr>
-                <td colSpan={5} className="nome">
+                <td colSpan={6} className="nome">
                   <b>Presença</b> — {extrato.totais.presentes} presente(s), {extrato.totais.justificados} justificada(s), {extrato.totais.ausentes} ausência(s)
                   {extrato.totais.pendentes ? `, ${extrato.totais.pendentes} encontro(s) sem lançamento` : ""} (mínimo {fmt(extrato.jornada.presenca_minima_pct, 0)}%)
                 </td>
@@ -164,6 +166,34 @@ export default function ImpressaoPresencaPage() {
               </tr>
             </tfoot>
           </table>
+          {extrato.por_trilha && extrato.por_trilha.length > 1 && (
+            <table className="grade porTrilha">
+              <thead>
+                <tr>
+                  <th className="nome">Por trilha</th>
+                  <th>Encontros</th>
+                  <th>Horas</th>
+                  <th>P</th>
+                  <th>J</th>
+                  <th>F</th>
+                  <th>% presença</th>
+                </tr>
+              </thead>
+              <tbody>
+                {extrato.por_trilha.map((b) => (
+                  <tr key={b.trilha_id ?? "sem"}>
+                    <td className="nome">{b.titulo}</td>
+                    <td className="c">{b.encontros}</td>
+                    <td className="c">{fmt(b.horas)}</td>
+                    <td className="c">{b.presentes}</td>
+                    <td className="c">{b.justificados}</td>
+                    <td className="c">{b.ausentes}</td>
+                    <td className="c">{b.pct_presenca === null ? "—" : `${fmt(b.pct_presenca)}%`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
           <div className="legenda">Falta justificada não soma horas e fica fora do cálculo do percentual. Encontro sem lançamento não é contado como falta.</div>
           <div className="assinaturas">
             <div>
@@ -213,6 +243,7 @@ const CSS = `
   table.grade th { background: #e2e8f0; text-align: center; }
   table.grade .nome { text-align: left; }
   table.grade .c { text-align: center; }
+  table.porTrilha { margin-top: 14px; }
   table.grade th.enc { min-width: 34px; }
   td.presente { background: #dcfce7; font-weight: 700; }
   td.justificado { background: #fef3c7; font-weight: 700; }
