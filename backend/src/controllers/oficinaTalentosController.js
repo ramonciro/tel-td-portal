@@ -20,8 +20,10 @@ const { resolverPessoa } = require("../services/pessoasService");
 const STATUS_TURMA = ["rascunho", "inscricoes_abertas", "inscricoes_encerradas", "em_andamento", "encerrada"];
 const MODALIDADES = ["presencial", "online", "hibrido"];
 const STATUS_INSCRICAO = ["confirmado", "em_conferencia", "lista_espera", "cancelado", "desistente"];
+// "concluido" é definido só pela emissão do certificado (Fase 2) e desfeito só
+// pela revogação dele — por isso não está na lista de status aceitos acima.
 // Status que ocupam vaga. Lista de espera, cancelado e desistente não ocupam.
-const STATUS_OCUPAM_VAGA = ["confirmado", "em_conferencia"];
+const STATUS_OCUPAM_VAGA = ["confirmado", "em_conferencia", "concluido"];
 
 const CARGOS_ELEGIVEIS_PADRAO = ["Operador(a)", "Monitor(a)", "Instrutor(a)"];
 const CARGOS_ALMEJADOS_PADRAO = ["Supervisor(a)", "Instrutor(a)", "Monitor(a)", "Analista", "Coordenador(a)", "Outro"];
@@ -33,6 +35,7 @@ const TURMA_COLUNAS = `
   t.horario, t.modalidade, t.local_nome, t.endereco, t.vagas,
   DATE_FORMAT(t.inscricoes_ate, '%Y-%m-%d') AS inscricoes_ate,
   t.status, t.cargos_elegiveis, t.cargos_almejados, t.carga_horaria_prevista,
+  t.presenca_minima, t.assinatura1_nome, t.assinatura1_cargo, t.assinatura2_nome, t.assinatura2_cargo,
   t.created_at, t.updated_at
 `;
 
@@ -113,6 +116,7 @@ function normalizarModulos(lista) {
   if (!Array.isArray(lista)) return [];
   return lista
     .map((m, i) => ({
+      id: Number.isInteger(Number(m?.id)) && Number(m?.id) > 0 ? Number(m.id) : null,
       ordem: i,
       titulo: texto(m?.titulo, 255),
       data: dataIso(m?.data),
@@ -124,14 +128,34 @@ function normalizarModulos(lista) {
     .slice(0, 60);
 }
 
+// Grava a grade PRESERVANDO os módulos que já existem (o id vem do formulário):
+// atualizar não pode recriar a linha, senão a presença já lançada (FK CASCADE)
+// seria apagada junto. Módulo com id → UPDATE; sem id → INSERT; módulo que
+// existia e saiu do formulário → DELETE (a presença dele vai junto, de propósito).
 async function gravarModulos(conn, turmaId, modulos) {
-  await conn.query(`DELETE FROM oficina_modulos WHERE turma_id = ?`, [turmaId]);
+  const [existentes] = await conn.query(`SELECT id FROM oficina_modulos WHERE turma_id = ?`, [turmaId]);
+  const idsExistentes = new Set(existentes.map((m) => m.id));
+  const idsMantidos = new Set();
+
   for (const m of modulos) {
-    await conn.query(
-      `INSERT INTO oficina_modulos (turma_id, ordem, titulo, data, hora_inicio, hora_fim, carga_horaria)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [turmaId, m.ordem, m.titulo, m.data, m.hora_inicio, m.hora_fim, m.carga_horaria]
-    );
+    if (m.id && idsExistentes.has(m.id)) {
+      await conn.query(
+        `UPDATE oficina_modulos SET ordem = ?, titulo = ?, data = ?, hora_inicio = ?, hora_fim = ?, carga_horaria = ?
+         WHERE id = ? AND turma_id = ?`,
+        [m.ordem, m.titulo, m.data, m.hora_inicio, m.hora_fim, m.carga_horaria, m.id, turmaId]
+      );
+      idsMantidos.add(m.id);
+    } else {
+      await conn.query(
+        `INSERT INTO oficina_modulos (turma_id, ordem, titulo, data, hora_inicio, hora_fim, carga_horaria)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [turmaId, m.ordem, m.titulo, m.data, m.hora_inicio, m.hora_fim, m.carga_horaria]
+      );
+    }
+  }
+
+  for (const id of idsExistentes) {
+    if (!idsMantidos.has(id)) await conn.query(`DELETE FROM oficina_modulos WHERE id = ? AND turma_id = ?`, [id, turmaId]);
   }
 }
 
@@ -163,6 +187,12 @@ function validarCorpoTurma(body) {
     if (!Number.isInteger(vagas) || vagas < 0) return { erro: "Número de vagas inválido." };
   }
 
+  let presencaMinima = 100;
+  if (body?.presenca_minima !== "" && body?.presenca_minima !== null && body?.presenca_minima !== undefined) {
+    presencaMinima = numeroOuNull(body.presenca_minima);
+    if (presencaMinima === null || presencaMinima > 100) return { erro: "A presença mínima deve ficar entre 0 e 100%." };
+  }
+
   const modulos = normalizarModulos(body?.modulos);
 
   return {
@@ -181,6 +211,11 @@ function validarCorpoTurma(body) {
       cargos_elegiveis: listaTexto(body?.cargos_elegiveis, CARGOS_ELEGIVEIS_PADRAO),
       cargos_almejados: listaTexto(body?.cargos_almejados, CARGOS_ALMEJADOS_PADRAO),
       carga_horaria_prevista: somaCargaHoraria(modulos, numeroOuNull(body?.carga_horaria_prevista)),
+      presenca_minima: presencaMinima,
+      assinatura1_nome: texto(body?.assinatura1_nome, 150),
+      assinatura1_cargo: texto(body?.assinatura1_cargo, 150) || "Colaborador(a)",
+      assinatura2_nome: texto(body?.assinatura2_nome, 150),
+      assinatura2_cargo: texto(body?.assinatura2_cargo, 150) || "Coordenador(a) de T&D",
       modulos: body?.modulos === undefined ? null : modulos,
     },
   };
@@ -195,6 +230,7 @@ async function listarTurmas(req, res) {
       `SELECT ${TURMA_COLUNAS},
          (SELECT COUNT(*) FROM oficina_inscricoes i WHERE i.turma_id = t.id) AS total_inscritos,
          (SELECT COUNT(*) FROM oficina_inscricoes i WHERE i.turma_id = t.id AND i.status = 'confirmado') AS confirmados,
+         (SELECT COUNT(*) FROM oficina_inscricoes i WHERE i.turma_id = t.id AND i.status = 'concluido') AS concluidos,
          (SELECT COUNT(*) FROM oficina_inscricoes i WHERE i.turma_id = t.id AND i.status = 'em_conferencia') AS em_conferencia,
          (SELECT COUNT(*) FROM oficina_inscricoes i WHERE i.turma_id = t.id AND i.status = 'lista_espera') AS lista_espera,
          (SELECT COUNT(*) FROM oficina_inscricoes i WHERE i.turma_id = t.id AND i.status IN ('cancelado','desistente')) AS cancelados
@@ -209,6 +245,7 @@ async function listarTurmas(req, res) {
         ...formatarTurma(t),
         total_inscritos: Number(t.total_inscritos),
         confirmados: Number(t.confirmados),
+        concluidos: Number(t.concluidos),
         em_conferencia: Number(t.em_conferencia),
         lista_espera: Number(t.lista_espera),
         cancelados: Number(t.cancelados),
@@ -260,8 +297,9 @@ async function criarTurma(req, res) {
     const [result] = await conn.query(
       `INSERT INTO oficina_turmas
         (empresa_id, nome, descricao, token, data_inicio, data_fim, horario, modalidade, local_nome, endereco,
-         vagas, inscricoes_ate, status, cargos_elegiveis, cargos_almejados, carga_horaria_prevista, criado_por_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         vagas, inscricoes_ate, status, cargos_elegiveis, cargos_almejados, carga_horaria_prevista, criado_por_id,
+         presenca_minima, assinatura1_nome, assinatura1_cargo, assinatura2_nome, assinatura2_cargo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.empresaId,
         dados.nome,
@@ -280,6 +318,11 @@ async function criarTurma(req, res) {
         JSON.stringify(dados.cargos_almejados),
         dados.carga_horaria_prevista,
         req.user?.id ?? null,
+        dados.presenca_minima,
+        dados.assinatura1_nome,
+        dados.assinatura1_cargo,
+        dados.assinatura2_nome,
+        dados.assinatura2_cargo,
       ]
     );
 
@@ -311,7 +354,8 @@ async function atualizarTurma(req, res) {
       `UPDATE oficina_turmas SET
          nome = ?, descricao = ?, data_inicio = ?, data_fim = ?, horario = ?, modalidade = ?, local_nome = ?,
          endereco = ?, vagas = ?, inscricoes_ate = ?, status = ?, cargos_elegiveis = ?, cargos_almejados = ?,
-         carga_horaria_prevista = ?
+         carga_horaria_prevista = ?, presenca_minima = ?, assinatura1_nome = ?, assinatura1_cargo = ?,
+         assinatura2_nome = ?, assinatura2_cargo = ?
        WHERE id = ?`,
       [
         dados.nome,
@@ -328,6 +372,11 @@ async function atualizarTurma(req, res) {
         JSON.stringify(dados.cargos_elegiveis),
         JSON.stringify(dados.cargos_almejados),
         dados.modulos ? dados.carga_horaria_prevista : numeroOuNull(existente.carga_horaria_prevista),
+        dados.presenca_minima,
+        dados.assinatura1_nome,
+        dados.assinatura1_cargo,
+        dados.assinatura2_nome,
+        dados.assinatura2_cargo,
         existente.id,
       ]
     );
@@ -367,8 +416,9 @@ async function duplicarTurma(req, res) {
     const [result] = await conn.query(
       `INSERT INTO oficina_turmas
         (empresa_id, nome, descricao, token, horario, modalidade, local_nome, endereco, vagas, status,
-         cargos_elegiveis, cargos_almejados, carga_horaria_prevista, criado_por_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'rascunho', ?, ?, ?, ?)`,
+         cargos_elegiveis, cargos_almejados, carga_horaria_prevista, criado_por_id,
+         presenca_minima, assinatura1_nome, assinatura1_cargo, assinatura2_nome, assinatura2_cargo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'rascunho', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         origem.empresa_id,
         `${origem.nome} (cópia)`.slice(0, 255),
@@ -383,6 +433,11 @@ async function duplicarTurma(req, res) {
         origem.cargos_almejados,
         origem.carga_horaria_prevista,
         req.user?.id ?? null,
+        origem.presenca_minima,
+        origem.assinatura1_nome,
+        origem.assinatura1_cargo,
+        origem.assinatura2_nome,
+        origem.assinatura2_cargo,
       ]
     );
     await gravarModulos(conn, result.insertId, modulos);
@@ -470,6 +525,9 @@ async function alterarStatusInscricao(req, res) {
     );
     const inscricao = rows[0];
     if (!inscricao) return res.status(404).json({ error: "Inscrição não encontrada." });
+    if (inscricao.status === "concluido") {
+      return res.status(409).json({ error: "Esta inscrição já tem certificado emitido. Revogue o certificado antes de alterar a situação." });
+    }
 
     // Controle de vagas: só barra quando a pessoa passa a OCUPAR vaga que não
     // ocupava antes (ex.: lista de espera → confirmado). Quem já ocupa vaga e
@@ -478,8 +536,8 @@ async function alterarStatusInscricao(req, res) {
     const ocuparaDepois = STATUS_OCUPAM_VAGA.includes(status);
     if (!ocupavaAntes && ocuparaDepois && inscricao.vagas !== null && !forcar) {
       const [[{ ocupadas }]] = await db.query(
-        `SELECT COUNT(*) AS ocupadas FROM oficina_inscricoes WHERE turma_id = ? AND status IN ('confirmado','em_conferencia')`,
-        [inscricao.turma_id]
+        `SELECT COUNT(*) AS ocupadas FROM oficina_inscricoes WHERE turma_id = ? AND status IN (${STATUS_OCUPAM_VAGA.map(() => "?").join(",")})`,
+        [inscricao.turma_id, ...STATUS_OCUPAM_VAGA]
       );
       if (Number(ocupadas) >= inscricao.vagas) {
         return res.status(409).json({
@@ -522,6 +580,7 @@ async function alterarStatusInscricao(req, res) {
 
 const ROTULO_STATUS_INSCRICAO = {
   confirmado: "Confirmado",
+  concluido: "Concluído",
   em_conferencia: "Em conferência",
   lista_espera: "Lista de espera",
   cancelado: "Cancelado",
@@ -606,4 +665,7 @@ module.exports = {
   CARGOS_ALMEJADOS_PADRAO,
   STATUS_OCUPAM_VAGA,
   lerLista,
+  buscarTurma,
+  carregarModulos,
+  filtroTenant,
 };
