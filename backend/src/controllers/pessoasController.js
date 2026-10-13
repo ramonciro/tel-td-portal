@@ -26,8 +26,14 @@
  * inteiro para quem não tem esse acesso, em vez de vir mascarado.
  */
 const pool = require("../lib/db");
+const { blocoOficinaDaPessoa } = require("./oficinaIndicadoresController");
 
 const PERFIS_COM_ACESSO_CPF = ["coordenador", "assistente_treinamento", "super_admin"];
+
+// Quem vê o bloco "Oficina de Talentos" no perfil 360 (cargo almejado e
+// promoção são dados de carreira): time de Metodologia, Coordenação de T&D e
+// Super Admin. Supervisor direto, instrutor, superintendente etc. não.
+const PERFIS_OFICINA = ["metodologia", "coordenador", "super_admin"];
 
 function podeVerCpf(perfil) {
   return PERFIS_COM_ACESSO_CPF.includes(String(perfil || "").toLowerCase().trim());
@@ -186,6 +192,20 @@ async function perfil(req, res) {
       dadosBancarios = bancoRows[0] || null;
     }
 
+    // Oficina de Talentos (Fase 3, 13/10/2026): inscrições, presença,
+    // certificado, cargo almejado e promoção. Dado de carreira — só para o time
+    // de Metodologia/T&D; o supervisor direto e demais perfis não recebem o
+    // bloco (decisão do Ramon: acompanhamento é da Metodologia). Erro aqui
+    // nunca derruba o perfil inteiro.
+    let oficina = null;
+    if (PERFIS_OFICINA.includes(String(req.user?.perfil || "").toLowerCase().trim())) {
+      try {
+        oficina = await blocoOficinaDaPessoa(id, req.empresaId);
+      } catch (e) {
+        console.error("[pessoasController] bloco oficina:", e.message || e);
+      }
+    }
+
     return res.json({
       ok: true,
       pessoa: {
@@ -203,6 +223,7 @@ async function perfil(req, res) {
       metodologia: metodologiaRows[0] || null,
       usuario: usuarioRows[0] || null,
       dados_bancarios: dadosBancarios,
+      oficina,
       pode_ver_cpf: podeCpf,
     });
   } catch (error) {

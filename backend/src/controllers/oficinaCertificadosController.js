@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const db = require("../lib/db");
 const { buscarTurma, carregarModulos, filtroTenant } = require("./oficinaTalentosController");
+const { cargoAlmejadoRotulo } = require("./oficinaIndicadoresController");
 
 // Oficina de Talentos — Fase 2: presença (credenciamento) por módulo, lista de
 // frequência, elegibilidade e certificados. Regra do Ramon (13/10/2026): o
@@ -46,6 +47,8 @@ function gerarCodigo() {
 async function carregarParticipantes(turmaId) {
   const [rows] = await db.query(
     `SELECT i.id, i.nome, i.matricula, i.cpf, i.status, i.pessoa_id,
+            i.cargo_almejado, i.cargo_almejado_outro, i.cargo_promovido, i.promocao_obs,
+            DATE_FORMAT(i.promovido_em, '%Y-%m-%d') AS promovido_em,
             c.id AS certificado_id, c.codigo AS certificado_codigo
      FROM oficina_inscricoes i
      LEFT JOIN oficina_certificados c ON c.inscricao_id = i.id
@@ -91,6 +94,8 @@ async function frequenciaTurma(req, res) {
         percentual: freq.percentual,
         elegivel: elegivel(freq.percentual, turma.presenca_minima, modulos.length > 0),
         certificado: p.certificado_id ? { id: p.certificado_id, codigo: p.certificado_codigo } : null,
+        cargo_almejado: cargoAlmejadoRotulo(p.cargo_almejado, p.cargo_almejado_outro),
+        promocao: p.promovido_em ? { data: p.promovido_em, cargo: p.cargo_promovido, observacao: p.promocao_obs } : null,
       };
     });
 
@@ -318,11 +323,19 @@ async function revogarCertificado(req, res) {
   try {
     const tenant = filtroTenant(req, "t");
     const [rows] = await conn.query(
-      `SELECT c.id, c.inscricao_id FROM oficina_certificados c JOIN oficina_turmas t ON t.id = c.turma_id
+      `SELECT c.id, c.inscricao_id, i.promovido_em
+       FROM oficina_certificados c
+       JOIN oficina_turmas t ON t.id = c.turma_id
+       JOIN oficina_inscricoes i ON i.id = c.inscricao_id
        WHERE c.id = ?${tenant.sql}`,
       [req.params.id, ...tenant.params]
     );
     if (!rows[0]) return res.status(404).json({ error: "Certificado não encontrado." });
+    if (rows[0].promovido_em) {
+      return res.status(409).json({
+        error: "Esta pessoa tem promoção registrada a partir da oficina. Desfaça a promoção antes de revogar o certificado.",
+      });
+    }
 
     await conn.beginTransaction();
     await conn.query(`DELETE FROM oficina_certificados WHERE id = ?`, [rows[0].id]);
