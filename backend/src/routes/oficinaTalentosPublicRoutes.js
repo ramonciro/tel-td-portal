@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/oficinaTalentosPublicController");
+const certificados = require("../controllers/oficinaCertificadosController");
 const { criarLimitador } = require("../lib/rateLimit");
 const { normalizarCpf } = require("../services/pessoasService");
 
@@ -21,6 +22,10 @@ const limiteEnvioPorCpf = criarLimitador({
   chave: (req) => `${req.params.token}:${normalizarCpf(req.body?.cpf) || "sem-cpf"}`,
   mensagem: "Muitas tentativas com este CPF. Aguarde alguns minutos e tente novamente.",
 });
+
+// Validação pública de certificado (Fase 2) — declarada antes de "/:token".
+const limiteValidacao = criarLimitador({ janelaMs: JANELA, max: 60 });
+router.get("/certificado/:codigo", limiteValidacao, certificados.validarCertificadoPublico);
 
 router.get("/:token", limiteLeitura, controller.obterTurmaPublica);
 router.post("/:token/inscricoes", limiteEnvioPorIp, limiteEnvioPorCpf, controller.inscrever);
