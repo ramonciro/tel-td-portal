@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/oficinaTalentosController");
 const certificados = require("../controllers/oficinaCertificadosController");
+const indicadores = require("../controllers/oficinaIndicadoresController");
 
 // authRequired + authorizeRoles("metodologia") já são aplicados no app.use()
 // de index.js — mesmo padrão de metodologiaClientesRoutes.js.
@@ -23,5 +24,9 @@ router.post("/modulos/:moduloId/credenciar-todos", certificados.credenciarTodos)
 router.post("/turmas/:id/certificados/emitir", certificados.emitirCertificados);
 router.get("/turmas/:id/certificados", certificados.listarCertificados);
 router.delete("/certificados/:id", certificados.revogarCertificado);
+
+// Fase 3 — promoção (marcada pela Metodologia) e funil de indicadores.
+router.put("/inscricoes/:id/promocao", indicadores.registrarPromocao);
+router.get("/indicadores", indicadores.indicadores);
 
 module.exports = router;
