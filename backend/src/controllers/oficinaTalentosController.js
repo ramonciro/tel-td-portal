@@ -263,16 +263,22 @@ async function detalharTurma(req, res) {
     if (!turma) return res.status(404).json({ error: "Turma não encontrada." });
 
     const modulos = await carregarModulos(turma.id);
-    const [porDia] = await db.query(
-      `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS dia, COUNT(*) AS total
-       FROM oficina_inscricoes WHERE turma_id = ? GROUP BY dia ORDER BY dia ASC`,
-      [turma.id]
-    );
+    // "Inscrições por dia" no fuso de Salvador (America/Bahia): agrupar em SQL
+    // usaria o fuso do banco (UTC no Railway) e jogaria quem se inscreve à
+    // noite para o dia seguinte.
+    const [criadas] = await db.query(`SELECT created_at FROM oficina_inscricoes WHERE turma_id = ?`, [turma.id]);
+    const contagem = new Map();
+    criadas.forEach((r) => {
+      if (!r.created_at) return;
+      const dia = new Date(r.created_at).toLocaleDateString("en-CA", { timeZone: "America/Bahia" });
+      contagem.set(dia, (contagem.get(dia) || 0) + 1);
+    });
+    const porDia = [...contagem.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([dia, total]) => ({ dia, total }));
 
     res.json({
       ...formatarTurma(turma),
       modulos,
-      inscricoes_por_dia: porDia.map((d) => ({ dia: d.dia, total: Number(d.total) })),
+      inscricoes_por_dia: porDia,
     });
   } catch (error) {
     console.error("[oficina] detalharTurma:", error);
