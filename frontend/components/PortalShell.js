@@ -199,7 +199,7 @@ export default function PortalShell({
     // "/usuarios" (Fase 1, 22/09/2026) entrou na lista pelo mesmo motivo do
     // comentário acima — sem isso, o próprio redirect empurrava metodologia
     // de volta para /mapa-desenvolvimento ao tentar abrir Gestão de Usuários.
-    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao", "/oficina-talentos", "/usuarios"];
+    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao", "/oficina-talentos", "/usuarios", "/pessoas"];
     if (
       user.perfil === "metodologia" &&
       !METODOLOGIA_ROTAS.some((rota) => isRouteActive(pathname, rota))
