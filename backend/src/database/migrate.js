@@ -194,6 +194,92 @@ async function ensureEmailNullableUsuarios() {
 // quando a lista de Clientes da Metodologia ainda está vazia — ver passo 42)
 // quebrava com "Column 'cliente' cannot be null", porque o banco de produção
 // ainda tinha a coluna como NOT NULL de antes desta revisão do schema.
+// 53. Oficina de Talentos (Metodologia), Fase 1 — turmas, grade livre e
+// inscrições por link público (13/10/2026, pedido do Ramon; proposta em
+// claude/proposta-oficina-de-talentos-2026-10-09.md). Três tabelas novas, todas
+// com empresa_id (multi-ambiente). Nada aqui altera tabela existente.
+//  - oficina_turmas: uma edição/local da Oficina. `token` é o que vai no link
+//    público e também define a empresa (tenant) da inscrição.
+//  - oficina_modulos: grade da turma, preenchida livremente (a grade e a carga
+//    horária variam por oficina — decisão do Ramon).
+//  - oficina_inscricoes: retrato do que a pessoa informou + vínculo opcional
+//    com `pessoas`/`usuarios`. UNIQUE (turma_id, cpf): uma inscrição por pessoa
+//    por turma.
+async function ensureOficinaTalentos() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oficina_turmas (
+      id                    INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id            INT NOT NULL,
+      nome                  VARCHAR(255) NOT NULL,
+      descricao             TEXT NULL,
+      token                 VARCHAR(48) NOT NULL,
+      data_inicio           DATE NULL,
+      data_fim              DATE NULL,
+      horario               VARCHAR(120) NULL,
+      modalidade            VARCHAR(20) NOT NULL DEFAULT 'presencial',
+      local_nome            VARCHAR(255) NULL,
+      endereco              VARCHAR(500) NULL,
+      vagas                 INT NULL,
+      inscricoes_ate        DATE NULL,
+      status                VARCHAR(30) NOT NULL DEFAULT 'rascunho',
+      cargos_elegiveis      TEXT NULL,
+      cargos_almejados      TEXT NULL,
+      carga_horaria_prevista DECIMAL(6,2) NULL,
+      criado_por_id         INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_oficina_turmas_token (token),
+      INDEX idx_oficina_turmas_empresa (empresa_id, status)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oficina_modulos (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      turma_id       INT NOT NULL,
+      ordem          INT NOT NULL DEFAULT 0,
+      titulo         VARCHAR(255) NOT NULL,
+      data           DATE NULL,
+      hora_inicio    VARCHAR(5) NULL,
+      hora_fim       VARCHAR(5) NULL,
+      carga_horaria  DECIMAL(5,2) NULL,
+      INDEX idx_oficina_modulos_turma (turma_id, ordem),
+      CONSTRAINT fk_oficina_modulos_turma FOREIGN KEY (turma_id) REFERENCES oficina_turmas(id) ON DELETE CASCADE
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oficina_inscricoes (
+      id                    INT AUTO_INCREMENT PRIMARY KEY,
+      turma_id              INT NOT NULL,
+      empresa_id            INT NOT NULL,
+      pessoa_id             INT NULL,
+      usuario_id            INT NULL,
+      nome                  VARCHAR(255) NOT NULL,
+      email                 VARCHAR(255) NULL,
+      cpf                   VARCHAR(11) NOT NULL,
+      matricula             VARCHAR(100) NOT NULL,
+      escolaridade          VARCHAR(80) NULL,
+      horario_trabalho      VARCHAR(120) NULL,
+      cargo_atual           VARCHAR(150) NULL,
+      cargo_almejado        VARCHAR(150) NULL,
+      cargo_almejado_outro  VARCHAR(150) NULL,
+      status                VARCHAR(30) NOT NULL DEFAULT 'em_conferencia',
+      vinculo               VARCHAR(30) NULL,
+      motivo_conferencia    VARCHAR(255) NULL,
+      consentimento_em      DATETIME NULL,
+      decidido_por_id       INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_oficina_inscricao_turma_cpf (turma_id, cpf),
+      INDEX idx_oficina_inscricoes_turma (turma_id, status),
+      INDEX idx_oficina_inscricoes_pessoa (pessoa_id),
+      INDEX idx_oficina_inscricoes_empresa (empresa_id),
+      CONSTRAINT fk_oficina_inscricoes_turma FOREIGN KEY (turma_id) REFERENCES oficina_turmas(id) ON DELETE CASCADE
+    );
+  `);
+}
+
 async function ensureClienteNullableTrilhas() {
   const [rows] = await pool.query(
     `SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
@@ -1712,6 +1798,9 @@ async function runMigrations() {
     // 52. Erro ao criar trilha no módulo Metodologia (08/10/2026, bug
     // reportado pelo Ramon) — ver ensureClienteNullableTrilhas() acima.
     await ensureClienteNullableTrilhas();
+
+    // 53. Oficina de Talentos — Fase 1 (13/10/2026) — ver ensureOficinaTalentos().
+    await ensureOficinaTalentos();
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
