@@ -59,40 +59,48 @@ async function calcularElegibilidade(treinamento_id, nome, empresaId) {
   const tenantCheckTr = empresaId ? ' AND empresa_id = ?' : '';
   const trParams = empresaId ? [treinamento_id, empresaId] : [treinamento_id];
   const [trRows] = await pool.query(
-    `SELECT tema, cliente, carga_horaria FROM treinamentos WHERE id = ?${tenantCheckTr} LIMIT 1`,
+    `SELECT tema, cliente, carga_horaria, presenca_minima_pct FROM treinamentos WHERE id = ?${tenantCheckTr} LIMIT 1`,
     trParams
   );
   if (!trRows.length) return null;
   const tr = trRows[0];
 
+  // Regra única de presença (a mesma da grade de presença da turma e das
+  // jornadas): % = presentes ÷ (presentes + ausentes). Justificada e pendente
+  // ficam FORA da conta — falta justificada não penaliza e aula sem chamada
+  // nunca vira falta. Sem nenhum presente/ausente lançado => null (sem dado;
+  // não barra, como já era).
+  const calcular = (presentes, ausentes) => {
+    const computaveis = Number(presentes || 0) + Number(ausentes || 0);
+    return computaveis > 0 ? Number(((Number(presentes || 0) / computaveis) * 100).toFixed(1)) : null;
+  };
+
   // Calcula frequência com base em presencas legado (por nome)
   const [presRows] = await pool.query(
     `SELECT
-       COUNT(*)                                                       AS total,
-       SUM(CASE WHEN LOWER(TRIM(status)) = 'presente' THEN 1 ELSE 0 END) AS presentes
+       SUM(CASE WHEN LOWER(TRIM(status)) = 'presente' THEN 1 ELSE 0 END) AS presentes,
+       SUM(CASE WHEN LOWER(TRIM(status)) = 'ausente'  THEN 1 ELSE 0 END) AS ausentes
      FROM presencas
      WHERE treinamento_id = ? AND treinando_nome = ?`,
     [treinamento_id, nome]
   );
-  const total    = Number(presRows[0]?.total    || 0);
-  const presentes = Number(presRows[0]?.presentes || 0);
-  const freq = total > 0 ? Number(((presentes / total) * 100).toFixed(1)) : null;
+  const freq = calcular(presRows[0]?.presentes, presRows[0]?.ausentes);
 
-  // Também tenta via presenca_aulas (sistema de chamada por aula)
+  // Também tenta via presenca_aulas (sistema de chamada por aula). Aula
+  // cancelada não entra (igual à grade).
   let freqFinal = freq;
   if (freq === null) {
     const [paRows] = await pool.query(
       `SELECT
-         COUNT(*)                                                          AS total,
-         SUM(CASE WHEN LOWER(TRIM(pa.status)) = 'presente' THEN 1 ELSE 0 END) AS presentes
+         SUM(CASE WHEN LOWER(TRIM(pa.status)) = 'presente' THEN 1 ELSE 0 END) AS presentes,
+         SUM(CASE WHEN LOWER(TRIM(pa.status)) = 'ausente'  THEN 1 ELSE 0 END) AS ausentes
        FROM presenca_aulas pa
        JOIN turma_aulas ta ON ta.id = pa.turma_aula_id
-       WHERE ta.treinamento_id = ? AND pa.treinando_nome = ?`,
+       WHERE ta.treinamento_id = ? AND pa.treinando_nome = ?
+         AND COALESCE(ta.status_execucao, '') <> 'cancelada'`,
       [treinamento_id, nome]
     );
-    const paTotal    = Number(paRows[0]?.total    || 0);
-    const paPresentes = Number(paRows[0]?.presentes || 0);
-    freqFinal = paTotal > 0 ? Number(((paPresentes / paTotal) * 100).toFixed(1)) : null;
+    freqFinal = calcular(paRows[0]?.presentes, paRows[0]?.ausentes);
   }
 
   // Busca nota final (prova > qualidade)
@@ -108,7 +116,13 @@ async function calcularElegibilidade(treinamento_id, nome, empresaId) {
   const mediaQual  = avRows[0]?.media_qualidade ? Number(Number(avRows[0].media_qualidade).toFixed(1)) : null;
   const nota = mediaProva ?? mediaQual ?? null;
 
-  return { tr, freqFinal, nota };
+  // Presença mínima da turma (configurada na aba Presença); em branco = 75%.
+  const minimoTurma = Number(tr.presenca_minima_pct);
+  const minimo = Number.isFinite(minimoTurma) && tr.presenca_minima_pct !== null && minimoTurma > 0
+    ? minimoTurma
+    : FREQUENCIA_MINIMA;
+
+  return { tr, freqFinal, nota, minimo };
 }
 
 const FREQUENCIA_MINIMA = 75;
@@ -212,7 +226,7 @@ async function previewCertificado(req, res) {
     if (!resultado) {
       return res.status(404).json({ ok: false, message: 'Treinamento não encontrado' });
     }
-    const { tr, freqFinal, nota } = resultado;
+    const { tr, freqFinal, nota, minimo } = resultado;
 
     // Pacote 3 (acesso restrito por cliente, generalizar): sem isso, um
     // treinando/instrutor conseguia consultar o preview de um treinamento_id
@@ -231,8 +245,8 @@ async function previewCertificado(req, res) {
       carga_horaria: tr.carga_horaria,
       frequencia_percentual: freqFinal,
       nota_final: nota,
-      abaixo_do_minimo: freqFinal != null && freqFinal < FREQUENCIA_MINIMA,
-      frequencia_minima: FREQUENCIA_MINIMA,
+      abaixo_do_minimo: freqFinal != null && freqFinal < minimo,
+      frequencia_minima: minimo,
       sem_registros: freqFinal == null,
     });
   } catch (error) {
