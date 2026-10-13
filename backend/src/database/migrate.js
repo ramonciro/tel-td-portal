@@ -183,17 +183,6 @@ async function ensureEmailNullableUsuarios() {
   console.log(`  ↳ usuarios.email agora aceita NULL (contas sem e-mail, login por CPF/matrícula)`);
 }
 
-// Achado em 08/10/2026 (bug reportado pelo Ramon: "Erro ao criar trilha" no
-// módulo Metodologia). O CREATE TABLE IF NOT EXISTS de trilhas_aprendizagem
-// (passo 20, acima) já declara `cliente VARCHAR(150) NULL` — uma trilha sem
-// cliente é uma trilha "GLOBAL", de propósito (ver clients/opcoesCliente em
-// frontend/app/trilhas/page.js). Mas IF NOT EXISTS nunca altera uma tabela
-// que já existia em produção antes dessa coluna virar opcional — mesma causa
-// raiz do hotfix de usuarios.criado_em (passo 30) e de usuarios.email (função
-// acima). Na prática: toda trilha criada sem selecionar um cliente (inclusive
-// quando a lista de Clientes da Metodologia ainda está vazia — ver passo 42)
-// quebrava com "Column 'cliente' cannot be null", porque o banco de produção
-// ainda tinha a coluna como NOT NULL de antes desta revisão do schema.
 // 53. Oficina de Talentos (Metodologia), Fase 1 — turmas, grade livre e
 // inscrições por link público (13/10/2026, pedido do Ramon; proposta em
 // claude/proposta-oficina-de-talentos-2026-10-09.md). Três tabelas novas, todas
@@ -280,6 +269,43 @@ async function ensureOficinaTalentos() {
   `);
 }
 
+// Achado em 13/10/2026 (bug reportado pelo Ramon: "Erro ao criar jornada" no
+// Mapa de Desenvolvimento; log de produção: "Data truncated for column
+// 'status' at row 1" em jornadasDesenvolvimentoController.criar). O controller
+// grava status "em_andamento" / "planejada" / "concluida" / "cancelada", e o
+// CREATE TABLE do passo 28 declara `status VARCHAR(20)` — mas a tabela de
+// produção nasceu antes, com uma coluna mais restrita (vocabulário antigo
+// "ativo"/"inativo"), e CREATE TABLE IF NOT EXISTS nunca altera tabela
+// existente: mesma causa raiz dos hotfixes de usuarios.email e
+// trilhas_aprendizagem.cliente. Esta função alarga a coluna para VARCHAR(30)
+// só se ela ainda for ENUM ou um VARCHAR menor que 30 (idempotente) — os
+// valores antigos são preservados como texto, e mapRow() já os traduz.
+// Aplicada também às tabelas irmãs do módulo (mesmo risco de drift).
+async function ensureStatusVarchar(tabela, tamanho = 30, padrao = "planejada") {
+  const [rows] = await pool.query(
+    `SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'status'
+     LIMIT 1`,
+    [tabela]
+  );
+  if (!rows.length) return;
+  const { DATA_TYPE, CHARACTER_MAXIMUM_LENGTH } = rows[0];
+  if (String(DATA_TYPE).toLowerCase() === "varchar" && Number(CHARACTER_MAXIMUM_LENGTH) >= tamanho) return;
+  await pool.query(`ALTER TABLE ${tabela} MODIFY COLUMN status VARCHAR(${tamanho}) NOT NULL DEFAULT '${padrao}'`);
+  console.log(`  ↳ ${tabela}.status agora é VARCHAR(${tamanho}) (era ${DATA_TYPE}${CHARACTER_MAXIMUM_LENGTH ? `(${CHARACTER_MAXIMUM_LENGTH})` : ""})`);
+}
+
+// Achado em 08/10/2026 (bug reportado pelo Ramon: "Erro ao criar trilha" no
+// módulo Metodologia). O CREATE TABLE IF NOT EXISTS de trilhas_aprendizagem
+// (passo 20, acima) já declara `cliente VARCHAR(150) NULL` — uma trilha sem
+// cliente é uma trilha "GLOBAL", de propósito (ver clients/opcoesCliente em
+// frontend/app/trilhas/page.js). Mas IF NOT EXISTS nunca altera uma tabela
+// que já existia em produção antes dessa coluna virar opcional — mesma causa
+// raiz do hotfix de usuarios.criado_em (passo 30) e de usuarios.email (função
+// acima). Na prática: toda trilha criada sem selecionar um cliente (inclusive
+// quando a lista de Clientes da Metodologia ainda está vazia — ver passo 42)
+// quebrava com "Column 'cliente' cannot be null", porque o banco de produção
+// ainda tinha a coluna como NOT NULL de antes desta revisão do schema.
 async function ensureClienteNullableTrilhas() {
   const [rows] = await pool.query(
     `SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
@@ -1801,6 +1827,12 @@ async function runMigrations() {
 
     // 53. Oficina de Talentos — Fase 1 (13/10/2026) — ver ensureOficinaTalentos().
     await ensureOficinaTalentos();
+
+    // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
+    await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
+    await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
+    await ensureStatusVarchar("acoes_desenvolvimento", 30, "planejada");
+    await ensureStatusVarchar("coaching_planos", 30, "planejado");
 
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
