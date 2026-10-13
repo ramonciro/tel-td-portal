@@ -398,6 +398,57 @@ async function ensureJornadaPresenca() {
   `);
 }
 
+// Trilhas vinculadas às jornadas e aos encontros (13/10/2026, pedido do Ramon:
+// "as trilhas precisam ser vinculadas às jornadas e aparecer nos encontros").
+// Até aqui a trilha só se ligava a uma ETAPA da jornada (passo 43) e nada
+// disso aparecia em Encontros e presença. Agora:
+//  - jornada_trilhas: quais trilhas do catálogo pertencem a cada jornada (a
+//    mesma trilha pode servir a várias jornadas — UNIQUE jornada × trilha);
+//  - jornada_encontros.trilha_id: a trilha a que o encontro pertence.
+// Sem FK (mesmo padrão do módulo: o tipo do id em produção pode divergir);
+// a limpeza em cascata é feita nos controllers. O backfill roda UMA vez, só
+// quando a tabela acaba de ser criada: traz para a jornada as trilhas que já
+// estavam ligadas a alguma etapa dela — assim, quem tirar uma trilha da jornada
+// depois não a vê voltar a cada deploy.
+async function ensureJornadaTrilhas() {
+  const [existia] = await pool.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jornada_trilhas' LIMIT 1`
+  );
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jornada_trilhas (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id  INT NULL,
+      jornada_id  INT NOT NULL,
+      trilha_id   INT NOT NULL,
+      ordem       INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_jornada_trilha (jornada_id, trilha_id),
+      INDEX idx_jornada_trilhas_trilha (trilha_id),
+      INDEX idx_jornada_trilhas_empresa (empresa_id)
+    );
+  `);
+
+  await ensureColumn("jornada_encontros", "trilha_id", "INT NULL");
+
+  if (!existia.length) {
+    try {
+      const [r] = await pool.query(`
+        INSERT IGNORE INTO jornada_trilhas (empresa_id, jornada_id, trilha_id, ordem)
+        SELECT j.empresa_id, je.jornada_id, je.trilha_id, 0
+        FROM jornadas_etapas je
+        JOIN jornadas_desenvolvimento j ON j.id = je.jornada_id
+        JOIN trilhas_aprendizagem t ON t.id = je.trilha_id
+        WHERE je.trilha_id IS NOT NULL
+        GROUP BY j.empresa_id, je.jornada_id, je.trilha_id
+      `);
+      console.log(`  ↳ jornada_trilhas: ${r.affectedRows} vínculo(s) trazido(s) das etapas`);
+    } catch (err) {
+      console.warn(`  ↳ backfill de jornada_trilhas não aplicado: ${err.message}`);
+    }
+  }
+}
+
 // Achado em 13/10/2026 (bug reportado pelo Ramon: "Erro ao criar jornada" no
 // Mapa de Desenvolvimento; log de produção: "Data truncated for column
 // 'status' at row 1" em jornadasDesenvolvimentoController.criar). O controller
@@ -1965,6 +2016,9 @@ async function runMigrations() {
 
     // 57. Jornadas — encontros e presença por pessoa (Fase 1) — ver ensureJornadaPresenca().
     await ensureJornadaPresenca();
+
+    // 58. Trilhas vinculadas às jornadas e aos encontros — ver ensureJornadaTrilhas().
+    await ensureJornadaTrilhas();
 
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
