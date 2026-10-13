@@ -328,6 +328,20 @@ async function ensureOficinaFase2() {
   `);
 }
 
+// 56. Oficina de Talentos, Fase 3 — promoção (13/10/2026). O funil de
+// indicadores é inscritos → concluintes → promovidos (e para qual cargo). A
+// promoção é registrada pela Metodologia na própria inscrição concluída:
+//  - promovido_em: data da promoção (DATE) — NULL = ainda não promovido.
+//  - cargo_promovido: cargo assumido (texto livre, sugerido a partir do cargo
+//    almejado).
+//  - promocao_obs / promovido_por_id: observação curta e quem registrou.
+async function ensureOficinaFase3() {
+  await ensureColumn("oficina_inscricoes", "promovido_em", "DATE NULL");
+  await ensureColumn("oficina_inscricoes", "cargo_promovido", "VARCHAR(150) NULL");
+  await ensureColumn("oficina_inscricoes", "promocao_obs", "VARCHAR(255) NULL");
+  await ensureColumn("oficina_inscricoes", "promovido_por_id", "INT NULL");
+}
+
 // Achado em 13/10/2026 (bug reportado pelo Ramon: "Erro ao criar jornada" no
 // Mapa de Desenvolvimento; log de produção: "Data truncated for column
 // 'status' at row 1" em jornadasDesenvolvimentoController.criar). O controller
@@ -1889,6 +1903,9 @@ async function runMigrations() {
 
     // 55. Oficina de Talentos — Fase 2 (presença e certificado) — ver ensureOficinaFase2().
     await ensureOficinaFase2();
+
+    // 56. Oficina de Talentos — Fase 3 (promoção / indicadores) — ver ensureOficinaFase3().
+    await ensureOficinaFase3();
 
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
