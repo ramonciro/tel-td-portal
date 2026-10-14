@@ -187,6 +187,9 @@ export default function AvaliacoesTurmaPage() {
   }
 
   const ehTreinando = usuario?.perfil === "treinando";
+  // Só Coordenador e Supervisor excluem avaliação/material (o servidor responde
+  // 403 ao instrutor); antes o botão aparecia para ele mesmo assim.
+  const podeExcluir = ["coordenador", "supervisor"].includes(String(usuario?.perfil || "").toLowerCase());
   const media       = avaliacoes.length
     ? (avaliacoes.reduce((acc, a) => acc + Number(a.nota_prova || 0), 0) / avaliacoes.length).toFixed(1)
     : null;
@@ -332,9 +335,11 @@ export default function AvaliacoesTurmaPage() {
                       >
                         {a.nota_prova != null ? "corrigir" : "lançar nota"}
                       </button>
-                      <button onClick={() => excluir(a.id)} style={{ ...btnLink, color: colors.dangerText }}>
-                        excluir
-                      </button>
+                      {podeExcluir && (
+                        <button onClick={() => excluir(a.id)} style={{ ...btnLink, color: colors.dangerText }}>
+                          excluir
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -434,7 +439,7 @@ export default function AvaliacoesTurmaPage() {
                             </span>
                             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                               <button style={btnEditar} onClick={() => editarMaterial(m)}>Editar</button>
-                              <button style={btnExcluir} onClick={() => excluirMaterial(m.id)}>Excluir</button>
+                              {podeExcluir && <button style={btnExcluir} onClick={() => excluirMaterial(m.id)}>Excluir</button>}
                             </div>
                           </div>
                         );
