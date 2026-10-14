@@ -28,8 +28,10 @@ export default function RSConfiguracoes() {
   const carregarUsuarios = async () => {
     setLoadingUsers(true);
     try {
-      const data = await apiFetch("/rs/usuarios");
-      setUsuarios(data);
+      // /usuarios já vem com o escopo do módulo para o coordenador R&S; o filtro
+      // abaixo só garante que a consulta rápida mostre apenas perfis R&S.
+      const data = await apiFetch("/usuarios");
+      setUsuarios((Array.isArray(data) ? data : []).filter((u) => ["coordenador_rs", "gestor_rs"].includes(u.perfil)));
     } catch { setUsuarios([]); }
     finally { setLoadingUsers(false); }
   };
