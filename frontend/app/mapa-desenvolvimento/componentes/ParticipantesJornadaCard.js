@@ -261,7 +261,7 @@ export default function ParticipantesJornadaCard({
                           <a
                             href={`/pessoas/${item.pessoa_id}`}
                             title="Ver perfil completo"
-                            style={{ display: "inline-block", marginTop: 2, marginBottom: 4, color: "#D97706", fontWeight: 700, fontSize: 11.5, textDecoration: "none" }}
+                            style={{ display: "inline-block", marginTop: 2, marginBottom: 4, color: "#B45309", fontWeight: 700, fontSize: 11.5, textDecoration: "none" }}
                           >
                             Ver perfil completo
                           </a>
