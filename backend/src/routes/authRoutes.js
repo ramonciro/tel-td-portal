@@ -19,7 +19,7 @@ const router  = express.Router();
 const pool    = require("../lib/db");
 const bcrypt  = require("bcryptjs");
 const crypto  = require("crypto");
-const { signToken, authRequired } = require("../middlewares/auth");
+const { signToken, authRequired, limparCacheConta } = require("../middlewares/auth");
 const { sendMail } = require("../services/mailer");
 
 /* ─── RATE LIMITING (login) ─────────────────────────────────────────────── */
@@ -393,6 +393,7 @@ router.post("/alterar-senha", authRequired, async (req, res) => {
       "UPDATE usuarios SET senha = ?, troca_senha_obrigatoria = 0 WHERE id = ?",
       [senhaHash, userId]
     );
+    limparCacheConta(userId);
 
     return res.json({ message: "Senha alterada com sucesso" });
   } catch (error) {
@@ -515,6 +516,7 @@ router.post("/redefinir-senha", async (req, res) => {
       "UPDATE usuarios SET senha = ?, troca_senha_obrigatoria = 0 WHERE id = ?",
       [novoHash, record.usuario_id]
     );
+    limparCacheConta(record.usuario_id);
     await pool.query(
       "UPDATE password_reset_tokens SET usado = 1 WHERE id = ?",
       [record.id]
