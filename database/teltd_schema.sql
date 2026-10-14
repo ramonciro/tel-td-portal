@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS mapa_desenvolvimento (
   observacoes TEXT
 );
 INSERT INTO usuarios (nome, email, senha, perfil, cliente, ativo, troca_senha_obrigatoria)
-VALUES ('Administrador Tel T&D', 'admin@teltd.com', 'Tel@2026', 'admin', 'Tel Centro de Contatos', 1, 1)
+VALUES ('Administrador Portal T&D', 'admin@portal.local', 'Portal@2026', 'admin', 'Portal T&D', 1, 1)
 ON DUPLICATE KEY UPDATE email = email;
 INSERT INTO clientes (nome, segmento, status, gestor, descricao) VALUES
 ('Agibank', 'Bancário', 'ativo', 'Gestão T&D', 'Operação de atendimento Agibank'),
