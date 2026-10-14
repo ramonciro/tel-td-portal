@@ -1711,6 +1711,7 @@ async function runMigrations() {
       ["Carolaine Silva", "Saiu do time de instrutores (informado em 14/10/2026)"],
       ["Fabiane Almeida", "Hoje é analista (informado em 14/10/2026)"],
       ["Hiago Assunção", "Hoje é analista (informado em 14/10/2026)"],
+      ["Diego Souza", "Não atua mais como instrutor (informado em 14/10/2026)"],
     ];
     for (const [nomeDeslig, obs] of DESLIGADOS_INICIAIS) {
       await pool.query(
@@ -1723,7 +1724,6 @@ async function runMigrations() {
     const GRAFIAS_INSTRUTOR = [
       ["Etilaine", "Etilaine Souza"],
       ["Hiago Amor", "Hiago Assunção"],
-      ["Diogo Souza", "Diogo Silva"],
     ];
     for (const [antigo, correto] of GRAFIAS_INSTRUTOR) {
       await pool.query(`UPDATE treinamentos SET instrutor = ? WHERE TRIM(instrutor) = ?`, [correto, antigo]);
