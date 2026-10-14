@@ -2059,8 +2059,6 @@ const {
   getRelatorio:     getRSRelatorio,
   exportar:         exportarRS,
   importarPlanilha: importarRSPlanilha,
-  listarUsuariosRS,
-  criarUsuarioRS,
 } = require("./controllers/rsController");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
@@ -2077,9 +2075,8 @@ app.put   ("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"), 
 app.delete("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"),              excluirRP);
 // Importação de planilha histórica (xlsx do Google Sheets)
 app.post  ("/api/rs/importar",  authRequired, authorizeRoles("coordenador_rs"), comUploadTratado(upload.single("arquivo")), importarRSPlanilha);
-// Gestão de usuários R&S (sem precisar do /usuarios do T&D)
-app.get   ("/api/rs/usuarios",  authRequired, authorizeRoles("coordenador_rs"), listarUsuariosRS);
-app.post  ("/api/rs/usuarios",  authRequired, authorizeRoles("coordenador_rs"), criarUsuarioRS);
+// Usuários do R&S: gerenciados em /api/usuarios (Gestão de Usuários) — os atalhos
+// /api/rs/usuarios foram removidos em 14/10/2026.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Fase 2 — disparo manual dos jobs de e-mail (além do agendamento automático
