@@ -1,4 +1,4 @@
--- Ajuste empresa_id para o ID real da Tel antes de executar
+-- Ajuste empresa_id para o ID real da empresa antes de executar
 INSERT INTO rs_sites (empresa_id, nome) VALUES
   (1, 'BARUERI'),
   (1, 'BELO HORIZONTE'),

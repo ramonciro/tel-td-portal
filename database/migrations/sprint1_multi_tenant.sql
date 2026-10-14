@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS empresas (
 );
 
 INSERT INTO empresas (id, nome, ativo)
-VALUES (1, 'Tel Centro de Contatos', 1)
+VALUES (1, 'Portal T&D', 1)
 ON DUPLICATE KEY UPDATE nome = VALUES(nome);
 
 -- ─── 2. usuarios.empresa_id ────────────────────────────────────────────────────
