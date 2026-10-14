@@ -52,7 +52,16 @@ export default function PrimeiroAcessoPage() {
       // de "Acesso restrito" — /inicio não é uma das telas liberadas pra
       // ela. Mesmo destino usado no login normal (ver login/page.js).
       const perfil = String(user?.perfil || "").toLowerCase().trim();
-      router.push(perfil === "assistente_treinamento" ? "/salas" : "/inicio");
+      // Superintendente e R&S também não têm /inicio (mesmo destino do login).
+      router.push(
+        perfil === "assistente_treinamento"
+          ? "/salas"
+          : perfil === "superintendente"
+          ? "/dashboard"
+          : ["coordenador_rs", "gestor_rs"].includes(perfil)
+          ? "/rs/rps"
+          : "/inicio"
+      );
     } catch (err) {
       setErro(err.message);
     } finally {
