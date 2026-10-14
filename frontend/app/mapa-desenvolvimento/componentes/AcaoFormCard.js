@@ -5,7 +5,7 @@
 // nenhuma mudança de comportamento.
 
 import SectionCard from "../../../components/SectionCard";
-import { actionInitial, SUBTIPOS_ACAO } from "./helpers";
+import { actionInitial } from "./helpers";
 import {
   detailsCard,
   detailsSummary,
@@ -26,6 +26,7 @@ export default function AcaoFormCard({
   jornadas,
   turmas,
   usuarios,
+  subtiposCatalogo = [],
   handleSelecionarTurma,
   saving,
   setErro,
@@ -85,11 +86,16 @@ export default function AcaoFormCard({
                 style={compactInputStyle()}
               >
                 <option value="">Não classificada</option>
-                {SUBTIPOS_ACAO.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
+                {subtiposCatalogo.map((item) => (
+                  <option key={item.id ?? item.nome} value={item.nome}>
+                    {item.nome}
                   </option>
                 ))}
+                {/* Subtipo atual da ação que foi desativado depois: continua
+                    selecionável para editar a ação sem perder a classificação. */}
+                {acaoForm.subtipo && !subtiposCatalogo.some((item) => item.nome === acaoForm.subtipo) && (
+                  <option value={acaoForm.subtipo}>{acaoForm.subtipo} (fora da lista ativa)</option>
+                )}
               </select>
             </label>
 

@@ -408,17 +408,8 @@ export const actionInitial = {
   turma_id: "",
 };
 
-// Subdivisões usadas para comprovação de horas por norma (ex.: MPT), a
-// partir das jornadas descritas no projeto do Portal T&D. Ramon pode pedir
-// para ajustar esta lista conforme a necessidade real de cada cliente.
-export const SUBTIPOS_ACAO = [
-  "Prevenção ao Assédio Moral",
-  "Coaching de Coordenação e Gerência",
-  "Compliance e Ética",
-  "Desenvolvimento de Liderança",
-  "Treinamento Técnico",
-  "Outro",
-];
+// Subdivisões (subtipo) agora vêm do catálogo da tela "Subtipos" (/subtipos),
+// carregado em page.js — a lista fixa que existia aqui foi removida.
 
 export const coachingInitial = {
   id: null,

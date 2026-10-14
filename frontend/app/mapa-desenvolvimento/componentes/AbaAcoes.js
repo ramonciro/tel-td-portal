@@ -14,6 +14,7 @@ export default function AbaAcoes({
   jornadas,
   turmas,
   usuarios,
+  subtiposCatalogo,
   handleSelecionarTurma,
   saving,
   setErro,
@@ -32,6 +33,7 @@ export default function AbaAcoes({
         jornadas={jornadas}
         turmas={turmas}
         usuarios={usuarios}
+        subtiposCatalogo={subtiposCatalogo}
         handleSelecionarTurma={handleSelecionarTurma}
         saving={saving}
         setErro={setErro}
