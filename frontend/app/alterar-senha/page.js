@@ -22,7 +22,7 @@ export default function AlterarSenhaPage() {
     setSucesso("");
     const user = getStoredUser();
 
-    if (!user?.email) return setErro("Usuário não identificado.");
+    if (!user?.id) return setErro("Usuário não identificado.");
     if (!senhaAtual || !novaSenha || !confirmacao) {
       return setErro("Preencha todos os campos.");
     }
