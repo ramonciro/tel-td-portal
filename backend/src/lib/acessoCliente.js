@@ -74,7 +74,7 @@ function usuarioTemAcessoAoCliente(req, clienteRecurso) {
  * (ex.: treinamentos), onde essa condição nunca é verdadeira mas também
  * não atrapalha.
  */
-function filtroClientesSQL(req, coluna = "cliente") {
+function filtroClientesSQL(req, coluna = "cliente", { aceitarGlobalLiteral = false } = {}) {
   if (isGestor(req)) return null;
 
   const clientesUsuario = normalizarClientes(req.user?.cliente);
@@ -82,7 +82,10 @@ function filtroClientesSQL(req, coluna = "cliente") {
 
   const placeholders = clientesUsuario.map(() => "?").join(", ");
   return {
-    sql: `(${coluna} IS NULL OR ${coluna} = '' OR LOWER(${coluna}) IN (${placeholders}))`,
+    // aceitarGlobalLiteral: na Biblioteca o formulário orienta digitar
+    // "GLOBAL" para conteúdo de todas as operações; sem isso esse conteúdo
+    // sumia para quem tem cliente vinculado.
+    sql: `(${coluna} IS NULL OR ${coluna} = ''${aceitarGlobalLiteral ? ` OR UPPER(TRIM(${coluna})) = 'GLOBAL'` : ""} OR LOWER(${coluna}) IN (${placeholders}))`,
     params: clientesUsuario.map((c) => c.toLowerCase()),
   };
 }
