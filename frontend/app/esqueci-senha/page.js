@@ -65,7 +65,7 @@ export default function EsqueciSenhaPage() {
             <form onSubmit={enviar} style={form}>
               <input
                 type="email"
-                placeholder="voce@telcc.com.br"
+                placeholder="voce@empresa.com.br"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={input}
