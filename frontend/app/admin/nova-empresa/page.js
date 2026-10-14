@@ -228,7 +228,7 @@ export default function NovaEmpresaPage() {
                 </div>
                 <div>
                   <label style={lbl}>Subdomínio</label>
-                  <input style={inp} placeholder="dasa.teltd.com.br" {...fieldEmpresa("subdomain")} />
+                  <input style={inp} placeholder="dasa.seudominio.com.br" {...fieldEmpresa("subdomain")} />
                 </div>
                 <div style={fieldFull}><div style={divider} /></div>
                 <div>
