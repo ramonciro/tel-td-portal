@@ -187,7 +187,7 @@ export default function IndicadoresPage() {
   // no subtítulo.
   const volumeAprendizagem = activeTab === "roi" && d ? [
     { label: "Horas realizadas",   valor: d.horas_realizadas,   max: d.horas_previstas,   suf: "h" },
-    { label: "Pessoas impactadas", valor: d.pessoas_impactadas, max: d.pessoas_previstas, suf: "" },
+    { label: "Matrículas confirmadas", valor: d.matriculas, max: d.matriculas_previstas, suf: "" },
     { label: "Turmas concluídas",  valor: d.turmas_concluidas,  max: d.turmas_total,      suf: "" },
   ].map((item) => {
     const max = item.max || item.valor || 1;
@@ -214,10 +214,11 @@ export default function IndicadoresPage() {
           title="Indicadores"
           subtitle="Horas treinadas, NPS, efetividade e ROI do seu ambiente"
           stats={resumo ? [
-            { label: "Horas realizadas", value: fmtH(resumo.horas_total) },
-            { label: "Participantes",    value: fmtN(resumo.participantes_unicos) },
-            { label: "NPS",              value: resumo.nps_score != null ? String(resumo.nps_score) : "—" },
-            { label: "Presença média",   value: fmtPct(resumo.taxa_presenca) },
+            { label: "Horas realizadas",       value: fmtH(resumo.horas_total) },
+            { label: "Pessoas únicas",         value: fmtN(resumo.participantes_unicos) },
+            { label: "Matrículas",             value: fmtN(resumo.matriculas) },
+            { label: "NPS (score -100 a 100)", value: resumo.nps_score != null ? String(resumo.nps_score) : "—" },
+            { label: "Presença (por pessoa)",  value: fmtPct(resumo.taxa_presenca) },
           ] : []}
         />
 
@@ -310,7 +311,7 @@ export default function IndicadoresPage() {
                   <div className={`ind-cascade ${revelado ? "ind-play" : ""}`} style={kpiRow}>
                     <StatCard title="Horas realizadas"
                       value={d.total != null ? <ContadorAnimado valor={d.total} decimais={2} sufixo="h" revelado={revelado} /> : "—"}
-                      subtitle="turmas concluídas"
+                      subtitle="aulas concluídas no período filtrado"
                       accent={colors.accent} />
                     <StatCard title="Clientes / operações"
                       value={<ContadorAnimado valor={d.por_cliente?.length || 0} revelado={revelado} />} />
@@ -367,6 +368,11 @@ export default function IndicadoresPage() {
                     <div style={section}>
                       <p style={sectionTitle}>Score NPS</p>
                       <NpsGauge score={d.score} total={d.total} />
+                      {d.media != null && d.total > 0 && (
+                        <p style={{ textAlign: "center", fontSize: 12, color: colors.textSecondary, margin: "10px 0 0" }}>
+                          Nota média: <strong>{String(d.media).replace(".", ",")}</strong> (escala 0 a 10) — é o "NPS médio" mostrado no Dashboard.
+                        </p>
+                      )}
                       {d.total > 0 && (
                         <div style={{ marginTop: 20 }}>
                           <Donut
@@ -429,10 +435,10 @@ export default function IndicadoresPage() {
                       accent={colors.success} />
                     <StatCard title="Nota média (prova)"
                       value={d.media_prova != null ? String(d.media_prova) : "—"} />
-                    <StatCard title="Taxa de presença"
-                      value={d.presenca?.taxa != null ? <ContadorAnimado valor={d.presenca.taxa} decimais={1} sufixo="%" revelado={revelado} /> : "—"}
+                    <StatCard title="Taxa de presença (por pessoa)"
+                      value={d.presenca?.taxa != null ? <ContadorAnimado valor={d.presenca.taxa} sufixo="%" revelado={revelado} /> : "—"}
                       subtitle={d.presenca?.total > 0
-                        ? `${fmtN(d.presenca.presentes)} presenças`
+                        ? `${fmtN(d.presenca.presentes)} de ${fmtN(d.presenca.total)} pessoas presentes (justificados e pendentes não entram)`
                         : "sem registros"}
                       accent={d.presenca?.taxa >= 75 ? colors.success : colors.warning} />
                   </div>
@@ -485,10 +491,11 @@ export default function IndicadoresPage() {
                       value={d.horas_realizadas != null ? <ContadorAnimado valor={d.horas_realizadas} decimais={2} sufixo="h" revelado={revelado} /> : "—"}
                       subtitle={`de ${fmtH(d.horas_previstas)} previstas`}
                       accent={colors.accent} />
-                    <StatCard title="Pessoas impactadas"
+                    <StatCard title="Pessoas únicas impactadas"
                       value={d.pessoas_impactadas != null ? <ContadorAnimado valor={d.pessoas_impactadas} revelado={revelado} /> : "—"}
-                      subtitle={d.alcance_percentual
-                        ? `${d.alcance_percentual}% do previsto` : ""} />
+                      subtitle={d.matriculas != null
+                        ? `${fmtN(d.matriculas)} matrículas confirmadas${d.alcance_percentual != null ? ` · alcance ${String(d.alcance_percentual).replace(".", ",")}%` : ""}`
+                        : ""} />
                     <StatCard title="Taxa de conclusão"
                       value={d.taxa_conclusao != null ? <ContadorAnimado valor={d.taxa_conclusao} decimais={1} sufixo="%" revelado={revelado} /> : "—"}
                       subtitle={`${fmtN(d.turmas_concluidas)} de ${fmtN(d.turmas_total)} turmas`}
@@ -512,14 +519,15 @@ export default function IndicadoresPage() {
                       <p style={sectionTitle}>Referência de custo</p>
                       <p style={{ fontSize: 13, color: colors.textSecondary,
                         lineHeight: 1.6, margin: "0 0 12px" }}>
-                        O custo estimado usa <strong>{fmtR(d.custo_por_hora)}/h por participante</strong>{d.custo_por_hora === 150
+                        O custo estimado soma, <strong>turma a turma</strong>, as horas realizadas × os participantes confirmados × <strong>{fmtR(d.custo_por_hora)}/h por participante</strong>{d.custo_por_hora === 150
                           ? " como referência de mercado (T&D Brasil 2024)."
                           : ", valor configurado para este tenant."}
                       </p>
                       {[
-                        { l: "Horas × participantes", v: `${fmtH(d.horas_realizadas)} × ${fmtN(d.pessoas_impactadas)}` },
-                        { l: "Custo total estimado",  v: fmtR(d.custo_estimado) },
-                        { l: "Alcance da meta",       v: fmtPct(d.alcance_percentual) },
+                        { l: "Horas realizadas",                    v: fmtH(d.horas_realizadas) },
+                        { l: "Matrículas confirmadas",              v: fmtN(d.matriculas) },
+                        { l: "Custo total estimado (turma a turma)", v: fmtR(d.custo_estimado) },
+                        { l: "Alcance (confirmadas ÷ previstas)",   v: fmtPct(d.alcance_percentual) },
                       ].map((item) => (
                         <div key={item.l} style={{ display: "flex", justifyContent: "space-between",
                           padding: "8px 0",
