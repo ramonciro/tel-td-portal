@@ -291,7 +291,7 @@ router.post("/login", async (req, res) => {
     // empresa (nome, cor, logo) volta junto do login pra o PortalShell
     // aplicar no resto do portal — antes só a tela de login usava isso (via
     // /auth/ambientes), então o menu/cabeçalho continuavam sempre com a
-    // identidade padrão do Tel T&D, não importa de qual empresa a pessoa
+    // identidade padrão do Portal T&D, não importa de qual empresa a pessoa
     // era. Fica só na resposta do login (guardado junto do resto de "user"
     // no localStorage do front) — nunca no JWT, que não precisa carregar
     // dado de apresentação em toda requisição autenticada. Super admin não
