@@ -1,4 +1,4 @@
-# Tel T&D Platform
+# Portal T&D
 
 ## Estrutura
 - `frontend/` — Next.js (Vercel)
