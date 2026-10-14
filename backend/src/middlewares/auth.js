@@ -23,23 +23,47 @@ function signToken(payload, expiresInSeconds = 60 * 60 * 12) {
 // requisição; se a consulta falhar, NÃO bloqueia (mantém o comportamento
 // anterior) — só barra quando a conta existe e está explicitamente inativa.
 const CACHE_ATIVO_MS = 30 * 1000;
-const cacheAtivo = new Map(); // id -> { ativo, expira }
+const cacheAtivo = new Map(); // id -> { inativa, trocaPendente, expira }
 
-async function contaEstaInativa(userId) {
-  if (!userId) return false;
+async function estadoDaConta(userId) {
+  if (!userId) return { inativa: false, trocaPendente: false };
   const agora = Date.now();
   const c = cacheAtivo.get(userId);
-  if (c && c.expira > agora) return c.inativa;
+  if (c && c.expira > agora) return c;
   try {
     const pool = require("../lib/db");
-    const [rows] = await pool.query("SELECT ativo FROM usuarios WHERE id = ? LIMIT 1", [userId]);
-    const inativa = rows.length > 0 && rows[0].ativo !== null && Number(rows[0].ativo) === 0;
-    cacheAtivo.set(userId, { inativa, expira: agora + CACHE_ATIVO_MS });
+    const [rows] = await pool.query(
+      "SELECT ativo, troca_senha_obrigatoria FROM usuarios WHERE id = ? LIMIT 1",
+      [userId]
+    );
+    const r = rows[0];
+    const estado = {
+      inativa: !!r && r.ativo !== null && Number(r.ativo) === 0,
+      trocaPendente: !!r && Number(r.troca_senha_obrigatoria || 0) === 1,
+      expira: agora + CACHE_ATIVO_MS,
+    };
+    cacheAtivo.set(userId, estado);
     if (cacheAtivo.size > 5000) cacheAtivo.clear();
-    return inativa;
+    return estado;
   } catch (e) {
-    return false;
+    return { inativa: false, trocaPendente: false };
   }
+}
+
+// Chamado quando a senha muda (alterar/redefinir): sem isso o cache de 30s
+// continuaria barrando quem acabou de trocar a senha.
+function limparCacheConta(userId) {
+  if (userId) cacheAtivo.delete(userId);
+  else cacheAtivo.clear();
+}
+
+// Troca de senha obrigatória (auditoria 14/10/2026): antes só o front mandava
+// o usuário para /primeiro-acesso; quem chamasse a API direto com o token do
+// login usava o portal normalmente com a senha padrão. Agora a API só aceita
+// a própria troca de senha enquanto a flag estiver ligada.
+function ehTrocaDeSenha(req) {
+  const caminho = String(req.originalUrl || req.url || "").split("?")[0].replace(/\/+$/, "");
+  return req.method === "POST" && caminho === "/api/auth/alterar-senha";
 }
 
 // 3. Middleware de proteção das rotas
@@ -62,10 +86,18 @@ async function authRequired(req, res, next) {
     const decoded = jwt.verify(token, secret);
     req.user = decoded;
 
-    if (await contaEstaInativa(decoded?.id)) {
+    const estado = await estadoDaConta(decoded?.id);
+    if (estado.inativa) {
       return res.status(401).json({
         ok: false,
         message: "Conta inativa. Procure a coordenação.",
+      });
+    }
+    if (estado.trocaPendente && !ehTrocaDeSenha(req)) {
+      return res.status(403).json({
+        ok: false,
+        codigo: "TROCA_SENHA_OBRIGATORIA",
+        message: "Troque a senha padrão no primeiro acesso para continuar.",
       });
     }
 
@@ -138,6 +170,7 @@ function requireSuperAdmin(req, res, next) {
 module.exports = {
   signToken,
   authRequired,
+  limparCacheConta,
   authorizeRoles,
   requireSuperAdmin,
 };
