@@ -9,7 +9,7 @@ import { colors, radius } from "../../lib/theme";
 // passo de seleção de empresa/ambiente antes do e-mail+senha, alimentado por
 // GET /api/auth/ambientes (empresas ativas, só com o que é seguro mostrar
 // sem sessão: nome/código/logo/cor). Isso é o "seletor no próprio app" —
-// não depende de subdomínio de verdade (comercio.teltd.com / dasa.teltd.com
+// não depende de subdomínio de verdade (comercio.exemplo.com / dasa.exemplo.com
 // hoje não apontam pro Vercel ainda), mas já cumpre o objetivo de cada
 // empresa entrar no seu próprio ambiente, com a marca certa, e evita que
 // alguém confunda o e-mail com a empresa errada (o backend valida isso em
@@ -144,7 +144,7 @@ export default function LoginPage() {
   const nomeAtual = empresaSelecionada?.nome || NOME_PADRAO;
   const logoAtual = empresaSelecionada?.logo_url || LOGO_PADRAO;
   const corAtual = empresaSelecionada?.cor_primaria || COR_PADRAO;
-  const eyebrowAtual = empresaSelecionada ? "Portal T&D" : "Tel Centro de Contatos";
+  const eyebrowAtual = empresaSelecionada ? "Portal T&D" : "Treinamento e Desenvolvimento";
 
   return (
     <div style={container}>
@@ -213,7 +213,7 @@ export default function LoginPage() {
 
             <label style={fieldLabel}>E-mail, CPF ou matrícula</label>
             <input
-              placeholder="voce@telcc.com.br, CPF ou matrícula"
+              placeholder="voce@empresa.com.br, CPF ou matrícula"
               value={identificador}
               onChange={(e) => setIdentificador(e.target.value)}
               style={input}
