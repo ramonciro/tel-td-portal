@@ -303,29 +303,51 @@ async function listarInstrutoresConhecidos(empresaId, { apenasAtivos = false } =
   const params = empresaId ? [empresaId, empresaId] : [];
 
   const tenantUsuario = empresaId ? " AND u.empresa_id = ?" : "";
-  const filtroAtivos = apenasAtivos
+  // Ajuste de 14/10/2026: além do usuário instrutor inativo, a lista de ativos
+  // também exclui quem foi registrado em `instrutores_desligados` (pessoa que
+  // saiu do time de instrução mas nunca teve, ou ainda não teve, a conta
+  // inativada). O histórico de horas continua intacto — só sai da lista de
+  // quem conta como instrutor hoje.
+  const tenantDesligado = empresaId ? " AND (d.empresa_id IS NULL OR d.empresa_id = ?)" : "";
+  const montarFiltro = (comDesligados) => apenasAtivos
     ? `WHERE NOT EXISTS (
          SELECT 1 FROM usuarios u
          WHERE LOWER(TRIM(u.nome)) = LOWER(TRIM(todos.nome))
            AND LOWER(TRIM(u.perfil)) = 'instrutor'
            AND u.ativo = 0
            ${tenantUsuario}
-       )`
+       )${comDesligados ? `
+       AND NOT EXISTS (
+         SELECT 1 FROM instrutores_desligados d
+         WHERE LOWER(TRIM(d.nome)) = LOWER(TRIM(todos.nome))
+           ${tenantDesligado}
+       )` : ""}`
     : "";
-  const paramsFiltro = apenasAtivos && empresaId ? [empresaId] : [];
-
-  const [rows] = await pool.query(
+  const montarParamsFiltro = (comDesligados) => {
+    if (!apenasAtivos || !empresaId) return [];
+    return comDesligados ? [empresaId, empresaId] : [empresaId];
+  };
+  const consulta = (comDesligados) => pool.query(
     `
     SELECT nome FROM (
       SELECT DISTINCT TRIM(instrutor) AS nome FROM treinamentos WHERE instrutor IS NOT NULL AND TRIM(instrutor) <> ''${tenantTreinamentos}
       UNION
       SELECT DISTINCT TRIM(instrutor_responsavel) AS nome FROM turma_aulas WHERE instrutor_responsavel IS NOT NULL AND TRIM(instrutor_responsavel) <> ''${tenantAulas}
     ) todos
-    ${filtroAtivos}
+    ${montarFiltro(comDesligados)}
     ORDER BY nome ASC
   `,
-    [...params, ...paramsFiltro]
+    [...params, ...montarParamsFiltro(comDesligados)]
   );
+
+  let rows;
+  try {
+    [rows] = await consulta(true);
+  } catch (error) {
+    // Banco ainda sem a tabela `instrutores_desligados` (migração não rodou).
+    if (error && error.code === "ER_NO_SUCH_TABLE") [rows] = await consulta(false);
+    else throw error;
+  }
   return rows.map((r) => r.nome);
 }
 
@@ -356,7 +378,20 @@ async function buscarInstrutoresInativos(empresaId) {
      WHERE LOWER(TRIM(perfil)) = 'instrutor' AND ativo = 0${tenantCheck}`,
     params
   );
-  return new Set(rows.map((r) => r.nome));
+  const nomes = new Set(rows.map((r) => r.nome));
+  // Também os instrutores registrados como desligados (ver
+  // listarInstrutoresConhecidos).
+  try {
+    const [desligados] = await pool.query(
+      `SELECT DISTINCT LOWER(TRIM(nome)) AS nome FROM instrutores_desligados
+       WHERE 1 = 1${empresaId ? " AND (empresa_id IS NULL OR empresa_id = ?)" : ""}`,
+      params
+    );
+    desligados.forEach((r) => nomes.add(r.nome));
+  } catch (error) {
+    if (!error || error.code !== "ER_NO_SUCH_TABLE") throw error;
+  }
+  return nomes;
 }
 
 async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInicio, dataFim, empresaId } = {}) {
