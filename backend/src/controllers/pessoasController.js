@@ -35,6 +35,20 @@ const PERFIS_COM_ACESSO_CPF = ["coordenador", "assistente_treinamento", "super_a
 // Super Admin. Supervisor direto, instrutor, superintendente etc. não.
 const PERFIS_OFICINA = ["metodologia", "coordenador", "super_admin"];
 
+// Auditoria de 14/10/2026: GET /api/pessoas e /api/pessoas/:id estavam abertos a
+// qualquer perfil logado — inclusive treinando e instrutor, que conseguiam ler
+// observações de coaching e perfil comportamental (DISC/animal) de qualquer
+// pessoa do ambiente. Agora: treinando não acessa o cadastro de pessoas; coaching
+// e perfil comportamental (dado da Metodologia) só vão para quem já vê a
+// Oficina (metodologia, coordenador, super_admin); a conta de acesso (e-mail e
+// perfil de login de terceiros) não vai para o instrutor.
+const PERFIS_SEM_ACESSO = ["treinando"];
+const PERFIS_SEM_CONTA = ["instrutor"];
+
+function perfilNorm(req) {
+  return String(req.user?.perfil || "").toLowerCase().trim();
+}
+
 function podeVerCpf(perfil) {
   return PERFIS_COM_ACESSO_CPF.includes(String(perfil || "").toLowerCase().trim());
 }
@@ -49,6 +63,9 @@ function mascararCpf(cpf) {
 // pensado pra autocomplete/typeahead, não pra listagem.
 async function buscar(req, res) {
   try {
+    if (PERFIS_SEM_ACESSO.includes(perfilNorm(req))) {
+      return res.status(403).json({ ok: false, message: "Acesso não autorizado para este perfil." });
+    }
     const termo = String(req.query.busca || "").trim();
     if (termo.length < 2) {
       return res.json({ ok: true, itens: [] });
@@ -94,6 +111,9 @@ async function buscar(req, res) {
 // diferença de mensagem que um id pertence a outra empresa.
 async function perfil(req, res) {
   try {
+    if (PERFIS_SEM_ACESSO.includes(perfilNorm(req))) {
+      return res.status(403).json({ ok: false, message: "Acesso não autorizado para este perfil." });
+    }
     const id = Number(req.params.id);
     if (!id) {
       return res.status(400).json({ ok: false, message: "Id inválido." });
@@ -113,6 +133,7 @@ async function perfil(req, res) {
     }
 
     const podeCpf = podeVerCpf(req.user?.perfil);
+    const veCoachingMetodologia = PERFIS_OFICINA.includes(perfilNorm(req));
 
     const [
       [turmas],
@@ -219,9 +240,14 @@ async function perfil(req, res) {
       },
       turmas,
       jornadas,
-      coaching,
-      metodologia: metodologiaRows[0] || null,
-      usuario: usuarioRows[0] || null,
+      coaching: veCoachingMetodologia ? coaching : [],
+      metodologia: veCoachingMetodologia ? (metodologiaRows[0] || null) : null,
+      usuario: PERFIS_SEM_CONTA.includes(perfilNorm(req)) ? null : (usuarioRows[0] || null),
+      ocultos: {
+        coaching: !veCoachingMetodologia,
+        metodologia: !veCoachingMetodologia,
+        usuario: PERFIS_SEM_CONTA.includes(perfilNorm(req)),
+      },
       dados_bancarios: dadosBancarios,
       oficina,
       pode_ver_cpf: podeCpf,
