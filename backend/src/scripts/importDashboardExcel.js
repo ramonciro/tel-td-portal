@@ -56,7 +56,7 @@ function normalizeClient(value) {
   return map[text] || titleCase(text);
 }
 
-function sanitizeEmail(name, domain = "teltd.local") {
+function sanitizeEmail(name, domain = "portal.local") {
   const base =
     normalizeText(name)
       .normalize("NFD")
@@ -218,7 +218,7 @@ async function upsertUser(nome, perfil, cliente) {
   const data = {
     nome: cleanName,
     email,
-    senha: "Tel@2026",
+    senha: "Portal@2026",
     perfil,
     cliente,
     ativo: 1,
