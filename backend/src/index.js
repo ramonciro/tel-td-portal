@@ -830,7 +830,7 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   const dados = { ...data };
 
   if ("subtipo" in dados) {
-    dados.subtipo = await normalizeSubtipo(dados.subtipo);
+    dados.subtipo = await normalizeSubtipo(dados.subtipo, ctx?.antes?.subtipo);
   }
 
   if ("carga_horaria" in dados) {
@@ -1331,7 +1331,9 @@ app.delete(
 app.get(
   "/api/subtipos",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  // "metodologia" lê o catálogo para o formulário de Ações do Mapa de
+  // Desenvolvimento (antes esse formulário usava uma lista fixa no código).
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "metodologia"),
   listarSubtipos
 );
 
