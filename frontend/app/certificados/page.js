@@ -178,7 +178,7 @@ export default function CertificadosPage() {
       .metas{display:flex;gap:40px;margin:36px 0}.meta label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9ca3af;display:block;margin-bottom:4px}
       .meta span{font-size:18px;font-weight:bold;color:#0B1220}.footer{margin-top:60px;font-size:11px;color:#9ca3af}
       @media print{body{margin:20px}}</style></head><body>
-      <div class="logo">Tel Centro de Contatos · Portal T&D</div>
+      <div class="logo">Portal T&D</div>
       <div class="titulo">Certificado de Conclusão</div>
       <div class="nome">${cert.usuario_nome}</div>
       <div class="corpo">Certificamos que o participante acima concluiu com aproveitamento o treinamento
