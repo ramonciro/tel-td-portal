@@ -147,7 +147,7 @@ const CSS = `
   body { background: #e5e7eb !important; }
   .pagina { font-family: Inter, Arial, sans-serif; color: #0f172a; }
   .barra { position: sticky; top: 0; z-index: 5; background: #0b1220; color: #fff; padding: 10px 16px; display: flex; gap: 14px; align-items: center; font-size: 13px; }
-  .barra button { background: #d97706; color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 700; cursor: pointer; }
+  .barra button { background: #B45309; color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 700; cursor: pointer; }
   .erro { max-width: 600px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 12px; text-align: center; }
   .certificado { position: relative; width: 297mm; height: 210mm; margin: 16px auto; background: #fff; box-sizing: border-box; border: 6px double #0b1220; overflow: hidden; page-break-after: always; break-after: page; }
   .certificado .faixa { background: #0b1220; height: 38mm; display: flex; align-items: center; justify-content: center; }
