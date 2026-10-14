@@ -17,8 +17,33 @@ function signToken(payload, expiresInSeconds = 60 * 60 * 12) {
   return jwt.sign(payload, secret, { expiresIn: expiresInSeconds });
 }
 
+// Conta inativada passa a valer na hora: o token dura 12h e antes continuava
+// funcionando até expirar mesmo depois de a conta ser desativada. Consulta o
+// campo `ativo` com cache curto (30s por usuário) para não pesar em cada
+// requisição; se a consulta falhar, NÃO bloqueia (mantém o comportamento
+// anterior) — só barra quando a conta existe e está explicitamente inativa.
+const CACHE_ATIVO_MS = 30 * 1000;
+const cacheAtivo = new Map(); // id -> { ativo, expira }
+
+async function contaEstaInativa(userId) {
+  if (!userId) return false;
+  const agora = Date.now();
+  const c = cacheAtivo.get(userId);
+  if (c && c.expira > agora) return c.inativa;
+  try {
+    const pool = require("../lib/db");
+    const [rows] = await pool.query("SELECT ativo FROM usuarios WHERE id = ? LIMIT 1", [userId]);
+    const inativa = rows.length > 0 && rows[0].ativo !== null && Number(rows[0].ativo) === 0;
+    cacheAtivo.set(userId, { inativa, expira: agora + CACHE_ATIVO_MS });
+    if (cacheAtivo.size > 5000) cacheAtivo.clear();
+    return inativa;
+  } catch (e) {
+    return false;
+  }
+}
+
 // 3. Middleware de proteção das rotas
-function authRequired(req, res, next) {
+async function authRequired(req, res, next) {
   try {
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ")
@@ -36,6 +61,13 @@ function authRequired(req, res, next) {
     // jwt.verify já verifica assinatura e expiração automaticamente
     const decoded = jwt.verify(token, secret);
     req.user = decoded;
+
+    if (await contaEstaInativa(decoded?.id)) {
+      return res.status(401).json({
+        ok: false,
+        message: "Conta inativa. Procure a coordenação.",
+      });
+    }
 
     return next();
   } catch (error) {
