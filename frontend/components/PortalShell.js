@@ -99,6 +99,30 @@ const menuItems = [
 // provas, /responder-avaliacao e /responder-nps continuam sendo os links
 // que a aba da turma usa) — só saíram da navegação principal.
 
+// Rotas que NÃO aparecem no menu lateral mas existem e abrem dentro do shell
+// (detalhe de turma, perfil 360, telas de resposta de avaliação etc.). Auditoria
+// de 14/10/2026: antes, qualquer rota fora do menu caía em
+// `if (!currentItem) return true` — ou seja, liberada para todo mundo no front
+// (a API continuava protegendo os dados, mas a tela abria). Agora o shell nega
+// por padrão: rota que não estiver no menu NEM nesta lista fica em "Acesso
+// restrito". `roles: null` = qualquer perfil logado. Ao criar uma página nova,
+// cadastre-a no menu ou aqui — os perfis devem espelhar o que o backend libera.
+const ROTAS_FORA_DO_MENU = [
+  { href: "/alterar-senha", roles: null },
+  { href: "/primeiro-acesso", roles: null },
+  { href: "/turma", roles: ["coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "superintendente"] },
+  { href: "/presenca-turma", roles: ["coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "superintendente"] },
+  { href: "/nps", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/responder-nps", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/responder-avaliacao", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/evolucao-colaborador", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
+  { href: "/frequencia-individual", roles: ["coordenador", "supervisor", "instrutor", "treinando", "superintendente"] },
+  { href: "/resultados-avaliacoes", roles: ["coordenador", "assistente_treinamento"] },
+  { href: "/subtipos", roles: ["coordenador", "assistente_treinamento", "metodologia"] },
+  { href: "/pessoas", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente", "metodologia", "coordenador_rs"] },
+  { href: "/apresentacao/sebrae", roles: ["coordenador", "superintendente"] },
+];
+
 function isRouteActive(pathname, href) {
   if (!pathname) return false;
   if (pathname === href) return true;
@@ -252,20 +276,24 @@ export default function PortalShell({
     });
   }, [user, isSuperAdmin]);
 
+  // Item mais específico que casa com a rota (o de href mais longo), no menu
+  // ou na lista de rotas fora do menu.
   const currentItem = useMemo(() => {
-    return menuItems.find(
+    const candidatos = [...menuItems, ...ROTAS_FORA_DO_MENU].filter(
       (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
     );
+    if (!candidatos.length) return null;
+    return candidatos.reduce((a, b) => (b.href.length > a.href.length ? b : a));
   }, [pathname]);
 
   const currentAllowed = useMemo(() => {
-    if (!currentItem) return true;
+    // Nega por padrão: rota desconhecida (nem no menu, nem em ROTAS_FORA_DO_MENU).
+    if (!currentItem) return false;
     if (!user) return false;
     // super_admin tem acesso irrestrito no frontend
     if (isSuperAdmin) return true;
-    const roleOk = hasSomeRole(user, currentItem.roles);
-    if (!roleOk) return false;
-    return true;
+    if (currentItem.roles === null) return true;
+    return hasSomeRole(user, currentItem.roles);
   }, [currentItem, user, isSuperAdmin]);
 
   function handleLogout() {
