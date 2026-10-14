@@ -48,7 +48,19 @@ export default function AlterarSenhaPage() {
       // acesso a /inicio, então volta para Salas em vez de cair numa tela de
       // "Acesso restrito" logo depois de trocar a própria senha.
       const perfil = String(user?.perfil || "").toLowerCase().trim();
-      setTimeout(() => router.push(perfil === "assistente_treinamento" ? "/salas" : "/inicio"), 1200);
+      setTimeout(
+        () =>
+          router.push(
+            perfil === "assistente_treinamento"
+          ? "/salas"
+          : perfil === "superintendente"
+          ? "/dashboard"
+          : ["coordenador_rs", "gestor_rs"].includes(perfil)
+          ? "/rs/rps"
+          : "/inicio"
+          ),
+        1200
+      );
     } catch (error) {
       setErro(error.message || "Erro ao alterar senha");
     } finally {
