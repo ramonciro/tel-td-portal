@@ -573,6 +573,103 @@ function bloquearExclusaoForaDoEscopo(antes, req) {
   }
 }
 
+// Gestão de Usuários — exportação em Excel (restaurada em 14/10/2026: a rota
+// existia desde o redesign de 16/09 e foi perdida num upload de index.js
+// mais antigo em 19/09). Registrada ANTES do mount genérico abaixo, senão o
+// router de CRUD trataria "exportar" como um :id. Respeita o mesmo recorte da
+// listagem: tenant do ator e, para coordenador_rs/metodologia, só os perfis do
+// próprio módulo.
+const PERFIL_LABEL_EXPORT = {
+  coordenador: "Coordenador",
+  supervisor: "Supervisor",
+  instrutor: "Instrutor",
+  treinando: "Treinando",
+  superintendente: "Superintendente",
+  coaching: "Coaching",
+  metodologia: "Metodologia",
+  assistente_treinamento: "Assistente de Treinamento",
+  coordenador_rs: "Coordenador R&S",
+  gestor_rs: "Gestor R&S",
+  super_admin: "Super Admin",
+};
+
+app.get(
+  "/api/usuarios/exportar",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs"),
+  async (req, res) => {
+    try {
+      const { empresaId } = tenantScopeFor(req, {});
+      const ids = String(req.query.ids || "")
+        .split(",")
+        .map((v) => Number(v.trim()))
+        .filter((v) => Number.isInteger(v) && v > 0);
+
+      const condicoes = [];
+      const params = [];
+      if (empresaId !== null && empresaId !== undefined) {
+        condicoes.push("empresa_id = ?");
+        params.push(empresaId);
+      }
+      const escopo = escopoPerfilFor(req);
+      if (escopo && escopo.length) {
+        condicoes.push(`perfil IN (${escopo.map(() => "?").join(",")})`);
+        params.push(...escopo);
+      }
+      if (ids.length) {
+        condicoes.push(`id IN (${ids.map(() => "?").join(",")})`);
+        params.push(...ids);
+      }
+      const where = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+
+      const [linhas] = await pool.query(
+        `SELECT nome, email, perfil, cliente, ativo, criado_em
+         FROM usuarios ${where}
+         ORDER BY nome`,
+        params
+      );
+
+      const { novoWorkbook, adicionarTabela } = require("./lib/excelExport");
+      const wb = novoWorkbook();
+      adicionarTabela(wb, {
+        nomeAba: "Usuários",
+        colunas: [
+          { titulo: "Nome", chave: "nome" },
+          { titulo: "E-mail", chave: "email" },
+          { titulo: "Perfil", chave: "perfil" },
+          { titulo: "Operações vinculadas", chave: "operacoes" },
+          { titulo: "Status", chave: "status" },
+          { titulo: "Criado em", chave: "criado_em", formato: "data" },
+        ],
+        linhas: linhas.map((u) => ({
+          nome: u.nome,
+          email: u.email || "-",
+          perfil: PERFIL_LABEL_EXPORT[String(u.perfil || "").toLowerCase()] || u.perfil || "-",
+          operacoes: u.cliente || "-",
+          status: u.ativo ? "Ativo" : "Inativo",
+          criado_em: u.criado_em,
+        })),
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      registrarAuditoria({
+        usuario: req.user,
+        acao: "exportar",
+        entidade: "usuario",
+        entidadeId: ids.length === 1 ? ids[0] : null,
+        resumo: `${req.user?.nome || "Alguém"} exportou ${linhas.length} usuário(s) em Gestão de Usuários${ids.length ? ` (ids: ${ids.join(",")})` : ""}`,
+        ip: req.ip,
+      });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", 'attachment; filename="usuarios.xlsx"');
+      return res.send(Buffer.from(buf));
+    } catch (error) {
+      console.error("[usuarios] exportar:", error.message);
+      return res.status(500).json({ ok: false, message: "Erro ao exportar usuários" });
+    }
+  }
+);
+
 app.use(
   "/api/usuarios",
   createCrudRouter({
