@@ -169,6 +169,23 @@ function resumirTurmas(turmas) {
   return r;
 }
 
+// Cache simples: a coluna `avaliacoes.criado_em` existe ou não conforme a
+// idade do banco; descobrir uma vez basta (só cacheia quando a consulta funciona).
+let _avaliacoesTemCriadoEm = null;
+async function avaliacoesTemCriadoEm() {
+  if (_avaliacoesTemCriadoEm !== null) return _avaliacoesTemCriadoEm;
+  try {
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS n FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'avaliacoes' AND column_name = 'criado_em'`
+    );
+    _avaliacoesTemCriadoEm = Number(rows[0]?.n || 0) > 0;
+    return _avaliacoesTemCriadoEm;
+  } catch (_) {
+    return true;
+  }
+}
+
 // Pessoas únicas (por nome) nas turmas do recorte. Por definição, pessoas
 // únicas nunca passam das matrículas confirmadas (a mesma pessoa em 3 turmas
 // = 1 pessoa, 3 matrículas); quando o cadastro da turma tem mais nomes do que
@@ -348,17 +365,25 @@ async function getNps(req, res) {
 
     // Tendência NPS por mês (últimos 6 meses) — janela fixa de 6 meses
     // continua valendo por cima do filtro de período escolhido na tela.
+    // Em bancos antigos a tabela `avaliacoes` não tem a coluna `criado_em`
+    // (erro "Unknown column 'av.criado_em'" visto em produção em 14/10/2026,
+    // que derrubava a aba NPS inteira). Nesse caso a avaliação é datada pela
+    // data da própria turma.
+    const temCriadoEm = await avaliacoesTemCriadoEm();
+    const dataAval = temCriadoEm
+      ? "av.criado_em"
+      : "COALESCE(t.data_fim, t.data_inicio, t.data)";
     const [tendencia] = await pool.query(
       `SELECT
-         YEAR(av.criado_em)   AS ano,
-         MONTH(av.criado_em)  AS mes,
+         YEAR(${dataAval})   AS ano,
+         MONTH(${dataAval})  AS mes,
          COUNT(*)             AS respostas,
          ROUND(AVG(av.nota_nps), 1) AS media
        FROM avaliacoes av
        JOIN treinamentos t ON t.id = av.treinamento_id
        WHERE ${where}
          AND av.nota_nps IS NOT NULL
-         AND av.criado_em >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+         AND ${dataAval} >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
        GROUP BY ano, mes
        ORDER BY ano, mes`,
       filtro.params
