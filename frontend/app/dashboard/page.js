@@ -299,6 +299,13 @@ export default function DashboardPage() {
 
   const [exportando, setExportando] = useState(false);
 
+  // O painel de capacidade devolve os últimos N meses (padrão 3). O rótulo
+  // "período" não dizia isso e parecia o mês corrente — daí a CH realizada do
+  // Dashboard não bater com as "Horas realizadas" do Indicadores, que somam
+  // o histórico filtrado.
+  const mesesPainel = capacidade?.periodo?.meses?.length || 3;
+  const rotuloPeriodoCapacidade = mesesPainel === 1 ? "mês corrente" : `últimos ${mesesPainel} meses`;
+
   async function handleExportar() {
     try {
       setExportando(true);
@@ -465,9 +472,9 @@ export default function DashboardPage() {
           <GroupHeader title="Visão geral" />
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`} style={kpiGrid}>
             <StatCard title="Turmas" value={<ContadorAnimado valor={kpis.treinamentos} revelado={revelado} />} subtitle="Base no recorte" accent={chart.blue} />
-            <StatCard title="Previstos" value={<ContadorAnimado valor={kpis.participantes_previstos} revelado={revelado} />} subtitle="Capacidade cadastrada" accent={chart.cyan} />
-            <StatCard title="Confirmados" value={<ContadorAnimado valor={kpis.treinados} revelado={revelado} />} subtitle="Com chamada registrada" accent={colors.primary} />
-            <StatCard title="Presença" value={<ContadorAnimado valor={kpis.taxa_presenca} sufixo="%" revelado={revelado} />} subtitle="Consolidado" accent={colors.success} />
+            <StatCard title="Matrículas previstas" value={<ContadorAnimado valor={kpis.participantes_previstos} revelado={revelado} />} subtitle="Capacidade cadastrada" accent={chart.cyan} />
+            <StatCard title="Matrículas confirmadas" value={<ContadorAnimado valor={kpis.treinados} revelado={revelado} />} subtitle="Soma por turma (a mesma pessoa conta em cada turma)" accent={colors.primary} />
+            <StatCard title="Presença (por pessoa)" value={<ContadorAnimado valor={kpis.taxa_presenca} sufixo="%" revelado={revelado} />} subtitle="Presentes ÷ (presentes + ausentes)" accent={colors.success} />
             <StatCard title="Pendências" value={<ContadorAnimado valor={kpis.pendentes} revelado={revelado} />} subtitle="Ainda em aberto" accent={colors.warning} />
             <StatCard title="Execução" value={<ContadorAnimado valor={kpis.taxa_execucao_diaria} sufixo="%" revelado={revelado} />} subtitle="Base já registrada" accent={chart.purple} />
             <StatCard title="Chamada concluída" value={<ContadorAnimado valor={kpis.taxa_conclusao_chamada} sufixo="%" revelado={revelado} />} subtitle="Dias de chamada já registrados" accent={chart.teal} />
@@ -477,7 +484,7 @@ export default function DashboardPage() {
                arredondada pra inteiro (8,5 virando "9"). */}
             {nps.total_avaliacoes > 0 && (
               <>
-                <StatCard title="NPS médio" value={nps.media_nps > 0 ? <ContadorAnimado valor={nps.media_nps} decimais={1} revelado={revelado} /> : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent={chart.pink} />
+                <StatCard title="NPS médio (nota 0 a 10)" value={nps.media_nps > 0 ? <ContadorAnimado valor={nps.media_nps} decimais={1} revelado={revelado} /> : "—"} subtitle={`${fmt(nps.total_avaliacoes)} avaliação(ões)`} accent={chart.pink} />
                 <StatCard title="Qualidade" value={nps.media_qualidade > 0 ? <ContadorAnimado valor={nps.media_qualidade} decimais={1} revelado={revelado} /> : "—"} subtitle="Nota média qualidade" accent={chart.orange} />
                 {nps.media_prova > 0 && (
                   <StatCard title="Prova" value={<ContadorAnimado valor={nps.media_prova} decimais={1} revelado={revelado} />} subtitle="Nota média prova" accent={chart.teal} />
@@ -504,27 +511,27 @@ export default function DashboardPage() {
                      com até 2 casas, ocupacao_time_pct com 1) — sem isso o
                      contador arredondava o valor exibido, não só a forma. */}
                   <StatCard
-                    title="CH programada (período)"
+                    title={`CH programada (${rotuloPeriodoCapacidade})`}
                     value={<ContadorAnimado valor={capacidade.indicadores?.hc_programado_periodo} decimais={2} sufixo="h" revelado={revelado} />}
                     subtitle="Turmas + cronograma planejados"
                     accent={chart.cyan}
                   />
                   <StatCard
-                    title="CH realizada (período)"
+                    title={`CH realizada (${rotuloPeriodoCapacidade})`}
                     value={<ContadorAnimado valor={capacidade.indicadores?.hc_realizado_periodo} decimais={2} sufixo="h" revelado={revelado} />}
                     subtitle={capacidade.indicadores?.aderencia_geral_pct != null ? `Aderência ${fmt(capacidade.indicadores.aderencia_geral_pct)}%` : "Sem base de comparação"}
                     accent={colors.primary}
                   />
                   <StatCard
-                    title="Ocupação do time"
-                    value={<ContadorAnimado valor={capacidade.indicadores?.ocupacao_time_pct} decimais={1} sufixo="%" revelado={revelado} />}
-                    subtitle="Realizado vs. capacidade nominal"
+                    title="Ocupação (instrutores com meta)"
+                    value={capacidade.indicadores?.ocupacao_time_pct != null ? <ContadorAnimado valor={capacidade.indicadores.ocupacao_time_pct} decimais={1} sufixo="%" revelado={revelado} /> : "—"}
+                    subtitle={`Só quem tem meta: ${fmt(capacidade.indicadores?.instrutores_com_meta || 0)} de ${fmt(capacidade.indicadores?.instrutores_total || 0)} instrutores`}
                     accent={colors.success}
                   />
                   <StatCard
-                    title="Capacidade nominal (time)"
+                    title="Capacidade nominal (instrutores com meta)"
                     value={<ContadorAnimado valor={capacidade.indicadores?.capacidade_nominal_periodo} decimais={2} sufixo="h" revelado={revelado} />}
-                    subtitle="Dias úteis × regra padrão"
+                    subtitle="Soma das metas cadastradas; não inclui instrutores sem meta"
                     accent={chart.orange}
                   />
                 </div>
@@ -548,7 +555,7 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "12px 16px", fontSize: 13, color: colors.successText, fontWeight: 600 }}>
-                    ✅ Todos os instrutores estão na faixa saudável de ocupação este mês.
+                    ✅ Nenhum instrutor com meta cadastrada está fora da faixa saudável este mês.{Number(capacidade.indicadores?.instrutores_sem_meta || 0) > 0 ? ` (${fmt(capacidade.indicadores.instrutores_sem_meta)} instrutor(es) sem meta não entram nesta conta.)` : ""}
                   </div>
                 )}
 
