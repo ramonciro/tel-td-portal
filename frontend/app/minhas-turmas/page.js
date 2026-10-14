@@ -69,21 +69,24 @@ export default function MinhasTurmasPage() {
         const lista = Array.isArray(data) ? data : [];
         setTurmas(lista);
 
-        // Busca frequências individuais em paralelo para não-gestores
+        // Frequência de cada turma, pela MESMA regra do certificado (presentes ÷
+        // presentes+ausentes; justificada e sem chamada ficam de fora; mínimo da
+        // turma, padrão 75%). A rota /frequencia-individual era só da equipe e
+        // devolvia acesso negado ao treinando — a barra nunca carregava.
         if (!isGestor && lista.length) {
           const freqResults = await Promise.allSettled(
-            lista.map((t) =>
-              apiFetch(`/frequencia-individual?treinamento_id=${t.id}`)
-            )
+            lista.map((t) => apiFetch(`/certificados/preview?treinamento_id=${t.id}`))
           );
           const freqMap = {};
           lista.forEach((t, i) => {
             const r = freqResults[i];
-            if (r.status === "fulfilled") {
-              const item = (r.value?.itens || []).find(
-                (it) => normalize(it.treinando_nome) === normalize(user?.nome)
-              );
-              if (item) freqMap[t.id] = item;
+            if (r.status === "fulfilled" && r.value?.ok && !r.value.sem_registros) {
+              freqMap[t.id] = {
+                frequencia_percentual: r.value.frequencia_percentual,
+                nota_prova: r.value.nota_final,
+                minimo: r.value.frequencia_minima ?? 75,
+                abaixo: !!r.value.abaixo_do_minimo,
+              };
             }
           });
           setFrequencias(freqMap);
@@ -269,7 +272,7 @@ export default function MinhasTurmasPage() {
                         <span style={freqLabel}>Frequência</span>
                         <div style={freqBar}>
                           <div style={{ ...freqFill, width: `${Math.min(Number(freqPct), 100)}%`,
-                            background: freqPct >= 75 ? "#22c55e" : "#ef4444" }} />
+                            background: freqPct >= (freq?.minimo ?? 75) ? "#22c55e" : "#ef4444" }} />
                         </div>
                         <span style={{ ...freqBadge, background: freqCor.bg, color: freqCor.text }}>
                           {Number(freqPct).toFixed(0)}%
@@ -305,6 +308,10 @@ export default function MinhasTurmasPage() {
                               {new Date(cert.emitido_em).toLocaleDateString("pt-BR")}
                             </div>
                           </div>
+                        </div>
+                      ) : freq?.abaixo ? (
+                        <div style={{ fontSize: 12, color: "#b91c1c", maxWidth: 190, lineHeight: 1.35 }}>
+                          Frequência de {Number(freqPct).toFixed(0)}% abaixo do mínimo de {freq.minimo}% desta turma. Procure a coordenação.
                         </div>
                       ) : (
                         <button
