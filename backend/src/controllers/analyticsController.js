@@ -23,6 +23,7 @@ const {
   getHorasAplicadasPorInstrutor,
 } = require('../services/capacidadeResolver');
 const { tenantScopeFor } = require('../lib/tenantScope');
+const { getResumoPresenca } = require('../services/presencaResolver');
 
 // Pacote Superintendente (24/09/2026): a superintendente é chefe dos
 // coordenadores e precisa ver Indicadores de todos os tenants, sem escolher
@@ -53,8 +54,12 @@ function filtroRecorte(query = {}, alias = 't') {
     conditions.push(`${alias}.cliente = ?`);
     params.push(query.cliente);
   }
+  // Alinhado ao Dashboard (15/10/2026): o início do período olha a data de
+  // INÍCIO da turma e o fim do período olha a data de FIM (ou, sem data de
+  // fim, a de início). Antes aqui os dois extremos usavam a data de fim, e o
+  // mesmo intervalo trazia turmas diferentes nas duas telas.
   if (query.data_inicio) {
-    conditions.push(`DATE(COALESCE(${alias}.data_fim, ${alias}.data_inicio, ${alias}.data)) >= ?`);
+    conditions.push(`DATE(COALESCE(${alias}.data_inicio, ${alias}.data)) >= ?`);
     params.push(query.data_inicio);
   }
   if (query.data_fim) {
@@ -99,13 +104,93 @@ const STATUS_PLANEJADO = "(LOWER(TRIM(status)) LIKE '%planej%' OR LOWER(TRIM(sta
 function asInt(v) { return Number(v || 0); }
 function asDec(v) { return v != null ? Number(Number(v).toFixed(1)) : null; }
 
+/* ─── recorte de turmas pelo motor único (mesmo do Dashboard) ──────────────── */
+
+function isoData(valor) {
+  if (!valor) return null;
+  if (valor instanceof Date) {
+    if (Number.isNaN(valor.getTime())) return null;
+    return [
+      valor.getFullYear(),
+      String(valor.getMonth() + 1).padStart(2, '0'),
+      String(valor.getDate()).padStart(2, '0'),
+    ].join('-');
+  }
+  return String(valor).slice(0, 10);
+}
+
+// Carrega as turmas do recorte (tenant + cliente + período) já com presença,
+// status e horas resolvidos pelo presencaResolver — a MESMA fonte do
+// Dashboard e da Gestão de Turmas. Antes, Indicadores calculava presença só
+// pela tabela antiga `presencas` (dividindo por todas as linhas, inclusive
+// justificado/pendente) e status pela coluna crua, e por isso os números
+// nunca batiam com o Dashboard (Ramon, 15/10/2026: presença 97% x 80,5%).
+async function carregarTurmasRecorte(query, empresaId) {
+  const todas = await getResumoPresenca({ empresaId });
+  return todas.filter((t) => {
+    if (query.cliente && t.cliente !== query.cliente) return false;
+    const inicio = isoData(t.data_inicio) || isoData(t.data);
+    const fim = isoData(t.data_fim) || inicio;
+    if (query.data_inicio && !(inicio && inicio >= query.data_inicio)) return false;
+    if (query.data_fim && !(fim && fim <= query.data_fim)) return false;
+    return true;
+  });
+}
+
+// Agrega as turmas do recorte numa única passada.
+function resumirTurmas(turmas) {
+  const r = {
+    turmas_total: turmas.length,
+    turmas_concluidas: 0,
+    por_status: {},
+    presentes_pessoas: 0,
+    ausentes_pessoas: 0,
+    matriculas_confirmadas: 0,
+    matriculas_previstas: 0,   // base ativa: o maior entre previsto e confirmado, por turma
+    horas_previstas: 0,
+    horas_aplicadas: 0,
+  };
+  for (const t of turmas) {
+    const status = t.status_turma || 'Planejada';
+    r.por_status[status] = (r.por_status[status] || 0) + 1;
+    if (status === 'Concluída') r.turmas_concluidas += 1;
+    r.presentes_pessoas += asInt(t.presentes_pessoas);
+    r.ausentes_pessoas += asInt(t.ausentes_pessoas);
+    const confirmados = asInt(t.treinandos_confirmados);
+    r.matriculas_confirmadas += confirmados;
+    r.matriculas_previstas += Math.max(asInt(t.treinandos_previstos), confirmados);
+    r.horas_previstas += Number(t.horas_planejadas || 0);
+    r.horas_aplicadas += Number(t.horas_aplicadas || 0);
+  }
+  const base = r.presentes_pessoas + r.ausentes_pessoas;
+  // Inteiro, como no Dashboard (97% lá, 97% aqui — sem casas decimais que
+  // façam o mesmo número parecer diferente).
+  r.taxa_presenca = base > 0 ? Math.round((r.presentes_pessoas / base) * 100) : null;
+  return r;
+}
+
+// Pessoas únicas (por nome) nas turmas do recorte. Por definição, pessoas
+// únicas nunca passam das matrículas confirmadas (a mesma pessoa em 3 turmas
+// = 1 pessoa, 3 matrículas); quando o cadastro da turma tem mais nomes do que
+// matrículas confirmadas pela chamada, o excedente não conta como pessoa
+// impactada — por isso o teto `maxMatriculas`.
+async function contarPessoasUnicas(turmas, maxMatriculas = null) {
+  const ids = turmas.map((t) => Number(t.id)).filter(Boolean);
+  if (!ids.length) return 0;
+  const [[row]] = await pool.query(
+    'SELECT COUNT(DISTINCT tp.nome) AS total FROM treinamento_participantes tp WHERE tp.treinamento_id IN (?)',
+    [ids]
+  );
+  const total = asInt(row.total);
+  return maxMatriculas === null ? total : Math.min(total, asInt(maxMatriculas));
+}
+
 /* ─── GET /api/analytics/resumo ────────────────────────────────────────────── */
 async function getResumo(req, res) {
   try {
     const { empresaId: eId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const tw   = tenantWhere(eId);
     const filtro = filtroRecorte(req.query);
-    const where = `${tw}${filtro.sql}`;
 
     // Lista de clientes/operações do tenant, para alimentar o filtro na tela
     // (Indicadores não tinha filtro nenhum antes — nem cliente, nem período).
@@ -117,28 +202,14 @@ async function getResumo(req, res) {
       clientes = clienteRows.map((r) => r.cliente);
     } catch (_) {}
 
-    // Turmas por status
-    const [statusRows] = await pool.query(
-      `SELECT status, COUNT(*) AS total FROM treinamentos t WHERE ${where} GROUP BY status`,
-      filtro.params
-    );
-
-    const porStatus = {};
-    let turmasTotal = 0;
-    statusRows.forEach((r) => {
-      porStatus[r.status] = asInt(r.total);
-      turmasTotal += asInt(r.total);
-    });
-
-    // LIKE para evitar problemas de acento — conta linhas com status 'conclui*'
-    const concluidas = statusRows
-      .filter((r) => String(r.status || '').toLowerCase().trim().includes('conclui'))
-      .reduce((s, r) => s + asInt(r.total), 0);
+    // Turmas do recorte pelo motor único (mesmo do Dashboard): status,
+    // presença e horas previstas já resolvidos por turma.
+    const turmas = await carregarTurmasRecorte(req.query, eId);
+    const agg = resumirTurmas(turmas);
 
     // Horas treinadas (aplicadas) — mesma fonte única da Capacidade: aula a
     // aula quando a turma tem cronograma, senão carga horária nominal de
-    // turma que já rodou/está rodando. Antes era um SUM(carga_horaria)
-    // simplificado de turmas concluídas, que não batia com a Capacidade.
+    // turma que já rodou/está rodando.
     const horas_total = await getHorasAplicadasTotal({
       empresaId: eId,
       cliente: req.query.cliente,
@@ -146,43 +217,22 @@ async function getResumo(req, res) {
       dataFim: req.query.data_fim,
     });
 
-    // Horas previstas (todas as turmas)
-    const [[{ horas_previstas }]] = await pool.query(
-      `SELECT COALESCE(SUM(carga_horaria), 0) AS horas_previstas
-       FROM treinamentos t WHERE ${where}`,
-      filtro.params
-    );
+    // Pessoas únicas x matrículas: a mesma pessoa em 3 turmas é 1 pessoa
+    // única e 3 matrículas (o Dashboard mostra matrículas em "Confirmados").
+    const participantes_unicos = await contarPessoasUnicas(turmas, agg.matriculas_confirmadas);
 
-    // Participantes únicos treinados
-    let participantes_unicos = 0;
-    try {
-      const [[row]] = await pool.query(
-        `SELECT COUNT(DISTINCT tp.nome) AS total
-         FROM treinamento_participantes tp
-         JOIN treinamentos t ON t.id = tp.treinamento_id
-         WHERE ${tenantWhere(eId, 't')}${filtro.sql}`,
-        filtro.params
-      );
-      participantes_unicos = asInt(row.total);
-    } catch (_) {
-      // Fallback: participantes direto em treinamentos
-      const [[row]] = await pool.query(
-        `SELECT COALESCE(SUM(participantes_presentes), 0) AS total
-         FROM treinamentos t WHERE ${where}`,
-        filtro.params
-      );
-      participantes_unicos = asInt(row.total);
-    }
-
-    // NPS médio
+    // NPS — duas leituras do mesmo dado: o SCORE clássico (-100 a +100,
+    // promotores menos detratores) e a NOTA MÉDIA (0 a 10, a que o Dashboard
+    // mostra como "NPS médio").
     let nps_score = null;
+    let nps_media = null;
     try {
       const [[nRow]] = await pool.query(
         `SELECT
            COUNT(*)                                                         AS total,
            SUM(CASE WHEN nota_nps >= 9 THEN 1 ELSE 0 END)                  AS promotores,
-           SUM(CASE WHEN nota_nps BETWEEN 7 AND 8.9 THEN 1 ELSE 0 END)    AS neutros,
-           SUM(CASE WHEN nota_nps < 7 THEN 1 ELSE 0 END)                   AS detratores
+           SUM(CASE WHEN nota_nps < 7 THEN 1 ELSE 0 END)                   AS detratores,
+           ROUND(AVG(nota_nps), 1)                                          AS media
          FROM avaliacoes av
          JOIN treinamentos t ON t.id = av.treinamento_id
          WHERE ${tenantWhere(eId, 't')}${filtro.sql} AND av.nota_nps IS NOT NULL`,
@@ -192,35 +242,24 @@ async function getResumo(req, res) {
         nps_score = Math.round(
           ((asInt(nRow.promotores) - asInt(nRow.detratores)) / asInt(nRow.total)) * 100
         );
-      }
-    } catch (_) {}
-
-    // Taxa de presença média
-    let taxa_presenca = null;
-    try {
-      const [[pRow]] = await pool.query(
-        `SELECT
-           COUNT(*)                                                              AS total,
-           SUM(CASE WHEN LOWER(TRIM(p.status)) = 'presente' THEN 1 ELSE 0 END) AS presentes
-         FROM presencas p
-         JOIN treinamentos t ON t.id = p.treinamento_id
-         WHERE ${tenantWhere(eId, 't')}${filtro.sql}`,
-        filtro.params
-      );
-      if (asInt(pRow.total) > 0) {
-        taxa_presenca = Number(((asInt(pRow.presentes) / asInt(pRow.total)) * 100).toFixed(1));
+        nps_media = Number(nRow.media);
       }
     } catch (_) {}
 
     return res.json({
-      turmas_total:         turmasTotal,
-      turmas_concluidas:    concluidas,
-      horas_total:          asInt(horas_total),
-      horas_previstas:      asInt(horas_previstas),
+      turmas_total:         agg.turmas_total,
+      turmas_concluidas:    agg.turmas_concluidas,
+      horas_total:          asDec(horas_total),
+      horas_previstas:      asDec(agg.horas_previstas),
       participantes_unicos,
+      matriculas:           agg.matriculas_confirmadas,
       nps_score,
-      taxa_presenca,
-      por_status:           porStatus,
+      nps_media,
+      // Presença por PESSOA (presentes / (presentes + ausentes)), a mesma
+      // regra do Dashboard e da Frequência Individual: justificado e
+      // pendente não contam contra a taxa.
+      taxa_presenca:        agg.taxa_presenca,
+      por_status:           agg.por_status,
       clientes,
     });
   } catch (error) {
@@ -360,25 +399,17 @@ async function getEfetividade(req, res) {
       filtro.params
     );
 
-    // Taxa de presença global
+    // Taxa de presença — por PESSOA, pelo motor único (mesma regra do
+    // Dashboard): presentes / (presentes + ausentes); justificado e pendente
+    // não contam contra. `total` = pessoas classificadas (presentes + ausentes).
     let presenca = { taxa: null, presentes: 0, total: 0 };
     try {
-      const [[pRow]] = await pool.query(
-        `SELECT
-           COUNT(*) AS total,
-           SUM(CASE WHEN LOWER(TRIM(p.status)) = 'presente' THEN 1 ELSE 0 END) AS presentes
-         FROM presencas p
-         JOIN treinamentos t ON t.id = p.treinamento_id
-         WHERE ${where}`,
-        filtro.params
-      );
-      const ptotal = asInt(pRow.total);
+      const turmasRecorte = await carregarTurmasRecorte(req.query, eId);
+      const agg = resumirTurmas(turmasRecorte);
       presenca = {
-        total:    ptotal,
-        presentes: asInt(pRow.presentes),
-        taxa:     ptotal > 0
-          ? Number(((asInt(pRow.presentes) / ptotal) * 100).toFixed(1))
-          : null,
+        taxa:      agg.taxa_presenca,
+        presentes: agg.presentes_pessoas,
+        total:     agg.presentes_pessoas + agg.ausentes_pessoas,
       };
     } catch (_) {}
 
@@ -418,91 +449,67 @@ async function getEfetividade(req, res) {
   }
 }
 
+// Cálculo único do ROI (tela e exportação em Excel usam o mesmo).
+//
+// Correções de 15/10/2026 (Ramon: "Custo estimado R$ 313 milhões"):
+//  - Custo: antes era (horas do portal inteiro) x (pessoas únicas do portal
+//    inteiro) x custo/hora — uma conta sem sentido, que explodia com o
+//    volume. Agora é a soma, TURMA A TURMA, de (horas aplicadas da turma) x
+//    (participantes confirmados da turma) x custo/hora.
+//  - Alcance: antes comparava pessoas ÚNICAS com linhas de matrícula (a
+//    pessoa que fez 3 turmas contava 1 no numerador e 3 no denominador), o
+//    que dava ~32%. Agora é matrículas confirmadas / matrículas previstas,
+//    a mesma lógica da "Execução" do Dashboard.
+//  - Turmas concluídas: status canônico (mesmo do Dashboard), não a coluna
+//    crua `status`.
+async function calcularRoi(req, eId) {
+  const custoPorHora = await getCustoPorHora(eId);
+  const turmas = await carregarTurmasRecorte(req.query, eId);
+  const agg = resumirTurmas(turmas);
+
+  const [horasRealizadas, pessoasUnicas] = await Promise.all([
+    getHorasAplicadasTotal({
+      empresaId: eId,
+      cliente: req.query.cliente,
+      dataInicio: req.query.data_inicio,
+      dataFim: req.query.data_fim,
+    }),
+    contarPessoasUnicas(turmas, agg.matriculas_confirmadas),
+  ]);
+
+  const custo = turmas.reduce(
+    (acc, t) => acc + Number(t.horas_aplicadas || 0) * asInt(t.treinandos_confirmados) * custoPorHora,
+    0
+  );
+
+  const taxaConclusao = agg.turmas_total > 0
+    ? Number(((agg.turmas_concluidas / agg.turmas_total) * 100).toFixed(1))
+    : 0;
+  const alcance = agg.matriculas_previstas > 0
+    ? Math.min(Number(((agg.matriculas_confirmadas / agg.matriculas_previstas) * 100).toFixed(1)), 100)
+    : null;
+
+  return {
+    horas_realizadas:    asDec(horasRealizadas),
+    horas_previstas:     asDec(agg.horas_previstas),
+    pessoas_impactadas:  pessoasUnicas,
+    matriculas:          agg.matriculas_confirmadas,
+    matriculas_previstas: agg.matriculas_previstas,
+    turmas_concluidas:   agg.turmas_concluidas,
+    turmas_total:        agg.turmas_total,
+    taxa_conclusao:      taxaConclusao,
+    alcance_percentual:  alcance,
+    custo_estimado:      Math.round(custo * 100) / 100,
+    custo_por_hora:      custoPorHora,
+  };
+}
+
 /* ─── GET /api/analytics/roi ───────────────────────────────────────────────── */
 async function getRoi(req, res) {
   try {
     const { empresaId: eId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
-    const filtro = filtroRecorte(req.query);
-    const where = `${tenantWhere(eId)}${filtro.sql}`;
-    const custoPorHora = await getCustoPorHora(eId);
-
-    const [dados, participantesRow, horasAplicadas] = await Promise.all([
-      pool.query(
-        `SELECT
-           COUNT(*)                                         AS turmas_total,
-           SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
-           COALESCE(SUM(carga_horaria), 0)                  AS horas_total
-         FROM treinamentos t WHERE ${where}`,
-        filtro.params
-      ).then(([rows]) => rows[0]),
-      // Pessoas impactadas/previstas — reaproveita o roster real de
-      // treinamento_participantes (mesma fonte de participantes_unicos já
-      // usada em getResumo()), em vez de treinamentos.participantes_presentes/
-      // participantes_previstos. Essas duas colunas são estáticas e quase
-      // nunca preenchidas na operação real (só por lançamento manual via
-      // CRUD genérico, ou pela importação legada de Excel — importDashboard
-      // Excel.js) — qualquer filtro de período que não caísse exatamente
-      // nas poucas turmas antigas com o campo preenchido zerava "Pessoas
-      // impactadas" por inteiro. Bug relatado pelo Ramon em 28/09/2026:
-      // selecionar um mês específico na aba ROI zerava o valor (e, por
-      // consequência, também "Custo estimado" e "Alcance da meta", que
-      // dependem dele). "Impactadas" = pessoas únicas (COUNT DISTINCT nome,
-      // já que a mesma pessoa pode repetir em mais de uma turma do período);
-      // "previstas" = total de matrículas/vagas registradas no período
-      // (COUNT das linhas de roster, sem distinct) — a base de comparação
-      // para "alcance da meta".
-      pool.query(
-        `SELECT
-           COUNT(DISTINCT tp.nome) AS pessoas_impactadas,
-           COUNT(tp.id)            AS pessoas_previstas
-         FROM treinamento_participantes tp
-         JOIN treinamentos t ON t.id = tp.treinamento_id
-         WHERE ${where}`,
-        filtro.params
-      ).then(([rows]) => rows[0]),
-      // Horas aplicadas — mesma fonte única da Capacidade (aula a aula
-      // quando a turma tem cronograma, senão carga horária nominal de
-      // turma que já rodou/está rodando). Antes era SUM(carga_horaria)
-      // nominal de turmas concluídas, que não batia com a Capacidade.
-      getHorasAplicadasTotal({
-        empresaId: eId,
-        cliente: req.query.cliente,
-        dataInicio: req.query.data_inicio,
-        dataFim: req.query.data_fim,
-      }),
-    ]);
-
-    const horas      = horasAplicadas;
-    const pessoas    = asInt(participantesRow.pessoas_impactadas);
-    // Custo estimado: configurável por empresa (Admin → tenant → "Custo por
-    // hora de treinamento"); sem valor definido, usa R$ 150/h como referência
-    // (T&D Brasil 2024) — antes esse valor vinha sempre fixo em 150, mesmo
-    // com uma nota na tela dizendo que dava pra configurar.
-    const custo_est  = horas * pessoas * custoPorHora;
-
-    const turmasTotal    = asInt(dados.turmas_total);
-    const turmasConc     = asInt(dados.turmas_concluidas);
-    const taxaConclusao  = turmasTotal > 0
-      ? Number(((turmasConc / turmasTotal) * 100).toFixed(1))
-      : 0;
-
-    const pessoasPrev = asInt(participantesRow.pessoas_previstas);
-    const alcance     = pessoasPrev > 0
-      ? Number(((pessoas / pessoasPrev) * 100).toFixed(1))
-      : null;
-
-    return res.json({
-      horas_realizadas:    horas,
-      horas_previstas:     asInt(dados.horas_total),
-      pessoas_impactadas:  pessoas,
-      pessoas_previstas:   pessoasPrev,
-      turmas_concluidas:   turmasConc,
-      turmas_total:        turmasTotal,
-      taxa_conclusao:      taxaConclusao,
-      alcance_percentual:  alcance,
-      custo_estimado:      custo_est,  // referência indicativa
-      custo_por_hora:      custoPorHora,
-    });
+    const roi = await calcularRoi(req, eId);
+    return res.json(roi);
   } catch (error) {
     console.error('[analytics] getRoi:', error.message);
     return res.status(500).json({ ok: false, message: 'Erro ao buscar ROI'});
@@ -599,45 +606,19 @@ async function exportarIndicadores(req, res) {
         })),
       });
     } else if (aba === 'roi') {
-      const filtro = filtroRecorte(req.query);
-      const where = `${tenantWhere(eId)}${filtro.sql}`;
-      const custoPorHora = await getCustoPorHora(eId);
-      const [dados, participantesRow, horas] = await Promise.all([
-        pool.query(
-          `SELECT
-             COUNT(*)                                         AS turmas_total,
-             SUM(CASE WHEN ${STATUS_CONCLUIDO} THEN 1 END)   AS turmas_concluidas,
-             COALESCE(SUM(carga_horaria), 0)                  AS horas_total
-           FROM treinamentos t WHERE ${where}`,
-          filtro.params
-        ).then(([rows]) => rows[0]),
-        // Mesma correção do getRoi() — roster real (treinamento_participantes)
-        // em vez das colunas estáticas participantes_presentes/previstos.
-        pool.query(
-          `SELECT
-             COUNT(DISTINCT tp.nome) AS pessoas_impactadas,
-             COUNT(tp.id)            AS pessoas_previstas
-           FROM treinamento_participantes tp
-           JOIN treinamentos t ON t.id = tp.treinamento_id
-           WHERE ${where}`,
-          filtro.params
-        ).then(([rows]) => rows[0]),
-        // Mesma fonte única de horas aplicadas usada pela tela (getRoi).
-        getHorasAplicadasTotal({ empresaId: eId, cliente: req.query.cliente, dataInicio: req.query.data_inicio, dataFim: req.query.data_fim }),
-      ]);
-      const pessoas = Number(participantesRow.pessoas_impactadas || 0);
-      const custo = horas * pessoas * custoPorHora;
+      const roi = await calcularRoi(req, eId);
       const ws = wb.addWorksheet("ROI");
-      ws.columns = [{ width: 26 }, { width: 18 }];
+      ws.columns = [{ width: 36 }, { width: 18 }];
       const linhasRoi = [
-        ["Turmas totais", Number(dados.turmas_total || 0), "inteiro"],
-        ["Turmas concluídas", Number(dados.turmas_concluidas || 0), "inteiro"],
-        ["Horas previstas", Number(dados.horas_total || 0), "decimal1"],
-        ["Horas realizadas", horas, "decimal1"],
-        ["Pessoas impactadas", pessoas, "inteiro"],
-        ["Pessoas previstas", Number(participantesRow.pessoas_previstas || 0), "inteiro"],
-        ["Custo por hora", custoPorHora, "moeda"],
-        ["Custo estimado", custo, "moeda"],
+        ["Turmas totais", roi.turmas_total, "inteiro"],
+        ["Turmas concluídas", roi.turmas_concluidas, "inteiro"],
+        ["Horas previstas", roi.horas_previstas, "decimal1"],
+        ["Horas realizadas", roi.horas_realizadas, "decimal1"],
+        ["Pessoas únicas impactadas", roi.pessoas_impactadas, "inteiro"],
+        ["Matrículas confirmadas", roi.matriculas, "inteiro"],
+        ["Matrículas previstas", roi.matriculas_previstas, "inteiro"],
+        ["Custo por hora", roi.custo_por_hora, "moeda"],
+        ["Custo estimado (turma a turma)", roi.custo_estimado, "moeda"],
       ];
       ws.getCell(1, 1).value = "Indicador";
       ws.getCell(1, 2).value = "Valor";

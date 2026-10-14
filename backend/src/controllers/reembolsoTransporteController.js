@@ -48,7 +48,7 @@ const { tenantScopeFor } = require("../lib/tenantScope");
 const { resolverPessoa } = require("../services/pessoasService");
 
 const CROSS_TENANT_ROLES = ["assistente_treinamento"];
-const SUBTIPO_AVALIACAO_TECNICA = "Avaliação Técnica";
+const { ehSubtipoAvaliacaoTecnica, nomesAvaliacaoTecnica } = require("../lib/subtipos");
 const VALOR_PASSAGEM_PADRAO = 5.9;
 
 async function buscarTurmaElegivel(req, treinamentoId) {
@@ -141,13 +141,17 @@ async function listarTurmasElegiveis(req, res) {
   try {
     const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const tenantCheck = empresaId ? " AND t.empresa_id = ?" : "";
-    const params = empresaId ? [SUBTIPO_AVALIACAO_TECNICA, empresaId] : [SUBTIPO_AVALIACAO_TECNICA];
+    // O subtipo "Avaliação Técnica" é identificado pela chave de sistema, não
+    // pelo texto: se alguém renomear o item no catálogo, o Reembolso continua
+    // enxergando as mesmas turmas.
+    const { nomes } = await nomesAvaliacaoTecnica();
+    const params = empresaId ? [nomes, empresaId] : [nomes];
 
     const [rows] = await pool.query(
       `
       SELECT t.id, t.tema, t.cliente, t.empresa_id, t.data_inicio, t.data, t.data_fim
       FROM treinamentos t
-      WHERE t.subtipo = ?${tenantCheck}
+      WHERE t.subtipo IN (?)${tenantCheck}
       ORDER BY COALESCE(t.data_inicio, t.data) DESC
       `,
       params
@@ -173,7 +177,7 @@ async function obterListaNominal(req, res) {
     if (!turma) {
       return res.status(404).json({ ok: false, message: "Turma não encontrada" });
     }
-    if (turma.subtipo !== SUBTIPO_AVALIACAO_TECNICA) {
+    if (!(await ehSubtipoAvaliacaoTecnica(turma.subtipo))) {
       return res.status(400).json({
         ok: false,
         message: 'Presença Nominal/Reembolso só está disponível para turmas classificadas como "Avaliação Técnica".',
@@ -393,7 +397,7 @@ async function exportarListaNominal(req, res) {
     if (!turma) {
       return res.status(404).json({ ok: false, message: "Turma não encontrada" });
     }
-    if (turma.subtipo !== SUBTIPO_AVALIACAO_TECNICA) {
+    if (!(await ehSubtipoAvaliacaoTecnica(turma.subtipo))) {
       return res.status(400).json({
         ok: false,
         message: 'Presença Nominal/Reembolso só está disponível para turmas classificadas como "Avaliação Técnica".',

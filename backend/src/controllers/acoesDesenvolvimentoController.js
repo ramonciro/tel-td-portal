@@ -231,7 +231,14 @@ async function atualizar(req, res) {
     // string era aceita), o que corrompe silenciosamente a agregação usada
     // depois para comprovação ao MPT. Agora valida contra a lista fixa
     // compartilhada com treinamentos.subtipo (ver lib/subtipos.js).
-    const subtipo = await normalizeSubtipo(body.subtipo);
+    // Passa o subtipo que a ação já tem: se ele foi desativado depois, editar
+    // outros campos não pode apagar a classificação.
+    let subtipoAtual = null;
+    try {
+      const [atualRows] = await db.query(`SELECT subtipo FROM acoes_desenvolvimento WHERE id = ? LIMIT 1`, [id]);
+      subtipoAtual = atualRows?.[0]?.subtipo || null;
+    } catch (_) { /* segue sem o valor atual */ }
+    const subtipo = await normalizeSubtipo(body.subtipo, subtipoAtual);
     const publicoAlvo = String(body.publico_alvo || "").trim() || null;
     const obrigatoria = body.obrigatoria ? 1 : 0;
     const turmaId = body.turma_id ? Number(body.turma_id) : null;
