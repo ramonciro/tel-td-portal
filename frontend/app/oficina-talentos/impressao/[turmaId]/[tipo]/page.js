@@ -73,7 +73,7 @@ export default function ImpressaoOficinaPage() {
               <img src={LOGO} alt="Portal T&D" />
             </div>
             <div className="corpo">
-              <p className="sobre">Tel Centro de Contatos · Metodologia e Desenvolvimento</p>
+              <p className="sobre">Metodologia e Desenvolvimento</p>
               <h1>CERTIFICADO</h1>
               <p className="texto">Certificamos que</p>
               <p className="nome">{c.nome}</p>
