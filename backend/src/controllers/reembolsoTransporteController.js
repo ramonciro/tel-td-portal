@@ -379,10 +379,14 @@ function paraDate(value) {
 //                             (padrão: tema da turma em caixa alta)
 //   responsavel              — "Responsável pelo preenchimento:" (padrão:
 //                             nome de quem está exportando)
+//   contato                  — telefone/ramal da linha "TEL:" do cabeçalho
+//                             (padrão: telefone de contato cadastrado na
+//                             empresa da turma, no painel Super Admin; sem
+//                             nenhum dos dois, a linha fica em branco)
 async function exportarListaNominal(req, res) {
   try {
     const { treinamento_id } = req.params;
-    const { inicio, fim, valor_passagem, motivo, responsavel } = req.query;
+    const { inicio, fim, valor_passagem, motivo, responsavel, contato } = req.query;
     const { empresaId, crossTenant } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
 
     const turma = await buscarTurmaElegivel(req, treinamento_id);
@@ -409,6 +413,18 @@ async function exportarListaNominal(req, res) {
 
     const motivoFinal = (motivo && String(motivo).trim()) || `${turma.tema}${turma.cliente ? ` — ${turma.cliente}` : ""}`.toUpperCase();
     const responsavelFinal = (responsavel && String(responsavel).trim()) || req.user?.nome || "";
+    // Contato do cabeçalho: antes era um número fixo no código. Agora vem da
+    // tela de exportação ou, na falta dela, do cadastro da empresa da turma.
+    let contatoFinal = contato && String(contato).trim() ? String(contato).trim() : "";
+    if (!contatoFinal) {
+      const empresaDaTurma = turma.empresa_id || empresaId;
+      if (empresaDaTurma) {
+        try {
+          const [[emp]] = await pool.query(`SELECT contato_telefone FROM empresas WHERE id = ? LIMIT 1`, [empresaDaTurma]);
+          contatoFinal = (emp && emp.contato_telefone && String(emp.contato_telefone).trim()) || "";
+        } catch (_) { /* coluna ausente em banco antigo — segue sem contato */ }
+      }
+    }
     const periodoLabel =
       inicio && fim
         ? `${formatarDataBR(inicio)} à ${formatarDataBR(fim)}`
@@ -430,7 +446,7 @@ async function exportarListaNominal(req, res) {
     ws.getCell("A4").value = "Vale Transporte - Treinamento";
     ws.getCell("A4").font = { bold: true, size: 13 };
 
-    ws.getCell("A5").value = "TEL:  16.18.1618099";
+    ws.getCell("A5").value = contatoFinal ? `TEL:  ${contatoFinal}` : "";
     ws.getCell("A6").value = `Responsável pelo preenchimento: ${responsavelFinal}`;
     ws.getCell("A7").value = "Departamento: Treinamento";
 
