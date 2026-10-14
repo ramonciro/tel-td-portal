@@ -109,7 +109,7 @@ function isRouteActive(pathname, href) {
 // empresa (cor, logo) que o login já carrega em `user.empresa` agora é
 // aplicada aqui também — antes só a tela de login mudava de cara por
 // empresa; o menu/cabeçalho do resto do portal continuavam sempre com a
-// identidade padrão do Tel T&D. Empresas sem cor/logo próprios cadastrados
+// identidade padrão do Portal T&D. Empresas sem cor/logo próprios cadastrados
 // (ou o super_admin, que não pertence a uma empresa) continuam vendo
 // exatamente a mesma marca padrão de sempre — nada muda pra quem não tem
 // branding configurado.
@@ -438,7 +438,7 @@ export default function PortalShell({
               {user?.perfil === "super_admin" ? (
                 <>
                   <span style={{ ...envLabel, color: colors.accentBright }}>Super Admin</span>
-                  <strong style={{ ...envValue, color: colors.accentBright }}>Tel Centro de Contatos</strong>
+                  <strong style={{ ...envValue, color: colors.accentBright }}>Portal T&D</strong>
                 </>
               ) : (
                 <>
