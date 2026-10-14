@@ -65,6 +65,7 @@ export default function ReembolsoTransportePage() {
   const [valorPassagem, setValorPassagem] = useState("");
   const [motivo, setMotivo] = useState("");
   const [responsavel, setResponsavel] = useState("");
+  const [contato, setContato] = useState("");
 
   const temAcesso = hasSomeRole(usuario, ["coordenador", "assistente_treinamento"]);
 
@@ -169,6 +170,7 @@ export default function ReembolsoTransportePage() {
       if (valorPassagem) params.set("valor_passagem", valorPassagem);
       if (motivo) params.set("motivo", motivo);
       if (responsavel) params.set("responsavel", responsavel);
+      if (contato) params.set("contato", contato);
       await apiDownload(`/reembolso-transporte/${turmaId}/exportar?${params.toString()}`, `solicitacao-vt-turma-${turmaId}.xlsx`);
     } catch (err) {
       setError(err.message || "Não foi possível exportar a lista.");
@@ -266,6 +268,10 @@ export default function ReembolsoTransportePage() {
                   <label style={fieldWrap}>
                     <span style={fieldLabel}>Responsável pelo preenchimento</span>
                     <input type="text" style={inputStyle} value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
+                  </label>
+                  <label style={fieldWrap}>
+                    <span style={fieldLabel}>Telefone/ramal de contato</span>
+                    <input type="text" style={inputStyle} value={contato} placeholder="Vazio = telefone cadastrado da empresa" onChange={(e) => setContato(e.target.value)} />
                   </label>
                 </div>
                 <p style={emptyHint}>
