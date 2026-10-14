@@ -389,7 +389,7 @@ app.delete(
 app.get("/api", async (req, res) => {
   try {
     await pool.query("SELECT 1");
-    res.json({ status: "API Tel T&D online" });
+    res.json({ status: "API Portal T&D online" });
   } catch (error) {
     console.error("[index]", error.message || error);
     res.status(500).json({
