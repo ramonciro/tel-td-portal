@@ -246,7 +246,7 @@ export default function ParticipantesTurmaPage() {
           <button style={btnOutline} onClick={() => { setAbrirManual((v) => !v); setAbrirImport(false); }}>
             {abrirManual ? "Fechar form." : "+ Adicionar manual"}
           </button>
-          <button style={btnGhost} onClick={exportarPrimeiraAula}>
+          <button style={btnOutline} onClick={exportarPrimeiraAula}>
             Exportar 1ª aula
           </button>
         </div>
