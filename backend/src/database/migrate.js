@@ -1656,7 +1656,11 @@ async function runMigrations() {
         UNIQUE KEY uq_subtipos_nome (nome)
       );
     `);
-    await pool.query(`
+    // Lista inicial só entra com o catálogo vazio. Antes era INSERT IGNORE a
+    // cada inicialização: renomear um item (ex.: "Outro" -> "Outros") fazia o
+    // nome antigo voltar sozinho como item novo no próximo deploy.
+    const [[subtiposQtd]] = await pool.query(`SELECT COUNT(*) AS n FROM subtipos`);
+    if (!Number(subtiposQtd.n)) await pool.query(`
       INSERT IGNORE INTO subtipos (nome) VALUES
         ('Prevenção ao Assédio Moral'),
         ('Coaching de Coordenação e Gerência'),
@@ -1665,6 +1669,21 @@ async function runMigrations() {
         ('Treinamento Técnico'),
         ('Avaliação Técnica'),
         ('Outro');
+    `);
+
+    // 34b. Subtipo "de sistema" (15/10/2026). O Reembolso de Transporte só
+    // enxerga turmas classificadas como "Avaliação Técnica", mas o subtipo é
+    // gravado como texto na turma — renomear o item no cadastro quebrava o
+    // Reembolso. A coluna `chave_sistema` identifica o item pelo papel que ele
+    // cumpre (não pelo nome), então o nome pode mudar. O UPDATE é idempotente
+    // e só marca UM item (se já existir algum marcado, não faz nada).
+    await ensureColumn("subtipos", "chave_sistema", "VARCHAR(40) NULL");
+    await pool.query(`
+      UPDATE subtipos
+      SET chave_sistema = 'avaliacao_tecnica'
+      WHERE nome = 'Avaliação Técnica'
+        AND chave_sistema IS NULL
+        AND NOT EXISTS (SELECT 1 FROM (SELECT id FROM subtipos WHERE chave_sistema = 'avaliacao_tecnica') marcado)
     `);
 
     // 35. Ajuste pós-entrega do Pacote Salas (15/09/2026) — ver o comentário
