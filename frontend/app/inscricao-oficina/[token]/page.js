@@ -361,7 +361,7 @@ export default function InscricaoOficinaPage() {
           </>
         )}
 
-        <footer style={rodape}>Portal T&D · Tel Centro de Contatos</footer>
+        <footer style={rodape}>Portal T&D</footer>
       </div>
     </div>
   );
