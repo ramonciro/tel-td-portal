@@ -1,5 +1,5 @@
 {
-  "name": "tel-td-portal-backend",
+  "name": "portal-td-backend",
   "version": "1.0.0",
   "main": "src/index.js",
   "scripts": {
