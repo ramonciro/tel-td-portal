@@ -112,6 +112,12 @@ const PERFIL_ESCOPOS_UI = {
   coordenador_rs: ["coordenador_rs", "gestor_rs"],
   metodologia: ["metodologia"],
 };
+// Espelha deleteMiddlewares de /api/usuarios no backend: Supervisor edita mas
+// não exclui — antes o botão aparecia e o servidor respondia 403.
+function perfilPodeExcluirUsuario() {
+  const perfil = String(getStoredUser()?.perfil || "").toLowerCase();
+  return ["coordenador", "superintendente", "coordenador_rs", "metodologia", "super_admin"].includes(perfil);
+}
 function escopoPerfilDoUsuarioLogado() {
   const usuario = getStoredUser();
   const perfil = String(usuario?.perfil || "").toLowerCase();
@@ -304,14 +310,17 @@ function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onF
   async function salvar() {
     try {
       setSalvando(true); setErro("");
-      if (!form.nome || !form.email || !form.perfil)
-        throw new Error("Nome, e-mail e perfil são obrigatórios.");
+      // E-mail só é obrigatório ao criar: contas de treinando criadas pela
+      // importação de turma entram por CPF/matrícula e não têm e-mail — antes
+      // não dava para editar nem redefinir a senha delas por esta tela.
+      if (!form.nome || !form.perfil || (modo === "criar" && !form.email))
+        throw new Error(modo === "criar" ? "Nome, e-mail e perfil são obrigatórios." : "Nome e perfil são obrigatórios.");
       if (modo === "criar" && !form.senha)
         throw new Error("Senha é obrigatória para novos usuários.");
 
       const payload = {
         nome:    form.nome,
-        email:   form.email,
+        ...(form.email ? { email: form.email } : {}),
         perfil:  form.perfil,
         cliente: form.cliente || "",
         ativo:   Number(form.ativo),
@@ -760,12 +769,12 @@ export default function UsuariosPage() {
                                   Cancelar
                                 </button>
                               </>
-                            ) : (
+                            ) : perfilPodeExcluirUsuario() ? (
                               <button style={btnAcao(colors.dangerLight, colors.dangerText)}
                                 onClick={() => setExcluindo(u.id)}>
                                 Excluir
                               </button>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                       </tr>
