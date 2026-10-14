@@ -326,6 +326,18 @@ function TurmaCard({ item, necessidade, resumo, salaNome, sala, canEdit, canDele
 // estática, senão o build de produção falha (ver responder-avaliacao/page.js
 // e responder-nps/page.js pro mesmo fix) — por isso o componente que lê a
 // URL fica separado, e o export default só envolve ele em Suspense.
+// Opções do seletor de subtipo. Se a turma já tem um subtipo que foi desativado
+// depois, ele continua na lista (marcado) para que editar a turma não apague a
+// classificação.
+function opcoesSubtipo(subtipos, atual) {
+  const opcoes = (subtipos || []).map((x) => ({ value: x.nome, label: x.nome }));
+  const valor = String(atual || "").trim();
+  if (valor && !opcoes.some((o) => o.value === valor)) {
+    opcoes.push({ value: valor, label: `${valor} (fora da lista ativa)` });
+  }
+  return opcoes;
+}
+
 export default function TreinamentosPage() {
   return (
     <Suspense fallback={null}>
@@ -828,7 +840,7 @@ function TreinamentosConteudo() {
 
             <FormSection step="3" title="Classificação / observações" hint="Subdivisão para comprovação de horas, status da turma e notas livres.">
               <Field label="Subdivisão / subtipo" hint="Usado para comprovação de horas por subdivisão (ex.: MPT). Selecione &quot;Avaliação Técnica&quot; para habilitar a Presença Nominal/Reembolso de Transporte.">
-                <Select value={form.subtipo} onChange={(e) => setField("subtipo", e.target.value)} options={subtipos.map((x) => ({ value: x.nome, label: x.nome }))} placeholder="Sem subdivisão" />
+                <Select value={form.subtipo} onChange={(e) => setField("subtipo", e.target.value)} options={opcoesSubtipo(subtipos, form.subtipo)} placeholder="Sem subdivisão" />
               </Field>
               <Field label="Status"><Select value={form.status} onChange={(e) => setField("status", e.target.value)} options={Object.entries(STATUS).map(([value, x]) => ({ value, label: x.label }))} placeholder="Selecione o status" /></Field>
               <Field label="Observações"><textarea value={form.descricao} onChange={(e) => setField("descricao", e.target.value)} placeholder="Informações complementares" style={{ ...inputStyle, minHeight: 92, resize: "vertical" }} /></Field>
