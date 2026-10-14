@@ -33,6 +33,7 @@ export default function SubtiposPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [nome, setNome] = useState("");
+  const [editando, setEditando] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const canManage = hasSomeRole(usuario, ["coordenador", "assistente_treinamento"]);
@@ -58,14 +59,23 @@ export default function SubtiposPage() {
   const ativos = useMemo(() => subtipos.filter((s) => s.ativo), [subtipos]);
   const inativos = useMemo(() => subtipos.filter((s) => !s.ativo), [subtipos]);
 
+  function textoUso(s) {
+    const t = Number(s?.turmas_em_uso || 0);
+    const a = Number(s?.acoes_em_uso || 0);
+    if (!t && !a) return "";
+    return `${t} turma(s) e ${a} ação(ões)`;
+  }
+
   function abrirCriar() {
     setEditingId(null);
+    setEditando(null);
     setNome("");
     setError(""); setSuccess(""); setModalOpen(true);
   }
 
   function abrirEditar(subtipo) {
     setEditingId(subtipo.id);
+    setEditando(subtipo);
     setNome(subtipo.nome || "");
     setError(""); setSuccess(""); setModalOpen(true);
   }
@@ -76,9 +86,10 @@ export default function SubtiposPage() {
     try {
       setSaving(true); setError(""); setSuccess("");
       const payload = { nome: nome.trim() };
-      if (editingId) await apiFetch(`/subtipos/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
+      let resp = null;
+      if (editingId) resp = await apiFetch(`/subtipos/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/subtipos", { method: "POST", body: JSON.stringify(payload) });
-      setSuccess(editingId ? "Subtipo atualizado com sucesso." : "Subtipo cadastrado com sucesso.");
+      setSuccess(editingId ? (resp?.message || "Subtipo atualizado com sucesso.") : "Subtipo cadastrado com sucesso.");
       setModalOpen(false);
       await carregar();
     } catch (err) {
@@ -89,11 +100,15 @@ export default function SubtiposPage() {
   }
 
   async function desativar(subtipo) {
-    if (!window.confirm(`Desativar "${subtipo.nome}"? Ele deixa de aparecer para novas turmas/ações, mas os registros que já usam esse subtipo continuam com o histórico.`)) return;
+    const uso = textoUso(subtipo);
+    const aviso = uso
+      ? `"${subtipo.nome}" está em uso: ${uso}. Esses registros continuam com a classificação (histórico preservado), mas o subtipo deixa de ser oferecido em novos cadastros. Desativar mesmo assim?`
+      : `Desativar "${subtipo.nome}"? Ele deixa de aparecer para novas turmas/ações.`;
+    if (!window.confirm(aviso)) return;
     try {
       setError("");
-      await apiFetch(`/subtipos/${subtipo.id}`, { method: "DELETE" });
-      setSuccess("Subtipo desativado.");
+      const resp = await apiFetch(`/subtipos/${subtipo.id}`, { method: "DELETE" });
+      setSuccess(resp?.message || "Subtipo desativado.");
       await carregar();
     } catch (err) {
       setError(err.message || "Não foi possível desativar o subtipo.");
@@ -134,11 +149,21 @@ export default function SubtiposPage() {
             <div style={grid}>
               {ativos.map((s) => (
                 <div key={s.id} style={itemCard}>
-                  <strong style={itemNome}>{s.nome}</strong>
+                  <div style={{ display: "grid", gap: 3, minWidth: 0 }}>
+                    <strong style={itemNome}>{s.nome}</strong>
+                    <span style={itemUso}>{textoUso(s) ? `Em uso: ${textoUso(s)}` : "Sem uso ainda"}</span>
+                    {s.chave_sistema && <span style={badgeSistema} title="Item de sistema: usado pelo Reembolso de Transporte">Reembolso de Transporte</span>}
+                  </div>
                   {canManage && (
                     <div style={{ display: "flex", gap: 6 }}>
                       <button type="button" style={ghostButton} onClick={() => abrirEditar(s)}>Editar</button>
-                      <button type="button" style={dangerGhost} onClick={() => desativar(s)}>Desativar</button>
+                      <button
+                        type="button"
+                        style={s.chave_sistema ? { ...dangerGhost, opacity: 0.4, cursor: "not-allowed" } : dangerGhost}
+                        disabled={!!s.chave_sistema}
+                        title={s.chave_sistema ? "Item de sistema: pode ser renomeado, mas não desativado." : undefined}
+                        onClick={() => desativar(s)}
+                      >Desativar</button>
                     </div>
                   )}
                 </div>
@@ -153,7 +178,10 @@ export default function SubtiposPage() {
             <div style={grid}>
               {inativos.map((s) => (
                 <div key={s.id} style={{ ...itemCard, opacity: 0.6 }}>
-                  <strong style={itemNome}>{s.nome}</strong>
+                  <div style={{ display: "grid", gap: 3, minWidth: 0 }}>
+                    <strong style={itemNome}>{s.nome}</strong>
+                    {textoUso(s) && <span style={itemUso}>Ainda em uso: {textoUso(s)}</span>}
+                  </div>
                   <button type="button" style={ghostButton} onClick={() => reativar(s)}>Reativar</button>
                 </div>
               ))}
@@ -170,6 +198,14 @@ export default function SubtiposPage() {
                   <span style={fieldLabel}>Nome <b style={{ color: "#dc2626" }}>*</b></span>
                   <input style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Ergonomia" />
                 </label>
+                {editando && nome.trim() && nome.trim() !== editando.nome && (
+                  <div style={avisoRenomear}>
+                    {textoUso(editando)
+                      ? `Ao salvar, ${textoUso(editando)} que usam "${editando.nome}" passam a mostrar o novo nome.`
+                      : "Este subtipo ainda não foi usado em turmas ou ações."}
+                    {editando.chave_sistema ? " O Reembolso de Transporte continua funcionando com o novo nome." : ""}
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
                   <button type="button" disabled={saving} style={secondaryButton} onClick={() => setModalOpen(false)}>Cancelar</button>
                   <button type="submit" disabled={saving} style={createButton}>{saving ? "Salvando..." : "Salvar"}</button>
@@ -188,8 +224,11 @@ const createButton = { border: 0, background: colors.accent, color: "#fff", bord
 const secondaryButton = { border: "1px solid #e2e8f0", background: "#fff", color: "#475569", borderRadius: 12, padding: "12px 17px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
 const card = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 20, padding: 20, marginTop: 16 };
 const sectionTitle = { margin: "0 0 14px", fontSize: 16, fontWeight: 850, color: "#0f172a" };
-const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10 };
-const itemCard = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 14, border: "1px solid #e5e7eb", background: "#f8fafc" };
+const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 10 };
+const itemCard = { display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius: 14, border: "1px solid #e5e7eb", background: "#f8fafc" };
+const itemUso = { fontSize: 11, color: "#64748b" };
+const badgeSistema = { fontSize: 10, fontWeight: 800, color: "#1d4ed8", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 999, padding: "2px 8px", width: "fit-content" };
+const avisoRenomear = { fontSize: 11.5, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "9px 11px", lineHeight: 1.4 };
 const itemNome = { fontSize: 14, color: "#0f172a" };
 const ghostButton = { border: "1px solid #e2e8f0", background: "#fff", color: "#475569", borderRadius: 9, padding: "7px 10px", fontWeight: 750, fontSize: 11, cursor: "pointer" };
 const dangerGhost = { ...ghostButton, color: "#b91c1c", borderColor: "#fecaca" };
