@@ -9,7 +9,7 @@
  *   2. Contas nascem em lote, junto da importação/cadastro de participantes
  *      de turma — é este serviço que faz isso.
  *   3. Senha inicial continua o padrão já usado no resto do portal
- *      (Tel@2026, troca obrigatória no primeiro acesso).
+ *      (Portal@2026, troca obrigatória no primeiro acesso).
  *
  * garantirUsuarioTreinando() é chamado depois de resolverPessoa() (ver
  * pessoasService.js) — nunca decide identidade sozinho, só o que fazer com
@@ -29,7 +29,7 @@
 const bcrypt = require("bcryptjs");
 const pool = require("../lib/db");
 
-const SENHA_PADRAO_TREINANDO = "Tel@2026";
+const SENHA_PADRAO_TREINANDO = "Portal@2026";
 
 function normalizarListaClientes(valor) {
   return String(valor || "")
