@@ -23,7 +23,7 @@ export default function PrimeiroAcessoPage() {
 
     const user = getStoredUser();
 
-    if (!user?.email) {
+    if (!user?.id) {
       setErro("Usuário não identificado");
       return;
     }
