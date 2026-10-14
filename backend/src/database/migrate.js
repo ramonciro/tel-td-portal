@@ -63,8 +63,8 @@ async function ensureVarcharType(table, column, length) {
 // Oceano/Trilhas/Certificados foram criadas com `empresa_id INT NULL DEFAULT
 // 1` — mesmo problema já identificado e corrigido na tabela `biblioteca`
 // (ver item 26 abaixo): qualquer INSERT que esqueça de informar empresa_id
-// explicitamente cai silenciosamente dentro do tenant de id 1 (Tel Centro de
-// Contatos/Comércio) em vez de ficar sem tenant e ser barrado pelos filtros
+// explicitamente cai silenciosamente dentro do tenant de id 1 (o primeiro
+// ambiente cadastrado) em vez de ficar sem tenant e ser barrado pelos filtros
 // de isolamento. Os CREATE TABLE já foram corrigidos para `empresa_id INT
 // NULL` (sem DEFAULT), mas isso só vale para bancos novos — em produção a
 // coluna já existe com o DEFAULT antigo, e CREATE TABLE IF NOT EXISTS não
@@ -565,6 +565,29 @@ async function ensureRespostasAvaliativasChavePorPessoa() {
       `ALTER TABLE respostas_avaliativas ADD UNIQUE KEY uniq_material_pessoa (material_id, pessoa_id)`
     );
     console.log(`  ↳ chave única adicionada: respostas_avaliativas (material_id, pessoa_id)`);
+  }
+}
+
+// Diagnóstico somente-leitura (ver passo 60 em runMigrations).
+async function diagnosticarNomeAntigo() {
+  const alvos = [
+    ["empresas", "nome"],
+    ["usuarios", "cliente"],
+    ["treinamentos", "cliente"],
+    ["certificados", "treinamento_cliente"],
+  ];
+  for (const [tabela, coluna] of alvos) {
+    try {
+      const info = await columnInfo(tabela, coluna);
+      if (!info) continue;
+      const [rows] = await pool.query(
+        `SELECT COUNT(*) AS n FROM ${tabela} WHERE ${coluna} LIKE '%Tel Centro de Contatos%'`
+      );
+      const n = Number(rows[0]?.n || 0);
+      if (n > 0) console.log(`  ⚠ nome antigo ainda gravado: ${tabela}.${coluna} (${n} linha(s)) — renomear pelo painel`);
+    } catch (e) {
+      console.warn(`  (diagnóstico do nome antigo ignorado em ${tabela}.${coluna}: ${e.message})`);
+    }
   }
 }
 
@@ -1549,7 +1572,7 @@ async function runMigrations() {
 
     // 31. Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026) — cadastro
     // de salas. Catálogo GLOBAL, sem empresa_id: as 6 salas físicas são um
-    // espaço compartilhado entre todas as tenants (Tel T&D, Comércio, Dasa,
+    // espaço compartilhado entre todas as tenants (Portal T&D, Comércio, Dasa,
     // IBM etc. treinam no mesmo prédio) — ver claude/proposta-agendamento-
     // salas-2026-09.md, decisão 8. Isso é deliberado e diferente de toda
     // outra tabela do sistema (que ou tem empresa_id, ou herda por JOIN);
@@ -2025,6 +2048,13 @@ async function runMigrations() {
     // 59. Grade de presença da turma (Treinamentos, 13/10/2026) — presença
     // mínima configurável por turma (NULL = padrão 75%).
     await ensureColumn("treinamentos", "presenca_minima_pct", "DECIMAL(5,2) NULL");
+
+    // 60. Desvinculação do nome da empresa antiga (13/10/2026) — SOMENTE
+    // LEITURA: conta, nos logs do deploy, onde ainda existe o texto antigo
+    // gravado como dado (nome da empresa/ambiente, cliente do usuário), para
+    // o Super Admin renomear pelo painel. Não altera nada e nunca derruba o
+    // start (qualquer erro vira só um aviso).
+    await diagnosticarNomeAntigo();
 
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
