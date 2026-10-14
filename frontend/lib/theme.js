@@ -20,13 +20,12 @@ export const colors = {
   navySoft: "#161D2E",
   // antes era um coral (#FF6B4A) que não batia com o laranja real do logo.
   // `accent` é usado em ~25 telas como fundo de botão com texto branco —
-  // por isso ficou num âmbar mais fechado (contraste ~3.2:1 com branco,
-  // acima do coral anterior ~2.5:1; ainda abaixo do ideal de 4.5:1 do WCAG
-  // AA para texto pequeno — anotado no design-system.md como item aberto de
-  // acessibilidade). `accentBright` é o âmbar vivo de verdade do logo, para
+  // por isso ficou num âmbar mais fechado. 14/10/2026: escurecido de #D97706
+  // (3,19:1 com branco) para #B45309 (5,02:1), que passa no WCAG AA para texto
+  // pequeno. `accentBright` é o âmbar vivo de verdade do logo, para
   // uso decorativo onde contraste de texto não entra (pontos, ícones,
   // preenchimento de gráfico, fundo suave de destaque).
-  accent: "#D97706",
+  accent: "#B45309",
   accentBright: "#F59E0B",
   accentLight: "#FEF3C7",
   accentText: "#92400E",
