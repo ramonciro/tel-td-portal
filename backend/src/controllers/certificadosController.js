@@ -30,8 +30,22 @@ async function listCertificados(req, res) {
     // Treinandos e instrutores veem apenas os próprios certificados
     const isGestor = ['coordenador', 'supervisor', 'superintendente'].includes(perfil);
     if (!isGestor) {
-      where.push('usuario_email = ?');
-      params.push(userEmail);
+      // Conta criada pela importação de turma nasce SEM e-mail (login por
+      // CPF/matrícula). Antes, o filtro só por e-mail devolvia lista vazia
+      // para essas contas — o treinando nunca via os próprios certificados.
+      // Agora: por e-mail quando existe; e, para certificados gravados sem
+      // e-mail (usuario_email NULL), pelo nome da própria pessoa.
+      const nomeUsuario = String(req.user?.nome || '').trim();
+      const condicoes = [];
+      if (userEmail) {
+        condicoes.push('usuario_email = ?');
+        params.push(userEmail);
+      }
+      if (nomeUsuario) {
+        condicoes.push('(usuario_email IS NULL AND LOWER(TRIM(usuario_nome)) = LOWER(TRIM(?)))');
+        params.push(nomeUsuario);
+      }
+      where.push(condicoes.length ? `(${condicoes.join(' OR ')})` : '1 = 0');
     }
 
     if (empresaId !== null) {
@@ -312,7 +326,12 @@ async function emitirCertificado(req, res) {
     // cadastro de usuário (tabela `usuarios`) cujo nome bata (case-insensitive),
     // que é onde e-mail de fato existe no sistema.
     let email = usuario_email || null;
-    if (!email && !usuario_nome) {
+    if (!isGestor) {
+      // Self-service: sempre a própria conta. Não procura "outro usuário com o
+      // mesmo nome" (poderia gravar o certificado no e-mail de um homônimo);
+      // conta sem e-mail grava o certificado sem e-mail (como o job automático).
+      email = req.user?.email || null;
+    } else if (!email && !usuario_nome) {
       email = req.user?.email || null;
     } else if (!email) {
       const empresaCheck = empresaId ? ' AND empresa_id = ?' : '';
@@ -329,7 +348,7 @@ async function emitirCertificado(req, res) {
     if (!resultado) {
       return res.status(404).json({ ok: false, message: 'Treinamento não encontrado' });
     }
-    const { tr, freqFinal, nota } = resultado;
+    const { tr, freqFinal, nota, minimo } = resultado;
 
     // Pacote 3 (acesso restrito por cliente, generalizar): mesma checagem
     // do preview — sem isso, o fluxo self-service ("Minhas Turmas") deixava
@@ -337,6 +356,17 @@ async function emitirCertificado(req, res) {
     // cliente do mesmo tenant.
     if (!usuarioTemAcessoAoCliente(req, tr.cliente)) {
       return res.status(404).json({ ok: false, message: 'Treinamento não encontrado' });
+    }
+
+    // Regra de frequência também na emissão self-service: o botão "Emitir
+    // certificado" aparecia para qualquer turma concluída e o servidor emitia
+    // sem conferir o mínimo (só o job diário e a tela de gestão conferiam).
+    // Coordenação/supervisão continuam podendo emitir "mesmo assim".
+    if (!isGestor && freqFinal != null && freqFinal < minimo) {
+      return res.status(403).json({
+        ok: false,
+        message: `Frequência de ${Number(freqFinal).toFixed(0)}% abaixo do mínimo de ${minimo}% exigido para esta turma. Procure a coordenação.`,
+      });
     }
 
     // Emite (upsert — emitir de novo atualiza frequência e nota). Usa a
@@ -380,16 +410,31 @@ async function emitirCertificado(req, res) {
 async function verificarCertificado(req, res) {
   try {
     const { treinamento_id, email } = req.query;
-    const userEmail = email || req.user?.email;
+    const perfil = String(req.user?.perfil || '').toLowerCase().trim();
+    const isGestor = ['coordenador', 'supervisor', 'superintendente'].includes(perfil);
+    // Não-gestor só consulta o próprio certificado (antes bastava passar o
+    // e-mail de outra pessoa na query string).
+    const userEmail = isGestor ? (email || req.user?.email) : req.user?.email;
+    const nomeUsuario = String(req.user?.nome || '').trim();
 
-    if (!treinamento_id || !userEmail) {
+    if (!treinamento_id || (!userEmail && !(nomeUsuario && !isGestor))) {
       return res.status(400).json({ ok: false, message: 'Parâmetros insuficientes' });
     }
 
     const tenantCheck = req.empresaId ? ' AND empresa_id = ?' : '';
-    const params = req.empresaId ? [treinamento_id, userEmail, req.empresaId] : [treinamento_id, userEmail];
+    const params = [treinamento_id];
+    let quem;
+    if (userEmail) {
+      quem = 'usuario_email = ?';
+      params.push(userEmail);
+    } else {
+      // Conta sem e-mail: certificado gravado sem e-mail, ligado pelo nome.
+      quem = '(usuario_email IS NULL AND LOWER(TRIM(usuario_nome)) = LOWER(TRIM(?)))';
+      params.push(nomeUsuario);
+    }
+    if (req.empresaId) params.push(req.empresaId);
     const [rows] = await pool.query(
-      `SELECT * FROM certificados WHERE treinamento_id = ? AND usuario_email = ?${tenantCheck} LIMIT 1`,
+      `SELECT * FROM certificados WHERE treinamento_id = ? AND ${quem}${tenantCheck} LIMIT 1`,
       params
     );
 

@@ -1039,10 +1039,115 @@ function formatExcelDateToMySQL(value) {
   return null;
 }
 
+// "Exportar 1ª aula" (telas Cronograma e Pessoas da turma): o botão chamava
+// /treinamentos/:id/exportar-primeira-aula, rota que nunca existiu — o clique
+// terminava em erro. Gera a lista de quem inicia a turma (útil para liberar
+// acessos/crachás e conferir quem é esperado no primeiro dia), com o resumo
+// da turma no topo e uma coluna em branco para a assinatura na entrada.
+async function exportarPrimeiraAula(req, res) {
+  try {
+    const { id } = req.params;
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+
+    if (!(await treinamentoPertenceAoTenant(db, id, empresaId, req))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+
+    const [trRows] = await db.query(
+      `SELECT tema, cliente, instrutor, supervisor, data_inicio, hora_inicio, hora_fim
+         FROM treinamentos WHERE id = ? LIMIT 1`,
+      [id]
+    );
+    const tr = trRows[0] || {};
+
+    // Data da 1ª aula: a mais antiga do cronograma; sem cronograma, a data de início da turma.
+    const [aulaRows] = await db.query(
+      `SELECT MIN(data_aula) AS primeira FROM turma_aulas
+        WHERE treinamento_id = ? AND COALESCE(status_execucao, '') <> 'cancelada'`,
+      [id]
+    );
+    const primeira = aulaRows[0]?.primeira || tr.data_inicio || null;
+
+    const [pessoas] = await db.query(
+      `SELECT nome, matricula, cpf, operacao, supervisor, data_admissao
+         FROM treinamento_participantes
+        WHERE treinamento_id = ?
+        ORDER BY nome ASC`,
+      [id]
+    );
+    const comCpf = usuarioPodeVerCpf(req);
+
+    const { novoWorkbook, estilizarCabecalho, FORMATO_DATA, paraDate } = require("../lib/excelExport");
+    const wb = novoWorkbook();
+    const ws = wb.addWorksheet("1ª aula");
+
+    const info = [
+      ["Turma", tr.tema || "—"],
+      ["Cliente", tr.cliente || "—"],
+      ["Instrutor", tr.instrutor || "—"],
+      ["Supervisor", tr.supervisor || "—"],
+      ["Data da 1ª aula", paraDate(primeira) || "—"],
+      ["Horário", [tr.hora_inicio, tr.hora_fim].filter(Boolean).map((h) => String(h).slice(0, 5)).join(" às ") || "—"],
+      ["Total de participantes", pessoas.length],
+    ];
+    info.forEach(([rotulo, valor], i) => {
+      const r = i + 1;
+      ws.getCell(r, 1).value = rotulo;
+      ws.getCell(r, 1).font = { bold: true };
+      const c = ws.getCell(r, 2);
+      c.value = valor;
+      if (valor instanceof Date) c.numFmt = FORMATO_DATA;
+      c.alignment = { horizontal: "left" };
+    });
+
+    const colunas = [
+      { titulo: "Nº", largura: 6 },
+      { titulo: "Nome", largura: 38 },
+      { titulo: "Matrícula", largura: 14 },
+      ...(comCpf ? [{ titulo: "CPF", largura: 16 }] : []),
+      { titulo: "Operação", largura: 22 },
+      { titulo: "Supervisor", largura: 22 },
+      { titulo: "Data de admissão", largura: 16 },
+      { titulo: "Assinatura", largura: 30 },
+    ];
+    ws.columns = colunas.map((c) => ({ width: c.largura }));
+    const cab = info.length + 2;
+    colunas.forEach((c, i) => { ws.getCell(cab, i + 1).value = c.titulo; });
+    estilizarCabecalho(ws, cab, colunas.length);
+
+    pessoas.forEach((p, idx) => {
+      const r = cab + 1 + idx;
+      let col = 1;
+      ws.getCell(r, col++).value = idx + 1;
+      ws.getCell(r, col++).value = p.nome || "";
+      ws.getCell(r, col++).value = p.matricula || "";
+      if (comCpf) ws.getCell(r, col++).value = p.cpf || "";
+      ws.getCell(r, col++).value = p.operacao || "";
+      ws.getCell(r, col++).value = p.supervisor || "";
+      const adm = ws.getCell(r, col++);
+      const d = paraDate(p.data_admissao);
+      if (d) { adm.value = d; adm.numFmt = FORMATO_DATA; }
+      ws.getCell(r, col++).value = "";
+      ws.getRow(r).height = 22;
+    });
+    ws.views = [{ state: "frozen", ySplit: cab }];
+
+    const buf = await wb.xlsx.writeBuffer();
+    const nome = String(tr.tema || "turma").replace(/[^\p{L}\p{N}]+/gu, "_").replace(/^_+|_+$/g, "") || "turma";
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="primeira_aula_${nome}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  } catch (error) {
+    console.error("[participantes] exportarPrimeiraAula:", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao exportar a lista da primeira aula" });
+  }
+}
+
 module.exports = {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   baixarModeloImportacaoParticipantes,
+  exportarPrimeiraAula,
   salvarChamadaParticipantes,
   createParticipanteTreinamento,
   deleteParticipanteTreinamento,

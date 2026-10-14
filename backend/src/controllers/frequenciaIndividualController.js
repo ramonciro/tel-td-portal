@@ -15,7 +15,7 @@ async function getFrequenciaIndividual(req, res) {
     const { cliente, treinamento_id, inicio, fim } = req.query || {};
     const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
 
-    const itens = await getFrequenciaPorParticipante({
+    const itensTodos = await getFrequenciaPorParticipante({
       cliente: cliente || undefined,
       treinamentoId: treinamento_id ? Number(treinamento_id) : undefined,
       inicio: inicio || undefined,
@@ -26,6 +26,17 @@ async function getFrequenciaIndividual(req, res) {
       // está em CROSS_TENANT_ROLES, hoje apenas superintendente).
       empresaId: empresaId || undefined,
     });
+
+    // Treinando também consulta esta rota (barra de frequência em Minhas
+    // Turmas e tela "Meu histórico"), mas só pode ver a PRÓPRIA linha: o
+    // restante da lista é filtrado aqui, no servidor, e nunca sai da API.
+    const perfil = String(req.user?.perfil || "").toLowerCase().trim();
+    let itens = itensTodos;
+    if (perfil === "treinando") {
+      const norm = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+      const meuNome = norm(req.user?.nome);
+      itens = meuNome ? itensTodos.filter((i) => norm(i.treinando_nome) === meuNome) : [];
+    }
 
     const totalTreinandos = itens.length;
 

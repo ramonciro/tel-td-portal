@@ -25,10 +25,17 @@ async function listBiblioteca(req, res) {
       params.push(req.empresaId);
     }
 
-    const filtroCliente = filtroClientesSQL(req, "cliente");
+    const filtroCliente = filtroClientesSQL(req, "cliente", { aceitarGlobalLiteral: true });
     if (filtroCliente) {
       condicoes.push(filtroCliente.sql);
       params.push(...filtroCliente.params);
+    }
+
+    // Rascunho é só da equipe de gestão: treinando/instrutor não veem material
+    // ainda não publicado (antes o status "Rascunho" era só um rótulo).
+    const perfilLista = String(req.user?.perfil || "").toLowerCase().trim();
+    if (!["coordenador", "supervisor", "superintendente", "assistente_treinamento"].includes(perfilLista) && !req.user?.super_admin) {
+      condicoes.push("(status IS NULL OR LOWER(TRIM(status)) <> 'rascunho')");
     }
 
     const where = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
@@ -241,7 +248,10 @@ async function uploadBibliotecaArquivo(req, res) {
       .basename(req.file.originalname || "arquivo", ext)
       .replace(/[^a-zA-Z0-9-_]/g, "_");
 
-    const fileName = `${Date.now()}_${base}${ext}`;
+    // Nome imprevisível: os arquivos são servidos por link direto (sem login,
+    // para abrir em nova aba/baixar); com um sufixo aleatório de 16 bytes o
+    // endereço não pode ser adivinhado a partir do nome do arquivo ou da data.
+    const fileName = `${Date.now()}_${require("crypto").randomBytes(16).toString("hex")}_${base}${ext}`;
     const fullPath = path.join(uploadDir, fileName);
 
     fs.writeFileSync(fullPath, req.file.buffer);
