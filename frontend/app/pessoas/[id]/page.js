@@ -122,7 +122,7 @@ export default function PerfilPessoaPage() {
     );
   }
 
-  const { pessoa, turmas = [], jornadas = [], coaching = [], metodologia, usuario, dados_bancarios: dadosBancarios, oficina } = dados;
+  const { pessoa, turmas = [], jornadas = [], coaching = [], metodologia, usuario, dados_bancarios: dadosBancarios, oficina, ocultos = {} } = dados;
   const selo = selosIdentidade(pessoa.status_identidade);
 
   return (
@@ -223,6 +223,7 @@ export default function PerfilPessoaPage() {
           )}
         </section>
 
+        {!ocultos.coaching && (
         <section style={{ ...card, marginTop: 16 }}>
           <h2 style={sectionTitle}>Coaching individual ({coaching.length})</h2>
           {!coaching.length ? (
@@ -246,6 +247,7 @@ export default function PerfilPessoaPage() {
             </div>
           )}
         </section>
+        )}
 
         {oficina && (
           <section style={{ ...card, marginTop: 16 }}>
@@ -327,6 +329,7 @@ export default function PerfilPessoaPage() {
           </section>
         )}
 
+        {!ocultos.metodologia && (
         <section style={{ ...card, marginTop: 16 }}>
           <h2 style={sectionTitle}>Perfil comportamental</h2>
           {!metodologia ? (
@@ -352,7 +355,9 @@ export default function PerfilPessoaPage() {
             </div>
           )}
         </section>
+        )}
 
+        {!ocultos.usuario && (
         <section style={{ ...card, marginTop: 16 }}>
           <h2 style={sectionTitle}>Conta de acesso ao Portal</h2>
           {!usuario ? (
@@ -374,6 +379,7 @@ export default function PerfilPessoaPage() {
             </div>
           )}
         </section>
+        )}
 
         {dadosBancarios && (
           <section style={{ ...card, marginTop: 16 }}>
