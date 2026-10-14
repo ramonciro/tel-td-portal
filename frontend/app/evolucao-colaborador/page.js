@@ -107,37 +107,30 @@ function VisaoTreinando({ usuario }) {
       setLoading(true);
       const nome = String(usuario?.nome || "").trim();
 
-      // Busca turmas onde o usuário é participante e avaliações próprias
-      const [treinamentosData, avaliData] = await Promise.all([
-        apiFetch("/treinamentos").catch(() => []),
-        apiFetch(`/avaliacoes`).catch(() => []),
+      // Turmas em que a pessoa é participante e as notas das próprias avaliações.
+      // Antes usava /treinamentos e /avaliacoes (rotas da equipe): o treinando
+      // recebia acesso negado e a tela ficava sempre vazia.
+      const [turmasData, avaliData] = await Promise.all([
+        apiFetch("/minhas-turmas").catch(() => []),
+        apiFetch("/minhas-avaliacoes").catch(() => []),
       ]);
 
-      const listaTurmas = Array.isArray(treinamentosData) ? treinamentosData : [];
-      const listaAvals  = Array.isArray(avaliData) ? avaliData : [];
+      const listaTurmas = Array.isArray(turmasData) ? turmasData : [];
+      const minhasAvals = Array.isArray(avaliData) ? avaliData : [];
 
-      // Filtrar avaliações do próprio treinando
-      const minhasAvals = listaAvals.filter(
-        (a) => String(a.treinando_nome || "").trim().toLowerCase() === nome.toLowerCase()
-      );
-
-      // Buscar frequência individual por turma com participação confirmada
-      const treinamentoIds = [...new Set(minhasAvals.map((a) => a.treinamento_id))];
+      // Frequência individual por turma (o servidor já devolve só a própria linha).
       const freqMap = {};
-
       await Promise.all(
-        treinamentoIds.map(async (tid) => {
-          const r = await apiFetch(`/frequencia-individual?treinamento_id=${tid}`).catch(() => null);
-          const item = (r?.itens || []).find(
-            (i) => String(i.treinando_nome || "").trim().toLowerCase() === nome.toLowerCase()
-          );
-          if (item) freqMap[tid] = item;
+        listaTurmas.map(async (t) => {
+          const r = await apiFetch(`/frequencia-individual?treinamento_id=${t.id}`).catch(() => null);
+          const item = (r?.itens || [])[0]; // só a própria linha (o servidor filtra)
+          if (item) freqMap[t.id] = item;
         })
       );
 
       setFreqs(freqMap);
       setAvals(minhasAvals);
-      setTurmas(listaTurmas.filter((t) => treinamentoIds.includes(t.id)));
+      setTurmas(listaTurmas);
       setErro("");
     } catch (e) {
       setErro(e.message || "Erro ao carregar seu histórico.");
