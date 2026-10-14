@@ -128,6 +128,7 @@ const {
   getParticipantesByTreinamento,
   importarParticipantesExcel,
   baixarModeloImportacaoParticipantes,
+  exportarPrimeiraAula,
   salvarChamadaParticipantes,
   createParticipanteTreinamento,   // FIX: estava exportada no controller mas nunca importada
   deleteParticipanteTreinamento,
@@ -272,7 +273,17 @@ app.use(express.urlencoded({ extended: true }));
 // direto já usado por esses arquivos); no Railway o disco não é persistente
 // entre deploys — isso é uma limitação arquitetural separada, já registrada
 // no roadmap, e não é resolvida por esta correção pontual.
-app.use("/uploads", express.static(require("path").join(process.cwd(), "uploads")));
+app.use(
+  "/uploads",
+  (req, res, next) => {
+    // Arquivos enviados nunca são interpretados pelo navegador como página
+    // (HTML/script): sempre tratados como o tipo declarado, sem "adivinhar".
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    next();
+  },
+  express.static(require("path").join(process.cwd(), "uploads"), { index: false, dotfiles: "deny" })
+);
 // Sprint 1: clientMiddleware aplicado globalmente — popula req.empresaId
 // via empresa_id do JWT para todas as rotas protegidas
 app.use(clientMiddleware);
@@ -1051,6 +1062,13 @@ app.get(
   baixarModeloImportacaoParticipantes
 );
 
+app.get(
+  "/api/treinamentos/:id/exportar-primeira-aula",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  exportarPrimeiraAula
+);
+
 app.post(
   "/api/treinamentos/salvar-chamada",
   authRequired,
@@ -1376,9 +1394,32 @@ app.get(
   // esta rota, sem essa liberação, respondia 403 para turmas de outro
   // tenant. Ver tenantScopeFor em frequenciaIndividualController.js para o
   // isolamento de dados correspondente.
-  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "treinando"),
   getFrequenciaIndividual
 );
+
+// "Meu histórico" do treinando: as notas das avaliações dele. /api/avaliacoes
+// (CRUD) é só da equipe; aqui o servidor devolve apenas as linhas da própria
+// pessoa (pelo nome da conta, dentro da empresa).
+app.get("/api/minhas-avaliacoes", authRequired, async (req, res) => {
+  try {
+    const nome = String(req.user?.nome || "").trim();
+    if (!nome) return res.json([]);
+    const empresaId = req.empresaId ?? null;
+    const [rows] = await pool.query(
+      `SELECT id, treinamento_id, titulo, nota_nps, nota_qualidade, nota_prova, treinando_nome
+         FROM avaliacoes
+        WHERE LOWER(TRIM(treinando_nome)) = LOWER(TRIM(?))
+          ${empresaId ? "AND empresa_id = ?" : ""}
+        ORDER BY id DESC`,
+      empresaId ? [nome, empresaId] : [nome]
+    );
+    return res.json(rows);
+  } catch (error) {
+    console.error("[minhas-avaliacoes]", error.message);
+    return res.status(500).json({ ok: false, message: "Erro ao buscar avaliações" });
+  }
+});
 
 app.get(
   "/api/avaliacoes-treinandos",
@@ -1505,7 +1546,11 @@ app.post(
   (req, res, next) => {
     uploadBiblioteca.single("arquivo")(req, res, (err) => {
       if (err) {
-        return res.status(400).json({ ok: false, message: err.message || "Falha no upload do arquivo" });
+        const tamanho = err.code === "LIMIT_FILE_SIZE";
+        return res.status(400).json({
+          ok: false,
+          message: tamanho ? "Arquivo maior que o limite permitido (25MB)." : (err.message || "Falha no upload do arquivo"),
+        });
       }
       return next();
     });
