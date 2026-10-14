@@ -5,9 +5,114 @@
 // CommonJS — nunca usar import/export
 
 const db      = require("../lib/db");
-const bcrypt  = require("bcryptjs");
+const { registrarAuditoria } = require("../services/auditoria");
 
 const getEmpresaId = (req) => req.user?.empresa_id;
+
+// Respostas de erro: mantém `error` (usado pelo front antigo) e acrescenta
+// `message` (padrão do resto do portal). Detalhes técnicos nunca vão para o
+// cliente — ficam só no log do servidor.
+const erro = (res, status, msg, extra = {}) => res.status(status).json({ error: msg, message: msg, ...extra });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VALIDAÇÃO (auditoria 14/10/2026) — antes, criar/editar aceitavam qualquer
+// texto em setor/status (o banco recusava com 500 genérico), números inválidos
+// viravam 0 em silêncio e editar nem checava campos obrigatórios.
+// ─────────────────────────────────────────────────────────────────────────────
+const SETORES  = ["OPERACIONAL", "ESTRATÉGICO"];
+const STATUSES = ["EM ANDAMENTO", "ENTREGUE", "NÃO ENTREGUE", "CANCELADA"];
+const LIMITE_LISTA_MAX = 500;
+
+function _soDataISO(v) {
+  if (v === null || v === undefined || v === "") return null;
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return undefined;
+    const p = (n) => String(n).padStart(2, "0");
+    return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}`;
+  }
+  const t = String(v).trim();
+  const m = t.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?(?:[T ].*)?$/);
+  if (!m) return undefined;
+  const ano = Number(m[1]); const mes = Number(m[2]); const dia = Number(m[3] || 1);
+  const d = new Date(Date.UTC(ano, mes - 1, dia));
+  if (d.getUTCFullYear() !== ano || d.getUTCMonth() !== mes - 1 || d.getUTCDate() !== dia) return undefined;
+  return `${m[1]}-${m[2]}-${String(dia).padStart(2, "0")}`;
+}
+
+function _inteiro(v, campo, erros) {
+  if (v === null || v === undefined || v === "") return 0;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 100000) {
+    erros.push(`${campo} deve ser um número inteiro entre 0 e 100000`);
+    return 0;
+  }
+  return n;
+}
+
+function _texto(v, max, campo, erros, { obrigatorio = false } = {}) {
+  const t = v === null || v === undefined ? "" : String(v).trim();
+  if (!t) {
+    if (obrigatorio) erros.push(`${campo} é obrigatório`);
+    return null;
+  }
+  if (t.length > max) { erros.push(`${campo} deve ter no máximo ${max} caracteres`); return t.slice(0, max); }
+  return t;
+}
+
+/** Valida o corpo completo de uma RP. Devolve { erros, dados }. */
+function validarRP(b) {
+  const erros = [];
+  const mes = _soDataISO(b.mes_referencia);
+  if (b.mes_referencia === undefined || b.mes_referencia === null || b.mes_referencia === "") erros.push("mes_referencia é obrigatório");
+  else if (mes === undefined || mes === null) erros.push("mes_referencia inválido (use AAAA-MM)");
+
+  const site    = _texto(b.site, 100, "site", erros, { obrigatorio: true });
+  const produto = _texto(b.produto, 150, "produto", erros, { obrigatorio: true });
+
+  const setorBruto = b.setor === undefined || b.setor === null ? "" : String(b.setor).trim().toUpperCase();
+  const setor = setorBruto.includes("ESTRAT") ? "ESTRATÉGICO" : setorBruto.includes("OPER") ? "OPERACIONAL" : null;
+  if (!setor) erros.push("setor deve ser OPERACIONAL ou ESTRATÉGICO");
+
+  const statusBruto = b.status === undefined || b.status === null || b.status === "" ? "EM ANDAMENTO" : String(b.status).trim().toUpperCase();
+  const status = STATUSES.find((x) => x === statusBruto) || null;
+  if (!status) erros.push(`status deve ser um de: ${STATUSES.join(", ")}`);
+
+  const datas = {};
+  for (const campo of ["data_recebimento", "inicio_av_tecnica", "final_av_tecnica", "data_fechamento_vaga"]) {
+    const d = _soDataISO(b[campo]);
+    if (d === undefined) { erros.push(`${campo} inválida (use AAAA-MM-DD)`); datas[campo] = null; }
+    else datas[campo] = d;
+  }
+  if (setor === "OPERACIONAL" && datas.inicio_av_tecnica && datas.final_av_tecnica && datas.final_av_tecnica < datas.inicio_av_tecnica)
+    erros.push("final_av_tecnica não pode ser anterior a inicio_av_tecnica");
+
+  const chamado = _texto(b.chamado, 200, "chamado", erros);
+  const cargo   = _texto(b.cargo, 200, "cargo", erros);
+  const obs     = _texto(b.observacoes, 5000, "observacoes", erros);
+  const hcs           = _inteiro(b.hcs, "hcs", erros);
+  const hcs_com_to    = _inteiro(b.hcs_com_to, "hcs_com_to", erros);
+  const hcs_aprovados = _inteiro(b.hcs_aprovados, "hcs_aprovados", erros);
+  const qtd_entregue  = _inteiro(b.qtd_entregue, "qtd_entregue", erros);
+
+  // Campos que só existem para um dos setores são zerados no outro.
+  const dados = {
+    mes_referencia: mes ? `${mes.slice(0, 7)}-01` : null,
+    site, setor, chamado, produto, status, observacoes: obs,
+    cargo:                setor === "ESTRATÉGICO" ? cargo : null,
+    data_fechamento_vaga: setor === "ESTRATÉGICO" ? datas.data_fechamento_vaga : null,
+    inicio_av_tecnica:    setor === "OPERACIONAL" ? datas.inicio_av_tecnica : null,
+    final_av_tecnica:     setor === "OPERACIONAL" ? datas.final_av_tecnica : null,
+    data_recebimento: datas.data_recebimento,
+    hcs, hcs_com_to, hcs_aprovados, qtd_entregue,
+  };
+  return { erros, dados };
+}
+
+const COLUNAS_RP = [
+  "mes_referencia", "site", "setor", "chamado", "produto", "cargo", "data_recebimento", "status",
+  "inicio_av_tecnica", "final_av_tecnica", "data_fechamento_vaga",
+  "hcs", "hcs_com_to", "hcs_aprovados", "qtd_entregue", "observacoes",
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRINT 1 — CRUD
@@ -15,13 +120,17 @@ const getEmpresaId = (req) => req.user?.empresa_id;
 
 const listar = async (req, res) => {
   const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
 
-  const { mes, site, setor, status, produto, page = 1, limit = 200 } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const { mes, site, setor, status, produto } = req.query;
+  // Teto no limite: antes um `?limit=999999` devolvia a tabela inteira.
+  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), LIMITE_LISTA_MAX);
+  const page   = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const offset = (page - 1) * limit;
   const params = [empresa_id];
   const conditions = ["r.empresa_id = ?"];
 
+  if (mes && !/^\d{4}-\d{2}$/.test(String(mes))) return erro(res, 400, "Filtro mes inválido (use AAAA-MM)");
   if (mes)     { conditions.push("DATE_FORMAT(r.mes_referencia, '%Y-%m') = ?"); params.push(mes); }
   if (site)    { conditions.push("r.site = ?");          params.push(site); }
   if (setor)   { conditions.push("r.setor = ?");         params.push(setor); }
@@ -37,7 +146,7 @@ const listar = async (req, res) => {
        WHERE ${where}
        ORDER BY r.mes_referencia DESC, r.site, r.setor, r.produto
        LIMIT ? OFFSET ?`,
-      [...params, parseInt(limit), offset]
+      [...params, limit, offset]
     );
     const [[{ total }]] = await db.query(`SELECT COUNT(*) AS total FROM rps r WHERE ${where}`, params);
     const [[totais]]    = await db.query(
@@ -45,52 +154,36 @@ const listar = async (req, res) => {
               SUM(hcs_aprovados) AS hcs_aprovados, SUM(qtd_entregue) AS qtd_entregue
        FROM rps r WHERE ${where}`, params
     );
-    return res.json({ rps, total, totais, page: parseInt(page), limit: parseInt(limit) });
+    return res.json({ rps, total, totais, page, limit });
   } catch (err) {
     console.error("[rsController.listar]", err);
-    return res.status(500).json({ error: "Erro ao listar RPs" });
+    return erro(res, 500, "Erro ao listar RPs");
   }
 };
 
 const criar = async (req, res) => {
   const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
 
-  const {
-    mes_referencia, site, setor, chamado, produto, cargo,
-    data_recebimento, status,
-    inicio_av_tecnica, final_av_tecnica, data_fechamento_vaga,
-    hcs, hcs_com_to, hcs_aprovados, qtd_entregue, observacoes,
-  } = req.body;
-
-  if (!mes_referencia || !site || !setor || !produto)
-    return res.status(400).json({ error: "Campos obrigatórios: mes_referencia, site, setor, produto" });
-
-  const cargoFinal      = setor === "ESTRATÉGICO" ? (cargo               || null) : null;
-  const fechamentoFinal = setor === "ESTRATÉGICO" ? (data_fechamento_vaga || null) : null;
-  const inicioAvFinal   = setor === "OPERACIONAL" ? (inicio_av_tecnica    || null) : null;
-  const finalAvFinal    = setor === "OPERACIONAL" ? (final_av_tecnica     || null) : null;
+  const { erros, dados } = validarRP(req.body || {});
+  if (erros.length) return erro(res, 400, erros.join("; "), { erros });
 
   try {
     const [result] = await db.query(
-      `INSERT INTO rps
-         (empresa_id, mes_referencia, site, setor, chamado, produto, cargo,
-          data_recebimento, status, inicio_av_tecnica, final_av_tecnica,
-          data_fechamento_vaga, hcs, hcs_com_to, hcs_aprovados, qtd_entregue,
-          observacoes, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [empresa_id, mes_referencia, site, setor, chamado || null, produto, cargoFinal,
-       data_recebimento || null, status || "EM ANDAMENTO",
-       inicioAvFinal, finalAvFinal, fechamentoFinal,
-       parseInt(hcs) || 0, parseInt(hcs_com_to) || 0,
-       parseInt(hcs_aprovados) || 0, parseInt(qtd_entregue) || 0,
-       observacoes || null, req.user?.id || null]
+      `INSERT INTO rps (empresa_id, ${COLUNAS_RP.join(", ")}, created_by)
+       VALUES (?, ${COLUNAS_RP.map(() => "?").join(", ")}, ?)`,
+      [empresa_id, ...COLUNAS_RP.map((c) => dados[c]), req.user?.id || null]
     );
-    await _upsertProduto(empresa_id, produto);
+    await _upsertProduto(empresa_id, dados.produto);
+    registrarAuditoria({
+      usuario: req.user, acao: "criar", entidade: "rp", entidadeId: result.insertId,
+      resumo: `${req.user?.nome || "Alguém"} criou a RP ${dados.produto} · ${dados.site} · ${dados.mes_referencia.slice(0, 7)} (${dados.setor})`,
+      dadosDepois: dados, ip: req.ip,
+    });
     return res.status(201).json({ id: result.insertId, message: "RP criada com sucesso" });
   } catch (err) {
     console.error("[rsController.criar]", err);
-    return res.status(500).json({ error: "Erro ao criar RP" });
+    return erro(res, 500, "Erro ao criar RP");
   }
 };
 
@@ -98,70 +191,81 @@ const detalhe = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   try {
     const [[rp]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ?", [req.params.id, empresa_id]);
-    if (!rp) return res.status(404).json({ error: "RP não encontrada" });
+    if (!rp) return erro(res, 404, "RP não encontrada");
     return res.json(rp);
   } catch (err) {
     console.error("[rsController.detalhe]", err);
-    return res.status(500).json({ error: "Erro ao buscar RP" });
+    return erro(res, 500, "Erro ao buscar RP");
   }
 };
 
 const editar = async (req, res) => {
   const empresa_id = getEmpresaId(req);
-  const {
-    mes_referencia, site, setor, chamado, produto, cargo,
-    data_recebimento, status,
-    inicio_av_tecnica, final_av_tecnica, data_fechamento_vaga,
-    hcs, hcs_com_to, hcs_aprovados, qtd_entregue, observacoes,
-  } = req.body;
-
-  const cargoFinal      = setor === "ESTRATÉGICO" ? (cargo               || null) : null;
-  const fechamentoFinal = setor === "ESTRATÉGICO" ? (data_fechamento_vaga || null) : null;
-  const inicioAvFinal   = setor === "OPERACIONAL" ? (inicio_av_tecnica    || null) : null;
-  const finalAvFinal    = setor === "OPERACIONAL" ? (final_av_tecnica     || null) : null;
-
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
   try {
-    const [result] = await db.query(
-      `UPDATE rps SET mes_referencia=?, site=?, setor=?, chamado=?, produto=?, cargo=?,
-         data_recebimento=?, status=?, inicio_av_tecnica=?, final_av_tecnica=?,
-         data_fechamento_vaga=?, hcs=?, hcs_com_to=?, hcs_aprovados=?, qtd_entregue=?,
-         observacoes=?, updated_by=?
+    const [[antes]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ?", [req.params.id, empresa_id]);
+    if (!antes) return erro(res, 404, "RP não encontrada");
+
+    // Campo ausente no corpo mantém o valor atual; o conjunto final é validado.
+    const corpo = req.body || {};
+    const mesclado = {};
+    for (const c of COLUNAS_RP) mesclado[c] = corpo[c] !== undefined ? corpo[c] : antes[c];
+    const { erros, dados } = validarRP(mesclado);
+    if (erros.length) return erro(res, 400, erros.join("; "), { erros });
+
+    await db.query(
+      `UPDATE rps SET ${COLUNAS_RP.map((c) => `${c}=?`).join(", ")}, updated_by=?
        WHERE id=? AND empresa_id=?`,
-      [mes_referencia, site, setor, chamado || null, produto, cargoFinal,
-       data_recebimento || null, status, inicioAvFinal, finalAvFinal, fechamentoFinal,
-       parseInt(hcs) || 0, parseInt(hcs_com_to) || 0,
-       parseInt(hcs_aprovados) || 0, parseInt(qtd_entregue) || 0,
-       observacoes || null, req.user?.id || null, req.params.id, empresa_id]
+      [...COLUNAS_RP.map((c) => dados[c]), req.user?.id || null, req.params.id, empresa_id]
     );
-    if (result.affectedRows === 0) return res.status(404).json({ error: "RP não encontrada" });
-    if (produto) await _upsertProduto(empresa_id, produto);
+    await _upsertProduto(empresa_id, dados.produto);
+    registrarAuditoria({
+      usuario: req.user, acao: "editar", entidade: "rp", entidadeId: Number(req.params.id),
+      resumo: `${req.user?.nome || "Alguém"} editou a RP ${dados.produto} · ${dados.site} · ${dados.mes_referencia.slice(0, 7)}`,
+      dadosAntes: antes, dadosDepois: dados, ip: req.ip,
+    });
     return res.json({ message: "RP atualizada com sucesso" });
   } catch (err) {
     console.error("[rsController.editar]", err);
-    return res.status(500).json({ error: "Erro ao editar RP" });
+    return erro(res, 500, "Erro ao editar RP");
   }
 };
 
 const excluir = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   try {
-    const [result] = await db.query("DELETE FROM rps WHERE id=? AND empresa_id=?", [req.params.id, empresa_id]);
-    if (result.affectedRows === 0) return res.status(404).json({ error: "RP não encontrada" });
+    const [[antes]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ?", [req.params.id, empresa_id]);
+    if (!antes) return erro(res, 404, "RP não encontrada");
+    await db.query("DELETE FROM rps WHERE id=? AND empresa_id=?", [req.params.id, empresa_id]);
+    registrarAuditoria({
+      usuario: req.user, acao: "excluir", entidade: "rp", entidadeId: Number(req.params.id),
+      resumo: `${req.user?.nome || "Alguém"} excluiu a RP ${antes.produto} · ${antes.site}`,
+      dadosAntes: antes, ip: req.ip,
+    });
     return res.json({ message: "RP excluída com sucesso" });
   } catch (err) {
     console.error("[rsController.excluir]", err);
-    return res.status(500).json({ error: "Erro ao excluir RP" });
+    return erro(res, 500, "Erro ao excluir RP");
   }
 };
 
 const getSites = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   try {
-    const [sites] = await db.query("SELECT id, nome FROM rs_sites WHERE empresa_id=? AND ativo=1 ORDER BY nome", [empresa_id]);
+    // Sites cadastrados + sites que já aparecem em RPs (ambiente novo sem seed
+    // não fica com o seletor vazio).
+    const [sites] = await db.query(
+      `SELECT COALESCE(MIN(id), CONCAT('n:', nome)) AS id, nome FROM (
+         SELECT id, nome FROM rs_sites WHERE empresa_id=? AND ativo=1
+         UNION ALL
+         SELECT NULL AS id, site AS nome FROM rps WHERE empresa_id=? AND site IS NOT NULL AND site <> ''
+       ) x GROUP BY nome ORDER BY nome`,
+      [empresa_id, empresa_id]
+    );
     return res.json(sites);
   } catch (err) {
     console.error("[rsController.getSites]", err);
-    return res.status(500).json({ error: "Erro ao buscar sites" });
+    return erro(res, 500, "Erro ao buscar sites");
   }
 };
 
@@ -237,7 +341,7 @@ const getRelatorio = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
   const { mes, setor } = req.query;
-  if (!mes) return res.status(400).json({ error: "Parâmetro mes é obrigatório" });
+  if (!mes || !/^\d{4}-\d{2}$/.test(String(mes))) return res.status(400).json({ error: "Parâmetro mes é obrigatório (AAAA-MM)", message: "Parâmetro mes é obrigatório (AAAA-MM)" });
 
   const base = [empresa_id, mes];
   const bw   = "empresa_id=? AND DATE_FORMAT(mes_referencia,'%Y-%m')=?";
@@ -272,7 +376,7 @@ const exportar = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
   const { mes } = req.query;
-  if (!mes) return res.status(400).json({ error: "Parâmetro mes é obrigatório" });
+  if (!mes || !/^\d{4}-\d{2}$/.test(String(mes))) return res.status(400).json({ error: "Parâmetro mes é obrigatório (AAAA-MM)", message: "Parâmetro mes é obrigatório (AAAA-MM)" });
 
   try {
     const { novoWorkbook, adicionarTabela, escreverTabela } = require("../lib/excelExport");
@@ -501,28 +605,41 @@ function _findHeaderRow(sheet, XLSX) {
  *   ?ano=2026      → ano de referência para normalizar meses sem ano (default: ano atual)
  *   ?modo=append   → adiciona sem verificar duplicatas
  *   ?modo=skip     → ignora linhas que já existem (default)
+ *
+ * Auditoria 14/10/2026: a importação agora é TUDO OU NADA (uma transação, em
+ * lotes de 200 linhas) — antes, um erro no meio deixava a planilha pela
+ * metade no banco. A chave de duplicata inclui cargo e data de recebimento
+ * (antes era só mês/site/setor/produto/chamado, o que descartava como
+ * "duplicadas" RPs diferentes sem número de chamado). Cada importação fica
+ * registrada em Auditoria.
  */
+const TAM_LOTE_IMPORT = 200;
+
+function _chaveRP(r) {
+  return [r.mes_referencia, r.site, r.setor, r.produto, r.chamado || "", r.cargo || "", r.data_recebimento || ""]
+    .map((v) => String(v).toUpperCase()).join("|");
+}
+
 const importarPlanilha = async (req, res) => {
   const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
-  if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado" });
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  if (!req.file) return erro(res, 400, "Nenhum arquivo enviado");
 
-  const ano  = parseInt(req.query.ano) || new Date().getFullYear();
-  const modo = req.query.modo || "skip";
+  const ano  = parseInt(req.query.ano, 10) || new Date().getFullYear();
+  if (ano < 2000 || ano > 2100) return erro(res, 400, "Ano inválido");
+  const modo = req.query.modo === "append" ? "append" : "skip";
 
+  let conn;
   try {
     const XLSX      = require("xlsx");
     const workbook  = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
-    const sheetNames = workbook.SheetNames;
 
-    let totalImportado = 0;
-    let totalIgnorado  = 0;
-    let totalErro      = 0;
+    let totalIgnorado = 0;
     const detalhes = [];
+    const novas = []; // linhas válidas, na ordem da planilha
 
-    // Processar cada aba que contém dados operacionais ou estratégicos
-    for (const nomAba of sheetNames) {
-      // Pular abas de dashboard/tabelas/gráficos
+    // ── 1) Ler e validar tudo em memória (nada é gravado ainda) ──────────────
+    for (const nomAba of workbook.SheetNames) {
       const nomUpper = nomAba.toUpperCase();
       if (nomUpper.includes("DASHBOARD") || nomUpper.includes("TABELA") ||
           nomUpper.includes("GRAFICO") || nomUpper.includes("GRÁFICO") ||
@@ -530,7 +647,6 @@ const importarPlanilha = async (req, res) => {
         continue;
       }
 
-      // Determinar setor pela aba (ex: "JULHO OPERACIONAL", "AGOSTO ESTRATÉGICO")
       let setorAba = null;
       if (nomUpper.includes("OPER"))   setorAba = "OPERACIONAL";
       if (nomUpper.includes("ESTRAT")) setorAba = "ESTRATÉGICO";
@@ -544,169 +660,143 @@ const importarPlanilha = async (req, res) => {
         continue;
       }
 
-      // Ler dados a partir do cabeçalho
       const raw = XLSX.utils.sheet_to_json(sheet, { defval: null, range: headerRow });
       if (!raw || raw.length === 0) continue;
 
-      // Mapear nomes de colunas (podem ter acentos ou espaços diferentes)
       const colMap = (row) => {
         const result = {};
         for (const [k, v] of Object.entries(row)) {
-          const ku = k.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+          const ku = k.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
           result[ku] = v;
         }
         return result;
       };
 
-      let importadosAba = 0;
-      let ignoradosAba  = 0;
+      let validasAba = 0;
+      let ignoradosAba = 0;
 
       for (const rawRow of raw) {
         const row = colMap(rawRow);
 
-        // Pular linha de TOTAL e linhas completamente vazias
         const primeiroVal = String(Object.values(rawRow)[0] || "").trim().toUpperCase();
         if (primeiroVal === "TOTAL" || primeiroVal === "MES" || primeiroVal === "MÊS") continue;
 
-        // Extrair mes
-        const mesRaw = row["MES"] ?? row["MES REFERENCIA"] ?? null;
-        const mes_referencia = _normMes(mesRaw, ano);
+        const mes_referencia = _normMes(row["MES"] ?? row["MES REFERENCIA"] ?? null, ano);
         if (!mes_referencia) { totalIgnorado++; ignoradosAba++; continue; }
 
-        // Site e setor
-        const site = String(row["SITE"] || "").trim().toUpperCase() || null;
+        const site = String(row["SITE"] || "").trim().toUpperCase().slice(0, 100) || null;
         if (!site) { totalIgnorado++; ignoradosAba++; continue; }
 
-        // Setor: usar da aba ou da coluna
-        const setorColuna = _normSetor(row["SETOR"]);
-        const setor       = setorColuna || setorAba;
+        const setor = _normSetor(row["SETOR"]) || setorAba;
         if (!setor) { totalIgnorado++; ignoradosAba++; continue; }
 
-        // Produto
-        const produto = String(row["PRODUTO"] ?? row["CLIENTE"] ?? "").trim().toUpperCase();
+        const produto = String(row["PRODUTO"] ?? row["CLIENTE"] ?? "").trim().toUpperCase().slice(0, 150);
         if (!produto) { totalIgnorado++; ignoradosAba++; continue; }
 
-        // Status
-        const status = _normStatus(row["STATUS"]);
-
-        // Datas
-        const data_recebimento     = _normDate(row["DATA RECEBIMENTO RP"] ?? row["DATA RECEBIMENTO"], ano);
-        const inicio_av_tecnica    = setor==="OPERACIONAL" ? _normDate(row["INICIO DA AV TECNICA"] ?? row["INICIO AV TECNICA"], ano) : null;
-        const final_av_tecnica     = setor==="OPERACIONAL" ? _normDate(row["FINAL DA AV TECNICA"]  ?? row["FINAL AV TECNICA"],  ano) : null;
-        const data_fechamento_vaga = setor==="ESTRATÉGICO"  ? _normDate(row["DATA FECHAMENTO DA VAGA"] ?? row["DATA FECHAMENTO VAGA"], ano) : null;
-
-        // Cargo (só ESTRATÉGICO)
-        const cargo = setor==="ESTRATÉGICO" ? (String(row["CARGO"]||"").trim().toUpperCase()||null) : null;
-
-        // Chamado
-        const chamado = String(row["CHAMADO"]??row["N CHAMADO"]??"").trim()||null;
-
-        // HC's
-        const hcs           = _normInt(row["HCS"] ?? row["HC'S"] ?? row["HCS SOLICITADOS"]);
-        const hcs_com_to    = _normInt(row["HCS COM TO"] ?? row["HC'S COM TO"]);
-        const hcs_aprovados = _normInt(row["HCS APROVADOS"] ?? row["HC'S APROVADOS"]);
-        const qtd_entregue  = _normInt(row["QTD ENTREGUE"] ?? row["ENTREGUE"]);
-
-        // Verificar duplicata (modo skip)
-        if (modo === "skip") {
-          const [[exists]] = await db.query(
-            `SELECT id FROM rps WHERE empresa_id=? AND mes_referencia=? AND site=? AND setor=?
-             AND produto=? AND COALESCE(chamado,'')=? LIMIT 1`,
-            [empresa_id, mes_referencia, site, setor, produto, chamado||""]
-          );
-          if (exists) { totalIgnorado++; ignoradosAba++; continue; }
+        const data_recebimento = _normDate(row["DATA RECEBIMENTO RP"] ?? row["DATA RECEBIMENTO"], ano);
+        const registro = {
+          mes_referencia, site, setor, produto,
+          status: _normStatus(row["STATUS"]),
+          data_recebimento,
+          inicio_av_tecnica:    setor==="OPERACIONAL" ? _normDate(row["INICIO DA AV TECNICA"] ?? row["INICIO AV TECNICA"], ano) : null,
+          final_av_tecnica:     setor==="OPERACIONAL" ? _normDate(row["FINAL DA AV TECNICA"]  ?? row["FINAL AV TECNICA"],  ano) : null,
+          data_fechamento_vaga: setor==="ESTRATÉGICO"  ? _normDate(row["DATA FECHAMENTO DA VAGA"] ?? row["DATA FECHAMENTO VAGA"], ano) : null,
+          cargo:   setor==="ESTRATÉGICO" ? (String(row["CARGO"]||"").trim().toUpperCase().slice(0, 200)||null) : null,
+          chamado: String(row["CHAMADO"]??row["N CHAMADO"]??"").trim().slice(0, 200)||null,
+          hcs:           _normInt(row["HCS"] ?? row["HC'S"] ?? row["HCS SOLICITADOS"]),
+          hcs_com_to:    _normInt(row["HCS COM TO"] ?? row["HC'S COM TO"]),
+          hcs_aprovados: _normInt(row["HCS APROVADOS"] ?? row["HC'S APROVADOS"]),
+          qtd_entregue:  _normInt(row["QTD ENTREGUE"] ?? row["ENTREGUE"]),
+        };
+        // Datas incoerentes na planilha: mantém a linha, mas sem o par inválido.
+        if (registro.inicio_av_tecnica && registro.final_av_tecnica && registro.final_av_tecnica < registro.inicio_av_tecnica) {
+          registro.final_av_tecnica = null;
         }
-
-        try {
-          await db.query(
-            `INSERT INTO rps (empresa_id, mes_referencia, site, setor, chamado, produto, cargo,
-               data_recebimento, status, inicio_av_tecnica, final_av_tecnica, data_fechamento_vaga,
-               hcs, hcs_com_to, hcs_aprovados, qtd_entregue, created_by)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-            [empresa_id, mes_referencia, site, setor, chamado, produto, cargo,
-             data_recebimento, status, inicio_av_tecnica, final_av_tecnica, data_fechamento_vaga,
-             hcs, hcs_com_to, hcs_aprovados, qtd_entregue, req.user?.id||null]
-          );
-          await _upsertProduto(empresa_id, produto);
-          totalImportado++; importadosAba++;
-        } catch (rowErr) {
-          console.error("[importar] erro na linha:", rowErr.message);
-          totalErro++;
-        }
+        novas.push(registro);
+        validasAba++;
       }
-
-      detalhes.push({ aba: nomAba, importados: importadosAba, ignorados: ignoradosAba });
+      detalhes.push({ aba: nomAba, validas: validasAba, ignorados: ignoradosAba });
     }
+
+    if (!novas.length && !totalIgnorado) {
+      return erro(res, 400, "Nenhuma aba reconhecida na planilha (procurei uma linha de cabeçalho com a coluna MÊS). Confira se é a planilha de R&S.", { detalhes });
+    }
+
+    // ── 2) Remover duplicatas (contra o banco e dentro da própria planilha) ──
+    let aInserir = novas;
+    if (modo === "skip" && novas.length) {
+      const [existentes] = await db.query(
+        `SELECT DATE_FORMAT(mes_referencia, '%Y-%m-%d') AS mes_referencia, site, setor, produto, chamado, cargo,
+                DATE_FORMAT(data_recebimento, '%Y-%m-%d') AS data_recebimento
+         FROM rps WHERE empresa_id=?`,
+        [empresa_id]
+      );
+      const vistos = new Set(existentes.map(_chaveRP));
+      aInserir = [];
+      for (const r of novas) {
+        const k = _chaveRP(r);
+        if (vistos.has(k)) { totalIgnorado++; continue; }
+        vistos.add(k);
+        aInserir.push(r);
+      }
+    }
+
+    // ── 3) Gravar tudo ou nada ───────────────────────────────────────────────
+    if (aInserir.length) {
+      conn = await db.getConnection();
+      await conn.beginTransaction();
+      for (let i = 0; i < aInserir.length; i += TAM_LOTE_IMPORT) {
+        const lote = aInserir.slice(i, i + TAM_LOTE_IMPORT);
+        const valores = [];
+        const marcadores = lote.map((r) => {
+          valores.push(
+            empresa_id, r.mes_referencia, r.site, r.setor, r.chamado, r.produto, r.cargo,
+            r.data_recebimento, r.status, r.inicio_av_tecnica, r.final_av_tecnica, r.data_fechamento_vaga,
+            r.hcs, r.hcs_com_to, r.hcs_aprovados, r.qtd_entregue, req.user?.id || null
+          );
+          return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        });
+        await conn.query(
+          `INSERT INTO rps (empresa_id, mes_referencia, site, setor, chamado, produto, cargo,
+             data_recebimento, status, inicio_av_tecnica, final_av_tecnica, data_fechamento_vaga,
+             hcs, hcs_com_to, hcs_aprovados, qtd_entregue, created_by)
+           VALUES ${marcadores.join(",")}`,
+          valores
+        );
+      }
+      await conn.commit();
+      conn.release();
+      conn = null;
+      for (const nome of new Set(aInserir.map((r) => r.produto))) await _upsertProduto(empresa_id, nome);
+    }
+
+    registrarAuditoria({
+      usuario: req.user, acao: "importar", entidade: "rp", entidadeId: null,
+      resumo: `${req.user?.nome || "Alguém"} importou planilha de R&S: ${aInserir.length} RP(s) criada(s), ${totalIgnorado} ignorada(s) (ano ${ano}, modo ${modo}, arquivo ${String(req.file.originalname || "").slice(0, 80)})`,
+      dadosDepois: { importadas: aInserir.length, ignoradas: totalIgnorado, ano, modo },
+      ip: req.ip,
+    });
 
     return res.json({
       ok: true,
-      resumo: { total_importado: totalImportado, total_ignorado: totalIgnorado, total_erro: totalErro },
+      resumo: { total_importado: aInserir.length, total_ignorado: totalIgnorado, total_erro: 0 },
       detalhes,
     });
   } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) { /* ignora */ }
+      conn.release();
+    }
     console.error("[rsController.importarPlanilha]", err);
-    if (err.code === "MODULE_NOT_FOUND") return res.status(500).json({ error: "xlsx não instalado" });
-    return res.status(500).json({ error: "Erro ao processar arquivo: " + err.message });
+    // Sem err.message para o cliente: pode expor SQL e caminhos internos.
+    return erro(res, 500, "Não foi possível importar a planilha. Nenhuma linha foi gravada — confira o arquivo e tente de novo.");
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SPRINT 3 — GESTÃO DE USUÁRIOS R&S
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** GET /api/rs/usuarios — lista usuários coordenador_rs e gestor_rs do tenant */
-const listarUsuariosRS = async (req, res) => {
-  const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
-  try {
-    const [usuarios] = await db.query(
-      `SELECT id, nome, email, perfil, ativo, created_at
-       FROM usuarios
-       WHERE empresa_id=? AND perfil IN ('coordenador_rs','gestor_rs')
-       ORDER BY nome`,
-      [empresa_id]
-    );
-    return res.json(usuarios);
-  } catch (err) {
-    console.error("[rsController.listarUsuariosRS]", err);
-    return res.status(500).json({ error: "Erro ao listar usuários R&S" });
-  }
-};
-
-/** POST /api/rs/usuarios — cria usuário coordenador_rs ou gestor_rs */
-const criarUsuarioRS = async (req, res) => {
-  const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
-
-  const { nome, email, senha, perfil } = req.body;
-
-  if (!nome || !email || !senha)
-    return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios" });
-
-  const perfilFinal = ["coordenador_rs","gestor_rs"].includes(perfil) ? perfil : "gestor_rs";
-
-  try {
-    // Verificar e-mail duplicado — restrito ao próprio tenant: checar
-    // globalmente vazava (via true/false) se um e-mail já existia em OUTRA
-    // empresa. O índice único de `usuarios` já impede duplicata real.
-    const [[exists]] = await db.query(
-      "SELECT id FROM usuarios WHERE email=? AND empresa_id=? LIMIT 1",
-      [email, empresa_id]
-    );
-    if (exists) return res.status(400).json({ error: "E-mail já cadastrado" });
-
-    const hash = await bcrypt.hash(senha, 10);
-    const [result] = await db.query(
-      `INSERT INTO usuarios (empresa_id, nome, email, senha, perfil, ativo, troca_senha_obrigatoria)
-       VALUES (?,?,?,?,?,1,0)`,
-      [empresa_id, nome.trim(), email.trim().toLowerCase(), hash, perfilFinal]
-    );
-    return res.status(201).json({ id: result.insertId, message: "Usuário R&S criado com sucesso" });
-  } catch (err) {
-    console.error("[rsController.criarUsuarioRS]", err);
-    return res.status(500).json({ error: "Erro ao criar usuário" });
-  }
-};
+// Gestão de usuários do R&S: a partir de 14/10/2026 é feita só em /api/usuarios
+// (Gestão de Usuários), que já aplica o escopo restrito (lib/perfilScope.js),
+// troca de senha obrigatória e vínculo de cliente. Os atalhos /api/rs/usuarios
+// foram removidos.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS INTERNOS
@@ -731,5 +821,5 @@ module.exports = {
   // Sprint 2
   getDashboard, getRelatorio, exportar,
   // Sprint 3
-  importarPlanilha, listarUsuariosRS, criarUsuarioRS,
+  importarPlanilha,
 };
