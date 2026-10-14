@@ -2121,6 +2121,60 @@ async function runMigrations() {
     // start (qualquer erro vira só um aviso).
     await diagnosticarNomeAntigo();
 
+    // 61. Módulo R&S — tabelas nunca tiveram CREATE TABLE no migrate.js: só
+    // existiam como database/migrations/01–03_*.sql, rodados à mão. Ambiente
+    // novo (ou banco restaurado) subia sem elas e o módulo inteiro dava 500.
+    // Idempotente: em produção as tabelas já existem e nada é alterado.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rs_sites (
+        id         INT PRIMARY KEY AUTO_INCREMENT,
+        empresa_id INT NOT NULL,
+        nome       VARCHAR(100) NOT NULL,
+        ativo      TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rs_produtos (
+        id         INT PRIMARY KEY AUTO_INCREMENT,
+        empresa_id INT NOT NULL,
+        nome       VARCHAR(150) NOT NULL,
+        ativo      TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rps (
+        id                   INT PRIMARY KEY AUTO_INCREMENT,
+        empresa_id           INT NOT NULL,
+        mes_referencia       DATE NOT NULL,
+        site                 VARCHAR(100) NOT NULL,
+        setor                ENUM('OPERACIONAL','ESTRATÉGICO') NOT NULL,
+        chamado              VARCHAR(200) NULL,
+        produto              VARCHAR(150) NOT NULL,
+        cargo                VARCHAR(200) NULL,
+        data_recebimento     DATE NULL,
+        status               ENUM('EM ANDAMENTO','ENTREGUE','NÃO ENTREGUE','CANCELADA') NOT NULL DEFAULT 'EM ANDAMENTO',
+        inicio_av_tecnica    DATE NULL,
+        final_av_tecnica     DATE NULL,
+        data_fechamento_vaga DATE NULL,
+        hcs                  INT NOT NULL DEFAULT 0,
+        hcs_com_to           INT NOT NULL DEFAULT 0,
+        hcs_aprovados        INT NOT NULL DEFAULT 0,
+        qtd_entregue         INT NOT NULL DEFAULT 0,
+        observacoes          TEXT NULL,
+        created_by           INT NULL,
+        updated_by           INT NULL,
+        created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_rps_empresa (empresa_id),
+        INDEX idx_rps_mes     (mes_referencia),
+        INDEX idx_rps_site    (site),
+        INDEX idx_rps_setor   (setor),
+        INDEX idx_rps_status  (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
