@@ -65,6 +65,10 @@ export default function MapaDesenvolvimentoPage() {
   const [usuarios, setUsuarios] = useState([]);
   const [participantesJornada, setParticipantesJornada] = useState([]);
   const [turmas, setTurmas] = useState([]);
+  // Catálogo de subtipos (/subtipos) — alimenta o <select> "Subdivisão" do
+  // formulário de Ações. Antes era uma lista fixa no código, que nunca refletia
+  // o que era cadastrado na tela de Subtipos.
+  const [subtiposCatalogo, setSubtiposCatalogo] = useState([]);
   // Coaching individual (20/09/2026) — trilha à parte, pessoa a pessoa, que
   // nunca entra no total_coachings acima (esse é o plano/ação coletiva de
   // coaching, coaching_planos). Só usado aqui pra mostrar "+N em coaching
@@ -148,6 +152,7 @@ export default function MapaDesenvolvimentoPage() {
     // só para popular o <select> de "trilha vinculada" da etapa — não
     // duplica lógica de acesso nem cria endpoint novo pra isso.
     { key: "trilhasCatalogo", label: "trilhas", path: "/trilhas", setter: setTrilhasCatalogo },
+    { key: "subtiposCatalogo", label: "subtipos", path: "/subtipos", setter: setSubtiposCatalogo },
   ];
 
   async function loadAll() {
@@ -1269,6 +1274,7 @@ export default function MapaDesenvolvimentoPage() {
             jornadas={jornadas}
             turmas={turmas}
             usuarios={usuarios}
+            subtiposCatalogo={subtiposCatalogo}
             handleSelecionarTurma={handleSelecionarTurma}
             saving={saving}
             setErro={setErro}
