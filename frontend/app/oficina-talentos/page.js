@@ -455,7 +455,7 @@ export default function OficinaTalentosPage() {
                   </select>
                 </Campo>
                 <Campo rotulo="Local">
-                  <input style={entrada} value={form.local_nome} onChange={(e) => setForm({ ...form, local_nome: e.target.value })} placeholder="Ex.: Tel Feira de Santana" />
+                  <input style={entrada} value={form.local_nome} onChange={(e) => setForm({ ...form, local_nome: e.target.value })} placeholder="Ex.: Unidade Feira de Santana" />
                 </Campo>
                 <Campo rotulo="Endereço">
                   <input style={entrada} value={form.endereco} onChange={(e) => setForm({ ...form, endereco: e.target.value })} />
