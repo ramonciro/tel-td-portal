@@ -69,6 +69,7 @@ const oficinaTalentosRoutes = require("./routes/oficinaTalentosRoutes");
 const oficinaTalentosPublicRoutes = require("./routes/oficinaTalentosPublicRoutes");
 const jornadaPresencaRoutes = require("./routes/jornadaPresencaRoutes");
 const jornadaDesenvolvimentoRoutes = require("./routes/jornadaDesenvolvimentoRoutes");
+const trilhaPessoasRoutes = require("./routes/trilhaPessoasRoutes");
 const turmaPresencaGradeRoutes = require("./routes/turmaPresencaGradeRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
 const instrutoresCtrl = require("./controllers/instrutoresController");
@@ -1994,6 +1995,8 @@ app.use("/api/jornada-presenca", authRequired, authorizeRoles("metodologia"), jo
 // Jornadas — desenvolvimento por etapa e evolução (Fase 2, 16/10/2026). Só a Metodologia lança;
 // o Perfil 360 lê o resumo pelo pessoasController. Isolamento por empresa dentro do controller.
 app.use("/api/jornada-desenvolvimento", authRequired, authorizeRoles("metodologia"), jornadaDesenvolvimentoRoutes);
+// Trilhas por pessoa (Fase 3, 16/10/2026) — participantes e progresso lançados pela Metodologia.
+app.use("/api/trilha-pessoas", authRequired, authorizeRoles("metodologia"), trilhaPessoasRoutes);
 
 // Treinamentos — grade de presença da turma (pessoas × aulas), PDF e Excel
 // (13/10/2026). Mesmos perfis da chamada por aula; super_admin passa.
