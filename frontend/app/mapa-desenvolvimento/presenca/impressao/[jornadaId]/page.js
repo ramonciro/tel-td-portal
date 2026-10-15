@@ -9,11 +9,17 @@ import { formatDateBR } from "../../../../../lib/date";
 // para imprimir / "Salvar como PDF" no navegador (mesmo caminho da Oficina).
 //   /mapa-desenvolvimento/presenca/impressao/<jornadaId>                    → lista de presença da jornada (paisagem)
 //   /mapa-desenvolvimento/presenca/impressao/<jornadaId>?participante=<id>  → extrato individual (evidência MPT)
+//     Fase 3 (16/10/2026): o extrato individual passa a trazer também o desenvolvimento por etapa
+//     e o progresso nas trilhas. Avaliação/nota/observação e anotações de evolução são internas:
+//     ficam DESLIGADAS por padrão e só entram no papel se a pessoa que imprime marcar.
 // Como o login fica no navegador, quem abre precisa estar logado no Portal.
 
 const LOGO = "/logo-td.png";
 const LETRA = { presente: "P", justificado: "J", ausente: "F" };
 const ROTULO = { presente: "Presente", justificado: "Justificado", ausente: "Ausente" };
+const STATUS_ETAPA_TXT = { nao_iniciada: "Não iniciada", em_andamento: "Em andamento", concluida: "Concluída" };
+const AVALIACAO_TXT = { atingiu: "Atingiu", parcial: "Parcial", nao_atingiu: "Não atingiu" };
+const TIPO_EVOLUCAO_TXT = { ponto_forte: "Ponto forte", dificuldade: "Dificuldade", plano_acao: "Plano de ação", geral: "Geral" };
 const fmt = (v, c = 1) => (v === null || v === undefined ? "—" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: c }));
 
 export default function ImpressaoPresencaPage() {
@@ -23,6 +29,9 @@ export default function ImpressaoPresencaPage() {
   const [pronto, setPronto] = useState(false);
   const [dados, setDados] = useState(null);
   const [extrato, setExtrato] = useState(null);
+  const [painel, setPainel] = useState(null);
+  const [comAvaliacao, setComAvaliacao] = useState(false);
+  const [comEvolucao, setComEvolucao] = useState(false);
   const [erro, setErro] = useState("");
 
   useEffect(() => {
@@ -38,6 +47,15 @@ export default function ImpressaoPresencaPage() {
       .catch((e) => setErro(e.message || "Não foi possível carregar. Entre no Portal e tente novamente."));
   }, [pronto, jornadaId, participanteId]);
 
+  // Desenvolvimento por etapa + trilhas (só no extrato individual). Se falhar, o
+  // extrato de presença continua saindo normalmente.
+  useEffect(() => {
+    if (!pronto || !participanteId) return;
+    apiFetch(`/jornada-desenvolvimento/participantes/${participanteId}/painel`)
+      .then(setPainel)
+      .catch(() => setPainel(null));
+  }, [pronto, participanteId]);
+
   const geradoEm = new Date().toLocaleString("pt-BR", { timeZone: "America/Bahia" });
 
   return (
@@ -47,6 +65,16 @@ export default function ImpressaoPresencaPage() {
       <div className="barra">
         <button onClick={() => window.print()}>Imprimir / Salvar PDF</button>
         <span>{participanteId ? "Extrato individual de presença" : "Lista de presença da jornada"} — use “Salvar como PDF” na janela de impressão.</span>
+        {participanteId && painel?.participante && (
+          <>
+            <label className="opc">
+              <input type="checkbox" checked={comAvaliacao} onChange={(e) => setComAvaliacao(e.target.checked)} /> Incluir avaliação, nota e observação das etapas
+            </label>
+            <label className="opc">
+              <input type="checkbox" checked={comEvolucao} onChange={(e) => setComEvolucao(e.target.checked)} /> Incluir anotações de evolução
+            </label>
+          </>
+        )}
       </div>
       {erro && <div className="erro">{erro}</div>}
 
@@ -200,6 +228,120 @@ export default function ImpressaoPresencaPage() {
             </table>
           )}
           <div className="legenda">Falta justificada não soma horas e fica fora do cálculo do percentual. Encontro sem lançamento não é contado como falta.</div>
+          {painel?.participante && (
+            <>
+              <h2 className="secao">Desenvolvimento por etapa da jornada</h2>
+              <div className="ficha">
+                <div>
+                  <b>% da jornada:</b> {painel.participante.pct_jornada === null ? "—" : `${fmt(painel.participante.pct_jornada)}%`}
+                  {painel.participante.base_pct_jornada === "horas" ? " (horas ÷ carga prevista)" : painel.participante.base_pct_jornada === "etapas" ? " (etapas concluídas)" : ""}
+                </div>
+                <div>
+                  <b>Etapas concluídas:</b> {painel.participante.concluidas} de {painel.participante.total_etapas}
+                </div>
+              </div>
+              {painel.etapas.length === 0 ? (
+                <div className="legenda">A jornada não tem etapas cadastradas.</div>
+              ) : (
+                <table className="grade">
+                  <thead>
+                    <tr>
+                      <th className="nome">Etapa</th>
+                      <th>Situação</th>
+                      <th>Conclusão</th>
+                      <th>Encontros</th>
+                      <th>Horas</th>
+                      <th>% presença</th>
+                      {comAvaliacao && <th>Avaliação</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {painel.etapas.map((et) => {
+                      const c = painel.participante.etapas[et.id] || {};
+                      return (
+                        <tr key={et.id}>
+                          <td className="nome">
+                            {et.nome}
+                            {comAvaliacao && c.observacao ? <div className="sub">{c.observacao}</div> : null}
+                          </td>
+                          <td className="c">{c.lancado ? STATUS_ETAPA_TXT[c.status] || "—" : "Sem lançamento"}</td>
+                          <td className="c">{c.data_conclusao ? formatDateBR(c.data_conclusao) : "—"}</td>
+                          <td className="c">{c.encontros || 0}</td>
+                          <td className="c">{fmt(c.horas || 0)}</td>
+                          <td className="c">{c.pct_presenca === null || c.pct_presenca === undefined ? "—" : `${fmt(c.pct_presenca)}%`}</td>
+                          {comAvaliacao && (
+                            <td className="c">{c.avaliacao ? `${AVALIACAO_TXT[c.avaliacao] || c.avaliacao}${c.nota !== null && c.nota !== undefined ? ` · ${fmt(c.nota)}` : ""}` : "—"}</td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              {painel.trilhas && painel.trilhas.length > 0 && (
+                <>
+                  <h2 className="secao">Trilhas de desenvolvimento</h2>
+                  <table className="grade">
+                    <thead>
+                      <tr>
+                        <th className="nome">Trilha / etapa</th>
+                        <th>Situação</th>
+                        <th>Data de conclusão</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {painel.trilhas.flatMap((t) => [
+                        <tr key={`t-${t.trilha_id}`} className="totalTrilha">
+                          <td className="nome">
+                            {t.titulo}
+                            {t.cliente ? ` — ${t.cliente}` : ""}
+                          </td>
+                          <td className="c">
+                            {t.concluidas} de {t.total} etapas{t.pct !== null ? ` (${fmt(t.pct, 0)}%)` : ""}
+                          </td>
+                          <td />
+                        </tr>,
+                        ...t.etapas.map((e) => (
+                          <tr key={`t-${t.trilha_id}-${e.id}`}>
+                            <td className="nome" style={{ paddingLeft: 18 }}>
+                              ↳ {e.titulo}
+                            </td>
+                            <td className="c">{e.concluida ? "Concluída" : "Pendente"}</td>
+                            <td className="c">{e.concluida ? formatDateBR(e.data_conclusao) : "—"}</td>
+                          </tr>
+                        )),
+                      ])}
+                    </tbody>
+                  </table>
+                </>
+              )}
+              {comEvolucao && painel.participante.evolucao && painel.participante.evolucao.length > 0 && (
+                <>
+                  <h2 className="secao">Anotações de evolução</h2>
+                  <table className="grade">
+                    <thead>
+                      <tr>
+                        <th>Data</th>
+                        <th>Tipo</th>
+                        <th className="nome">Anotação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {painel.participante.evolucao.map((n) => (
+                        <tr key={n.id}>
+                          <td className="c">{formatDateBR(n.data)}</td>
+                          <td className="c">{TIPO_EVOLUCAO_TXT[n.tipo] || n.tipo}</td>
+                          <td className="nome" style={{ whiteSpace: "pre-wrap" }}>
+                            {n.texto}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </>
+          )}
           <div className="assinaturas">
             <div>
               <div className="linha" />
@@ -234,7 +376,7 @@ function Cabecalho({ titulo, jornada, geradoEm }) {
 const CSS = `
   body { background: #e5e7eb; margin: 0; font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
   .pagina { padding: 16px; }
-  .barra { display: flex; gap: 12px; align-items: center; margin: 0 auto 12px; max-width: 1100px; font-size: 13px; color: #475569; }
+  .barra { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0 auto 12px; max-width: 1100px; font-size: 13px; color: #475569; }
   .barra button { background: #2563eb; color: #fff; border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
   .erro { max-width: 1100px; margin: 0 auto 12px; background: #fee2e2; color: #b91c1c; padding: 10px 14px; border-radius: 8px; }
   .folha { background: #fff; margin: 0 auto; max-width: 1100px; padding: 24px 28px; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
@@ -254,6 +396,8 @@ const CSS = `
   td.presente { background: #dcfce7; font-weight: 700; }
   td.justificado { background: #fef3c7; font-weight: 700; }
   td.ausente { background: #fee2e2; font-weight: 700; }
+  .barra .opc { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  h2.secao { font-size: 14px; margin: 18px 0 8px; border-bottom: 1px solid #94a3b8; padding-bottom: 3px; }
   .legenda { font-size: 10.5px; color: #334155; margin-top: 8px; line-height: 1.4; }
   .assinaturas { display: flex; gap: 60px; margin-top: 46px; font-size: 12px; text-align: center; }
   .assinaturas > div { flex: 1; }
