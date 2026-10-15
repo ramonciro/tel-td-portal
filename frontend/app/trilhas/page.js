@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import Link from "next/link";
 import PortalShell from "../../components/PortalShell";
 import PageHero    from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
@@ -415,6 +416,9 @@ export default function TrilhasPage() {
                         </button>
                         {isGestor && (
                           <>
+                            <Link href={`/trilhas/pessoas?trilha=${t.id}`} style={{ ...btnSecundary, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+                              Participantes e progresso
+                            </Link>
                             <button style={btnPrimary} onClick={() => abrirEditor(t)}>Editar</button>
                             <button style={btnDanger}  onClick={() => handleDelete(t.id)}>Excluir</button>
                           </>
@@ -581,6 +585,9 @@ export default function TrilhasPage() {
                 <button style={btnSecundary} onClick={() => handleExportarProgresso(detalhe)} disabled={exportando}>
                   {exportando ? "Exportando…" : "⬇ Exportar progresso"}
                 </button>
+                <Link href={`/trilhas/pessoas?trilha=${detalhe.id}`} style={{ ...btnSecundary, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+                  Participantes e progresso →
+                </Link>
                 <button style={btnPrimary} onClick={() => { setDetalhe(null); abrirEditor(detalhe); }}>
                   Editar trilha
                 </button>
