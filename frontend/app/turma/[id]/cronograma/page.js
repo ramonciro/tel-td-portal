@@ -109,6 +109,7 @@ export default function CronogramaTurmaPage() {
   const [turmasDisponiveis, setTurmasDisponiveis]  = useState([]);
   const [participantes,     setParticipantes]      = useState([]);
 
+  const [instrutoresOpcoes, setInstrutoresOpcoes]  = useState([]);
   const [loading,           setLoading]            = useState(true);
   const [erro,              setErro]               = useState("");
   const [sucesso,           setSucesso]            = useState("");
@@ -118,6 +119,13 @@ export default function CronogramaTurmaPage() {
   const [abrirForm,         setAbrirForm]          = useState(false);
 
   const [gerando,           setGerando]            = useState(false);
+
+  // Instrutores ativos do cadastro (Capacidade > Instrutores) — sugestão no campo
+  // Instrutor para a grafia não variar de uma aula para outra. Falha silenciosa:
+  // sem a lista, o campo continua aceitando digitação livre.
+  useEffect(() => {
+    apiFetch("/instrutores/opcoes").then((r) => setInstrutoresOpcoes(r?.nomes || [])).catch(() => {});
+  }, []);
   const [duplicando,        setDuplicando]         = useState(false);
   const [copiarAberto,      setCopiarAberto]       = useState(false);
   const [turmaOrigemId,     setTurmaOrigemId]      = useState("");
@@ -426,7 +434,10 @@ export default function CronogramaTurmaPage() {
               <input type="date" value={aulaForm.data_aula} onChange={campo("data_aula")} style={fieldInput} />
             </Field>
             <Field label="Instrutor">
-              <input value={aulaForm.instrutor} onChange={campo("instrutor")} style={fieldInput} />
+              <input value={aulaForm.instrutor} onChange={campo("instrutor")} style={fieldInput} list="instrutores-ativos" autoComplete="off" />
+              <datalist id="instrutores-ativos">
+                {instrutoresOpcoes.map((n) => <option key={n} value={n} />)}
+              </datalist>
             </Field>
             <Field label="Tipo">
               <select value={aulaForm.tipo_aula} onChange={campo("tipo_aula")} style={fieldInput}>
