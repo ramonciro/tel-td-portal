@@ -28,10 +28,31 @@ function statusStyle(status) {
   return                                 { ...base, background: "#f1f5f9",            color: "#64748b"           };
 }
 
+/* Arquivos enviados pelo portal são privados: o link só abre com uma
+   assinatura de curta duração, pedida ao servidor na hora do clique. */
+async function abrirMaterial(item, onErro) {
+  const link = String(item.link_arquivo || "");
+  if (!link) return;
+  if (!link.includes("/uploads/biblioteca/")) {
+    window.open(link, "_blank", "noopener,noreferrer");
+    return;
+  }
+  // abre a aba já no clique (evita bloqueio de pop-up) e troca o endereço depois
+  const aba = window.open("", "_blank");
+  try {
+    const r = await apiFetch(`/biblioteca/${item.id}/arquivo-url`);
+    if (!r?.url) throw new Error("Não foi possível abrir o arquivo.");
+    if (aba) { aba.opener = null; aba.location.href = r.url; } else { window.location.href = r.url; }
+  } catch (e) {
+    if (aba) aba.close();
+    onErro(e?.message || "Não foi possível abrir o arquivo.");
+  }
+}
+
 /* ═══════════════════════════════════════════════
    CARD DE MATERIAL
 ═══════════════════════════════════════════════ */
-function MaterialCard({ item, podeEditar, podeExcluir, confirmandoExclusao, onEditar, onIniciarExclusao, onConfirmarExclusao, onCancelarExclusao }) {
+function MaterialCard({ item, onAbrir, podeEditar, podeExcluir, confirmandoExclusao, onEditar, onIniciarExclusao, onConfirmarExclusao, onCancelarExclusao }) {
   return (
     <div style={card}>
       <div style={cardTop}>
@@ -65,9 +86,9 @@ function MaterialCard({ item, podeEditar, podeExcluir, confirmandoExclusao, onEd
         ) : (
           <div style={cardAcoes}>
             {item.link_arquivo && (
-              <a href={item.link_arquivo} target="_blank" rel="noreferrer" style={btnAbrir}>
+              <button type="button" onClick={onAbrir} style={btnAbrir}>
                 Abrir material ↗
-              </a>
+              </button>
             )}
             {podeEditar  && <button onClick={onEditar}         style={btnEdit}>Editar</button>}
             {podeExcluir && <button onClick={onIniciarExclusao} style={btnDel}>Excluir</button>}
@@ -354,7 +375,7 @@ export default function BibliotecaPage() {
         <div style={cardsGrid}>
           {listaFiltrada.map((b) => (
             <MaterialCard
-              key={b.id} item={b} podeEditar={podeEditar} podeExcluir={podeExcluir}
+              key={b.id} item={b} onAbrir={() => { setErro(""); abrirMaterial(b, setErro); }} podeEditar={podeEditar} podeExcluir={podeExcluir}
               confirmandoExclusao={excluindo === b.id}
               onEditar={() => { setUploadLink(""); setModal({ modo:"editar", item: b }); }}
               onIniciarExclusao={() => setExcluindo(b.id)}
@@ -397,7 +418,7 @@ const cardBody   = { padding:16, display:"flex", flexDirection:"column", gap:10,
 const cardAcoes  = { display:"flex", gap:8, flexWrap:"wrap", marginTop:"auto" };
 const tipoChip   = { display:"inline-block", padding:"4px 9px", borderRadius:999, background:"#eff6ff", color:"#1d4ed8", fontWeight:800, fontSize:11 };
 const tag        = { display:"inline-block", background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", padding:"3px 8px", borderRadius:999, fontSize:12, fontWeight:700 };
-const btnAbrir   = { textDecoration:"none", display:"inline-block", borderRadius:10, padding:"8px 14px", background:colors.accent, color:"#fff", fontWeight:800, fontSize:13 };
+const btnAbrir   = { border:0, cursor:"pointer", textDecoration:"none", display:"inline-block", borderRadius:10, padding:"8px 14px", background:colors.accent, color:"#fff", fontWeight:800, fontSize:13 };
 const btnEditStyle = { background:"#dbeafe", color:"#1d4ed8", border:0, borderRadius:8, padding:"7px 12px", cursor:"pointer", fontSize:12, fontWeight:700 };
 const btnDelStyle  = { background:colors.dangerLight, color:colors.dangerText, border:0, borderRadius:8, padding:"7px 12px", cursor:"pointer", fontSize:12, fontWeight:700 };
 const btnEdit    = { ...btnEditStyle };
