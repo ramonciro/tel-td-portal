@@ -9,8 +9,9 @@
  *   - ele envia só as alternativas marcadas; acertos, percentual e nota saem
  *     daqui (corrigir).
  *
- * Mantém exatamente a conta de antes: nota = acertos / total × nota_máxima
- * (o campo "peso" do construtor continua sem efeito sobre a nota).
+ * Nota = (soma dos pesos das questões certas ÷ soma dos pesos) × nota_máxima.
+ * Peso vazio, zero ou inválido vale 1 — então prova sem pesos definidos é
+ * dividida igualmente, exatamente como era antes (15/10/2026).
  */
 
 const CAMPOS_GABARITO = ["resposta_correta", "gabarito", "correta", "alternativa_correta", "resposta"];
@@ -50,6 +51,12 @@ function obterRespostaCorreta(questao) {
   return "";
 }
 
+// Peso da questão: vazio, zero, negativo ou inválido vale 1.
+function pesoDaQuestao(questao) {
+  const p = Number(questao?.peso);
+  return Number.isFinite(p) && p > 0 ? p : 1;
+}
+
 // Aceita objeto {0:"A",1:"C"} ou string JSON dele.
 function parseRespostas(raw) {
   try {
@@ -71,13 +78,20 @@ function corrigir(material, respostasBrutas) {
   const enviadas = parseRespostas(respostasBrutas);
   const respostas = {};
   let acertos = 0;
+  let pesoTotal = 0;
+  let pesoAcertado = 0;
 
   for (let i = 0; i < total; i++) {
     const marcada = normalizarAlternativa(enviadas[i]);
     if (!marcada) return { ok: false, erro: "Responda todas as questões antes de enviar." };
     respostas[i] = marcada;
     const correta = obterRespostaCorreta(questoes[i]);
-    if (correta && marcada === correta) acertos += 1;
+    const peso = pesoDaQuestao(questoes[i]);
+    pesoTotal += peso;
+    if (correta && marcada === correta) {
+      acertos += 1;
+      pesoAcertado += peso;
+    }
   }
 
   const notaMaxima = Number(material?.nota_maxima || 0);
@@ -85,8 +99,8 @@ function corrigir(material, respostasBrutas) {
     ok: true,
     acertos,
     total_questoes: total,
-    percentual: Number(((acertos / total) * 100).toFixed(2)),
-    nota_final: Number(((acertos / total) * notaMaxima).toFixed(2)),
+    percentual: Number(((pesoAcertado / pesoTotal) * 100).toFixed(2)),
+    nota_final: Number(((pesoAcertado / pesoTotal) * notaMaxima).toFixed(2)),
     respostas,
   };
 }
