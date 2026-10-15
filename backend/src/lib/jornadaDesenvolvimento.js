@@ -35,6 +35,31 @@ function etapaCancelada(status) {
   return ["cancelada", "cancelado"].includes(String(status || "").trim().toLowerCase());
 }
 
+function normalizarNome(v) {
+  return String(v || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// Acha a etapa da jornada pelo nome (igual ou contido), a partir de textos do
+// encontro. Devolve o id só quando há exatamente UMA etapa candidata.
+function etapaPeloNome(etapas, textos) {
+  const achadas = new Set();
+  for (const bruto of textos) {
+    const t = normalizarNome(bruto);
+    if (t.length < 4) continue;
+    for (const et of etapas) {
+      const n = normalizarNome(et.nome);
+      if (n.length < 4) continue;
+      if (n === t || n.includes(t) || t.includes(n)) achadas.add(et.id);
+    }
+  }
+  return achadas.size === 1 ? Array.from(achadas)[0] : null;
+}
+
 // Sugestão de status da etapa para UMA pessoa, a partir da presença nos
 // encontros dessa etapa: concluída quando todos os encontros já aconteceram,
 // todos foram lançados e a presença atinge o mínimo; em andamento quando há
@@ -76,8 +101,11 @@ async function calcularDesenvolvimento(jornada, opcoes = {}) {
       [jornada.id]
     ),
     db.query(
-      `SELECT id, etapa_id, titulo, DATE_FORMAT(data, '%Y-%m-%d') AS data, carga_horaria
-       FROM jornada_encontros WHERE jornada_id = ? ORDER BY data ASC, hora_inicio ASC, id ASC`,
+      `SELECT je.id, je.etapa_id, je.titulo, DATE_FORMAT(je.data, '%Y-%m-%d') AS data, je.carga_horaria,
+              te.titulo AS trilha_etapa_titulo
+       FROM jornada_encontros je
+       LEFT JOIN trilha_etapas te ON te.id = je.trilha_etapa_id
+       WHERE je.jornada_id = ? ORDER BY je.data ASC, je.hora_inicio ASC, je.id ASC`,
       [jornada.id]
     ),
     db.query(
@@ -98,10 +126,38 @@ async function calcularDesenvolvimento(jornada, opcoes = {}) {
   const idsEtapas = new Set(etapas.map((e) => e.id));
   const encontros = encontrosBrutos.map((e) => ({ ...e, carga_horaria: Number(e.carga_horaria) }));
   const encontrosPorEtapa = new Map();
+  const encontrosSemEtapa = [];
+  const todasIdsEtapas = new Set(etapasBrutas.map((x) => x.id));
   for (const e of encontros) {
-    if (e.etapa_id && idsEtapas.has(e.etapa_id)) {
-      if (!encontrosPorEtapa.has(e.etapa_id)) encontrosPorEtapa.set(e.etapa_id, []);
-      encontrosPorEtapa.get(e.etapa_id).push(e);
+    let etapaId = e.etapa_id && idsEtapas.has(e.etapa_id) ? e.etapa_id : null;
+    let vinculo = etapaId ? "direto" : null;
+    // Encontro sem a "etapa (porto) da jornada" (campo vazio ou apontando para uma etapa
+    // que não existe mais nesta jornada): tenta achar pelo nome da etapa da trilha / título
+    // do encontro. Só vale quando há UMA etapa candidata. Etapa cancelada não é remapeada.
+    const etapaCanceladaDoEncontro = e.etapa_id && todasIdsEtapas.has(e.etapa_id) && !idsEtapas.has(e.etapa_id);
+    if (!etapaId && !etapaCanceladaDoEncontro) {
+      const candidata = etapaPeloNome(etapas, [e.trilha_etapa_titulo, e.titulo]);
+      if (candidata) {
+        etapaId = candidata;
+        vinculo = "inferido";
+      }
+    }
+    e.vinculo_etapa = vinculo;
+    if (etapaId) {
+      if (!encontrosPorEtapa.has(etapaId)) encontrosPorEtapa.set(etapaId, []);
+      encontrosPorEtapa.get(etapaId).push(e);
+    }
+    if (vinculo !== "direto") {
+      encontrosSemEtapa.push({
+        id: e.id,
+        titulo: e.titulo,
+        data: e.data,
+        carga_horaria: e.carga_horaria,
+        trilha_etapa_titulo: e.trilha_etapa_titulo || null,
+        motivo: !e.etapa_id ? "sem_etapa" : etapaCanceladaDoEncontro ? "etapa_cancelada" : "etapa_inexistente",
+        etapa_inferida_id: vinculo === "inferido" ? etapaId : null,
+        etapa_inferida_nome: vinculo === "inferido" ? (etapas.find((x) => x.id === etapaId) || {}).nome || null : null,
+      });
     }
   }
 
@@ -220,7 +276,7 @@ async function calcularDesenvolvimento(jornada, opcoes = {}) {
     };
   });
 
-  return { config, hoje, carga_prevista: cargaPrevista, etapas, participantes: resultado };
+  return { config, hoje, carga_prevista: cargaPrevista, etapas, participantes: resultado, encontros_sem_etapa: encontrosSemEtapa };
 }
 
 module.exports = {
