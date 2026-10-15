@@ -534,6 +534,17 @@ async function ensureRespostasAvaliativasChavePorPessoa() {
     console.log(`  ↳ coluna gerada adicionada: respostas_avaliativas.treinando_nome_legado`);
   }
 
+  // Tentativas por prova (passo 63): com a coluna `tentativa` as chaves únicas
+  // passam a incluir a tentativa (ver ensureTentativasProva). Recriar as chaves
+  // antigas aqui, a cada subida, só para o passo 63 derrubá-las em seguida, era
+  // trabalho inútil e deixava uma janela em que a prova ficava de 1 tentativa.
+  const [jaTemTentativa] = await pool.query(
+    `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'respostas_avaliativas'
+       AND COLUMN_NAME = 'tentativa'`
+  );
+  if (jaTemTentativa[0].c > 0) return;
+
   const [chaveAntiga] = await pool.query(
     `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'respostas_avaliativas'
