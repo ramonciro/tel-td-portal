@@ -2304,6 +2304,13 @@ async function runMigrations() {
       console.log(`  ↳ tentativas por prova não concluído (${error.message}) — seguindo`);
     }
 
+    // 64. Jornadas — desenvolvimento por etapa e evolução (Fase 2) — ver ensureJornadaDesenvolvimento().
+    try {
+      await ensureJornadaDesenvolvimento();
+    } catch (error) {
+      console.log(`  ↳ desenvolvimento das jornadas não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
@@ -2315,6 +2322,56 @@ async function runMigrations() {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);
     throw error;
   }
+}
+
+// 64. Jornadas — desenvolvimento por etapa e evolução (Fase 2, 16/10/2026,
+// pedido do Ramon: "registrar as presenças e o desenvolvimento de cada pessoa
+// registrada nas jornadas"). Proposta em
+// claude/proposta-presenca-desenvolvimento-jornadas-trilhas-2026-10-13.md.
+//  - jornada_participante_etapas: por participante × etapa da jornada — status
+//    (nao_iniciada / em_andamento / concluida, com data), avaliação (atingiu /
+//    parcial / nao_atingiu + nota opcional) e observação curta. UNIQUE por par.
+//  - jornada_evolucao_notas: anotações datadas por participante (ponto forte,
+//    dificuldade, plano de ação, geral).
+// Sem FK para jornadas/participantes/etapas (mesmo motivo do passo 57: o tipo
+// do id em produção pode divergir); a limpeza em cascata é feita nos controllers.
+async function ensureJornadaDesenvolvimento() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jornada_participante_etapas (
+      id              INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id      INT NULL,
+      participante_id INT NOT NULL,
+      etapa_id        INT NOT NULL,
+      status          VARCHAR(20) NOT NULL DEFAULT 'nao_iniciada',
+      data_conclusao  DATE NULL,
+      avaliacao       VARCHAR(15) NULL,
+      nota            DECIMAL(4,1) NULL,
+      observacao      VARCHAR(500) NULL,
+      atualizado_por_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_jornada_participante_etapa (participante_id, etapa_id),
+      INDEX idx_jpe_etapa (etapa_id),
+      INDEX idx_jpe_empresa (empresa_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jornada_evolucao_notas (
+      id              INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id      INT NULL,
+      participante_id INT NOT NULL,
+      data            DATE NOT NULL,
+      tipo            VARCHAR(20) NOT NULL DEFAULT 'geral',
+      texto           TEXT NOT NULL,
+      criado_por_id   INT NULL,
+      criado_por_nome VARCHAR(150) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_jen_participante (participante_id, data),
+      INDEX idx_jen_empresa (empresa_id)
+    );
+  `);
 }
 
 module.exports = { runMigrations };
