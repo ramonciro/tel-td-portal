@@ -281,6 +281,28 @@ async function excluirOverride(id, empresaId) {
   await pool.query(`DELETE FROM capacidade_instrutor_mensal WHERE id = ?${tenantCheck}`, params);
 }
 
+// Cadastro de instrutores (14/10/2026): nomes (e apelidos) de quem está
+// desligado ou marcado como "não é instrutor" no cadastro. Se a tabela ainda
+// não existe (migração pendente), devolve vazio e o comportamento anterior vale.
+async function nomesForaDoTimePeloCadastro(empresaId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT LOWER(TRIM(i.nome)) AS nome FROM instrutores i
+       WHERE i.situacao IN ('desligado','ignorado')${empresaId ? " AND i.empresa_id = ?" : ""}
+       UNION
+       SELECT LOWER(TRIM(a.apelido)) FROM instrutor_apelidos a
+       JOIN instrutores i ON i.id = a.instrutor_id
+       WHERE i.situacao IN ('desligado','ignorado')${empresaId ? " AND i.empresa_id = ?" : ""}`,
+      empresaId ? [empresaId, empresaId] : []
+    );
+    return new Set(rows.map((r) => r.nome));
+  } catch (error) {
+    if (error && error.code === "ER_NO_SUCH_TABLE") return new Set();
+    throw error;
+  }
+}
+
+
 // Correção (16/09/2026): "instrutor" nunca foi ligado a usuarios — é texto
 // livre em treinamentos.instrutor/turma_aulas.instrutor_responsavel — então
 // excluir/desativar o usuário nunca tirava o nome dele desta lista, nem do
@@ -348,7 +370,10 @@ async function listarInstrutoresConhecidos(empresaId, { apenasAtivos = false } =
     if (error && error.code === "ER_NO_SUCH_TABLE") [rows] = await consulta(false);
     else throw error;
   }
-  return rows.map((r) => r.nome);
+  const nomes = rows.map((r) => r.nome);
+  if (!apenasAtivos) return nomes;
+  const foraDoTime = await nomesForaDoTimePeloCadastro(empresaId);
+  return foraDoTime.size ? nomes.filter((n) => !foraDoTime.has(String(n).toLowerCase().trim())) : nomes;
 }
 
 async function listarOperacoesConhecidas(empresaId) {
@@ -391,6 +416,7 @@ async function buscarInstrutoresInativos(empresaId) {
   } catch (error) {
     if (!error || error.code !== "ER_NO_SUCH_TABLE") throw error;
   }
+  (await nomesForaDoTimePeloCadastro(empresaId)).forEach((n) => nomes.add(n));
   return nomes;
 }
 
