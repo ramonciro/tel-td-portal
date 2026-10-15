@@ -103,6 +103,7 @@ async function matriz(req, res) {
       etapas: d.etapas,
       participantes: d.participantes,
       totais,
+      encontros_sem_etapa: d.encontros_sem_etapa,
       hoje: d.hoje,
     });
   } catch (e) {
