@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
+import CadastroInstrutores from "../../components/CadastroInstrutores";
 import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
 import { BarraHorizontal, GraficoBarraAgrupada, Donut, Funil, CORES } from "../../components/Charts";
@@ -94,7 +95,7 @@ function CapacidadePageInner() {
   // ── Aba "Scorecard por instrutor" (CH + frequência + avaliação + NPS) ──
   // ?aba=instrutor abre direto nessa aba — usado pelo link do resumo
   // executivo "Desempenho dos instrutores" no Dashboard.
-  const [aba, setAba] = useState(() => (searchParams.get("aba") === "instrutor" ? "instrutor" : "time")); // "time" | "instrutor"
+  const [aba, setAba] = useState(() => (searchParams.get("aba") === "instrutor" ? "instrutor" : searchParams.get("aba") === "cadastro" ? "cadastro" : "time")); // "time" | "instrutor" | "cadastro"
   const [scInstrutoresOpcoes, setScInstrutoresOpcoes] = useState([]);
   const [scPeriodoTipo, setScPeriodoTipo] = useState("mensal"); // "mensal" | "trimestral"
   const hoje = new Date();
@@ -363,7 +364,10 @@ function CapacidadePageInner() {
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <button style={aba === "time" ? abaBtnAtiva : abaBtn} onClick={() => setAba("time")}>Visão do time</button>
         <button style={aba === "instrutor" ? abaBtnAtiva : abaBtn} onClick={() => setAba("instrutor")}>Scorecard por instrutor</button>
+        <button style={aba === "cadastro" ? abaBtnAtiva : abaBtn} onClick={() => setAba("cadastro")}>Instrutores</button>
       </div>
+
+      {aba === "cadastro" && <CadastroInstrutores />}
 
       {aba === "time" && (
       <>
