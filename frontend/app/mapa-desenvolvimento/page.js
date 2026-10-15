@@ -1115,6 +1115,12 @@ export default function MapaDesenvolvimentoPage() {
               >
                 Encontros e presença →
               </Link>
+              <Link
+                href="/mapa-desenvolvimento/desenvolvimento"
+                style={{ ...buttonSecondaryStyle(), textDecoration: "none", display: "inline-block" }}
+              >
+                Desenvolvimento por etapa →
+              </Link>
               <button
                 type="button"
                 style={buttonSecondaryStyle()}
