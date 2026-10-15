@@ -86,9 +86,19 @@ export default function PainelPessoa({ participanteId, hoje, onFechar, onMudou, 
             {[p.matricula && `Matrícula ${p.matricula}`, p.turma, p.cargo, p.supervisor && `Supervisor: ${p.supervisor}`].filter(Boolean).join(" · ") || dados.jornada.nome}
           </div>
         </div>
-        <button style={btnSecundario} onClick={onFechar}>
-          Fechar
-        </button>
+        <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <a
+            href={`/mapa-desenvolvimento/presenca/impressao/${dados.jornada.id}?participante=${participanteId}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ ...btnSecundario, textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+          >
+            Relatório individual (PDF)
+          </a>
+          <button style={btnSecundario} onClick={onFechar}>
+            Fechar
+          </button>
+        </span>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
