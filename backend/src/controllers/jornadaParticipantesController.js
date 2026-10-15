@@ -207,6 +207,9 @@ async function remove(req, res) {
     // Presença por encontro (13/10/2026): sem FK para esta tabela (ver
     // ensureJornadaPresenca), então a limpeza é feita aqui.
     await db.query(`DELETE FROM jornada_presencas WHERE participante_id = ?`, [id]).catch(() => null);
+    // Desenvolvimento por etapa e evolução (Fase 2, 16/10/2026) — sem FK, limpeza aqui.
+    await db.query(`DELETE FROM jornada_participante_etapas WHERE participante_id = ?`, [id]).catch(() => null);
+    await db.query(`DELETE FROM jornada_evolucao_notas WHERE participante_id = ?`, [id]).catch(() => null);
 
     await db.query(`DELETE FROM jornada_participantes WHERE id = ?${tenantCheck}`, checkParams);
     return res.json({ ok: true, message: "Participante removido com sucesso." });

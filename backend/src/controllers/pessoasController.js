@@ -27,6 +27,7 @@
  */
 const pool = require("../lib/db");
 const { blocoOficinaDaPessoa } = require("./oficinaIndicadoresController");
+const { calcularDesenvolvimento } = require("../lib/jornadaDesenvolvimento");
 
 const PERFIS_COM_ACESSO_CPF = ["coordenador", "assistente_treinamento", "super_admin"];
 
@@ -213,6 +214,66 @@ async function perfil(req, res) {
       dadosBancarios = bancoRows[0] || null;
     }
 
+    // Desenvolvimento nas jornadas (Fase 2, 16/10/2026): presença, horas, % da
+    // jornada e status por etapa. Avaliação, nota, observação e anotações de
+    // evolução são dado de acompanhamento da Metodologia — só vão para quem vê
+    // a Oficina (metodologia, coordenador, super_admin). Erro aqui nunca derruba
+    // o perfil inteiro: a jornada volta como já era (sem o bloco novo).
+    const veAvaliacao = PERFIS_OFICINA.includes(perfilNorm(req));
+    const jornadasComDesenvolvimento = await Promise.all(
+      jornadas.map(async (j) => {
+        try {
+          const [cfg] = await pool.query(
+            `SELECT id, presenca_minima_pct, meta_horas, periodicidade_meses FROM jornadas_desenvolvimento WHERE id = ? AND empresa_id = ? LIMIT 1`,
+            [j.jornada_id, req.empresaId]
+          );
+          if (!cfg[0]) return j;
+          const d = await calcularDesenvolvimento(cfg[0], {
+            participanteId: j.participante_id,
+            incluirAvaliacao: veAvaliacao,
+            incluirEvolucao: veAvaliacao,
+          });
+          const p = d.participantes[0];
+          if (!p) return j;
+          return {
+            ...j,
+            desenvolvimento: {
+              horas: p.horas,
+              meta_horas: d.config.meta_horas,
+              presenca_minima_pct: d.config.presenca_minima_pct,
+              pct_presenca: p.pct_presenca,
+              farol: p.farol,
+              presentes: p.presentes,
+              ausentes: p.ausentes,
+              justificados: p.justificados,
+              pct_jornada: p.pct_jornada,
+              base_pct_jornada: p.base_pct_jornada,
+              concluidas: p.concluidas,
+              total_etapas: p.total_etapas,
+              etapas: d.etapas.map((et) => {
+                const c = p.etapas[et.id];
+                return {
+                  id: et.id,
+                  nome: et.nome,
+                  status: c.status,
+                  data_conclusao: c.data_conclusao,
+                  horas: c.horas,
+                  pct_presenca: c.pct_presenca,
+                  avaliacao: c.avaliacao,
+                  nota: c.nota,
+                  observacao: c.observacao,
+                };
+              }),
+              evolucao: veAvaliacao ? p.evolucao || [] : [],
+            },
+          };
+        } catch (e) {
+          console.error("[pessoasController] desenvolvimento da jornada:", e.message || e);
+          return j;
+        }
+      })
+    );
+
     // Oficina de Talentos (Fase 3, 13/10/2026): inscrições, presença,
     // certificado, cargo almejado e promoção. Dado de carreira — só para o time
     // de Metodologia/T&D; o supervisor direto e demais perfis não recebem o
@@ -239,11 +300,12 @@ async function perfil(req, res) {
         criada_em: pessoa.created_at,
       },
       turmas,
-      jornadas,
+      jornadas: jornadasComDesenvolvimento,
       coaching: veCoachingMetodologia ? coaching : [],
       metodologia: veCoachingMetodologia ? (metodologiaRows[0] || null) : null,
       usuario: PERFIS_SEM_CONTA.includes(perfilNorm(req)) ? null : (usuarioRows[0] || null),
       ocultos: {
+        avaliacao_jornada: !veAvaliacao,
         coaching: !veCoachingMetodologia,
         metodologia: !veCoachingMetodologia,
         usuario: PERFIS_SEM_CONTA.includes(perfilNorm(req)),
