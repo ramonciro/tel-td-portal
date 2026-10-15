@@ -1,4 +1,5 @@
 const db = require("../lib/db");
+const { resumoPorJornada } = require("../lib/jornadaPresencaResumo");
 
 // KPIs do Ambiente Metodologia (20/09/2026) — implementa o framework
 // acordado com o Ramon em claude/framework-kpis-metodologia-2026-09-20.md:
@@ -32,7 +33,7 @@ function farolPercentual(pct) {
 async function obterKpis(req, res) {
   try {
     const tenantWhereJE = req.empresaId ? "AND je.empresa_id = ?" : "";
-    const tenantWhereJP = req.empresaId ? "AND jp.empresa_id = ?" : "";
+    const tenantWhereJD = req.empresaId ? "AND jd.empresa_id = ?" : "";
     const tenantWhereCI = req.empresaId ? "AND ci.empresa_id = ?" : "";
     const tenantWhereAD = req.empresaId ? "AND ad.empresa_id = ?" : "";
     const params = req.empresaId ? [req.empresaId] : [];
@@ -81,21 +82,37 @@ async function obterKpis(req, res) {
     });
 
     // ── Cobertura por cliente (headcount simples, sem cálculo de gap) ───
-    const [coberturaRows] = await db.query(
+    // 16/10/2026: agrupa pelo cliente da JORNADA (o do participante só entra
+    // se a jornada não tiver cliente) e conta PESSOAS distintas — antes
+    // agrupava só pelo cliente digitado em cada participante (vazio na
+    // maioria → tudo caía em "Sem cliente") e contava linhas, então quem
+    // está em duas jornadas era somado duas vezes. Jornada cancelada não
+    // conta como "pessoa em jornada". O escopo vem da jornada (empresa_id
+    // do participante nem sempre foi gravado).
+    const [participantesRows] = await db.query(
       `
-      SELECT jp.cliente, COUNT(*) AS pessoas
+      SELECT jp.id, jp.pessoa_id, jp.cliente AS cliente_participante, jd.cliente AS cliente_jornada, jd.status AS status_jornada
       FROM jornada_participantes jp
-      WHERE 1=1 ${tenantWhereJP}
-      GROUP BY jp.cliente
-      ORDER BY pessoas DESC
+      INNER JOIN jornadas_desenvolvimento jd ON jd.id = jp.jornada_id
+      WHERE 1=1 ${tenantWhereJD}
       `,
       params
     );
-    const coberturaPorCliente = coberturaRows.map((r) => ({
-      cliente: r.cliente || "Sem cliente",
-      pessoas: Number(r.pessoas),
-    }));
-    const totalCobertura = coberturaPorCliente.reduce((soma, c) => soma + c.pessoas, 0);
+    const pessoasPorCliente = new Map();
+    const pessoasTotal = new Set();
+    for (const r of participantesRows) {
+      if (statusCancelado(r.status_jornada)) continue;
+      const cliente =
+        String(r.cliente_jornada || "").trim() || String(r.cliente_participante || "").trim() || "Sem cliente";
+      const chavePessoa = r.pessoa_id ? `p${r.pessoa_id}` : `j${r.id}`;
+      if (!pessoasPorCliente.has(cliente)) pessoasPorCliente.set(cliente, new Set());
+      pessoasPorCliente.get(cliente).add(chavePessoa);
+      pessoasTotal.add(chavePessoa);
+    }
+    const coberturaPorCliente = Array.from(pessoasPorCliente.entries())
+      .map(([cliente, set]) => ({ cliente, pessoas: set.size }))
+      .sort((a, b) => b.pessoas - a.pessoas || a.cliente.localeCompare(b.cliente, "pt-BR"));
+    const totalCobertura = pessoasTotal.size;
 
     // ── Coaching individual (trilha à parte — nunca soma na adesão) ─────
     const [coachingRows] = await db.query(
@@ -158,6 +175,82 @@ async function obterKpis(req, res) {
     }));
     const mptTotal = mptPorSubdivisao.reduce((soma, r) => soma + r.pendentes, 0);
 
+    // ── Jornadas: encontros e presença (Fase 1) ─────────────────────────
+    // Antes nada disto aparecia aqui: o dashboard só lia etapas com prazo,
+    // coaching e ações vencidas. Mesmas regras da grade de presença.
+    const resumoJornadas = (await resumoPorJornada(req.empresaId || null)).filter((j) => !j.cancelada);
+
+    let encPrevistos = 0;
+    let encLancados = 0;
+    const encPorCliente = {};
+    let presentesTotal = 0;
+    let ausentesTotal = 0;
+    let jornadasComDado = 0;
+    let jornadasAbaixo = 0;
+    let pessoasAbaixo = 0;
+    for (const j of resumoJornadas) {
+      const cliente = j.cliente || "Sem cliente";
+      if (!encPorCliente[cliente]) encPorCliente[cliente] = { cliente, previstos: 0, concluidos: 0 };
+      encPorCliente[cliente].previstos += j.encontros_realizados;
+      encPorCliente[cliente].concluidos += j.encontros_com_chamada;
+      encPrevistos += j.encontros_realizados;
+      encLancados += j.encontros_com_chamada;
+      presentesTotal += j.presentes;
+      ausentesTotal += j.ausentes;
+      if (j.pct_presenca !== null) {
+        jornadasComDado += 1;
+        if (j.farol === "vermelho") jornadasAbaixo += 1;
+      }
+      pessoasAbaixo += j.abaixo_do_minimo;
+    }
+    const encPct = encPrevistos > 0 ? Math.round((encLancados / encPrevistos) * 100) : null;
+    const adesaoEncontros = {
+      pct: encPct,
+      farol: encPct === null ? null : farolPercentual(encPct),
+      previstos: encPrevistos,
+      lancados: encLancados,
+      porCliente: Object.values(encPorCliente)
+        .filter((c) => c.previstos > 0)
+        .map((c) => {
+          const pct = Math.round((c.concluidos / c.previstos) * 100);
+          return { ...c, pct, farol: farolPercentual(pct) };
+        }),
+    };
+    const basePresenca = presentesTotal + ausentesTotal;
+    const presencaJornadas = {
+      pct: basePresenca > 0 ? Math.round((presentesTotal / basePresenca) * 1000) / 10 : null,
+      presentes: presentesTotal,
+      ausentes: ausentesTotal,
+      jornadasComDado,
+      jornadasAbaixoDoMinimo: jornadasAbaixo,
+      pessoasAbaixoDoMinimo: pessoasAbaixo,
+      // Regra do framework: risco nunca é diluído numa média — basta uma
+      // jornada abaixo do mínimo para o farol geral ficar crítico.
+      farol: jornadasComDado === 0 ? null : jornadasAbaixo > 0 ? "critico" : "saudavel",
+    };
+
+    // Comprovação MPT por HORAS REAIS (presença × meta de horas da jornada).
+    // Só entra jornada com meta cadastrada em "Configurar presença"; sem meta
+    // o sistema não inventa número (decisão E do Ramon, 13/10/2026).
+    const comParticipantes = resumoJornadas.filter((j) => j.participantes > 0);
+    const comMeta = comParticipantes.filter((j) => j.meta_horas);
+    const mptHoras = {
+      jornadasComMeta: comMeta.length,
+      jornadasSemMeta: comParticipantes.length - comMeta.length,
+      pessoas: comMeta.reduce((a, j) => a + j.participantes, 0),
+      atingiram: comMeta.reduce((a, j) => a + (j.atingiram_meta || 0), 0),
+      abaixo: comMeta.reduce((a, j) => a + (j.abaixo_da_meta || 0), 0),
+      porJornada: comMeta.map((j) => ({
+        jornada_id: j.jornada_id,
+        nome: j.nome,
+        cliente: j.cliente || "Sem cliente",
+        meta_horas: j.meta_horas,
+        pessoas: j.participantes,
+        atingiram: j.atingiram_meta || 0,
+        abaixo: j.abaixo_da_meta || 0,
+      })),
+    };
+
     res.json({
       adesaoCronograma: {
         pct: adesaoPct,
@@ -170,6 +263,10 @@ async function obterKpis(req, res) {
         total: totalCobertura,
         porCliente: coberturaPorCliente,
       },
+      adesaoEncontros,
+      presencaJornadas,
+      jornadas: resumoJornadas,
+      mptHoras,
       coachingIndividual: {
         total: coachingRows.length,
         emDia: coachingEmDia,
@@ -189,4 +286,16 @@ async function obterKpis(req, res) {
   }
 }
 
-module.exports = { obterKpis };
+// Resumo de encontros e presença por jornada — usado pelos cards do Mapa de
+// Desenvolvimento (horas, progresso, próximo encontro). Retorna um ARRAY, no
+// mesmo formato das demais fontes do Mapa.
+async function resumoJornadas(req, res) {
+  try {
+    res.json(await resumoPorJornada(req.empresaId || null));
+  } catch (error) {
+    console.error("Erro ao resumir presença das jornadas:", error);
+    res.status(500).json({ error: "Erro ao resumir encontros e presença das jornadas." });
+  }
+}
+
+module.exports = { obterKpis, resumoJornadas };
