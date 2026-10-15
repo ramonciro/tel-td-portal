@@ -5,6 +5,10 @@ import { apiFetch } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import { btnPrimario, btnSecundario, btnPerigo, entrada, rotulo, gradeForm, painel, dica, acoes } from "./estilos";
 
+function normalizar(v) {
+  return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 // Criar / editar / duplicar / excluir um encontro da jornada.
 export default function EncontroForm({ jornadaId, etapas, trilhas, onGerenciarTrilhas, padrao, encontro, presencasDoEncontro, onFechar, onSalvou, setErro, setAviso }) {
   const novo = !encontro;
@@ -34,7 +38,15 @@ export default function EncontroForm({ jornadaId, etapas, trilhas, onGerenciarTr
   // Escolher a etapa da trilha sugere o título do encontro quando ele ainda está vazio.
   function escolherEtapaDaTrilha(e) {
     const et = etapasDaTrilha.find((x) => String(x.id) === e.target.value);
-    setF({ ...f, trilha_etapa_id: e.target.value, titulo: f.titulo || et?.titulo || "" });
+    // Sugere também a etapa (porto) da jornada quando o nome bate com UMA só e o campo está vazio
+    // (evita encontro "solto", que não aparece em Desenvolvimento por etapa).
+    let etapaSugerida = f.etapa_id;
+    if (!f.etapa_id && et) {
+      const alvo = normalizar(et.titulo);
+      const achadas = alvo.length >= 4 ? etapas.filter((x) => { const n = normalizar(x.nome); return n.length >= 4 && (n === alvo || n.includes(alvo) || alvo.includes(n)); }) : [];
+      if (achadas.length === 1) etapaSugerida = String(achadas[0].id);
+    }
+    setF({ ...f, trilha_etapa_id: e.target.value, etapa_id: etapaSugerida, titulo: f.titulo || et?.titulo || "" });
   }
 
   // Ao escolher a etapa, sugere a trilha ligada a ela (se já estiver na jornada e o campo estiver vazio).
