@@ -194,6 +194,26 @@ export default function DesenvolvimentoJornadasPage() {
           </SectionCard>
         )}
 
+        {dados && dados.etapas.length > 0 && (dados.encontros_sem_etapa || []).length > 0 && (
+          <div style={{ ...avisoErro, background: colors.warningLight, color: colors.warningText, border: `1px solid ${colors.warning}` }}>
+            <strong>
+              {dados.encontros_sem_etapa.length} encontro(s) sem a etapa (porto) da jornada escolhida.
+            </strong>{" "}
+            Os que o sistema reconheceu pelo nome foram contados na etapa indicada; os demais ficam fora desta matriz (as horas e a presença continuam valendo no total).
+            Para fixar o vínculo, edite o encontro em{" "}
+            <Link href="/mapa-desenvolvimento/presenca" style={{ color: "inherit", fontWeight: 700 }}>Presença</Link> e escolha a "Etapa (porto) da jornada".
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {dados.encontros_sem_etapa.map((e) => (
+                <li key={e.id}>
+                  {e.data ? `${e.data.slice(8, 10)}/${e.data.slice(5, 7)} — ` : ""}
+                  {e.titulo}
+                  {e.etapa_inferida_nome ? ` → contado em "${e.etapa_inferida_nome}"` : e.motivo === "etapa_cancelada" ? " → ligado a uma etapa cancelada" : e.motivo === "etapa_inexistente" ? " → ligado a uma etapa que não existe mais nesta jornada" : " → sem etapa da jornada escolhida"}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {dados && dados.etapas.length > 0 && (
           <SectionCard title="Participantes × etapas" subtitle="Clique numa célula para lançar status e avaliação; clique no nome para abrir o painel da pessoa com a evolução.">
             <div style={{ display: "grid", gap: 12 }}>
