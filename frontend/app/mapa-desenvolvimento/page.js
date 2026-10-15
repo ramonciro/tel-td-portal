@@ -22,6 +22,7 @@ import { toDateInputLocal } from "../../lib/date";
 import {
   fmtNumber,
   fmtHours,
+  formatDate,
   normalize,
   canonicalStatus,
   isValidDateRange,
@@ -83,6 +84,12 @@ export default function MapaDesenvolvimentoPage() {
   // cadastro de etapa — não precisa de tratamento de erro próprio, já cai
   // no Promise.allSettled do loadAll() como as demais fontes.
   const [trilhasCatalogo, setTrilhasCatalogo] = useState([]);
+
+  // Encontros e presença resumidos por jornada (16/10/2026): horas de
+  // presença, % de presença, próximo encontro. Sem isto o card da jornada só
+  // enxergava ações e coaching e mostrava 0 horas / 0% para quem só tinha
+  // chamada lançada. Vem de /metodologia-kpis/jornadas.
+  const [presencaResumo, setPresencaResumo] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -153,6 +160,7 @@ export default function MapaDesenvolvimentoPage() {
     // duplica lógica de acesso nem cria endpoint novo pra isso.
     { key: "trilhasCatalogo", label: "trilhas", path: "/trilhas", setter: setTrilhasCatalogo },
     { key: "subtiposCatalogo", label: "subtipos", path: "/subtipos", setter: setSubtiposCatalogo },
+    { key: "presencaResumo", label: "presença das jornadas", path: "/metodologia-kpis/jornadas", setter: setPresencaResumo },
   ];
 
   async function loadAll() {
@@ -803,8 +811,17 @@ export default function MapaDesenvolvimentoPage() {
     return map;
   }, [trilhasCatalogo]);
 
+  const presencaPorJornada = useMemo(() => {
+    const map = {};
+    presencaResumo.forEach((item) => {
+      map[String(item.jornada_id)] = item;
+    });
+    return map;
+  }, [presencaResumo]);
+
   const jornadasEnriquecidas = useMemo(() => {
     return jornadas.map((jornada) => {
+      const presenca = presencaPorJornada[String(jornada.id)] || null;
       const acoesDaJornada = acoes.filter(
         (a) => String(a.jornada_id) === String(jornada.id)
       );
@@ -812,6 +829,8 @@ export default function MapaDesenvolvimentoPage() {
         (c) => String(c.jornada_id || "") === String(jornada.id)
       );
 
+      // Horas = ações + coaching + horas de presença nos encontros da
+      // jornada (soma das horas de todas as pessoas presentes).
       const horasTotais =
         acoesDaJornada.reduce(
           (acc, item) => acc + Number(item.horas_realizadas || 0),
@@ -820,10 +839,12 @@ export default function MapaDesenvolvimentoPage() {
         coachingsDaJornada.reduce(
           (acc, item) => acc + Number(item.horas_totais || 0),
           0
-        );
+        ) +
+        Number(presenca?.horas_presenca || 0);
 
       return {
         ...jornada,
+        presenca,
         nome: jornada.nome || jornada.titulo,
         publico_macro: jornada.publico_macro || jornada.publico_alvo,
         total_acoes: acoesDaJornada.length,
@@ -840,11 +861,11 @@ export default function MapaDesenvolvimentoPage() {
         ).length,
         horas_totais: horasTotais,
         prazo_info: getPrazoInfo(jornada),
-        attention_info: getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada),
+        attention_info: getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada, presenca),
         status_canonico: canonicalStatus(jornada.status),
       };
     });
-  }, [jornadas, acoes, coachings, participantesPorJornada, coachingIndividual]);
+  }, [jornadas, acoes, coachings, participantesPorJornada, coachingIndividual, presencaPorJornada]);
 
   const acoesEnriquecidas = useMemo(() => {
     return acoes.map((acao) => {
@@ -972,11 +993,28 @@ export default function MapaDesenvolvimentoPage() {
         acoesDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length +
         coachingsDaJornada.filter((item) => canonicalStatus(item.status) === "concluido").length;
 
-      const progresso = totalBlocos ? Math.round((concluidos / totalBlocos) * 100) : 0;
+      // Progresso: com meta de horas configurada em "Configurar presença",
+      // vale a média (horas ÷ meta, limitada a 100%) dos participantes; sem
+      // meta, ações/coaching concluídos; sem nada disso, encontros já
+      // realizados ÷ encontros previstos (antes ficava em 0%).
+      const presenca = jornada.presenca;
+      let progresso = 0;
+      if (presenca && presenca.progresso_meta_pct !== null && presenca.progresso_meta_pct !== undefined) {
+        progresso = presenca.progresso_meta_pct;
+      } else if (totalBlocos) {
+        progresso = Math.round((concluidos / totalBlocos) * 100);
+      } else if (presenca && presenca.encontros_total > 0) {
+        progresso = Math.round((presenca.encontros_realizados / presenca.encontros_total) * 100);
+      }
+
+      const proximoEncontro = presenca?.proximo_encontro
+        ? `Próximo encontro: ${presenca.proximo_encontro.titulo} (${formatDate(presenca.proximo_encontro.data)})`
+        : null;
 
       const proximoPasso =
         acoesDaJornada.find((item) => canonicalStatus(item.status) !== "concluido")?.tema ||
         coachingsDaJornada.find((item) => canonicalStatus(item.status) !== "concluido")?.titulo ||
+        proximoEncontro ||
         "Estruturar os próximos passos";
 
       return {
@@ -1038,6 +1076,11 @@ export default function MapaDesenvolvimentoPage() {
         ) +
         filteredCoachings.reduce(
           (acc, item) => acc + Number(item.horas_totais || 0),
+          0
+        ) +
+        // horas de presença nos encontros das jornadas filtradas (16/10/2026)
+        filteredJornadas.reduce(
+          (acc, item) => acc + Number(item.presenca?.horas_presenca || 0),
           0
         ),
       concluidas:
