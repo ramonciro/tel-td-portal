@@ -235,6 +235,9 @@ export default function PresencaJornadasPage() {
               <Link href="/mapa-desenvolvimento" style={{ ...btnSecundario, textDecoration: "none", display: "inline-block" }}>
                 ← Mapa
               </Link>
+              <Link href={`/mapa-desenvolvimento/desenvolvimento${jornadaId ? `?jornada=${jornadaId}` : ""}`} style={{ ...btnSecundario, textDecoration: "none", display: "inline-block" }}>
+                Desenvolvimento por etapa →
+              </Link>
             </>
           }
         />
