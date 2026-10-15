@@ -46,6 +46,39 @@ const STATUS_ETAPA_PERFIL = {
 const AVALIACAO_PERFIL = { atingiu: "Atingiu", parcial: "Parcial", nao_atingiu: "Não atingiu" };
 const TIPO_EVOLUCAO_PERFIL = { ponto_forte: "Ponto forte", dificuldade: "Dificuldade", plano_acao: "Plano de ação", geral: "Geral" };
 
+// Trilhas de desenvolvimento (Fase 3, 16/10/2026): progresso da pessoa em cada
+// trilha em que está inscrita (pelas jornadas ou por inclusão manual). Só chega
+// do backend para Metodologia, Coordenação e Super Admin (ocultos.trilhas).
+function TrilhasDaPessoa({ trilhas }) {
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {trilhas.map((t) => (
+        <div key={t.trilha_id} style={{ padding: "12px 14px", borderRadius: 12, background: "#f8fafc", border: "1px solid #e5e7eb" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
+            <strong style={{ fontSize: 13.5, color: "#0f172a" }}>
+              {t.titulo}{t.cliente ? <span style={{ fontWeight: 500, color: "#64748b" }}> · {t.cliente}</span> : null}
+            </strong>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: t.pct === 100 ? colors.successText : "#334155" }}>
+              {t.concluidas} de {t.total} etapas{t.pct !== null ? ` · ${fmtNum(t.pct, 0)}%` : ""}
+            </span>
+          </div>
+          <div style={{ height: 6, borderRadius: 999, background: "#e2e8f0", margin: "8px 0 10px", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${t.pct || 0}%`, background: t.pct === 100 ? colors.successText : colors.primary }} />
+          </div>
+          <div style={{ display: "grid", gap: 4 }}>
+            {t.etapas.map((e, i) => (
+              <div key={e.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, color: e.concluida ? "#0f172a" : "#94a3b8" }}>
+                <span>{e.concluida ? "✓" : "○"} {i + 1}. {e.titulo}</span>
+                <span>{e.concluida ? formatDate(e.data_conclusao) : "pendente"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Desenvolvimento na jornada (Fase 2, 16/10/2026): presença, horas, % da jornada
 // e status por etapa. Avaliação, nota, observação e evolução só chegam do backend
 // para Metodologia, Coordenação e Super Admin (ocultarAvaliacao avisa os demais).
@@ -221,7 +254,7 @@ export default function PerfilPessoaPage() {
     );
   }
 
-  const { pessoa, turmas = [], jornadas = [], coaching = [], metodologia, usuario, dados_bancarios: dadosBancarios, oficina, ocultos = {} } = dados;
+  const { pessoa, turmas = [], jornadas = [], trilhas = [], coaching = [], metodologia, usuario, dados_bancarios: dadosBancarios, oficina, ocultos = {} } = dados;
   const selo = selosIdentidade(pessoa.status_identidade);
 
   return (
@@ -324,6 +357,17 @@ export default function PerfilPessoaPage() {
             <DesenvolvimentoJornada key={`dev-${j.participante_id}`} jornada={j} ocultarAvaliacao={Boolean(ocultos.avaliacao_jornada)} />
           ))}
         </section>
+
+        {!ocultos.trilhas && (
+        <section style={{ ...card, marginTop: 16 }}>
+          <h2 style={sectionTitle}>Trilhas de desenvolvimento ({trilhas.length})</h2>
+          {!trilhas.length ? (
+            <p style={emptyHint}>Esta pessoa não está inscrita em nenhuma trilha.</p>
+          ) : (
+            <TrilhasDaPessoa trilhas={trilhas} />
+          )}
+        </section>
+        )}
 
         {!ocultos.coaching && (
         <section style={{ ...card, marginTop: 16 }}>
