@@ -70,6 +70,7 @@ const oficinaTalentosPublicRoutes = require("./routes/oficinaTalentosPublicRoute
 const jornadaPresencaRoutes = require("./routes/jornadaPresencaRoutes");
 const turmaPresencaGradeRoutes = require("./routes/turmaPresencaGradeRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
+const instrutoresCtrl = require("./controllers/instrutoresController");
 const {
   getDesempenho: getDesempenhoInstrutor,
   getDesempenhoExportar,
@@ -2012,6 +2013,28 @@ app.use(
   authorizeRoles("coordenador", "supervisor", "superintendente"),
   capacidadeRoutes
 );
+
+// Cadastro de instrutores (14/10/2026) — ver controllers/instrutoresController.js.
+// Leitura: coordenador, supervisor, superintendente. Escrita: coordenador e
+// superintendente. /opcoes (lista de ativos para os formulários) é aberta aos
+// perfis que montam turma/cronograma.
+app.get("/api/instrutores/opcoes", authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
+  instrutoresCtrl.opcoes);
+app.get("/api/instrutores/a-classificar", authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"), instrutoresCtrl.aClassificar);
+app.get("/api/instrutores", authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"), instrutoresCtrl.listar);
+app.post("/api/instrutores/classificar", authRequired,
+  authorizeRoles("coordenador", "superintendente"), instrutoresCtrl.classificar);
+app.post("/api/instrutores/cadastrar-todos", authRequired,
+  authorizeRoles("coordenador", "superintendente"), instrutoresCtrl.cadastrarTodos);
+app.delete("/api/instrutores/apelidos/:id", authRequired,
+  authorizeRoles("coordenador", "superintendente"), instrutoresCtrl.removerApelido);
+app.post("/api/instrutores", authRequired,
+  authorizeRoles("coordenador", "superintendente"), instrutoresCtrl.criar);
+app.put("/api/instrutores/:id", authRequired,
+  authorizeRoles("coordenador", "superintendente"), instrutoresCtrl.atualizar);
 
 // Scorecard de instrutor (CH + frequência + avaliação + NPS, mensal/
 // trimestral) — item 2 da visão de universidade corporativa (ver
