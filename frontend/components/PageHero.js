@@ -47,7 +47,7 @@ const eyebrowStyle = {
   fontWeight: 700,
   letterSpacing: ".08em",
   textTransform: "uppercase",
-  color: "#8B93A7",
+  color: "#B4BBCE",
 };
 
 const titleStyle = {
@@ -60,7 +60,7 @@ const titleStyle = {
 const subtitleStyle = {
   margin: "6px 0 0",
   fontSize: 13.5,
-  color: "#C7CCDA",
+  color: "#DDE1EC",
   maxWidth: 520,
   lineHeight: 1.5,
 };
@@ -75,5 +75,5 @@ const statValue = {
 const statLabel = {
   margin: "2px 0 0",
   fontSize: 11.5,
-  color: "#8B93A7",
+  color: "#B4BBCE",
 };
