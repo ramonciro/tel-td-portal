@@ -3,7 +3,9 @@ const fs = require("fs");
 const pool = require("../lib/db");
 const { filtroClientesSQL } = require("../lib/acessoCliente");
 
-const uploadDir = path.join(process.cwd(), "uploads", "biblioteca");
+const { pastaUploads, gerarQuery } = require("../lib/uploadAssinado");
+
+const uploadDir = path.join(pastaUploads(), "biblioteca");
 
 function garantirPastaUpload() {
   if (!fs.existsSync(uploadDir)) {
@@ -212,7 +214,7 @@ async function deleteBiblioteca(req, res) {
 
     const link = String(rows[0].link_arquivo || "");
     if (link.includes("/uploads/biblioteca/")) {
-      const fileName = link.split("/uploads/biblioteca/")[1];
+      const fileName = path.basename(decodeURIComponent(link.split("/uploads/biblioteca/")[1] || "").split("?")[0]);
       if (fileName) {
         const fullPath = path.join(uploadDir, fileName);
         if (fs.existsSync(fullPath)) {
@@ -248,9 +250,9 @@ async function uploadBibliotecaArquivo(req, res) {
       .basename(req.file.originalname || "arquivo", ext)
       .replace(/[^a-zA-Z0-9-_]/g, "_");
 
-    // Nome imprevisível: os arquivos são servidos por link direto (sem login,
-    // para abrir em nova aba/baixar); com um sufixo aleatório de 16 bytes o
-    // endereço não pode ser adivinhado a partir do nome do arquivo ou da data.
+    // Nome imprevisível (sufixo aleatório de 16 bytes). Além disso, o arquivo
+    // é privado: só abre com link assinado e de curta duração (ver
+    // lib/uploadAssinado.js e a rota GET /api/biblioteca/:id/arquivo-url).
     const fileName = `${Date.now()}_${require("crypto").randomBytes(16).toString("hex")}_${base}${ext}`;
     const fullPath = path.join(uploadDir, fileName);
 
@@ -275,7 +277,56 @@ async function uploadBibliotecaArquivo(req, res) {
   }
 }
 
+// Devolve um link assinado (vale 5 minutos) para abrir o arquivo de um item da
+// Biblioteca. Mesmas regras da listagem: mesma empresa, mesmo cliente (acesso
+// restrito) e rascunho só para a gestão. Itens com link externo voltam como estão.
+async function arquivoUrlBiblioteca(req, res) {
+  try {
+    const condicoes = ["id = ?"];
+    const params = [req.params.id];
+    if (req.empresaId) { condicoes.push("empresa_id = ?"); params.push(req.empresaId); }
+    const filtroCliente = filtroClientesSQL(req, "cliente", { aceitarGlobalLiteral: true });
+    if (filtroCliente) { condicoes.push(filtroCliente.sql); params.push(...filtroCliente.params); }
+    const perfil = String(req.user?.perfil || "").toLowerCase().trim();
+    if (!["coordenador", "supervisor", "superintendente", "assistente_treinamento"].includes(perfil) && !req.user?.super_admin) {
+      condicoes.push("(status IS NULL OR LOWER(TRIM(status)) <> 'rascunho')");
+    }
+
+    const [rows] = await pool.query(
+      `SELECT link_arquivo FROM biblioteca WHERE ${condicoes.join(" AND ")} LIMIT 1`,
+      params
+    );
+    if (!rows.length) return res.status(404).json({ ok: false, message: "Conteúdo não encontrado." });
+
+    const link = String(rows[0].link_arquivo || "");
+    if (!link) return res.status(404).json({ ok: false, message: "Este conteúdo não tem arquivo." });
+
+    const marcador = "/uploads/biblioteca/";
+    if (!link.includes(marcador)) return res.json({ ok: true, url: link, externo: true });
+
+    const fileName = path.basename(decodeURIComponent(link.split(marcador)[1] || "").split("?")[0]);
+    if (!fileName || !fs.existsSync(path.join(uploadDir, fileName))) {
+      return res.status(404).json({
+        ok: false,
+        message: "O arquivo não está mais no servidor. Envie o material de novo.",
+      });
+    }
+
+    const baseUrl =
+      process.env.PUBLIC_BACKEND_URL ||
+      process.env.BACKEND_PUBLIC_URL ||
+      `${req.protocol}://${req.get("host")}`;
+    const caminho = `/biblioteca/${fileName}`;
+    const query = gerarQuery(caminho);
+    return res.json({ ok: true, url: `${baseUrl}/uploads${encodeURI(caminho)}?${query}`, expira_em_segundos: 300 });
+  } catch (error) {
+    console.error("[bibliotecaController] arquivo-url:", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao gerar o link do arquivo." });
+  }
+}
+
 module.exports = {
+  arquivoUrlBiblioteca,
   listBiblioteca,
   createBiblioteca,
   updateBiblioteca,
