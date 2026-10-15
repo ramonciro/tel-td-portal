@@ -2,6 +2,7 @@ const pool = require("../lib/db");
 const { montarLinhasCronograma, toDateOnly: toDateOnlyGerador } = require("../lib/cronogramaGenerator");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
+const { planejarImportacao, gravarImportacao } = require("../services/presencaLegadaParaCronograma");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga o cronograma de qualquer tenant nesta
@@ -513,7 +514,8 @@ async function gerarCronogramaTurma(req, res) {
         carga_horaria,
         hora_inicio,
         hora_fim,
-        cliente
+        cliente,
+        empresa_id
       FROM treinamentos
       WHERE id = ?${tenantJoinTreinamento(req, "treinamentos")}
       LIMIT 1
@@ -552,12 +554,55 @@ async function gerarCronogramaTurma(req, res) {
       });
     }
 
+    // "Chamada sem cronograma" (15/10/2026): chamadas antigas (tabela
+    // legada `presencas`) são encaixadas nos dias gerados — ver
+    // services/presencaLegadaParaCronograma.js. `simular: true` só conta,
+    // não grava nada (a tela usa para avisar antes de confirmar).
+    const datasGeradas = new Set(linhas.map((l) => l.data_aula));
+    const plano = await planejarImportacao(pool, treinamento_id, datasGeradas);
+    const resumoLegado = {
+      total: plano.total,
+      encaixadas: plano.encaixaveis.length,
+      sem_dia: plano.sem_dia,
+      sem_participante: plano.sem_participante,
+    };
+
+    if (req.body?.simular) {
+      return res.json({ ok: true, simulacao: true, total_dias: linhas.length, chamada_antiga: resumoLegado });
+    }
+
     await inserirLinhasCronograma(treinamento_id, linhas);
+
+    const [aulas] = await pool.query(
+      `SELECT id, DATE_FORMAT(data_aula, '%Y-%m-%d') AS data FROM turma_aulas
+       WHERE treinamento_id = ? ORDER BY data_aula ASC, dia_numero ASC, id ASC`,
+      [treinamento_id]
+    );
+    const mapaDataAulaId = new Map();
+    for (const a of aulas) if (!mapaDataAulaId.has(a.data)) mapaDataAulaId.set(a.data, a.id);
+
+    let importadas = 0;
+    let importacaoFalhou = false;
+    try {
+      importadas = await gravarImportacao(pool, { id: treinamento_id, empresa_id: turma.empresa_id }, mapaDataAulaId, plano.encaixaveis);
+    } catch (erroImport) {
+      // O cronograma já existe; sem a importação o resolver continua usando a
+      // chamada antiga até a primeira chamada nova (ver presencaResolver.js).
+      importacaoFalhou = true;
+      console.error(`[turmaAulasController] encaixe da chamada antiga falhou (turma #${treinamento_id}):`, erroImport.message || erroImport);
+    }
+
+    // Aula sugerida para abrir a chamada: a mais recente que já aconteceu
+    // (hoje ou antes); se a turma ainda não começou, a primeira.
+    const passadas = aulas.filter((a) => a.data <= hojeISO);
+    const sugerida = passadas.length ? passadas[passadas.length - 1] : aulas[0];
 
     return res.json({
       ok: true,
       message: "Cronograma base gerado com sucesso",
       total_dias: linhas.length,
+      chamada_antiga: { ...resumoLegado, encaixadas: importadas, importacao_falhou: importacaoFalhou },
+      aula_sugerida: sugerida ? { turma_aula_id: sugerida.id, data_aula: sugerida.data } : null,
     });
   } catch (error) {
     console.error("[turmaAulasController]", error.message || error);
