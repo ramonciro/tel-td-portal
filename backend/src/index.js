@@ -214,7 +214,9 @@ const {
   updateBiblioteca,
   deleteBiblioteca,
   uploadBibliotecaArquivo,
+  arquivoUrlBiblioteca,
 } = require("./controllers/bibliotecaController");
+const { pastaUploads, exigirAssinatura } = require("./lib/uploadAssinado");
 
 const app = express();
 // Pacote 2 (débito técnico, 2026-09): esta instância genérica (planilhas de
@@ -268,24 +270,24 @@ const uploadBiblioteca = multer({
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Pacote 1 (correções críticas, 2026-09): a Biblioteca gravava os arquivos
-// enviados em uploads/biblioteca/ e devolvia um link "<host>/uploads/
-// biblioteca/<arquivo>", mas nada aqui servia essa pasta estaticamente —
-// todo link gerado respondia 404, tornando o recurso de anexar arquivo
-// inutilizável de ponta a ponta. Serve publicamente (mesmo padrão de link
-// direto já usado por esses arquivos); no Railway o disco não é persistente
-// entre deploys — isso é uma limitação arquitetural separada, já registrada
-// no roadmap, e não é resolvida por esta correção pontual.
+// Arquivos enviados (Biblioteca) são PRIVADOS (16/10/2026). Antes, qualquer
+// pessoa com o endereço abria o arquivo, sem login. Agora o /uploads só
+// responde com um link assinado e de curta duração (5 min), gerado pela rota
+// autenticada GET /api/biblioteca/:id/arquivo-url — que confere empresa,
+// cliente e perfil de quem pede. Sem assinatura (ou vencida): 403.
+// A pasta fica em UPLOADS_DIR ou ./uploads; no Railway, monte um volume em
+// /app/uploads para os arquivos sobreviverem aos deploys.
 app.use(
   "/uploads",
   (req, res, next) => {
     // Arquivos enviados nunca são interpretados pelo navegador como página
     // (HTML/script): sempre tratados como o tipo declarado, sem "adivinhar".
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.setHeader("Cache-Control", "private, no-store");
     next();
   },
-  express.static(require("path").join(process.cwd(), "uploads"), { index: false, dotfiles: "deny" })
+  exigirAssinatura,
+  express.static(pastaUploads(), { index: false, dotfiles: "deny" })
 );
 // Sprint 1: clientMiddleware aplicado globalmente — popula req.empresaId
 // via empresa_id do JWT para todas as rotas protegidas
@@ -1618,6 +1620,13 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
   listBiblioteca
+);
+
+app.get(
+  "/api/biblioteca/:id/arquivo-url",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  arquivoUrlBiblioteca
 );
 
 app.post(
