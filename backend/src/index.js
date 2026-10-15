@@ -1827,6 +1827,15 @@ app.post(
   }
 );
 
+// Certificado da Oficina de Talentos — o treinando baixa SÓ o dele (ver
+// meusCertificados). Registrado antes de qualquer rota /api/certificados/:x.
+app.get(
+  "/api/certificados/oficina/meus",
+  authRequired,
+  authorizeRoles("treinando", "coordenador", "supervisor", "instrutor"),
+  require("./controllers/oficinaCertificadosController").meusCertificados
+);
+
 // Sprint 3: Certificados
 app.get(
   "/api/certificados",
