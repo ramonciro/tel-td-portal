@@ -78,6 +78,8 @@ export default function ProgressoJornadasCard({ loading, jornadasFluxo, editJorn
                   <MetricBox label="Participantes" value={fmtNumber(jornada.total_tripulantes || 0)} />
                   <MetricBox label="Coaching individual" value={fmtNumber(jornada.total_coaching_individual || 0)} />
                   <MetricBox label="Horas" value={fmtHours(jornada.horas_totais)} />
+                  <MetricBox label="Encontros" value={jornada.presenca ? `${fmtNumber(jornada.presenca.encontros_realizados)} de ${fmtNumber(jornada.presenca.encontros_total)}` : "—"} />
+                  <MetricBox label="Presença" value={jornada.presenca?.pct_presenca != null ? `${jornada.presenca.pct_presenca}%` : "—"} />
                   <MetricBox label="Progresso" value={`${jornada.progresso}%`} />
                 </div>
               </div>

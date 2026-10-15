@@ -332,14 +332,25 @@ export function crewStatusBadge(value) {
   };
 }
 
-export function getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada) {
+export function getJourneyAttention(jornada, acoesDaJornada, coachingsDaJornada, presenca = null) {
   const prazo = getPrazoInfo(jornada);
 
   if (prazo.tone === "danger") {
     return { level: "alta", label: "Prazo vencido" };
   }
 
-  if (!acoesDaJornada.length && !coachingsDaJornada.length) {
+  // Encontros e presença (16/10/2026): uma jornada só com chamada lançada
+  // deixa de aparecer como "Sem entregas vinculadas", e presença abaixo do
+  // mínimo ou chamada pendente viram alerta.
+  if (presenca && Number(presenca.abaixo_do_minimo || 0) > 0) {
+    return { level: "media", label: "Presença abaixo do mínimo" };
+  }
+  if (presenca && Number(presenca.chamadas_pendentes || 0) > 0) {
+    return { level: "media", label: "Chamada pendente" };
+  }
+
+  const temEncontros = presenca && Number(presenca.encontros_total || 0) > 0;
+  if (!acoesDaJornada.length && !coachingsDaJornada.length && !temEncontros) {
     return { level: "media", label: "Sem entregas vinculadas" };
   }
 
