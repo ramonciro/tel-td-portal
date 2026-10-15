@@ -318,6 +318,71 @@ async function listarCertificados(req, res) {
   }
 }
 
+// "Meus certificados" da Oficina (treinando). 16/10/2026: o treinando baixa
+// SÓ o próprio certificado — nunca recebe o de outra pessoa. O vínculo é
+// feito pelo login: inscrição com usuario_id = quem está logado OU com o
+// mesmo pessoa_id do cadastro único (usuarios.pessoa_id). Sem vínculo
+// confiável, devolve lista vazia (não tenta adivinhar por nome). Nada é
+// importado do Doity: só lê o que já está em oficina_certificados.
+async function meusCertificados(req, res) {
+  try {
+    const usuarioId = Number(req.user?.id);
+    if (!usuarioId) return res.json({ certificados: [] });
+
+    const [[u]] = await db.query(`SELECT pessoa_id FROM usuarios WHERE id = ? LIMIT 1`, [usuarioId]);
+    const pessoaId = u?.pessoa_id || null;
+
+    const tenant = filtroTenant(req, "t");
+    const params = [usuarioId];
+    let vinculo = "i.usuario_id = ?";
+    if (pessoaId) {
+      vinculo = "(i.usuario_id = ? OR i.pessoa_id = ?)";
+      params.push(pessoaId);
+    }
+    params.push(...tenant.params);
+    let filtroCodigo = "";
+    if (req.query.codigo) {
+      filtroCodigo = " AND c.codigo = ?";
+      params.push(String(req.query.codigo));
+    }
+
+    const [rows] = await db.query(
+      `SELECT c.id, c.codigo, c.nome, c.turma_nome, c.carga_horaria,
+              DATE_FORMAT(c.data_inicio, '%Y-%m-%d') AS data_inicio,
+              DATE_FORMAT(c.data_fim, '%Y-%m-%d') AS data_fim,
+              c.percentual_presenca, c.emitido_em,
+              t.assinatura1_nome, t.assinatura1_cargo, t.assinatura2_nome, t.assinatura2_cargo
+       FROM oficina_certificados c
+       JOIN oficina_inscricoes i ON i.id = c.inscricao_id
+       JOIN oficina_turmas t ON t.id = c.turma_id
+       WHERE ${vinculo}${tenant.sql}${filtroCodigo}
+       ORDER BY c.emitido_em DESC`,
+      params
+    );
+
+    res.json({
+      certificados: rows.map((c) => ({
+        id: c.id,
+        codigo: c.codigo,
+        nome: c.nome,
+        turma_nome: c.turma_nome,
+        carga_horaria: c.carga_horaria === null ? null : Number(c.carga_horaria),
+        data_inicio: c.data_inicio,
+        data_fim: c.data_fim,
+        percentual_presenca: c.percentual_presenca === null ? null : Number(c.percentual_presenca),
+        emitido_em: c.emitido_em,
+        assinatura1_nome: c.assinatura1_nome,
+        assinatura1_cargo: c.assinatura1_cargo || "Colaborador(a)",
+        assinatura2_nome: c.assinatura2_nome,
+        assinatura2_cargo: c.assinatura2_cargo || "Coordenador(a) de T&D",
+      })),
+    });
+  } catch (error) {
+    console.error("[oficina] meusCertificados:", error);
+    res.status(500).json({ error: "Erro ao carregar seus certificados." });
+  }
+}
+
 async function revogarCertificado(req, res) {
   const conn = await db.getConnection();
   try {
@@ -394,6 +459,7 @@ async function validarCertificadoPublico(req, res) {
 }
 
 module.exports = {
+  meusCertificados,
   frequenciaTurma,
   registrarPresenca,
   credenciarTodos,
