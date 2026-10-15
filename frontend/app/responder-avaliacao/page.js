@@ -22,79 +22,6 @@ function formatTreinamentoLabel(material) {
   }`;
 }
 
-function normalizarAlternativa(valor) {
-  if (valor === null || valor === undefined) return "";
-
-  const texto = String(valor).trim().toUpperCase();
-
-  if (!texto) return "";
-
-  if (["A", "B", "C", "D"].includes(texto)) return texto;
-
-  const matchLetra = texto.match(/\b([ABCD])\b/);
-  if (matchLetra) return matchLetra[1];
-
-  if (texto.startsWith("ALTERNATIVA A")) return "A";
-  if (texto.startsWith("ALTERNATIVA B")) return "B";
-  if (texto.startsWith("ALTERNATIVA C")) return "C";
-  if (texto.startsWith("ALTERNATIVA D")) return "D";
-
-  if (texto.startsWith("A)")) return "A";
-  if (texto.startsWith("B)")) return "B";
-  if (texto.startsWith("C)")) return "C";
-  if (texto.startsWith("D)")) return "D";
-
-  return "";
-}
-
-function obterRespostaCorreta(questao) {
-  const possiveisCampos = [
-    questao?.resposta_correta,
-    questao?.gabarito,
-    questao?.correta,
-    questao?.alternativa_correta,
-    questao?.resposta,
-  ];
-
-  for (const valor of possiveisCampos) {
-    const normalizada = normalizarAlternativa(valor);
-    if (normalizada) return normalizada;
-  }
-
-  return "";
-}
-
-function calcularResultado(materialSelecionado, questoes, respostas) {
-  const totalQuestoes = questoes.length;
-
-  let acertos = 0;
-
-  questoes.forEach((questao, index) => {
-    const respostaMarcada = normalizarAlternativa(respostas[index]);
-    const respostaCorreta = obterRespostaCorreta(questao);
-
-    if (respostaMarcada && respostaCorreta && respostaMarcada === respostaCorreta) {
-      acertos += 1;
-    }
-  });
-
-  const percentual =
-    totalQuestoes > 0 ? Number(((acertos / totalQuestoes) * 100).toFixed(2)) : 0;
-
-  const notaMaxima = Number(materialSelecionado?.nota_maxima || 0);
-  const notaFinal =
-    totalQuestoes > 0
-      ? Number(((acertos / totalQuestoes) * notaMaxima).toFixed(2))
-      : 0;
-
-  return {
-    acertos,
-    total_questoes: totalQuestoes,
-    percentual,
-    nota_final: notaFinal,
-  };
-}
-
 // Next.js exige que useSearchParams() fique dentro de um <Suspense> em rota
 // estática (sem isso, o build de produção falha com "useSearchParams()
 // should be wrapped in a suspense boundary") — por isso o componente que lê
@@ -124,6 +51,17 @@ function ResponderAvaliacaoConteudo() {
 
   const ehTreinando = String(user?.perfil || "").toLowerCase() === "treinando";
 
+  async function buscarMateriais() {
+    const query = treinamentoIdContexto ? `?treinamento_id=${treinamentoIdContexto}` : "";
+    const data = await apiFetch(`/materiais-avaliativos-disponiveis${query}`).catch(() => []);
+    const lista = Array.isArray(data) ? data : [];
+    return lista.filter((item) => safeParseQuestoes(item.questoes_json).length > 0);
+  }
+
+  async function recarregarMateriais() {
+    setMateriais(await buscarMateriais());
+  }
+
   useEffect(() => {
     async function carregar() {
       try {
@@ -141,14 +79,7 @@ function ResponderAvaliacaoConteudo() {
         // listava nenhuma prova. Agora usa a rota dedicada, que também
         // restringe às provas dos treinamentos em que ele participa e some
         // com as que ele já respondeu (uma tentativa por prova).
-        const query = treinamentoIdContexto ? `?treinamento_id=${treinamentoIdContexto}` : "";
-        const materiaisData = await apiFetch(`/materiais-avaliativos-disponiveis${query}`).catch(() => []);
-
-        const listaMateriais = Array.isArray(materiaisData) ? materiaisData : [];
-        const materiaisComQuestoes = listaMateriais.filter((item) => {
-          const questoes = safeParseQuestoes(item.questoes_json);
-          return questoes.length > 0;
-        });
+        const materiaisComQuestoes = await buscarMateriais();
 
         setMateriais(materiaisComQuestoes);
 
@@ -215,17 +146,12 @@ function ResponderAvaliacaoConteudo() {
         return;
       }
 
-      const calculo = calcularResultado(materialSelecionado, questoes, respostas);
-
+      // A nota é calculada no servidor: só as alternativas marcadas são enviadas.
       const payload = {
         material_id: Number(materialSelecionado.id),
         treinamento_id: Number(materialSelecionado.treinamento_id),
         treinando_nome: String(treinandoNome).trim(),
         respostas_json: JSON.stringify(respostas),
-        acertos: calculo.acertos,
-        total_questoes: calculo.total_questoes,
-        percentual: calculo.percentual,
-        nota_final: calculo.nota_final,
       };
 
       setEnviando(true);
@@ -236,11 +162,19 @@ function ResponderAvaliacaoConteudo() {
       });
 
       setResultado({
-        acertos: response?.acertos ?? calculo.acertos,
-        total_questoes: response?.total_questoes ?? calculo.total_questoes,
-        percentual: response?.percentual ?? calculo.percentual,
-        nota_final: response?.nota_final ?? calculo.nota_final,
+        acertos: response?.acertos ?? 0,
+        total_questoes: response?.total_questoes ?? questoes.length,
+        percentual: response?.percentual ?? 0,
+        nota_final: response?.nota_final ?? 0,
+        tentativa: response?.tentativa ?? 1,
+        tentativas_max: response?.tentativas_max ?? 1,
+        tentativas_restantes: response?.tentativas_restantes ?? 0,
+        melhor_nota: response?.melhor_nota ?? response?.nota_final ?? 0,
       });
+
+      // Zera a prova: com tentativas sobrando, o treinando pode refazer.
+      setRespostas({});
+      await recarregarMateriais();
 
       setSucesso("Respostas enviadas com sucesso.");
     } catch (error) {
@@ -273,8 +207,9 @@ function ResponderAvaliacaoConteudo() {
               subtitle="Não há prova ou simulado aguardando sua resposta no momento."
             >
               <div style={materialDescription}>
-                Se você já respondeu a prova desta turma, ela some da lista automaticamente — só é
-                permitida uma tentativa por prova/simulado. Se acha que isso é um engano, fale com
+                Se você já respondeu a prova desta turma, ela some da lista automaticamente — o
+                instrutor define quantas tentativas cada prova/simulado permite, e ela some quando
+                elas acabam. Se acha que isso é um engano, fale com
                 o instrutor ou coordenador da turma.
               </div>
             </SectionCard>
@@ -326,6 +261,19 @@ function ResponderAvaliacaoConteudo() {
                     {Number(materialSelecionado.nota_maxima ?? 0).toFixed(2)} •{" "}
                     {questoes.length} questão(ões)
                   </div>
+
+                  {ehTreinando ? (
+                  <div style={materialDescription}>
+                    Tentativas: {Number(materialSelecionado.tentativas_usadas || 0)} de{" "}
+                    {Number(materialSelecionado.tentativas_max || 1)} usadas
+                    {Number(materialSelecionado.tentativas_max || 1) > 1
+                      ? " — vale a melhor nota."
+                      : " — você só tem uma tentativa."}
+                    {materialSelecionado.melhor_nota !== null && materialSelecionado.melhor_nota !== undefined
+                      ? ` Melhor nota até agora: ${Number(materialSelecionado.melhor_nota).toFixed(2)}.`
+                      : ""}
+                  </div>
+                  ) : null}
 
                   {materialSelecionado.tema ? (
                     <div style={materialDescription}>
@@ -409,8 +357,20 @@ function ResponderAvaliacaoConteudo() {
                 </div>
 
                 <div style={resultCard}>
-                  <span style={resultLabel}>Nota final</span>
+                  <span style={resultLabel}>Nota desta tentativa</span>
                   <strong style={resultValue}>{resultado.nota_final}</strong>
+                </div>
+
+                <div style={resultCard}>
+                  <span style={resultLabel}>Melhor nota (oficial)</span>
+                  <strong style={resultValue}>{resultado.melhor_nota}</strong>
+                </div>
+
+                <div style={resultCard}>
+                  <span style={resultLabel}>Tentativas</span>
+                  <strong style={resultValue}>
+                    {resultado.tentativa}/{resultado.tentativas_max}
+                  </strong>
                 </div>
               </div>
             </SectionCard>
