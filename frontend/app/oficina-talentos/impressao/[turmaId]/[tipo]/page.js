@@ -11,6 +11,8 @@ import { formatDateBR } from "../../../../../lib/date";
 //   /oficina-talentos/impressao/<turmaId>/certificados  → todos os certificados da turma
 //   /oficina-talentos/impressao/<turmaId>/OT-XXXXXXXXXX → um certificado só (pelo código)
 //   /oficina-talentos/impressao/<turmaId>/frequencia    → lista de frequência (assinatura em papel)
+//   /oficina-talentos/impressao/meu/OT-XXXXXXXXXX       → o treinando baixa SÓ o próprio certificado
+//                                                         (16/10/2026; API /certificados/oficina/meus)
 // Como o login fica no navegador, quem abre precisa estar logado no Portal.
 
 const LOGO = "/logo-td.png";
@@ -38,14 +40,16 @@ export default function ImpressaoOficinaPage() {
   useEffect(() => {
     setOrigem(window.location.origin);
     if (!turmaId || !tipo) return;
-    const caminho =
-      tipo === "frequencia"
+    const meu = turmaId === "meu";
+    const caminho = meu
+      ? `/certificados/oficina/meus?codigo=${encodeURIComponent(tipo)}`
+      : tipo === "frequencia"
         ? `/oficina-talentos/turmas/${turmaId}/frequencia`
         : tipo === "certificados"
         ? `/oficina-talentos/turmas/${turmaId}/certificados`
         : `/oficina-talentos/turmas/${turmaId}/certificados?codigo=${encodeURIComponent(tipo)}`;
     apiFetch(caminho)
-      .then(setDados)
+      .then((d) => setDados(meu ? { turma: {}, certificados: d.certificados || [] } : d))
       .catch((e) => setErro(e.message || "Não foi possível carregar. Entre no Portal e tente novamente."));
   }, [turmaId, tipo]);
 
@@ -78,7 +82,7 @@ export default function ImpressaoOficinaPage() {
               <p className="texto">Certificamos que</p>
               <p className="nome">{c.nome}</p>
               <p className="texto">
-                participou da <strong>Oficina de Talentos — {c.turma_nome}</strong>
+                participou da <strong>{/^oficina/i.test(c.turma_nome || "") ? c.turma_nome : `Oficina de Talentos — ${c.turma_nome}`}</strong>
                 {periodoTexto(c.data_inicio, c.data_fim) ? `, realizada ${periodoTexto(c.data_inicio, c.data_fim)}` : ""}
                 {horasTexto(c.carga_horaria) ? `, com carga horária de ${horasTexto(c.carga_horaria)}` : ""}
                 {c.percentual_presenca !== null ? ` e frequência de ${Number(c.percentual_presenca).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : ""}.
@@ -86,13 +90,13 @@ export default function ImpressaoOficinaPage() {
               <div className="assinaturas">
                 <div>
                   <div className="linha" />
-                  <strong>{dados.turma.assinatura1_nome || " "}</strong>
-                  <span>{dados.turma.assinatura1_cargo}</span>
+                  <strong>{c.assinatura1_nome || dados.turma.assinatura1_nome || " "}</strong>
+                  <span>{c.assinatura1_cargo || dados.turma.assinatura1_cargo}</span>
                 </div>
                 <div>
                   <div className="linha" />
-                  <strong>{dados.turma.assinatura2_nome || " "}</strong>
-                  <span>{dados.turma.assinatura2_cargo}</span>
+                  <strong>{c.assinatura2_nome || dados.turma.assinatura2_nome || " "}</strong>
+                  <span>{c.assinatura2_cargo || dados.turma.assinatura2_cargo}</span>
                 </div>
               </div>
             </div>
