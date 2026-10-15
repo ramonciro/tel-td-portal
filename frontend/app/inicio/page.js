@@ -24,8 +24,8 @@ function saudacaoPorHorario(hora) {
 }
 
 const HERO_GRADIENTES = {
-  manha: "linear-gradient(135deg, #2563EB 0%, #60a5fa 55%, #fbbf24 100%)",
-  tarde: "linear-gradient(135deg, #0B1220 0%, #1d4ed8 55%, #F59E0B 100%)",
+  manha: "linear-gradient(135deg, #1d4ed8 0%, #2563EB 55%, #B45309 100%)",
+  tarde: "linear-gradient(135deg, #0B1220 0%, #1d4ed8 55%, #B45309 100%)",
   noite: "linear-gradient(135deg, #0B1220 0%, #161D2E 60%, #4338ca 100%)",
 };
 
