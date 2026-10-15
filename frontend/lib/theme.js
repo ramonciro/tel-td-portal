@@ -68,7 +68,10 @@ export const colors = {
 // gradiente (o Dashboard antigo, por exemplo, usava #0f172a → #1d4ed8, um
 // gradiente diferente do da marca).
 export const brandGradient = "linear-gradient(135deg, #2563EB 0%, #F59E0B 100%)";
-export const brandGradientDark = "linear-gradient(135deg, #0B1220 0%, #1d4ed8 55%, #F59E0B 100%)";
+// 16/10/2026: o fim do degradê escuro era #F59E0B (2,15:1 com texto branco) —
+// botões e números do cabeçalho ficavam ilegíveis sobre a faixa laranja. Agora
+// termina no mesmo âmbar fechado do `accent` (#B45309, 5,02:1 com branco).
+export const brandGradientDark = "linear-gradient(135deg, #0B1220 0%, #1d4ed8 55%, #B45309 100%)";
 export const brandGradientSoft = "linear-gradient(135deg, rgba(37,99,235,0.12) 0%, rgba(245,158,11,0.12) 100%)";
 
 export const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
