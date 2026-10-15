@@ -56,6 +56,12 @@ export default function KpisDesenvolvimentoPage() {
   const cobertura = kpis?.coberturaPorCliente;
   const coaching = kpis?.coachingIndividual;
   const mpt = kpis?.mptPendentes;
+  // Encontros e presença das jornadas (16/10/2026) — antes o dashboard só
+  // lia etapas com prazo, coaching e ações vencidas.
+  const presenca = kpis?.presencaJornadas;
+  const encontros = kpis?.adesaoEncontros;
+  const jornadas = kpis?.jornadas || [];
+  const mptHoras = kpis?.mptHoras;
 
   return (
     <PortalShell>
@@ -88,6 +94,24 @@ export default function KpisDesenvolvimentoPage() {
               accent={colors.primary}
             />
             <StatCard
+              title="Presença nas jornadas"
+              value={presenca?.pct != null ? `${presenca.pct}%` : "—"}
+              subtitle={
+                presenca?.jornadasComDado
+                  ? `${presenca.jornadasAbaixoDoMinimo} de ${presenca.jornadasComDado} jornadas abaixo do mínimo · ${presenca.pessoasAbaixoDoMinimo} pessoas`
+                  : "nenhuma chamada lançada ainda"
+              }
+              accent={farolAccent(presenca?.farol)}
+              helper={farolLabel(presenca?.farol)}
+            />
+            <StatCard
+              title="Chamada em dia"
+              value={encontros?.pct != null ? `${encontros.pct}%` : "—"}
+              subtitle={`${encontros?.lancados ?? 0} de ${encontros?.previstos ?? 0} encontros já realizados com chamada lançada`}
+              accent={farolAccent(encontros?.farol)}
+              helper={farolLabel(encontros?.farol)}
+            />
+            <StatCard
               title="Coaching individual — em dia"
               value={coaching?.emDia ?? "—"}
               subtitle={`de ${coaching?.total ?? 0} relacionamentos ativos`}
@@ -107,7 +131,7 @@ export default function KpisDesenvolvimentoPage() {
               subtitle="% de portos concluídos no prazo, entre os previstos até hoje — cobertura ao lado é o headcount, não o mesmo cálculo"
             >
               {!adesao?.porCliente?.length ? (
-                <p style={vazio}>Sem etapas com prazo vencido registradas ainda.</p>
+                <p style={vazio}>Sem etapas com prazo vencido registradas ainda — o acompanhamento pelos encontros está no cartão "Chamada em dia" e no bloco de jornadas abaixo.</p>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   {adesao.porCliente.map((c) => (
@@ -161,6 +185,44 @@ export default function KpisDesenvolvimentoPage() {
             </SectionCard>
           </div>
 
+          <div style={{ marginTop: 20 }}>
+          <SectionCard
+            title="Jornadas — encontros e presença"
+            subtitle="Uma linha por jornada: presença contra o mínimo configurado, horas de presença e chamadas pendentes. Cadastro e lançamento em Mapa de Desenvolvimento → Encontros e presença."
+            action={
+              <a href="/mapa-desenvolvimento/presenca" style={linkAcao}>
+                Abrir encontros e presença →
+              </a>
+            }
+          >
+            {!jornadas.length ? (
+              <p style={vazio}>Nenhuma jornada cadastrada ainda.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                {jornadas.map((j) => (
+                  <div key={j.jornada_id} style={linhaJornada}>
+                    <div style={{ flex: "1 1 240px", minWidth: 200 }}>
+                      <div style={{ fontWeight: 700, color: colors.textPrimary, fontSize: 14 }}>{j.nome}</div>
+                      <div style={{ fontSize: 12, color: colors.textMuted }}>
+                        {j.cliente || "Sem cliente"} · {j.participantes} participantes · {j.encontros_realizados} de {j.encontros_total} encontros realizados
+                      </div>
+                      {j.proximo_encontro && (
+                        <div style={{ fontSize: 12, color: colors.textSecondary }}>
+                          Próximo: {j.proximo_encontro.titulo} ({formatarData(j.proximo_encontro.data)})
+                        </div>
+                      )}
+                    </div>
+                    <MiniStat label="horas de presença" value={j.horas_presenca} />
+                    <MiniStat label={`presença (mín. ${j.presenca_minima_pct}%)`} value={j.pct_presenca != null ? `${j.pct_presenca}%` : "—"} cor={j.farol === "vermelho" ? colors.danger : j.farol === "verde" ? colors.success : colors.neutral} />
+                    <MiniStat label="pessoas abaixo do mínimo" value={j.abaixo_do_minimo} cor={j.abaixo_do_minimo > 0 ? colors.danger : colors.neutral} />
+                    <MiniStat label="chamadas pendentes" value={j.chamadas_pendentes} cor={j.chamadas_pendentes > 0 ? colors.warning : colors.neutral} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+          </div>
+
           <div style={gridDuas}>
             <SectionCard
               title="Coaching individual"
@@ -181,10 +243,41 @@ export default function KpisDesenvolvimentoPage() {
 
             <SectionCard
               title="Comprovação MPT"
-              subtitle={mpt?.aviso || "Indicador provisório"}
+              subtitle="Horas reais de presença contra a meta de cada jornada; abaixo, o indicador provisório por prazo."
             >
-              <div style={avisoProvisorio}>
-                Provisório — ainda depende da regra de horas exigidas por subdivisão (pendência em aberto).
+              {!mptHoras?.jornadasComMeta ? (
+                <p style={vazio}>
+                  Nenhuma jornada com meta de horas definida — informe a meta em Encontros e presença → Configurar presença.
+                </p>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+                    <MiniStat label="pessoas com meta" value={mptHoras.pessoas} />
+                    <MiniStat label="atingiram a meta" value={mptHoras.atingiram} cor={colors.success} />
+                    <MiniStat label="abaixo da meta" value={mptHoras.abaixo} cor={mptHoras.abaixo > 0 ? colors.danger : colors.neutral} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+                    {mptHoras.porJornada.map((j) => (
+                      <div key={j.jornada_id} style={linhaCliente}>
+                        <span style={{ flexGrow: 1, fontSize: 13.5, color: colors.textPrimary }}>
+                          {j.nome} <span style={{ color: colors.textMuted }}>· meta {j.meta_horas} h</span>
+                        </span>
+                        <span style={{ fontSize: 12.5, color: colors.textSecondary }}>{j.atingiram} de {j.pessoas}</span>
+                        <span style={estiloBadgeClassificacao(j.abaixo > 0 ? "Crítico" : "Saudável")}>
+                          {j.abaixo > 0 ? `${j.abaixo} abaixo` : "completa"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {mptHoras.jornadasSemMeta > 0 && (
+                    <p style={{ ...vazio, marginTop: 10 }}>
+                      {mptHoras.jornadasSemMeta} jornada(s) com participantes ainda sem meta de horas definida.
+                    </p>
+                  )}
+                </>
+              )}
+              <div style={{ ...avisoProvisorio, marginTop: 14 }}>
+                {mpt?.aviso || "Indicador provisório"}
               </div>
               {!mpt?.porSubdivisao?.length ? (
                 <p style={vazio}>Nenhuma ação vencida sem conclusão no momento.</p>
@@ -204,6 +297,11 @@ export default function KpisDesenvolvimentoPage() {
       )}
     </PortalShell>
   );
+}
+
+function formatarData(iso) {
+  const [a, m, d] = String(iso || "").slice(0, 10).split("-");
+  return a && m && d ? `${d}/${m}/${a}` : "";
 }
 
 function MiniStat({ label, value, cor }) {
@@ -260,6 +358,15 @@ const linhaCliente = {
   alignItems: "center",
   gap: 10,
   padding: "6px 0",
+  borderBottom: `1px solid ${colors.border}`,
+};
+
+const linhaJornada = {
+  display: "flex",
+  alignItems: "center",
+  gap: 24,
+  flexWrap: "wrap",
+  padding: "12px 0",
   borderBottom: `1px solid ${colors.border}`,
 };
 
