@@ -2311,6 +2311,13 @@ async function runMigrations() {
       console.log(`  ↳ desenvolvimento das jornadas não concluído (${error.message}) — seguindo`);
     }
 
+    // 65. Trilhas por pessoa (Fase 3) — ver ensureTrilhaPessoas().
+    try {
+      await ensureTrilhaPessoas();
+    } catch (error) {
+      console.log(`  ↳ trilhas por pessoa não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
@@ -2372,6 +2379,64 @@ async function ensureJornadaDesenvolvimento() {
       INDEX idx_jen_empresa (empresa_id)
     );
   `);
+}
+
+// 65. Trilhas por pessoa (Fase 3, 16/10/2026, pedido do Ramon: trilhas lançadas
+// pela Metodologia, pessoa a pessoa, enquanto o treinando ainda não tem login).
+//  - trilha_participantes: quem está em cada trilha. Nasce da sincronização com
+//    os participantes das jornadas ligadas à trilha (origem "jornada") ou da
+//    inclusão manual pelo cadastro único (origem "manual"). "chave" evita duplicar
+//    a mesma pessoa: p<pessoa_id>, senão m<matrícula>, senão j<participante>.
+//    Remover = situacao "removido" (a linha fica, para a sincronização não trazer
+//    a pessoa de volta e o progresso já lançado não se perder).
+//  - trilha_progresso_pessoa: etapa concluída por pessoa (com data e observação).
+//    Sem linha = não concluída. Não mexe em trilha_progresso (por e-mail de login).
+// Sem FK (mesmo padrão do módulo); a limpeza em cascata é feita nos controllers.
+async function ensureTrilhaPessoas() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS trilha_participantes (
+      id                      INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id              INT NULL,
+      trilha_id               INT NOT NULL,
+      chave                   VARCHAR(40) NOT NULL,
+      pessoa_id               INT NULL,
+      jornada_participante_id INT NULL,
+      nome                    VARCHAR(255) NOT NULL,
+      matricula               VARCHAR(100) NULL,
+      turma                   VARCHAR(255) NULL,
+      cargo                   VARCHAR(255) NULL,
+      origem                  VARCHAR(20) NOT NULL DEFAULT 'manual',
+      situacao                VARCHAR(12) NOT NULL DEFAULT 'ativo',
+      entrou_em               DATE NULL,
+      criado_por_id           INT NULL,
+      created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_trilha_participante (trilha_id, chave),
+      INDEX idx_trilha_part_trilha (trilha_id),
+      INDEX idx_trilha_part_pessoa (pessoa_id),
+      INDEX idx_trilha_part_jp (jornada_participante_id),
+      INDEX idx_trilha_part_empresa (empresa_id)
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS trilha_progresso_pessoa (
+      id                    INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id            INT NULL,
+      trilha_id             INT NOT NULL,
+      trilha_participante_id INT NOT NULL,
+      etapa_id              INT NOT NULL,
+      data_conclusao        DATE NULL,
+      observacao            VARCHAR(500) NULL,
+      origem                VARCHAR(20) NOT NULL DEFAULT 'manual',
+      lancado_por_id        INT NULL,
+      created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_trilha_prog_pessoa (trilha_participante_id, etapa_id),
+      INDEX idx_trilha_prog_trilha (trilha_id),
+      INDEX idx_trilha_prog_etapa (etapa_id)
+    );
+  `);
+  console.log("  ↳ trilha_participantes / trilha_progresso_pessoa: ok");
 }
 
 module.exports = { runMigrations };
