@@ -568,6 +568,56 @@ async function ensureRespostasAvaliativasChavePorPessoa() {
   }
 }
 
+// Tentativas por prova (14/10/2026). O instrutor define quantas tentativas o
+// treinando tem em cada prova/simulado (materiais_avaliativos.tentativas_max;
+// NULL = 1, que é o comportamento de sempre). Cada tentativa vira uma linha em
+// respostas_avaliativas (coluna `tentativa`, 1..N) e a nota oficial é a melhor.
+// As chaves únicas (material, pessoa) e (material, nome legado) passam a
+// incluir `tentativa`: primeiro cria as novas, depois derruba as antigas, para
+// nunca deixar a tabela sem proteção contra duplicidade nem sem índice para a FK.
+async function ensureTentativasProva() {
+  const [tabelas] = await pool.query(
+    `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME IN ('materiais_avaliativos', 'respostas_avaliativas')`
+  );
+  const existentes = new Set(tabelas.map((t) => t.TABLE_NAME));
+  if (existentes.has("materiais_avaliativos")) {
+    await ensureColumn("materiais_avaliativos", "tentativas_max", "INT NULL");
+  }
+  if (!existentes.has("respostas_avaliativas")) return;
+
+  await ensureColumn("respostas_avaliativas", "tentativa", "INT NOT NULL DEFAULT 1");
+
+  const indices = async (nome) => {
+    const [r] = await pool.query(
+      `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'respostas_avaliativas' AND INDEX_NAME = ?`,
+      [nome]
+    );
+    return r[0].c > 0;
+  };
+
+  if (!(await indices("uniq_material_pessoa_tentativa"))) {
+    await pool.query(
+      `ALTER TABLE respostas_avaliativas ADD UNIQUE KEY uniq_material_pessoa_tentativa (material_id, pessoa_id, tentativa)`
+    );
+    console.log(`  ↳ chave única adicionada: respostas_avaliativas (material_id, pessoa_id, tentativa)`);
+  }
+  if (!(await indices("uniq_material_legado_tentativa"))) {
+    await pool.query(
+      `ALTER TABLE respostas_avaliativas ADD UNIQUE KEY uniq_material_legado_tentativa (material_id, treinando_nome_legado, tentativa)`
+    );
+    console.log(`  ↳ chave única adicionada: respostas_avaliativas (material_id, treinando_nome_legado, tentativa)`);
+  }
+  if (await indices("uniq_material_pessoa")) {
+    await pool.query(`ALTER TABLE respostas_avaliativas DROP INDEX uniq_material_pessoa`);
+  }
+  if (await indices("uniq_material_treinando_legado")) {
+    await pool.query(`ALTER TABLE respostas_avaliativas DROP INDEX uniq_material_treinando_legado`);
+  }
+}
+
 // Diagnóstico somente-leitura (ver passo 60 em runMigrations).
 async function diagnosticarNomeAntigo() {
   const alvos = [
@@ -2234,6 +2284,13 @@ async function runMigrations() {
       `);
     } catch (error) {
       console.log(`  ↳ carga inicial de instrutores não concluída (${error.message}) — seguindo`);
+    }
+
+    // 63. Tentativas por prova (14/10/2026) — ver ensureTentativasProva().
+    try {
+      await ensureTentativasProva();
+    } catch (error) {
+      console.log(`  ↳ tentativas por prova não concluído (${error.message}) — seguindo`);
     }
 
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
