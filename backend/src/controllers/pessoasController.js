@@ -28,6 +28,7 @@
 const pool = require("../lib/db");
 const { blocoOficinaDaPessoa } = require("./oficinaIndicadoresController");
 const { calcularDesenvolvimento } = require("../lib/jornadaDesenvolvimento");
+const { trilhasDaPessoa } = require("../lib/trilhaPessoa");
 
 const PERFIS_COM_ACESSO_CPF = ["coordenador", "assistente_treinamento", "super_admin"];
 
@@ -288,6 +289,27 @@ async function perfil(req, res) {
       }
     }
 
+    // Trilhas lançadas pela Metodologia (Fase 3, 16/10/2026): progresso por etapa.
+    // Só para quem vê a Oficina/coaching (metodologia, coordenador, super_admin).
+    let trilhas = [];
+    if (veCoachingMetodologia) {
+      try {
+        trilhas = await trilhasDaPessoa({
+          empresaId: req.empresaId,
+          pessoaId: id,
+          participanteId: null,
+        });
+        // participantes de jornada ligados a esta pessoa (trilha sincronizada sem pessoa_id)
+        const idsParticipantes = jornadas.map((j) => j.participante_id).filter(Boolean);
+        for (const pid of idsParticipantes) {
+          const extra = await trilhasDaPessoa({ empresaId: req.empresaId, participanteId: pid });
+          for (const t of extra) if (!trilhas.some((x) => x.trilha_id === t.trilha_id)) trilhas.push(t);
+        }
+      } catch (e) {
+        console.error("[pessoasController] trilhas da pessoa:", e.message || e);
+      }
+    }
+
     return res.json({
       ok: true,
       pessoa: {
@@ -301,11 +323,13 @@ async function perfil(req, res) {
       },
       turmas,
       jornadas: jornadasComDesenvolvimento,
+      trilhas,
       coaching: veCoachingMetodologia ? coaching : [],
       metodologia: veCoachingMetodologia ? (metodologiaRows[0] || null) : null,
       usuario: PERFIS_SEM_CONTA.includes(perfilNorm(req)) ? null : (usuarioRows[0] || null),
       ocultos: {
         avaliacao_jornada: !veAvaliacao,
+        trilhas: !veCoachingMetodologia,
         coaching: !veCoachingMetodologia,
         metodologia: !veCoachingMetodologia,
         usuario: PERFIS_SEM_CONTA.includes(perfilNorm(req)),

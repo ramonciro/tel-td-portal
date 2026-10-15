@@ -465,6 +465,19 @@ async function exportarEvidencias(req, res) {
       );
     });
 
+    // Jornadas — horas reais dos encontros e da presença (Fase 3, 16/10/2026).
+    // Se falhar, a evidência sai como antes (ações e coaching).
+    let jornadasPresenca = [];
+    try {
+      const { resumoPorJornada } = require("../lib/jornadaPresencaResumo");
+      jornadasPresenca = (await resumoPorJornada(req.empresaId || null)).filter((j) => !j.cancelada && j.encontros_total > 0);
+      jornadasPresenca.forEach((j) => {
+        acumular(j.cliente, "Jornadas (encontros)", j.horas_encontros_total, j.horas_encontros_realizados, 1);
+      });
+    } catch (e) {
+      console.error("Evidência MPT — horas das jornadas:", e.message || e);
+    }
+
     const resumo = Array.from(resumoMap.values()).sort((x, y) => {
       if (x.cliente !== y.cliente) return x.cliente.localeCompare(y.cliente, "pt-BR");
       return x.subdivisao.localeCompare(y.subdivisao, "pt-BR");
@@ -484,6 +497,36 @@ async function exportarEvidencias(req, res) {
       ],
       linhas: resumo,
     });
+
+    if (jornadasPresenca.length) {
+      adicionarTabela(wb, {
+        nomeAba: "Jornadas (presença)",
+        colunas: [
+          { titulo: "Cliente", chave: "cliente", largura: 22 },
+          { titulo: "Jornada", chave: "nome", largura: 30 },
+          { titulo: "Participantes", chave: "participantes", largura: 14, formato: "inteiro" },
+          { titulo: "Encontros realizados / cadastrados", chave: "encontros", largura: 22 },
+          { titulo: "Horas dos encontros realizados (grupo)", chave: "horas_encontros_realizados", largura: 22, formato: "decimal1" },
+          { titulo: "Horas de presença (soma das pessoas)", chave: "horas_presenca", largura: 22, formato: "decimal1" },
+          { titulo: "% Presença", chave: "pct_presenca", largura: 12, formato: "percentual" },
+          { titulo: "Mínimo exigido (%)", chave: "presenca_minima_pct", largura: 14, formato: "inteiro" },
+          { titulo: "Meta de horas por pessoa", chave: "meta_horas", largura: 16, formato: "decimal1" },
+          { titulo: "Atingiram a meta", chave: "atingiram_meta", largura: 14 },
+        ],
+        linhas: jornadasPresenca.map((j) => ({
+          cliente: j.cliente || "Não informado",
+          nome: j.nome,
+          participantes: j.participantes,
+          encontros: `${j.encontros_realizados} / ${j.encontros_total}`,
+          horas_encontros_realizados: j.horas_encontros_realizados,
+          horas_presenca: j.horas_presenca,
+          pct_presenca: j.pct_presenca,
+          presenca_minima_pct: j.presenca_minima_pct,
+          meta_horas: j.meta_horas,
+          atingiram_meta: j.meta_horas ? `${j.atingiram_meta} de ${j.participantes}` : "—",
+        })),
+      });
+    }
 
     adicionarTabela(wb, {
       nomeAba: "Ações",

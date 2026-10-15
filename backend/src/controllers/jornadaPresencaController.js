@@ -1246,6 +1246,76 @@ async function exportar(req, res) {
     wt.views = [{ state: "frozen", ySplit: 1 }];
     wt.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colsT.length } };
 
+    // Abas 5–7 — desenvolvimento por etapa, avaliação e evolução (Fase 3, 16/10/2026).
+    // Rota só da Metodologia (e super_admin): avaliação, nota, observação e evolução
+    // entram aqui como no Perfil 360 desse público. Se o cálculo falhar, a exportação
+    // segue sem essas abas (a presença nunca deixa de sair).
+    let dev = null;
+    try {
+      const { calcularDesenvolvimento } = require("../lib/jornadaDesenvolvimento");
+      dev = await calcularDesenvolvimento(
+        { id: jornada.id, presenca_minima_pct: cfg.presenca_minima_pct, meta_horas: cfg.meta_horas, periodicidade_meses: cfg.periodicidade_meses },
+        { incluirAvaliacao: true, incluirEvolucao: true }
+      );
+    } catch (e) {
+      console.error("[jornadaPresenca] exportar — desenvolvimento:", e.message || e);
+    }
+    if (dev) {
+      const ROT_STATUS = { nao_iniciada: "Não iniciada", em_andamento: "Em andamento", concluida: "Concluída" };
+      const ROT_AVAL = { atingiu: "Atingiu", parcial: "Parcial", nao_atingiu: "Não atingiu" };
+      const ROT_TIPO = { ponto_forte: "Ponto forte", dificuldade: "Dificuldade", plano_acao: "Plano de ação", geral: "Geral" };
+
+      const wd = wb.addWorksheet("Desenvolvimento");
+      const colsD = ["Nome", "Matrícula", "Turma", "Horas realizadas", "Carga prevista (h)", "% da jornada", "Base do %", "Etapas concluídas", "Total de etapas", "% Presença", "Situação da presença"];
+      colsD.forEach((c, i) => { wd.getCell(1, i + 1).value = c; });
+      estilizarCabecalho(wd, 1, colsD.length);
+      dev.participantes.forEach((p, r) => {
+        const linha = r + 2;
+        [p.nome, p.matricula || "", p.turma || "", p.horas, dev.carga_prevista || "", p.pct_jornada === null ? "" : p.pct_jornada / 100, p.base_pct_jornada === "horas" ? "Horas ÷ carga prevista" : p.base_pct_jornada === "etapas" ? "Etapas concluídas ÷ etapas" : "", p.concluidas, p.total_etapas, p.pct_presenca === null ? "" : p.pct_presenca / 100, ROTULO_FAROL[p.farol] + ` (mín. ${cfg.presenca_minima_pct}%)`].forEach((v, i) => {
+          wd.getCell(linha, i + 1).value = v;
+        });
+        wd.getCell(linha, 6).numFmt = "0.0%";
+        wd.getCell(linha, 10).numFmt = "0.0%";
+      });
+      wd.columns = [34, 14, 18, 16, 16, 13, 26, 16, 14, 12, 28].map((width) => ({ width }));
+      wd.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+      wd.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colsD.length } };
+
+      const we2 = wb.addWorksheet("Etapas (status e avaliação)");
+      const colsE2 = ["Nome", "Matrícula", "Etapa", "Status", "Data de conclusão", "Encontros", "Horas na etapa", "% Presença na etapa", "Avaliação", "Nota", "Observação"];
+      colsE2.forEach((c, i) => { we2.getCell(1, i + 1).value = c; });
+      estilizarCabecalho(we2, 1, colsE2.length);
+      let re = 2;
+      for (const p of dev.participantes) {
+        for (const et of dev.etapas) {
+          const c = p.etapas[et.id];
+          const vals = [p.nome, p.matricula || "", et.nome, ROT_STATUS[c.status] || c.status, c.data_conclusao ? paraDate(c.data_conclusao) : "", c.encontros, c.horas, c.pct_presenca === null ? "" : c.pct_presenca / 100, c.avaliacao ? ROT_AVAL[c.avaliacao] : "", c.nota === null ? "" : c.nota, c.observacao || ""];
+          vals.forEach((v, i) => { we2.getCell(re, i + 1).value = v; });
+          if (c.data_conclusao) we2.getCell(re, 5).numFmt = FORMATO_DATA;
+          we2.getCell(re, 8).numFmt = "0.0%";
+          re += 1;
+        }
+      }
+      we2.columns = [34, 14, 34, 16, 16, 11, 14, 16, 14, 8, 50].map((width) => ({ width }));
+      we2.views = [{ state: "frozen", ySplit: 1 }];
+      we2.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colsE2.length } };
+
+      const wv = wb.addWorksheet("Evolução (anotações)");
+      const colsV = ["Nome", "Matrícula", "Data", "Tipo", "Anotação", "Registrado por"];
+      colsV.forEach((c, i) => { wv.getCell(1, i + 1).value = c; });
+      estilizarCabecalho(wv, 1, colsV.length);
+      let rv = 2;
+      for (const p of dev.participantes) {
+        for (const n of p.evolucao || []) {
+          [p.nome, p.matricula || "", paraDate(n.data), ROT_TIPO[n.tipo] || n.tipo, n.texto, n.criado_por_nome || ""].forEach((v, i) => { wv.getCell(rv, i + 1).value = v; });
+          wv.getCell(rv, 3).numFmt = FORMATO_DATA;
+          rv += 1;
+        }
+      }
+      wv.columns = [34, 14, 12, 16, 80, 26].map((width) => ({ width }));
+      wv.views = [{ state: "frozen", ySplit: 1 }];
+    }
+
     // Aba 5 — resumo e critérios.
     const wm = wb.addWorksheet("Resumo");
     const linhasResumo = [
@@ -1268,6 +1338,7 @@ async function exportar(req, res) {
       ["% de presença = presentes ÷ (presentes + ausentes) nos encontros já lançados. Falta justificada não soma horas e fica fora do cálculo."],
       ["Encontro sem lançamento não é contado como falta."],
       ["Legenda da grade: P = presente · J = justificado · F = ausente · vazio = não lançado."],
+      ["As abas Desenvolvimento, Etapas (status e avaliação) e Evolução (anotações) trazem dado de acompanhamento da Metodologia — avalie antes de compartilhar o arquivo fora do time."],
     ];
     linhasResumo.forEach((l, i) => {
       l.forEach((v, c) => { wm.getCell(i + 1, c + 1).value = v; });

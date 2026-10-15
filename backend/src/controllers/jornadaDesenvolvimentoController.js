@@ -21,6 +21,7 @@ const {
   calcularDesenvolvimento,
   hojeBahia,
 } = require("../lib/jornadaDesenvolvimento");
+const { trilhasDaPessoa } = require("../lib/trilhaPessoa");
 
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -227,10 +228,21 @@ async function painel(req, res) {
       { id: participante.jornada_id, presenca_minima_pct: participante.presenca_minima_pct, meta_horas: participante.meta_horas, periodicidade_meses: participante.periodicidade_meses },
       { participanteId: participante.id }
     );
+    let trilhas = [];
+    try {
+      trilhas = await trilhasDaPessoa({
+        empresaId: req.empresaId,
+        pessoaId: participante.pessoa_id || null,
+        participanteId: participante.id,
+      });
+    } catch (e) {
+      console.error("[jornadaDesenvolvimento] trilhas da pessoa:", e.message || e);
+    }
     return res.json({
       jornada: { id: participante.jornada_id, nome: participante.jornada_nome, cliente: participante.cliente, ...d.config },
       etapas: d.etapas,
       participante: d.participantes[0] || null,
+      trilhas,
       hoje: d.hoje,
     });
   } catch (e) {

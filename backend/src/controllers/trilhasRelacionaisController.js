@@ -247,6 +247,7 @@ async function updateTrilha(req, res) {
     const removidos = [...idsAtuais].filter((x) => !mantidos.has(x));
     if (removidos.length) {
       await conn.query('DELETE FROM trilha_progresso WHERE etapa_id IN (?)', [removidos]);
+      await conn.query('DELETE FROM trilha_progresso_pessoa WHERE etapa_id IN (?)', [removidos]).catch(() => null);
       await conn.query('UPDATE jornada_encontros SET trilha_etapa_id = NULL WHERE trilha_etapa_id IN (?)', [removidos]).catch(() => null);
       await conn.query('DELETE FROM trilha_etapas WHERE id IN (?)', [removidos]);
     }
@@ -282,6 +283,9 @@ async function deleteTrilha(req, res) {
     }
 
     await conn.query('DELETE FROM trilha_progresso WHERE trilha_id = ?', [id]);
+    // Trilhas por pessoa (Fase 3, 16/10/2026): participantes e progresso lançados pela Metodologia.
+    await conn.query('DELETE FROM trilha_progresso_pessoa WHERE trilha_id = ?', [id]).catch(() => null);
+    await conn.query('DELETE FROM trilha_participantes WHERE trilha_id = ?', [id]).catch(() => null);
     // Trilhas da jornada (13/10/2026): sai da lista de cada jornada e os
     // encontros que apontavam para ela passam a "sem trilha" (a presença fica).
     await conn.query('UPDATE jornada_encontros SET trilha_id = NULL, trilha_etapa_id = NULL WHERE trilha_id = ?', [id]).catch(() => null);
