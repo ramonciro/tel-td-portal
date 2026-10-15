@@ -41,7 +41,7 @@ export default function AvaliacoesTurmaPage() {
   const [materiais,     setMateriais]     = useState([]);
   const [materialForm,  setMaterialForm]  = useState({
     titulo: "", tipo: "prova", link_arquivo: "", descricao: "",
-    nota_maxima: "", data_aplicacao: "",
+    nota_maxima: "", data_aplicacao: "", tentativas_max: "1",
   });
   const [questoes,      setQuestoes]      = useState([novaQuestao()]);
   const [editMaterialId, setEditMaterialId] = useState(null);
@@ -134,7 +134,7 @@ export default function AvaliacoesTurmaPage() {
   function limparMaterial() {
     setEditMaterialId(null); setBuilderErro(""); setBuilderOk("");
     setMaterialForm({ titulo: "", tipo: "prova", link_arquivo: "", descricao: "",
-      nota_maxima: "", data_aplicacao: "" });
+      nota_maxima: "", data_aplicacao: "", tentativas_max: "1" });
     setQuestoes([novaQuestao()]);
   }
 
@@ -154,6 +154,7 @@ export default function AvaliacoesTurmaPage() {
         ...materialForm,
         treinamento_id: Number(id),
         nota_maxima: materialForm.nota_maxima || 0,
+        tentativas_max: Math.min(Math.max(parseInt(materialForm.tentativas_max, 10) || 1, 1), 10),
         questoes_json: JSON.stringify(questoes.filter((q) => q.enunciado)),
       };
       const url = editMaterialId ? `/materiais-avaliativos/${editMaterialId}` : "/materiais-avaliativos";
@@ -178,6 +179,7 @@ export default function AvaliacoesTurmaPage() {
       titulo: m.titulo || "", tipo: m.tipo || "prova",
       link_arquivo: m.link_arquivo || "", descricao: m.descricao || "",
       nota_maxima: m.nota_maxima || "",
+      tentativas_max: String(m.tentativas_max || 1),
       data_aplicacao: m.data_aplicacao ? String(m.data_aplicacao).slice(0, 10) : "",
     });
     try {
@@ -371,6 +373,11 @@ export default function AvaliacoesTurmaPage() {
                         </select>
                       </BField>
                       <BField label="Nota máx."><input type="number" value={materialForm.nota_maxima} onChange={campoMaterial("nota_maxima")} style={bInput} /></BField>
+                      <BField label="Tentativas">
+                        <input type="number" min={1} max={10} value={materialForm.tentativas_max}
+                          onChange={campoMaterial("tentativas_max")} style={bInput}
+                          title="Quantas vezes o treinando pode fazer esta prova. Vale a melhor nota." />
+                      </BField>
                       <BField label="Aplicação"><input type="date" value={materialForm.data_aplicacao} onChange={campoMaterial("data_aplicacao")} style={bInput} /></BField>
                       <BField label="Link" full><input value={materialForm.link_arquivo} onChange={campoMaterial("link_arquivo")} placeholder="URL do arquivo (opcional)" style={bInput} /></BField>
                       <BField label="Descrição" full>
@@ -435,7 +442,7 @@ export default function AvaliacoesTurmaPage() {
                                 borderRadius: 999, padding: "2px 8px", fontWeight: 700 }}>{m.tipo}</span>
                             </div>
                             <span style={{ fontSize: 12, color: "#64748b" }}>
-                              {nQ} questão(ões) · nota máx. {m.nota_maxima ?? 0}
+                              {nQ} questão(ões) · nota máx. {m.nota_maxima ?? 0} · {m.tentativas_max || 1} tentativa(s)
                             </span>
                             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                               <button style={btnEditar} onClick={() => editarMaterial(m)}>Editar</button>
