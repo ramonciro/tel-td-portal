@@ -5,6 +5,7 @@ import { useParams, useSearchParams }      from "next/navigation";
 import TurmaPageShell                      from "../../../components/TurmaPageShell";
 import StatCard                            from "../../../components/StatCard";
 import { apiFetch }                        from "../../../services/api";
+import { gerarCronogramaEAbrirChamada }   from "../../../lib/gerarCronogramaEAbrirChamada";
 import { colors, chart, estiloBadgeStatus } from "../../../lib/theme";
 import { compareLocalDatesAsc, formatDateBR, parseLocalDate } from "../../../lib/date";
 
@@ -129,6 +130,22 @@ export default function GestaoTurmaPage() {
   /* ── Ações ── */
   function ir(path) { window.location.href = path; }
 
+  const [gerandoCron, setGerandoCron] = useState(false);
+  const [erroCron, setErroCron] = useState("");
+  async function gerarEAbrirChamada() {
+    try {
+      setGerandoCron(true); setErroCron("");
+      const r = await gerarCronogramaEAbrirChamada(id);
+      if (r.cancelado) return;
+      if (r.aviso) { setErroCron(r.aviso); return; }
+      window.location.href = r.href;
+    } catch (e) {
+      setErroCron(e.message || "Não foi possível gerar o cronograma.");
+    } finally {
+      setGerandoCron(false);
+    }
+  }
+
   function abrirPresencaAula() {
     // FIX: antes redirecionava para a própria página (turma/${id}?...)
     // Agora vai corretamente para /turma/${id}/chamada
@@ -217,6 +234,10 @@ export default function GestaoTurmaPage() {
             <button style={btnCoral} onClick={abrirPresencaAula}>
               Abrir chamada da aula
             </button>
+          ) : resumo.totalAulas === 0 ? (
+            <button style={btnCoral} onClick={gerarEAbrirChamada} disabled={gerandoCron}>
+              {gerandoCron ? "Gerando cronograma…" : "Gerar cronograma e abrir chamada"}
+            </button>
           ) : (
             <button style={btnOutline} onClick={() => ir(`/turma/${id}/cronograma`)}>
               Selecionar aula para chamada
@@ -227,6 +248,12 @@ export default function GestaoTurmaPage() {
           </button>
         </div>
       </div>
+
+      {erroCron && (
+        <div style={{ margin: "0 0 12px", padding: 12, borderRadius: 12, background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontWeight: 700 }}>
+          {erroCron}
+        </div>
+      )}
 
       {/* ── Resumo da aula selecionada (opcional) ── */}
       {aulaSelecionada && resumoAulaSelecionada && (
