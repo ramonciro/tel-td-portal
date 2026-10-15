@@ -68,6 +68,7 @@ const metodologiaClientesRoutes = require("./routes/metodologiaClientesRoutes");
 const oficinaTalentosRoutes = require("./routes/oficinaTalentosRoutes");
 const oficinaTalentosPublicRoutes = require("./routes/oficinaTalentosPublicRoutes");
 const jornadaPresencaRoutes = require("./routes/jornadaPresencaRoutes");
+const jornadaDesenvolvimentoRoutes = require("./routes/jornadaDesenvolvimentoRoutes");
 const turmaPresencaGradeRoutes = require("./routes/turmaPresencaGradeRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
 const instrutoresCtrl = require("./controllers/instrutoresController");
@@ -1990,6 +1991,9 @@ app.use("/api/public/oficina", oficinaTalentosPublicRoutes);
 // Metodologia lança a chamada (decisão D do Ramon); super_admin passa pelo
 // authorizeRoles. Isolamento por empresa dentro do controller (via jornada).
 app.use("/api/jornada-presenca", authRequired, authorizeRoles("metodologia"), jornadaPresencaRoutes);
+// Jornadas — desenvolvimento por etapa e evolução (Fase 2, 16/10/2026). Só a Metodologia lança;
+// o Perfil 360 lê o resumo pelo pessoasController. Isolamento por empresa dentro do controller.
+app.use("/api/jornada-desenvolvimento", authRequired, authorizeRoles("metodologia"), jornadaDesenvolvimentoRoutes);
 
 // Treinamentos — grade de presença da turma (pessoas × aulas), PDF e Excel
 // (13/10/2026). Mesmos perfis da chamada por aula; super_admin passa.
