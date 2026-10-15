@@ -138,6 +138,10 @@ async function resumoPorJornada(empresaId) {
       encontros_total: lista.length,
       encontros_realizados: realizados.length,
       encontros_com_chamada: comChamada,
+      // horas do grupo (carga dos encontros), para a evidência MPT: previstas = todos os
+      // encontros cadastrados; realizadas = os que já aconteceram (horas_presenca é por pessoa).
+      horas_encontros_total: arredondar(lista.reduce((a, e) => a + (Number(e.carga_horaria) || 0), 0), 2),
+      horas_encontros_realizados: arredondar(realizados.reduce((a, e) => a + (Number(e.carga_horaria) || 0), 0), 2),
       chamadas_pendentes: realizados.length - comChamada,
       horas_presenca: arredondar(horas, 2),
       presentes,
