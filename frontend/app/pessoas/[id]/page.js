@@ -34,6 +34,105 @@ function formatDate(v) {
   return v ? formatDateBR(v) : "—";
 }
 
+function fmtNum(v, casas = 1) {
+  return v === null || v === undefined ? "—" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: casas });
+}
+
+const STATUS_ETAPA_PERFIL = {
+  nao_iniciada: { label: "Não iniciada", background: colors.neutralLight, color: colors.neutral },
+  em_andamento: { label: "Em andamento", background: colors.warningLight, color: colors.warningText },
+  concluida: { label: "Concluída", background: colors.successLight, color: colors.successText },
+};
+const AVALIACAO_PERFIL = { atingiu: "Atingiu", parcial: "Parcial", nao_atingiu: "Não atingiu" };
+const TIPO_EVOLUCAO_PERFIL = { ponto_forte: "Ponto forte", dificuldade: "Dificuldade", plano_acao: "Plano de ação", geral: "Geral" };
+
+// Desenvolvimento na jornada (Fase 2, 16/10/2026): presença, horas, % da jornada
+// e status por etapa. Avaliação, nota, observação e evolução só chegam do backend
+// para Metodologia, Coordenação e Super Admin (ocultarAvaliacao avisa os demais).
+function DesenvolvimentoJornada({ jornada, ocultarAvaliacao }) {
+  const d = jornada.desenvolvimento;
+  const corPresenca = d.farol === "vermelho" ? colors.dangerText : d.farol === "verde" ? colors.successText : colors.neutral;
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #e5e7eb" }}>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
+        {jornada.jornada_nome} — desenvolvimento
+      </div>
+      <div style={identidadeHeader}>
+        <div>
+          <span style={fieldLabel}>% da jornada</span>
+          <p style={fieldValue}>{d.pct_jornada === null ? "—" : `${fmtNum(d.pct_jornada)}%`}</p>
+        </div>
+        <div>
+          <span style={fieldLabel}>Horas realizadas</span>
+          <p style={fieldValue}>{fmtNum(d.horas)} h{d.meta_horas ? ` / ${fmtNum(d.meta_horas)} h` : ""}</p>
+        </div>
+        <div>
+          <span style={fieldLabel}>Presença (mín. {fmtNum(d.presenca_minima_pct, 0)}%)</span>
+          <p style={{ ...fieldValue, color: corPresenca }}>{d.pct_presenca === null ? "Sem chamada lançada" : `${fmtNum(d.pct_presenca)}%`}</p>
+        </div>
+        <div>
+          <span style={fieldLabel}>Etapas concluídas</span>
+          <p style={fieldValue}>{d.concluidas} de {d.total_etapas}</p>
+        </div>
+      </div>
+      {d.etapas.length > 0 && (
+        <div style={{ overflowX: "auto", marginTop: 10 }}>
+          <table style={table}>
+            <thead>
+              <tr>
+                <th style={th}>Etapa</th>
+                <th style={th}>Status</th>
+                <th style={th}>Horas</th>
+                <th style={th}>Presença</th>
+                {!ocultarAvaliacao && <th style={th}>Avaliação</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {d.etapas.map((e) => {
+                const st = STATUS_ETAPA_PERFIL[e.status] || STATUS_ETAPA_PERFIL.nao_iniciada;
+                return (
+                  <tr key={e.id}>
+                    <td style={td}>{e.nome}</td>
+                    <td style={td}>
+                      <span style={{ ...badge, background: st.background, color: st.color }}>{st.label}</span>
+                      {e.data_conclusao ? <span style={{ marginLeft: 6, fontSize: 11.5, color: "#64748b" }}>{formatDate(e.data_conclusao)}</span> : null}
+                    </td>
+                    <td style={td}>{fmtNum(e.horas)} h</td>
+                    <td style={td}>{e.pct_presenca === null ? "—" : `${fmtNum(e.pct_presenca)}%`}</td>
+                    {!ocultarAvaliacao && (
+                      <td style={td}>
+                        {e.avaliacao ? `${AVALIACAO_PERFIL[e.avaliacao]}${e.nota !== null ? ` · ${fmtNum(e.nota)}` : ""}` : "—"}
+                        {e.observacao ? <div style={{ fontSize: 11.5, color: "#64748b" }}>{e.observacao}</div> : null}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {ocultarAvaliacao ? (
+        <p style={{ ...emptyHint, marginTop: 10 }}>Avaliação por etapa e evolução são visíveis só para Metodologia, Coordenação e Super Admin.</p>
+      ) : d.evolucao.length > 0 ? (
+        <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+          <span style={fieldLabel}>Evolução ({d.evolucao.length})</span>
+          {d.evolucao.map((n) => (
+            <div key={n.id} style={coachingCard}>
+              <div>
+                <div style={{ fontSize: 11.5, color: "#64748b", fontWeight: 700 }}>
+                  {TIPO_EVOLUCAO_PERFIL[n.tipo] || "Geral"} · {formatDate(n.data)}{n.criado_por_nome ? ` · ${n.criado_por_nome}` : ""}
+                </div>
+                <div style={{ fontSize: 13, color: "#0f172a", whiteSpace: "pre-wrap" }}>{n.texto}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function selosIdentidade(status) {
   if (status === "confirmada") {
     return { label: "Identidade confirmada (CPF)", background: colors.successLight, color: colors.successText };
@@ -221,6 +320,9 @@ export default function PerfilPessoaPage() {
               </table>
             </div>
           )}
+          {jornadas.filter((j) => j.desenvolvimento).map((j) => (
+            <DesenvolvimentoJornada key={`dev-${j.participante_id}`} jornada={j} ocultarAvaliacao={Boolean(ocultos.avaliacao_jornada)} />
+          ))}
         </section>
 
         {!ocultos.coaching && (
