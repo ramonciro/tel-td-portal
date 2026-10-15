@@ -55,6 +55,8 @@ export default function CertificadosPage() {
   const isGestor = ["coordenador", "supervisor"].includes(perfil);
 
   const [certs,      setCerts]    = useState([]);
+  // Certificados da Oficina de Talentos — a API devolve SÓ os da própria pessoa.
+  const [certsOficina, setCertsOficina] = useState([]);
   const [treinamentos, setTrein]  = useState([]);
   const [loading,    setLoading]  = useState(true);
   const [error,      setError]    = useState("");
@@ -87,6 +89,8 @@ export default function CertificadosPage() {
           isGestor ? apiFetch("/treinamentos").catch(() => []) : Promise.resolve([]),
         ]);
         setCerts(Array.isArray(cData) ? cData : []);
+        const ofic = await apiFetch("/certificados/oficina/meus").catch(() => ({ certificados: [] }));
+        setCertsOficina(Array.isArray(ofic?.certificados) ? ofic.certificados : []);
         setTrein(Array.isArray(tData) ? tData : []);
       } catch (err) {
         setError(err.message || "Erro ao carregar certificados.");
@@ -345,7 +349,7 @@ export default function CertificadosPage() {
         {loading ? (
           <div style={empty}>Carregando certificados…</div>
         ) : filtrados.length === 0 ? (
-          <div style={empty}>{certs.length === 0 ? "Nenhum certificado emitido ainda." : "Nenhum resultado para os filtros."}</div>
+          certs.length === 0 && certsOficina.length > 0 ? null : <div style={empty}>{certs.length === 0 ? "Nenhum certificado emitido ainda." : "Nenhum resultado para os filtros."}</div>
         ) : (
           <div style={certLista}>
             {filtrados.map((cert) => (
@@ -354,6 +358,41 @@ export default function CertificadosPage() {
                 <button style={btnImprimir} onClick={() => handlePrint(cert)}>🖨 Imprimir</button>
               </div>
             ))}
+          </div>
+        )}
+        {!loading && certsOficina.length > 0 && (
+          <div style={{ marginTop: 32 }}>
+            <h2 style={ofTitulo}>Oficina de Talentos</h2>
+            <p style={ofSub}>Seus certificados da Oficina. Para baixar, clique em “Baixar PDF” e, na janela de impressão, escolha “Salvar como PDF”.</p>
+            <div style={certLista}>
+              {certsOficina.map((c) => (
+                <div key={c.id} style={certRow}>
+                  <div style={certCard}>
+                    <div style={certTopo}>
+                      <span style={certIcone}>🏆</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={certNome}>{c.nome}</div>
+                        <div style={certTema}>{/^oficina/i.test(c.turma_nome || "") ? c.turma_nome : `Oficina de Talentos — ${c.turma_nome}`}</div>
+                      </div>
+                      <div style={certDataWrap}>
+                        <div style={certDataLabel}>Emitido em</div>
+                        <div style={certDataValor}>{fmtDate(c.emitido_em)}</div>
+                      </div>
+                    </div>
+                    <div style={certMetas}>
+                      {c.carga_horaria != null && (
+                        <div style={metaItem}><div style={metaLabel}>Carga horária</div><div style={metaValor}>{c.carga_horaria}h</div></div>
+                      )}
+                      {c.percentual_presenca != null && (
+                        <div style={metaItem}><div style={metaLabel}>Frequência</div><div style={metaValor}>{fmtPct(c.percentual_presenca)}</div></div>
+                      )}
+                      <div style={metaItem}><div style={metaLabel}>Código</div><div style={{ ...metaValor, fontSize: 11, color: "#6b7280" }}>{c.codigo}</div></div>
+                    </div>
+                  </div>
+                  <button style={btnImprimir} onClick={() => window.open(`/oficina-talentos/impressao/meu/${encodeURIComponent(c.codigo)}`, "_blank")}>⬇ Baixar PDF</button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -373,6 +412,8 @@ const filterRow = { display: "flex", gap: 12, flex: 1 };
 const searchInput = { flex: 1, padding: "10px 14px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14 };
 const sel = { padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, background: "#fff" };
 const empty = { textAlign: "center", color: "#9ca3af", padding: "60px 0", fontSize: 14 };
+const ofTitulo = { fontSize: 18, fontWeight: 800, color: "#0B1220", margin: "0 0 4px" };
+const ofSub = { fontSize: 13, color: "#6b7280", margin: "0 0 14px" };
 const certLista = { display: "flex", flexDirection: "column", gap: 16 };
 const certRow = { display: "flex", alignItems: "center", gap: 16 };
 const certCard = { flex: 1, background: "#fff", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 4px rgba(0,0,0,.06)", borderLeft: `4px solid ${colors.accent}` };
