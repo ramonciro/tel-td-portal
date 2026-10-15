@@ -6,6 +6,7 @@ import StatCard    from "../../components/StatCard";
 import PageHero    from "../../components/PageHero";
 import { apiFetch, apiDownloadPost } from "../../services/api";
 import { formatDateBR }     from "../../lib/date";
+import { gerarCronogramaEAbrirChamada } from "../../lib/gerarCronogramaEAbrirChamada";
 import {
   colors,
   chart,
@@ -69,6 +70,10 @@ const STATUS_CONFIGS = [
 function getActionConfig(statusTurma, usaCronograma, id) {
   if (statusTurma === "Sem treinandos")
     return { label: "Importar treinandos", variant: "alerta", href: `/turma/${id}/participantes?abrir_import=1` };
+  // Chamada sem cronograma (15/10/2026): turma que só tem chamada antiga ou
+  // nenhuma aula gera o cronograma aqui mesmo e já abre a chamada.
+  if (!usaCronograma && ["Sem cronograma", "Chamada pendente", "Em andamento"].includes(statusTurma))
+    return { label: "Gerar cronograma e abrir chamada", variant: "primario", href: `/turma/${id}`, gerar: true };
   if (usaCronograma && statusTurma === "Sem cronograma")
     return { label: "Gerir turma", variant: "alerta", href: `/turma/${id}` };
   if (statusTurma === "Planejada")
@@ -315,6 +320,22 @@ export default function GestaoPresencasPage() {
   /* ── ações ── */
   function abrirTurma(href) {
     window.location.href = href;
+  }
+
+  const [gerandoId, setGerandoId] = useState(null);
+  async function gerarEAbrir(turmaId) {
+    try {
+      setGerandoId(turmaId);
+      setErro("");
+      const r = await gerarCronogramaEAbrirChamada(turmaId);
+      if (r.cancelado) return;
+      if (r.aviso) { setErro(r.aviso); return; }
+      window.location.href = r.href;
+    } catch (error) {
+      setErro(error.message || "Não foi possível gerar o cronograma.");
+    } finally {
+      setGerandoId(null);
+    }
   }
 
   function limparFiltros() {
@@ -741,8 +762,8 @@ export default function GestaoPresencasPage() {
                     {/* Botão de ação */}
                     <CardActionBtn
                       variant={action.variant}
-                      label={action.label}
-                      onClick={() => abrirTurma(action.href)}
+                      label={gerandoId === item.id ? "Gerando cronograma…" : action.label}
+                      onClick={() => (action.gerar ? gerarEAbrir(item.id) : abrirTurma(action.href))}
                     />
                   </div>
                 );
