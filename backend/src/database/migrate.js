@@ -2175,6 +2175,67 @@ async function runMigrations() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
 
+    // 62. Cadastro de instrutores (14/10/2026) — ver controllers/instrutoresController.js.
+    // `instrutores` (nome oficial + situação) e `instrutor_apelidos` (grafias que
+    // apontam para o mesmo instrutor). Carga inicial idempotente:
+    //  - usuários com perfil instrutor (ativos -> ativo; inativos -> desligado);
+    //  - tabela antiga `instrutores_desligados` (empresa NULL vale para todas).
+    // Nomes que só existem no histórico das turmas NÃO entram aqui: caem na fila
+    // "Nomes a classificar" para o time decidir.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS instrutores (
+        id          INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        empresa_id  INT NOT NULL,
+        nome        VARCHAR(150) NOT NULL,
+        situacao    VARCHAR(20) NOT NULL DEFAULT 'ativo',
+        data_saida  DATE NULL,
+        motivo      VARCHAR(255) NULL,
+        observacao  TEXT NULL,
+        created_by  INT NULL,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_instrutor_nome (empresa_id, nome),
+        KEY idx_instrutor_situacao (empresa_id, situacao)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS instrutor_apelidos (
+        id           INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        empresa_id   INT NOT NULL,
+        instrutor_id INT NOT NULL,
+        apelido      VARCHAR(150) NOT NULL,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_instrutor_apelido (empresa_id, apelido),
+        KEY idx_apelido_instrutor (instrutor_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    try {
+      await pool.query(`
+        INSERT IGNORE INTO instrutores (empresa_id, nome, situacao, motivo)
+        SELECT u.empresa_id, TRIM(u.nome),
+               CASE WHEN u.ativo = 0 THEN 'desligado' ELSE 'ativo' END,
+               CASE WHEN u.ativo = 0 THEN 'Conta de instrutor inativa' ELSE NULL END
+        FROM usuarios u
+        WHERE LOWER(TRIM(u.perfil)) = 'instrutor' AND u.empresa_id IS NOT NULL AND TRIM(u.nome) <> ''
+      `);
+      await pool.query(`
+        INSERT IGNORE INTO instrutores (empresa_id, nome, situacao, motivo)
+        SELECT e.id, TRIM(d.nome), 'desligado', d.observacao
+        FROM instrutores_desligados d
+        JOIN empresas e ON (d.empresa_id IS NULL OR d.empresa_id = e.id)
+      `);
+      // Quem já estava na tabela antiga como desligado prevalece sobre "ativo" vindo do usuário.
+      await pool.query(`
+        UPDATE instrutores i
+        JOIN instrutores_desligados d ON LOWER(TRIM(d.nome)) COLLATE utf8mb4_unicode_ci = LOWER(TRIM(i.nome)) COLLATE utf8mb4_unicode_ci
+             AND (d.empresa_id IS NULL OR d.empresa_id = i.empresa_id)
+        SET i.situacao = 'desligado', i.motivo = COALESCE(i.motivo, d.observacao)
+        WHERE i.situacao = 'ativo'
+      `);
+    } catch (error) {
+      console.log(`  ↳ carga inicial de instrutores não concluída (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
