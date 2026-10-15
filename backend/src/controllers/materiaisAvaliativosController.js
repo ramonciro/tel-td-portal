@@ -2,6 +2,15 @@ const pool = require("../lib/db");
 const { usuarioTemAcessoAoCliente, filtroClientesSQL } = require("../lib/acessoCliente");
 const { pessoaIdDoUsuario } = require("../services/pessoasService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
+const { removerGabarito, tentativasPermitidas } = require("../lib/correcaoProva");
+
+// "" / null / inválido = 1 tentativa (comportamento de sempre); máximo 10.
+function normalizarTentativasMax(valor) {
+  if (valor === null || valor === undefined || valor === "") return null;
+  const n = Number(valor);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return Math.min(Math.floor(n), 10);
+}
 
 // materiais_avaliativos não tem empresa_id própria — isolamento via JOIN
 // até treinamentos, mesmo padrão do restante do módulo de avaliações.
@@ -52,6 +61,7 @@ async function listMateriaisAvaliativos(req, res) {
         COALESCE(m.nota_maxima, 0) AS nota_maxima,
         m.data_aplicacao,
         m.questoes_json,
+        m.tentativas_max,
         m.criado_em
       FROM materiais_avaliativos m
       LEFT JOIN treinamentos t ON t.id = m.treinamento_id
@@ -99,28 +109,50 @@ async function listMateriaisAvaliativosDisponiveis(req, res) {
       const condRa = condicaoIdentidade("ra", "treinando_nome", pessoaId, nomeUsuario);
 
       const filtros = [];
-      const params = [...condTp.params, ...condRa.params];
+      // Ordem dos "?": subconsultas do SELECT (condRa x2), JOIN (condTp), filtros.
+      const params = [...condRa.params, ...condRa.params, ...condTp.params];
       if (req.empresaId) { filtros.push("t.empresa_id = ?"); params.push(req.empresaId); }
       if (treinamentoIdFiltro) { filtros.push("m.treinamento_id = ?"); params.push(treinamentoIdFiltro); }
       const where = filtros.length ? ` AND ${filtros.join(" AND ")}` : "";
 
+      // Tentativas por prova (14/10/2026): a prova continua disponível
+      // enquanto o treinando não esgotar tentativas_max (NULL = 1).
       const [rows] = await pool.query(
         `
-        SELECT
-          m.id, m.treinamento_id, m.titulo, m.tipo, m.link_arquivo, m.descricao,
-          COALESCE(m.nota_maxima, 0) AS nota_maxima, m.data_aplicacao, m.questoes_json, m.criado_em,
-          t.tema, t.cliente
-        FROM materiais_avaliativos m
-        INNER JOIN treinamentos t ON t.id = m.treinamento_id
-        INNER JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND ${condTp.sql}
-        LEFT JOIN respostas_avaliativas ra ON ra.material_id = m.id AND ${condRa.sql}
-        WHERE ra.id IS NULL${where}
-        ORDER BY m.id DESC
+        SELECT * FROM (
+          SELECT
+            m.id, m.treinamento_id, m.titulo, m.tipo, m.link_arquivo, m.descricao,
+            COALESCE(m.nota_maxima, 0) AS nota_maxima, m.data_aplicacao, m.questoes_json, m.criado_em,
+            m.tentativas_max,
+            t.tema, t.cliente,
+            (SELECT COUNT(*) FROM respostas_avaliativas ra WHERE ra.material_id = m.id AND ${condRa.sql}) AS tentativas_usadas,
+            (SELECT MAX(ra.nota_final) FROM respostas_avaliativas ra WHERE ra.material_id = m.id AND ${condRa.sql}) AS melhor_nota
+          FROM materiais_avaliativos m
+          INNER JOIN treinamentos t ON t.id = m.treinamento_id
+          INNER JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND ${condTp.sql}
+          WHERE 1 = 1${where}
+        ) x
+        WHERE x.tentativas_usadas < LEAST(GREATEST(COALESCE(x.tentativas_max, 1), 1), 10)
+        ORDER BY x.id DESC
         `,
         params
       );
 
-      return res.json(rows);
+      // O treinando NUNCA recebe o gabarito (a correção é feita no servidor).
+      return res.json(
+        rows.map((r) => {
+          const maximo = tentativasPermitidas(r.tentativas_max);
+          const usadas = Number(r.tentativas_usadas || 0);
+          return {
+            ...r,
+            questoes_json: removerGabarito(r.questoes_json),
+            tentativas_max: maximo,
+            tentativas_usadas: usadas,
+            tentativas_restantes: Math.max(maximo - usadas, 0),
+            melhor_nota: r.melhor_nota === null || r.melhor_nota === undefined ? null : Number(r.melhor_nota),
+          };
+        })
+      );
     }
 
     // Coordenador/supervisor/instrutor: mesma listagem completa de sempre
@@ -134,6 +166,7 @@ async function listMateriaisAvaliativosDisponiveis(req, res) {
       SELECT
         m.id, m.treinamento_id, m.titulo, m.tipo, m.link_arquivo, m.descricao,
         COALESCE(m.nota_maxima, 0) AS nota_maxima, m.data_aplicacao, m.questoes_json, m.criado_em,
+        m.tentativas_max,
         t.tema, t.cliente
       FROM materiais_avaliativos m
       LEFT JOIN treinamentos t ON t.id = m.treinamento_id
@@ -163,6 +196,7 @@ async function createMaterialAvaliativo(req, res) {
       nota_maxima,
       data_aplicacao,
       questoes_json,
+      tentativas_max,
     } = req.body || {};
 
     if (!treinamento_id || !titulo || !tipo) {
@@ -187,9 +221,10 @@ async function createMaterialAvaliativo(req, res) {
         descricao,
         nota_maxima,
         data_aplicacao,
-        questoes_json
+        questoes_json,
+        tentativas_max
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         treinamento_id,
@@ -200,6 +235,7 @@ async function createMaterialAvaliativo(req, res) {
         Number(nota_maxima || 0),
         data_aplicacao || null,
         questoes_json || null,
+        normalizarTentativasMax(tentativas_max),
       ]
     );
 
@@ -228,6 +264,7 @@ async function updateMaterialAvaliativo(req, res) {
       nota_maxima,
       data_aplicacao,
       questoes_json,
+      tentativas_max,
     } = req.body || {};
 
     if (!treinamento_id || !titulo || !tipo) {
@@ -265,7 +302,8 @@ async function updateMaterialAvaliativo(req, res) {
         descricao = ?,
         nota_maxima = ?,
         data_aplicacao = ?,
-        questoes_json = ?
+        questoes_json = ?,
+        tentativas_max = ?
       WHERE id = ?
       `,
       [
@@ -277,6 +315,7 @@ async function updateMaterialAvaliativo(req, res) {
         Number(nota_maxima || 0),
         data_aplicacao || null,
         questoes_json || null,
+        normalizarTentativasMax(tentativas_max),
         id,
       ]
     );

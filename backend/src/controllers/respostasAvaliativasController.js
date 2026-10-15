@@ -1,6 +1,7 @@
 const pool = require("../lib/db");
 const { pessoaIdDoUsuario } = require("../services/pessoasService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
+const { corrigir, tentativasPermitidas } = require("../lib/correcaoProva");
 
 // Isolamento por tenant via JOIN até treinamentos (respostas_avaliativas não
 // tem empresa_id própria). Sem isso, respostas de prova de outras empresas
@@ -74,6 +75,7 @@ async function listRespostasAvaliativas(req, res) {
         ra.total_questoes,
         ra.percentual,
         ra.nota_final,
+        ra.tentativa,
         ra.criado_em,
         ra.atualizado_em
       FROM respostas_avaliativas ra
@@ -92,15 +94,10 @@ async function listRespostasAvaliativas(req, res) {
 
 async function createRespostaAvaliativa(req, res) {
   try {
-    const {
-      material_id,
-      treinamento_id,
-      respostas_json,
-      acertos,
-      total_questoes,
-      percentual,
-      nota_final,
-    } = req.body || {};
+    // Correção no servidor (14/10/2026): acertos/percentual/nota que o
+    // navegador mandar são ignorados — só as alternativas marcadas valem
+    // (ver lib/correcaoProva.js).
+    const { material_id, treinamento_id, respostas_json } = req.body || {};
 
     let treinando_nome = req.body?.treinando_nome;
 
@@ -151,63 +148,96 @@ async function createRespostaAvaliativa(req, res) {
           message: "Você só pode responder avaliações de treinamentos em que está participando",
         });
       }
-
-      // Uma tentativa por prova/simulado — evita refazer até acertar tudo.
-      const condDup = condicaoIdentidade("respostas_avaliativas", "treinando_nome", pessoaId, nomeUsuario);
-      const [duplicado] = await pool.query(
-        `SELECT id FROM respostas_avaliativas WHERE material_id = ? AND ${condDup.sql} LIMIT 1`,
-        [material_id, ...condDup.params]
-      );
-      if (duplicado.length) {
-        return res.status(400).json({
-          ok: false,
-          message: "Você já respondeu esta prova/simulado.",
-        });
-      }
     }
 
-    await pool.query(
-      `
-      INSERT INTO respostas_avaliativas
-      (
-        material_id,
-        treinamento_id,
-        treinando_nome,
-        respostas_json,
-        acertos,
-        total_questoes,
-        percentual,
-        nota_final,
-        pessoa_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        respostas_json = VALUES(respostas_json),
-        acertos = VALUES(acertos),
-        total_questoes = VALUES(total_questoes),
-        percentual = VALUES(percentual),
-        nota_final = VALUES(nota_final),
-        pessoa_id = VALUES(pessoa_id),
-        atualizado_em = CURRENT_TIMESTAMP
-      `,
-      [
-        material_id,
-        treinamento_id,
-        treinando_nome,
-        typeof respostas_json === "string"
-          ? respostas_json
-          : JSON.stringify(respostas_json || {}),
-        Number(acertos || 0),
-        Number(total_questoes || 0),
-        Number(percentual || 0),
-        Number(nota_final || 0),
-        pessoaId,
-      ]
+    const [materiais] = await pool.query(
+      `SELECT id, nota_maxima, questoes_json, tentativas_max FROM materiais_avaliativos WHERE id = ? LIMIT 1`,
+      [material_id]
+    );
+    const material = materiais[0];
+    const correcao = corrigir(material, respostas_json);
+    if (!correcao.ok) {
+      return res.status(400).json({ ok: false, message: correcao.erro });
+    }
+
+    // Tentativas: o instrutor define o máximo na prova (padrão 1). Cada envio
+    // vira uma linha; a nota oficial é a melhor (ver melhor_nota abaixo).
+    const maximo = tentativasPermitidas(material.tentativas_max);
+    const condDup = condicaoIdentidade("respostas_avaliativas", "treinando_nome", pessoaId, treinando_nome);
+    const [uso] = await pool.query(
+      `SELECT COUNT(*) AS usadas, COALESCE(MAX(tentativa), 0) AS ultima
+       FROM respostas_avaliativas WHERE material_id = ? AND ${condDup.sql}`,
+      [material_id, ...condDup.params]
+    );
+    const usadas = Number(uso[0].usadas || 0);
+    if (usadas >= maximo) {
+      return res.status(400).json({
+        ok: false,
+        message: maximo === 1
+          ? "Você já respondeu esta prova/simulado."
+          : `Você já usou as ${maximo} tentativas desta prova/simulado.`,
+      });
+    }
+    const tentativa = Number(uso[0].ultima || 0) + 1;
+
+    try {
+      await pool.query(
+        `
+        INSERT INTO respostas_avaliativas
+        (
+          material_id,
+          treinamento_id,
+          treinando_nome,
+          respostas_json,
+          acertos,
+          total_questoes,
+          percentual,
+          nota_final,
+          pessoa_id,
+          tentativa
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          material_id,
+          treinamento_id,
+          treinando_nome,
+          JSON.stringify(correcao.respostas),
+          correcao.acertos,
+          correcao.total_questoes,
+          correcao.percentual,
+          correcao.nota_final,
+          pessoaId,
+          tentativa,
+        ]
+      );
+    } catch (erroInsert) {
+      // Dois envios simultâneos da mesma tentativa: a chave única segura o segundo.
+      if (erroInsert && erroInsert.code === "ER_DUP_ENTRY") {
+        return res.status(409).json({
+          ok: false,
+          message: "Esta tentativa já foi registrada. Atualize a página e confira seu resultado.",
+        });
+      }
+      throw erroInsert;
+    }
+
+    const [melhor] = await pool.query(
+      `SELECT MAX(nota_final) AS melhor_nota FROM respostas_avaliativas WHERE material_id = ? AND ${condDup.sql}`,
+      [material_id, ...condDup.params]
     );
 
     return res.status(201).json({
       ok: true,
       message: "Resposta avaliativa registrada com sucesso",
+      acertos: correcao.acertos,
+      total_questoes: correcao.total_questoes,
+      percentual: correcao.percentual,
+      nota_final: correcao.nota_final,
+      tentativa,
+      tentativas_max: maximo,
+      tentativas_restantes: Math.max(maximo - tentativa, 0),
+      melhor_nota: Number(melhor[0].melhor_nota ?? correcao.nota_final),
     });
   } catch (error) {
     console.error("[respostasAvaliativasController]", error.message || error);
