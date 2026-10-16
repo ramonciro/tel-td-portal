@@ -62,6 +62,15 @@ function fraseDesempenho(itens) {
   return `${itens.length} instrutores estão fora da faixa saudável de frequência este mês.`;
 }
 
+function fraseRotina(itens) {
+  if (!itens.length) return null;
+  const atrasadas = itens.filter((i) => i.severidade === "vermelho").length;
+  if (atrasadas) {
+    return `A rotina do instrutor tem ${itens.length} pendência(s) em aberto, ${atrasadas} atrasada(s) (veja o painel de aderência).`;
+  }
+  return `A rotina do instrutor tem ${itens.length} ponto(s) de atenção em aberto (veja o painel de aderência).`;
+}
+
 /**
  * Função pura — recebe o mesmo objeto "resumo" que
  * pendenciasDigest.montarResumoEmpresa já monta
@@ -74,6 +83,7 @@ function gerarTextoResumo(resumo) {
     fraseChamadas(resumo.chamadasPendentes || []),
     fraseCapacidade(resumo.capacidade || []),
     fraseDesempenho(resumo.desempenho || []),
+    fraseRotina(resumo.rotina || []),
   ].filter(Boolean);
 
   if (!frases.length) {
