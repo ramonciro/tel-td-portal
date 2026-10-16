@@ -9,7 +9,7 @@ import { colors, radius } from "../../../../lib/theme";
 // Rotina do instrutor (16/10/2026) — por turma.
 //  · Avaliação Técnica: checklist (Véspera/Início/Final), responsabilidades com
 //    prazo e farol, diário de bordo e atividades.
-//    + Avaliação individual dos candidatos (notas 5–10, média, Passou/Em berço/Não seguiu).
+//    + Avaliação individual dos candidatos (notas 5–10, média, Aprovado/Em berço/Reprovado).
 //  · Demais turmas (formação continuada): só atividades.
 // Toda atividade registrada tem duração e SOMA na CH do instrutor.
 
@@ -695,9 +695,9 @@ function Kpi({ rotulo, valor, detalhe, cor }) {
 /* ───────────────────────── avaliação individual (Avaliação Técnica) ───────────────────────── */
 
 const RESULTADOS_AV = [
-  ["passou", "Passou"],
+  ["passou", "Aprovado"],
   ["em_berco", "Em berço"],
-  ["nao_seguiu", "Não seguiu"],
+  ["nao_seguiu", "Reprovado"],
 ];
 const RES_COR = {
   passou: { cor: colors.successText, bg: colors.successLight },
@@ -852,9 +852,9 @@ function Avaliacao({ id }) {
 
       <div style={faixa}>
         <Kpi rotulo="Candidatos" valor={String(linhas.length)} detalhe="nesta turma" />
-        <Kpi rotulo="Passou" valor={String(contagem.passou)} cor={colors.successText} />
+        <Kpi rotulo="Aprovado" valor={String(contagem.passou)} cor={colors.successText} />
         <Kpi rotulo="Em berço" valor={String(contagem.em_berco)} cor={colors.warningText} />
-        <Kpi rotulo="Não seguiu" valor={String(contagem.nao_seguiu)} cor={colors.dangerText} />
+        <Kpi rotulo="Reprovado" valor={String(contagem.nao_seguiu)} cor={colors.dangerText} />
       </div>
 
       {registrada && (
@@ -979,7 +979,7 @@ function Avaliacao({ id }) {
 
         <div style={{ padding: "14px 16px", borderTop: `1px solid ${colors.border}`, display: "grid", gap: 10 }}>
           <div style={{ fontSize: 13, color: colors.textSecondary }}>
-            Quem recebe <strong>Passou</strong> entra automaticamente na célula baby da turma.
+            Quem for <strong>Aprovado</strong> entra automaticamente na célula baby da turma.
             {dados.celula ? (
               <>
                 {" "}
