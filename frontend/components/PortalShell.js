@@ -64,6 +64,8 @@ const menuItems = [
   // e catálogo/modelos mantidos pela coordenação. Espelha /api/rotina.
   { href: "/minhas-atividades", label: "Minhas atividades",  icon: "clock", roles: ["instrutor", "coordenador", "assistente_treinamento"] },
   { href: "/rotina-catalogo",   label: "Catálogo da rotina", icon: "settings", roles: ["coordenador", "assistente_treinamento"] },
+  // Painel de aderência da rotina (Fase 3): leitura para a gestão; o instrutor vê a aderência dele em Meu Desempenho.
+  { href: "/rotina-aderencia",  label: "Aderência da rotina", icon: "chart", roles: ["coordenador", "assistente_treinamento", "supervisor", "superintendente"] },
   { href: "/celulas-baby",  label: "Células baby",           icon: "trending", roles: ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/indicadores",  label: "Indicadores",             icon: "trending", roles: ["coordenador", "supervisor", "superintendente"] },
