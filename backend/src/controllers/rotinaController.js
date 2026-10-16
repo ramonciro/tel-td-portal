@@ -902,7 +902,25 @@ async function carregarAvaliacao(t) {
   );
   const [regRows] = await pool.query("SELECT registrada_por, registrada_em FROM rotina_avaliacao_registro WHERE treinamento_id = ?", [t.id]);
   const registro = regRows[0] || null;
-  return { rows, registro };
+  // Provas em papel já confirmadas: aparecem como referência ao lado das notas
+  // (não preenchem nada sozinhas — a escala daqui é 5–10).
+  const papel = new Map();
+  try {
+    const [pp] = await pool.query(
+      `SELECT r.participante_id, l.titulo, l.id AS lote_id, r.nota_10
+         FROM prova_papel_resultados r
+         JOIN prova_papel_lotes l ON l.id = r.lote_id
+        WHERE l.treinamento_id = ? AND l.status = 'confirmado' AND r.faltou = 0 AND r.nota_10 IS NOT NULL
+        ORDER BY l.id`,
+      [t.id]
+    );
+    pp.forEach((x) => {
+      const lista = papel.get(Number(x.participante_id)) || [];
+      lista.push({ titulo: x.titulo, nota: Number(x.nota_10) });
+      papel.set(Number(x.participante_id), lista);
+    });
+  } catch (_) { /* tabela ainda não existe: segue sem a referência */ }
+  return { rows, registro, papel };
 }
 
 function linhaParaApi(r) {
@@ -919,8 +937,8 @@ async function obterAvaliacao(req, res) {
   try {
     const t = await turmaDeAvTec(req, res);
     if (!t) return;
-    const { rows, registro } = await carregarAvaliacao(t);
-    const linhas = rows.map(linhaParaApi);
+    const { rows, registro, papel } = await carregarAvaliacao(t);
+    const linhas = rows.map((r) => ({ ...linhaParaApi(r), provas_papel: papel.get(Number(r.participante_id)) || [] }));
     const cont = { passou: 0, em_berco: 0, nao_seguiu: 0, sem_resultado: 0 };
     linhas.forEach((l) => { if (l.resultado) cont[l.resultado] += 1; else cont.sem_resultado += 1; });
     const sit = await AV.situacaoNaCelula(t.id, 0);
@@ -1132,7 +1150,11 @@ async function exportarAvaliacao(req, res) {
   }
 }
 
+// Reaproveitado pela importação de provas em papel (mesmas regras de acesso à turma).
+const acesso = { buscarTurma, podeEditarTurma, podeVerTurma, ehGestao, exigirTurma, escopo };
+
 module.exports = {
+  acesso,
   estadoDaTurma, responderChecklist, marcarTarefa, salvarDiario, escolherAtividades,
   criarRegistro, editarRegistro, excluirRegistro, listarMinhas, exportarRegistros,
   listarCatalogo, criarCatalogo, editarCatalogo, obterModelos, salvarModelos,
