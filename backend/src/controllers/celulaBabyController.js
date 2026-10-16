@@ -183,6 +183,17 @@ async function carregarDetalhe(celula) {
        FROM celula_baby_pessoas WHERE celula_id = ? ORDER BY nome ASC`,
     [celula.id]
   );
+  // Resultado definido na avaliação individual da Rotina do instrutor: a célula só lê.
+  try {
+    const [av] = await pool.query(
+      `SELECT participante_id FROM rotina_avaliacao_individual WHERE treinamento_id = ? AND resultado IS NOT NULL`,
+      [celula.treinamento_id]
+    );
+    const doAv = new Set(av.map((x) => Number(x.participante_id)));
+    pessoas.forEach((p) => { p.resultado_da_avaliacao = doAv.has(Number(p.participante_id)); });
+  } catch (_) {
+    pessoas.forEach((p) => { p.resultado_da_avaliacao = false; });
+  }
   const [indicadores] = await pool.query(
     `SELECT id, nome, unidade, sentido, meta, ordem FROM celula_baby_indicadores WHERE celula_id = ? ORDER BY ordem ASC, id ASC`,
     [celula.id]
@@ -305,6 +316,15 @@ async function atualizarPessoa(req, res) {
     const params = [];
     let resultado = pessoa.resultado;
 
+    if (b.resultado !== undefined && b.resultado !== pessoa.resultado) {
+      try {
+        const [[av]] = await pool.query(
+          `SELECT resultado FROM rotina_avaliacao_individual WHERE treinamento_id = ? AND participante_id = ? AND resultado IS NOT NULL LIMIT 1`,
+          [celula.treinamento_id, pessoa.participante_id]
+        );
+        if (av) return erro(res, 409, "Este resultado vem da avaliação individual da turma. Altere em Turma > Rotina do instrutor > Avaliação individual.");
+      } catch (_) { /* tabela ainda não existe: segue como antes */ }
+    }
     if (b.resultado !== undefined) {
       const r = b.resultado === null || b.resultado === "" ? null : String(b.resultado);
       if (r !== null && !RESULTADOS.includes(r)) return erro(res, 400, "Resultado inválido.");
