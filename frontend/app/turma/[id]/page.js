@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState }   from "react";
 import { useParams, useSearchParams }      from "next/navigation";
 import TurmaPageShell                      from "../../../components/TurmaPageShell";
 import StatCard                            from "../../../components/StatCard";
-import { apiFetch }                        from "../../../services/api";
+import { apiFetch, getStoredUser }         from "../../../services/api";
 import { gerarCronogramaEAbrirChamada }   from "../../../lib/gerarCronogramaEAbrirChamada";
 import { colors, chart, estiloBadgeStatus } from "../../../lib/theme";
 import { compareLocalDatesAsc, formatDateBR, parseLocalDate } from "../../../lib/date";
@@ -60,6 +60,10 @@ export default function GestaoTurmaPage() {
   const [erro,                setErro]                = useState("");
 
   useEffect(() => { carregarTudo(); }, [id, turmaAulaId, dataAula]);
+
+  // Rotina do instrutor (16/10/2026): treinando não vê; os demais perfis seguem a API.
+  const perfilAtual = String(getStoredUser()?.perfil || "").toLowerCase();
+  const podeVerRotina = ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente", "super_admin"].includes(perfilAtual);
 
   async function carregarTudo() {
     if (!id) return;
@@ -230,6 +234,11 @@ export default function GestaoTurmaPage() {
           <button style={btnOutline} onClick={() => ir(`/turma/${id}/participantes`)}>
             Pessoas
           </button>
+          {podeVerRotina && (
+            <button style={btnOutline} onClick={() => ir(`/turma/${id}/rotina`)}>
+              Rotina do instrutor
+            </button>
+          )}
           {turmaAulaId ? (
             <button style={btnCoral} onClick={abrirPresencaAula}>
               Abrir chamada da aula
