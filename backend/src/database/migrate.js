@@ -2318,6 +2318,13 @@ async function runMigrations() {
       console.log(`  ↳ trilhas por pessoa não concluído (${error.message}) — seguindo`);
     }
 
+    // 66. Célula baby (16/10/2026) — ver ensureCelulaBaby().
+    try {
+      await ensureCelulaBaby();
+    } catch (error) {
+      console.log(`  ↳ célula baby não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
@@ -2437,6 +2444,84 @@ async function ensureTrilhaPessoas() {
     );
   `);
   console.log("  ↳ trilha_participantes / trilha_progresso_pessoa: ok");
+}
+
+// 66. Célula baby (16/10/2026, pedido do Ramon): acompanhamento da curva de
+// aprendizagem, feito pelo próprio instrutor, dos treinandos APROVADOS numa
+// turma de Avaliação Técnica, nos 7 primeiros dias de operação. Indicadores
+// livres (o instrutor define nome/unidade/sentido; meta é opcional). O
+// resultado da avaliação técnica (passou / em berço / não seguiu) é definido
+// pelo instrutor ao final da turma e só "passou" entra no acompanhamento.
+async function ensureCelulaBaby() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS celulas_baby (
+      id                    INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id            INT NULL,
+      treinamento_id        INT NOT NULL,
+      cliente               VARCHAR(150) NULL,
+      turma_nome            VARCHAR(255) NULL,
+      instrutor             VARCHAR(150) NULL,
+      data_inicio_operacao  DATE NULL,
+      status                VARCHAR(20) NOT NULL DEFAULT 'a_configurar',
+      relatorio_final       TEXT NULL,
+      iniciada_em           DATETIME NULL,
+      encerrada_em          DATETIME NULL,
+      encerrada_por_id      INT NULL,
+      created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_celula_turma (treinamento_id),
+      INDEX idx_celula_empresa (empresa_id),
+      INDEX idx_celula_status (status)
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS celula_baby_pessoas (
+      id              INT AUTO_INCREMENT PRIMARY KEY,
+      celula_id       INT NOT NULL,
+      participante_id INT NULL,
+      pessoa_id       INT NULL,
+      nome            VARCHAR(255) NOT NULL,
+      matricula       VARCHAR(100) NULL,
+      resultado       VARCHAR(20) NULL,
+      parecer         VARCHAR(20) NULL,
+      observacao      VARCHAR(1000) NULL,
+      created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_celula_pessoa (celula_id, participante_id),
+      INDEX idx_celula_pessoa_celula (celula_id),
+      INDEX idx_celula_pessoa_pessoa (pessoa_id)
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS celula_baby_indicadores (
+      id         INT AUTO_INCREMENT PRIMARY KEY,
+      celula_id  INT NOT NULL,
+      nome       VARCHAR(120) NOT NULL,
+      unidade    VARCHAR(30) NULL,
+      sentido    VARCHAR(10) NOT NULL DEFAULT 'maior',
+      meta       DECIMAL(14,4) NULL,
+      ordem      INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_celula_ind_nome (celula_id, nome),
+      INDEX idx_celula_ind_celula (celula_id)
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS celula_baby_lancamentos (
+      id            INT AUTO_INCREMENT PRIMARY KEY,
+      celula_id     INT NOT NULL,
+      indicador_id  INT NOT NULL,
+      pessoa_row_id INT NOT NULL,
+      dia           TINYINT NOT NULL,
+      valor         DECIMAL(14,4) NOT NULL,
+      lancado_por_id INT NULL,
+      created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_celula_lanc (indicador_id, pessoa_row_id, dia),
+      INDEX idx_celula_lanc_celula (celula_id)
+    );
+  `);
+  console.log("  ↳ célula baby: ok");
 }
 
 module.exports = { runMigrations };
