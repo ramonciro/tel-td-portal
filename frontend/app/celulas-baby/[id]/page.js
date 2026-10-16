@@ -19,9 +19,9 @@ import { colors, radius } from "../../../lib/theme";
 // sequência, não dias do calendário.
 
 const RESULTADOS = [
-  { id: "passou", label: "Passou", cor: colors.successText, bg: colors.successLight },
+  { id: "passou", label: "Aprovado", cor: colors.successText, bg: colors.successLight },
   { id: "em_berco", label: "Em berço", cor: colors.warningText, bg: colors.warningLight },
-  { id: "nao_seguiu", label: "Não seguiu", cor: colors.dangerText, bg: colors.dangerLight },
+  { id: "nao_seguiu", label: "Reprovado", cor: colors.dangerText, bg: colors.dangerLight },
 ];
 const PARECERES = [
   { id: "atingiu", label: "Atingiu a curva" },
@@ -126,9 +126,9 @@ export default function CelulaBabyDetalhe() {
           title={c.turma_nome || "Célula baby"}
           subtitle={`${c.cliente || "Sem cliente"} · Instrutor: ${c.instrutor || "—"}${c.data_inicio_operacao ? ` · Início na operação: ${c.data_inicio_operacao.split("-").reverse().join("/")}` : ""}`}
           stats={[
-            { label: "Passaram", value: passaram.length },
+            { label: "Aprovados", value: passaram.length },
             { label: "Em berço", value: d.pessoas.filter((p) => p.resultado === "em_berco").length },
-            { label: "Não seguiram", value: d.pessoas.filter((p) => p.resultado === "nao_seguiu").length },
+            { label: "Reprovados", value: d.pessoas.filter((p) => p.resultado === "nao_seguiu").length },
             { label: "Sem resultado", value: d.pessoas.filter((p) => !p.resultado).length },
           ]}
           actions={
@@ -152,7 +152,7 @@ export default function CelulaBabyDetalhe() {
         </div>
 
         {aba === "resultado" && (
-          <SectionCard title="Resultado da avaliação técnica" subtitle="Defina quem passou, quem ficou em berço e quem não seguiu no processo seletivo. Só quem passou entra no acompanhamento.">
+          <SectionCard title="Resultado da avaliação técnica" subtitle="Defina quem foi aprovado, quem ficou em berço e quem foi reprovado no processo seletivo. Só quem foi aprovado entra no acompanhamento.">
             <div style={{ display: "grid", gap: 8 }}>
               {d.pessoas.map((p) => (
                 <div key={p.id} style={linhaPessoa}>
@@ -214,7 +214,7 @@ export default function CelulaBabyDetalhe() {
             {d.indicadores.length === 0 ? (
               <p style={dica}>Cadastre os indicadores em “2 · Início e indicadores” para ver a curva.</p>
             ) : passaram.length === 0 ? (
-              <p style={dica}>Ninguém foi marcado como “Passou” ainda.</p>
+              <p style={dica}>Ninguém foi marcado como “Aprovado” ainda.</p>
             ) : (
               <>
                 <PillsIndicadores d={d} indAtivo={indAtivo} setIndAtivo={setIndAtivo} />
@@ -341,7 +341,7 @@ function ConfigIndicadores({ d, id, podeEditar, ocupado, acao }) {
       {podeEditar && c.status === "a_configurar" && (
         <SectionCard title="Iniciar acompanhamento">
           <p style={{ ...dica, marginTop: 0 }}>
-            {passaram} pessoa(s) marcada(s) como “Passou” · {d.indicadores.length} indicador(es) · início {c.data_inicio_operacao ? c.data_inicio_operacao.split("-").reverse().join("/") : "não informado"}.
+            {passaram} pessoa(s) marcada(s) como “Aprovado” · {d.indicadores.length} indicador(es) · início {c.data_inicio_operacao ? c.data_inicio_operacao.split("-").reverse().join("/") : "não informado"}.
             Os indicadores podem ser ajustados depois de iniciar.
           </p>
           <button type="button" style={btnPrim} disabled={ocupado}
@@ -401,7 +401,7 @@ function Lancamento({ d, id, podeEditar, indAtivo, setIndAtivo, passaram, dias, 
     return <SectionCard title="Lançamento diário"><p style={dica}>Inicie o acompanhamento em “2 · Início e indicadores” para lançar os dias.</p></SectionCard>;
   }
   if (!ind) return <SectionCard title="Lançamento diário"><p style={dica}>Cadastre ao menos um indicador em “2 · Início e indicadores”.</p></SectionCard>;
-  if (!passaram.length) return <SectionCard title="Lançamento diário"><p style={dica}>Ninguém foi marcado como “Passou”.</p></SectionCard>;
+  if (!passaram.length) return <SectionCard title="Lançamento diário"><p style={dica}>Ninguém foi marcado como “Aprovado”.</p></SectionCard>;
 
   const valorSalvo = (pessoaId, dia) => {
     const l = d.lancamentos.find((x) => x.indicador_id === ind.id && x.pessoa_row_id === pessoaId && x.dia === dia);
@@ -517,7 +517,7 @@ function Encerramento({ d, id, podeEditar, gestao, ocupado, acao, passaram, setE
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <SectionCard title="Parecer por pessoa" subtitle="Como cada pessoa fechou a curva de aprendizagem nos 7 primeiros dias de operação.">
-        {passaram.length === 0 && <p style={dica}>Ninguém foi marcado como “Passou”.</p>}
+        {passaram.length === 0 && <p style={dica}>Ninguém foi marcado como “Aprovado”.</p>}
         <div style={{ display: "grid", gap: 10 }}>
           {passaram.map((p) => (
             <div key={p.id} style={{ ...linhaPessoa, alignItems: "start" }}>
