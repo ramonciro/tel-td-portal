@@ -349,6 +349,19 @@ export default function AvaliacoesTurmaPage() {
             ))}
           </div>
 
+          {/* Provas feitas no papel: foto/PDF guardado + digitação assistida (16/10/2026) */}
+          {["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"].includes(usuario?.perfil) && (
+            <div style={papelBox}>
+              <div>
+                <strong style={{ fontSize: 14, color: colors.navy }}>Provas feitas no papel</strong>
+                <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>
+                  Guarde a foto ou o PDF das folhas e lance as respostas marcadas ou a nota já corrigida.
+                </div>
+              </div>
+              <a href={`/turma/${id}/avaliacoes/papel`} style={linkBtn}>Importar prova em papel</a>
+            </div>
+          )}
+
           {/* Builder de provas/simulados (com questões), filtrado pra esta turma */}
           <div style={{ marginTop: 16 }}>
             <button style={btnBuilder} onClick={() => setBuilderAberto((v) => !v)}>
@@ -475,6 +488,7 @@ function BField({ label, children, full = false }) {
 /* ── Estilos ── */
 const errorBox = { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 14 };
 const successBox = { background: colors.successLight, color: colors.successText, border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 14 };
+const papelBox = { marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, padding: "14px 18px" };
 const cta = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 14, padding: 20, textAlign: "center" };
 const linkBtn = { display: "inline-block", padding: "10px 20px", borderRadius: 10, background: colors.accent, color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none" };
 const kpiRow = { display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" };
