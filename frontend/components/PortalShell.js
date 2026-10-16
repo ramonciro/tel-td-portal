@@ -59,6 +59,11 @@ const menuItems = [
   // Célula baby (16/10/2026): acompanhamento da curva de aprendizagem dos
   // aprovados na Avaliação Técnica, feito pelo instrutor. Mesmo conjunto liberado
   // no backend (/api/celulas-baby); o instrutor só vê as próprias turmas.
+  // Rotina do instrutor (16/10/2026): atividades do instrutor que somam na CH
+  // (as das turmas ficam na aba Rotina de cada turma; aqui, as avulsas e o total do mês)
+  // e catálogo/modelos mantidos pela coordenação. Espelha /api/rotina.
+  { href: "/minhas-atividades", label: "Minhas atividades",  icon: "clock", roles: ["instrutor", "coordenador", "assistente_treinamento"] },
+  { href: "/rotina-catalogo",   label: "Catálogo da rotina", icon: "settings", roles: ["coordenador", "assistente_treinamento"] },
   { href: "/celulas-baby",  label: "Células baby",           icon: "trending", roles: ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/indicadores",  label: "Indicadores",             icon: "trending", roles: ["coordenador", "supervisor", "superintendente"] },
