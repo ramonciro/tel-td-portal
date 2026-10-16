@@ -21,6 +21,7 @@ const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
 const { registrarAuditoria } = require("../services/auditoria");
 const R = require("../lib/rotina");
+const AV = require("../lib/rotinaAvaliacao");
 
 const GESTAO = ["coordenador", "assistente_treinamento", "super_admin"];
 const RESPOSTAS = ["sim", "nao", "na"];
@@ -877,8 +878,263 @@ async function salvarModelos(req, res) {
   }
 }
 
+/* ───────────────────────── avaliação individual (Fase 2) ───────────────────────── */
+
+async function turmaDeAvTec(req, res, { editar = false } = {}) {
+  const t = await exigirTurma(req, res, { editar });
+  if (!t) return null;
+  if (!(await ehSubtipoAvaliacaoTecnica(t.subtipo))) {
+    erro(res, 404, "A avaliação individual existe só em turmas de Avaliação Técnica.");
+    return null;
+  }
+  return t;
+}
+
+async function carregarAvaliacao(t) {
+  const [rows] = await pool.query(
+    `SELECT p.id AS participante_id, p.nome, p.matricula, p.pessoa_id,
+            a.nota_pontualidade, a.nota_interesse, a.nota_comportamento, a.nota_quiz, a.nota_avaliacao_final,
+            a.media, a.resultado, a.observacao, a.atualizado_por, a.updated_at
+       FROM treinamento_participantes p
+       LEFT JOIN rotina_avaliacao_individual a ON a.treinamento_id = p.treinamento_id AND a.participante_id = p.id
+      WHERE p.treinamento_id = ? ORDER BY p.nome`,
+    [t.id]
+  );
+  const [regRows] = await pool.query("SELECT registrada_por, registrada_em FROM rotina_avaliacao_registro WHERE treinamento_id = ?", [t.id]);
+  const registro = regRows[0] || null;
+  return { rows, registro };
+}
+
+function linhaParaApi(r) {
+  const notas = {};
+  AV.CRITERIOS.forEach((c) => { notas[c.chave] = r[c.coluna] === null || r[c.coluna] === undefined ? null : Number(r[c.coluna]); });
+  return {
+    participante_id: r.participante_id, nome: r.nome, matricula: r.matricula, notas,
+    media: r.media === null || r.media === undefined ? null : Number(r.media),
+    resultado: r.resultado || null, observacao: r.observacao || "", atualizado_por: r.atualizado_por || null,
+  };
+}
+
+async function obterAvaliacao(req, res) {
+  try {
+    const t = await turmaDeAvTec(req, res);
+    if (!t) return;
+    const { rows, registro } = await carregarAvaliacao(t);
+    const linhas = rows.map(linhaParaApi);
+    const cont = { passou: 0, em_berco: 0, nao_seguiu: 0, sem_resultado: 0 };
+    linhas.forEach((l) => { if (l.resultado) cont[l.resultado] += 1; else cont.sem_resultado += 1; });
+    const sit = await AV.situacaoNaCelula(t.id, 0);
+    const podeEditarTurma_ = podeEditarTurma(req, t);
+    return res.json({
+      ok: true,
+      turma: { id: t.id, tema: t.tema, cliente: t.cliente, instrutor: t.instrutor },
+      criterios: AV.CRITERIOS.map((c) => ({ chave: c.chave, rotulo: c.rotulo })),
+      nota_min: AV.NOTA_MIN, nota_max: AV.NOTA_MAX, media_minima: AV.MEDIA_MINIMA,
+      linhas, contagem: cont,
+      registro: registro ? { registrada_por: registro.registrada_por, registrada_em: registro.registrada_em } : null,
+      celula: sit.celula ? { id: sit.celula.id, status: sit.celula.status } : null,
+      pode_editar: podeEditarTurma_ && (!registro || ehGestao(req)),
+      pode_reabrir: ehGestao(req) && !!registro,
+      so_leitura_motivo: !podeEditarTurma_ ? "perfil" : registro && !ehGestao(req) ? "registrada" : null,
+    });
+  } catch (e) {
+    console.error("[rotina.obterAvaliacao]", e.message || e);
+    return erro(res, 500, "Erro ao carregar a avaliação individual.");
+  }
+}
+
+async function salvarAvaliacao(req, res) {
+  try {
+    const t = await turmaDeAvTec(req, res, { editar: true });
+    if (!t) return;
+    const registrar = !!req.body?.registrar;
+    const entrada = Array.isArray(req.body?.linhas) ? req.body.linhas : [];
+
+    const { rows, registro } = await carregarAvaliacao(t);
+    if (registro && !ehGestao(req)) {
+      return erro(res, 403, "A avaliação já foi registrada. Peça à coordenação para reabrir.");
+    }
+    const atuais = new Map(rows.map((r) => [Number(r.participante_id), linhaParaApi(r)]));
+    const dados = new Map(rows.map((r) => [Number(r.participante_id), r]));
+
+    // 1) valida e mescla o que chegou com o que já está salvo
+    const finais = new Map([...atuais].map(([k, v]) => [k, { ...v, notas: { ...v.notas } }]));
+    const alteradas = [];
+    for (const l of entrada) {
+      const pid = Number(l?.participante_id);
+      if (!atuais.has(pid)) return erro(res, 400, "Há candidato que não pertence a esta turma.");
+      const alvo = finais.get(pid);
+      for (const c of AV.CRITERIOS) {
+        if (l.notas && l.notas[c.chave] !== undefined) {
+          const n = l.notas[c.chave] === null || l.notas[c.chave] === "" ? null : Number(l.notas[c.chave]);
+          if (!AV.notaValida(n)) return erro(res, 400, `Nota inválida em ${c.rotulo}: use números inteiros de ${AV.NOTA_MIN} a ${AV.NOTA_MAX}.`);
+          alvo.notas[c.chave] = n;
+        }
+      }
+      if (l.resultado !== undefined) {
+        const r = l.resultado === null || l.resultado === "" ? null : String(l.resultado);
+        if (r !== null && !AV.RESULTADOS.includes(r)) return erro(res, 400, "Resultado inválido.");
+        alvo.resultado = r;
+      }
+      if (l.observacao !== undefined) alvo.observacao = String(l.observacao || "").trim().slice(0, 1000);
+      alvo.media = AV.calcularMedia(alvo.notas);
+      alteradas.push(pid);
+    }
+
+    // 2) para registrar, tudo precisa estar completo
+    if (registrar) {
+      if (!finais.size) return erro(res, 400, "Esta turma não tem candidatos para avaliar.");
+      const faltas = [];
+      for (const l of finais.values()) {
+        if (l.media === null) faltas.push(`${l.nome} (faltam notas)`);
+        else if (!l.resultado) faltas.push(`${l.nome} (falta o resultado)`);
+        else if (l.media < AV.MEDIA_MINIMA && !l.observacao) faltas.push(`${l.nome} (média abaixo de ${AV.MEDIA_MINIMA} pede observação)`);
+      }
+      if (faltas.length) {
+        return erro(res, 400, `Para registrar, complete: ${faltas.slice(0, 5).join("; ")}${faltas.length > 5 ? ` e mais ${faltas.length - 5}` : ""}.`);
+      }
+    }
+
+    // 3) regras da célula baby para quem mudou de resultado
+    const mudancas = [];
+    for (const pid of alteradas) {
+      const antes = atuais.get(pid).resultado;
+      const depois = finais.get(pid).resultado;
+      if (antes === depois) continue;
+      const sit = await AV.situacaoNaCelula(t.id, pid);
+      if (sit.celula && sit.celula.status !== "a_configurar" && !ehGestao(req)) {
+        return erro(res, 403, "A célula baby já foi iniciada: só a coordenação altera o resultado.");
+      }
+      if (sit.pessoa && sit.pessoa.resultado === "passou" && depois !== "passou" && sit.lancamentos > 0) {
+        return erro(res, 409, `${finais.get(pid).nome} já tem lançamentos na célula baby. Apague os lançamentos antes de mudar o resultado.`);
+      }
+      mudancas.push({ pid, antes, depois, travada: !!(sit.celula && sit.celula.status !== "a_configurar") });
+    }
+
+    // 4) grava
+    for (const pid of alteradas) {
+      const l = finais.get(pid);
+      await pool.query(
+        `INSERT INTO rotina_avaliacao_individual
+           (empresa_id, treinamento_id, participante_id, nota_pontualidade, nota_interesse, nota_comportamento, nota_quiz,
+            nota_avaliacao_final, media, resultado, observacao, atualizado_por)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE nota_pontualidade = VALUES(nota_pontualidade), nota_interesse = VALUES(nota_interesse),
+           nota_comportamento = VALUES(nota_comportamento), nota_quiz = VALUES(nota_quiz),
+           nota_avaliacao_final = VALUES(nota_avaliacao_final), media = VALUES(media), resultado = VALUES(resultado),
+           observacao = VALUES(observacao), atualizado_por = VALUES(atualizado_por)`,
+        [t.empresa_id || null, t.id, pid, l.notas.pontualidade, l.notas.interesse, l.notas.comportamento, l.notas.quiz,
+         l.notas.avaliacao_final, l.media, l.resultado, l.observacao || null, req.user?.nome || null]
+      );
+    }
+
+    // Depois de registrada, qualquer mudança de nota/observação também fica na Auditoria.
+    if (registro) {
+      for (const pid of alteradas) {
+        const a = atuais.get(pid);
+        const f = finais.get(pid);
+        const mudouNota = AV.CRITERIOS.some((c) => (a.notas[c.chave] ?? null) !== (f.notas[c.chave] ?? null));
+        const mudouObs = (a.observacao || "") !== (f.observacao || "");
+        const mudouResultado = a.resultado !== f.resultado;
+        // a mudança de resultado já é auditada no passo 5
+        if ((mudouNota || mudouObs) && !mudouResultado) {
+          registrarAuditoria({
+            usuario: req.user, acao: "editar", entidade: "rotina_avaliacao", entidadeId: t.id,
+            resumo: `${req.user?.nome || "Alguém"} alterou notas/observação de ${f.nome} na avaliação individual já registrada da turma ${t.tema}`,
+            dadosAntes: { notas: a.notas, media: a.media, observacao: a.observacao || null },
+            dadosDepois: { notas: f.notas, media: f.media, observacao: f.observacao || null }, ip: req.ip,
+          });
+        }
+      }
+    }
+
+    // 5) célula baby lê o resultado
+    let naCelula = 0;
+    for (const m of mudancas) {
+      const [[p]] = await pool.query("SELECT id, nome, matricula, pessoa_id FROM treinamento_participantes WHERE id = ?", [m.pid]);
+      if (p && (await AV.aplicarResultadoNaCelula(t, p, m.depois))) naCelula += 1;
+      if (m.travada || registro) {
+        registrarAuditoria({
+          usuario: req.user, acao: "editar", entidade: "rotina_avaliacao", entidadeId: t.id,
+          resumo: `${req.user?.nome || "Alguém"} alterou o resultado de ${finais.get(m.pid).nome} na avaliação individual da turma ${t.tema}: ${AV.ROTULO_RESULTADO[m.antes] || "—"} → ${AV.ROTULO_RESULTADO[m.depois] || "—"}`,
+          dadosAntes: { resultado: m.antes }, dadosDepois: { resultado: m.depois }, ip: req.ip,
+        });
+      }
+    }
+
+    if (registrar) {
+      await pool.query(
+        `INSERT INTO rotina_avaliacao_registro (treinamento_id, empresa_id, registrada_por, registrada_em) VALUES (?,?,?, NOW())
+         ON DUPLICATE KEY UPDATE registrada_por = VALUES(registrada_por), registrada_em = NOW()`,
+        [t.id, t.empresa_id || null, req.user?.nome || null]
+      );
+      registrarAuditoria({
+        usuario: req.user, acao: "editar", entidade: "rotina_avaliacao", entidadeId: t.id,
+        resumo: `${req.user?.nome || "Alguém"} registrou a avaliação individual da turma ${t.tema} (${finais.size} candidato(s))`, ip: req.ip,
+      });
+    }
+    return res.json({ ok: true, celula_atualizada: naCelula });
+  } catch (e) {
+    console.error("[rotina.salvarAvaliacao]", e.message || e);
+    return erro(res, 500, "Erro ao salvar a avaliação individual.");
+  }
+}
+
+async function reabrirAvaliacao(req, res) {
+  try {
+    const t = await turmaDeAvTec(req, res, { editar: true });
+    if (!t) return;
+    const [r] = await pool.query("DELETE FROM rotina_avaliacao_registro WHERE treinamento_id = ?", [t.id]);
+    if (!r.affectedRows) return erro(res, 409, "A avaliação ainda não foi registrada.");
+    registrarAuditoria({
+      usuario: req.user, acao: "editar", entidade: "rotina_avaliacao", entidadeId: t.id,
+      resumo: `${req.user?.nome || "Alguém"} reabriu a avaliação individual da turma ${t.tema}`, ip: req.ip,
+    });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("[rotina.reabrirAvaliacao]", e.message || e);
+    return erro(res, 500, "Erro ao reabrir a avaliação.");
+  }
+}
+
+async function exportarAvaliacao(req, res) {
+  try {
+    const t = await turmaDeAvTec(req, res);
+    if (!t) return;
+    const { rows } = await carregarAvaliacao(t);
+    const XL = require("../lib/excelExport");
+    const wb = XL.novoWorkbook();
+    const colunas = [
+      { titulo: "Candidato", chave: "nome", largura: 32 },
+      { titulo: "Matrícula", chave: "matricula", largura: 14 },
+      ...AV.CRITERIOS.map((c) => ({ titulo: c.rotulo, chave: c.chave, formato: "inteiro", largura: 16 })),
+      { titulo: "Média", chave: "media", formato: "decimal1", largura: 9 },
+      { titulo: "Resultado", chave: "resultado", largura: 13 },
+      { titulo: "Observação", chave: "observacao", largura: 50 },
+    ];
+    XL.adicionarTabela(wb, {
+      nomeAba: "Avaliação individual",
+      colunas,
+      linhas: rows.map((r) => {
+        const l = linhaParaApi(r);
+        const linha = { nome: l.nome, matricula: l.matricula || "", media: l.media, resultado: AV.ROTULO_RESULTADO[l.resultado] || "", observacao: l.observacao };
+        AV.CRITERIOS.forEach((c) => { linha[c.chave] = l.notas[c.chave]; });
+        return linha;
+      }),
+    });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="avaliacao-individual-turma-${t.id}.xlsx"`);
+    await wb.xlsx.write(res);
+    return res.end();
+  } catch (e) {
+    console.error("[rotina.exportarAvaliacao]", e.message || e);
+    if (!res.headersSent) return erro(res, 500, "Erro ao exportar.");
+  }
+}
+
 module.exports = {
   estadoDaTurma, responderChecklist, marcarTarefa, salvarDiario, escolherAtividades,
   criarRegistro, editarRegistro, excluirRegistro, listarMinhas, exportarRegistros,
   listarCatalogo, criarCatalogo, editarCatalogo, obterModelos, salvarModelos,
+  obterAvaliacao, salvarAvaliacao, reabrirAvaliacao, exportarAvaliacao,
 };
