@@ -2071,6 +2071,10 @@ app.put("/api/rotina/turmas/:id/checklist/:itemId", authRequired, authorizeRoles
 app.put("/api/rotina/turmas/:id/tarefas/:tarefaId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.marcarTarefa);
 app.put("/api/rotina/turmas/:id/diario/:data", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.salvarDiario);
 app.put("/api/rotina/turmas/:id/atividades", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.escolherAtividades);
+app.get("/api/rotina/turmas/:id/avaliacao", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.obterAvaliacao);
+app.put("/api/rotina/turmas/:id/avaliacao", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.salvarAvaliacao);
+app.post("/api/rotina/turmas/:id/avaliacao/reabrir", authRequired, authorizeRoles(...ROTINA_GESTAO), rotinaCtrl.reabrirAvaliacao);
+app.get("/api/rotina/turmas/:id/avaliacao/exportar", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.exportarAvaliacao);
 app.post("/api/rotina/registros", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.criarRegistro);
 app.put("/api/rotina/registros/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.editarRegistro);
 app.delete("/api/rotina/registros/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.excluirRegistro);
