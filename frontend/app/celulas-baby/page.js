@@ -112,7 +112,7 @@ export default function CelulasBabyPage() {
                     </div>
                   </div>
                   <div style={col}><span style={rot}>Início na operação</span><strong>{fmtData(c.data_inicio_operacao)}</strong></div>
-                  <div style={col}><span style={rot}>Passaram</span><strong>{c.passaram}/{c.total_pessoas}</strong></div>
+                  <div style={col}><span style={rot}>Aprovados</span><strong>{c.passaram}/{c.total_pessoas}</strong></div>
                   <div style={col}><span style={rot}>Dias lançados</span><strong>{c.dias_lancados}/7</strong></div>
                   <div style={col}>
                     <span style={rot}>Situação</span>
