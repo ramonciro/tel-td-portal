@@ -122,4 +122,8 @@ function tentativasPermitidas(valor) {
   return Math.min(Math.floor(n), 10);
 }
 
-module.exports = { parseQuestoes, corrigir, removerGabarito, tentativasPermitidas };
+module.exports = {
+  parseQuestoes, corrigir, removerGabarito, tentativasPermitidas,
+  // usados pela importação de provas em papel (lib/provasPapel.js)
+  normalizarAlternativa, obterRespostaCorreta, pesoDaQuestao,
+};
