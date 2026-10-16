@@ -74,6 +74,7 @@ const turmaPresencaGradeRoutes = require("./routes/turmaPresencaGradeRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
 const instrutoresCtrl = require("./controllers/instrutoresController");
 const celulaBabyCtrl = require("./controllers/celulaBabyController");
+const rotinaCtrl = require("./controllers/rotinaController");
 const {
   getDesempenho: getDesempenhoInstrutor,
   getDesempenhoExportar,
@@ -2058,6 +2059,28 @@ app.put("/api/celulas-baby/:id/lancamentos", authRequired, authorizeRoles(...CEL
 app.post("/api/celulas-baby/:id/iniciar", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.iniciar);
 app.post("/api/celulas-baby/:id/encerrar", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.encerrar);
 app.post("/api/celulas-baby/:id/reabrir", authRequired, authorizeRoles("coordenador", "assistente_treinamento"), celulaBabyCtrl.reabrir);
+
+// Rotina do instrutor (16/10/2026) — checklist/responsabilidades/diário da Avaliação
+// Técnica e atividades do instrutor (somam na CH). Ver controllers/rotinaController.js.
+// Instrutor só edita as próprias turmas e atividades (checado no controller).
+const ROTINA_LER = ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"];
+const ROTINA_ESCREVER = ["coordenador", "assistente_treinamento", "instrutor"];
+const ROTINA_GESTAO = ["coordenador", "assistente_treinamento"];
+app.get("/api/rotina/turmas/:id", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.estadoDaTurma);
+app.put("/api/rotina/turmas/:id/checklist/:itemId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.responderChecklist);
+app.put("/api/rotina/turmas/:id/tarefas/:tarefaId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.marcarTarefa);
+app.put("/api/rotina/turmas/:id/diario/:data", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.salvarDiario);
+app.put("/api/rotina/turmas/:id/atividades", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.escolherAtividades);
+app.post("/api/rotina/registros", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.criarRegistro);
+app.put("/api/rotina/registros/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.editarRegistro);
+app.delete("/api/rotina/registros/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.excluirRegistro);
+app.get("/api/rotina/minhas-atividades", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.listarMinhas);
+app.get("/api/rotina/minhas-atividades/exportar", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.exportarRegistros);
+app.get("/api/rotina/catalogo", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.listarCatalogo);
+app.post("/api/rotina/catalogo", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.criarCatalogo);
+app.put("/api/rotina/catalogo/:id", authRequired, authorizeRoles(...ROTINA_GESTAO), rotinaCtrl.editarCatalogo);
+app.get("/api/rotina/modelos", authRequired, authorizeRoles(...ROTINA_GESTAO), rotinaCtrl.obterModelos);
+app.put("/api/rotina/modelos", authRequired, authorizeRoles(...ROTINA_GESTAO), rotinaCtrl.salvarModelos);
 
 // Cadastro de instrutores (14/10/2026) — ver controllers/instrutoresController.js.
 // Leitura: coordenador, supervisor, superintendente. Escrita: coordenador e
