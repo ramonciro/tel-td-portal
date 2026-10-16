@@ -2,11 +2,11 @@
  * celulaBabyController.js — Célula baby (16/10/2026, pedido do Ramon)
  *
  * Acompanhamento da curva de aprendizagem, feito pelo PRÓPRIO instrutor, dos
- * treinandos que passaram na Avaliação Técnica, nos 7 primeiros dias de
+ * treinandos aprovados na Avaliação Técnica, nos 7 primeiros dias de
  * operação. Regras decididas com o Ramon:
  *  - Abre sozinha ao concluir a turma de Avaliação Técnica (lib/celulaBaby.js).
  *  - Ao final da avaliação o instrutor define o resultado de cada pessoa:
- *    passou | em berço | não seguiu. Só "passou" entra no acompanhamento.
+ *    aprovado | em berço | reprovado (códigos internos: passou | em_berco | nao_seguiu). Só "aprovado" entra no acompanhamento.
  *  - Indicadores livres, definidos pelo instrutor (nome, unidade, sentido).
  *    Meta é opcional (uma meta de referência por indicador; sem meta a célula
  *    simplesmente não ganha cor).
@@ -347,7 +347,7 @@ async function atualizarPessoa(req, res) {
     if (b.parecer !== undefined) {
       const p = b.parecer === null || b.parecer === "" ? null : String(b.parecer);
       if (p !== null && !PARECERES.includes(p)) return erro(res, 400, "Parecer inválido.");
-      if (p !== null && resultado !== "passou") return erro(res, 400, "Parecer só vale para quem passou.");
+      if (p !== null && resultado !== "passou") return erro(res, 400, "Parecer só vale para quem foi aprovado.");
       if (!sets.includes("parecer = NULL")) {
         sets.push("parecer = ?");
         params.push(p);
@@ -529,7 +529,7 @@ async function iniciar(req, res) {
       `SELECT COUNT(*) AS n FROM celula_baby_pessoas WHERE celula_id = ? AND resultado = 'passou'`,
       [celula.id]
     );
-    if (!Number(n)) return erro(res, 400, "Marque pelo menos uma pessoa como “Passou” para iniciar o acompanhamento.");
+    if (!Number(n)) return erro(res, 400, "Marque pelo menos uma pessoa como “Aprovado” para iniciar o acompanhamento.");
     await pool.query(`UPDATE celulas_baby SET status = 'em_andamento', iniciada_em = NOW() WHERE id = ?`, [celula.id]);
     registrarAuditoria({
       usuario: req.user, acao: "editar", entidade: "celula_baby", entidadeId: celula.id,
@@ -596,7 +596,7 @@ async function reabrir(req, res) {
 
 /* ───────────────────────── exportação ───────────────────────── */
 
-const ROTULO_RESULTADO = { passou: "Passou", em_berco: "Em berço", nao_seguiu: "Não seguiu" };
+const ROTULO_RESULTADO = { passou: "Aprovado", em_berco: "Em berço", nao_seguiu: "Reprovado" };
 const ROTULO_PARECER = { atingiu: "Atingiu a curva", parcial: "Parcial", abaixo: "Abaixo da curva" };
 
 async function exportar(req, res) {
