@@ -47,6 +47,7 @@ const {
   statusOcupacao,
 } = require("./capacidadeResolver");
 const { getResumoPresenca } = require("./presencaResolver");
+const { getResumoRotinaPorInstrutor } = require("../lib/rotina");
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -108,7 +109,7 @@ function tenantWhereTreinamentos(empresaId, alias = "t") {
 // e proposta-revisao-ocupacao-capacidade-2026-09-28.md no projeto).
 async function getChPorInstrutor({ instrutores, meses, empresaId }) {
   const acumulado = new Map(
-    instrutores.map((nome) => [nome, { horas_realizadas: 0, capacidade_horas: 0, horas_com_meta: 0, turmas: 0, tem_meta: false }])
+    instrutores.map((nome) => [nome, { horas_realizadas: 0, horas_sala: 0, horas_atividades: 0, capacidade_horas: 0, horas_com_meta: 0, turmas: 0, tem_meta: false }])
   );
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, empresaId });
@@ -116,6 +117,9 @@ async function getChPorInstrutor({ instrutores, meses, empresaId }) {
       const acc = acumulado.get(item.instrutor);
       if (!acc) continue;
       acc.horas_realizadas += item.horas_realizadas;
+      // Rotina do instrutor (16/10/2026): horas em sala + horas em atividades = total.
+      acc.horas_sala += item.horas_sala !== undefined ? item.horas_sala : item.horas_realizadas;
+      acc.horas_atividades += item.horas_atividades || 0;
       acc.turmas += item.turmas || 0;
       if (item.tem_meta) {
         acc.capacidade_horas += item.capacidade_horas;
@@ -133,6 +137,8 @@ async function getChPorInstrutor({ instrutores, meses, empresaId }) {
     const ocupacaoPct = acc.tem_meta && capacidadeHoras > 0 ? arredonda((horasComMeta / capacidadeHoras) * 100) : null;
     mapa.set(instrutor, {
       horas_realizadas: horasRealizadas,
+      horas_sala: arredonda(acc.horas_sala, 2),
+      horas_atividades: arredonda(acc.horas_atividades, 2),
       turmas,
       tem_meta: acc.tem_meta,
       capacidade_horas: capacidadeHoras,
@@ -335,11 +341,15 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
     return { periodo: periodoResolvido, itens: [], medias_time: null };
   }
 
-  const [chMap, avaliacaoMap, npsMap, frequenciaMap] = await Promise.all([
+  const [chMap, avaliacaoMap, npsMap, frequenciaMap, rotinaMap] = await Promise.all([
     getChPorInstrutor({ instrutores, meses, empresaId }),
     getAvaliacaoPorInstrutor({ instrutores, meses, empresaId }),
     getNpsPorInstrutor({ instrutores, meses, empresaId }),
     getFrequenciaPorInstrutor({ instrutores, meses, empresaId }),
+    getResumoRotinaPorInstrutor({ instrutores, meses, empresaId }).catch((e) => {
+      console.error("[desempenho] rotina:", e.message || e);
+      return new Map();
+    }),
   ]);
 
   const itens = instrutores.map((nome) => {
@@ -352,6 +362,8 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
       instrutor: nome,
       ch: {
         horas_realizadas: ch.horas_realizadas,
+        horas_sala: ch.horas_sala !== undefined ? ch.horas_sala : ch.horas_realizadas,
+        horas_atividades: ch.horas_atividades || 0,
         turmas: ch.turmas,
         tem_meta: ch.tem_meta,
         capacidade_horas: ch.capacidade_horas,
@@ -362,6 +374,7 @@ async function getScorecardInstrutor({ instrutor, periodo, ano, mes, trimestre, 
       frequencia,
       avaliacao,
       nps,
+      rotina: rotinaMap.get(nome) || { horas_atividades: 0, atividades_qtd: 0, por_tipo: [], revisoes_plano: 0, aderencia_pct: null },
       indice_geral: calcularIndiceGeral({ frequenciaPct: frequencia.media_pct }),
     };
   });

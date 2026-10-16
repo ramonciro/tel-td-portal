@@ -110,8 +110,7 @@ function statusOcupacao(pct) {
 // vem sempre de "t" (treinamentos), nunca de turma_aulas.empresa_id, pelo
 // mesmo motivo do turmaAulasController: a coluna em turma_aulas existe só
 // pra backfill e não é gravada de forma confiável em linhas novas.
-const FONTE_HORAS_SQL = `
-  (
+const FONTE_AULAS_SQL = `
     SELECT
       t.id AS treinamento_id,
       t.empresa_id AS empresa_id,
@@ -123,7 +122,8 @@ const FONTE_HORAS_SQL = `
       CASE WHEN LOWER(TRIM(COALESCE(ta.status_execucao,''))) = 'concluida'
            THEN COALESCE(NULLIF(ta.carga_horaria_real, 0), ta.carga_horaria_planejada, 0)
            ELSE 0 END AS horas_real,
-      COALESCE(ta.carga_horaria_planejada, 0) AS horas_planejada
+      COALESCE(ta.carga_horaria_planejada, 0) AS horas_planejada,
+      'aula' AS fonte
     FROM turma_aulas ta
     JOIN treinamentos t ON t.id = ta.treinamento_id
     WHERE ta.instrutor_responsavel IS NOT NULL AND TRIM(ta.instrutor_responsavel) <> ''
@@ -142,13 +142,64 @@ const FONTE_HORAS_SQL = `
              AND LOWER(TRIM(COALESCE(t.status,''))) NOT LIKE '%cancel%'
              AND LOWER(TRIM(COALESCE(t.status,''))) <> 'agendado'
            THEN COALESCE(t.carga_horaria, 0) ELSE 0 END AS horas_real,
-      COALESCE(t.carga_horaria, 0) AS horas_planejada
+      COALESCE(t.carga_horaria, 0) AS horas_planejada,
+      'turma' AS fonte
     FROM treinamentos t
     WHERE t.instrutor IS NOT NULL AND TRIM(t.instrutor) <> ''
       AND COALESCE(t.data_inicio, t.data) IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM turma_aulas ta2 WHERE ta2.treinamento_id = t.id)
-  ) fonte_horas
 `;
+
+// Terceira origem (16/10/2026, pedido do Ramon): as atividades da Rotina do
+// instrutor (escutas, cards, vídeos, suporte in loco etc.) são trabalho do
+// instrutor e entram na CH dele. Cada registro vale como horas realizadas
+// (= planejadas) no mês da data da atividade. Atividade avulsa (sem turma)
+// tem treinamento_id NULL. A coluna `fonte` permite separar "sala" de
+// "atividade" onde a conta não deve misturar (contagem de turmas, ROI).
+const FONTE_ATIVIDADES_SQL = `
+    UNION ALL
+
+    SELECT
+      r.treinamento_id AS treinamento_id,
+      r.empresa_id AS empresa_id,
+      TRIM(r.instrutor) AS instrutor,
+      r.cliente AS cliente,
+      r.tipo_nome AS tema,
+      YEAR(r.data_atividade) AS ano,
+      MONTH(r.data_atividade) AS mes,
+      r.minutos / 60.0 AS horas_real,
+      r.minutos / 60.0 AS horas_planejada,
+      'atividade' AS fonte
+    FROM rotina_atividades_registros r
+    WHERE r.instrutor IS NOT NULL AND TRIM(r.instrutor) <> ''
+`;
+
+const FONTE_SEM_ATIVIDADES = `( ${FONTE_AULAS_SQL} ) fonte_horas`;
+const FONTE_COM_ATIVIDADES = `( ${FONTE_AULAS_SQL} ${FONTE_ATIVIDADES_SQL} ) fonte_horas`;
+
+// Só usa a terceira origem se a tabela existir (migração da Rotina rodou).
+// Resultado em cache por 60 s para não testar a cada consulta.
+let _rotinaCache = { ok: false, ts: 0 };
+async function rotinaDisponivel() {
+  const agora = Date.now();
+  if (agora - _rotinaCache.ts < 60000) return _rotinaCache.ok;
+  try {
+    await pool.query("SELECT 1 FROM rotina_atividades_registros LIMIT 1");
+    _rotinaCache = { ok: true, ts: agora };
+  } catch (_) {
+    _rotinaCache = { ok: false, ts: agora };
+  }
+  return _rotinaCache.ok;
+}
+async function fonteHoras() {
+  return (await rotinaDisponivel()) ? FONTE_COM_ATIVIDADES : FONTE_SEM_ATIVIDADES;
+}
+
+// Dashboard/ROI (horas aplicadas a pessoas): por padrão só horas em sala.
+// Para somar as atividades também ali: ROTINA_ATIVIDADES_NO_DASHBOARD=1.
+const ATIVIDADES_NO_DASHBOARD = process.env.ROTINA_ATIVIDADES_NO_DASHBOARD === "1";
+const SO_SALA_SQL = ATIVIDADES_NO_DASHBOARD ? "" : "fonte_horas.fonte <> 'atividade'";
+
 
 function tenantFonteHoras(empresaId) {
   return empresaId ? " AND fonte_horas.empresa_id = ?" : "";
@@ -349,17 +400,21 @@ async function listarInstrutoresConhecidos(empresaId, { apenasAtivos = false } =
     if (!apenasAtivos || !empresaId) return [];
     return comDesligados ? [empresaId, empresaId] : [empresaId];
   };
+  const comRotina = await rotinaDisponivel();
+  const paramsBase = empresaId ? (comRotina ? [empresaId, empresaId, empresaId] : [empresaId, empresaId]) : [];
   const consulta = (comDesligados) => pool.query(
     `
     SELECT nome FROM (
       SELECT DISTINCT TRIM(instrutor) AS nome FROM treinamentos WHERE instrutor IS NOT NULL AND TRIM(instrutor) <> ''${tenantTreinamentos}
       UNION
-      SELECT DISTINCT TRIM(instrutor_responsavel) AS nome FROM turma_aulas WHERE instrutor_responsavel IS NOT NULL AND TRIM(instrutor_responsavel) <> ''${tenantAulas}
+      SELECT DISTINCT TRIM(instrutor_responsavel) AS nome FROM turma_aulas WHERE instrutor_responsavel IS NOT NULL AND TRIM(instrutor_responsavel) <> ''${tenantAulas}${comRotina ? `
+      UNION
+      SELECT DISTINCT TRIM(instrutor) AS nome FROM rotina_atividades_registros WHERE instrutor IS NOT NULL AND TRIM(instrutor) <> ''${tenantTreinamentos}` : ""}
     ) todos
     ${montarFiltro(comDesligados)}
     ORDER BY nome ASC
   `,
-    [...params, ...montarParamsFiltro(comDesligados)]
+    [...paramsBase, ...montarParamsFiltro(comDesligados)]
   );
 
   let rows;
@@ -440,8 +495,9 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
   const [horasRows] = await pool.query(
     `SELECT fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes,
             SUM(fonte_horas.horas_real) AS horas,
-            COUNT(DISTINCT CASE WHEN fonte_horas.horas_real > 0 THEN fonte_horas.treinamento_id END) AS turmas
-     FROM ${FONTE_HORAS_SQL}
+            SUM(CASE WHEN fonte_horas.fonte = 'atividade' THEN fonte_horas.horas_real ELSE 0 END) AS horas_atividades,
+            COUNT(DISTINCT CASE WHEN fonte_horas.horas_real > 0 AND fonte_horas.fonte <> 'atividade' THEN fonte_horas.treinamento_id END) AS turmas
+     FROM ${await fonteHoras()}
      WHERE fonte_horas.instrutor IN (${placeholdersInstrutores})
        AND (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses})
        ${clienteSql}
@@ -464,6 +520,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
   const chaveMes = (a, m) => `${a}-${pad2(m)}`;
   const mapaHoras = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas)]));
   const mapaTurmas = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.turmas)]));
+  const mapaAtividades = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas_atividades || 0)]));
   const mapaOverrides = new Map(overridesRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, r]));
 
   const resultado = [];
@@ -473,6 +530,8 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
       const chave = `${nomeInstrutor}|${chaveMes(anoRef, mesRef)}`;
       const horasRealizadas = Number((mapaHoras.get(chave) || 0).toFixed(2));
       const turmas = Number(mapaTurmas.get(chave) || 0);
+      const horasAtividades = Number((mapaAtividades.get(chave) || 0).toFixed(2));
+      const horasSala = Number((horasRealizadas - horasAtividades).toFixed(2));
 
       // Instrutor confirmadamente desligado (usuário inativo) e sem nenhuma
       // hora real neste mês específico → não gera linha fantasma (0h,
@@ -508,6 +567,8 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
         ano: anoRef,
         mes: mesRef,
         horas_realizadas: horasRealizadas,
+        horas_sala: horasSala,
+        horas_atividades: horasAtividades,
         turmas,
         tem_meta: temMeta,
         capacidade_horas: capacidadeHoras,
@@ -565,7 +626,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
   const mesesParams = meses.flatMap((m) => [m.ano, m.mes]);
   const [[programadoRow]] = await pool.query(
     `SELECT COALESCE(SUM(fonte_horas.horas_planejada), 0) AS total
-     FROM ${FONTE_HORAS_SQL}
+     FROM ${await fonteHoras()}
      WHERE (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses}) ${clienteSql} ${tenantFonteHoras(empresaId)}`,
     [...mesesParams, ...clienteParams, ...tenantFonteHorasParam(empresaId)]
   );
@@ -579,7 +640,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
   const [porMesGeralRows] = await pool.query(
     `SELECT fonte_horas.ano, fonte_horas.mes,
             COALESCE(SUM(fonte_horas.horas_planejada), 0) AS programado
-     FROM ${FONTE_HORAS_SQL}
+     FROM ${await fonteHoras()}
      WHERE (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses}) ${clienteSql} ${tenantFonteHoras(empresaId)}
      GROUP BY fonte_horas.ano, fonte_horas.mes`,
     [...mesesParams, ...clienteParams, ...tenantFonteHorasParam(empresaId)]
@@ -621,7 +682,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
 async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const instrutores = await listarInstrutoresConhecidos(empresaId);
-  const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, meses: {}, total_90d: 0, capacidade_90d: 0, tem_meta: false }]));
+  const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, meses: {}, total_90d: 0, sala_90d: 0, atividades_90d: 0, capacidade_90d: 0, tem_meta: false }]));
 
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, cliente, empresaId });
@@ -630,6 +691,8 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId 
       if (!linha) continue;
       linha.meses[`${ano}-${pad2(mes)}`] = item.horas_realizadas;
       linha.total_90d += item.horas_realizadas;
+      linha.sala_90d += item.horas_sala !== undefined ? item.horas_sala : item.horas_realizadas;
+      linha.atividades_90d += item.horas_atividades || 0;
       if (item.tem_meta) {
         linha.capacidade_90d += item.capacidade_horas;
         linha.tem_meta = true;
@@ -652,6 +715,8 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId 
     .map((linha) => ({
       ...linha,
       total_90d: Number(linha.total_90d.toFixed(2)),
+      sala_90d: Number(linha.sala_90d.toFixed(2)),
+      atividades_90d: Number(linha.atividades_90d.toFixed(2)),
       capacidade_90d: linha.tem_meta ? Number(linha.capacidade_90d.toFixed(2)) : null,
       ocupacao_pct: linha.tem_meta && linha.capacidade_90d > 0
         ? Number(((linha.total_90d / linha.capacidade_90d) * 100).toFixed(1))
@@ -709,15 +774,16 @@ async function getAderenciaPorTema({ cliente, ano, mes, dataInicio, dataFim, emp
     params.push(...meses.flatMap((m) => [m.ano, m.mes]));
   }
   if (empresaId) { conditions.push("fonte_horas.empresa_id = ?"); params.push(empresaId); }
+  conditions.push("fonte_horas.fonte <> 'atividade'"); // tema = conteúdo de treinamento, não atividade do instrutor
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const [rows] = await pool.query(
     `SELECT
        fonte_horas.tema AS tema,
-       COUNT(DISTINCT fonte_horas.treinamento_id) AS qtd_turmas,
+       COUNT(DISTINCT CASE WHEN fonte_horas.fonte <> 'atividade' THEN fonte_horas.treinamento_id END) AS qtd_turmas,
        COALESCE(SUM(fonte_horas.horas_planejada), 0) AS hc_programado,
        COALESCE(SUM(fonte_horas.horas_real), 0) AS hc_realizado
-     FROM ${FONTE_HORAS_SQL}
+     FROM ${await fonteHoras()}
      ${where}
      GROUP BY fonte_horas.tema
      ORDER BY hc_realizado DESC`,
@@ -752,7 +818,7 @@ async function getDistribuicaoPorOperacao({ meses: totalMeses, empresaId } = {})
     `SELECT
        COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação') AS operacao,
        COALESCE(SUM(fonte_horas.horas_real), 0) AS horas
-     FROM ${FONTE_HORAS_SQL}
+     FROM ${await fonteHoras()}
      ${where}
      GROUP BY COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação')`,
     params
@@ -804,7 +870,7 @@ async function getCapacidadePorInstrutorCliente({ meses: totalMeses = 3, empresa
     `SELECT fonte_horas.instrutor AS instrutor,
             COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação') AS cliente,
             SUM(fonte_horas.horas_real) AS horas
-     FROM ${FONTE_HORAS_SQL}
+     FROM ${await fonteHoras()}
      WHERE fonte_horas.instrutor IN (${placeholdersInstrutores})
        AND (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses})
        ${tenantFonteHoras(empresaId)}
@@ -869,6 +935,7 @@ async function getHorasAplicadasPorTreinamento({ empresaId, treinamentoId } = {}
   const params = [];
   if (empresaId) { conditions.push("fonte_horas.empresa_id = ?"); params.push(empresaId); }
   if (treinamentoId) { conditions.push("fonte_horas.treinamento_id = ?"); params.push(treinamentoId); }
+  if (SO_SALA_SQL) conditions.push(SO_SALA_SQL);
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const [rows] = await pool.query(
@@ -876,7 +943,7 @@ async function getHorasAplicadasPorTreinamento({ empresaId, treinamentoId } = {}
        fonte_horas.treinamento_id AS treinamento_id,
        SUM(fonte_horas.horas_real) AS horas_aplicadas,
        SUM(fonte_horas.horas_planejada) AS horas_planejadas
-     FROM ${FONTE_HORAS_SQL}
+     FROM ${await fonteHoras()}
      ${where}
      GROUP BY fonte_horas.treinamento_id`,
     params
@@ -912,6 +979,7 @@ function condicoesRecorte({ empresaId, cliente, dataInicio, dataFim }) {
     conditions.push(`(fonte_horas.ano, fonte_horas.mes) IN (${meses.map(() => "(?, ?)").join(",")})`);
     params.push(...meses.flatMap((m) => [m.ano, m.mes]));
   }
+  if (SO_SALA_SQL) conditions.push(SO_SALA_SQL);
   return { conditions, params };
 }
 
@@ -920,7 +988,7 @@ async function getHorasAplicadasTotal({ empresaId, cliente, dataInicio, dataFim 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const [[row]] = await pool.query(
     `SELECT COALESCE(SUM(fonte_horas.horas_real), 0) AS horas_aplicadas
-     FROM ${FONTE_HORAS_SQL}
+     FROM ${await fonteHoras()}
      ${where}`,
     params
   );
@@ -939,12 +1007,13 @@ async function getHorasAplicadasPorMes({ empresaId, cliente, dataInicio, dataFim
   const params = [...meses.flatMap((m) => [m.ano, m.mes])];
   if (empresaId) { conditions.push("fonte_horas.empresa_id = ?"); params.push(empresaId); }
   if (cliente) { conditions.push("fonte_horas.cliente = ?"); params.push(cliente); }
+  if (SO_SALA_SQL) conditions.push(SO_SALA_SQL);
 
   const [rows] = await pool.query(
     `SELECT fonte_horas.ano AS ano, fonte_horas.mes AS mes,
             COALESCE(SUM(fonte_horas.horas_real), 0) AS horas,
-            COUNT(DISTINCT fonte_horas.treinamento_id) AS turmas
-     FROM ${FONTE_HORAS_SQL}
+            COUNT(DISTINCT CASE WHEN fonte_horas.fonte <> 'atividade' THEN fonte_horas.treinamento_id END) AS turmas
+     FROM ${await fonteHoras()}
      WHERE ${conditions.join(" AND ")}
      GROUP BY fonte_horas.ano, fonte_horas.mes
      ORDER BY fonte_horas.ano, fonte_horas.mes`,
@@ -965,8 +1034,8 @@ async function getHorasAplicadasPorCliente({ empresaId, cliente, dataInicio, dat
   const [rows] = await pool.query(
     `SELECT COALESCE(NULLIF(fonte_horas.cliente, ''), '(sem cliente)') AS cliente,
             COALESCE(SUM(fonte_horas.horas_real), 0) AS horas,
-            COUNT(DISTINCT fonte_horas.treinamento_id) AS turmas
-     FROM ${FONTE_HORAS_SQL}
+            COUNT(DISTINCT CASE WHEN fonte_horas.fonte <> 'atividade' THEN fonte_horas.treinamento_id END) AS turmas
+     FROM ${await fonteHoras()}
      ${where}
      GROUP BY COALESCE(NULLIF(fonte_horas.cliente, ''), '(sem cliente)')
      ORDER BY horas DESC
@@ -982,8 +1051,8 @@ async function getHorasAplicadasPorInstrutor({ empresaId, cliente, dataInicio, d
   const [rows] = await pool.query(
     `SELECT COALESCE(NULLIF(fonte_horas.instrutor, ''), '(sem instrutor)') AS instrutor,
             COALESCE(SUM(fonte_horas.horas_real), 0) AS horas,
-            COUNT(DISTINCT fonte_horas.treinamento_id) AS turmas
-     FROM ${FONTE_HORAS_SQL}
+            COUNT(DISTINCT CASE WHEN fonte_horas.fonte <> 'atividade' THEN fonte_horas.treinamento_id END) AS turmas
+     FROM ${await fonteHoras()}
      ${where}
      GROUP BY COALESCE(NULLIF(fonte_horas.instrutor, ''), '(sem instrutor)')
      ORDER BY horas DESC
@@ -1044,6 +1113,7 @@ module.exports = {
   getHorasAplicadasPorCliente,
   getHorasAplicadasPorInstrutor,
   getAlertas,
+  rotinaDisponivel,
   diasUteisDoMes,
   statusOcupacao,
   mesesNoIntervalo,
