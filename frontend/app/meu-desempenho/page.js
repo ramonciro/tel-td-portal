@@ -135,6 +135,14 @@ export default function MeuDesempenhoPage() {
             <StatCard title="NPS" value={item.nps.nps_score ?? "—"} subtitle={medias ? `Média do time: ${medias.nps_score ?? "—"}` : undefined} accent={colors.success} />
           </div>
 
+          {Number(item.ch.horas_atividades) > 0 && (
+            <p style={{ fontSize: 13, color: "#334155", marginBottom: 12 }}>
+              Sua CH no período: <strong>{fmt(item.ch.horas_sala)}h em sala</strong> + <strong>{fmt(item.ch.horas_atividades)}h em atividades</strong> = {fmt(item.ch.horas_realizadas)}h
+              {item.rotina?.revisoes_plano ? ` · ${item.rotina.revisoes_plano} revisão(ões) do plano de aula` : ""}
+              {item.rotina?.aderencia_pct != null ? ` · aderência à rotina ${fmtPct(item.rotina.aderencia_pct)}` : ""}
+            </p>
+          )}
+
           <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 20 }}>
             Índice geral pondera frequência (peso maior) e NPS — a nota de avaliação abaixo é informativa e não entra nessa conta, porque não tem uma escala fixa entre as provas hoje.
           </p>
