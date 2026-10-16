@@ -22,6 +22,7 @@ const { sendMail } = require("../services/mailer");
 const { getAlertas } = require("../services/capacidadeResolver");
 const { getResumoExecutivo } = require("../services/desempenhoInstrutorResolver");
 const { getResumoPresenca } = require("../services/presencaResolver");
+const { getPendenciasRotina } = require("../lib/rotinaAderencia");
 const { gerarTextoResumo, salvarResumoDoDia } = require("../services/resumoExecutivoService");
 
 const PERFIS_DESTINATARIOS = ["coordenador", "supervisor", "superintendente"];
@@ -52,10 +53,16 @@ async function listarDestinatarios(empresaId) {
 }
 
 async function montarResumoEmpresa(empresaId) {
-  const [alertasCapacidade, resumoDesempenho, presencaItens] = await Promise.all([
+  const [alertasCapacidade, resumoDesempenho, presencaItens, rotinaPend] = await Promise.all([
     getAlertas(empresaId).catch(() => ({ itens: [] })),
     getResumoExecutivo({ empresaId }).catch(() => ({ fora_faixa_saudavel: [] })),
     getResumoPresenca({ empresaId }).catch(() => []),
+    // Rotina do instrutor (Fase 3, 16/10/2026): responsabilidades atrasadas, diário de bordo,
+    // revisão do plano, avaliação individual e provas em papel paradas.
+    getPendenciasRotina({ empresaId }).catch((e) => {
+      console.error("[pendenciasDigest] rotina:", e.message || e);
+      return { itens: [] };
+    }),
   ]);
 
   const chamadasPendentes = presencaItens.filter((t) => t.status_turma === "Chamada pendente");
@@ -66,6 +73,7 @@ async function montarResumoEmpresa(empresaId) {
     desempenho: resumoDesempenho.fora_faixa_saudavel || [],
     chamadasPendentes,
     turmasCriticas,
+    rotina: rotinaPend.itens || [],
   };
 }
 
@@ -74,8 +82,25 @@ function totalPendencias(resumo) {
     resumo.capacidade.length +
     resumo.desempenho.length +
     resumo.chamadasPendentes.length +
-    resumo.turmasCriticas.length
+    resumo.turmasCriticas.length +
+    (resumo.rotina || []).length
   );
+}
+
+const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// Pendências da rotina do instrutor: as atrasadas primeiro, no máximo 15 linhas no e-mail
+// (o restante fica no painel de aderência do Portal).
+function blocoRotina(itens) {
+  if (!itens.length) return "";
+  const mostrar = itens.slice(0, 15);
+  const linhas = mostrar
+    .map((i) => `<li>${esc(i.tema)} — ${esc(i.cliente)} (instrutor: ${esc(i.instrutor || "não informado")}): ${esc(i.texto)}${i.severidade === "vermelho" ? " <strong>(atrasado)</strong>" : ""}</li>`)
+    .join("");
+  const resto = itens.length > mostrar.length ? `<li>…e mais ${itens.length - mostrar.length} no painel de aderência do Portal.</li>` : "";
+  return `
+      <h3 style="margin:20px 0 8px;color:#0f172a;font-size:15px;">Rotina do instrutor — pendências (${itens.length})</h3>
+      <ul style="margin:0 0 4px;padding-left:18px;color:#334155;font-size:13.5px;line-height:1.6;">${linhas}${resto}</ul>`;
 }
 
 function montarHtml(resumo) {
@@ -109,6 +134,7 @@ function montarHtml(resumo) {
       resumo.turmasCriticas,
       (t) => `<li>${t.tema} — ${t.cliente}</li>`
     ),
+    blocoRotina(resumo.rotina || []),
   ].join("");
 
   return `
