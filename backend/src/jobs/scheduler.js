@@ -30,6 +30,7 @@ const { rodarDigestPendencias } = require("./pendenciasDigest");
 const { rodarLembretesAula } = require("./lembretesAula");
 const { rodarCalculoConquistas } = require("./conquistasJob");
 const { rodarCertificadosAutomaticos } = require("./certificadosAutomaticos");
+const { sincronizarCelulas } = require("../lib/celulaBaby");
 
 function iniciarAgendamentos() {
   cron.schedule("0 5 * * *", async () => {
@@ -38,6 +39,17 @@ function iniciarAgendamentos() {
       console.log("[scheduler] Certificados automáticos executados:", JSON.stringify(resultado));
     } catch (error) {
       console.error("[scheduler] Erro ao rodar certificados automáticos:", error.message);
+    }
+  });
+
+  // Célula baby (16/10/2026): abre as células das turmas de Avaliação Técnica
+  // concluídas. Também roda ao abrir a lista de células; este é o reforço diário.
+  cron.schedule("30 5 * * *", async () => {
+    try {
+      const criadas = await sincronizarCelulas(null);
+      console.log("[scheduler] Células baby abertas:", criadas);
+    } catch (error) {
+      console.error("[scheduler] Erro ao abrir células baby:", error.message);
     }
   });
 
