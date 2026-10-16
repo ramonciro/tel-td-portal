@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import TurmaPageShell from "../../../../components/TurmaPageShell";
-import { apiFetch } from "../../../../services/api";
+import { apiFetch, apiDownload, getStoredUser } from "../../../../services/api";
 import { colors, radius } from "../../../../lib/theme";
 
 // Rotina do instrutor (16/10/2026) — por turma.
 //  · Avaliação Técnica: checklist (Véspera/Início/Final), responsabilidades com
 //    prazo e farol, diário de bordo e atividades.
+//    + Avaliação individual dos candidatos (notas 5–10, média, Passou/Em berço/Não seguiu).
 //  · Demais turmas (formação continuada): só atividades.
 // Toda atividade registrada tem duração e SOMA na CH do instrutor.
 
@@ -143,6 +144,7 @@ export default function RotinaTurmaPage() {
                 ["responsabilidades", "Responsabilidades"],
                 ["diario", "Diário de bordo"],
                 ["atividades", "Atividades"],
+                ["avaliacao", "Avaliação individual"],
               ].map(([k, l]) => (
                 <button key={k} onClick={() => setAba(k)} style={{ ...aba_, ...(aba === k ? abaOn : null) }}>
                   {l}
@@ -155,6 +157,7 @@ export default function RotinaTurmaPage() {
           {abaAtual === "responsabilidades" && <Responsabilidades estado={estado} acao={acao} id={id} />}
           {abaAtual === "diario" && <Diario estado={estado} acao={acao} id={id} />}
           {abaAtual === "atividades" && <Atividades estado={estado} acao={acao} id={id} />}
+          {abaAtual === "avaliacao" && <Avaliacao id={id} />}
 
           {avTec && estado.celula_baby && (
             <div style={{ ...card, marginTop: 16 }}>
@@ -688,6 +691,347 @@ function Kpi({ rotulo, valor, detalhe, cor }) {
     </div>
   );
 }
+
+/* ───────────────────────── avaliação individual (Avaliação Técnica) ───────────────────────── */
+
+const RESULTADOS_AV = [
+  ["passou", "Passou"],
+  ["em_berco", "Em berço"],
+  ["nao_seguiu", "Não seguiu"],
+];
+const RES_COR = {
+  passou: { cor: colors.successText, bg: colors.successLight },
+  em_berco: { cor: colors.warningText, bg: colors.warningLight },
+  nao_seguiu: { cor: colors.dangerText, bg: colors.dangerLight },
+};
+const NOTAS_OPCOES = [5, 6, 7, 8, 9, 10];
+
+function mediaDe(notas, criterios) {
+  const v = criterios.map((c) => notas?.[c.chave]);
+  if (v.some((n) => n === null || n === undefined || n === "")) return null;
+  const soma = v.reduce((s, n) => s + Number(n), 0);
+  return Math.round((soma / v.length) * 100) / 100;
+}
+function fmtMedia(m) {
+  return m === null || m === undefined ? "—" : Number(m).toFixed(1).replace(".", ",");
+}
+
+function Avaliacao({ id }) {
+  const [dados, setDados] = useState(null);
+  const [linhas, setLinhas] = useState([]);
+  const [sujo, setSujo] = useState(false);
+  const [erro, setErro] = useState("");
+  const [aviso, setAviso] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const usuario = getStoredUser();
+  const gestao = ["coordenador", "assistente_treinamento"].includes(usuario?.perfil);
+
+  const carregar = useCallback(async () => {
+    try {
+      const d = await apiFetch(`/rotina/turmas/${id}/avaliacao`);
+      setDados(d);
+      setLinhas(
+        (d.linhas || []).map((l) => ({
+          participante_id: l.participante_id,
+          nome: l.nome,
+          matricula: l.matricula,
+          notas: { ...l.notas },
+          resultado: l.resultado || "",
+          observacao: l.observacao || "",
+        }))
+      );
+      setSujo(false);
+      setErro("");
+    } catch (e) {
+      setErro(e.message || "Não foi possível carregar a avaliação individual.");
+    }
+  }, [id]);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const criterios = dados?.criterios || [];
+  const celulaIniciada = !!dados?.celula && dados.celula.status !== "a_configurar";
+  const editavel = !!dados?.pode_editar;
+  // com a célula iniciada, só a coordenação mexe no resultado
+  const resultadoTravado = celulaIniciada && !gestao;
+
+  function mudar(pid, campo, valor, criterio) {
+    setSujo(true);
+    setLinhas((ls) =>
+      ls.map((l) => {
+        if (l.participante_id !== pid) return l;
+        if (criterio) return { ...l, notas: { ...l.notas, [criterio]: valor === "" ? null : Number(valor) } };
+        return { ...l, [campo]: valor };
+      })
+    );
+  }
+
+  const contagem = useMemo(() => {
+    const c = { passou: 0, em_berco: 0, nao_seguiu: 0 };
+    linhas.forEach((l) => {
+      if (c[l.resultado] !== undefined) c[l.resultado] += 1;
+    });
+    return c;
+  }, [linhas]);
+
+  const pendencias = useMemo(() => {
+    const p = [];
+    linhas.forEach((l) => {
+      const m = mediaDe(l.notas, criterios);
+      if (m === null) p.push(`${l.nome}: faltam notas`);
+      else if (!l.resultado) p.push(`${l.nome}: falta o resultado`);
+      else if (m < (dados?.media_minima || 6) && !String(l.observacao).trim()) p.push(`${l.nome}: média abaixo de ${dados?.media_minima || 6} pede observação`);
+    });
+    return p;
+  }, [linhas, criterios, dados]);
+
+  function corpo(registrar) {
+    return {
+      registrar,
+      linhas: linhas.map((l) => ({
+        participante_id: l.participante_id,
+        notas: l.notas,
+        resultado: l.resultado || null,
+        observacao: l.observacao,
+      })),
+    };
+  }
+
+  async function salvar(registrar) {
+    setOcupado(true);
+    setErro("");
+    try {
+      await apiFetch(`/rotina/turmas/${id}/avaliacao`, { method: "PUT", body: JSON.stringify(corpo(registrar)) });
+      setAviso(registrar ? "Avaliação registrada e encerrada." : "Rascunho salvo.");
+      setTimeout(() => setAviso(""), 3000);
+      setConfirmando(false);
+      await carregar();
+    } catch (e) {
+      setErro(e.message || "Não foi possível salvar.");
+      setConfirmando(false);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function reabrir() {
+    setOcupado(true);
+    setErro("");
+    try {
+      await apiFetch(`/rotina/turmas/${id}/avaliacao/reabrir`, { method: "POST" });
+      setAviso("Avaliação reaberta para edição.");
+      setTimeout(() => setAviso(""), 3000);
+      await carregar();
+    } catch (e) {
+      setErro(e.message || "Não foi possível reabrir.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function exportar() {
+    try {
+      setErro("");
+      await apiDownload(`/rotina/turmas/${id}/avaliacao/exportar`, `avaliacao-individual-turma-${id}.xlsx`);
+    } catch (e) {
+      setErro(e.message || "Não foi possível exportar.");
+    }
+  }
+
+  if (!dados) return erro ? <div style={alerta}>{erro}</div> : <div style={vazio}>Carregando avaliação individual…</div>;
+
+  const registrada = !!dados.registro;
+
+  return (
+    <div>
+      {erro && <div style={alerta}>{erro}</div>}
+      {aviso && <div style={okBox}>{aviso}</div>}
+
+      <div style={faixa}>
+        <Kpi rotulo="Candidatos" valor={String(linhas.length)} detalhe="nesta turma" />
+        <Kpi rotulo="Passou" valor={String(contagem.passou)} cor={colors.successText} />
+        <Kpi rotulo="Em berço" valor={String(contagem.em_berco)} cor={colors.warningText} />
+        <Kpi rotulo="Não seguiu" valor={String(contagem.nao_seguiu)} cor={colors.dangerText} />
+      </div>
+
+      {registrada && (
+        <div style={okBox}>
+          Avaliação registrada{dados.registro.registrada_por ? ` por ${dados.registro.registrada_por}` : ""}
+          {dados.registro.registrada_em ? ` em ${fmtData(dados.registro.registrada_em)}` : ""}.
+          {gestao ? " Você pode ajustar notas e resultados (as mudanças ficam na Auditoria)." : " Para alterar, peça à coordenação."}
+        </div>
+      )}
+      {!editavel && !registrada && dados.so_leitura_motivo === "perfil" && (
+        <div style={aviso2}>Você está só visualizando. Quem preenche é o instrutor da turma ou a coordenação.</div>
+      )}
+      {celulaIniciada && editavel && (
+        <div style={aviso2}>
+          A célula baby já foi iniciada.{" "}
+          {gestao ? "Mudar o resultado de alguém fica registrado na Auditoria." : "Só a coordenação altera o resultado; você ainda pode ajustar notas e observações."}
+        </div>
+      )}
+
+      <div style={card}>
+        <div style={cabCard}>
+          <div>
+            <h2 style={h2}>Avaliação individual dos candidatos</h2>
+            <p style={sub}>
+              Notas inteiras de {dados.nota_min} a {dados.nota_max} em cada critério. A média é calculada; abaixo de {dados.media_minima} a observação é obrigatória.
+              Esta tela não substitui a planilha em papel e não soma horas na CH.
+            </p>
+          </div>
+          <button style={btnSec} onClick={exportar}>Exportar Excel</button>
+        </div>
+
+        {!linhas.length ? (
+          <div style={vazio}>Esta turma ainda não tem candidatos cadastrados. Inclua os participantes na turma para avaliar.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ ...tabela, minWidth: 980 }}>
+              <thead>
+                <tr>
+                  <th style={th}>Candidato</th>
+                  {criterios.map((c) => (
+                    <th key={c.chave} style={{ ...th, textAlign: "center", minWidth: 84 }}>{c.rotulo}</th>
+                  ))}
+                  <th style={{ ...th, textAlign: "center" }}>Média</th>
+                  <th style={th}>Resultado</th>
+                  <th style={{ ...th, minWidth: 200 }}>Observação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map((l) => {
+                  const m = mediaDe(l.notas, criterios);
+                  const baixa = m !== null && m < dados.media_minima;
+                  const obsFalta = baixa && !String(l.observacao).trim();
+                  const rc = RES_COR[l.resultado];
+                  return (
+                    <tr key={l.participante_id}>
+                      <td style={td}>
+                        <strong style={{ color: colors.navy }}>{l.nome}</strong>
+                        {l.matricula ? <div style={{ fontSize: 12, color: colors.textMuted }}>{l.matricula}</div> : null}
+                      </td>
+                      {criterios.map((c) => {
+                        const n = l.notas[c.chave];
+                        const vermelho = n !== null && n !== undefined && n < dados.media_minima;
+                        return (
+                          <td key={c.chave} style={{ ...td, textAlign: "center" }}>
+                            <select
+                              aria-label={`${c.rotulo} de ${l.nome}`}
+                              disabled={!editavel || ocupado}
+                              value={n ?? ""}
+                              onChange={(e) => mudar(l.participante_id, null, e.target.value, c.chave)}
+                              style={{
+                                ...selNota,
+                                ...(vermelho ? { background: colors.dangerLight, color: colors.dangerText, borderColor: "#fca5a5" } : null),
+                              }}
+                            >
+                              <option value="">—</option>
+                              {NOTAS_OPCOES.map((o) => (
+                                <option key={o} value={o}>{o}</option>
+                              ))}
+                            </select>
+                          </td>
+                        );
+                      })}
+                      <td style={{ ...td, textAlign: "center", fontWeight: 800, color: baixa ? colors.dangerText : colors.navy }}>{fmtMedia(m)}</td>
+                      <td style={td}>
+                        {editavel && !resultadoTravado ? (
+                          <select
+                            aria-label={`Resultado de ${l.nome}`}
+                            disabled={ocupado}
+                            value={l.resultado}
+                            onChange={(e) => mudar(l.participante_id, "resultado", e.target.value)}
+                            style={{ ...selRes, ...(rc ? { background: rc.bg, color: rc.cor, borderColor: rc.cor } : null) }}
+                          >
+                            <option value="">Escolher…</option>
+                            {RESULTADOS_AV.map(([k, r]) => (
+                              <option key={k} value={k}>{r}</option>
+                            ))}
+                          </select>
+                        ) : rc ? (
+                          <span style={{ ...badge, background: rc.bg, color: rc.cor }}>{RESULTADOS_AV.find(([k]) => k === l.resultado)?.[1]}</span>
+                        ) : (
+                          <span style={{ color: colors.textMuted }}>—</span>
+                        )}
+                      </td>
+                      <td style={td}>
+                        <input
+                          aria-label={`Observação de ${l.nome}`}
+                          disabled={!editavel || ocupado}
+                          value={l.observacao}
+                          maxLength={1000}
+                          placeholder={baixa ? "Obrigatória (média abaixo de 6)" : "Opcional"}
+                          onChange={(e) => mudar(l.participante_id, "observacao", e.target.value)}
+                          style={{ ...input, ...(obsFalta ? { borderColor: "#fca5a5", background: colors.dangerLight } : null) }}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ padding: "14px 16px", borderTop: `1px solid ${colors.border}`, display: "grid", gap: 10 }}>
+          <div style={{ fontSize: 13, color: colors.textSecondary }}>
+            Quem recebe <strong>Passou</strong> entra automaticamente na célula baby da turma.
+            {dados.celula ? (
+              <>
+                {" "}
+                <a href={`/celulas-baby/${dados.celula.id}`} style={{ color: colors.primary, fontWeight: 700 }}>Abrir a célula baby</a>
+              </>
+            ) : null}
+          </div>
+
+          {editavel && linhas.length > 0 && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <button style={btnSec} disabled={ocupado || !sujo} onClick={() => salvar(false)}>Salvar rascunho</button>
+              {!registrada && (
+                <button style={{ ...btn, opacity: pendencias.length ? 0.55 : 1 }} disabled={ocupado || pendencias.length > 0} onClick={() => setConfirmando(true)}>
+                  Registrar e encerrar avaliação
+                </button>
+              )}
+              {sujo && <span style={{ fontSize: 12, color: colors.warningText, fontWeight: 700 }}>Há alterações não salvas.</span>}
+            </div>
+          )}
+
+          {editavel && !registrada && pendencias.length > 0 && linhas.length > 0 && (
+            <div style={{ fontSize: 12, color: colors.textSecondary }}>
+              Para registrar, falta: {pendencias.slice(0, 3).join("; ")}
+              {pendencias.length > 3 ? ` e mais ${pendencias.length - 3}` : ""}.
+            </div>
+          )}
+
+          {confirmando && (
+            <div style={{ ...aviso2, border: `1px solid ${colors.border}`, display: "grid", gap: 10 }}>
+              <span>
+                Registrar e encerrar a avaliação de {linhas.length} candidato(s)? Depois disso só a coordenação consegue alterar. Faça isto ao fim da turma, depois de lançar a planilha em papel.
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={btn} disabled={ocupado} onClick={() => salvar(true)}>Sim, registrar</button>
+                <button style={btnSec} disabled={ocupado} onClick={() => setConfirmando(false)}>Cancelar</button>
+              </div>
+            </div>
+          )}
+
+          {dados.pode_reabrir && (
+            <div>
+              <button style={link} disabled={ocupado} onClick={reabrir}>Reabrir avaliação para edição</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const selNota = { padding: "7px 8px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, background: "#fff", fontSize: 14, fontWeight: 700, minWidth: 56, textAlign: "center" };
+const selRes = { padding: "8px 10px", borderRadius: radius.sm, border: `1px solid ${colors.border}`, background: "#fff", fontSize: 13, fontWeight: 800, minWidth: 120 };
 
 /* ───────────────────────── estilos ───────────────────────── */
 
