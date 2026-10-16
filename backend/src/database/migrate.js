@@ -2325,6 +2325,13 @@ async function runMigrations() {
       console.log(`  ↳ célula baby não concluído (${error.message}) — seguindo`);
     }
 
+    // 67. Rotina do instrutor (16/10/2026) — ver ensureRotinaInstrutor().
+    try {
+      await ensureRotinaInstrutor();
+    } catch (error) {
+      console.log(`  ↳ rotina do instrutor não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
@@ -2522,6 +2529,133 @@ async function ensureCelulaBaby() {
     );
   `);
   console.log("  ↳ célula baby: ok");
+}
+
+// 67. Rotina do instrutor (16/10/2026, pedido do Ramon).
+// Checklist e responsabilidades (turma de Avaliação Técnica), diário de bordo,
+// atividades do instrutor (formação continuada e avulsas). As atividades
+// registradas somam na CH do instrutor (ver services/capacidadeResolver.js).
+async function ensureRotinaInstrutor() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_atividades_catalogo (
+      id                  INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id          INT NULL,
+      nome                VARCHAR(120) NOT NULL,
+      descricao           TEXT NULL,
+      pede_pessoa         TINYINT(1) NOT NULL DEFAULT 0,
+      minutos_padrao      INT NULL,
+      tem_prazo_fim_turma TINYINT(1) NOT NULL DEFAULT 0,
+      marcada_padrao      TINYINT(1) NOT NULL DEFAULT 0,
+      marcada_padrao_avtec TINYINT(1) NOT NULL DEFAULT 0,
+      ativo               TINYINT(1) NOT NULL DEFAULT 1,
+      sistema             TINYINT(1) NOT NULL DEFAULT 0,
+      criado_por          VARCHAR(150) NULL,
+      created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_rac_empresa (empresa_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_turma_atividades (
+      treinamento_id INT NOT NULL,
+      catalogo_id    INT NOT NULL,
+      PRIMARY KEY (treinamento_id, catalogo_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_atividades_registros (
+      id              INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id      INT NULL,
+      treinamento_id  INT NULL,
+      catalogo_id     INT NULL,
+      tipo_nome       VARCHAR(120) NOT NULL,
+      data_atividade  DATE NOT NULL,
+      minutos         INT NOT NULL,
+      instrutor       VARCHAR(150) NULL,
+      cliente         VARCHAR(150) NULL,
+      participante_id INT NULL,
+      pessoa_nome     VARCHAR(200) NULL,
+      tema            VARCHAR(300) NULL,
+      observacao      TEXT NULL,
+      biblioteca_id   INT NULL,
+      necessidade_id  INT NULL,
+      criado_por      VARCHAR(150) NULL,
+      created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_rar_turma (treinamento_id),
+      INDEX idx_rar_instrutor (instrutor, data_atividade),
+      INDEX idx_rar_empresa (empresa_id, data_atividade)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_modelo_checklist (
+      id         INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NULL,
+      etapa      VARCHAR(20) NOT NULL,
+      ordem      INT NOT NULL DEFAULT 0,
+      texto      VARCHAR(500) NOT NULL,
+      ativo      TINYINT(1) NOT NULL DEFAULT 1,
+      INDEX idx_rmc_empresa (empresa_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_modelo_tarefas (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id  INT NULL,
+      ordem       INT NOT NULL DEFAULT 0,
+      item        VARCHAR(200) NOT NULL,
+      o_que_fazer VARCHAR(600) NULL,
+      ancora      VARCHAR(20) NOT NULL DEFAULT 'continuo',
+      offset_dias INT NOT NULL DEFAULT 0,
+      dias_uteis  TINYINT(1) NOT NULL DEFAULT 0,
+      ativo       TINYINT(1) NOT NULL DEFAULT 1,
+      INDEX idx_rmt_empresa (empresa_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_checklist (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id     INT NULL,
+      treinamento_id INT NOT NULL,
+      etapa          VARCHAR(20) NOT NULL,
+      ordem          INT NOT NULL DEFAULT 0,
+      texto          VARCHAR(500) NOT NULL,
+      resposta       VARCHAR(5) NULL,
+      obs            TEXT NULL,
+      respondido_por VARCHAR(150) NULL,
+      respondido_em  DATETIME NULL,
+      UNIQUE KEY uk_rc_item (treinamento_id, etapa, ordem)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_tarefas (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id     INT NULL,
+      treinamento_id INT NOT NULL,
+      ordem          INT NOT NULL DEFAULT 0,
+      item           VARCHAR(200) NOT NULL,
+      o_que_fazer    VARCHAR(600) NULL,
+      ancora         VARCHAR(20) NOT NULL DEFAULT 'continuo',
+      offset_dias    INT NOT NULL DEFAULT 0,
+      dias_uteis     TINYINT(1) NOT NULL DEFAULT 0,
+      feito          TINYINT(1) NOT NULL DEFAULT 0,
+      feito_em       DATETIME NULL,
+      feito_por      VARCHAR(150) NULL,
+      UNIQUE KEY uk_rt_item (treinamento_id, ordem)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_diario (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id     INT NULL,
+      treinamento_id INT NOT NULL,
+      data_dia       DATE NOT NULL,
+      texto          TEXT NULL,
+      atualizado_por VARCHAR(150) NULL,
+      updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_rd_dia (treinamento_id, data_dia)
+    )
+  `);
+  console.log("  ↳ rotina do instrutor: ok");
 }
 
 module.exports = { runMigrations };
