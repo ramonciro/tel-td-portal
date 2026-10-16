@@ -739,6 +739,7 @@ function Avaliacao({ id }) {
           notas: { ...l.notas },
           resultado: l.resultado || "",
           observacao: l.observacao || "",
+          provas_papel: l.provas_papel || [],
         }))
       );
       setSujo(false);
@@ -913,6 +914,11 @@ function Avaliacao({ id }) {
                       <td style={td}>
                         <strong style={{ color: colors.navy }}>{l.nome}</strong>
                         {l.matricula ? <div style={{ fontSize: 12, color: colors.textMuted }}>{l.matricula}</div> : null}
+                        {(l.provas_papel || []).length > 0 && (
+                          <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 3 }} title="Nota importada da prova em papel (referência para o quiz / avaliação final; não preenche as notas)">
+                            Prova em papel: {l.provas_papel.map((p) => `${p.titulo} ${Number(p.nota).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}`).join(" · ")}
+                          </div>
+                        )}
                       </td>
                       {criterios.map((c) => {
                         const n = l.notas[c.chave];
