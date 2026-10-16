@@ -160,6 +160,19 @@ export default function CelulaBabyDetalhe() {
                     <strong>{p.nome}</strong>
                     {p.matricula && <span style={{ color: colors.textMuted, marginLeft: 8, fontSize: 12 }}>mat. {p.matricula}</span>}
                   </div>
+                  {p.resultado_da_avaliacao ? (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      {(() => {
+                        const r = RESULTADOS.find((x) => x.id === p.resultado);
+                        return r ? (
+                          <span style={{ padding: "6px 12px", borderRadius: radius.pill, fontWeight: 800, fontSize: 12, background: r.bg, color: r.cor }}>{r.label}</span>
+                        ) : null;
+                      })()}
+                      <a href={`/turma/${c.treinamento_id}/rotina`} style={{ fontSize: 12, color: colors.primary, fontWeight: 700 }}>
+                        vem da avaliação individual
+                      </a>
+                    </div>
+                  ) : (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {RESULTADOS.map((r) => {
                       const ativo = p.resultado === r.id;
@@ -172,9 +185,15 @@ export default function CelulaBabyDetalhe() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
               ))}
             </div>
+            {d.pessoas.some((p) => p.resultado_da_avaliacao) && (
+              <p style={dica}>
+                O resultado de quem foi avaliado vem da avaliação individual da turma (Turma → Rotina do instrutor → Avaliação individual) e é alterado lá, não aqui.
+              </p>
+            )}
             {podeEditar && c.status === "a_configurar" && (
               <p style={dica}>Depois de marcar os resultados, vá para “2 · Início e indicadores” para informar a data de início na operação e iniciar o acompanhamento.</p>
             )}
