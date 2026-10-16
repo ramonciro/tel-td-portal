@@ -9,7 +9,7 @@ import { apiFetch } from "../../../../services/api";
 // imprimir / "Salvar como PDF" no navegador (mesmo caminho dos certificados).
 // Precisa estar logado no Portal: os dados vêm da API com o seu login.
 
-const RESULTADO = { passou: "Passou", em_berco: "Em berço", nao_seguiu: "Não seguiu" };
+const RESULTADO = { passou: "Aprovado", em_berco: "Em berço", nao_seguiu: "Reprovado" };
 const PARECER = { atingiu: "Atingiu a curva", parcial: "Parcial", abaixo: "Abaixo da curva" };
 const STATUS = { a_configurar: "A configurar", em_andamento: "Em andamento", encerrada: "Encerrada" };
 
