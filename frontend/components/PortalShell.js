@@ -56,6 +56,10 @@ const menuItems = [
   { href: "/reembolso-transporte", label: "Reembolso de Transporte", icon: "bus", roles: ["coordenador", "assistente_treinamento"], menuRoles: ["assistente_treinamento"] },
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "backpack", roles: ["instrutor", "treinando"] },
   { href: "/meu-desempenho", label: "Meu Desempenho",        icon: "trending", roles: ["instrutor"] },
+  // Célula baby (16/10/2026): acompanhamento da curva de aprendizagem dos
+  // aprovados na Avaliação Técnica, feito pelo instrutor. Mesmo conjunto liberado
+  // no backend (/api/celulas-baby); o instrutor só vê as próprias turmas.
+  { href: "/celulas-baby",  label: "Células baby",           icon: "trending", roles: ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/indicadores",  label: "Indicadores",             icon: "trending", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/capacidade",   label: "CH por Instrutor",        icon: "clock", roles: ["coordenador", "supervisor", "superintendente"] },
