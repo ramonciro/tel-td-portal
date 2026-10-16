@@ -2655,6 +2655,37 @@ async function ensureRotinaInstrutor() {
       UNIQUE KEY uk_rd_dia (treinamento_id, data_dia)
     )
   `);
+  // Fase 2 (16/10/2026): avaliação individual dos candidatos ao final da Avaliação Técnica.
+  // Uma linha por candidato (UNIQUE turma + participante); o resultado
+  // (passou / em_berco / nao_seguiu) alimenta a célula baby. O "registro"
+  // marca a avaliação como registrada (trava a edição do instrutor).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_avaliacao_individual (
+      id              INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id      INT NULL,
+      treinamento_id  INT NOT NULL,
+      participante_id INT NOT NULL,
+      nota_pontualidade TINYINT NULL,
+      nota_interesse    TINYINT NULL,
+      nota_comportamento TINYINT NULL,
+      nota_quiz         TINYINT NULL,
+      nota_avaliacao_final TINYINT NULL,
+      media           DECIMAL(4,2) NULL,
+      resultado       VARCHAR(20) NULL,
+      observacao      VARCHAR(1000) NULL,
+      atualizado_por  VARCHAR(150) NULL,
+      updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_rai (treinamento_id, participante_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rotina_avaliacao_registro (
+      treinamento_id INT NOT NULL PRIMARY KEY,
+      empresa_id     INT NULL,
+      registrada_por VARCHAR(150) NULL,
+      registrada_em  DATETIME NOT NULL
+    )
+  `);
   console.log("  ↳ rotina do instrutor: ok");
 }
 
