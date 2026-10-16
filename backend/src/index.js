@@ -2075,6 +2075,21 @@ app.get("/api/rotina/turmas/:id/avaliacao", authRequired, authorizeRoles(...ROTI
 app.put("/api/rotina/turmas/:id/avaliacao", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.salvarAvaliacao);
 app.post("/api/rotina/turmas/:id/avaliacao/reabrir", authRequired, authorizeRoles(...ROTINA_GESTAO), rotinaCtrl.reabrirAvaliacao);
 app.get("/api/rotina/turmas/:id/avaliacao/exportar", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.exportarAvaliacao);
+
+// Importação de provas feitas no papel (16/10/2026): foto/PDF + lançamento assistido.
+// Só a confirmação grava notas; desfazer é da coordenação.
+const provasPapelCtrl = require("./controllers/provasPapelController");
+app.get   ("/api/provas-papel/turmas/:id", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.listarDaTurma);
+app.post  ("/api/provas-papel/turmas/:id/lotes", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.criarLote);
+app.get   ("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.obterLote);
+app.put   ("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.salvarLote);
+app.delete("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.excluirLote);
+app.post  ("/api/provas-papel/lotes/:id/confirmar", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.confirmarLote);
+app.post  ("/api/provas-papel/lotes/:id/desfazer", authRequired, authorizeRoles(...ROTINA_GESTAO), provasPapelCtrl.desfazerLote);
+app.get   ("/api/provas-papel/lotes/:id/exportar", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.exportarLote);
+app.post  ("/api/provas-papel/lotes/:id/arquivos", authRequired, authorizeRoles(...ROTINA_ESCREVER), comUploadTratado(upload.single("arquivo")), provasPapelCtrl.anexarArquivo);
+app.delete("/api/provas-papel/lotes/:id/arquivos/:arquivoId", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.removerArquivo);
+app.get   ("/api/provas-papel/lotes/:id/arquivos/:arquivoId/url", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.urlArquivo);
 app.post("/api/rotina/registros", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.criarRegistro);
 app.put("/api/rotina/registros/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.editarRegistro);
 app.delete("/api/rotina/registros/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.excluirRegistro);
