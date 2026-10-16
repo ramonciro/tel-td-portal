@@ -73,6 +73,7 @@ const trilhaPessoasRoutes = require("./routes/trilhaPessoasRoutes");
 const turmaPresencaGradeRoutes = require("./routes/turmaPresencaGradeRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
 const instrutoresCtrl = require("./controllers/instrutoresController");
+const celulaBabyCtrl = require("./controllers/celulaBabyController");
 const {
   getDesempenho: getDesempenhoInstrutor,
   getDesempenhoExportar,
@@ -2038,6 +2039,25 @@ app.use(
   authorizeRoles("coordenador", "supervisor", "superintendente"),
   capacidadeRoutes
 );
+
+// Célula baby (16/10/2026) — acompanhamento da curva de aprendizagem feito pelo
+// instrutor nos 7 primeiros dias de operação. Ver controllers/celulaBabyController.js.
+// Instrutor só enxerga/edita as próprias turmas (checado no controller).
+const CELULA_LER = ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"];
+const CELULA_ESCREVER = ["coordenador", "assistente_treinamento", "instrutor"];
+app.get("/api/celulas-baby", authRequired, authorizeRoles(...CELULA_LER), celulaBabyCtrl.listar);
+app.get("/api/celulas-baby/:id", authRequired, authorizeRoles(...CELULA_LER), celulaBabyCtrl.detalhar);
+app.get("/api/celulas-baby/:id/exportar", authRequired, authorizeRoles(...CELULA_LER), celulaBabyCtrl.exportar);
+app.put("/api/celulas-baby/:id", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.atualizar);
+app.put("/api/celulas-baby/:id/pessoas/:pessoaId", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.atualizarPessoa);
+app.post("/api/celulas-baby/:id/indicadores", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.criarIndicador);
+app.post("/api/celulas-baby/:id/indicadores/copiar", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.copiarIndicadores);
+app.put("/api/celulas-baby/:id/indicadores/:indicadorId", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.editarIndicador);
+app.delete("/api/celulas-baby/:id/indicadores/:indicadorId", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.excluirIndicador);
+app.put("/api/celulas-baby/:id/lancamentos", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.salvarLancamentos);
+app.post("/api/celulas-baby/:id/iniciar", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.iniciar);
+app.post("/api/celulas-baby/:id/encerrar", authRequired, authorizeRoles(...CELULA_ESCREVER), celulaBabyCtrl.encerrar);
+app.post("/api/celulas-baby/:id/reabrir", authRequired, authorizeRoles("coordenador", "assistente_treinamento"), celulaBabyCtrl.reabrir);
 
 // Cadastro de instrutores (14/10/2026) — ver controllers/instrutoresController.js.
 // Leitura: coordenador, supervisor, superintendente. Escrita: coordenador e
