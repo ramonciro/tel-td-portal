@@ -21,6 +21,8 @@ const ENTIDADES = [
   { value: "presenca", label: "Presença" },
   { value: "necessidade_treinamento", label: "Necessidade de treinamento" },
   { value: "publicacao_mural", label: "Publicação no mural" },
+  { value: "rotina_avaliacao", label: "Avaliação individual (Av. Técnica)" },
+  { value: "prova_papel", label: "Prova em papel" },
 ];
 
 const LIMITE_INICIAL = 200;
@@ -55,6 +57,12 @@ export default function AuditoriaPage() {
   // mostravam só o que estava carregado, rotulado como se fosse o total do
   // período filtrado.
   const [totaisServidor, setTotaisServidor] = useState({ total: 0, criar: 0, editar: 0, excluir: 0 });
+  // Pendências da rotina do instrutor (Fase 3): vem do mesmo cálculo do painel de aderência e do e-mail diário.
+  const [pendRotina, setPendRotina] = useState(null);
+
+  useEffect(() => {
+    apiFetch("/rotina/aderencia/pendencias?limite=5").then(setPendRotina).catch(() => setPendRotina(null));
+  }, []);
 
   // Sempre que um filtro muda, volta a paginação para o início — senão o
   // "carregar mais" acumulado de um filtro anterior vaza para o próximo.
@@ -115,6 +123,23 @@ export default function AuditoriaPage() {
             </div>
           ))}
         </div>
+
+        {pendRotina && pendRotina.total > 0 && (
+          <SectionCard
+            title={`Pendências da rotina do instrutor (${pendRotina.total})`}
+            subtitle={`${pendRotina.vermelhas} atrasada(s) e ${pendRotina.amarelas} em atenção, nas turmas dos últimos 45 dias.`}
+            action={<a href="/rotina-aderencia" style={{ color: colors.primary, fontWeight: 700, fontSize: 13, textDecoration: "none" }}>Abrir painel de aderência</a>}
+          >
+            <ul style={{ margin: 0, padding: "4px 16px 14px 32px", fontSize: 13, display: "grid", gap: 4 }}>
+              {pendRotina.itens.map((i, k) => (
+                <li key={k} style={{ color: i.severidade === "vermelho" ? colors.dangerText : colors.textPrimary }}>
+                  <a href={`/turma/${i.turma_id}/rotina`} style={{ color: "inherit", fontWeight: 700 }}>{i.tema}</a>
+                  {" "}({i.cliente}{i.instrutor ? ` · ${i.instrutor}` : ""}): {i.texto}
+                </li>
+              ))}
+            </ul>
+          </SectionCard>
+        )}
 
         <SectionCard title="Filtros">
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
