@@ -2066,6 +2066,11 @@ app.post("/api/celulas-baby/:id/reabrir", authRequired, authorizeRoles("coordena
 const ROTINA_LER = ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"];
 const ROTINA_ESCREVER = ["coordenador", "assistente_treinamento", "instrutor"];
 const ROTINA_GESTAO = ["coordenador", "assistente_treinamento"];
+// Painel de aderência (Fase 3): leitura; o instrutor vê só as próprias turmas (checado no controller).
+const rotinaAderenciaCtrl = require("./controllers/rotinaAderenciaController");
+app.get("/api/rotina/aderencia", authRequired, authorizeRoles(...ROTINA_LER), rotinaAderenciaCtrl.painel);
+app.get("/api/rotina/aderencia/pendencias", authRequired, authorizeRoles(...ROTINA_LER), rotinaAderenciaCtrl.pendencias);
+app.get("/api/rotina/aderencia/exportar", authRequired, authorizeRoles(...ROTINA_LER), rotinaAderenciaCtrl.exportar);
 app.get("/api/rotina/turmas/:id", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.estadoDaTurma);
 app.put("/api/rotina/turmas/:id/checklist/:itemId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.responderChecklist);
 app.put("/api/rotina/turmas/:id/tarefas/:tarefaId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.marcarTarefa);
