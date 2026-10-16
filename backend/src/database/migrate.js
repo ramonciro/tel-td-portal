@@ -2332,6 +2332,13 @@ async function runMigrations() {
       console.log(`  ↳ rotina do instrutor não concluído (${error.message}) — seguindo`);
     }
 
+    // 68. Importação de provas em papel (16/10/2026) — ver ensureProvasPapel().
+    try {
+      await ensureProvasPapel();
+    } catch (error) {
+      console.log(`  ↳ provas em papel não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
@@ -2687,6 +2694,80 @@ async function ensureRotinaInstrutor() {
     )
   `);
   console.log("  ↳ rotina do instrutor: ok");
+}
+
+/**
+ * Importação de provas feitas no papel (16/10/2026).
+ *  - prova_papel_lotes: uma importação (uma prova aplicada em papel numa turma).
+ *  - prova_papel_resultados: uma linha por participante (faltou, respostas, nota).
+ *  - prova_papel_arquivos: fotos/PDF digitalizados (ficam em /uploads/provas-papel, privados).
+ * Ao confirmar, a nota vai para avaliacoes.nota_prova (Dashboard, Analytics, Certificados)
+ * e, se a prova é cadastrada, também para respostas_avaliativas (origem 'papel').
+ */
+async function ensureProvasPapel() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS prova_papel_lotes (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id     INT NULL,
+      treinamento_id INT NOT NULL,
+      material_id    INT NULL,
+      titulo         VARCHAR(200) NOT NULL,
+      nota_maxima    DECIMAL(6,2) NOT NULL DEFAULT 10,
+      data_aplicacao DATE NULL,
+      status         VARCHAR(12) NOT NULL DEFAULT 'rascunho',
+      criado_por     VARCHAR(150) NULL,
+      criado_em      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      confirmado_por VARCHAR(150) NULL,
+      confirmado_em  DATETIME NULL,
+      desfeito_por   VARCHAR(150) NULL,
+      desfeito_em    DATETIME NULL,
+      KEY idx_ppl_trein (treinamento_id),
+      KEY idx_ppl_empresa (empresa_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS prova_papel_resultados (
+      id               INT AUTO_INCREMENT PRIMARY KEY,
+      lote_id          INT NOT NULL,
+      participante_id  INT NOT NULL,
+      pessoa_id        INT NULL,
+      nome             VARCHAR(200) NOT NULL,
+      faltou           TINYINT(1) NOT NULL DEFAULT 0,
+      respostas_texto  VARCHAR(400) NULL,
+      acertos          INT NULL,
+      total_questoes   INT NULL,
+      nota_original    DECIMAL(6,2) NULL,
+      nota_10          DECIMAL(5,2) NULL,
+      avaliacao_id     INT NULL,
+      avaliacao_criada TINYINT(1) NOT NULL DEFAULT 0,
+      nota_anterior    DECIMAL(5,2) NULL,
+      resposta_id      INT NULL,
+      UNIQUE KEY uk_ppr (lote_id, participante_id),
+      KEY idx_ppr_part (participante_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS prova_papel_arquivos (
+      id            INT AUTO_INCREMENT PRIMARY KEY,
+      lote_id       INT NOT NULL,
+      nome_original VARCHAR(255) NULL,
+      arquivo       VARCHAR(255) NOT NULL,
+      tipo          VARCHAR(80) NULL,
+      tamanho       INT NULL,
+      enviado_por   VARCHAR(150) NULL,
+      criado_em     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_ppa_lote (lote_id)
+    )
+  `);
+  // Marca de onde veio a resposta: 'papel' = importada de prova em papel.
+  const [existe] = await pool.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'respostas_avaliativas' LIMIT 1`
+  );
+  if (existe.length) {
+    await ensureColumn("respostas_avaliativas", "origem", "VARCHAR(20) NULL");
+    await ensureColumn("respostas_avaliativas", "lote_papel_id", "INT NULL");
+  }
+  console.log("  ↳ provas em papel: ok");
 }
 
 module.exports = { runMigrations };
