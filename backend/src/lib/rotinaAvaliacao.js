@@ -3,7 +3,7 @@
  *
  * Ao final da Avaliação Técnica o instrutor registra, por candidato, nota de 5 a 10
  * em 5 critérios (média calculada), observação (obrigatória se média < 6) e o
- * resultado Passou / Em berço / Não seguiu. O resultado alimenta a célula baby:
+ * resultado Aprovado / Em berço / Reprovado. O resultado alimenta a célula baby:
  * a célula só lê (ver controllers/celulaBabyController.js).
  * Não soma horas na CH (já está dentro da CH da turma).
  */
@@ -17,7 +17,7 @@ const CRITERIOS = [
   { chave: "avaliacao_final", coluna: "nota_avaliacao_final", rotulo: "Desempenho na avaliação final" },
 ];
 const RESULTADOS = ["passou", "em_berco", "nao_seguiu"];
-const ROTULO_RESULTADO = { passou: "Passou", em_berco: "Em berço", nao_seguiu: "Não seguiu" };
+const ROTULO_RESULTADO = { passou: "Aprovado", em_berco: "Em berço", nao_seguiu: "Reprovado" };
 const NOTA_MIN = 5;
 const NOTA_MAX = 10;
 const MEDIA_MINIMA = 6;
