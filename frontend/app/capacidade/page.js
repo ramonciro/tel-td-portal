@@ -407,7 +407,7 @@ function CapacidadePageInner() {
                 revelado={revelado}
               />
               <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 10, marginBottom: 0 }}>
-                Só quem tem uma meta cadastrada (ajuste manual, na configuração abaixo) aparece com % de ocupação nas telas — o restante do time é mostrado por volume (horas em sala / turmas), sem comparar contra um teto genérico.
+                Só quem tem uma meta cadastrada (ajuste manual, na configuração abaixo) aparece com % de ocupação nas telas — o restante do time é mostrado por volume (horas em sala + atividades / turmas), sem comparar contra um teto genérico.
               </p>
             </div>
             <div style={card}>
@@ -503,7 +503,7 @@ function CapacidadePageInner() {
               )}
             </div>
             <div style={card}>
-              <div style={cardTitle}>Sem meta cadastrada — horas em sala ({janela})</div>
+              <div style={cardTitle}>Sem meta cadastrada — horas em sala + atividades ({janela})</div>
               {capacitySemMeta.length > 0 ? (
                 <BarraHorizontal
                   dados={capacitySemMeta}
@@ -526,6 +526,8 @@ function CapacidadePageInner() {
                     <tr style={theadRow}>
                       <th style={th}>Instrutor</th>
                       {(capacity?.meses || []).map((m) => <th key={m} style={{ ...th, textAlign: "right" }}>{m}</th>)}
+                      <th style={{ ...th, textAlign: "right" }}>Sala</th>
+                      <th style={{ ...th, textAlign: "right" }}>Atividades</th>
                       <th style={{ ...th, textAlign: "right" }}>Total {mesesFiltro}m</th>
                       <th style={{ ...th, textAlign: "right" }}>Cap. {mesesFiltro}m</th>
                       <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
@@ -536,6 +538,8 @@ function CapacidadePageInner() {
                       <tr key={row.instrutor} style={tr}>
                         <td style={{ ...td, fontWeight: 700 }}>{row.instrutor}</td>
                         {(capacity?.meses || []).map((m) => <td key={m} style={{ ...td, textAlign: "right" }}>{fmt(row.meses[m] || 0)}</td>)}
+                        <td style={{ ...td, textAlign: "right" }}>{fmt(row.sala_90d ?? row.total_90d)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{fmt(row.atividades_90d || 0)}</td>
                         <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmt(row.total_90d)}</td>
                         <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmt(row.capacidade_90d) : "—"}</td>
                         <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmtPct(row.ocupacao_pct) : "sem meta"}</td>
@@ -954,6 +958,14 @@ function ScorecardInstrutor({
             />
             <StatCard title="NPS score" value={item.nps.nps_score ?? "—"} accent={colors.success} />
           </div>
+
+          {item.ch && Number(item.ch.horas_atividades) > 0 && (
+            <p style={{ fontSize: 13, color: "#334155", marginTop: -8, marginBottom: 16 }}>
+              CH do período: <strong>{fmt(item.ch.horas_sala)}h em sala</strong> + <strong>{fmt(item.ch.horas_atividades)}h em atividades</strong> = {fmt(item.ch.horas_realizadas)}h
+              {item.rotina?.revisoes_plano ? ` · ${item.rotina.revisoes_plano} revisão(ões) do plano de aula` : ""}
+              {item.rotina?.aderencia_pct != null ? ` · aderência à rotina ${fmtPct(item.rotina.aderencia_pct)}` : ""}
+            </p>
+          )}
 
           {medias && (
             <p style={{ fontSize: 12, color: "#64748b", marginTop: -8, marginBottom: 16 }}>
