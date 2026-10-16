@@ -80,6 +80,18 @@ async function sincronizarCelulas(empresaId) {
         [r.insertId, p.id, p.pessoa_id || null, p.nome, p.matricula || null]
       );
     }
+    // Resultado já definido na avaliação individual (Rotina do instrutor).
+    try {
+      await pool.query(
+        `UPDATE celula_baby_pessoas cp
+           JOIN rotina_avaliacao_individual a ON a.treinamento_id = ? AND a.participante_id = cp.participante_id
+            SET cp.resultado = a.resultado
+          WHERE cp.celula_id = ? AND a.resultado IS NOT NULL`,
+        [t.id, r.insertId]
+      );
+    } catch (e) {
+      if (!(e && e.code === "ER_NO_SUCH_TABLE")) console.error("[celulaBaby] resultado da avaliação:", e.message || e);
+    }
     criadas += 1;
   }
   return criadas;
