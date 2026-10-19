@@ -225,6 +225,19 @@ async function getParticipantesByTreinamento(req, res) {
       rows = result;
     }
 
+    // 19/10/2026 (decisão do Ramon): o treinando vê só os nomes dos colegas da própria turma —
+    // matrícula, supervisor, operação, admissão e CPF ficam restritos à equipe. A linha dele mesmo vem completa.
+    if (perfil === "treinando") {
+      const proprio = String(req.user?.nome || "").trim().toLowerCase();
+      return res.json(
+        removerCpfSeNecessario(req, rows).map((r) =>
+          String(r.nome || "").trim().toLowerCase() === proprio
+            ? r
+            : { id: r.id, treinamento_id: r.treinamento_id, nome: r.nome, cliente: r.cliente, turma: r.turma }
+        )
+      );
+    }
+
     return res.json(removerCpfSeNecessario(req, rows));
   } catch (error) {
     console.error("[treinamentoParticipantesController]", error.message || error);
