@@ -7,7 +7,6 @@ const authRoutes = require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
-const importDashboardExcel = require("./scripts/importDashboardExcel");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
@@ -1786,6 +1785,18 @@ app.post(
   requireSuperAdmin,
   async (req, res) => {
     try {
+      // 19/10/2026 (decisão do Ramon): trava de confirmação — a ação apaga TUDO
+      // (inclusive usuários) e só roda se o corpo trouxer confirmacao: "ZERAR".
+      if (String(req.body?.confirmacao || "").trim() !== "ZERAR") {
+        return res.status(400).json({
+          ok: false,
+          message: 'Confirmação obrigatória: envie confirmacao = "ZERAR" para apagar toda a base.',
+        });
+      }
+      registrarAuditoria({
+        usuario: req.user, acao: "excluir", entidade: "base", entidadeId: null,
+        resumo: `${req.user?.nome || "Alguém"} zerou a base inteira (zerar-dashboard)`, ip: req.ip,
+      });
       await pool.query("SET FOREIGN_KEY_CHECKS = 0");
 
       await pool.query("TRUNCATE TABLE avaliacoes");
@@ -1816,53 +1827,8 @@ app.post(
   }
 );
 
-// Sprint 1: convertido de GET para POST
-// Fase 4 (isolamento multi-tenant): mesmo motivo do /api/zerar-dashboard —
-// o `?truncate=1` também esvazia as tabelas centrais por inteiro, de todas
-// as empresas. Restrito a super_admin.
-app.post(
-  "/api/importar-dashboard",
-  authRequired,
-  requireSuperAdmin,
-  async (req, res) => {
-    try {
-      const truncate =
-        req.query.truncate === "1" ||
-        req.query.truncate === "true" ||
-        req.query.truncate === "sim";
-
-      if (truncate) {
-        await pool.query("SET FOREIGN_KEY_CHECKS = 0");
-        await pool.query("TRUNCATE TABLE avaliacoes");
-        await pool.query("TRUNCATE TABLE presenca_aulas");
-        await pool.query("TRUNCATE TABLE presencas");
-        await pool.query("TRUNCATE TABLE treinamento_participantes");
-        await pool.query("TRUNCATE TABLE turma_aulas");
-        await pool.query("TRUNCATE TABLE treinamentos");
-        await pool.query("TRUNCATE TABLE usuarios");
-        await pool.query("TRUNCATE TABLE clientes");
-        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-      }
-
-      const resultado = await importDashboardExcel();
-
-      res.json({
-        ok: true,
-        message: "Importação do dashboard concluída com sucesso.",
-        resumo: resultado,
-      });
-    } catch (error) {
-      try {
-        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-      } catch (_) {}
-
-      console.error("Erro ao importar dashboard:", error);
-      res.status(500).json({
-        ok: false,
-        message: "Erro ao importar dashboard."});
-    }
-  }
-);
+// /api/importar-dashboard (importação antiga do Excel do Dashboard) removida em 19/10/2026,
+// por decisão do Ramon: estava quebrada e sem uso. A importação de notas por planilha/prova em papel a substitui.
 
 // Certificado da Oficina de Talentos — o treinando baixa SÓ o dele (ver
 // meusCertificados). Registrado antes de qualquer rota /api/certificados/:x.
