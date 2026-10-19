@@ -12,7 +12,8 @@ const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
 const { escopoPerfilFor } = require("./lib/perfilScope");
-const { resolverPessoa } = require("./services/pessoasService");
+const { resolverPessoa, pessoaIdDoUsuario } = require("./services/pessoasService");
+const { condicaoIdentidade } = require("./lib/identidadeTreinando");
 
 // Fase 2 (roadmap de competitividade): automações por e-mail — resumo diário
 // de pendências para coordenadores e lembrete de aula do dia seguinte para
@@ -1065,10 +1066,29 @@ app.use(
 app.get(
   "/api/treinamentos/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "treinando"),
   async (req, res) => {
     try {
       const { id } = req.params;
+
+      // 19/10/2026: o treinando vê o treinamento e o cliente da turma em que PARTICIPA (cabeçalho
+      // das abas Avaliações/NPS), só com os campos de identificação — nada de gestão
+      // (participantes previstos, supervisor, sala, status etc.). Turma em que ele não está = 404.
+      if (String(req.user?.perfil || "").toLowerCase() === "treinando") {
+        const nomeUsuario = String(req.user?.nome || "").trim();
+        const pessoaId = await pessoaIdDoUsuario(req.user?.id);
+        const condTp = condicaoIdentidade("tp", "nome", pessoaId, nomeUsuario);
+        const [minha] = await pool.query(
+          `SELECT t.id, t.tema, t.cliente, t.instrutor, t.carga_horaria, t.data, t.data_inicio, t.data_fim
+             FROM treinamentos t
+             INNER JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND ${condTp.sql}
+            WHERE t.id = ?${req.empresaId ? " AND t.empresa_id = ?" : ""}
+            LIMIT 1`,
+          [...condTp.params, id, ...(req.empresaId ? [req.empresaId] : [])]
+        );
+        if (!minha.length) return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+        return res.json(minha[0]);
+      }
 
       // Fase 4 (isolamento multi-tenant): esta rota era a única do CRUD de
       // treinamentos sem checagem de empresa_id — qualquer coordenador/
