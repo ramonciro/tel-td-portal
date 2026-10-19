@@ -171,6 +171,11 @@ export default function MeuDesempenhoPage() {
                 <>
                   <p style={linha}>Nota média: <strong>{fmt(item.nps.nota_media)}</strong> · {item.nps.total_respostas} resposta(s)</p>
                   <p style={linha}>Promotores {item.nps.promotores} · Neutros {item.nps.neutros} · Detratores {item.nps.detratores}</p>
+                  {Array.isArray(item.nps.criterios) && item.nps.criterios.length > 0 && (
+                    <p style={linha}>
+                      Questionário (1 a 5): {item.nps.criterios.map((c) => `${c.rotulo.split(" (")[0]} ${fmt(c.media)}`).join(" · ")}
+                    </p>
+                  )}
                 </>
               )}
             </div>
