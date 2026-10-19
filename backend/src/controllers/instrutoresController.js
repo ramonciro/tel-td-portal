@@ -158,9 +158,26 @@ async function criar(req, res) {
     const empresaId = req.empresaId;
     if (!empresaId) return erro(res, 400, "Empresa não identificada.");
     const nome = norm(req.body?.nome);
-    const situacao = SITUACOES.includes(req.body?.situacao) ? req.body.situacao : "ativo";
+    // 19/10/2026 (decisão do Ramon): validação mais firme — situação inválida deixa de virar "ativo" em silêncio.
+    const situacaoInformada = req.body?.situacao;
+    if (situacaoInformada !== undefined && situacaoInformada !== null && situacaoInformada !== "" && !SITUACOES.includes(situacaoInformada)) {
+      return erro(res, 400, "Situação inválida. Use: ativo, desligado ou ignorado.");
+    }
+    const situacao = SITUACOES.includes(situacaoInformada) ? situacaoInformada : "ativo";
     if (!nome) return erro(res, 400, "Informe o nome do instrutor.");
+    if (nome.length < 3) return erro(res, 400, "Nome muito curto (mín. 3 letras).");
     if (nome.length > 150) return erro(res, 400, "Nome muito longo (máx. 150).");
+    if (!/\p{L}/u.test(nome) || /[\u0000-\u001f<>]/.test(nome)) {
+      return erro(res, 400, "Nome inválido: use letras e evite símbolos como < e >.");
+    }
+    let dataSaida = req.body?.data_saida || null;
+    if (dataSaida) {
+      dataSaida = String(dataSaida).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataSaida) || Number.isNaN(new Date(dataSaida).getTime())) {
+        return erro(res, 400, "Data de saída inválida (use AAAA-MM-DD).");
+      }
+      if (situacao === "ativo") dataSaida = null;
+    }
     const [[ja]] = await pool.query(
       `SELECT i.id FROM instrutores i WHERE i.empresa_id = ? AND i.nome = ?
        UNION SELECT a.instrutor_id FROM instrutor_apelidos a WHERE a.empresa_id = ? AND a.apelido = ? LIMIT 1`,
@@ -171,7 +188,7 @@ async function criar(req, res) {
       `INSERT INTO instrutores (empresa_id, nome, situacao, motivo, data_saida, observacao, created_by)
        VALUES (?,?,?,?,?,?,?)`,
       [empresaId, nome, situacao, norm(req.body?.motivo).slice(0, 255) || null,
-       req.body?.data_saida || null, norm(req.body?.observacao).slice(0, 2000) || null, req.user?.id || null]
+       dataSaida, norm(req.body?.observacao).slice(0, 2000) || null, req.user?.id || null]
     );
     registrarAuditoria({
       usuario: req.user, acao: "criar", entidade: "instrutor", entidadeId: r.insertId,
