@@ -70,6 +70,18 @@ export default function NpsTurmaPage() {
     ? Math.round((promotores / total) * 100 - (detratores / total) * 100)
     : null;
 
+  // Questionário (19/10/2026): média de 1–5 por critério, só de quem respondeu aquele critério.
+  const [criteriosLista, setCriteriosLista] = useState([]);
+  useEffect(() => {
+    apiFetch("/nps-questionario").then((q) => setCriteriosLista(Array.isArray(q?.criterios) ? q.criterios : [])).catch(() => {});
+  }, []);
+  const mediasCriterios = criteriosLista
+    .map((c) => {
+      const vals = respostas.map((r) => Number(r.questionario?.criterios?.[c.chave])).filter((n) => Number.isFinite(n) && n > 0);
+      return { ...c, n: vals.length, media: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null };
+    })
+    .filter((c) => c.n > 0);
+
   return (
     <TurmaPageShell id={id} treinamento={treinamento} loading={loading} abaAtiva="nps">
 
@@ -130,6 +142,20 @@ export default function NpsTurmaPage() {
             </div>
           )}
 
+          {mediasCriterios.length > 0 && (
+            <div style={criteriosCard}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 8 }}>Questionário — média por critério (1 a 5)</div>
+              {mediasCriterios.map((c) => (
+                <div key={c.chave} style={criterioRow}>
+                  <span style={{ flex: "1 1 200px", fontSize: 13, color: "#334155" }}>{c.rotulo}</span>
+                  <div style={criterioBarra}><div style={{ ...criterioBarraPreenche, width: `${(c.media / 5) * 100}%` }} /></div>
+                  <strong style={{ width: 54, textAlign: "right", fontSize: 13 }}>{c.media.toFixed(1).replace(".", ",")}</strong>
+                  <span style={{ fontSize: 11, color: "#94a3b8", width: 28 }}>{c.n}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Lista de respostas */}
           {loading && <p style={hint}>Carregando…</p>}
           {!loading && respostas.length === 0 && (
@@ -143,7 +169,12 @@ export default function NpsTurmaPage() {
                   <div style={respostaNome}>{r.treinando_nome || "—"}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     {r.comentario && (
-                      <span style={respostaComentario}>{r.comentario}</span>
+                      <span style={respostaComentario} title={r.comentario}>{r.comentario}</span>
+                    )}
+                    {r.questionario?.criterios && Object.keys(r.questionario.criterios).length > 0 && (
+                      <span style={{ fontSize: 11, color: "#64748b" }} title={criteriosLista.filter((c) => r.questionario.criterios[c.chave]).map((c) => `${c.rotulo}: ${r.questionario.criterios[c.chave]}`).join("\n")}>
+                        {criteriosLista.filter((c) => r.questionario.criterios[c.chave]).map((c) => r.questionario.criterios[c.chave]).join(" · ")}
+                      </span>
                     )}
                     <span style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", minWidth: 24, textAlign: "right" }}>
                       {r.nota_nps}
@@ -177,3 +208,7 @@ const lista = { display: "flex", flexDirection: "column", gap: 8 };
 const respostaItem = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fff", border: "1px solid #e9eef4", borderRadius: 12, padding: "12px 16px", flexWrap: "wrap" };
 const respostaNome = { fontSize: 14, fontWeight: 600, color: "#0f172a" };
 const respostaComentario = { fontSize: 12, color: "#64748b", fontStyle: "italic", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const criteriosCard = { background: "#fff", border: "1px solid #e9eef4", borderRadius: 12, padding: "14px 16px", marginBottom: 16 };
+const criterioRow = { display: "flex", alignItems: "center", gap: 10, padding: "4px 0", flexWrap: "wrap" };
+const criterioBarra = { flex: "1 1 120px", height: 8, borderRadius: 999, background: "#f1f5f9", overflow: "hidden" };
+const criterioBarraPreenche = { height: "100%", background: colors.success, borderRadius: 999 };
