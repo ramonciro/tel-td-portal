@@ -176,7 +176,7 @@ async function listMateriaisAvaliativosDisponiveis(req, res) {
       params
     );
 
-    return res.json(rows);
+    return res.json(rows.filter((r) => usuarioTemAcessoAoCliente(req, r.cliente)));
   } catch (error) {
     console.error("[materiaisAvaliativosController]", error.message || error);
     return res.status(500).json({
