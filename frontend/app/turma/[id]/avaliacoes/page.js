@@ -19,6 +19,13 @@ function novaQuestao() {
   };
 }
 
+function temQuestoes(m) {
+  try {
+    const q = typeof m?.questoes_json === "string" ? JSON.parse(m.questoes_json || "[]") : m?.questoes_json;
+    return Array.isArray(q) && q.length > 0;
+  } catch { return false; }
+}
+
 export default function AvaliacoesTurmaPage() {
   const { id } = useParams() || {};
 
@@ -35,6 +42,9 @@ export default function AvaliacoesTurmaPage() {
   const [novoTitulo,    setNovoTitulo]    = useState("");
   const [novoTreinando, setNovoTreinando] = useState("");
   const [criando,       setCriando]       = useState(false);
+  const [aviso,         setAviso]         = useState("");
+  const [materiaisTurma, setMateriaisTurma] = useState([]);
+  const [minhasNotas,   setMinhasNotas]   = useState([]);
 
   // ── Builder de provas/simulados (trazido de /avaliacoes) ──
   const [builderAberto, setBuilderAberto] = useState(false);
@@ -76,6 +86,22 @@ export default function AvaliacoesTurmaPage() {
       setAvaliacoes(daTurma);
       setParticipantes(Array.isArray(participantesData) ? participantesData : []);
       setErro("");
+
+      // 19/10/2026: o treinando passa a ver, na própria turma, a nota das provas que fez
+      // e as provas em PDF; a equipe vê as provas da turma para escolher o título ao lançar.
+      if (getStoredUser()?.perfil === "treinando") {
+        const [minhas, disp] = await Promise.all([
+          apiFetch("/minhas-avaliacoes").catch(() => []),
+          apiFetch(`/materiais-avaliativos-disponiveis?treinamento_id=${id}`).catch(() => []),
+        ]);
+        setMinhasNotas((Array.isArray(minhas) ? minhas : []).filter((a) => String(a.treinamento_id) === String(id)));
+        setMateriaisTurma(Array.isArray(disp) ? disp : []);
+      } else {
+        const mats = await apiFetch("/materiais-avaliativos").catch(() => []);
+        const daTurmaMats = (Array.isArray(mats) ? mats : []).filter((m) => String(m.treinamento_id) === String(id));
+        setMateriaisTurma(daTurmaMats);
+        setNovoTitulo((atual) => atual || (daTurmaMats[0]?.titulo ? String(daTurmaMats[0].titulo) : ""));
+      }
     } catch (e) {
       setErro(e.message || "Erro ao carregar avaliações.");
     } finally {
@@ -83,9 +109,34 @@ export default function AvaliacoesTurmaPage() {
     }
   }
 
+  async function lancarParaTurma() {
+    setAviso(""); setErro("");
+    if (!novoTitulo.trim()) { setErro("Informe o título da avaliação (ex.: o nome da prova) antes de lançar para a turma."); return; }
+    if (!window.confirm(`Lançar “${novoTitulo.trim()}” para todos os ${participantes.length} participantes da turma? A nota fica em branco até você digitar.`)) return;
+    try {
+      setCriando(true);
+      const r = await apiFetch("/avaliacoes-lote", {
+        method: "POST",
+        body: JSON.stringify({ treinamento_id: Number(id), titulo: novoTitulo.trim() }),
+      });
+      setAviso(r?.message || "Avaliação lançada para a turma.");
+      await carregar();
+    } catch (e) {
+      setErro(e.message || "Erro ao lançar para a turma.");
+    } finally {
+      setCriando(false);
+    }
+  }
+
   async function criarAvaliacao(nomeSugerido) {
+    setAviso(""); setErro("");
     const nome = (nomeSugerido ?? novoTreinando).trim();
-    if (!novoTitulo.trim() || !nome) return;
+    if (!novoTitulo.trim() || !nome) {
+      setErro(!novoTitulo.trim()
+        ? "Informe o título da avaliação (ex.: o nome da prova) e depois clique em Lançar."
+        : "Informe o nome do treinando (ou clique em um nome da lista de pendentes).");
+      return;
+    }
     try {
       setCriando(true);
       await apiFetch("/avaliacoes", {
@@ -96,7 +147,8 @@ export default function AvaliacoesTurmaPage() {
           treinando_nome: nome,
         }),
       });
-      setNovoTitulo(""); setNovoTreinando("");
+      setNovoTreinando("");
+      setAviso(`Avaliação “${novoTitulo.trim()}” lançada para ${nome}.`);
       await carregar();
     } catch (e) {
       setErro(e.message || "Erro ao lançar avaliação.");
@@ -106,10 +158,17 @@ export default function AvaliacoesTurmaPage() {
   }
 
   async function salvarNota(avaliacaoId) {
+    const txt = String(notaEdicao).replace(",", ".").trim();
+    const valor = Number(txt);
+    if (txt === "" || Number.isNaN(valor) || valor < 0 || valor > 10) {
+      setErro("Digite a nota na escala de 0 a 10 (ex.: 8,5).");
+      return;
+    }
     try {
+      setErro("");
       await apiFetch(`/avaliacoes/${avaliacaoId}`, {
         method: "PUT",
-        body: JSON.stringify({ nota_prova: Number(notaEdicao) }),
+        body: JSON.stringify({ nota_prova: valor }),
       });
       setEditandoId(null);
       await carregar();
@@ -192,8 +251,10 @@ export default function AvaliacoesTurmaPage() {
   // Só Coordenador e Supervisor excluem avaliação/material (o servidor responde
   // 403 ao instrutor); antes o botão aparecia para ele mesmo assim.
   const podeExcluir = ["coordenador", "supervisor"].includes(String(usuario?.perfil || "").toLowerCase());
-  const media       = avaliacoes.length
-    ? (avaliacoes.reduce((acc, a) => acc + Number(a.nota_prova || 0), 0) / avaliacoes.length).toFixed(1)
+  // Média só das notas já lançadas — linha "aguardando nota" não pode puxar a média para baixo.
+  const comNota     = avaliacoes.filter((a) => a.nota_prova != null);
+  const media       = comNota.length
+    ? (comNota.reduce((acc, a) => acc + Number(a.nota_prova), 0) / comNota.length).toFixed(1)
     : null;
   const pendentesCorrecao = avaliacoes.filter((a) => a.nota_prova == null).length;
 
@@ -215,16 +276,56 @@ export default function AvaliacoesTurmaPage() {
     <TurmaPageShell id={id} treinamento={treinamento} loading={loading} abaAtiva="avaliacoes">
 
       {erro && <div style={errorBox}>{erro}</div>}
+      {aviso && <div style={successBox}>{aviso}</div>}
 
       {ehTreinando ? (
-        <div style={cta}>
-          <p style={{ margin: "0 0 12px", fontSize: 14, color: "#334155" }}>
-            Você tem avaliações pendentes desta turma para responder.
-          </p>
-          <a href={`/responder-avaliacao?treinamento_id=${id}`} style={linkBtn}>
-            Responder avaliação
-          </a>
-        </div>
+        <>
+          <div style={{ ...formCard, marginBottom: 14 }}>
+            <div style={formTitle}>Suas notas nesta turma</div>
+            {minhasNotas.length === 0 ? (
+              <p style={hint}>Ainda não há nota lançada para você nesta turma. Quando você responder uma prova no Portal, a nota aparece aqui; provas em PDF ou no papel aparecem depois que o instrutor lançar.</p>
+            ) : (
+              <div style={lista}>
+                {minhasNotas.map((a) => (
+                  <div key={a.id} style={avaliacaoItem}>
+                    <div style={avaliacaoInfo}><span style={avaliacaoTitulo}>{a.titulo || "Avaliação"}</span></div>
+                    <span style={{ fontSize: 20, fontWeight: 800, color: a.nota_prova != null ? "#0f172a" : "#94a3b8" }}>
+                      {a.nota_prova != null ? Number(a.nota_prova).toFixed(1) : "aguardando nota"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {materiaisTurma.some((m) => !temQuestoes(m)) && (
+            <div style={{ ...formCard, marginBottom: 14 }}>
+              <div style={formTitle}>Provas em PDF desta turma</div>
+              <div style={lista}>
+                {materiaisTurma.filter((m) => !temQuestoes(m)).map((m) => (
+                  <div key={m.id} style={avaliacaoItem}>
+                    <div style={avaliacaoInfo}>
+                      <span style={avaliacaoTitulo}>{m.titulo}</span>
+                      <span style={avaliacaoTreinando}>A nota será lançada pelo instrutor.</span>
+                    </div>
+                    {m.link_arquivo ? <a href={m.link_arquivo} target="_blank" rel="noopener noreferrer" style={linkBtn}>Abrir prova</a> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={cta}>
+            <p style={{ margin: "0 0 12px", fontSize: 14, color: "#334155" }}>
+              {materiaisTurma.some(temQuestoes)
+                ? "Você tem provas pendentes desta turma para responder."
+                : "Quando houver prova no Portal para você responder, ela aparece aqui."}
+            </p>
+            <a href={`/responder-avaliacao?treinamento_id=${id}`} style={linkBtn}>
+              Responder avaliação
+            </a>
+          </div>
+        </>
       ) : (
         <>
           {/* KPIs */}
@@ -259,7 +360,7 @@ export default function AvaliacoesTurmaPage() {
               <span style={alertaTitulo}>⚠️ {semAvaliacao.length} treinando{semAvaliacao.length !== 1 ? "s" : ""} sem nenhuma avaliação lançada</span>
               <div style={alertaLista}>
                 {semAvaliacao.map((nome) => (
-                  <button key={nome} style={alertaChip} onClick={() => setNovoTreinando(nome)}>
+                  <button key={nome} style={alertaChip} onClick={() => { setNovoTreinando(nome); if (novoTitulo.trim()) criarAvaliacao(nome); else setErro("Informe o título da avaliação e clique em Lançar."); }}>
                     {nome} <span style={alertaChipAcao}>lançar</span>
                   </button>
                 ))}
@@ -275,8 +376,12 @@ export default function AvaliacoesTurmaPage() {
                 value={novoTitulo}
                 onChange={(e) => setNovoTitulo(e.target.value)}
                 placeholder="Título (ex: Avaliação final)"
+                list="titulos-provas-turma"
                 style={{ ...inputBase, flex: "2 1 200px" }}
               />
+              <datalist id="titulos-provas-turma">
+                {materiaisTurma.map((m) => <option key={m.id} value={m.titulo} />)}
+              </datalist>
               <input
                 value={novoTreinando}
                 onChange={(e) => setNovoTreinando(e.target.value)}
@@ -285,16 +390,23 @@ export default function AvaliacoesTurmaPage() {
               />
               <button
                 onClick={() => criarAvaliacao()}
-                disabled={criando || !novoTitulo.trim() || !novoTreinando.trim()}
-                style={{
-                  ...btnLancar,
-                  opacity: (!novoTitulo.trim() || !novoTreinando.trim()) ? .5 : 1,
-                  cursor:  (!novoTitulo.trim() || !novoTreinando.trim()) ? "default" : "pointer",
-                }}
+                disabled={criando}
+                style={{ ...btnLancar, opacity: criando ? .6 : 1, cursor: criando ? "default" : "pointer" }}
               >
                 {criando ? "Lançando…" : "Lançar"}
               </button>
+              <button
+                onClick={() => lancarParaTurma()}
+                disabled={criando || participantes.length === 0}
+                style={{ ...btnLancar, background: "#fff", color: colors.primary, border: `1px solid ${colors.primary}`, opacity: (criando || participantes.length === 0) ? .5 : 1, cursor: "pointer" }}
+                title="Cria a avaliação, com nota em branco, para todos os participantes da turma"
+              >
+                Lançar para toda a turma
+              </button>
             </div>
+            <p style={{ ...hint, margin: "8px 0 0" }}>
+              Escolha o título da prova (as provas cadastradas nesta turma aparecem na lista). Para prova em PDF, use “Lançar para toda a turma” e depois digite a nota de cada um (escala 0 a 10). Prova feita no Portal entra sozinha.
+            </p>
           </div>
 
           {/* Lista */}
@@ -307,13 +419,16 @@ export default function AvaliacoesTurmaPage() {
               <div key={a.id} style={avaliacaoItem}>
                 <div style={avaliacaoInfo}>
                   <span style={avaliacaoTitulo}>{a.titulo || "Avaliação"}</span>
-                  <span style={avaliacaoTreinando}>{a.treinando_nome || "—"}</span>
+                  <span style={avaliacaoTreinando}>
+                    {a.treinando_nome || "—"}
+                    {/^Prova online/i.test(a.observacoes || "") ? " · prova online" : /^Prova em papel/i.test(a.observacoes || "") ? " · prova em papel" : ""}
+                  </span>
                 </div>
                 <div style={avaliacaoAcoes}>
                   {editandoId === a.id ? (
                     <>
                       <input
-                        type="number"
+                        type="text" inputMode="decimal" placeholder="0–10"
                         value={notaEdicao}
                         onChange={(e) => setNotaEdicao(e.target.value)}
                         style={{ ...inputBase, width: 70, textAlign: "center" }}
