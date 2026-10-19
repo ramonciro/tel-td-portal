@@ -1,5 +1,6 @@
 const { getResumoPresenca } = require("../services/presencaResolver");
 const { tenantScopeFor } = require("../lib/tenantScope");
+const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga o resumo de presença de qualquer tenant
@@ -26,7 +27,9 @@ async function listarResumoGeral(req, res) {
   try {
     const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     const dados = await getResumoPresenca({ empresaId });
-    return res.json({ ok: true, itens: dados });
+    // Acesso restrito por cliente (varredura 16/10/2026): instrutor/treinando
+    // vinculados a um cliente só enxergam as turmas dele (gestores veem tudo).
+    return res.json({ ok: true, itens: dados.filter((d) => usuarioTemAcessoAoCliente(req, d.cliente)) });
   } catch (error) {
     console.error("[presencaResumoController]", error.message || error);
     return res.status(500).json({
@@ -43,7 +46,7 @@ async function obterResumoPorTreinamento(req, res) {
       treinamentoId: Number(treinamento_id),
       empresaId,
     });
-    if (!dados.length) {
+    if (!dados.length || !usuarioTemAcessoAoCliente(req, dados[0].cliente)) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
     }
     return res.json({ ok: true, item: dados[0] });
