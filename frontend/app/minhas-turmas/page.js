@@ -293,7 +293,7 @@ export default function MinhasTurmasPage() {
                   <div style={turmaCardRight}>
                     <button
                       style={btnVerTurma}
-                      onClick={() => router.push(`/turma/${t.id}`)}>
+                      onClick={() => router.push(perfil === "treinando" ? `/turma/${t.id}/mural` : `/turma/${t.id}`)}>
                       Ver turma →
                     </button>
 
