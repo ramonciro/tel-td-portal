@@ -2,6 +2,7 @@ const pool = require("../lib/db");
 const { pessoaIdDoUsuario } = require("../services/pessoasService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 const { corrigir, tentativasPermitidas } = require("../lib/correcaoProva");
+const { sincronizarNotaProva } = require("../lib/sincNotaProva");
 
 // Isolamento por tenant via JOIN até treinamentos (respostas_avaliativas não
 // tem empresa_id própria). Sem isso, respostas de prova de outras empresas
@@ -227,6 +228,10 @@ async function createRespostaAvaliativa(req, res) {
       [material_id, ...condDup.params]
     );
 
+    // 19/10/2026: leva a nota da prova para a aba Avaliações da turma, para o
+    // Dashboard/Certificados e para o desempenho do instrutor (ver lib/sincNotaProva.js).
+    await sincronizarNotaProva({ materialId: material_id, treinamentoId: treinamento_id, nome: treinando_nome, pessoaId });
+
     return res.status(201).json({
       ok: true,
       message: "Resposta avaliativa registrada com sucesso",
@@ -263,7 +268,7 @@ async function updateRespostaAvaliativa(req, res) {
 
     const tenantCheck = tenantJoinTreinamento(req.empresaId, "respostas_avaliativas");
     const [exists] = await pool.query(
-      `SELECT id, material_id, treinamento_id FROM respostas_avaliativas WHERE id = ?${tenantCheck} LIMIT 1`,
+      `SELECT id, material_id, treinamento_id, treinando_nome, pessoa_id FROM respostas_avaliativas WHERE id = ?${tenantCheck} LIMIT 1`,
       [id]
     );
     if (!exists.length) {
@@ -316,6 +321,10 @@ async function updateRespostaAvaliativa(req, res) {
       ]
     );
 
+    // Mantém a nota da turma em dia: tanto a identidade/prova antiga quanto a nova.
+    await sincronizarNotaProva({ materialId: exists[0].material_id, treinamentoId: exists[0].treinamento_id, nome: exists[0].treinando_nome, pessoaId: exists[0].pessoa_id });
+    await sincronizarNotaProva({ materialId: materialIdFinal, treinamentoId: treinamentoIdFinal, nome: treinando_nome || exists[0].treinando_nome, pessoaId: exists[0].pessoa_id });
+
     return res.json({
       ok: true,
       message: "Resposta avaliativa atualizada com sucesso",
@@ -334,7 +343,7 @@ async function deleteRespostaAvaliativa(req, res) {
     const tenantCheck = tenantJoinTreinamento(req.empresaId, "respostas_avaliativas");
 
     const [exists] = await pool.query(
-      `SELECT id FROM respostas_avaliativas WHERE id = ?${tenantCheck} LIMIT 1`,
+      `SELECT id, material_id, treinamento_id, treinando_nome, pessoa_id FROM respostas_avaliativas WHERE id = ?${tenantCheck} LIMIT 1`,
       [id]
     );
     if (!exists.length) {
@@ -345,6 +354,7 @@ async function deleteRespostaAvaliativa(req, res) {
       `DELETE FROM respostas_avaliativas WHERE id = ?`,
       [id]
     );
+    await sincronizarNotaProva({ materialId: exists[0].material_id, treinamentoId: exists[0].treinamento_id, nome: exists[0].treinando_nome, pessoaId: exists[0].pessoa_id });
 
     return res.json({
       ok: true,
