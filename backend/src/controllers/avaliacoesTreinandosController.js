@@ -2,6 +2,7 @@ const pool = require("../lib/db");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { pessoaIdDoUsuario } = require("../services/pessoasService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
+const { normalizarRespostas, lerRespostas } = require("../lib/npsQuestionario");
 
 async function listAvaliacoesTreinandos(req, res) {
   try {
@@ -58,6 +59,7 @@ async function listAvaliacoesTreinandos(req, res) {
         at.treinando_nome,
         at.nota_nps,
         at.comentario,
+        at.respostas_json,
         at.created_at,
         t.tema,
         t.cliente,
@@ -70,7 +72,7 @@ async function listAvaliacoesTreinandos(req, res) {
       params
     );
 
-    return res.json(rows);
+    return res.json(rows.map((r) => ({ ...r, respostas_json: undefined, questionario: lerRespostas(r.respostas_json) })));
   } catch (error) {
     console.error("[avaliacoesTreinandosController]", error.message || error);
     return res.status(500).json({
@@ -186,6 +188,11 @@ async function createAvaliacaoTreinando(req, res) {
 
     nota_nps = Number(nota_nps);
 
+    // Questionário (19/10/2026): critérios 1–5 + textos; a nota 0–10 continua sendo a base do NPS.
+    const q = normalizarRespostas(req.body);
+    if (!q.ok) return res.status(400).json({ ok: false, message: q.erro });
+    comentario = q.comentario;
+
     if (Number.isNaN(nota_nps) || nota_nps < 0 || nota_nps > 10) {
       return res.status(400).json({
         ok: false,
@@ -253,10 +260,10 @@ async function createAvaliacaoTreinando(req, res) {
     const [result] = await pool.query(
       `
       INSERT INTO avaliacoes_treinandos
-      (treinamento_id, treinando_nome, nota_nps, comentario, pessoa_id)
-      VALUES (?, ?, ?, ?, ?)
+      (treinamento_id, treinando_nome, nota_nps, comentario, pessoa_id, respostas_json)
+      VALUES (?, ?, ?, ?, ?, ?)
       `,
-      [treinamento_id, treinando_nome, nota_nps, comentario || null, pessoaId]
+      [treinamento_id, treinando_nome, nota_nps, comentario || null, pessoaId, q.json]
     );
 
     return res.status(201).json({
