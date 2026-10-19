@@ -38,6 +38,11 @@ export default function PresencaTurmaPage() {
   const podeConfigurar = useMemo(() => hasSomeRole(getStoredUser(), PODE_CONFIGURAR), []);
 
   useEffect(() => {
+    // Treinando não vê a presença da turma (tela de gestão): volta para as turmas dele, sem mensagem de erro.
+    if (String(getStoredUser()?.perfil || "").toLowerCase() === "treinando") {
+      window.location.replace("/minhas-turmas");
+      return;
+    }
     setId(new URLSearchParams(window.location.search).get("turma") || "");
   }, []);
 
