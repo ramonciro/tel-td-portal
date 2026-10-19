@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import PortalShell  from "./PortalShell";
-import TurmaTabs   from "./TurmaTabs";
+import TurmaTabs, { ABAS_DO_TREINANDO } from "./TurmaTabs";
+import { getStoredUser } from "../services/api";
 import { formatDateBR } from "../lib/date";
 import { corDoCliente } from "../lib/theme";
 
@@ -27,6 +29,18 @@ function formatPeriodo(t) {
  */
 export default function TurmaPageShell({ id, treinamento, loading, abaAtiva, children }) {
   const cor = corDoCliente(treinamento?.cliente);
+
+  // 19/10/2026: tela de gestão aberta por um treinando (link antigo, endereço digitado) —
+  // não mostra "acesso não autorizado": leva direto ao mural da turma.
+  const [ehTreinando, setEhTreinando] = useState(false);
+  const bloqueadaParaTreinando = ehTreinando && !ABAS_DO_TREINANDO.includes(abaAtiva);
+  useEffect(() => {
+    const treinando = String(getStoredUser()?.perfil || "").toLowerCase() === "treinando";
+    setEhTreinando(treinando);
+    if (treinando && !ABAS_DO_TREINANDO.includes(abaAtiva)) window.location.replace(`/turma/${id}/mural`);
+  }, [id, abaAtiva]);
+
+  if (bloqueadaParaTreinando) return <PortalShell><div /></PortalShell>;
 
   return (
     <PortalShell>

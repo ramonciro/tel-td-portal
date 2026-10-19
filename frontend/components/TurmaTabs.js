@@ -1,6 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { colors } from "../lib/theme";
+import { getStoredUser } from "../services/api";
+
+// 19/10/2026: o treinando só enxerga Mural, Avaliações e NPS da própria turma.
+// Visão geral, Cronograma, Presença e Pessoas são telas de gestão e não aparecem para ele.
+export const ABAS_DO_TREINANDO = ["mural", "avaliacoes", "nps"];
 
 const ABAS = [
   { key: "mural",        label: "Mural",       href: (id) => `/turma/${id}/mural`        },
@@ -13,9 +19,18 @@ const ABAS = [
 ];
 
 export default function TurmaTabs({ id, ativa }) {
+  // Até saber quem é o usuário, mostra só as abas seguras (o treinando nunca vê as de gestão, nem por um instante).
+  const [perfil, setPerfil] = useState(null);
+  useEffect(() => {
+    setPerfil(String(getStoredUser()?.perfil || "").toLowerCase());
+  }, []);
+  const abasVisiveis = perfil === null || perfil === "treinando"
+    ? ABAS.filter((a) => ABAS_DO_TREINANDO.includes(a.key))
+    : ABAS;
+
   return (
     <div style={wrap}>
-      {ABAS.map((aba) => {
+      {abasVisiveis.map((aba) => {
         const isAtiva = aba.key === ativa;
         return (
           <a
