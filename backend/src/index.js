@@ -1114,7 +1114,8 @@ app.get(
         params
       );
 
-      if (!rows.length) {
+      // Acesso restrito por cliente (varredura 16/10/2026): o detalhe também respeita o cliente do usuário.
+      if (!rows.length || !usuarioTemAcessoAoCliente(req, rows[0].cliente)) {
         return res.status(404).json({
           ok: false,
           message: "Treinamento não encontrado",
@@ -2092,6 +2093,8 @@ app.delete("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...ROTINA
 app.post  ("/api/provas-papel/lotes/:id/confirmar", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.confirmarLote);
 app.post  ("/api/provas-papel/lotes/:id/desfazer", authRequired, authorizeRoles(...ROTINA_GESTAO), provasPapelCtrl.desfazerLote);
 app.get   ("/api/provas-papel/lotes/:id/exportar", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.exportarLote);
+app.get   ("/api/provas-papel/lotes/:id/modelo", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.modeloPlanilha);
+app.post  ("/api/provas-papel/lotes/:id/planilha", authRequired, authorizeRoles(...ROTINA_ESCREVER), comUploadTratado(upload.single("arquivo")), provasPapelCtrl.lerPlanilha);
 app.post  ("/api/provas-papel/lotes/:id/arquivos", authRequired, authorizeRoles(...ROTINA_ESCREVER), comUploadTratado(upload.single("arquivo")), provasPapelCtrl.anexarArquivo);
 app.delete("/api/provas-papel/lotes/:id/arquivos/:arquivoId", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.removerArquivo);
 app.get   ("/api/provas-papel/lotes/:id/arquivos/:arquivoId/url", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.urlArquivo);
