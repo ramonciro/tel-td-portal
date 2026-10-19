@@ -1004,6 +1004,11 @@ function ScorecardInstrutor({
                   <p style={{ fontSize: 13, color: "#334155", margin: "4px 0" }}>
                     Promotores {item.nps.promotores} · Neutros {item.nps.neutros} · Detratores {item.nps.detratores}
                   </p>
+                  {Array.isArray(item.nps.criterios) && item.nps.criterios.length > 0 && (
+                    <p style={{ fontSize: 13, color: "#334155", margin: "4px 0" }}>
+                      Questionário (1 a 5): {item.nps.criterios.map((c) => `${c.rotulo.split(" (")[0]} ${fmt(c.media)}`).join(" · ")}
+                    </p>
+                  )}
                 </>
               )}
             </div>
