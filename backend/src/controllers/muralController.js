@@ -8,6 +8,9 @@ const {
 } = require("../services/muralResolver");
 const { registrarAuditoria } = require("../services/auditoria");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
+const pool = require("../lib/db");
+const { pessoaIdDoUsuario } = require("../services/pessoasService");
+const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 
 function mensagemErro(error, acaoDescricao) {
   const tabelaAusente = /doesn't exist/i.test(error.message);
@@ -30,6 +33,20 @@ async function obterMural(req, res) {
     // cliente do mesmo tenant só sabendo/incrementando o treinamento_id.
     if (!usuarioTemAcessoAoCliente(req, mural.treinamento?.cliente)) {
       return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+    // 19/10/2026 (decisão do Ramon): o treinando só vê o mural das turmas em que participa
+    // (antes bastava ser do mesmo cliente). Sem matrícula → 404, igual a turma inexistente.
+    if (String(req.user?.perfil || "").toLowerCase() === "treinando") {
+      const nomeUsuario = String(req.user?.nome || "").trim();
+      const pessoaId = await pessoaIdDoUsuario(req.user?.id);
+      const cond = condicaoIdentidade("tp", "nome", pessoaId, nomeUsuario);
+      const [matriculado] = await pool.query(
+        `SELECT tp.id FROM treinamento_participantes tp WHERE tp.treinamento_id = ? AND ${cond.sql} LIMIT 1`,
+        [treinamentoId, ...cond.params]
+      );
+      if (!nomeUsuario || !matriculado.length) {
+        return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+      }
     }
     return res.json({ ok: true, ...mural });
   } catch (error) {
