@@ -21,6 +21,7 @@ const { pastaUploads, gerarQuery } = require("../lib/uploadAssinado");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 const { parseQuestoes } = require("../lib/correcaoProva");
 const P = require("../lib/provasPapel");
+const PL = require("../lib/planilhaNotasPapel");
 
 const erro = (res, status, msg, extra = {}) => res.status(status).json({ ok: false, message: msg, error: msg, ...extra });
 const texto = (v, max) => {
@@ -588,7 +589,104 @@ async function exportarLote(req, res) {
   }
 }
 
+/* ───────────────────── planilha de notas (modelo + leitura) ───────────────────── */
+
+/** Baixa o modelo: treinandos da turma já listados; o instrutor só preenche. */
+async function modeloPlanilha(req, res) {
+  try {
+    const ctx = await carregarLote(req, res, { editar: true });
+    if (!ctx) return;
+    const ed = await montarEditor(ctx.lote, ctx.t);
+    const comGabarito = !!ed.material;
+    const XL = require("../lib/excelExport");
+    const wb = XL.novoWorkbook();
+    const ws = wb.addWorksheet("Notas");
+    const cols = [
+      { header: "Matrícula", key: "matricula", width: 14 },
+      { header: "Nome", key: "nome", width: 38 },
+      { header: "Faltou (S/N)", key: "faltou", width: 14 },
+      { header: `Nota (0 a ${Number(ed.lote.nota_maxima)})`, key: "nota", width: 16 },
+    ];
+    if (comGabarito) cols.push({ header: "Respostas", key: "respostas", width: 28 });
+    ws.columns = cols;
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+    ed.linhas.forEach((l) => {
+      const row = ws.addRow({
+        matricula: l.matricula || "", nome: l.nome, faltou: l.faltou ? "S" : "",
+        nota: l.respostas ? null : l.nota, respostas: l.respostas || "",
+      });
+      row.getCell(1).numFmt = "@";
+      row.getCell(4).numFmt = "0.00";
+      row.getCell(3).dataValidation = { type: "list", allowBlank: true, formulae: ['"S,N"'] };
+      row.getCell(4).dataValidation = {
+        type: "decimal", operator: "between", allowBlank: true, formulae: [0, Number(ed.lote.nota_maxima)],
+        showErrorMessage: true, errorTitle: "Nota inválida", error: `Use um valor de 0 a ${Number(ed.lote.nota_maxima)}.`,
+      };
+    });
+    const ins = wb.addWorksheet("Instruções");
+    ins.columns = [{ width: 26 }, { width: 90 }];
+    const dados = [
+      ["Importação nº", String(ed.lote.id)],
+      ["Prova", ed.lote.titulo],
+      ["Turma", ctx.t.tema || ""],
+      ["Nota máxima", String(Number(ed.lote.nota_maxima))],
+      [],
+      ["Como preencher", "Na aba “Notas”, preencha a Nota de cada treinando (aceita vírgula) ou marque S em “Faltou”."],
+      ["", comGabarito
+        ? `Se tiver as letras marcadas, preencha “Respostas” (${ed.material.total_questoes} letras, ex.: ABCDDACB; use - para em branco) e deixe a nota vazia: o Portal corrige pelo gabarito.`
+        : "Esta prova não tem gabarito cadastrado: informe só a nota."],
+      ["", "Não altere a Matrícula nem o Nome. Linhas sem nota, sem respostas e sem “S” em Faltou ficam sem lançamento."],
+      ["", "Depois envie o arquivo em “Importar notas por planilha”. Você confere tudo na tela antes de salvar e confirmar."],
+    ];
+    dados.forEach((d) => ins.addRow(d));
+    ins.getColumn(1).font = { bold: true };
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="modelo-notas-prova-papel-${ctx.lote.id}.xlsx"`);
+    await wb.xlsx.write(res);
+    return res.end();
+  } catch (e) {
+    console.error("[provasPapel.modeloPlanilha]", e.message || e);
+    if (!res.headersSent) return erro(res, 500, "Erro ao gerar o modelo.");
+  }
+}
+
+/** Lê a planilha e devolve a pré-visualização. Não grava nada: a tela preenche o rascunho. */
+async function lerPlanilha(req, res) {
+  try {
+    const ctx = await carregarLote(req, res, { editar: true });
+    if (!ctx) return;
+    const { lote, t } = ctx;
+    if (lote.status !== "rascunho") return erro(res, 409, "Esta importação já foi confirmada. Peça à coordenação para desfazer se precisar corrigir.");
+    if (!req.file?.buffer?.length) return erro(res, 400, "Envie a planilha preenchida (.xlsx ou .csv).");
+    const material = await materialDoLote(lote);
+    const [parts] = await pool.query("SELECT id, nome, matricula FROM treinamento_participantes WHERE treinamento_id = ?", [t.id]);
+    let arq;
+    try {
+      arq = await PL.lerArquivo(req.file.buffer, req.file.originalname);
+    } catch (e) {
+      if (e.amigavel) return erro(res, 400, e.message);
+      throw e;
+    }
+    const r = PL.interpretar(arq, parts, {
+      totalQuestoes: material ? parseQuestoes(material.questoes_json).length : 0,
+      temGabarito: !!material,
+      notaMaxima: Number(lote.nota_maxima),
+    });
+    if (!r.ok) return erro(res, 400, r.erro);
+    if (arq.importacaoId && arq.importacaoId !== lote.id) {
+      r.problemas.unshift({ tipo: "aviso", linha: null, nome: "", mensagem: `Este modelo foi gerado para a importação nº ${arq.importacaoId}, não para a nº ${lote.id}. Confira se é a planilha certa.` });
+      r.resumo.avisos += 1;
+    }
+    return res.json({ ok: true, arquivo: req.file.originalname, ...r });
+  } catch (e) {
+    console.error("[provasPapel.lerPlanilha]", e.message || e);
+    return erro(res, 500, "Erro ao ler a planilha.");
+  }
+}
+
 module.exports = {
   listarDaTurma, criarLote, obterLote, salvarLote, excluirLote, confirmarLote, desfazerLote,
-  anexarArquivo, removerArquivo, urlArquivo, exportarLote,
+  anexarArquivo, removerArquivo, urlArquivo, exportarLote, modeloPlanilha, lerPlanilha,
 };
