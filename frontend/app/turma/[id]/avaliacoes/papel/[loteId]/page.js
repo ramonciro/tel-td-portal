@@ -48,6 +48,9 @@ export default function ProvaPapelEditorPage() {
   const [visor, setVisor] = useState(null); // { url, tipo }
   const [visorErro, setVisorErro] = useState("");
   const inputArq = useRef(null);
+  const inputPlan = useRef(null);
+  const [previa, setPrevia] = useState(null); // resultado da leitura da planilha
+  const [verTodos, setVerTodos] = useState(false);
 
   const carregar = useCallback(async (manterEdicao = false) => {
     if (!loteId) return null;
@@ -213,6 +216,51 @@ export default function ProvaPapelEditorPage() {
     }
   }
 
+  async function baixarModelo() {
+    try {
+      await apiDownload(`/provas-papel/lotes/${loteId}/modelo`, `modelo-notas-prova-papel-${loteId}.xlsx`);
+    } catch (e) {
+      setErro(e.message || "Não foi possível baixar o modelo.");
+    }
+  }
+
+  async function enviarPlanilha(ev) {
+    const f = (ev.target.files || [])[0];
+    ev.target.value = "";
+    if (!f) return;
+    setOcupado(true);
+    setErro("");
+    setPrevia(null);
+    setVerTodos(false);
+    try {
+      const fd = new FormData();
+      fd.append("arquivo", f);
+      const r = await apiFetch(`/provas-papel/lotes/${loteId}/planilha`, { method: "POST", body: fd });
+      setPrevia(r);
+    } catch (e) {
+      setErro(e.message || "Não foi possível ler a planilha.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  function aplicarPlanilha() {
+    if (!previa) return;
+    setEdit((p) => {
+      const n = { ...p };
+      for (const l of previa.linhas) {
+        n[l.participante_id] = { faltou: !!l.faltou, respostas: l.respostas || "", nota: l.nota || "" };
+      }
+      return n;
+    });
+    setErrosLinha({});
+    setSujo(true);
+    const msg = `${previa.linhas.length} linha(s) da planilha aplicadas no rascunho. Confira abaixo e clique em Salvar rascunho.`;
+    setAviso(msg);
+    setTimeout(() => setAviso((a) => (a === msg ? "" : a)), 6000);
+    setPrevia(null);
+  }
+
   async function exportar() {
     try {
       await apiDownload(`/provas-papel/lotes/${loteId}/exportar`, `prova-papel-${loteId}.xlsx`);
@@ -355,6 +403,62 @@ export default function ProvaPapelEditorPage() {
                   </label>
                 </div>
               ) : null}
+
+              {pode && (
+                <div style={caixaPlanilha}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <div>
+                      <strong style={{ color: colors.navy, fontSize: 14 }}>Importar notas por planilha</strong>
+                      <div style={mini}>Baixe o modelo com os treinandos da turma, preencha as notas e envie de volta. Você confere antes de salvar.</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button type="button" style={btnSec} disabled={ocupado} onClick={baixarModelo}>Baixar modelo</button>
+                      <input ref={inputPlan} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: "none" }} onChange={enviarPlanilha} />
+                      <button type="button" style={btnSec} disabled={ocupado} onClick={() => inputPlan.current?.click()}>Enviar planilha preenchida</button>
+                    </div>
+                  </div>
+                  {previa && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 13, color: colors.textPrimary, marginBottom: 6 }}>
+                        <strong>{previa.arquivo}</strong>: {previa.resumo.lidas} linha(s) lida(s) · <strong>{previa.resumo.aplicaveis} para aplicar</strong>
+                        {previa.resumo.faltaram ? ` (${previa.resumo.faltaram} faltaram)` : ""}
+                        {previa.resumo.sem_lancamento ? ` · ${previa.resumo.sem_lancamento} sem lançamento` : ""}
+                        {previa.resumo.erros ? <span style={{ color: colors.dangerText, fontWeight: 700 }}> · {previa.resumo.erros} com erro (não serão aplicadas)</span> : null}
+                        {previa.resumo.avisos ? <span style={{ color: colors.warningText, fontWeight: 700 }}> · {previa.resumo.avisos} aviso(s)</span> : null}
+                      </div>
+                      {previa.problemas.length > 0 && (
+                        <ul style={listaProb}>
+                          {(verTodos ? previa.problemas : previa.problemas.slice(0, 6)).map((x, i) => (
+                            <li key={i} style={{ color: x.tipo === "erro" ? colors.dangerText : colors.warningText }}>
+                              {x.linha ? `Linha ${x.linha}` : "Planilha"}{x.nome ? ` · ${x.nome}` : ""}: {x.mensagem}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {previa.problemas.length > 6 && (
+                        <button type="button" style={{ ...link, marginBottom: 6 }} onClick={() => setVerTodos((v) => !v)}>
+                          {verTodos ? "Mostrar menos" : `Ver todos os ${previa.problemas_total} apontamentos`}
+                        </button>
+                      )}
+                      {previa.resumo.fora_da_planilha > 0 && (
+                        <div style={mini}>
+                          {previa.resumo.fora_da_planilha} treinando(s) da turma não vieram na planilha e ficam como estão
+                          {previa.nao_listados.length ? `: ${previa.nao_listados.slice(0, 5).join(", ")}${previa.nao_listados.length > 5 ? "…" : ""}` : ""}.
+                        </div>
+                      )}
+                      {previa.linhas.some((l) => { const v = edit[l.participante_id]; return v && (v.nota || v.respostas || v.faltou); }) && (
+                        <div style={{ ...mini, color: colors.warningText, marginTop: 4 }}>
+                          Atenção: linhas que já têm nota, respostas ou falta digitadas no rascunho serão substituídas pelas da planilha.
+                        </div>
+                      )}
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <button type="button" style={btn} disabled={!previa.linhas.length} onClick={aplicarPlanilha}>Aplicar {previa.linhas.length} linha(s) no rascunho</button>
+                        <button type="button" style={btnSec} onClick={() => setPrevia(null)}>Descartar</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <p style={dica}>
                 {d.material
                   ? `Digite as ${d.material.total_questoes} letras marcadas, na ordem (ex.: ABCDDACB). Use “-” para questão em branco, que conta como erro. Se a folha já foi corrigida à mão, deixe as respostas vazias e informe a nota.`
@@ -469,6 +573,8 @@ const chipOn = { background: colors.navy, color: "#fff", borderColor: colors.nav
 const tabela = { width: "100%", borderCollapse: "collapse", fontSize: 14 };
 const th = { textAlign: "left", padding: "9px 10px", fontSize: 11, color: colors.textMuted, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".04em", background: "#f8fafc", borderBottom: `1px solid ${colors.border}` };
 const td = { padding: "9px 10px", borderBottom: `1px solid ${colors.border}`, verticalAlign: "top" };
+const caixaPlanilha = { background: colors.surfaceMuted, border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: "12px 14px", marginBottom: 12 };
+const listaProb = { margin: "0 0 6px", paddingLeft: 18, fontSize: 12, display: "grid", gap: 2 };
 const mini = { fontSize: 12, color: colors.textSecondary, marginTop: 2 };
 const dica = { margin: "0 0 12px", fontSize: 13, color: colors.textSecondary };
 const badge = { padding: "5px 11px", borderRadius: radius.pill, fontWeight: 800, fontSize: 12, whiteSpace: "nowrap", display: "inline-block" };
