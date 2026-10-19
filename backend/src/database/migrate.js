@@ -2339,6 +2339,14 @@ async function runMigrations() {
       console.log(`  ↳ provas em papel não concluído (${error.message}) — seguindo`);
     }
 
+    // 69. Correções dos testes em produção (19/10/2026) — contador do id, questionário de NPS
+    //     e nota das provas respondidas online. Ver ensureCorrecoesAvaliacoes().
+    try {
+      await ensureCorrecoesAvaliacoes();
+    } catch (error) {
+      console.log(`  ↳ correções de avaliações não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
@@ -2768,6 +2776,66 @@ async function ensureProvasPapel() {
     await ensureColumn("respostas_avaliativas", "lote_papel_id", "INT NULL");
   }
   console.log("  ↳ provas em papel: ok");
+}
+
+// ---------------------------------------------------------------------------
+// 19/10/2026 — achados do teste em produção do Ramon.
+//
+// 1) "Field 'id' doesn't have a default value" ao registrar NPS: em produção a
+//    tabela avaliacoes_treinandos foi criada à mão, sem AUTO_INCREMENT no id,
+//    e o CREATE TABLE IF NOT EXISTS do passo 23 nunca a corrige. Aqui,
+//    para cada tabela de avaliação, se o id existe, é chave primária e não é
+//    AUTO_INCREMENT, passa a ser (o contador começa depois do maior id atual).
+//    Se o id nem é chave primária (caso raro), só avisa no log — não arrisca
+//    mexer em chave de tabela com dados.
+// 2) Questionário de NPS: coluna respostas_json em avaliacoes_treinandos.
+// 3) Provas respondidas online antes desta versão não tinham nota na turma:
+//    cria as linhas que faltam em `avaliacoes` (sem sobrescrever nada que já exista).
+// ---------------------------------------------------------------------------
+async function ensureAutoIncrementId(tabela) {
+  const [tab] = await pool.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
+    [tabela]
+  );
+  if (!tab.length) return;
+  const [rows] = await pool.query(
+    `SELECT COLUMN_TYPE, COLUMN_KEY, EXTRA FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'id' LIMIT 1`,
+    [tabela]
+  );
+  const col = rows[0];
+  if (!col) return;
+  if (/auto_increment/i.test(col.EXTRA || "")) return;
+  if (col.COLUMN_KEY !== "PRI") {
+    console.log(`  ↳ ${tabela}.id sem AUTO_INCREMENT e fora da chave primária — não alterado (verificar manualmente)`);
+    return;
+  }
+  const tipo = /^(tinyint|smallint|mediumint|int|bigint)/i.test(col.COLUMN_TYPE) ? col.COLUMN_TYPE : "INT";
+  await pool.query(`ALTER TABLE ${tabela} MODIFY COLUMN id ${tipo} NOT NULL AUTO_INCREMENT`);
+  console.log(`  ↳ ${tabela}.id agora é AUTO_INCREMENT`);
+}
+
+async function ensureCorrecoesAvaliacoes() {
+  for (const tabela of ["avaliacoes_treinandos", "avaliacoes", "respostas_avaliativas", "materiais_avaliativos"]) {
+    try {
+      await ensureAutoIncrementId(tabela);
+    } catch (error) {
+      console.log(`  ↳ ${tabela}: contador do id não ajustado (${error.message}) — seguindo`);
+    }
+  }
+  const [t] = await pool.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'avaliacoes_treinandos' LIMIT 1`
+  );
+  if (t.length) await ensureColumn("avaliacoes_treinandos", "respostas_json", "TEXT NULL");
+
+  try {
+    const { reconciliarNotasProvas } = require("../lib/sincNotaProva");
+    const criadas = await reconciliarNotasProvas();
+    if (criadas) console.log(`  ↳ notas de provas online levadas para as turmas: ${criadas}`);
+  } catch (error) {
+    console.log(`  ↳ reconciliação das notas de provas não concluída (${error.message}) — seguindo`);
+  }
+  console.log("  ↳ correções de avaliações: ok");
 }
 
 module.exports = { runMigrations };
