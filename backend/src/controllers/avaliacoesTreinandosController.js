@@ -1,4 +1,5 @@
 const pool = require("../lib/db");
+const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { pessoaIdDoUsuario } = require("../services/pessoasService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 
@@ -148,7 +149,7 @@ async function listNpsDisponivel(req, res) {
       params
     );
 
-    return res.json(rows);
+    return res.json(rows.filter((r) => usuarioTemAcessoAoCliente(req, r.cliente)));
   } catch (error) {
     console.error("[avaliacoesTreinandosController]", error.message || error);
     return res.status(500).json({
