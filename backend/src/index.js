@@ -157,6 +157,8 @@ const {
   listNpsDisponivel,
   createAvaliacaoTreinando,
 } = require("./controllers/avaliacoesTreinandosController");
+const { lancarAvaliacaoParaTurma } = require("./controllers/avaliacoesLoteController");
+const { CRITERIOS: NPS_CRITERIOS } = require("./lib/npsQuestionario");
 
 const {
   listRespostasAvaliativas,
@@ -1454,6 +1456,18 @@ async function validarTreinamentoDaAvaliacao(data, req) {
   }
   return data;
 }
+
+// 19/10/2026: lança a avaliação (nota em branco) para todos os participantes da turma.
+// Fica ANTES do CRUD de /api/avaliacoes para não ser engolida pela rota /:id.
+app.post(
+  "/api/avaliacoes-lote",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  lancarAvaliacaoParaTurma
+);
+
+// Perguntas do questionário de NPS (mantidas no servidor para a tela e a validação não divergirem).
+app.get("/api/nps-questionario", authRequired, (req, res) => res.json({ criterios: NPS_CRITERIOS }));
 
 app.use(
   "/api/avaliacoes",
