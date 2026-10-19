@@ -48,6 +48,7 @@ const {
 } = require("./capacidadeResolver");
 const { getResumoPresenca } = require("./presencaResolver");
 const { getResumoRotinaPorInstrutor } = require("../lib/rotina");
+const { CRITERIOS: NPS_CRITERIOS, lerRespostas: lerRespostasNps } = require("../lib/npsQuestionario");
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -206,7 +207,8 @@ async function getNpsPorInstrutor({ instrutores, meses, empresaId }) {
     `
     SELECT
       TRIM(t.instrutor) AS instrutor,
-      at.nota_nps AS nota_nps
+      at.nota_nps AS nota_nps,
+      at.respostas_json AS respostas_json
     FROM avaliacoes_treinandos at
     JOIN treinamentos t ON t.id = at.treinamento_id
     WHERE TRIM(t.instrutor) IN (${placeholdersInstrutores})
@@ -218,13 +220,22 @@ async function getNpsPorInstrutor({ instrutores, meses, empresaId }) {
     [...instrutores, ...mesesParams, ...(empresaId ? [empresaId] : [])]
   );
 
-  const acumulado = new Map(instrutores.map((nome) => [nome, { total: 0, soma: 0, promotores: 0, neutros: 0, detratores: 0 }]));
+  const acumulado = new Map(instrutores.map((nome) => [nome, { total: 0, soma: 0, promotores: 0, neutros: 0, detratores: 0, crit: {} }]));
   for (const r of rows) {
     const acc = acumulado.get(r.instrutor);
     if (!acc) continue;
     const nota = Number(r.nota_nps);
     acc.total += 1;
     acc.soma += nota;
+    // Questionário (19/10/2026): média 1–5 por critério, só de quem respondeu o critério.
+    const q = lerRespostasNps(r.respostas_json);
+    for (const [chave, valor] of Object.entries(q?.criterios || {})) {
+      const n = Number(valor);
+      if (!Number.isFinite(n)) continue;
+      (acc.crit[chave] = acc.crit[chave] || { soma: 0, n: 0 });
+      acc.crit[chave].soma += n;
+      acc.crit[chave].n += 1;
+    }
     const classe = classificarNps(nota);
     if (classe === "promotor") acc.promotores += 1;
     else if (classe === "neutro") acc.neutros += 1;
@@ -243,6 +254,9 @@ async function getNpsPorInstrutor({ instrutores, meses, empresaId }) {
       neutros: acc.neutros,
       detratores: acc.detratores,
       nps_score: npsScore,
+      criterios: NPS_CRITERIOS
+        .filter((c) => acc.crit[c.chave]?.n)
+        .map((c) => ({ chave: c.chave, rotulo: c.rotulo, media: arredonda(acc.crit[c.chave].soma / acc.crit[c.chave].n, 2), respostas: acc.crit[c.chave].n })),
     });
   }
   return mapa;
