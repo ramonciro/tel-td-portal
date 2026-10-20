@@ -44,7 +44,8 @@ const pool = require('../lib/db');
 const jwt  = require('jsonwebtoken');
 
 function getJwtSecret() {
-  return process.env.JWT_SECRET || 'default_secret_key';
+  // Varredura 20/10/2026: sem segredo padrão — se JWT_SECRET faltar, a verificação falha (fail-closed).
+  return process.env.JWT_SECRET;
 }
 
 async function clientMiddleware(req, res, next) {
