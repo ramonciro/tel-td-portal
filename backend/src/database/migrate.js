@@ -2347,6 +2347,27 @@ async function runMigrations() {
       console.log(`  ↳ correções de avaliações não concluído (${error.message}) — seguindo`);
     }
 
+    // 70. Comentários das RPs do R&S (19/10/2026) — histórico de observações com autor e data.
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rps_comentarios (
+          id           INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+          empresa_id   INT NOT NULL,
+          rp_id        INT NOT NULL,
+          autor_id     INT NULL,
+          autor_nome   VARCHAR(150) NULL,
+          autor_perfil VARCHAR(40) NULL,
+          texto        TEXT NOT NULL,
+          created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_rps_comentarios_rp (rp_id, created_at),
+          INDEX idx_rps_comentarios_empresa (empresa_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      `);
+      console.log("  ↳ comentários das RPs: ok");
+    } catch (error) {
+      console.log(`  ↳ comentários das RPs não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
