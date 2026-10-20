@@ -2179,8 +2179,18 @@ const {
   getDashboard:     getRSDashboard,
   getRelatorio:     getRSRelatorio,
   exportar:         exportarRS,
+  exportarLista:    exportarListaRPs,
   importarPlanilha: importarRSPlanilha,
 } = require("./controllers/rsController");
+const {
+  listarSitesGestao: listarRSSitesGestao,
+  criarSite:         criarRSSite,
+  editarSite:        editarRSSite,
+  previaPadronizacao: previaRSPadronizacao,
+  aplicarPadronizacao: aplicarRSPadronizacao,
+  listarLixeira:     listarRSLixeira,
+  restaurarRP:       restaurarRSRP,
+} = require("./controllers/rsGestaoController");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
 // Leitura: coordenador_rs + gestor_rs | Escrita: coordenador_rs apenas
@@ -2198,6 +2208,16 @@ app.delete("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"), 
 app.get   ("/api/rs/rps/:id/comentarios", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), listarComentariosRP);
 app.post  ("/api/rs/rps/:id/comentarios", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), criarComentarioRP);
 app.delete("/api/rs/rps/:id/comentarios/:comentarioId", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), excluirComentarioRP);
+// Exportar a lista de RPs com os filtros da tela (20/10/2026). Caminho próprio para não colidir com /rps/:id.
+app.get   ("/api/rs/rps-exportar", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), exportarListaRPs);
+// Cadastro de sites, padronização de nomes e lixeira (20/10/2026): só coordenador_rs.
+app.get   ("/api/rs/sites-gestao",      authRequired, authorizeRoles("coordenador_rs"), listarRSSitesGestao);
+app.post  ("/api/rs/sites-gestao",      authRequired, authorizeRoles("coordenador_rs"), criarRSSite);
+app.put   ("/api/rs/sites-gestao/:id",  authRequired, authorizeRoles("coordenador_rs"), editarRSSite);
+app.get   ("/api/rs/padronizacao",      authRequired, authorizeRoles("coordenador_rs"), previaRSPadronizacao);
+app.post  ("/api/rs/padronizacao",      authRequired, authorizeRoles("coordenador_rs"), aplicarRSPadronizacao);
+app.get   ("/api/rs/lixeira",           authRequired, authorizeRoles("coordenador_rs"), listarRSLixeira);
+app.post  ("/api/rs/lixeira/:id/restaurar", authRequired, authorizeRoles("coordenador_rs"), restaurarRSRP);
 // Importação de planilha histórica (xlsx do Google Sheets)
 app.post  ("/api/rs/importar",  authRequired, authorizeRoles("coordenador_rs"), comUploadTratado(upload.single("arquivo")), importarRSPlanilha);
 // Usuários do R&S: gerenciados em /api/usuarios (Gestão de Usuários) — os atalhos
