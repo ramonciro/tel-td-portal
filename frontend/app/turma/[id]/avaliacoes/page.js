@@ -76,7 +76,7 @@ export default function AvaliacoesTurmaPage() {
       // e sem risco de confundir dados de turmas diferentes.
       const [treinamentoData, avaliacoesData, participantesData] = await Promise.all([
         apiFetch(`/treinamentos/${id}`).catch(() => null),
-        apiFetch("/avaliacoes").catch(() => []),
+        apiFetch(`/avaliacoes?treinamento_id=${id}`).catch(() => []),
         apiFetch(`/treinamentos/${id}/participantes`).catch(() => []),
       ]);
       setTreinamento(treinamentoData || null);
@@ -91,13 +91,13 @@ export default function AvaliacoesTurmaPage() {
       // e as provas em PDF; a equipe vê as provas da turma para escolher o título ao lançar.
       if (getStoredUser()?.perfil === "treinando") {
         const [minhas, disp] = await Promise.all([
-          apiFetch("/minhas-avaliacoes").catch(() => []),
+          apiFetch(`/minhas-avaliacoes?treinamento_id=${id}`).catch(() => []),
           apiFetch(`/materiais-avaliativos-disponiveis?treinamento_id=${id}`).catch(() => []),
         ]);
         setMinhasNotas((Array.isArray(minhas) ? minhas : []).filter((a) => String(a.treinamento_id) === String(id)));
         setMateriaisTurma(Array.isArray(disp) ? disp : []);
       } else {
-        const mats = await apiFetch("/materiais-avaliativos").catch(() => []);
+        const mats = await apiFetch(`/materiais-avaliativos?treinamento_id=${id}`).catch(() => []);
         const daTurmaMats = (Array.isArray(mats) ? mats : []).filter((m) => String(m.treinamento_id) === String(id));
         setMateriaisTurma(daTurmaMats);
         setNovoTitulo((atual) => atual || (daTurmaMats[0]?.titulo ? String(daTurmaMats[0].titulo) : ""));
