@@ -5,6 +5,7 @@ import Link from "next/link";
 import PortalShell from "../../../components/PortalShell";
 import PageHero    from "../../../components/PageHero";
 import { apiFetch } from "../../../services/api";
+import { SitesCard, PadronizacaoCard } from "../../../components/RSCadastros";
 import { colors } from "../../../lib/theme";
 
 export default function RSConfiguracoes() {
@@ -13,6 +14,7 @@ export default function RSConfiguracoes() {
   const [ano, setAno] = useState(new Date().getFullYear().toString());
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [previa, setPrevia] = useState(null); // resultado da análise (simulação) antes de gravar
 
   // ── Usuários R&S ─────────────────────────────────────────────────
   // 22/09/2026 (pedido do Ramon): o formulário de criação que existia aqui
@@ -38,24 +40,31 @@ export default function RSConfiguracoes() {
 
   useEffect(() => { carregarUsuarios(); }, []);
 
-  // ── Importar planilha ─────────────────────────────────────────────
-  const handleImportar = async () => {
+  // ── Importar planilha (20/10/2026: 1º analisa e mostra a prévia, 2º grava) ──
+  const enviar = async (simular) => {
+    const form = new FormData();
+    form.append("arquivo", arquivo);
+    return apiFetch(`/rs/importar?ano=${ano}&modo=skip${simular ? "&simular=1" : ""}`, { method: "POST", body: form });
+  };
+
+  const handleAnalisar = async () => {
     if (!arquivo) { alert("Selecione um arquivo .xlsx primeiro."); return; }
-    setImportando(true);
-    setResultado(null);
+    setImportando(true); setResultado(null); setPrevia(null);
     try {
-      const form = new FormData();
-      form.append("arquivo", arquivo);
-      const data = await apiFetch(`/rs/importar?ano=${ano}&modo=skip`, {
-        method: "POST",
-        body: form,
-      });
-      setResultado(data);
+      setPrevia(await enviar(true));
     } catch (e) {
       setResultado({ ok: false, error: e.message });
-    } finally {
-      setImportando(false);
-    }
+    } finally { setImportando(false); }
+  };
+
+  const handleConfirmar = async () => {
+    setImportando(true); setResultado(null);
+    try {
+      const data = await enviar(false);
+      setResultado(data); setPrevia(null);
+    } catch (e) {
+      setResultado({ ok: false, error: e.message });
+    } finally { setImportando(false); }
   };
 
   const anos = Array.from({ length: 6 }, (_, i) => String(new Date().getFullYear() - i));
@@ -65,10 +74,13 @@ export default function RSConfiguracoes() {
       <PageHero
         eyebrow="Recrutamento & Seleção"
         title="Configurações"
-        subtitle="Importe o histórico do Google Sheets e gerencie os usuários do módulo R&S."
+        subtitle="Cadastre os sites, padronize os nomes, importe o histórico do Google Sheets e consulte os usuários do módulo R&S."
       />
 
       <div style={{ marginTop: 16, display: "grid", gap: 16 }}>
+
+        <SitesCard />
+        <PadronizacaoCard />
 
         {/* ── Importação de planilha ── */}
         <div style={card}>
@@ -97,7 +109,7 @@ export default function RSConfiguracoes() {
               {arquivo && <p style={{ ...hint, color: colors.success }}>✓ {arquivo.name}</p>}
             </div>
             <button
-              onClick={handleImportar}
+              onClick={handleAnalisar}
               disabled={importando || !arquivo}
               style={{
                 background: importando ? "#f1f5f9" : colors.accent,
@@ -106,9 +118,72 @@ export default function RSConfiguracoes() {
                 fontWeight: 700, fontSize: 14, cursor: importando ? "not-allowed" : "pointer",
                 alignSelf: "flex-start", marginTop: 20,
               }}>
-              {importando ? "⏳ Importando..." : "⬆ Importar"}
+              {importando ? "⏳ Aguarde..." : "🔍 Analisar planilha"}
             </button>
           </div>
+
+          {/* Prévia: nada foi gravado ainda */}
+          {previa?.simulacao && (
+            <div style={{ borderRadius: 12, border: "1px solid #bfdbfe", background: "#f8fbff", padding: "16px 18px", marginBottom: 14 }}>
+              <div style={{ fontWeight: 800, color: colors.textPrimary, marginBottom: 4 }}>Prévia da importação — nada foi gravado ainda</div>
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "10px 0 12px" }}>
+                {[
+                  { v: previa.resumo.total_a_importar, l: "Serão importadas", c: colors.success },
+                  { v: previa.resumo.total_duplicadas, l: "Já existem (ignoradas)", c: colors.neutral },
+                  { v: previa.resumo.total_invalidas, l: "Linhas inválidas", c: previa.resumo.total_invalidas > 0 ? colors.danger : colors.neutral },
+                ].map((x) => (
+                  <div key={x.l} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 26, fontWeight: 900, color: x.c }}>{x.v}</div>
+                    <div style={{ fontSize: 11, color: colors.textMuted, textTransform: "uppercase" }}>{x.l}</div>
+                  </div>
+                ))}
+              </div>
+              {previa.por_mes?.length > 0 && (
+                <p style={{ ...hint, fontSize: 12, color: colors.textSecondary }}>
+                  <strong>Por mês:</strong> {previa.por_mes.map((m) => `${m.mes.slice(5)}/${m.mes.slice(0, 4)}: ${m.rps}`).join(" · ")}
+                  {" · "}<strong>Setor:</strong> Operacional {previa.por_setor?.OPERACIONAL ?? 0}, Estratégico {previa.por_setor?.["ESTRATÉGICO"] ?? 0}
+                </p>
+              )}
+              {previa.sites_novos?.length > 0 && (
+                <p style={{ ...hint, fontSize: 12, color: "#92400e" }}>
+                  <strong>Sites novos (serão cadastrados):</strong> {previa.sites_novos.join(", ")}. Se algum for erro de digitação, corrija a planilha antes de importar.
+                </p>
+              )}
+              {previa.produtos_novos?.length > 0 && (
+                <p style={{ ...hint, fontSize: 12, color: colors.textSecondary }}>
+                  <strong>Produtos novos:</strong> {previa.produtos_novos.slice(0, 15).join(", ")}{previa.produtos_novos.length > 15 ? ` e mais ${previa.produtos_novos.length - 15}` : ""}
+                </p>
+              )}
+              {previa.amostra?.length > 0 && (
+                <div style={{ overflowX: "auto", margin: "10px 0" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr style={{ background: "#eef2ff" }}>
+                      <th style={thSm}>Mês</th><th style={thSm}>Site</th><th style={thSm}>Setor</th><th style={thSm}>Produto</th><th style={thSm}>Cargo</th><th style={thSm}>Status</th>
+                    </tr></thead>
+                    <tbody>{previa.amostra.map((a, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                        <td style={{ padding: "6px 14px" }}>{a.mes.slice(5)}/{a.mes.slice(0, 4)}</td><td style={{ padding: "6px 14px" }}>{a.site}</td>
+                        <td style={{ padding: "6px 14px" }}>{a.setor === "OPERACIONAL" ? "Oper." : "Estr."}</td><td style={{ padding: "6px 14px" }}>{a.produto}</td>
+                        <td style={{ padding: "6px 14px" }}>{a.cargo || "—"}</td><td style={{ padding: "6px 14px" }}>{a.status}</td>
+                      </tr>))}</tbody>
+                  </table>
+                  <p style={hint}>Primeiras {previa.amostra.length} linhas que serão importadas.</p>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                <button onClick={handleConfirmar} disabled={importando || previa.resumo.total_a_importar === 0}
+                  style={{ background: colors.accent, color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontWeight: 700, fontSize: 14,
+                           cursor: "pointer", opacity: previa.resumo.total_a_importar === 0 ? 0.5 : 1 }}>
+                  {importando ? "⏳ Importando..." : `✓ Confirmar e importar ${previa.resumo.total_a_importar} RP(s)`}
+                </button>
+                <button onClick={() => setPrevia(null)} disabled={importando}
+                  style={{ background: "#fff", color: colors.neutral, border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 18px", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+                  Cancelar
+                </button>
+              </div>
+              {previa.resumo.total_a_importar === 0 && <p style={hint}>Nada novo para importar — todas as linhas válidas já existem.</p>}
+            </div>
+          )}
 
           {/* Resultado da importação */}
           {resultado && (
@@ -126,7 +201,7 @@ export default function RSConfiguracoes() {
                     </div>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontSize: 28, fontWeight: 900, color: colors.neutral }}>{resultado.resumo?.total_ignorado ?? 0}</div>
-                      <div style={{ fontSize: 11, color: colors.textMuted, textTransform: "uppercase" }}>Já existiam</div>
+                      <div style={{ fontSize: 11, color: colors.textMuted, textTransform: "uppercase" }}>Ignorados</div>
                     </div>
                     {(resultado.resumo?.total_erro ?? 0) > 0 && (
                       <div style={{ textAlign: "center" }}>
@@ -140,7 +215,7 @@ export default function RSConfiguracoes() {
                       <thead>
                         <tr style={{ background: "#f1f5f9" }}>
                           <th style={thSm}>Aba</th>
-                          <th style={{ ...thSm, textAlign: "right" }}>Importados</th>
+                          <th style={{ ...thSm, textAlign: "right" }}>Linhas válidas</th>
                           <th style={{ ...thSm, textAlign: "right" }}>Ignorados</th>
                         </tr>
                       </thead>
@@ -148,7 +223,7 @@ export default function RSConfiguracoes() {
                         {resultado.detalhes.map((d, i) => (
                           <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                             <td style={{ padding: "7px 14px", color: colors.textPrimary }}>{d.aba}</td>
-                            <td style={{ padding: "7px 14px", textAlign: "right", color: colors.success, fontWeight: 700 }}>{d.importados ?? "—"}</td>
+                            <td style={{ padding: "7px 14px", textAlign: "right", color: colors.success, fontWeight: 700 }}>{d.validas ?? "—"}</td>
                             <td style={{ padding: "7px 14px", textAlign: "right", color: colors.neutral }}>{d.ignorados ?? "—"}</td>
                           </tr>
                         ))}
