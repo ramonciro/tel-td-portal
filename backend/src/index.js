@@ -72,6 +72,9 @@ const jornadaDesenvolvimentoRoutes = require("./routes/jornadaDesenvolvimentoRou
 const trilhaPessoasRoutes = require("./routes/trilhaPessoasRoutes");
 const turmaPresencaGradeRoutes = require("./routes/turmaPresencaGradeRoutes");
 const capacidadeRoutes = require("./routes/capacidadeRoutes");
+const acessoInicialRoutes = require("./routes/acessoInicialRoutes");
+const avisosRoutes = require("./routes/avisosRoutes");
+const fechamentoCtrl = require("./controllers/fechamentoMensalController");
 const instrutoresCtrl = require("./controllers/instrutoresController");
 const celulaBabyCtrl = require("./controllers/celulaBabyController");
 const rotinaCtrl = require("./controllers/rotinaController");
@@ -1591,13 +1594,16 @@ app.get("/api/minhas-avaliacoes", authRequired, async (req, res) => {
     const nome = String(req.user?.nome || "").trim();
     if (!nome) return res.json([]);
     const empresaId = req.empresaId ?? null;
+    const turmaFiltro = Number(req.query?.treinamento_id);
+    const filtrarTurma = Number.isInteger(turmaFiltro) && turmaFiltro > 0;
     const [rows] = await pool.query(
       `SELECT id, treinamento_id, titulo, nota_nps, nota_qualidade, nota_prova, treinando_nome
          FROM avaliacoes
         WHERE LOWER(TRIM(treinando_nome)) = LOWER(TRIM(?))
           ${empresaId ? "AND empresa_id = ?" : ""}
+          ${filtrarTurma ? "AND treinamento_id = ?" : ""}
         ORDER BY id DESC`,
-      empresaId ? [nome, empresaId] : [nome]
+      [nome, ...(empresaId ? [empresaId] : []), ...(filtrarTurma ? [turmaFiltro] : [])]
     );
     return res.json(rows);
   } catch (error) {
@@ -2038,6 +2044,24 @@ app.use("/api/jornada-participantes", authRequired, authorizeRoles("metodologia"
 // (req.empresaId, aplicado globalmente acima) e o CPF já sai mascarado
 // para quem não tem perfil autorizado (ver pessoasController.js).
 app.use("/api/pessoas", authRequired, pessoasRoutes);
+
+// Códigos de primeiro acesso dos treinandos (21/10/2026) — troca a senha única
+// por um código individual; a coordenação gera, renova e baixa a lista.
+// Sino de avisos (21/10/2026) — qualquer perfil logado; só vê os próprios avisos.
+app.use("/api/avisos", authRequired, avisosRoutes);
+// Sequência de chamadas em dia (21/10/2026) — só o instrutor, só os próprios dados.
+app.get("/api/minha-sequencia", authRequired, authorizeRoles("instrutor"), require("./controllers/sequenciaController").minhaSequencia);
+
+// Fechamento mensal por cliente (21/10/2026). Ler/exportar: coordenação e superintendência;
+// fechar/reabrir: só coordenador e supervisor.
+const FECH_LER = authorizeRoles("coordenador", "supervisor", "superintendente");
+const FECH_ESCREVER = authorizeRoles("coordenador", "supervisor");
+app.get("/api/fechamento-mensal/panorama", authRequired, FECH_LER, fechamentoCtrl.panorama);
+app.get("/api/fechamento-mensal/exportar", authRequired, FECH_LER, fechamentoCtrl.exportar);
+app.get("/api/fechamento-mensal", authRequired, FECH_LER, fechamentoCtrl.obter);
+app.post("/api/fechamento-mensal", authRequired, FECH_ESCREVER, fechamentoCtrl.fechar);
+app.delete("/api/fechamento-mensal", authRequired, FECH_ESCREVER, fechamentoCtrl.reabrir);
+app.use("/api/acesso-inicial", authRequired, authorizeRoles("coordenador", "supervisor", "assistente_treinamento"), acessoInicialRoutes);
 
 // Coaching individual + KPIs do Ambiente Metodologia (20/09/2026, pedido do
 // Ramon) — trilha à parte, pessoa a pessoa, e o endpoint de agregação dos
