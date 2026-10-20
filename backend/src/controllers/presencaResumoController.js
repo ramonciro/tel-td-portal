@@ -1,6 +1,26 @@
 const { getResumoPresenca } = require("../services/presencaResolver");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
+const pool = require("../lib/db");
+const { condicaoIdentidade } = require("../lib/identidadeTreinando");
+const { pessoaIdDoUsuario } = require("../services/pessoasService");
+
+// Varredura 20/10/2026: o treinando recebia o resumo de TODAS as turmas do ambiente
+// (tema, cliente, instrutor, horas), mesmo de turmas em que nunca participou.
+// Agora só vê as turmas em que está matriculado (mesma regra de identidade do
+// NPS, das provas e da lista de pessoas da turma).
+async function idsDasTurmasDoTreinando(req) {
+  const nome = String(req.user?.nome || "").trim();
+  if (!nome) return new Set();
+  const pessoaId = await pessoaIdDoUsuario(req.user?.id);
+  const cond = condicaoIdentidade("tp", "nome", pessoaId, nome);
+  const [rows] = await pool.query(
+    `SELECT DISTINCT tp.treinamento_id FROM treinamento_participantes tp WHERE ${cond.sql}`,
+    cond.params
+  );
+  return new Set(rows.map((r) => Number(r.treinamento_id)));
+}
+const ehTreinando = (req) => String(req.user?.perfil || "").toLowerCase() === "treinando";
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga o resumo de presença de qualquer tenant
@@ -29,7 +49,12 @@ async function listarResumoGeral(req, res) {
     const dados = await getResumoPresenca({ empresaId });
     // Acesso restrito por cliente (varredura 16/10/2026): instrutor/treinando
     // vinculados a um cliente só enxergam as turmas dele (gestores veem tudo).
-    return res.json({ ok: true, itens: dados.filter((d) => usuarioTemAcessoAoCliente(req, d.cliente)) });
+    let itens = dados.filter((d) => usuarioTemAcessoAoCliente(req, d.cliente));
+    if (ehTreinando(req)) {
+      const minhas = await idsDasTurmasDoTreinando(req);
+      itens = itens.filter((d) => minhas.has(Number(d.id)));
+    }
+    return res.json({ ok: true, itens });
   } catch (error) {
     console.error("[presencaResumoController]", error.message || error);
     return res.status(500).json({

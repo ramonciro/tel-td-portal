@@ -194,6 +194,11 @@ const listar = async (req, res) => {
       ...r,
       dias_aberto: r.dias_aberto === null || r.dias_aberto === undefined ? null : Number(r.dias_aberto),
       atrasada: r.status === "EM ANDAMENTO" && Number(r.dias_aberto) > limiteDias,
+      // Varredura 20/10/2026: marca RPs cujos números não fecham (vindas de
+      // importação ou de antes da regra). Texto vazio = tudo certo.
+      numeros_incoerentes: incoerencias({
+        status: r.status, hcs: Number(r.hcs) || 0, hcs_aprovados: Number(r.hcs_aprovados) || 0, qtd_entregue: Number(r.qtd_entregue) || 0,
+      }).join(" · "),
     }));
     return res.json({ rps: itens, total, totais, page, limit, paginas: Math.max(Math.ceil(total / limit), 1), limite_dias: limiteDias });
   } catch (err) {
@@ -959,9 +964,22 @@ const importarPlanilha = async (req, res) => {
         porSetor[r.setor] = (porSetor[r.setor] || 0) + 1;
         if (!prodConhecidos.has(chaveNormal(r.produto))) produtosNovos.add(r.produto);
       }
+      // Varredura 20/10/2026: a importação não aplicava a regra "aprovados <= HC'S
+      // e entregues <= aprovados" que o cadastro manual já exige. Não bloqueia
+      // (planilhas antigas têm esse tipo de linha), mas avisa na prévia.
+      const incoerentes = aInserir
+        .map((r) => ({ r, msgs: incoerencias(r) }))
+        .filter((x) => x.msgs.length);
       return res.json({
         ok: true,
         simulacao: true,
+        incoerentes: {
+          total: incoerentes.length,
+          amostra: incoerentes.slice(0, 8).map(({ r, msgs }) => ({
+            mes: String(r.mes_referencia).slice(0, 7), site: r.site, produto: r.produto,
+            hcs: r.hcs, hcs_aprovados: r.hcs_aprovados, qtd_entregue: r.qtd_entregue, problemas: msgs,
+          })),
+        },
         resumo: {
           total_linhas_validas: novas.length,
           total_a_importar: aInserir.length,
@@ -1019,7 +1037,7 @@ const importarPlanilha = async (req, res) => {
 
     return res.json({
       ok: true,
-      resumo: { total_importado: aInserir.length, total_ignorado: totalIgnorado, total_duplicadas: totalDuplicado, total_invalidas: totalInvalido, total_erro: 0 },
+      resumo: { total_importado: aInserir.length, total_ignorado: totalIgnorado, total_duplicadas: totalDuplicado, total_invalidas: totalInvalido, total_erro: 0, total_numeros_incoerentes: aInserir.filter((r) => incoerencias(r).length).length },
       detalhes,
     });
   } catch (err) {
