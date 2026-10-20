@@ -7,6 +7,7 @@ import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
 import PresencaCertificados from "./PresencaCertificados";
 import Indicadores from "./Indicadores";
+import PosOficina from "./PosOficina";
 import { apiFetch, apiDownload } from "../../services/api";
 import { colors, radius } from "../../lib/theme";
 import { formatDateBR } from "../../lib/date";
@@ -109,7 +110,7 @@ export default function OficinaTalentosPage() {
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
 
-  // tela: 'lista' | 'form' | 'turma' | 'indicadores'
+  // tela: 'lista' | 'form' | 'turma' | 'indicadores' | 'pos'
   const [tela, setTela] = useState("lista");
   const [turmaAtual, setTurmaAtual] = useState(null); // detalhe (com módulos)
   const [inscricoes, setInscricoes] = useState([]);
@@ -332,6 +333,9 @@ export default function OficinaTalentosPage() {
           actions={
             tela === "lista" ? (
               <div style={acoes}>
+                <button style={btnSecundario} onClick={() => { limparMensagens(); setTela("pos"); }}>
+                  Depois do encontro
+                </button>
                 <button style={btnSecundario} onClick={() => { limparMensagens(); setTela("indicadores"); }}>
                   Indicadores
                 </button>
@@ -339,7 +343,7 @@ export default function OficinaTalentosPage() {
                   + Nova turma
                 </button>
               </div>
-            ) : tela === "indicadores" ? (
+            ) : tela === "indicadores" || tela === "pos" ? (
               <button style={btnSecundario} onClick={() => { limparMensagens(); setTela("lista"); }}>
                 ← Turmas
               </button>
@@ -352,6 +356,9 @@ export default function OficinaTalentosPage() {
 
         {/* ───────────── INDICADORES (Fase 3) ───────────── */}
         {tela === "indicadores" && <Indicadores turmas={turmas} setErro={setErro} />}
+
+        {/* ───────────── DEPOIS DO ENCONTRO (21/10/2026) ───────────── */}
+        {tela === "pos" && <PosOficina turmas={turmas} setErro={setErro} setAviso={setAviso} />}
 
         {/* ───────────── LISTA ───────────── */}
         {tela === "lista" && (
