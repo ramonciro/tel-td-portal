@@ -77,7 +77,7 @@ function lerFiltros(q) {
 /** WHERE comum. `periodo` pode ser null (sem filtro de mês). */
 function montarWhere(empresa_id, periodo, { site, setor } = {}, alias = "") {
   const p = alias ? `${alias}.` : "";
-  const conds = [`${p}empresa_id = ?`];
+  const conds = [`${p}empresa_id = ?`, `${p}excluido_em IS NULL`]; // RPs na lixeira ficam fora de tudo
   const params = [empresa_id];
   if (periodo) {
     conds.push(`DATE_FORMAT(${p}mes_referencia, '%Y-%m') BETWEEN ? AND ?`);
