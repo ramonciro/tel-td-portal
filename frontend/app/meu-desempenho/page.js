@@ -35,6 +35,7 @@ export default function MeuDesempenhoPage() {
   const [loading,    setLoading]    = useState(true);
   const [erro,       setErro]       = useState("");
   const [conquistas, setConquistas] = useState([]);
+  const [rotina,     setRotina]     = useState(null); // aderência por turma no mês escolhido
 
   useEffect(() => { carregar(); }, [periodoTipo, ano, mes, trimestre]);
 
@@ -46,6 +47,17 @@ export default function MeuDesempenhoPage() {
       .then((r) => setConquistas(r?.conquistas || []))
       .catch(() => setConquistas([]));
   }, []);
+
+  // "Minha rotina": aderência por turma e pendências do mês escolhido (no trimestral, o mês corrente).
+  useEffect(() => {
+    const mesRef = periodoTipo === "mensal" ? Number(mes) : hoje.getMonth() + 1;
+    const ym = `${ano}-${String(mesRef).padStart(2, "0")}`;
+    let vivo = true;
+    apiFetch(`/rotina/aderencia?mes=${ym}`)
+      .then((p) => { if (vivo) setRotina(p || null); })
+      .catch(() => { if (vivo) setRotina(null); });
+    return () => { vivo = false; };
+  }, [periodoTipo, ano, mes]);
 
   async function carregar() {
     try {
@@ -110,6 +122,37 @@ export default function MeuDesempenhoPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {rotina && rotina.turmas?.length > 0 && (
+        <div style={rotinaBox}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            <div style={cardTitle}>Minha rotina</div>
+            <div style={{ fontSize: 12, color: "#64748b" }}>
+              {rotina.resumo.verdes} em dia · {rotina.resumo.amarelas} em atenção · {rotina.resumo.vermelhas} atrasada(s)
+              {rotina.instrutores?.[0]?.aderencia_pct != null ? ` · aderência ${fmtPct(rotina.instrutores[0].aderencia_pct)}` : ""}
+            </div>
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {rotina.turmas.slice(0, 8).map((t) => (
+              <a key={t.id} href={`/turma/${t.id}/rotina`} style={rotinaLinha}>
+                <span style={{ ...farolDot, background: FAROL_COR[t.farol] || "#94a3b8" }} title={t.farol} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <strong style={{ fontSize: 13, color: "#0f172a" }}>{t.tema}</strong>
+                  <span style={{ display: "block", fontSize: 12, color: "#64748b" }}>
+                    {t.cliente || "—"}{t.pendencias?.length ? ` · ${t.pendencias[0].texto}` : " · sem pendências"}
+                  </span>
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "#334155" }}>{t.aderencia_pct != null ? fmtPct(t.aderencia_pct) : "—"}</span>
+              </a>
+            ))}
+          </div>
+          {rotina.turmas.length > 8 && <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>Mostrando 8 de {rotina.turmas.length} turmas  — as demais estão em Minhas turmas.</p>}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+            <a href="/celulas-baby" style={atalho}>Células baby</a>
+            <a href="/minhas-turmas" style={atalho}>Minhas turmas (avaliação individual)</a>
           </div>
         </div>
       )}
@@ -186,6 +229,11 @@ export default function MeuDesempenhoPage() {
   );
 }
 
+const FAROL_COR = { verde: "#16a34a", amarelo: "#d97706", vermelho: "#dc2626", cinza: "#94a3b8" };
+const rotinaBox = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 20, marginBottom: 20, boxShadow: "0 8px 18px rgba(15,23,42,.04)" };
+const rotinaLinha = { display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", border: "1px solid #eef2f7", borderRadius: 12, textDecoration: "none" };
+const farolDot = { width: 12, height: 12, borderRadius: 999, flexShrink: 0 };
+const atalho = { fontSize: 13, fontWeight: 700, color: colors.primary, textDecoration: "none", border: "1px solid #dbe4ee", borderRadius: 10, padding: "8px 12px", background: "#f8fafc" };
 const card = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 20, boxShadow: "0 8px 18px rgba(15,23,42,.04)" };
 const cardTitle = { fontSize: 15, fontWeight: 800, color: "#0f172a", marginBottom: 14 };
 const linha = { fontSize: 13, color: "#334155", margin: "4px 0" };
