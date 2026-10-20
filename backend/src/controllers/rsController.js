@@ -141,7 +141,8 @@ const listar = async (req, res) => {
 
   try {
     const [rps] = await db.query(
-      `SELECT r.*, u.nome AS criado_por_nome
+      `SELECT r.*, u.nome AS criado_por_nome,
+              (SELECT COUNT(*) FROM rps_comentarios c WHERE c.rp_id = r.id) AS qtd_comentarios
        FROM rps r LEFT JOIN usuarios u ON r.created_by = u.id
        WHERE ${where}
        ORDER BY r.mes_referencia DESC, r.site, r.setor, r.produto
@@ -236,6 +237,7 @@ const excluir = async (req, res) => {
   try {
     const [[antes]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ?", [req.params.id, empresa_id]);
     if (!antes) return erro(res, 404, "RP não encontrada");
+    await db.query("DELETE FROM rps_comentarios WHERE rp_id=? AND empresa_id=?", [req.params.id, empresa_id]).catch(() => {});
     await db.query("DELETE FROM rps WHERE id=? AND empresa_id=?", [req.params.id, empresa_id]);
     registrarAuditoria({
       usuario: req.user, acao: "excluir", entidade: "rp", entidadeId: Number(req.params.id),
@@ -815,9 +817,89 @@ function _pct(valor, total) {
   return Math.round((valor / total) * 100);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COMENTÁRIOS DA RP (19/10/2026) — histórico de observações: cada comentário
+// guarda autor, perfil e data/hora; nada é sobrescrito. Coordenador R&S e
+// gestor R&S leem e comentam; apagar: o próprio autor ou o coordenador R&S.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function _rpDaEmpresa(rpId, empresa_id) {
+  const [[rp]] = await db.query("SELECT id, produto, site FROM rps WHERE id = ? AND empresa_id = ?", [rpId, empresa_id]);
+  return rp || null;
+}
+
+const listarComentarios = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  try {
+    if (!(await _rpDaEmpresa(req.params.id, empresa_id))) return erro(res, 404, "RP não encontrada");
+    const [rows] = await db.query(
+      `SELECT id, rp_id, autor_id, autor_nome, autor_perfil, texto, created_at
+         FROM rps_comentarios WHERE rp_id = ? AND empresa_id = ? ORDER BY created_at DESC, id DESC LIMIT 500`,
+      [req.params.id, empresa_id]
+    );
+    return res.json({ comentarios: rows });
+  } catch (err) {
+    console.error("[rsController.listarComentarios]", err);
+    return erro(res, 500, "Erro ao listar comentários");
+  }
+};
+
+const criarComentario = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  const texto = String(req.body?.texto ?? "").trim();
+  if (!texto) return erro(res, 400, "Escreva o comentário.");
+  if (texto.length > 2000) return erro(res, 400, "O comentário pode ter no máximo 2000 caracteres.");
+  try {
+    const rp = await _rpDaEmpresa(req.params.id, empresa_id);
+    if (!rp) return erro(res, 404, "RP não encontrada");
+    const [r] = await db.query(
+      `INSERT INTO rps_comentarios (empresa_id, rp_id, autor_id, autor_nome, autor_perfil, texto) VALUES (?,?,?,?,?,?)`,
+      [empresa_id, rp.id, req.user?.id || null, String(req.user?.nome || "").slice(0, 150) || null,
+       String(req.user?.perfil || "").slice(0, 40) || null, texto]
+    );
+    registrarAuditoria({
+      usuario: req.user, acao: "criar", entidade: "rp_comentario", entidadeId: r.insertId,
+      resumo: `${req.user?.nome || "Alguém"} comentou na RP ${rp.produto} · ${rp.site}`,
+      dadosDepois: { rp_id: rp.id, texto }, ip: req.ip,
+    });
+    return res.status(201).json({ id: r.insertId, message: "Comentário registrado" });
+  } catch (err) {
+    console.error("[rsController.criarComentario]", err);
+    return erro(res, 500, "Erro ao registrar comentário");
+  }
+};
+
+const excluirComentario = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  try {
+    const [[c]] = await db.query(
+      "SELECT * FROM rps_comentarios WHERE id = ? AND rp_id = ? AND empresa_id = ?",
+      [req.params.comentarioId, req.params.id, empresa_id]
+    );
+    if (!c) return erro(res, 404, "Comentário não encontrado");
+    const perfil = String(req.user?.perfil || "").toLowerCase();
+    if (perfil !== "coordenador_rs" && Number(c.autor_id) !== Number(req.user?.id)) {
+      return erro(res, 403, "Só o autor ou o coordenador R&S pode apagar este comentário.");
+    }
+    await db.query("DELETE FROM rps_comentarios WHERE id = ? AND empresa_id = ?", [c.id, empresa_id]);
+    registrarAuditoria({
+      usuario: req.user, acao: "excluir", entidade: "rp_comentario", entidadeId: c.id,
+      resumo: `${req.user?.nome || "Alguém"} apagou um comentário da RP #${c.rp_id}`, dadosAntes: c, ip: req.ip,
+    });
+    return res.json({ message: "Comentário apagado" });
+  } catch (err) {
+    console.error("[rsController.excluirComentario]", err);
+    return erro(res, 500, "Erro ao apagar comentário");
+  }
+};
+
 module.exports = {
   // Sprint 1
   listar, criar, detalhe, editar, excluir, getSites, getProdutos,
+  listarComentarios, criarComentario, excluirComentario,
   // Sprint 2
   getDashboard, getRelatorio, exportar,
   // Sprint 3
