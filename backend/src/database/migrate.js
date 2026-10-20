@@ -2368,6 +2368,19 @@ async function runMigrations() {
       console.log(`  ↳ comentários das RPs não concluído (${error.message}) — seguindo`);
     }
 
+    // 71. Lixeira das RPs do R&S (20/10/2026) — excluir passa a "esconder" a RP por 30 dias
+    //     (restaurável); quem apaga de vez é a purga. NULL = RP normal.
+    try {
+      const [colExc] = await pool.query("SHOW COLUMNS FROM rps LIKE 'excluido_em'");
+      if (!colExc.length) {
+        await pool.query("ALTER TABLE rps ADD COLUMN excluido_em DATETIME NULL, ADD COLUMN excluido_por INT NULL");
+        await pool.query("ALTER TABLE rps ADD INDEX idx_rps_excluido (empresa_id, excluido_em)");
+      }
+      console.log("  ↳ lixeira das RPs: ok");
+    } catch (error) {
+      console.log(`  ↳ lixeira das RPs não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
