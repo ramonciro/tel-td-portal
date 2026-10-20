@@ -8,8 +8,10 @@
  *   1. Login por CPF ou matrícula (ver routes/authRoutes.js).
  *   2. Contas nascem em lote, junto da importação/cadastro de participantes
  *      de turma — é este serviço que faz isso.
- *   3. Senha inicial continua o padrão já usado no resto do portal
- *      (Portal@2026, troca obrigatória no primeiro acesso).
+ *   3. Senha inicial: era o padrão único Portal@2026. Desde 21/10/2026 cada
+ *      conta nova nasce com um CÓDIGO DE PRIMEIRO ACESSO próprio (ver
+ *      lib/codigoAcesso.js), com validade; a troca de senha segue obrigatória
+ *      no primeiro acesso. Contas antigas não são alteradas aqui.
  *
  * garantirUsuarioTreinando() é chamado depois de resolverPessoa() (ver
  * pessoasService.js) — nunca decide identidade sozinho, só o que fazer com
@@ -28,6 +30,7 @@
  */
 const bcrypt = require("bcryptjs");
 const pool = require("../lib/db");
+const { gerarCodigo, canonico, expiraEm } = require("../lib/codigoAcesso");
 
 const SENHA_PADRAO_TREINANDO = "Portal@2026";
 
@@ -81,12 +84,13 @@ async function garantirUsuarioTreinando({ pessoa, empresaId, cliente }, conn = p
     return { criado: false, atualizado: false, usuarioId: usuarioExistente.id, motivo: "ja_existia" };
   }
 
-  const senhaHash = await bcrypt.hash(SENHA_PADRAO_TREINANDO, 10);
+  const codigo = gerarCodigo();
+  const senhaHash = await bcrypt.hash(canonico(codigo), 10);
   const [result] = await conn.query(
     `INSERT INTO usuarios
-      (nome, email, senha, perfil, cliente, ativo, troca_senha_obrigatoria, empresa_id, pessoa_id)
-     VALUES (?, NULL, ?, 'treinando', ?, 1, 1, ?, ?)`,
-    [pessoa.nome, senhaHash, String(cliente || pessoa.cliente || "").trim() || null, empresaId, pessoa.id]
+      (nome, email, senha, perfil, cliente, ativo, troca_senha_obrigatoria, empresa_id, pessoa_id, codigo_acesso, codigo_acesso_expira)
+     VALUES (?, NULL, ?, 'treinando', ?, 1, 1, ?, ?, ?, ?)`,
+    [pessoa.nome, senhaHash, String(cliente || pessoa.cliente || "").trim() || null, empresaId, pessoa.id, codigo, expiraEm()]
   );
 
   return { criado: true, atualizado: false, usuarioId: result.insertId };

@@ -8,6 +8,7 @@
 // hora, a partir dos treinamentos que apontam pra essa necessidade.
 
 const pool = require("../lib/db");
+const { comTransacao } = require("../lib/tx");
 
 function n(value) {
   const x = Number(value);
@@ -150,8 +151,11 @@ async function excluirNecessidade(id, empresaId) {
     ? ` AND EXISTS (SELECT 1 FROM necessidades_treinamento nt WHERE nt.id = treinamentos.necessidade_id AND nt.empresa_id = ${pool.escape(empresaId)})`
     : "";
   const tenantCheck = empresaId ? ` AND empresa_id = ${pool.escape(empresaId)}` : "";
-  await pool.query(`UPDATE treinamentos SET necessidade_id = NULL WHERE necessidade_id = ?${tenantCheckTreinamentos}`, [id]);
-  await pool.query(`DELETE FROM necessidades_treinamento WHERE id = ?${tenantCheck}`, [id]);
+  // Desvincula as turmas e apaga a necessidade numa transação só (21/10/2026).
+  await comTransacao(async (conn) => {
+    await conn.query(`UPDATE treinamentos SET necessidade_id = NULL WHERE necessidade_id = ?${tenantCheckTreinamentos}`, [id]);
+    await conn.query(`DELETE FROM necessidades_treinamento WHERE id = ?${tenantCheck}`, [id]);
+  });
 }
 
 module.exports = {
