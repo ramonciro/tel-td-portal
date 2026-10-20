@@ -6,6 +6,7 @@
 
 const db      = require("../lib/db");
 const { registrarAuditoria } = require("../services/auditoria");
+const rel     = require("../lib/rsRelatorios");
 
 const getEmpresaId = (req) => req.user?.empresa_id;
 
@@ -108,6 +109,22 @@ function validarRP(b) {
   return { erros, dados };
 }
 
+/**
+ * Números que não fecham (decisão 20/10/2026: bloquear com mensagem clara).
+ * RP CANCELADA não entra nos totais, então não é checada.
+ */
+function incoerencias(d) {
+  if (d.status === "CANCELADA") return [];
+  const msgs = [];
+  if (d.hcs_aprovados > d.hcs)
+    msgs.push(`HC'S aprovados (${d.hcs_aprovados}) não pode ser maior que HC'S solicitados (${d.hcs})`);
+  if (d.qtd_entregue > d.hcs_aprovados)
+    msgs.push(`Qtd entregue (${d.qtd_entregue}) não pode ser maior que HC'S aprovados (${d.hcs_aprovados})`);
+  if (d.status === "ENTREGUE" && !(d.qtd_entregue > 0))
+    msgs.push("RP com status ENTREGUE precisa ter Qtd entregue maior que zero");
+  return msgs;
+}
+
 const COLUNAS_RP = [
   "mes_referencia", "site", "setor", "chamado", "produto", "cargo", "data_recebimento", "status",
   "inicio_av_tecnica", "final_av_tecnica", "data_fechamento_vaga",
@@ -151,8 +168,11 @@ const listar = async (req, res) => {
     );
     const [[{ total }]] = await db.query(`SELECT COUNT(*) AS total FROM rps r WHERE ${where}`, params);
     const [[totais]]    = await db.query(
-      `SELECT SUM(hcs) AS hcs, SUM(hcs_com_to) AS hcs_com_to,
-              SUM(hcs_aprovados) AS hcs_aprovados, SUM(qtd_entregue) AS qtd_entregue
+      // RPs canceladas não entram nos totais de HC'S (mesma regra do Dashboard e do Relatório)
+      `SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs ELSE 0 END),0) AS hcs,
+              COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs_com_to ELSE 0 END),0) AS hcs_com_to,
+              COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs_aprovados ELSE 0 END),0) AS hcs_aprovados,
+              COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN qtd_entregue ELSE 0 END),0) AS qtd_entregue
        FROM rps r WHERE ${where}`, params
     );
     return res.json({ rps, total, totais, page, limit });
@@ -167,6 +187,7 @@ const criar = async (req, res) => {
   if (!empresa_id) return erro(res, 401, "Não autorizado");
 
   const { erros, dados } = validarRP(req.body || {});
+  if (!erros.length) erros.push(...incoerencias(dados));
   if (erros.length) return erro(res, 400, erros.join("; "), { erros });
 
   try {
@@ -212,6 +233,12 @@ const editar = async (req, res) => {
     const mesclado = {};
     for (const c of COLUNAS_RP) mesclado[c] = corpo[c] !== undefined ? corpo[c] : antes[c];
     const { erros, dados } = validarRP(mesclado);
+    // Números incoerentes só travam se esta edição mexeu neles — assim uma RP antiga
+    // que já estava inconsistente ainda pode ter observação, datas etc. corrigidas.
+    const mexeuNosNumeros = ["hcs", "hcs_aprovados", "qtd_entregue", "status"].some(
+      (c) => String(dados[c] ?? "") !== String(antes[c] ?? "")
+    );
+    if (!erros.length && mexeuNosNumeros) erros.push(...incoerencias(dados));
     if (erros.length) return erro(res, 400, erros.join("; "), { erros });
 
     await db.query(
@@ -290,228 +317,335 @@ const getProdutos = async (req, res) => {
 // SPRINT 2 — ANALYTICS
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Cálculo único em lib/rsRelatorios.js — Dashboard, Relatório e Excel usam as mesmas funções,
+// então tela e planilha nunca divergem. Regras de negócio estão descritas no topo daquele arquivo.
+
+const MESES_NOME = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
+const rotuloMes = (ym) => (ym && /^\d{4}-\d{2}$/.test(ym) ? `${MESES_NOME[Number(ym.slice(5, 7)) - 1]}/${ym.slice(0, 4)}` : "");
+
+/** Mantém as chaves antigas (total_hcs etc.) ao lado das novas, para telas antigas não quebrarem durante o deploy. */
+function _comLegado(k) {
+  return { ...k, total_hcs: k.hcs, total_hcs_to: k.hcs_com_to, total_hcs_aprovados: k.hcs_aprovados, total_entregue: k.qtd_entregue };
+}
+
+/** Período da requisição; sem período, usa o último mês com RPs (ou o mês atual). */
+async function _periodoDaRequisicao(empresa_id, query) {
+  const lido = rel.lerPeriodo(query, { obrigatorio: false });
+  if (lido.erro) return lido;
+  if (lido.periodo) return lido;
+  const [[r]] = await db.query("SELECT DATE_FORMAT(MAX(mes_referencia), '%Y-%m') AS ym FROM rps WHERE empresa_id = ?", [empresa_id]);
+  const hoje = new Date();
+  const ym = r?.ym || `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  return { periodo: { de: ym, ate: ym, meses: 1 } };
+}
+
 const getDashboard = async (req, res) => {
   const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
-  const { mes } = req.query;
-  const params = [empresa_id];
-  let where = "empresa_id = ?";
-  if (mes) { where += " AND DATE_FORMAT(mes_referencia, '%Y-%m') = ?"; params.push(mes); }
-
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
   try {
-    const [[k]] = await db.query(
-      `SELECT COUNT(*) AS total_rps,
-         COALESCE(SUM(hcs),0) AS total_hcs, COALESCE(SUM(hcs_com_to),0) AS total_hcs_to,
-         COALESCE(SUM(hcs_aprovados),0) AS total_hcs_aprovados, COALESCE(SUM(qtd_entregue),0) AS total_entregue,
-         SUM(CASE WHEN status='ENTREGUE' THEN 1 ELSE 0 END) AS st_entregue,
-         SUM(CASE WHEN status='EM ANDAMENTO' THEN 1 ELSE 0 END) AS st_em_andamento,
-         SUM(CASE WHEN status='CANCELADA' THEN 1 ELSE 0 END) AS st_cancelada,
-         SUM(CASE WHEN status LIKE 'N_O ENTREGUE' THEN 1 ELSE 0 END) AS st_nao_entregue,
-         SUM(CASE WHEN setor='OPERACIONAL' THEN 1 ELSE 0 END) AS op_rps,
-         COALESCE(SUM(CASE WHEN setor='OPERACIONAL' THEN hcs ELSE 0 END),0) AS op_hcs,
-         COALESCE(SUM(CASE WHEN setor='OPERACIONAL' THEN hcs_aprovados ELSE 0 END),0) AS op_aprovados,
-         COALESCE(SUM(CASE WHEN setor='OPERACIONAL' THEN qtd_entregue ELSE 0 END),0) AS op_entregue,
-         SUM(CASE WHEN setor LIKE 'ESTRAT%' THEN 1 ELSE 0 END) AS es_rps,
-         COALESCE(SUM(CASE WHEN setor LIKE 'ESTRAT%' THEN hcs ELSE 0 END),0) AS es_hcs,
-         COALESCE(SUM(CASE WHEN setor LIKE 'ESTRAT%' THEN hcs_aprovados ELSE 0 END),0) AS es_aprovados,
-         COALESCE(SUM(CASE WHEN setor LIKE 'ESTRAT%' THEN qtd_entregue ELSE 0 END),0) AS es_entregue
-       FROM rps WHERE ${where}`, params
-    );
-    const [por_site]     = await db.query(`SELECT site, COUNT(*) AS total_rps FROM rps WHERE ${where} GROUP BY site ORDER BY total_rps DESC`, params);
-    const [top_produtos] = await db.query(`SELECT produto, SUM(hcs) AS hcs, SUM(qtd_entregue) AS qtd_entregue FROM rps WHERE ${where} GROUP BY produto ORDER BY hcs DESC LIMIT 5`, params);
-    const tot = (k.st_entregue||0)+(k.st_em_andamento||0)+(k.st_cancelada||0)+(k.st_nao_entregue||0);
+    const lido = await _periodoDaRequisicao(empresa_id, req.query);
+    if (lido.erro) return erro(res, 400, lido.erro);
+    const filtros = rel.lerFiltros(req.query);
+    const periodo = lido.periodo;
+
+    const vazio = rel.vazio();
+    const [r, tend, kOp, kEs] = await Promise.all([
+      rel.montarRelatorio(empresa_id, periodo, filtros),
+      rel.tendencia(empresa_id, periodo.ate, filtros, 6),
+      filtros.setor === "ESTRATÉGICO" ? vazio : rel.kpis(empresa_id, periodo, { ...filtros, setor: "OPERACIONAL" }),
+      filtros.setor === "OPERACIONAL" ? vazio : rel.kpis(empresa_id, periodo, { ...filtros, setor: "ESTRATÉGICO" }),
+    ]);
+
+    const st = (nome) => r.por_status.find((s) => s.status === nome) || { total: 0, pct: 0 };
+    const stat = (nome) => ({ count: st(nome).total, pct: st(nome).pct });
+    const { todos, ...emAberto } = r.em_aberto;
+    const setorLegado = (k) => ({ rps: k.total_rps, hcs: k.hcs, hcs_aprovados: k.hcs_aprovados, qtd_entregue: k.qtd_entregue, ...k });
+
     return res.json({
-      total_rps: k.total_rps||0, total_hcs: k.total_hcs||0,
-      total_hcs_aprovados: k.total_hcs_aprovados||0, total_entregue: k.total_entregue||0,
+      // chaves antigas
+      total_rps: r.kpis.total_rps, total_hcs: r.kpis.hcs,
+      total_hcs_aprovados: r.kpis.hcs_aprovados, total_entregue: r.kpis.qtd_entregue,
       por_status: {
-        entregue:     { count: k.st_entregue||0,     pct: _pct(k.st_entregue,     tot) },
-        em_andamento: { count: k.st_em_andamento||0, pct: _pct(k.st_em_andamento, tot) },
-        cancelada:    { count: k.st_cancelada||0,    pct: _pct(k.st_cancelada,    tot) },
-        nao_entregue: { count: k.st_nao_entregue||0, pct: _pct(k.st_nao_entregue, tot) },
+        entregue: stat("ENTREGUE"), em_andamento: stat("EM ANDAMENTO"),
+        cancelada: stat("CANCELADA"), nao_entregue: stat("NÃO ENTREGUE"),
       },
-      operacional: { rps: k.op_rps||0, hcs: k.op_hcs||0, hcs_aprovados: k.op_aprovados||0, qtd_entregue: k.op_entregue||0 },
-      estrategico: { rps: k.es_rps||0, hcs: k.es_hcs||0, hcs_aprovados: k.es_aprovados||0, qtd_entregue: k.es_entregue||0 },
-      por_site, top_produtos,
+      operacional: setorLegado(kOp), estrategico: setorLegado(kEs),
+      por_site: r.por_site.map((s) => ({ site: s.rotulo, ...s })),
+      top_produtos: r.por_produto.slice(0, 5).map((p) => ({ produto: p.rotulo, ...p })),
+      // novas
+      periodo: r.periodo, filtros: r.filtros,
+      kpis: _comLegado(r.kpis), anterior: r.anterior, variacao: r.variacao, acumulado_ano: r.acumulado_ano,
+      status_lista: r.por_status,
+      top_cargos: r.por_cargo.slice(0, 5).map((c) => ({ cargo: c.rotulo, ...c })),
+      tendencia: tend, sla: r.sla, em_aberto: emAberto,
     });
   } catch (err) {
     console.error("[rsController.getDashboard]", err);
-    return res.status(500).json({ error: "Erro ao gerar dashboard" });
+    return erro(res, 500, "Erro ao gerar dashboard");
   }
 };
 
 const getRelatorio = async (req, res) => {
   const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
-  const { mes, setor } = req.query;
-  if (!mes || !/^\d{4}-\d{2}$/.test(String(mes))) return res.status(400).json({ error: "Parâmetro mes é obrigatório (AAAA-MM)", message: "Parâmetro mes é obrigatório (AAAA-MM)" });
-
-  const base = [empresa_id, mes];
-  const bw   = "empresa_id=? AND DATE_FORMAT(mes_referencia,'%Y-%m')=?";
-  const sc   = setor ? " AND setor=?" : "";
-  const sp   = setor ? [...base, setor] : base;
-
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  const lido = rel.lerPeriodo(req.query, { obrigatorio: true });
+  if (lido.erro) return erro(res, 400, lido.erro);
+  const filtros = rel.lerFiltros(req.query);
   try {
-    const [[k]] = await db.query(`SELECT COUNT(*) AS total_rps, COALESCE(SUM(hcs),0) AS total_hcs, COALESCE(SUM(hcs_com_to),0) AS total_hcs_to, COALESCE(SUM(hcs_aprovados),0) AS total_hcs_aprovados, COALESCE(SUM(qtd_entregue),0) AS total_entregue FROM rps WHERE ${bw}${sc}`, sp);
-    const [por_site]   = await db.query(`SELECT site, COUNT(*) AS total_rps FROM rps WHERE ${bw}${sc} GROUP BY site ORDER BY total_rps DESC`, sp);
-    const [rawStatus]  = await db.query(`SELECT status, COUNT(*) AS total FROM rps WHERE ${bw}${sc} GROUP BY status ORDER BY total DESC`, sp);
-    const totSt = rawStatus.reduce((s,r)=>s+r.total,0);
-    const por_status = rawStatus.map(r=>({status:r.status,total:r.total,pct:_pct(r.total,totSt)}));
-
-    let por_produto = [];
-    if (!setor || setor==="OPERACIONAL") {
-      const [rows] = await db.query(`SELECT produto, COALESCE(SUM(hcs),0) AS hcs, COALESCE(SUM(hcs_com_to),0) AS hcs_com_to, COALESCE(SUM(hcs_aprovados),0) AS hcs_aprovados, COALESCE(SUM(qtd_entregue),0) AS qtd_entregue FROM rps WHERE ${bw} AND setor='OPERACIONAL' GROUP BY produto ORDER BY hcs DESC`, base);
-      por_produto = rows;
-    }
-    let por_cargo = [];
-    if (!setor || setor==="ESTRATÉGICO") {
-      const [rows] = await db.query(`SELECT COALESCE(NULLIF(cargo,''),'(sem cargo)') AS cargo, COALESCE(SUM(hcs),0) AS hcs, COALESCE(SUM(hcs_com_to),0) AS hcs_com_to, COALESCE(SUM(hcs_aprovados),0) AS hcs_aprovados, COALESCE(SUM(qtd_entregue),0) AS qtd_entregue FROM rps WHERE ${bw} AND setor LIKE 'ESTRAT%' GROUP BY cargo ORDER BY hcs DESC`, base);
-      por_cargo = rows;
-    }
-    return res.json({ kpis: { total_rps:k.total_rps||0, total_hcs:k.total_hcs||0, total_hcs_to:k.total_hcs_to||0, total_hcs_aprovados:k.total_hcs_aprovados||0, total_entregue:k.total_entregue||0 }, por_site, por_status, por_produto, por_cargo });
+    const r = await rel.montarRelatorio(empresa_id, lido.periodo, filtros);
+    const { todos, ...emAberto } = r.em_aberto;
+    return res.json({
+      periodo: r.periodo, filtros: r.filtros,
+      kpis: _comLegado(r.kpis), anterior: r.anterior, variacao: r.variacao, acumulado_ano: r.acumulado_ano,
+      por_status: r.por_status,
+      por_site: r.por_site.map((s) => ({ site: s.rotulo, ...s })),
+      por_produto: r.por_produto.map((p) => ({ produto: p.rotulo, ...p })),
+      por_cargo: r.por_cargo.map((c) => ({ cargo: c.rotulo, ...c })),
+      por_mes: r.por_mes, sla: r.sla, em_aberto: emAberto,
+    });
   } catch (err) {
     console.error("[rsController.getRelatorio]", err);
-    return res.status(500).json({ error: "Erro ao gerar relatório" });
+    return erro(res, 500, "Erro ao gerar relatório");
   }
 };
 
 const exportar = async (req, res) => {
   const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return res.status(401).json({ error: "Não autorizado" });
-  const { mes } = req.query;
-  if (!mes || !/^\d{4}-\d{2}$/.test(String(mes))) return res.status(400).json({ error: "Parâmetro mes é obrigatório (AAAA-MM)", message: "Parâmetro mes é obrigatório (AAAA-MM)" });
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  const lido = rel.lerPeriodo(req.query, { obrigatorio: true });
+  if (lido.erro) return erro(res, 400, lido.erro);
+  const filtros = rel.lerFiltros(req.query);
+  const periodo = lido.periodo;
 
   try {
-    const { novoWorkbook, adicionarTabela, escreverTabela } = require("../lib/excelExport");
-    const bw   = "empresa_id=? AND DATE_FORMAT(mes_referencia,'%Y-%m')=?";
-    const [rpsOp] = await db.query(`SELECT * FROM rps WHERE ${bw} AND setor='OPERACIONAL' ORDER BY site, produto`, [empresa_id, mes]);
-    const [rpsEs] = await db.query(`SELECT * FROM rps WHERE ${bw} AND setor LIKE 'ESTRAT%' ORDER BY site, cargo`, [empresa_id, mes]);
+    const { novoWorkbook, adicionarTabela, escreverTabela, escreverCelula, estilizarCabecalho } = require("../lib/excelExport");
+    const r = await rel.montarRelatorio(empresa_id, periodo, filtros);
 
-    const fm  = v => { if(!v) return ""; const m=["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"]; return m[new Date(v).getMonth()]; };
-    const sum = (arr, f) => arr.reduce((s,r)=>s+(Number(r[f])||0), 0);
+    // RPs do período (respeitando site/setor) — com comentários, para o Excel levar o histórico junto.
+    const { where, params } = rel.montarWhere(empresa_id, periodo, filtros, "r");
+    const [rps] = await db.query(
+      `SELECT r.*, DATE_FORMAT(r.mes_referencia, '%Y-%m') AS mes_ym,
+              DATEDIFF(r.final_av_tecnica, r.data_recebimento) AS dias_op,
+              DATEDIFF(r.data_fechamento_vaga, r.data_recebimento) AS dias_es
+         FROM rps r WHERE ${where} ORDER BY r.mes_referencia, r.site, r.produto, r.id`, params);
+    const comentariosPorRp = new Map();
+    if (rps.length) {
+      const ids = rps.map((x) => x.id);
+      const [coms] = await db.query(
+        `SELECT rp_id, autor_nome, texto, created_at FROM rps_comentarios
+          WHERE empresa_id = ? AND rp_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at, id`,
+        [empresa_id, ...ids]).catch(() => [[]]);
+      for (const c of coms) {
+        const d = c.created_at ? new Date(c.created_at) : null;
+        const ds = d && !isNaN(d) ? `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}` : "";
+        const linha = `${ds} ${c.autor_nome || ""}: ${c.texto}`.trim();
+        if (!comentariosPorRp.has(c.rp_id)) comentariosPorRp.set(c.rp_id, []);
+        comentariosPorRp.get(c.rp_id).push(linha);
+      }
+    }
 
+    const ativas = (arr) => arr.filter((x) => x.status !== "CANCELADA");
+    const sum = (arr, f) => ativas(arr).reduce((s, x) => s + (Number(x[f]) || 0), 0);
+    const nomeSetor = filtros.setor || "Todos";
+    const nomePeriodo = periodo.meses === 1 ? rotuloMes(periodo.de) : `${rotuloMes(periodo.de)} a ${rotuloMes(periodo.ate)}`;
     const wb = novoWorkbook();
 
+    // ───────────── RESUMO ─────────────
+    const ws = wb.addWorksheet("RESUMO");
+    ws.columns = [{ width: 30 }, { width: 18 }, { width: 18 }, { width: 14 }, { width: 22 }, { width: 14 }];
+    ws.getCell(1, 1).value = "RELATÓRIO R&S — RESUMO EXECUTIVO";
+    ws.getCell(1, 1).font = { bold: true, size: 14 };
+    ws.getCell(2, 1).value = `Período: ${nomePeriodo}   |   Site: ${filtros.site || "Todos"}   |   Setor: ${nomeSetor}`;
+    ws.getCell(3, 1).value = "RPs canceladas não entram nos totais de HC'S. Taxas = sobre HC'S solicitados. Comparativo = período anterior de mesma duração.";
+    ws.getCell(3, 1).font = { italic: true, color: { argb: "FF64748B" } };
+
+    let linha = 5;
+    const cab = ["INDICADOR", nomePeriodo, `ANTERIOR (${rotuloMes(r.anterior.periodo.de)}${periodo.meses > 1 ? " a " + rotuloMes(r.anterior.periodo.ate) : ""})`, "VARIAÇÃO", `ACUMULADO ${periodo.ate.slice(0, 4)}`];
+    cab.forEach((t, i) => { ws.getCell(linha, i + 1).value = t; });
+    estilizarCabecalho(ws, linha, cab.length);
+    linha += 1;
+    const K = r.kpis, A = r.anterior.kpis, Y = r.acumulado_ano.kpis, V = r.variacao;
+    const linhasKpi = [
+      ["RPs recebidas", "total_rps", "inteiro", "pct"],
+      ["HC'S solicitados", "hcs", "inteiro", "pct"],
+      ["HC'S com TO", "hcs_com_to", "inteiro", null],
+      ["HC'S aprovados", "hcs_aprovados", "inteiro", "pct"],
+      ["HC'S entregues", "qtd_entregue", "inteiro", "pct"],
+      ["Vagas pendentes (RPs em andamento)", "pendentes", "inteiro", "pct"],
+      ["Vagas não atendidas (RPs não entregues)", "nao_atendidas", "inteiro", null],
+      ["Taxa de aprovação", "taxa_aprovacao", "percentual", "pp"],
+      ["Taxa de entrega", "taxa_entrega", "percentual", "pp"],
+    ];
+    for (const [rot, chave, fmt, tipoVar] of linhasKpi) {
+      ws.getCell(linha, 1).value = rot;
+      escreverCelula(ws, linha, 2, K[chave], fmt);
+      escreverCelula(ws, linha, 3, A[chave], fmt);
+      if (tipoVar === "pct") {
+        const c = escreverCelula(ws, linha, 4, V[chave], "percentual");
+        if (V[chave] === null || V[chave] === undefined) c.value = "—";
+      } else if (tipoVar === "pp") {
+        const c = ws.getCell(linha, 4);
+        c.value = V[chave] === null || V[chave] === undefined ? "—" : `${V[chave] > 0 ? "+" : ""}${V[chave].toFixed(1).replace(".", ",")} pp`;
+      } else ws.getCell(linha, 4).value = "—";
+      escreverCelula(ws, linha, 5, Y[chave], fmt);
+      linha += 1;
+    }
+    linha += 1;
+
+    linha = escreverTabela(ws, {
+      startRow: linha, titulo: "SITUAÇÃO DAS RPs",
+      colunas: [{ titulo: "STATUS", chave: "status" }, { titulo: "RPs", chave: "total", formato: "inteiro" }, { titulo: "% DAS RPs", chave: "pct", formato: "percentual" }],
+      linhas: r.por_status.map((s) => ({ status: s.status, total: s.total, pct: s.pct })),
+    }) + 1;
+
+    linha = escreverTabela(ws, {
+      startRow: linha, titulo: `PRAZO MÉDIO (dias corridos, só RPs com as duas datas)`,
+      colunas: [{ titulo: "SETOR / ETAPA", chave: "etapa" }, { titulo: "DIAS (MÉDIA)", chave: "dias", formato: "decimal1" }, { titulo: "RPs CONSIDERADAS", chave: "n", formato: "inteiro" }],
+      linhas: [
+        { etapa: "Operacional: recebimento → início da av. técnica", dias: r.sla.operacional.ate_inicio, n: r.sla.operacional.n },
+        { etapa: "Operacional: recebimento → final da av. técnica", dias: r.sla.operacional.dias_medio, n: r.sla.operacional.n },
+        { etapa: "Estratégico: recebimento → fechamento da vaga", dias: r.sla.estrategico.dias_medio, n: r.sla.estrategico.n },
+      ],
+    }) + 1;
+
+    linha = escreverTabela(ws, {
+      startRow: linha,
+      titulo: `RPs EM ANDAMENTO: ${r.em_aberto.total} no total, ${r.em_aberto.atrasadas} atrasada(s) (mais de ${r.em_aberto.limite_dias} dias) — detalhe na aba EM ANDAMENTO`,
+      colunas: [{ titulo: "INDICADOR", chave: "i" }, { titulo: "QTD", chave: "q", formato: "inteiro" }],
+      linhas: [{ i: "Em andamento", q: r.em_aberto.total }, { i: "Atrasadas", q: r.em_aberto.atrasadas }],
+    }) + 1;
+
+    const colTaxas = (rotuloTitulo) => [
+      { titulo: rotuloTitulo, chave: "rotulo" },
+      { titulo: "RPs", chave: "total_rps", formato: "inteiro" },
+      { titulo: "HC'S", chave: "hcs", formato: "inteiro" },
+      { titulo: "APROVADOS", chave: "hcs_aprovados", formato: "inteiro" },
+      { titulo: "ENTREGUES", chave: "qtd_entregue", formato: "inteiro" },
+      { titulo: "TAXA ENTREGA", chave: "taxa_entrega", formato: "percentual" },
+      { titulo: "PENDENTES", chave: "pendentes", formato: "inteiro" },
+    ];
+    const totalLinha = (rot, k) => ({ rotulo: rot, total_rps: k.total_rps, hcs: k.hcs, hcs_aprovados: k.hcs_aprovados, qtd_entregue: k.qtd_entregue, taxa_entrega: k.taxa_entrega, pendentes: k.pendentes });
+    escreverTabela(ws, {
+      startRow: linha, titulo: "POR SITE", colunas: colTaxas("SITE"),
+      linhas: r.por_site, linhaTotal: totalLinha("TOTAL", K),
+    });
+
+    // ───────────── OPERACIONAL / ESTRATÉGICO ─────────────
+    const rpsOp = rps.filter((x) => x.setor === "OPERACIONAL");
+    const rpsEs = rps.filter((x) => String(x.setor).startsWith("ESTRAT"));
+    const comuns = (x) => ({
+      mes: rotuloMes(x.mes_ym), site: x.site, setor: x.setor, chamado: x.chamado || "", produto: x.produto,
+      data_recebimento: x.data_recebimento, status: x.status,
+      hcs: x.hcs, hcs_com_to: x.hcs_com_to, hcs_aprovados: x.hcs_aprovados, qtd_entregue: x.qtd_entregue,
+      observacoes: x.observacoes || "", comentarios: (comentariosPorRp.get(x.id) || []).join("\n"),
+    });
+    const totais = (arr) => ({
+      mes: "TOTAL (sem canceladas)", hcs: sum(arr, "hcs"), hcs_com_to: sum(arr, "hcs_com_to"),
+      hcs_aprovados: sum(arr, "hcs_aprovados"), qtd_entregue: sum(arr, "qtd_entregue"),
+    });
+    const colFinais = [
+      { titulo: "HC'S", chave: "hcs", largura: 8, formato: "inteiro" },
+      { titulo: "HC'S COM TO", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
+      { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", largura: 14, formato: "inteiro" },
+      { titulo: "QTD ENTREGUE", chave: "qtd_entregue", largura: 13, formato: "inteiro" },
+      { titulo: "OBSERVAÇÕES", chave: "observacoes", largura: 36 },
+      { titulo: "COMENTÁRIOS", chave: "comentarios", largura: 60 },
+    ];
     const colunasOp = [
-      { titulo: "MÊS", chave: "mes", largura: 12 },
-      { titulo: "SITE", chave: "site", largura: 14 },
-      { titulo: "SETOR", chave: "setor", largura: 14 },
-      { titulo: "CHAMADO", chave: "chamado", largura: 12 },
+      { titulo: "MÊS", chave: "mes", largura: 18 }, { titulo: "SITE", chave: "site", largura: 14 },
+      { titulo: "SETOR", chave: "setor", largura: 14 }, { titulo: "CHAMADO", chave: "chamado", largura: 12 },
       { titulo: "PRODUTO", chave: "produto", largura: 20 },
       { titulo: "DATA RECEBIMENTO RP", chave: "data_recebimento", largura: 16, formato: "data" },
       { titulo: "STATUS", chave: "status", largura: 16 },
       { titulo: "INICIO DA AV. TÉCNICA", chave: "inicio_av_tecnica", largura: 16, formato: "data" },
       { titulo: "FINAL DA AV. TECNICA", chave: "final_av_tecnica", largura: 16, formato: "data" },
-      { titulo: "HC'S", chave: "hcs", largura: 8, formato: "inteiro" },
-      { titulo: "HC'S COM TO", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
-      { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", largura: 14, formato: "inteiro" },
-      { titulo: "QTD ENTREGUE", chave: "qtd_entregue", largura: 13, formato: "inteiro" },
+      { titulo: "DIAS ATÉ O FINAL", chave: "dias", largura: 12 },
+      ...colFinais,
     ];
     adicionarTabela(wb, {
-      nomeAba: "OPERACIONAL",
-      colunas: colunasOp,
-      linhas: rpsOp.map(r => ({
-        mes: fm(r.mes_referencia), site: r.site, setor: r.setor, chamado: r.chamado || "", produto: r.produto,
-        data_recebimento: r.data_recebimento, status: r.status,
-        inicio_av_tecnica: r.inicio_av_tecnica, final_av_tecnica: r.final_av_tecnica,
-        hcs: r.hcs, hcs_com_to: r.hcs_com_to, hcs_aprovados: r.hcs_aprovados, qtd_entregue: r.qtd_entregue,
-      })),
-      linhaTotal: {
-        mes: "TOTAL",
-        hcs: sum(rpsOp, "hcs"), hcs_com_to: sum(rpsOp, "hcs_com_to"),
-        hcs_aprovados: sum(rpsOp, "hcs_aprovados"), qtd_entregue: sum(rpsOp, "qtd_entregue"),
-      },
+      nomeAba: "OPERACIONAL", colunas: colunasOp,
+      linhas: rpsOp.map((x) => ({ ...comuns(x), inicio_av_tecnica: x.inicio_av_tecnica, final_av_tecnica: x.final_av_tecnica, dias: x.dias_op != null && x.dias_op >= 0 ? x.dias_op : "" })),
+      linhaTotal: totais(rpsOp),
     });
-
     const colunasEs = [
-      { titulo: "MÊS", chave: "mes", largura: 12 },
-      { titulo: "SITE", chave: "site", largura: 14 },
-      { titulo: "SETOR", chave: "setor", largura: 14 },
-      { titulo: "CHAMADO", chave: "chamado", largura: 12 },
-      { titulo: "PRODUTO", chave: "produto", largura: 20 },
-      { titulo: "CARGO", chave: "cargo", largura: 20 },
+      { titulo: "MÊS", chave: "mes", largura: 18 }, { titulo: "SITE", chave: "site", largura: 14 },
+      { titulo: "SETOR", chave: "setor", largura: 14 }, { titulo: "CHAMADO", chave: "chamado", largura: 12 },
+      { titulo: "PRODUTO", chave: "produto", largura: 20 }, { titulo: "CARGO", chave: "cargo", largura: 20 },
       { titulo: "DATA RECEBIMENTO RP", chave: "data_recebimento", largura: 16, formato: "data" },
       { titulo: "STATUS", chave: "status", largura: 16 },
       { titulo: "DATA FECHAMENTO DA VAGA", chave: "data_fechamento_vaga", largura: 18, formato: "data" },
-      { titulo: "HC'S", chave: "hcs", largura: 8, formato: "inteiro" },
-      { titulo: "HC'S COM TO", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
-      { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", largura: 14, formato: "inteiro" },
-      { titulo: "QTD ENTREGUE", chave: "qtd_entregue", largura: 13, formato: "inteiro" },
+      { titulo: "DIAS ATÉ O FECHAMENTO", chave: "dias", largura: 14 },
+      ...colFinais,
     ];
     adicionarTabela(wb, {
-      nomeAba: "ESTRATÉGICO",
-      colunas: colunasEs,
-      linhas: rpsEs.map(r => ({
-        mes: fm(r.mes_referencia), site: r.site, setor: r.setor, chamado: r.chamado || "", produto: r.produto, cargo: r.cargo || "",
-        data_recebimento: r.data_recebimento, status: r.status, data_fechamento_vaga: r.data_fechamento_vaga,
-        hcs: r.hcs, hcs_com_to: r.hcs_com_to, hcs_aprovados: r.hcs_aprovados, qtd_entregue: r.qtd_entregue,
-      })),
-      linhaTotal: {
-        mes: "TOTAL",
-        hcs: sum(rpsEs, "hcs"), hcs_com_to: sum(rpsEs, "hcs_com_to"),
-        hcs_aprovados: sum(rpsEs, "hcs_aprovados"), qtd_entregue: sum(rpsEs, "qtd_entregue"),
-      },
+      nomeAba: "ESTRATÉGICO", colunas: colunasEs,
+      linhas: rpsEs.map((x) => ({ ...comuns(x), cargo: x.cargo || "", data_fechamento_vaga: x.data_fechamento_vaga, dias: x.dias_es != null && x.dias_es >= 0 ? x.dias_es : "" })),
+      linhaTotal: totais(rpsEs),
+    });
+    for (const nome of ["OPERACIONAL", "ESTRATÉGICO"]) {
+      for (const col of [15, 16]) wb.getWorksheet(nome).getColumn(col).alignment = { wrapText: true, vertical: "top" };
+    }
+
+    // ───────────── PRODUTOS E CARGOS ─────────────
+    const wsPC = wb.addWorksheet("PRODUTOS E CARGOS");
+    wsPC.columns = [{ width: 34 }, { width: 10 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 12 }];
+    const colPC = (t) => [
+      { titulo: t, chave: "rotulo" }, { titulo: "RPs", chave: "total_rps", formato: "inteiro" },
+      { titulo: "HC'S", chave: "hcs", formato: "inteiro" }, { titulo: "COM TO", chave: "hcs_com_to", formato: "inteiro" },
+      { titulo: "APROVADOS", chave: "hcs_aprovados", formato: "inteiro" }, { titulo: "ENTREGUES", chave: "qtd_entregue", formato: "inteiro" },
+      { titulo: "TAXA ENTREGA", chave: "taxa_entrega", formato: "percentual" }, { titulo: "PENDENTES", chave: "pendentes", formato: "inteiro" },
+    ];
+    const somaGrupo = (arr) => {
+      const t = { total_rps: 0, hcs: 0, hcs_com_to: 0, hcs_aprovados: 0, qtd_entregue: 0, pendentes: 0 };
+      arr.forEach((g) => Object.keys(t).forEach((c) => { t[c] += g[c]; }));
+      t.taxa_entrega = t.hcs > 0 ? Math.round((t.qtd_entregue / t.hcs) * 1000) / 10 : null;
+      return { rotulo: "TOTAL", ...t };
+    };
+    let l2 = escreverTabela(wsPC, { startRow: 1, titulo: "OPERACIONAL — POR PRODUTO", colunas: colPC("PRODUTO"), linhas: r.por_produto, linhaTotal: somaGrupo(r.por_produto) }) + 1;
+    escreverTabela(wsPC, { startRow: l2, titulo: "ESTRATÉGICO — POR CARGO", colunas: colPC("CARGO"), linhas: r.por_cargo, linhaTotal: somaGrupo(r.por_cargo) });
+
+    // ───────────── EM ANDAMENTO ─────────────
+    adicionarTabela(wb, {
+      nomeAba: "EM ANDAMENTO",
+      colunas: [
+        { titulo: "MÊS", chave: "mes", largura: 18 }, { titulo: "SITE", chave: "site", largura: 14 }, { titulo: "SETOR", chave: "setor", largura: 14 },
+        { titulo: "CHAMADO", chave: "chamado", largura: 12 }, { titulo: "PRODUTO", chave: "produto", largura: 22 }, { titulo: "CARGO", chave: "cargo", largura: 20 },
+        { titulo: "RECEBIMENTO", chave: "data_recebimento", largura: 14, formato: "data" },
+        { titulo: "DIAS EM ABERTO", chave: "dias", largura: 14, formato: "inteiro" },
+        { titulo: `ATRASADA (> ${r.em_aberto.limite_dias} DIAS)`, chave: "atrasada", largura: 20 },
+        { titulo: "HC'S", chave: "hcs", largura: 8, formato: "inteiro" }, { titulo: "APROVADOS", chave: "hcs_aprovados", largura: 12, formato: "inteiro" },
+        { titulo: "ENTREGUES", chave: "qtd_entregue", largura: 12, formato: "inteiro" }, { titulo: "PENDENTES", chave: "pendentes", largura: 12, formato: "inteiro" },
+      ],
+      linhas: r.em_aberto.todos.map((x) => ({ ...x, mes: rotuloMes(x.mes), cargo: x.cargo || "", atrasada: x.atrasada ? "SIM" : "" })),
+      linhaTotal: null,
     });
 
-    // Aba "DASHBOARD": três mini-tabelas empilhadas na mesma planilha (por
-    // site, operacional por produto, estratégico por cargo) — mantém o
-    // mesmo layout de sempre, só com o cabeçalho/números formatados.
-    const siteCount={};
-    [...rpsOp,...rpsEs].forEach(r=>{siteCount[r.site]=(siteCount[r.site]||0)+1;});
-    const prodMap={};
-    rpsOp.forEach(r=>{if(!prodMap[r.produto])prodMap[r.produto]={hcs:0,ha:0,qe:0};prodMap[r.produto].hcs+=r.hcs||0;prodMap[r.produto].ha+=r.hcs_aprovados||0;prodMap[r.produto].qe+=r.qtd_entregue||0;});
-    const cargoMap={};
-    rpsEs.forEach(r=>{const c=r.cargo||"(sem cargo)";if(!cargoMap[c])cargoMap[c]={hcs:0,ha:0,qe:0};cargoMap[c].hcs+=r.hcs||0;cargoMap[c].ha+=r.hcs_aprovados||0;cargoMap[c].qe+=r.qtd_entregue||0;});
+    // ───────────── POR MÊS (só quando o período tem mais de um mês) ─────────────
+    if (periodo.meses > 1) {
+      adicionarTabela(wb, {
+        nomeAba: "POR MÊS",
+        colunas: [
+          { titulo: "MÊS", chave: "mes", largura: 18 }, { titulo: "RPs", chave: "total_rps", formato: "inteiro" },
+          { titulo: "HC'S", chave: "hcs", formato: "inteiro" }, { titulo: "APROVADOS", chave: "hcs_aprovados", formato: "inteiro", largura: 14 },
+          { titulo: "ENTREGUES", chave: "qtd_entregue", formato: "inteiro", largura: 14 },
+          { titulo: "TAXA APROVAÇÃO", chave: "taxa_aprovacao", formato: "percentual", largura: 16 },
+          { titulo: "TAXA ENTREGA", chave: "taxa_entrega", formato: "percentual", largura: 14 },
+          { titulo: "PENDENTES", chave: "pendentes", formato: "inteiro", largura: 12 },
+        ],
+        linhas: r.por_mes.map((m) => ({ ...m, mes: rotuloMes(m.mes) })),
+        linhaTotal: { mes: "TOTAL", total_rps: K.total_rps, hcs: K.hcs, hcs_aprovados: K.hcs_aprovados, qtd_entregue: K.qtd_entregue, taxa_aprovacao: K.taxa_aprovacao, taxa_entrega: K.taxa_entrega, pendentes: K.pendentes },
+      });
+    }
 
-    const wsDash = wb.addWorksheet("DASHBOARD");
-    wsDash.columns = [{ width: 26 }, { width: 16 }, { width: 16 }, { width: 14 }];
-    wsDash.getCell(1, 1).value = `DASHBOARD — ${mes.replace("-", "/")}`;
-    wsDash.getCell(1, 1).font = { bold: true, size: 14 };
-
-    let linha = 3;
-    linha = escreverTabela(wsDash, {
-      startRow: linha,
-      titulo: "POR SITE",
-      colunas: [
-        { titulo: "SITE", chave: "site" },
-        { titulo: "TOTAL RPs", chave: "total", formato: "inteiro" },
-      ],
-      linhas: Object.entries(siteCount).map(([site, total]) => ({ site, total })),
-    }) + 1;
-
-    linha = escreverTabela(wsDash, {
-      startRow: linha,
-      titulo: "OPERACIONAL — POR PRODUTO",
-      colunas: [
-        { titulo: "PRODUTO", chave: "produto" },
-        { titulo: "HC'S", chave: "hcs", formato: "inteiro" },
-        { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", formato: "inteiro" },
-        { titulo: "QTD ENTREGUE", chave: "qtd_entregue", formato: "inteiro" },
-      ],
-      linhas: Object.entries(prodMap).map(([produto, v]) => ({ produto, hcs: v.hcs, hcs_aprovados: v.ha, qtd_entregue: v.qe })),
-      linhaTotal: { produto: "TOTAL", hcs: sum(rpsOp, "hcs"), hcs_aprovados: sum(rpsOp, "hcs_aprovados"), qtd_entregue: sum(rpsOp, "qtd_entregue") },
-    }) + 1;
-
-    escreverTabela(wsDash, {
-      startRow: linha,
-      titulo: "ESTRATÉGICO — POR CARGO",
-      colunas: [
-        { titulo: "CARGO", chave: "cargo" },
-        { titulo: "HC'S", chave: "hcs", formato: "inteiro" },
-        { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", formato: "inteiro" },
-        { titulo: "QTD ENTREGUE", chave: "qtd_entregue", formato: "inteiro" },
-      ],
-      linhas: Object.entries(cargoMap).map(([cargo, v]) => ({ cargo, hcs: v.hcs, hcs_aprovados: v.ha, qtd_entregue: v.qe })),
-      linhaTotal: { cargo: "TOTAL", hcs: sum(rpsEs, "hcs"), hcs_aprovados: sum(rpsEs, "hcs_aprovados"), qtd_entregue: sum(rpsEs, "qtd_entregue") },
-    });
-
+    const sufixo = periodo.meses === 1 ? periodo.de.replace("-", "_") : `${periodo.de.replace("-", "_")}_a_${periodo.ate.replace("-", "_")}`;
     const buf = await wb.xlsx.writeBuffer();
-    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition",`attachment; filename="relatorio_rs_${mes.replace("-","_")}.xlsx"`);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="relatorio_rs_${sufixo}.xlsx"`);
     return res.send(Buffer.from(buf));
   } catch (err) {
     console.error("[rsController.exportar]", err);
-    if (err.code === "MODULE_NOT_FOUND") return res.status(500).json({ error: "exceljs não instalado — rodar: npm install exceljs" });
-    return res.status(500).json({ error: "Erro ao gerar exportação" });
+    if (err.code === "MODULE_NOT_FOUND") return erro(res, 500, "exceljs não instalado — rodar: npm install exceljs");
+    return erro(res, 500, "Erro ao gerar exportação");
   }
 };
 
