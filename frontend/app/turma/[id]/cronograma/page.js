@@ -128,9 +128,24 @@ export default function CronogramaTurmaPage() {
   }, []);
   const [duplicando,        setDuplicando]         = useState(false);
   const [copiarAberto,      setCopiarAberto]       = useState(false);
+  const [turmasCarregadas,  setTurmasCarregadas]   = useState(false);
   const [turmaOrigemId,     setTurmaOrigemId]      = useState("");
 
   useEffect(() => { carregarTudo(); }, [id]);
+
+  // Carrega as turmas candidatas à cópia só quando o painel é aberto (uma vez por visita à tela).
+  useEffect(() => {
+    if (!copiarAberto || turmasCarregadas || !id) return;
+    let vivo = true;
+    apiFetch("/treinamentos")
+      .then((lista) => {
+        if (!vivo) return;
+        setTurmasDisponiveis((Array.isArray(lista) ? lista : []).filter((t) => String(t.id) !== String(id)));
+        setTurmasCarregadas(true);
+      })
+      .catch(() => { if (vivo) setTurmasCarregadas(true); });
+    return () => { vivo = false; };
+  }, [copiarAberto, turmasCarregadas, id]);
 
   /* ── carregamento ── */
   async function carregarTudo() {
@@ -138,19 +153,18 @@ export default function CronogramaTurmaPage() {
     try {
       setLoading(true); setErro(""); setSucesso("");
 
-      const [dadosTreinamento, listaTreinamentos, listaParticipantes] = await Promise.all([
+      // A lista de todas as turmas (só usada em "Copiar de outra turma") passou a ser
+      // carregada quando esse painel é aberto — ver useEffect de copiarAberto.
+      const [dadosTreinamento, listaParticipantes] = await Promise.all([
         apiFetch(`/treinamentos/${id}`),
-        apiFetch("/treinamentos").catch(() => []),   // necessário para copy-cronograma
         apiFetch(`/treinamentos/${id}/participantes`).catch(() => []),
       ]);
 
       const turmaAtual      = dadosTreinamento || null;
-      const listaTurmas     = Array.isArray(listaTreinamentos)  ? listaTreinamentos  : [];
       const listaParticSafe = Array.isArray(listaParticipantes) ? listaParticipantes : [];
 
       setTreinamento(turmaAtual);
       setParticipantes(listaParticSafe);
-      setTurmasDisponiveis(listaTurmas.filter((t) => String(t.id) !== String(id)));
 
       // Buscar aulas
       let listaAulas = [];
