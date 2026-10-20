@@ -223,6 +223,22 @@ const {
 const { pastaUploads, exigirAssinatura } = require("./lib/uploadAssinado");
 
 const app = express();
+
+// Varredura 20/10/2026: o portal roda atrás do proxy do Railway. Sem isto o
+// Express enxerga o IP do proxy em req.ip, então o IP gravado na Auditoria era
+// o mesmo para todo mundo e não dava para limitar tentativas por IP.
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+
+// Cabeçalhos de segurança básicos (sem dependência nova). A API só devolve JSON
+// e arquivos para download; nada aqui precisa ser embutido em outra página.
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  next();
+});
 // Pacote 2 (débito técnico, 2026-09): esta instância genérica (planilhas de
 // importação — participantes, R&S) não tinha nenhum limite de tamanho — um
 // arquivo enorme enviado por qualquer usuário autenticado consumia memória
@@ -812,12 +828,32 @@ app.delete(
 // então falha do mesmo jeito, mas por um valor realmente inválido, não por
 // formatação regional).
 function normalizarCargaHoraria(valor) {
-  if (valor === null || valor === undefined || valor === "") return valor;
+  if (valor === null || valor === undefined) return valor;
   const texto = String(valor).trim().replace(",", ".");
+  // Campo vazio: o formulário manda "" e o MySQL de produção (modo estrito)
+  // recusa texto vazio em coluna DECIMAL — erro 500 ao criar/editar turma sem
+  // carga horária (20/10/2026, turma "Treinamento X Prova SAC"). Vazio = sem CH.
+  if (texto === "") return null;
   const match = texto.match(/-?\d+(\.\d+)?/);
-  if (!match) return valor;
+  if (!match) {
+    const erro = new Error("Carga horária inválida — use só números (ex.: 8 ou 1,5).");
+    erro.status = 400;
+    throw erro;
+  }
   const numero = Number(match[0]);
-  return Number.isFinite(numero) ? numero : valor;
+  if (!Number.isFinite(numero)) {
+    const erro = new Error("Carga horária inválida — use só números (ex.: 8 ou 1,5).");
+    erro.status = 400;
+    throw erro;
+  }
+  return numero;
+}
+
+// Outros campos numéricos opcionais da turma: texto vazio vira "sem valor".
+function vazioParaNulo(dados, campos) {
+  for (const c of campos) {
+    if (c in dados && typeof dados[c] === "string" && dados[c].trim() === "") dados[c] = null;
+  }
 }
 
 /**
@@ -845,6 +881,7 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   if ("carga_horaria" in dados) {
     dados.carga_horaria = normalizarCargaHoraria(dados.carga_horaria);
   }
+  vazioParaNulo(dados, ["valor_passagem_vt", "presenca_minima_pct", "necessidade_id", "sala_id"]);
 
   const horaInicio = dados.hora_inicio ?? ctx.antes?.hora_inicio ?? null;
   const horaFim = dados.hora_fim ?? ctx.antes?.hora_fim ?? null;
@@ -896,7 +933,11 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
 // exports (ver lib/excelExport.js). Precisa ficar ANTES do mount de
 // createCrudRouter (linha abaixo) — senão a rota genérica de :id do CRUD
 // capturaria "exportar-selecionadas" como se fosse um id.
-app.get("/api/treinamentos/exportar-selecionadas", authRequired, async (req, res) => {
+app.get("/api/treinamentos/exportar-selecionadas", authRequired,
+  // Varredura 20/10/2026: antes bastava estar logado (inclusive treinando) e
+  // não havia recorte por cliente.
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
+  async (req, res) => {
   try {
     const ids = String(req.query.ids || "")
       .split(",")
@@ -911,13 +952,17 @@ app.get("/api/treinamentos/exportar-selecionadas", authRequired, async (req, res
     const placeholders = ids.map(() => "?").join(",");
     const params = empresaId ? [...ids, empresaId] : ids;
 
-    const [linhas] = await pool.query(
+    const [linhasTodas] = await pool.query(
       `SELECT id, tema, cliente, instrutor, supervisor, publico, subtipo, status,
               data_inicio, data, data_fim, carga_horaria, participantes, sala_id, sala_outro_local
        FROM treinamentos WHERE id IN (${placeholders})${tenantCheck}
        ORDER BY COALESCE(data_inicio, data) DESC`,
       params
     );
+    // Instrutor/supervisor ligados a um cliente só exportam turmas dele (a
+    // Assistente, como na listagem, enxerga qualquer cliente).
+    const ehAssistente = String(req.user?.perfil || "").toLowerCase() === "assistente_treinamento";
+    const linhas = ehAssistente ? linhasTodas : linhasTodas.filter((l) => usuarioTemAcessoAoCliente(req, l.cliente));
 
     const salaIds = [...new Set(linhas.map((l) => l.sala_id).filter(Boolean))];
     const salaNomePorId = new Map();
@@ -2035,10 +2080,17 @@ app.use(
 // criado) quanto este app.use(). Calculado 100% a partir do que já é
 // registrado no fluxo normal (turma criada + cronograma/chamada) — não exige
 // nenhum lançamento manual adicional do instrutor ou da coordenação.
+// Varredura 20/10/2026: supervisor e superintendente só LEEM a capacidade; quem
+// altera a regra padrão e as metas por instrutor é a coordenação (antes, o
+// supervisor também conseguia gravar e apagar metas).
 app.use(
   "/api/capacidade",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "superintendente"),
+  (req, res, next) => {
+    if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
+    return authorizeRoles("coordenador")(req, res, next);
+  },
   capacidadeRoutes
 );
 
