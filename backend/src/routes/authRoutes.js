@@ -33,6 +33,28 @@ const tentativasLogin = new Map(); // email normalizado -> { count, bloqueadoAte
 const LOGIN_MAX_TENTATIVAS = 5;
 const LOGIN_BLOQUEIO_MS = 15 * 60 * 1000; // 15 minutos
 
+// Varredura 20/10/2026: o limite acima é por e-mail/CPF; quem testa UMA senha
+// comum (ex.: a senha inicial dos treinandos) em muitos logins diferentes nunca
+// chegava a 5 tentativas no mesmo login. Este segundo limite é por IP.
+const tentativasLoginIp = new Map(); // ip -> { count, bloqueadoAte, inicioJanela }
+const LOGIN_IP_MAX_FALHAS = 40;
+const LOGIN_IP_JANELA_MS = 15 * 60 * 1000;
+
+function ipBloqueado(ip) {
+  const r = tentativasLoginIp.get(ip);
+  return !!(r && r.bloqueadoAte && r.bloqueadoAte > Date.now());
+}
+
+function registrarFalhaIp(ip) {
+  const agora = Date.now();
+  let r = tentativasLoginIp.get(ip);
+  if (!r || agora - r.inicioJanela > LOGIN_IP_JANELA_MS) r = { count: 0, bloqueadoAte: 0, inicioJanela: agora };
+  r.count += 1;
+  if (r.count >= LOGIN_IP_MAX_FALHAS) r.bloqueadoAte = agora + LOGIN_IP_JANELA_MS;
+  tentativasLoginIp.set(ip, r);
+  if (tentativasLoginIp.size > 5000) tentativasLoginIp.clear();
+}
+
 function minutosBloqueioRestantes(emailNorm) {
   const registro = tentativasLogin.get(emailNorm);
   if (registro?.bloqueadoAte && registro.bloqueadoAte > Date.now()) {
@@ -132,6 +154,10 @@ router.post("/login", async (req, res) => {
 
     const emailNorm = loginInput.toLowerCase();
 
+    if (ipBloqueado(req.ip)) {
+      return res.status(429).json({ message: "Muitas tentativas de login deste endereço. Tente novamente em alguns minutos." });
+    }
+
     const bloqueioRestante = minutosBloqueioRestantes(emailNorm);
     if (bloqueioRestante > 0) {
       return res.status(429).json({
@@ -192,7 +218,7 @@ router.post("/login", async (req, res) => {
       }
 
       if (rows.length > 1) {
-        registrarTentativaFalha(emailNorm);
+        registrarTentativaFalha(emailNorm); registrarFalhaIp(req.ip);
         return res.status(409).json({
           message: "Encontramos mais de uma conta com esse CPF/matrícula. Selecione sua empresa para continuar.",
           precisa_selecionar_empresa: true,
@@ -204,7 +230,7 @@ router.post("/login", async (req, res) => {
     // incorreta" — antes eram mensagens distintas, o que ajuda quem tenta
     // adivinhar e-mails cadastrados por tentativa e erro.
     if (!rows.length) {
-      registrarTentativaFalha(emailNorm);
+      registrarTentativaFalha(emailNorm); registrarFalhaIp(req.ip);
       return res.status(401).json({ message: "E-mail, CPF/matrícula ou senha inválidos" });
     }
 
@@ -230,7 +256,7 @@ router.post("/login", async (req, res) => {
     }
 
     if (!senhaValida) {
-      registrarTentativaFalha(emailNorm);
+      registrarTentativaFalha(emailNorm); registrarFalhaIp(req.ip);
       return res.status(401).json({ message: "E-mail ou senha inválidos" });
     }
 
@@ -265,7 +291,7 @@ router.post("/login", async (req, res) => {
             });
           }
           if (Number(empresaIdUsuario) !== Number(empresaSelecionada.id)) {
-            registrarTentativaFalha(emailNorm);
+            registrarTentativaFalha(emailNorm); registrarFalhaIp(req.ip);
             return res.status(403).json({
               message: `Este e-mail não pertence ao ambiente "${empresaSelecionada.nome}". Verifique se selecionou a empresa certa.`,
             });
