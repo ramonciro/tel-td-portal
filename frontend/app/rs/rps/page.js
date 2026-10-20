@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import PortalShell from "../../../components/PortalShell";
 import PageHero    from "../../../components/PageHero";
-import { apiFetch, getStoredUser, hasSomeRole } from "../../../services/api";
+import { apiFetch, apiDownload, getStoredUser, hasSomeRole } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import { formatDateBR } from "../../../lib/date";
 
@@ -75,6 +75,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   const [erro, setErro] = useState("");
   const [sugestoes, setSugestoes] = useState([]);
   const [showSug, setShowSug] = useState(false);
+  const [duplicadas, setDuplicadas] = useState(null); // RPs parecidas, à espera de confirmação
 
   useEffect(() => {
     if (!open) return;
@@ -101,9 +102,19 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
       setForm(FORM_VAZIO);
     }
     setErro("");
+    setDuplicadas(null);
   }, [rp, open]);
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
+
+  // Ao marcar ENTREGUE sem quantidade entregue, sugere os HC'S aprovados (dá para mudar).
+  const mudarStatus = (novo) => {
+    setForm(f => {
+      const semQtd = f.qtd_entregue === "" || Number(f.qtd_entregue) === 0;
+      if (novo === "ENTREGUE" && semQtd && Number(f.hcs_aprovados) > 0) return { ...f, status: novo, qtd_entregue: f.hcs_aprovados };
+      return { ...f, status: novo };
+    });
+  };
 
   const buscarProdutos = useCallback(async (q) => {
     if (!q || q.length < 2) { setSugestoes([]); return; }
@@ -113,8 +124,9 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
     } catch { setSugestoes([]); }
   }, []);
 
-  const handleSalvar = async () => {
+  const handleSalvar = async (confirmarDuplicada = false) => {
     if (!form.site || !form.produto) { setErro("Site e Produto são obrigatórios."); return; }
+    if (!form.data_recebimento) { setErro("Informe a data de recebimento da RP — sem ela o prazo (SLA) não é calculado."); return; }
     setSaving(true); setErro("");
     try {
       const payload = { ...form };
@@ -122,7 +134,9 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
       if (rp) {
         await apiFetch(`/rs/rps/${rp.id}`, { method: "PUT", body: JSON.stringify(payload) });
       } else {
-        await apiFetch("/rs/rps", { method: "POST", body: JSON.stringify(payload) });
+        if (confirmarDuplicada === true) payload.confirmar_duplicada = true;
+        const r = await apiFetch("/rs/rps", { method: "POST", body: JSON.stringify(payload) });
+        if (r && r.precisa_confirmar) { setDuplicadas(r.duplicadas || []); return; }
       }
       onSaved(); onClose();
     } catch (e) { setErro(e.message || "Erro ao salvar."); }
@@ -184,8 +198,12 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
             <label style={labelSt}>Site *</label>
             <select value={form.site} onChange={e => set("site", e.target.value)} style={inputSt}>
               <option value="">Selecione...</option>
+              {form.site && !sites.some(s => s.nome === form.site) && <option value={form.site}>{form.site}</option>}
               {sites.map(s => <option key={s.id} value={s.nome}>{s.nome}</option>)}
             </select>
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
+              Falta um site? Cadastre em Configurações R&S.
+            </p>
           </div>
 
           {/* Produto com autocomplete */}
@@ -195,7 +213,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
               value={form.produto}
               onChange={e => { set("produto", e.target.value); buscarProdutos(e.target.value); setShowSug(true); }}
               onBlur={() => setTimeout(() => setShowSug(false), 150)}
-              placeholder="SAFRA, DASA, CEMIG..." style={inputSt}
+              placeholder="Safra, Dasa, Cemig..." style={inputSt}
             />
             {showSug && sugestoes.length > 0 && (
               <div style={{
@@ -220,7 +238,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
             <div>
               <label style={labelSt}>Cargo</label>
               <input value={form.cargo} onChange={e => set("cargo", e.target.value)}
-                placeholder="SUPERVISOR DE TELEMARKETING" style={inputSt} />
+                placeholder="Supervisor de Telemarketing" style={inputSt} />
             </div>
           ) : <div />}
 
@@ -231,7 +249,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
           </div>
           <div>
             <label style={labelSt}>Status *</label>
-            <select value={form.status} onChange={e => set("status", e.target.value)} style={inputSt}>
+            <select value={form.status} onChange={e => mudarStatus(e.target.value)} style={inputSt}>
               <option value="EM ANDAMENTO">Em Andamento</option>
               <option value="ENTREGUE">Entregue</option>
               <option value="NÃO ENTREGUE">Não Entregue</option>
@@ -239,7 +257,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
             </select>
           </div>
           <div>
-            <label style={labelSt}>Data de Recebimento da RP</label>
+            <label style={labelSt}>Data de Recebimento da RP *</label>
             <input type="date" value={form.data_recebimento}
               onChange={e => set("data_recebimento", e.target.value)} style={inputSt} />
           </div>
@@ -307,9 +325,26 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
                         color: colors.dangerText, borderRadius: 8, fontSize: 13 }}>{erro}</div>
         )}
 
+        {duplicadas && (
+          <div style={{ marginTop: 12, padding: "12px 14px", background: "#fffbeb", border: "1px solid #fde68a",
+                        color: "#92400e", borderRadius: 8, fontSize: 13 }}>
+            <strong>Já existe uma RP igual a esta</strong> (mesmo mês, site, setor, produto, cargo, chamado e data de recebimento):
+            <ul style={{ margin: "6px 0 8px", paddingLeft: 18 }}>
+              {duplicadas.map(d => (
+                <li key={d.id}>#{d.id} · {d.status}{d.criado_por_nome ? ` · criada por ${d.criado_por_nome}` : ""} · HC'S {d.hcs ?? 0}</li>
+              ))}
+            </ul>
+            Se é uma requisição nova mesmo (por exemplo, outra vaga igual), confirme. Se foi um clique repetido, cancele.
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button onClick={() => handleSalvar(true)} disabled={saving} style={{ ...btnPrim, padding: "7px 14px", background: "#d97706" }}>Criar mesmo assim</button>
+              <button onClick={() => setDuplicadas(null)} disabled={saving} style={{ ...btnSec, padding: "7px 14px" }}>Voltar e revisar</button>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
           <button onClick={onClose} disabled={saving} style={btnSec}>Cancelar</button>
-          <button onClick={handleSalvar} disabled={saving} style={btnPrim}>
+          <button onClick={() => handleSalvar(false)} disabled={saving || !!duplicadas} style={{ ...btnPrim, opacity: duplicadas ? 0.5 : 1 }}>
             {saving ? "Salvando..." : rp ? "Salvar Alterações" : "Criar RP"}
           </button>
         </div>
@@ -324,6 +359,13 @@ export default function RPsPage() {
   const [rps, setRps] = useState([]);
   const [totais, setTotais] = useState(null);
   const [total, setTotal] = useState(0);
+  const [pagina, setPagina] = useState(1);
+  const [porPagina] = useState(100);
+  const [paginas, setPaginas] = useState(1);
+  const [limiteDias, setLimiteDias] = useState(15);
+  const [exportando, setExportando] = useState(false);
+  const [lixeiraAberta, setLixeiraAberta] = useState(false);
+  const [msg, setMsg] = useState("");
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -342,28 +384,51 @@ export default function RPsPage() {
   // coordenador_rs pode criar/editar/excluir; gestor_rs só visualiza
   const podeEditar = hasSomeRole(user, ["coordenador_rs", "super_admin"]);
 
+  const filtrosQS = useCallback(() => {
+    const p = new URLSearchParams();
+    if (filtroMes)     p.set("mes", filtroMes);
+    if (filtroSite)    p.set("site", filtroSite);
+    if (filtroSetor)   p.set("setor", filtroSetor);
+    if (filtroStatus)  p.set("status", filtroStatus);
+    if (filtroProduto) p.set("produto", filtroProduto);
+    return p;
+  }, [filtroMes, filtroSite, filtroSetor, filtroStatus, filtroProduto]);
+
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams();
-      if (filtroMes)     p.set("mes", filtroMes);
-      if (filtroSite)    p.set("site", filtroSite);
-      if (filtroSetor)   p.set("setor", filtroSetor);
-      if (filtroStatus)  p.set("status", filtroStatus);
-      if (filtroProduto) p.set("produto", filtroProduto);
+      const p = filtrosQS();
+      p.set("page", String(pagina));
+      p.set("limit", String(porPagina));
       const data = await apiFetch(`/rs/rps?${p}`);
       setRps(data.rps || []);
       setTotais(data.totais || null);
       setTotal(data.total || 0);
+      setPaginas(data.paginas || 1);
+      if (data.limite_dias) setLimiteDias(data.limite_dias);
+      // Se a página ficou além do fim (ex.: excluiu a última RP dela), volta para a última.
+      if ((data.paginas || 1) < pagina) setPagina(data.paginas || 1);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filtroMes, filtroSite, filtroSetor, filtroStatus, filtroProduto]);
+  }, [filtrosQS, pagina, porPagina]);
 
-  useEffect(() => {
+  // Mudou algum filtro: volta para a primeira página.
+  useEffect(() => { setPagina(1); }, [filtroMes, filtroSite, filtroSetor, filtroStatus, filtroProduto]);
+
+  const carregarSites = useCallback(() => {
     apiFetch("/rs/sites").then(setSites).catch(() => setSites([]));
   }, []);
+  useEffect(() => { carregarSites(); }, [carregarSites]);
 
   useEffect(() => { carregar(); }, [carregar]);
+
+  async function exportarExcel() {
+    setExportando(true); setMsg("");
+    try {
+      await apiDownload(`/rs/rps-exportar?${filtrosQS()}`, `rps_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) { setMsg(e.message || "Não foi possível exportar."); }
+    finally { setExportando(false); }
+  }
 
   const showAmbos = !filtroSetor;
   const showEstr  = !filtroSetor || filtroSetor === "ESTRATÉGICO";
@@ -371,17 +436,29 @@ export default function RPsPage() {
   const subtitleText = loading
     ? "Carregando..."
     : `${total} registro${total !== 1 ? "s" : ""} · ${mesLabel(filtroMes) || "todos os meses"}`;
+  const ini = total === 0 ? 0 : (pagina - 1) * porPagina + 1;
+  const fim = Math.min(pagina * porPagina, total);
 
   return (
     <PortalShell
       title="Requisições de Pessoas"
       subtitle={subtitleText}
       topRight={
-        podeEditar
-          ? <button onClick={() => { setRpEditando(null); setModalOpen(true); }} style={btnPrim}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={exportarExcel} disabled={exportando || loading} style={{ ...btnSec, padding: "9px 14px" }}
+            title="Baixa as RPs com os filtros que estão na tela (todas as páginas)">
+            {exportando ? "Gerando..." : "⬇ Exportar Excel"}
+          </button>
+          {podeEditar && (
+            <button onClick={() => setLixeiraAberta(true)} style={{ ...btnSec, padding: "9px 14px" }}
+              title="RPs excluídas nos últimos 30 dias">🗑 Lixeira</button>
+          )}
+          {podeEditar && (
+            <button onClick={() => { setRpEditando(null); setModalOpen(true); }} style={btnPrim}>
               + Nova RP
             </button>
-          : null
+          )}
+        </div>
       }
     >
       {/* PageHero com stats */}
@@ -450,8 +527,12 @@ export default function RPsPage() {
         )}
       </div>
 
+      {msg && (
+        <div style={{ margin: "0 0 12px", padding: "10px 14px", background: colors.dangerLight, color: colors.dangerText, borderRadius: 8, fontSize: 13 }}>{msg}</div>
+      )}
+
       {/* Tabela */}
-      {loading ? (
+      {loading && rps.length === 0 ? (
         <div style={{ textAlign: "center", padding: 48, color: colors.textMuted }}>Carregando requisições...</div>
       ) : rps.length === 0 ? (
         <div style={{ textAlign: "center", padding: 48, color: colors.textMuted }}>
@@ -470,7 +551,7 @@ export default function RPsPage() {
                   {showAmbos && <Th>Setor</Th>}
                   <Th>Produto</Th>
                   {showEstr && <Th>Cargo</Th>}
-                  <Th>Chamado</Th><Th>Recebimento</Th><Th>Status</Th>
+                  <Th>Chamado</Th><Th>Recebimento</Th><Th>Status</Th><Th>Prazo</Th>
                   {(showAmbos || filtroSetor === "OPERACIONAL") && <><Th>Início Av.</Th><Th>Final Av.</Th></>}
                   {filtroSetor === "ESTRATÉGICO" && <Th>Fechamento</Th>}
                   <Th right>HC'S</Th><Th right>TO</Th><Th right>Aprovados</Th>
@@ -498,6 +579,7 @@ export default function RPsPage() {
                     <Td muted>{rp.chamado || "—"}</Td>
                     <Td muted>{fmtDate(rp.data_recebimento)}</Td>
                     <Td><StatusBadge status={rp.status} /></Td>
+                    <Td><PrazoBadge rp={rp} limite={limiteDias} /></Td>
                     {(showAmbos || filtroSetor === "OPERACIONAL") && (
                       <>
                         <Td muted>{rp.setor === "OPERACIONAL" ? fmtDate(rp.inicio_av_tecnica) : "—"}</Td>
@@ -530,7 +612,7 @@ export default function RPsPage() {
                 {totais && (
                   <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
                     <td colSpan={
-                      (showAmbos ? 3 : 2) + (showEstr ? 1 : 0) + 3 +
+                      (showAmbos ? 3 : 2) + (showEstr ? 1 : 0) + 4 +
                       ((showAmbos || filtroSetor === "OPERACIONAL") ? 2 : filtroSetor === "ESTRATÉGICO" ? 1 : 0)
                     }
                       style={{ padding: "12px 16px", fontWeight: 800, fontSize: 12,
@@ -548,12 +630,32 @@ export default function RPsPage() {
               </tbody>
             </table>
           </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap",
+                        padding: "10px 16px", borderTop: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 12, color: colors.textMuted }}>
+            <span>
+              Mostrando <strong style={{ color: colors.textPrimary }}>{fmtNum(ini)}–{fmtNum(fim)}</strong> de <strong style={{ color: colors.textPrimary }}>{fmtNum(total)}</strong> RPs
+              {" · "}Os totais acima valem para todas as {fmtNum(total)}, não só para esta página.
+            </span>
+            {paginas > 1 && (
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={() => setPagina(p => Math.max(p - 1, 1))} disabled={pagina <= 1 || loading}
+                  style={{ ...btnSec, padding: "5px 12px", fontSize: 12, opacity: pagina <= 1 ? 0.5 : 1 }}>← Anterior</button>
+                <span>Página {pagina} de {paginas}</span>
+                <button onClick={() => setPagina(p => Math.min(p + 1, paginas))} disabled={pagina >= paginas || loading}
+                  style={{ ...btnSec, padding: "5px 12px", fontSize: 12, opacity: pagina >= paginas ? 0.5 : 1 }}>Próxima →</button>
+              </span>
+            )}
+          </div>
         </div>
       )}
 
       {/* Modal de cadastro/edição */}
       <RPModal open={modalOpen} rp={rpEditando} sites={sites}
         onClose={() => setModalOpen(false)} onSaved={carregar} />
+
+      {lixeiraAberta && (
+        <LixeiraModal onClose={() => setLixeiraAberta(false)} onRestaurada={carregar} />
+      )}
 
       {/* Comentários da RP */}
       {rpComentando && (
@@ -568,10 +670,10 @@ export default function RPsPage() {
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16,
                         padding: 28, maxWidth: 400, width: "100%",
                         boxShadow: "0 20px 48px rgba(15,23,42,0.15)" }}>
-            <h3 style={{ margin: "0 0 8px", color: colors.textPrimary }}>Excluir requisição?</h3>
+            <h3 style={{ margin: "0 0 8px", color: colors.textPrimary }}>Enviar requisição para a lixeira?</h3>
             <p style={{ color: colors.textSecondary, fontSize: 14, margin: "0 0 20px" }}>
               <strong>{confirmDelete.produto}</strong> · {confirmDelete.site} · {mesLabel(confirmDelete.mes_referencia?.slice(0, 7))}
-              <br />Esta ação não pode ser desfeita.
+              <br />Ela vai para a lixeira e pode ser restaurada por 30 dias.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button onClick={() => setConfirmDelete(null)} style={btnSec}>Cancelar</button>
@@ -580,7 +682,7 @@ export default function RPsPage() {
                   await apiFetch(`/rs/rps/${confirmDelete.id}`, { method: "DELETE" });
                   setConfirmDelete(null); carregar();
                 } catch (e) { alert(e.message || "Erro ao excluir"); }
-              }} style={{ ...btnPrim, background: colors.danger }}>Excluir</button>
+              }} style={{ ...btnPrim, background: colors.danger }}>Enviar para a lixeira</button>
             </div>
           </div>
         </div>
@@ -701,6 +803,103 @@ function ComentariosRPModal({ rp, user, onClose, onChanged }) {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Prazo (RPs em andamento) ──────────────────────────────────────
+function PrazoBadge({ rp, limite }) {
+  if (rp.status !== "EM ANDAMENTO" || rp.dias_aberto == null) return <span style={{ color: colors.textMuted }}>—</span>;
+  const atrasada = !!rp.atrasada;
+  return (
+    <span title={`${rp.dias_aberto} dia(s) desde o recebimento · limite de ${limite} dias`}
+      style={{ display: "inline-block", borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap",
+               background: atrasada ? colors.dangerLight : colors.successLight, color: atrasada ? colors.dangerText : colors.successText }}>
+      {atrasada ? "Atrasada" : "No prazo"} · {rp.dias_aberto}d
+    </span>
+  );
+}
+
+// ─── Lixeira (30 dias) ─────────────────────────────────────────────
+function LixeiraModal({ onClose, onRestaurada }) {
+  const [lista, setLista] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [ok, setOk] = useState("");
+
+  const carregar = useCallback(async () => {
+    try {
+      const r = await apiFetch("/rs/lixeira");
+      setLista(Array.isArray(r?.rps) ? r.rps : []);
+      setErro("");
+    } catch (e) { setErro(e.message || "Erro ao abrir a lixeira."); }
+    finally { setCarregando(false); }
+  }, []);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  async function restaurar(rp) {
+    setErro(""); setOk("");
+    try {
+      await apiFetch(`/rs/lixeira/${rp.id}/restaurar`, { method: "POST" });
+      setOk(`RP "${rp.produto} · ${rp.site}" restaurada.`);
+      await carregar();
+      onRestaurada && onRestaurada();
+    } catch (e) { setErro(e.message || "Erro ao restaurar."); }
+  }
+
+  const quando = (v) => {
+    const d = v ? new Date(v) : null;
+    return d && !isNaN(d.getTime()) ? d.toLocaleDateString("pt-BR") : "";
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+           style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 24, maxWidth: 760, width: "100%",
+                    maxHeight: "86vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 48px rgba(15,23,42,0.15)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <h3 style={{ margin: 0, color: colors.textPrimary }}>Lixeira de RPs</h3>
+            <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 4 }}>
+              As RPs excluídas ficam aqui por 30 dias; depois são apagadas de vez. Enquanto estão aqui, não entram nos relatórios.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ ...btnAcao, marginRight: 0 }} aria-label="Fechar">✕</button>
+        </div>
+        {erro && <div style={{ marginTop: 10, padding: "8px 12px", background: colors.dangerLight, color: colors.dangerText, borderRadius: 8, fontSize: 13 }}>{erro}</div>}
+        {ok && <div style={{ marginTop: 10, padding: "8px 12px", background: colors.successLight, color: colors.successText, borderRadius: 8, fontSize: 13 }}>{ok}</div>}
+        <div style={{ marginTop: 14, overflowY: "auto" }}>
+          {carregando ? (
+            <div style={{ color: colors.textMuted, fontSize: 13 }}>Carregando...</div>
+          ) : lista.length === 0 ? (
+            <div style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 24, border: "1px dashed #e2e8f0", borderRadius: 10 }}>
+              A lixeira está vazia.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "#f8fafc" }}>
+                  <Th>RP</Th><Th>Mês</Th><Th>Excluída</Th><Th>Some em</Th><Th center>Ação</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {lista.map((rp) => (
+                  <tr key={rp.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <Td bold>{rp.produto}<div style={{ fontWeight: 400, fontSize: 11, color: colors.textMuted }}>{rp.site} · {rp.setor === "OPERACIONAL" ? "Operacional" : "Estratégico"}{rp.cargo ? ` · ${rp.cargo}` : ""}</div></Td>
+                    <Td muted>{mesLabel(rp.mes)}</Td>
+                    <Td muted>{quando(rp.excluido_em)}{rp.excluido_por_nome ? <div style={{ fontSize: 11 }}>por {rp.excluido_por_nome}</div> : null}</Td>
+                    <Td muted>{rp.dias_restantes} dia{rp.dias_restantes === 1 ? "" : "s"}</Td>
+                    <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                      <button onClick={() => restaurar(rp)} style={{ ...btnPrim, padding: "6px 14px", fontSize: 12 }}>Restaurar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
