@@ -1,5 +1,6 @@
 "use client";
 
+import SinoAvisos from "./SinoAvisos";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -69,6 +70,7 @@ const menuItems = [
   { href: "/celulas-baby",  label: "Células baby",           icon: "trending", roles: ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/indicadores",  label: "Indicadores",             icon: "trending", roles: ["coordenador", "supervisor", "superintendente"] },
+  { href: "/fechamento-mensal", label: "Fechamento mensal",  icon: "chart", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/capacidade",   label: "CH por Instrutor",        icon: "clock", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/biblioteca",    label: "Biblioteca",             icon: "book", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/clientes",      label: "Clientes",               icon: "building", roles: ["coordenador", "supervisor"] },
@@ -118,6 +120,11 @@ const menuItems = [
 // por padrão: rota que não estiver no menu NEM nesta lista fica em "Acesso
 // restrito". `roles: null` = qualquer perfil logado. Ao criar uma página nova,
 // cadastre-a no menu ou aqui — os perfis devem espelhar o que o backend libera.
+// Marcador de versão (21/10/2026): ajuda a conferir se o deploy já chegou. O código do
+// commit vem do Vercel no build (next.config.js); localmente aparece "local".
+const VERSAO_PORTAL = `${process.env.NEXT_PUBLIC_BUILD_DATA || "local"} · ${process.env.NEXT_PUBLIC_BUILD_COMMIT || "dev"}`;
+const versaoStyle = { marginTop: 10, fontSize: 10.5, color: "rgba(255,255,255,.45)", textAlign: "center", letterSpacing: ".03em" };
+
 const ROTAS_FORA_DO_MENU = [
   { href: "/alterar-senha", roles: null },
   { href: "/primeiro-acesso", roles: null },
@@ -130,6 +137,7 @@ const ROTAS_FORA_DO_MENU = [
   { href: "/frequencia-individual", roles: ["coordenador", "supervisor", "instrutor", "treinando", "superintendente"] },
   { href: "/resultados-avaliacoes", roles: ["coordenador", "assistente_treinamento"] },
   { href: "/subtipos", roles: ["coordenador", "assistente_treinamento", "metodologia"] },
+  { href: "/usuarios/acessos", roles: ["coordenador", "supervisor", "assistente_treinamento"] },
   { href: "/pessoas", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente", "metodologia", "coordenador_rs"] },
   { href: "/apresentacao/sebrae", roles: ["coordenador", "superintendente"] },
 ];
@@ -506,11 +514,18 @@ export default function PortalShell({
             >
               Sair do portal
             </button>
+
+            <div style={versaoStyle} title="Versão do portal em uso">
+              Versão {VERSAO_PORTAL}
+            </div>
           </div>
         </aside>
       )}
 
       <main style={main}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <SinoAvisos />
+        </div>
         <div style={headerCard}>
           <div>
             <div style={pageTitle}>{title}</div>
