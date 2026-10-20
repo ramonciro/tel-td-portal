@@ -6,6 +6,7 @@
  *   - Cálculo de conquistas (gamificação): 06h, todos os dias.
  *   - Resumo diário de pendências (+ resumo executivo do Dashboard): 07h,
  *     dias úteis (segunda a sexta).
+ *   - Aviso de RPs atrasadas do R&S: 07h10, dias úteis; limpeza da lixeira do R&S: 04h.
  *   - Lembrete de aula do dia seguinte: 17h, todos os dias.
  *   - Certificado automático ao concluir a turma (Pacote 3): 05h, todos os
  *     dias — roda antes dos demais para os certificados já estarem prontos
@@ -31,6 +32,7 @@ const { rodarLembretesAula } = require("./lembretesAula");
 const { rodarCalculoConquistas } = require("./conquistasJob");
 const { rodarCertificadosAutomaticos } = require("./certificadosAutomaticos");
 const { sincronizarCelulas } = require("../lib/celulaBaby");
+const { rodarAvisoAtrasadas, rodarLimpezaLixeiraRS } = require("./rsAtrasadasDigest");
 
 function iniciarAgendamentos() {
   cron.schedule("0 5 * * *", async () => {
@@ -71,6 +73,26 @@ function iniciarAgendamentos() {
     }
   });
 
+  // R&S (20/10/2026): aviso das RPs atrasadas, dias úteis às 07h10 (logo depois do digest de pendências).
+  cron.schedule("10 7 * * 1-5", async () => {
+    try {
+      const resultado = await rodarAvisoAtrasadas();
+      console.log("[scheduler] Aviso de RPs atrasadas (R&S):", JSON.stringify(resultado));
+    } catch (error) {
+      console.error("[scheduler] Erro no aviso de RPs atrasadas:", error.message);
+    }
+  });
+
+  // R&S: apaga da lixeira as RPs excluídas há mais de 30 dias — todo dia às 04h.
+  cron.schedule("0 4 * * *", async () => {
+    try {
+      const resultado = await rodarLimpezaLixeiraRS();
+      console.log("[scheduler] Limpeza da lixeira do R&S:", JSON.stringify(resultado));
+    } catch (error) {
+      console.error("[scheduler] Erro ao limpar a lixeira do R&S:", error.message);
+    }
+  });
+
   cron.schedule("0 17 * * *", async () => {
     try {
       const resultado = await rodarLembretesAula();
@@ -81,7 +103,7 @@ function iniciarAgendamentos() {
   });
 
   console.log(
-    "[scheduler] Agendamentos automáticos registrados (certificados 05h diário, conquistas 06h diário, pendências 07h dias úteis, lembretes 17h diário)."
+    "[scheduler] Agendamentos automáticos registrados (certificados 05h diário, conquistas 06h diário, pendências 07h dias úteis, RPs atrasadas R&S 07h10 dias úteis, lixeira R&S 04h diário, lembretes 17h diário)."
   );
 }
 
