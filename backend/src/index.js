@@ -2171,6 +2171,9 @@ const {
   detalhe:          detalheRP,
   editar:           editarRP,
   excluir:          excluirRP,
+  listarComentarios: listarComentariosRP,
+  criarComentario:   criarComentarioRP,
+  excluirComentario: excluirComentarioRP,
   getSites:         getRSSites,
   getProdutos:      getRSProdutos,
   getDashboard:     getRSDashboard,
@@ -2191,6 +2194,10 @@ app.post  ("/api/rs/rps",       authRequired, authorizeRoles("coordenador_rs"), 
 app.get   ("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs","gestor_rs"), detalheRP);
 app.put   ("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"),              editarRP);
 app.delete("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"),              excluirRP);
+// Comentários da RP (19/10/2026): coordenador_rs e gestor_rs leem e comentam.
+app.get   ("/api/rs/rps/:id/comentarios", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), listarComentariosRP);
+app.post  ("/api/rs/rps/:id/comentarios", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), criarComentarioRP);
+app.delete("/api/rs/rps/:id/comentarios/:comentarioId", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), excluirComentarioRP);
 // Importação de planilha histórica (xlsx do Google Sheets)
 app.post  ("/api/rs/importar",  authRequired, authorizeRoles("coordenador_rs"), comUploadTratado(upload.single("arquivo")), importarRSPlanilha);
 // Usuários do R&S: gerenciados em /api/usuarios (Gestão de Usuários) — os atalhos
