@@ -574,7 +574,13 @@ export default function RPsPage() {
                         </span>
                       </Td>
                     )}
-                    <Td bold>{rp.produto}</Td>
+                    <Td bold>
+                      {rp.produto}
+                      {rp.numeros_incoerentes ? (
+                        <span title={`Os números não fecham: ${rp.numeros_incoerentes}. Edite a RP para corrigir.`}
+                              style={{ marginLeft: 6, color: "#b45309", cursor: "help" }} aria-label="Números que não fecham">⚠</span>
+                      ) : null}
+                    </Td>
                     {showEstr && <Td muted>{rp.cargo || "—"}</Td>}
                     <Td muted>{rp.chamado || "—"}</Td>
                     <Td muted>{fmtDate(rp.data_recebimento)}</Td>
