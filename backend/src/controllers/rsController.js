@@ -7,6 +7,7 @@
 const db      = require("../lib/db");
 const { registrarAuditoria } = require("../services/auditoria");
 const rel     = require("../lib/rsRelatorios");
+const { tituloPadrao, chaveNormal, listarSites, resolverSite } = require("../lib/rsPadrao");
 
 const getEmpresaId = (req) => req.user?.empresa_id;
 
@@ -61,14 +62,17 @@ function _texto(v, max, campo, erros, { obrigatorio = false } = {}) {
 }
 
 /** Valida o corpo completo de uma RP. Devolve { erros, dados }. */
-function validarRP(b) {
+function validarRP(b, { exigirDataRecebimento = false } = {}) {
   const erros = [];
   const mes = _soDataISO(b.mes_referencia);
   if (b.mes_referencia === undefined || b.mes_referencia === null || b.mes_referencia === "") erros.push("mes_referencia é obrigatório");
   else if (mes === undefined || mes === null) erros.push("mes_referencia inválido (use AAAA-MM)");
 
-  const site    = _texto(b.site, 100, "site", erros, { obrigatorio: true });
-  const produto = _texto(b.produto, 150, "produto", erros, { obrigatorio: true });
+  // Grafia padrão (20/10/2026): inicial maiúscula em site, produto e cargo.
+  const siteBruto    = _texto(b.site, 100, "site", erros, { obrigatorio: true });
+  const produtoBruto = _texto(b.produto, 150, "produto", erros, { obrigatorio: true });
+  const site    = siteBruto ? tituloPadrao(siteBruto) : siteBruto;
+  const produto = produtoBruto ? tituloPadrao(produtoBruto) : produtoBruto;
 
   const setorBruto = b.setor === undefined || b.setor === null ? "" : String(b.setor).trim().toUpperCase();
   const setor = setorBruto.includes("ESTRAT") ? "ESTRATÉGICO" : setorBruto.includes("OPER") ? "OPERACIONAL" : null;
@@ -84,11 +88,13 @@ function validarRP(b) {
     if (d === undefined) { erros.push(`${campo} inválida (use AAAA-MM-DD)`); datas[campo] = null; }
     else datas[campo] = d;
   }
+  if (exigirDataRecebimento && !datas.data_recebimento) erros.push("Informe a data de recebimento da RP — sem ela o prazo (SLA) e as RPs atrasadas não são calculados");
   if (setor === "OPERACIONAL" && datas.inicio_av_tecnica && datas.final_av_tecnica && datas.final_av_tecnica < datas.inicio_av_tecnica)
     erros.push("final_av_tecnica não pode ser anterior a inicio_av_tecnica");
 
   const chamado = _texto(b.chamado, 200, "chamado", erros);
-  const cargo   = _texto(b.cargo, 200, "cargo", erros);
+  const cargoBruto = _texto(b.cargo, 200, "cargo", erros);
+  const cargo   = cargoBruto ? tituloPadrao(cargoBruto) : cargoBruto;
   const obs     = _texto(b.observacoes, 5000, "observacoes", erros);
   const hcs           = _inteiro(b.hcs, "hcs", erros);
   const hcs_com_to    = _inteiro(b.hcs_com_to, "hcs_com_to", erros);
@@ -135,30 +141,39 @@ const COLUNAS_RP = [
 // SPRINT 1 — CRUD
 // ─────────────────────────────────────────────────────────────────────────────
 
-const listar = async (req, res) => {
-  const empresa_id = getEmpresaId(req);
-  if (!empresa_id) return erro(res, 401, "Não autorizado");
-
-  const { mes, site, setor, status, produto } = req.query;
-  // Teto no limite: antes um `?limit=999999` devolvia a tabela inteira.
-  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), LIMITE_LISTA_MAX);
-  const page   = Math.max(parseInt(req.query.page, 10) || 1, 1);
-  const offset = (page - 1) * limit;
+// Filtros da lista de RPs (usados pela tela e pela exportação, para saírem iguais).
+function _filtrosLista(q, empresa_id) {
+  const { mes, site, setor, status, produto } = q;
   const params = [empresa_id];
-  const conditions = ["r.empresa_id = ?"];
-
-  if (mes && !/^\d{4}-\d{2}$/.test(String(mes))) return erro(res, 400, "Filtro mes inválido (use AAAA-MM)");
+  const conditions = ["r.empresa_id = ?", "r.excluido_em IS NULL"];
+  if (mes && !/^\d{4}-\d{2}$/.test(String(mes))) return { erro: "Filtro mes inválido (use AAAA-MM)" };
   if (mes)     { conditions.push("DATE_FORMAT(r.mes_referencia, '%Y-%m') = ?"); params.push(mes); }
   if (site)    { conditions.push("r.site = ?");          params.push(site); }
   if (setor)   { conditions.push("r.setor = ?");         params.push(setor); }
   if (status)  { conditions.push("r.status = ?");        params.push(status); }
   if (produto) { conditions.push("r.produto LIKE ?");    params.push(`%${produto}%`); }
+  return { where: conditions.join(" AND "), params };
+}
 
-  const where = conditions.join(" AND ");
+const listar = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+
+  // Teto no limite: antes um `?limit=999999` devolvia a tabela inteira.
+  // 20/10/2026: padrão 100 por página, com paginação na tela (antes cortava em 200 sem avisar).
+  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), LIMITE_LISTA_MAX);
+  const limiteDias = Math.min(Math.max(parseInt(req.query.limite_dias, 10) || rel.LIMITE_DIAS_PADRAO, 1), 365);
+  const page   = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const offset = (page - 1) * limit;
+  const f = _filtrosLista(req.query, empresa_id);
+  if (f.erro) return erro(res, 400, f.erro);
+  const { where, params } = f;
 
   try {
     const [rps] = await db.query(
       `SELECT r.*, u.nome AS criado_por_nome,
+              CASE WHEN r.status = 'EM ANDAMENTO'
+                   THEN GREATEST(DATEDIFF(CURDATE(), COALESCE(r.data_recebimento, r.mes_referencia)), 0) END AS dias_aberto,
               (SELECT COUNT(*) FROM rps_comentarios c WHERE c.rp_id = r.id) AS qtd_comentarios
        FROM rps r LEFT JOIN usuarios u ON r.created_by = u.id
        WHERE ${where}
@@ -175,7 +190,12 @@ const listar = async (req, res) => {
               COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN qtd_entregue ELSE 0 END),0) AS qtd_entregue
        FROM rps r WHERE ${where}`, params
     );
-    return res.json({ rps, total, totais, page, limit });
+    const itens = rps.map((r) => ({
+      ...r,
+      dias_aberto: r.dias_aberto === null || r.dias_aberto === undefined ? null : Number(r.dias_aberto),
+      atrasada: r.status === "EM ANDAMENTO" && Number(r.dias_aberto) > limiteDias,
+    }));
+    return res.json({ rps: itens, total, totais, page, limit, paginas: Math.max(Math.ceil(total / limit), 1), limite_dias: limiteDias });
   } catch (err) {
     console.error("[rsController.listar]", err);
     return erro(res, 500, "Erro ao listar RPs");
@@ -186,11 +206,41 @@ const criar = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   if (!empresa_id) return erro(res, 401, "Não autorizado");
 
-  const { erros, dados } = validarRP(req.body || {});
+  // Data de recebimento é obrigatória nas RPs novas (20/10/2026): sem ela o SLA não calcula.
+  const { erros, dados } = validarRP(req.body || {}, { exigirDataRecebimento: true });
   if (!erros.length) erros.push(...incoerencias(dados));
-  if (erros.length) return erro(res, 400, erros.join("; "), { erros });
 
   try {
+    // Site precisa existir no cadastro (ou já aparecer em RPs): evita variações e erros de digitação.
+    if (!erros.length) {
+      const siteCanon = await resolverSite(empresa_id, dados.site);
+      if (!siteCanon) erros.push(`O site "${dados.site}" não está cadastrado. Cadastre-o em Configurações R&S > Sites e tente de novo`);
+      else dados.site = siteCanon;
+    }
+    if (erros.length) return erro(res, 400, erros.join("; "), { erros });
+
+    // Aviso de RP parecida (mesmo mês, site, setor, produto, chamado, cargo e data de recebimento).
+    // Responde 200 com precisa_confirmar para a tela perguntar; reenviar com confirmar_duplicada=true grava.
+    if (!req.body?.confirmar_duplicada) {
+      const [parecidas] = await db.query(
+        `SELECT id, site, produto, cargo, chamado, status, hcs,
+                DATE_FORMAT(mes_referencia, '%Y-%m') AS mes, DATE_FORMAT(data_recebimento, '%Y-%m-%d') AS data_recebimento
+           FROM rps
+          WHERE empresa_id = ? AND excluido_em IS NULL
+            AND DATE_FORMAT(mes_referencia, '%Y-%m') = ? AND site = ? AND setor = ? AND produto = ?
+            AND COALESCE(chamado, '') = ? AND COALESCE(cargo, '') = ? AND data_recebimento <=> ?
+          ORDER BY id LIMIT 5`,
+        [empresa_id, dados.mes_referencia.slice(0, 7), dados.site, dados.setor, dados.produto,
+         dados.chamado || "", dados.cargo || "", dados.data_recebimento]
+      );
+      if (parecidas.length) {
+        return res.json({
+          precisa_confirmar: true, duplicadas: parecidas,
+          message: "Já existe uma RP com o mesmo mês, site, setor, produto, chamado, cargo e data de recebimento.",
+        });
+      }
+    }
+
     const [result] = await db.query(
       `INSERT INTO rps (empresa_id, ${COLUNAS_RP.join(", ")}, created_by)
        VALUES (?, ${COLUNAS_RP.map(() => "?").join(", ")}, ?)`,
@@ -212,7 +262,7 @@ const criar = async (req, res) => {
 const detalhe = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   try {
-    const [[rp]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ?", [req.params.id, empresa_id]);
+    const [[rp]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ? AND excluido_em IS NULL", [req.params.id, empresa_id]);
     if (!rp) return erro(res, 404, "RP não encontrada");
     return res.json(rp);
   } catch (err) {
@@ -225,20 +275,26 @@ const editar = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   if (!empresa_id) return erro(res, 401, "Não autorizado");
   try {
-    const [[antes]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ?", [req.params.id, empresa_id]);
+    const [[antes]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ? AND excluido_em IS NULL", [req.params.id, empresa_id]);
     if (!antes) return erro(res, 404, "RP não encontrada");
 
     // Campo ausente no corpo mantém o valor atual; o conjunto final é validado.
     const corpo = req.body || {};
     const mesclado = {};
     for (const c of COLUNAS_RP) mesclado[c] = corpo[c] !== undefined ? corpo[c] : antes[c];
-    const { erros, dados } = validarRP(mesclado);
+    const { erros, dados } = validarRP(mesclado, { exigirDataRecebimento: true });
     // Números incoerentes só travam se esta edição mexeu neles — assim uma RP antiga
     // que já estava inconsistente ainda pode ter observação, datas etc. corrigidas.
     const mexeuNosNumeros = ["hcs", "hcs_aprovados", "qtd_entregue", "status"].some(
       (c) => String(dados[c] ?? "") !== String(antes[c] ?? "")
     );
     if (!erros.length && mexeuNosNumeros) erros.push(...incoerencias(dados));
+    if (!erros.length) {
+      const siteCanon = await resolverSite(empresa_id, dados.site);
+      if (siteCanon) dados.site = siteCanon;
+      else if (chaveNormal(dados.site) !== chaveNormal(antes.site))
+        erros.push(`O site "${dados.site}" não está cadastrado. Cadastre-o em Configurações R&S > Sites e tente de novo`);
+    }
     if (erros.length) return erro(res, 400, erros.join("; "), { erros });
 
     await db.query(
@@ -262,16 +318,17 @@ const editar = async (req, res) => {
 const excluir = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   try {
-    const [[antes]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ?", [req.params.id, empresa_id]);
+    const [[antes]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ? AND excluido_em IS NULL", [req.params.id, empresa_id]);
     if (!antes) return erro(res, 404, "RP não encontrada");
-    await db.query("DELETE FROM rps_comentarios WHERE rp_id=? AND empresa_id=?", [req.params.id, empresa_id]).catch(() => {});
-    await db.query("DELETE FROM rps WHERE id=? AND empresa_id=?", [req.params.id, empresa_id]);
+    // Lixeira (20/10/2026): a RP some das telas e dos relatórios, mas pode ser restaurada em até 30 dias.
+    // Comentários ficam guardados junto; a purga (gestão de lixeira) apaga de vez depois do prazo.
+    await db.query("UPDATE rps SET excluido_em = NOW(), excluido_por = ? WHERE id = ? AND empresa_id = ?", [req.user?.id || null, req.params.id, empresa_id]);
     registrarAuditoria({
       usuario: req.user, acao: "excluir", entidade: "rp", entidadeId: Number(req.params.id),
-      resumo: `${req.user?.nome || "Alguém"} excluiu a RP ${antes.produto} · ${antes.site}`,
+      resumo: `${req.user?.nome || "Alguém"} enviou para a lixeira a RP ${antes.produto} · ${antes.site}`,
       dadosAntes: antes, ip: req.ip,
     });
-    return res.json({ message: "RP excluída com sucesso" });
+    return res.json({ message: "RP enviada para a lixeira. Dá para restaurar por 30 dias." });
   } catch (err) {
     console.error("[rsController.excluir]", err);
     return erro(res, 500, "Erro ao excluir RP");
@@ -281,17 +338,10 @@ const excluir = async (req, res) => {
 const getSites = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   try {
-    // Sites cadastrados + sites que já aparecem em RPs (ambiente novo sem seed
-    // não fica com o seletor vazio).
-    const [sites] = await db.query(
-      `SELECT COALESCE(MIN(id), CONCAT('n:', nome)) AS id, nome FROM (
-         SELECT id, nome FROM rs_sites WHERE empresa_id=? AND ativo=1
-         UNION ALL
-         SELECT NULL AS id, site AS nome FROM rps WHERE empresa_id=? AND site IS NOT NULL AND site <> ''
-       ) x GROUP BY nome ORDER BY nome`,
-      [empresa_id, empresa_id]
-    );
-    return res.json(sites);
+    // Sites cadastrados (ativos) + sites que já aparecem em RPs, sem repetir variações
+    // de maiúsculas/acentos ("SALVADOR" e "Salvador" viram um só).
+    const sites = await listarSites(empresa_id);
+    return res.json(sites.map((s) => ({ id: s.id || `n:${s.nome}`, nome: s.nome })));
   } catch (err) {
     console.error("[rsController.getSites]", err);
     return erro(res, 500, "Erro ao buscar sites");
@@ -303,10 +353,18 @@ const getProdutos = async (req, res) => {
   const { q } = req.query;
   try {
     const [rows] = await db.query(
-      `SELECT nome FROM rs_produtos WHERE empresa_id=? AND ativo=1 ${q ? "AND nome LIKE ?" : ""} ORDER BY nome LIMIT 30`,
+      `SELECT nome FROM rs_produtos WHERE empresa_id=? AND ativo=1 ${q ? "AND nome LIKE ?" : ""} ORDER BY nome LIMIT 60`,
       q ? [empresa_id, `%${q}%`] : [empresa_id]
     );
-    return res.json(rows.map(r => r.nome));
+    const vistos = new Set();
+    const nomes = [];
+    for (const r of rows) {
+      const k = chaveNormal(r.nome);
+      if (vistos.has(k)) continue;
+      vistos.add(k);
+      nomes.push(tituloPadrao(r.nome));
+    }
+    return res.json(nomes.slice(0, 30));
   } catch (err) {
     console.error("[rsController.getProdutos]", err);
     return res.status(500).json({ error: "Erro ao buscar produtos" });
@@ -753,7 +811,7 @@ const TAM_LOTE_IMPORT = 200;
 
 function _chaveRP(r) {
   return [r.mes_referencia, r.site, r.setor, r.produto, r.chamado || "", r.cargo || "", r.data_recebimento || ""]
-    .map((v) => String(v).toUpperCase()).join("|");
+    .map((v) => chaveNormal(v)).join("|");
 }
 
 const importarPlanilha = async (req, res) => {
@@ -764,10 +822,17 @@ const importarPlanilha = async (req, res) => {
   const ano  = parseInt(req.query.ano, 10) || new Date().getFullYear();
   if (ano < 2000 || ano > 2100) return erro(res, 400, "Ano inválido");
   const modo = req.query.modo === "append" ? "append" : "skip";
+  // simular=1: só analisa e devolve a prévia (nada é gravado)
+  const simular = req.query.simular === "1" || req.query.simular === "true";
 
   let conn;
   try {
     const XLSX      = require("xlsx");
+    const sitesConhecidos = await listarSites(empresa_id, { incluirInativos: true });
+    const mapaSites = new Map(sitesConhecidos.map((x) => [x.chave, x.nome]));
+    const sitesNovos = new Map(); // chave → nome padrão (ainda não cadastrado)
+    let totalInvalido = 0;
+    let totalDuplicado = 0;
     const workbook  = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
 
     let totalIgnorado = 0;
@@ -818,16 +883,19 @@ const importarPlanilha = async (req, res) => {
         if (primeiroVal === "TOTAL" || primeiroVal === "MES" || primeiroVal === "MÊS") continue;
 
         const mes_referencia = _normMes(row["MES"] ?? row["MES REFERENCIA"] ?? null, ano);
-        if (!mes_referencia) { totalIgnorado++; ignoradosAba++; continue; }
+        if (!mes_referencia) { totalIgnorado++; totalInvalido++; ignoradosAba++; continue; }
 
-        const site = String(row["SITE"] || "").trim().toUpperCase().slice(0, 100) || null;
-        if (!site) { totalIgnorado++; ignoradosAba++; continue; }
+        const siteBruto = tituloPadrao(row["SITE"]).slice(0, 100);
+        if (!siteBruto) { totalIgnorado++; totalInvalido++; ignoradosAba++; continue; }
+        const chaveSite = chaveNormal(siteBruto);
+        const site = mapaSites.get(chaveSite) || siteBruto;
+        if (!mapaSites.has(chaveSite)) { sitesNovos.set(chaveSite, siteBruto); mapaSites.set(chaveSite, siteBruto); }
 
         const setor = _normSetor(row["SETOR"]) || setorAba;
-        if (!setor) { totalIgnorado++; ignoradosAba++; continue; }
+        if (!setor) { totalIgnorado++; totalInvalido++; ignoradosAba++; continue; }
 
-        const produto = String(row["PRODUTO"] ?? row["CLIENTE"] ?? "").trim().toUpperCase().slice(0, 150);
-        if (!produto) { totalIgnorado++; ignoradosAba++; continue; }
+        const produto = tituloPadrao(row["PRODUTO"] ?? row["CLIENTE"] ?? "").slice(0, 150);
+        if (!produto) { totalIgnorado++; totalInvalido++; ignoradosAba++; continue; }
 
         const data_recebimento = _normDate(row["DATA RECEBIMENTO RP"] ?? row["DATA RECEBIMENTO"], ano);
         const registro = {
@@ -837,7 +905,7 @@ const importarPlanilha = async (req, res) => {
           inicio_av_tecnica:    setor==="OPERACIONAL" ? _normDate(row["INICIO DA AV TECNICA"] ?? row["INICIO AV TECNICA"], ano) : null,
           final_av_tecnica:     setor==="OPERACIONAL" ? _normDate(row["FINAL DA AV TECNICA"]  ?? row["FINAL AV TECNICA"],  ano) : null,
           data_fechamento_vaga: setor==="ESTRATÉGICO"  ? _normDate(row["DATA FECHAMENTO DA VAGA"] ?? row["DATA FECHAMENTO VAGA"], ano) : null,
-          cargo:   setor==="ESTRATÉGICO" ? (String(row["CARGO"]||"").trim().toUpperCase().slice(0, 200)||null) : null,
+          cargo:   setor==="ESTRATÉGICO" ? (tituloPadrao(row["CARGO"]).slice(0, 200)||null) : null,
           chamado: String(row["CHAMADO"]??row["N CHAMADO"]??"").trim().slice(0, 200)||null,
           hcs:           _normInt(row["HCS"] ?? row["HC'S"] ?? row["HCS SOLICITADOS"]),
           hcs_com_to:    _normInt(row["HCS COM TO"] ?? row["HC'S COM TO"]),
@@ -864,17 +932,52 @@ const importarPlanilha = async (req, res) => {
       const [existentes] = await db.query(
         `SELECT DATE_FORMAT(mes_referencia, '%Y-%m-%d') AS mes_referencia, site, setor, produto, chamado, cargo,
                 DATE_FORMAT(data_recebimento, '%Y-%m-%d') AS data_recebimento
-         FROM rps WHERE empresa_id=?`,
+         FROM rps WHERE empresa_id=? AND excluido_em IS NULL`,
         [empresa_id]
       );
       const vistos = new Set(existentes.map(_chaveRP));
       aInserir = [];
       for (const r of novas) {
         const k = _chaveRP(r);
-        if (vistos.has(k)) { totalIgnorado++; continue; }
+        if (vistos.has(k)) { totalIgnorado++; totalDuplicado++; continue; }
         vistos.add(k);
         aInserir.push(r);
       }
+    }
+
+    // ── Prévia (simulação): conta e resume, sem gravar nada ──────────────────
+    if (simular) {
+      const porMes = {};
+      const porSetor = { OPERACIONAL: 0, "ESTRATÉGICO": 0 };
+      const produtosNovos = new Set();
+      const [prodCad] = await db.query("SELECT nome FROM rs_produtos WHERE empresa_id=?", [empresa_id]).catch(() => [[]]);
+      const [prodRps] = await db.query("SELECT DISTINCT produto AS nome FROM rps WHERE empresa_id=? AND excluido_em IS NULL", [empresa_id]);
+      const prodConhecidos = new Set([...prodCad, ...prodRps].map((x) => chaveNormal(x.nome)));
+      for (const r of aInserir) {
+        const m = String(r.mes_referencia).slice(0, 7);
+        porMes[m] = (porMes[m] || 0) + 1;
+        porSetor[r.setor] = (porSetor[r.setor] || 0) + 1;
+        if (!prodConhecidos.has(chaveNormal(r.produto))) produtosNovos.add(r.produto);
+      }
+      return res.json({
+        ok: true,
+        simulacao: true,
+        resumo: {
+          total_linhas_validas: novas.length,
+          total_a_importar: aInserir.length,
+          total_duplicadas: totalDuplicado,
+          total_invalidas: totalInvalido,
+        },
+        por_mes: Object.keys(porMes).sort().map((m) => ({ mes: m, rps: porMes[m] })),
+        por_setor: porSetor,
+        sites_novos: [...sitesNovos.values()].sort((a, b) => a.localeCompare(b, "pt-BR")),
+        produtos_novos: [...produtosNovos].sort((a, b) => a.localeCompare(b, "pt-BR")),
+        amostra: aInserir.slice(0, 8).map((r) => ({
+          mes: String(r.mes_referencia).slice(0, 7), site: r.site, setor: r.setor, produto: r.produto,
+          cargo: r.cargo, chamado: r.chamado, status: r.status, data_recebimento: r.data_recebimento,
+        })),
+        detalhes,
+      });
     }
 
     // ── 3) Gravar tudo ou nada ───────────────────────────────────────────────
@@ -904,6 +1007,7 @@ const importarPlanilha = async (req, res) => {
       conn.release();
       conn = null;
       for (const nome of new Set(aInserir.map((r) => r.produto))) await _upsertProduto(empresa_id, nome);
+      for (const nome of new Set(aInserir.map((r) => r.site))) await _upsertSite(empresa_id, nome);
     }
 
     registrarAuditoria({
@@ -915,7 +1019,7 @@ const importarPlanilha = async (req, res) => {
 
     return res.json({
       ok: true,
-      resumo: { total_importado: aInserir.length, total_ignorado: totalIgnorado, total_erro: 0 },
+      resumo: { total_importado: aInserir.length, total_ignorado: totalIgnorado, total_duplicadas: totalDuplicado, total_invalidas: totalInvalido, total_erro: 0 },
       detalhes,
     });
   } catch (err) {
@@ -940,9 +1044,19 @@ const importarPlanilha = async (req, res) => {
 
 async function _upsertProduto(empresa_id, nome) {
   try {
-    const nomeFinal = nome.trim().toUpperCase();
+    const nomeFinal = tituloPadrao(nome);
+    if (!nomeFinal) return;
     const [[exists]] = await db.query("SELECT id FROM rs_produtos WHERE empresa_id=? AND nome=?", [empresa_id, nomeFinal]);
     if (!exists) await db.query("INSERT INTO rs_produtos (empresa_id, nome) VALUES (?,?)", [empresa_id, nomeFinal]);
+  } catch (_) { /* não crítico */ }
+}
+
+async function _upsertSite(empresa_id, nome) {
+  try {
+    const chave = chaveNormal(nome);
+    const [cad] = await db.query("SELECT id, nome FROM rs_sites WHERE empresa_id=?", [empresa_id]);
+    if (cad.some((x) => chaveNormal(x.nome) === chave)) return;
+    await db.query("INSERT INTO rs_sites (empresa_id, nome) VALUES (?,?)", [empresa_id, nome]);
   } catch (_) { /* não crítico */ }
 }
 
@@ -1030,9 +1144,81 @@ const excluirComentario = async (req, res) => {
   }
 };
 
+// ── Exportar a lista de RPs (20/10/2026): mesmos filtros da tela, uma linha por RP ──
+const exportarLista = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  const f = _filtrosLista(req.query, empresa_id);
+  if (f.erro) return erro(res, 400, f.erro);
+  const limiteDias = Math.min(Math.max(parseInt(req.query.limite_dias, 10) || rel.LIMITE_DIAS_PADRAO, 1), 365);
+  try {
+    const { novoWorkbook, adicionarTabela } = require("../lib/excelExport");
+    const [rps] = await db.query(
+      `SELECT r.*, DATE_FORMAT(r.mes_referencia, '%m/%Y') AS mes_rotulo,
+              CASE WHEN r.status = 'EM ANDAMENTO'
+                   THEN GREATEST(DATEDIFF(CURDATE(), COALESCE(r.data_recebimento, r.mes_referencia)), 0) END AS dias_aberto
+         FROM rps r WHERE ${f.where}
+         ORDER BY r.mes_referencia DESC, r.site, r.setor, r.produto, r.id
+         LIMIT 20000`, f.params);
+    const comentarios = new Map();
+    if (rps.length) {
+      const [coms] = await db.query(
+        `SELECT c.rp_id, c.autor_nome, c.texto, c.created_at FROM rps_comentarios c
+           JOIN rps r ON r.id = c.rp_id WHERE ${f.where} AND c.empresa_id = r.empresa_id ORDER BY c.created_at, c.id`,
+        f.params).catch(() => [[]]);
+      for (const c of coms) {
+        const d = c.created_at ? new Date(c.created_at) : null;
+        const ds = d && !isNaN(d) ? `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}` : "";
+        if (!comentarios.has(c.rp_id)) comentarios.set(c.rp_id, []);
+        comentarios.get(c.rp_id).push(`${ds} ${c.autor_nome || ""}: ${c.texto}`.trim());
+      }
+    }
+    const linhas = rps.map((r) => {
+      const dias = r.dias_aberto === null || r.dias_aberto === undefined ? "" : Number(r.dias_aberto);
+      return {
+        mes: r.mes_rotulo, site: r.site, setor: r.setor, produto: r.produto, cargo: r.cargo || "", chamado: r.chamado || "",
+        data_recebimento: r.data_recebimento, status: r.status,
+        prazo: r.status === "EM ANDAMENTO" ? (dias > limiteDias ? "Atrasada" : "No prazo") : "",
+        dias_aberto: dias,
+        inicio_av_tecnica: r.inicio_av_tecnica, final_av_tecnica: r.final_av_tecnica, data_fechamento_vaga: r.data_fechamento_vaga,
+        hcs: r.hcs, hcs_com_to: r.hcs_com_to, hcs_aprovados: r.hcs_aprovados, qtd_entregue: r.qtd_entregue,
+        observacoes: r.observacoes || "", comentarios: (comentarios.get(r.id) || []).join("\n"),
+      };
+    });
+    const wb = novoWorkbook();
+    adicionarTabela(wb, {
+      nomeAba: "RPs",
+      colunas: [
+        { titulo: "Mês", chave: "mes", largura: 10 }, { titulo: "Site", chave: "site", largura: 20 },
+        { titulo: "Setor", chave: "setor", largura: 14 }, { titulo: "Produto", chave: "produto", largura: 24 },
+        { titulo: "Cargo", chave: "cargo", largura: 22 }, { titulo: "Chamado", chave: "chamado", largura: 14 },
+        { titulo: "Recebimento", chave: "data_recebimento", formato: "data", largura: 13 },
+        { titulo: "Status", chave: "status", largura: 15 }, { titulo: "Prazo", chave: "prazo", largura: 10 },
+        { titulo: "Dias em aberto", chave: "dias_aberto", largura: 10 },
+        { titulo: "Início av. técnica", chave: "inicio_av_tecnica", formato: "data", largura: 13 },
+        { titulo: "Final av. técnica", chave: "final_av_tecnica", formato: "data", largura: 13 },
+        { titulo: "Fechamento da vaga", chave: "data_fechamento_vaga", formato: "data", largura: 13 },
+        { titulo: "HC'S", chave: "hcs", formato: "inteiro", largura: 8 },
+        { titulo: "HC'S com TO", chave: "hcs_com_to", formato: "inteiro", largura: 10 },
+        { titulo: "HC'S aprovados", chave: "hcs_aprovados", formato: "inteiro", largura: 10 },
+        { titulo: "Entregues", chave: "qtd_entregue", formato: "inteiro", largura: 10 },
+        { titulo: "Observações", chave: "observacoes", largura: 30 }, { titulo: "Comentários", chave: "comentarios", largura: 50 },
+      ],
+      linhas,
+    });
+    const buf = await wb.xlsx.writeBuffer();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="rps_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  } catch (err) {
+    console.error("[rsController.exportarLista]", err);
+    return erro(res, 500, "Erro ao exportar a lista de RPs");
+  }
+};
+
 module.exports = {
   // Sprint 1
-  listar, criar, detalhe, editar, excluir, getSites, getProdutos,
+  listar, criar, detalhe, editar, excluir, getSites, getProdutos, exportarLista,
   listarComentarios, criarComentario, excluirComentario,
   // Sprint 2
   getDashboard, getRelatorio, exportar,
