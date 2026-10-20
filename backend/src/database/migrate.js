@@ -2381,6 +2381,14 @@ async function runMigrations() {
       console.log(`  ↳ lixeira das RPs não concluído (${error.message}) — seguindo`);
     }
 
+    // 72. Pacote 21/10/2026 — código de primeiro acesso, mural da turma, sino de avisos,
+    //     fechamento mensal, Oficina (reação e pós-oficina). Ver ensurePacote20261021().
+    try {
+      await ensurePacote20261021();
+    } catch (error) {
+      console.log(`  ↳ pacote 21/10 não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
@@ -2870,6 +2878,104 @@ async function ensureCorrecoesAvaliacoes() {
     console.log(`  ↳ reconciliação das notas de provas não concluída (${error.message}) — seguindo`);
   }
   console.log("  ↳ correções de avaliações: ok");
+}
+
+
+// 72. Pacote 21/10/2026.
+async function ensurePacote20261021() {
+  // Mural da turma: a tabela só existia como script SQL avulso (2026-07-17).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS turma_publicacoes (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      treinamento_id INT NOT NULL,
+      autor_id INT NULL,
+      autor_nome VARCHAR(150) NULL,
+      titulo VARCHAR(200) NULL,
+      conteudo TEXT NOT NULL,
+      fixado TINYINT(1) DEFAULT 0,
+      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_turma_publicacoes_treinamento (treinamento_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  // Código de primeiro acesso (lib/codigoAcesso.js).
+  await ensureColumn("usuarios", "codigo_acesso", "VARCHAR(16) NULL");
+  await ensureColumn("usuarios", "codigo_acesso_expira", "DATETIME NULL");
+
+  // Sino de avisos: um registro por usuário e por "chave" (evita repetir o mesmo aviso).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS avisos (
+      id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NULL,
+      usuario_id INT NOT NULL,
+      tipo       VARCHAR(40) NOT NULL,
+      gravidade  VARCHAR(10) NOT NULL DEFAULT 'info',
+      titulo     VARCHAR(200) NOT NULL,
+      mensagem   VARCHAR(500) NULL,
+      link       VARCHAR(300) NULL,
+      chave      VARCHAR(160) NOT NULL,
+      valor      INT NOT NULL DEFAULT 0,
+      lido_em    DATETIME NULL,
+      resolvido_em DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_avisos_usuario_chave (usuario_id, chave),
+      INDEX idx_avisos_usuario (usuario_id, lido_em, resolvido_em)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  // Fechamento mensal por cliente: foto (JSON) do mês no momento do fechamento.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fechamentos_mensais (
+      id          INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      empresa_id  INT NOT NULL,
+      cliente     VARCHAR(150) NOT NULL,
+      mes         CHAR(7) NOT NULL,
+      dados_json  LONGTEXT NOT NULL,
+      observacao  VARCHAR(1000) NULL,
+      fechado_por INT NULL,
+      fechado_por_nome VARCHAR(150) NULL,
+      fechado_em  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_fechamento (empresa_id, cliente, mes)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  // Oficina de Talentos — avaliação de reação por módulo (anônima para a gestão) e
+  // acompanhamento pós-oficina (30/60/90 dias após o fim da turma).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oficina_reacoes (
+      id          INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      empresa_id  INT NULL,
+      turma_id    INT NOT NULL,
+      modulo_id   INT NOT NULL,
+      inscricao_id INT NOT NULL,
+      nota        TINYINT NOT NULL,
+      comentario  VARCHAR(500) NULL,
+      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_reacao_modulo_inscricao (modulo_id, inscricao_id),
+      INDEX idx_reacao_turma (turma_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oficina_acompanhamentos (
+      id          INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      empresa_id  INT NULL,
+      turma_id    INT NOT NULL,
+      inscricao_id INT NOT NULL,
+      marco       SMALLINT NOT NULL,
+      data_prevista DATE NOT NULL,
+      status      VARCHAR(15) NOT NULL DEFAULT 'pendente',
+      resultado   VARCHAR(20) NULL,
+      gestor_nome VARCHAR(150) NULL,
+      observacao  VARCHAR(1000) NULL,
+      registrado_por_id INT NULL,
+      registrado_em DATETIME NULL,
+      UNIQUE KEY uk_acomp_inscricao_marco (inscricao_id, marco),
+      INDEX idx_acomp_empresa (empresa_id, status, data_prevista),
+      INDEX idx_acomp_turma (turma_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  console.log("  ↳ pacote 21/10 (mural, código de acesso, avisos, fechamento, Oficina): ok");
 }
 
 module.exports = { runMigrations };
