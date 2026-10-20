@@ -154,6 +154,16 @@ export default function RSConfiguracoes() {
                   <strong>Produtos novos:</strong> {previa.produtos_novos.slice(0, 15).join(", ")}{previa.produtos_novos.length > 15 ? ` e mais ${previa.produtos_novos.length - 15}` : ""}
                 </p>
               )}
+              {previa.incoerentes?.total > 0 && (
+                <div style={{ ...hint, fontSize: 12, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px", margin: "8px 0" }}>
+                  <strong>{previa.incoerentes.total} linha(s) com números que não fecham</strong> (aprovados maior que HC'S, ou entregues maior que aprovados). Elas serão importadas assim mesmo, mas aparecerão marcadas na lista de RPs para você corrigir. Exemplos:
+                  <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                    {previa.incoerentes.amostra.map((x, i) => (
+                      <li key={i}>{x.mes.slice(5)}/{x.mes.slice(0, 4)} · {x.site} · {x.produto}: HC'S {x.hcs}, aprovados {x.hcs_aprovados}, entregues {x.qtd_entregue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {previa.amostra?.length > 0 && (
                 <div style={{ overflowX: "auto", margin: "10px 0" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
