@@ -1,5 +1,6 @@
 const XLSX = require("xlsx");
 const db = require("../lib/db");
+const { comTransacao, ignorarTabelaAusente: ok } = require("../lib/tx");
 const { resolverPessoa } = require("../services/pessoasService");
 
 // Cadastro Único de Pessoas (Fase 2, item 4 — 28/09/2026): mesma
@@ -199,19 +200,21 @@ async function remove(req, res) {
     // desvincula (nunca apaga) o coaching antes de remover o participante:
     // ele passa a aparecer como coaching individual "solo", com todo o
     // histórico de encontros e perfil comportamental preservado.
-    await db.query(
-      `UPDATE coaching_individual SET jornada_participante_id = NULL WHERE jornada_participante_id = ?${tenantCheck}`,
-      checkParams
-    );
+    await comTransacao(async (conn) => {
+      await conn.query(
+        `UPDATE coaching_individual SET jornada_participante_id = NULL WHERE jornada_participante_id = ?${tenantCheck}`,
+        checkParams
+      );
 
-    // Presença por encontro (13/10/2026): sem FK para esta tabela (ver
-    // ensureJornadaPresenca), então a limpeza é feita aqui.
-    await db.query(`DELETE FROM jornada_presencas WHERE participante_id = ?`, [id]).catch(() => null);
-    // Desenvolvimento por etapa e evolução (Fase 2, 16/10/2026) — sem FK, limpeza aqui.
-    await db.query(`DELETE FROM jornada_participante_etapas WHERE participante_id = ?`, [id]).catch(() => null);
-    await db.query(`DELETE FROM jornada_evolucao_notas WHERE participante_id = ?`, [id]).catch(() => null);
+      // Presença por encontro (13/10/2026): sem FK para esta tabela (ver
+      // ensureJornadaPresenca), então a limpeza é feita aqui.
+      await ok(conn.query(`DELETE FROM jornada_presencas WHERE participante_id = ?`, [id]));
+      // Desenvolvimento por etapa e evolução (Fase 2, 16/10/2026) — sem FK, limpeza aqui.
+      await ok(conn.query(`DELETE FROM jornada_participante_etapas WHERE participante_id = ?`, [id]));
+      await ok(conn.query(`DELETE FROM jornada_evolucao_notas WHERE participante_id = ?`, [id]));
 
-    await db.query(`DELETE FROM jornada_participantes WHERE id = ?${tenantCheck}`, checkParams);
+      await conn.query(`DELETE FROM jornada_participantes WHERE id = ?${tenantCheck}`, checkParams);
+    });
     return res.json({ ok: true, message: "Participante removido com sucesso." });
   } catch (error) {
     console.error("Erro ao remover participante da jornada:", error);

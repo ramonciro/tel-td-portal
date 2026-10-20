@@ -531,7 +531,7 @@ const exportar = async (req, res) => {
     const linhasKpi = [
       ["RPs recebidas", "total_rps", "inteiro", "pct"],
       ["HC'S solicitados", "hcs", "inteiro", "pct"],
-      ["HC'S com TO", "hcs_com_to", "inteiro", null],
+      ["Meta com reserva", "hcs_com_to", "inteiro", null],
       ["HC'S aprovados", "hcs_aprovados", "inteiro", "pct"],
       ["HC'S entregues", "qtd_entregue", "inteiro", "pct"],
       ["Vagas pendentes (RPs em andamento)", "pendentes", "inteiro", "pct"],
@@ -608,7 +608,7 @@ const exportar = async (req, res) => {
     });
     const colFinais = [
       { titulo: "HC'S", chave: "hcs", largura: 8, formato: "inteiro" },
-      { titulo: "HC'S COM TO", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
+      { titulo: "META COM RESERVA", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
       { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", largura: 14, formato: "inteiro" },
       { titulo: "QTD ENTREGUE", chave: "qtd_entregue", largura: 13, formato: "inteiro" },
       { titulo: "OBSERVAÇÕES", chave: "observacoes", largura: 36 },
@@ -654,7 +654,7 @@ const exportar = async (req, res) => {
     wsPC.columns = [{ width: 34 }, { width: 10 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 12 }];
     const colPC = (t) => [
       { titulo: t, chave: "rotulo" }, { titulo: "RPs", chave: "total_rps", formato: "inteiro" },
-      { titulo: "HC'S", chave: "hcs", formato: "inteiro" }, { titulo: "COM TO", chave: "hcs_com_to", formato: "inteiro" },
+      { titulo: "HC'S", chave: "hcs", formato: "inteiro" }, { titulo: "COM RESERVA", chave: "hcs_com_to", formato: "inteiro" },
       { titulo: "APROVADOS", chave: "hcs_aprovados", formato: "inteiro" }, { titulo: "ENTREGUES", chave: "qtd_entregue", formato: "inteiro" },
       { titulo: "TAXA ENTREGA", chave: "taxa_entrega", formato: "percentual" }, { titulo: "PENDENTES", chave: "pendentes", formato: "inteiro" },
     ];
@@ -913,7 +913,7 @@ const importarPlanilha = async (req, res) => {
           cargo:   setor==="ESTRATÉGICO" ? (tituloPadrao(row["CARGO"]).slice(0, 200)||null) : null,
           chamado: String(row["CHAMADO"]??row["N CHAMADO"]??"").trim().slice(0, 200)||null,
           hcs:           _normInt(row["HCS"] ?? row["HC'S"] ?? row["HCS SOLICITADOS"]),
-          hcs_com_to:    _normInt(row["HCS COM TO"] ?? row["HC'S COM TO"]),
+          hcs_com_to:    _normInt(row["META COM RESERVA"] ?? row["HCS COM TO"] ?? row["HC'S COM TO"]),
           hcs_aprovados: _normInt(row["HCS APROVADOS"] ?? row["HC'S APROVADOS"]),
           qtd_entregue:  _normInt(row["QTD ENTREGUE"] ?? row["ENTREGUE"]),
         };
@@ -1217,7 +1217,7 @@ const exportarLista = async (req, res) => {
         { titulo: "Final av. técnica", chave: "final_av_tecnica", formato: "data", largura: 13 },
         { titulo: "Fechamento da vaga", chave: "data_fechamento_vaga", formato: "data", largura: 13 },
         { titulo: "HC'S", chave: "hcs", formato: "inteiro", largura: 8 },
-        { titulo: "HC'S com TO", chave: "hcs_com_to", formato: "inteiro", largura: 10 },
+        { titulo: "Meta com reserva", chave: "hcs_com_to", formato: "inteiro", largura: 10 },
         { titulo: "HC'S aprovados", chave: "hcs_aprovados", formato: "inteiro", largura: 10 },
         { titulo: "Entregues", chave: "qtd_entregue", formato: "inteiro", largura: 10 },
         { titulo: "Observações", chave: "observacoes", largura: 30 }, { titulo: "Comentários", chave: "comentarios", largura: 50 },

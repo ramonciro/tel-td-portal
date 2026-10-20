@@ -1,4 +1,5 @@
 const db = require("../lib/db");
+const { comTransacao, ignorarTabelaAusente: ok } = require("../lib/tx");
 const { usuarioPertenceAoTenant } = require("../services/tenantValidation");
 
 // Bugfix: a versão anterior colapsava "planejada" e "em_andamento" no MESMO
@@ -210,14 +211,17 @@ async function remover(req, res) {
       return res.status(404).json({ error: "Jornada não encontrada." });
     }
 
-    // Encontros e presenças da jornada (13/10/2026) — a FK cobre presença → encontro.
-    await db.query(`DELETE FROM jornada_encontros WHERE jornada_id = ?`, [id]).catch(() => null);
-    await db.query(`DELETE FROM jornada_trilhas WHERE jornada_id = ?`, [id]).catch(() => null);
-    // Desenvolvimento por etapa e evolução (Fase 2, 16/10/2026) — antes de apagar os participantes.
-    await db.query(`DELETE FROM jornada_participante_etapas WHERE participante_id IN (SELECT id FROM jornada_participantes WHERE jornada_id = ?)`, [id]).catch(() => null);
-    await db.query(`DELETE FROM jornada_evolucao_notas WHERE participante_id IN (SELECT id FROM jornada_participantes WHERE jornada_id = ?)`, [id]).catch(() => null);
-    await db.query(`DELETE FROM jornada_participantes WHERE jornada_id = ?`, [id]).catch(() => null);
-    await db.query(`DELETE FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, checkParams);
+    // Tudo da jornada sai junto ou nada sai (transação, 21/10/2026).
+    await comTransacao(async (conn) => {
+      // Encontros e presenças da jornada (13/10/2026) — a FK cobre presença → encontro.
+      await ok(conn.query(`DELETE FROM jornada_encontros WHERE jornada_id = ?`, [id]));
+      await ok(conn.query(`DELETE FROM jornada_trilhas WHERE jornada_id = ?`, [id]));
+      // Desenvolvimento por etapa e evolução (Fase 2, 16/10/2026) — antes de apagar os participantes.
+      await ok(conn.query(`DELETE FROM jornada_participante_etapas WHERE participante_id IN (SELECT id FROM jornada_participantes WHERE jornada_id = ?)`, [id]));
+      await ok(conn.query(`DELETE FROM jornada_evolucao_notas WHERE participante_id IN (SELECT id FROM jornada_participantes WHERE jornada_id = ?)`, [id]));
+      await ok(conn.query(`DELETE FROM jornada_participantes WHERE jornada_id = ?`, [id]));
+      await conn.query(`DELETE FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, checkParams);
+    });
 
     res.json({ success: true, message: "Jornada removida com sucesso." });
   } catch (error) {

@@ -16,6 +16,7 @@
  */
 const ExcelJS = require("exceljs");
 const pool = require("../lib/db");
+const { comTransacao } = require("../lib/tx");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
@@ -470,20 +471,24 @@ async function criarRegistro(req, res) {
       dados.pessoa_nome = p.nome;
     }
 
-    const [r] = await pool.query(
-      `INSERT INTO rotina_atividades_registros
-         (empresa_id, treinamento_id, catalogo_id, tipo_nome, data_atividade, minutos, instrutor, cliente,
-          participante_id, pessoa_nome, tema, observacao, biblioteca_id, necessidade_id, criado_por)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [empresaId, t ? t.id : null, cat.id, cat.nome, dados.data, dados.minutos, instrutor, cliente,
-       dados.participante_id, dados.pessoa_nome, dados.tema, dados.observacao, dados.biblioteca_id,
-       t?.necessidade_id || null, req.user?.nome || null]
-    );
-    if (t) {
-      // garante que o tipo usado fique marcado na turma
-      await pool.query("INSERT IGNORE INTO rotina_turma_atividades (treinamento_id, catalogo_id) VALUES (?,?)", [t.id, cat.id]);
-    }
-    return res.status(201).json({ ok: true, id: r.insertId });
+    // Registro + marcação do tipo na turma: juntos ou nenhum (21/10/2026).
+    const novoId = await comTransacao(async (conn) => {
+      const [r] = await conn.query(
+        `INSERT INTO rotina_atividades_registros
+           (empresa_id, treinamento_id, catalogo_id, tipo_nome, data_atividade, minutos, instrutor, cliente,
+            participante_id, pessoa_nome, tema, observacao, biblioteca_id, necessidade_id, criado_por)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [empresaId, t ? t.id : null, cat.id, cat.nome, dados.data, dados.minutos, instrutor, cliente,
+         dados.participante_id, dados.pessoa_nome, dados.tema, dados.observacao, dados.biblioteca_id,
+         t?.necessidade_id || null, req.user?.nome || null]
+      );
+      if (t) {
+        // garante que o tipo usado fique marcado na turma
+        await conn.query("INSERT IGNORE INTO rotina_turma_atividades (treinamento_id, catalogo_id) VALUES (?,?)", [t.id, cat.id]);
+      }
+      return r.insertId;
+    });
+    return res.status(201).json({ ok: true, id: novoId });
   } catch (e) {
     console.error("[rotina.criarRegistro]", e.message || e);
     return erro(res, 500, "Erro ao registrar a atividade.");
@@ -775,16 +780,18 @@ async function editarCatalogo(req, res) {
     }
     const marcadaPadrao = req.body?.marcada_padrao === undefined ? Number(atual.marcada_padrao) : req.body.marcada_padrao ? 1 : 0;
     const marcadaAv = req.body?.marcada_padrao_avtec === undefined ? Number(atual.marcada_padrao_avtec) : req.body.marcada_padrao_avtec ? 1 : 0;
-    await pool.query(
-      `UPDATE rotina_atividades_catalogo
-          SET nome = ?, descricao = ?, pede_pessoa = ?, minutos_padrao = ?, ativo = ?, marcada_padrao = ?, marcada_padrao_avtec = ?
-        WHERE id = ?`,
-      [d.nome, d.descricao, d.pede_pessoa, d.minutos_padrao, ativo, marcadaPadrao, marcadaAv, id]
-    );
-    if (d.nome !== atual.nome) {
-      // o nome denormalizado nos registros acompanha o catálogo
-      await pool.query("UPDATE rotina_atividades_registros SET tipo_nome = ? WHERE catalogo_id = ?", [d.nome, id]);
-    }
+    await comTransacao(async (conn) => {
+      await conn.query(
+        `UPDATE rotina_atividades_catalogo
+            SET nome = ?, descricao = ?, pede_pessoa = ?, minutos_padrao = ?, ativo = ?, marcada_padrao = ?, marcada_padrao_avtec = ?
+          WHERE id = ?`,
+        [d.nome, d.descricao, d.pede_pessoa, d.minutos_padrao, ativo, marcadaPadrao, marcadaAv, id]
+      );
+      if (d.nome !== atual.nome) {
+        // o nome denormalizado nos registros acompanha o catálogo
+        await conn.query("UPDATE rotina_atividades_registros SET tipo_nome = ? WHERE catalogo_id = ?", [d.nome, id]);
+      }
+    });
     registrarAuditoria({
       usuario: req.user, acao: "editar", entidade: "rotina_catalogo", entidadeId: id,
       resumo: `${req.user?.nome || "Alguém"} alterou a atividade "${atual.nome}" do catálogo da Rotina do instrutor`,
@@ -1029,22 +1036,31 @@ async function salvarAvaliacao(req, res) {
       mudancas.push({ pid, antes, depois, travada: !!(sit.celula && sit.celula.status !== "a_configurar") });
     }
 
-    // 4) grava
-    for (const pid of alteradas) {
-      const l = finais.get(pid);
-      await pool.query(
-        `INSERT INTO rotina_avaliacao_individual
-           (empresa_id, treinamento_id, participante_id, nota_pontualidade, nota_interesse, nota_comportamento, nota_quiz,
-            nota_avaliacao_final, media, resultado, observacao, atualizado_por)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-         ON DUPLICATE KEY UPDATE nota_pontualidade = VALUES(nota_pontualidade), nota_interesse = VALUES(nota_interesse),
-           nota_comportamento = VALUES(nota_comportamento), nota_quiz = VALUES(nota_quiz),
-           nota_avaliacao_final = VALUES(nota_avaliacao_final), media = VALUES(media), resultado = VALUES(resultado),
-           observacao = VALUES(observacao), atualizado_por = VALUES(atualizado_por)`,
-        [t.empresa_id || null, t.id, pid, l.notas.pontualidade, l.notas.interesse, l.notas.comportamento, l.notas.quiz,
-         l.notas.avaliacao_final, l.media, l.resultado, l.observacao || null, req.user?.nome || null]
-      );
-    }
+    // 4) grava — notas de todos + registro da avaliação numa transação só (21/10/2026)
+    await comTransacao(async (conn) => {
+      for (const pid of alteradas) {
+        const l = finais.get(pid);
+        await conn.query(
+          `INSERT INTO rotina_avaliacao_individual
+             (empresa_id, treinamento_id, participante_id, nota_pontualidade, nota_interesse, nota_comportamento, nota_quiz,
+              nota_avaliacao_final, media, resultado, observacao, atualizado_por)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+           ON DUPLICATE KEY UPDATE nota_pontualidade = VALUES(nota_pontualidade), nota_interesse = VALUES(nota_interesse),
+             nota_comportamento = VALUES(nota_comportamento), nota_quiz = VALUES(nota_quiz),
+             nota_avaliacao_final = VALUES(nota_avaliacao_final), media = VALUES(media), resultado = VALUES(resultado),
+             observacao = VALUES(observacao), atualizado_por = VALUES(atualizado_por)`,
+          [t.empresa_id || null, t.id, pid, l.notas.pontualidade, l.notas.interesse, l.notas.comportamento, l.notas.quiz,
+           l.notas.avaliacao_final, l.media, l.resultado, l.observacao || null, req.user?.nome || null]
+        );
+      }
+      if (registrar) {
+        await conn.query(
+          `INSERT INTO rotina_avaliacao_registro (treinamento_id, empresa_id, registrada_por, registrada_em) VALUES (?,?,?, NOW())
+           ON DUPLICATE KEY UPDATE registrada_por = VALUES(registrada_por), registrada_em = NOW()`,
+          [t.id, t.empresa_id || null, req.user?.nome || null]
+        );
+      }
+    });
 
     // Depois de registrada, qualquer mudança de nota/observação também fica na Auditoria.
     if (registro) {
@@ -1081,11 +1097,6 @@ async function salvarAvaliacao(req, res) {
     }
 
     if (registrar) {
-      await pool.query(
-        `INSERT INTO rotina_avaliacao_registro (treinamento_id, empresa_id, registrada_por, registrada_em) VALUES (?,?,?, NOW())
-         ON DUPLICATE KEY UPDATE registrada_por = VALUES(registrada_por), registrada_em = NOW()`,
-        [t.id, t.empresa_id || null, req.user?.nome || null]
-      );
       registrarAuditoria({
         usuario: req.user, acao: "editar", entidade: "rotina_avaliacao", entidadeId: t.id,
         resumo: `${req.user?.nome || "Alguém"} registrou a avaliação individual da turma ${t.tema} (${finais.size} candidato(s))`, ip: req.ip,

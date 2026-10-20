@@ -1,5 +1,6 @@
 const XLSX = require("xlsx");
 const db = require("../lib/db");
+const { comTransacao } = require("../lib/tx");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { resolverPessoa, pessoaIdDoUsuario } = require("../services/pessoasService");
@@ -636,76 +637,79 @@ async function salvarChamadaParticipantes(req, res) {
       empresaIdParaGravar = turmaReal?.empresa_id ?? null;
     }
 
-    for (const item of participantes) {
-      const status = item.status_presenca || "pendente";
-      const presente = status === "presente" ? 1 : 0;
+    // A chamada inteira entra numa transação (21/10/2026): ou salva todos os treinandos, ou nenhum.
+    await comTransacao(async (conn) => {
+      for (const item of participantes) {
+        const status = item.status_presenca || "pendente";
+        const presente = status === "presente" ? 1 : 0;
 
-      const [existentes] = await db.query(
-        `
-        SELECT id
-        FROM presencas
-        WHERE treinamento_id = ? AND treinando_nome = ? AND data_chamada = ?
-        LIMIT 1
-        `,
-        [treinamento_id, item.nome, data_chamada]
-      );
+        const [existentes] = await conn.query(
+          `
+          SELECT id
+          FROM presencas
+          WHERE treinamento_id = ? AND treinando_nome = ? AND data_chamada = ?
+          LIMIT 1
+          `,
+          [treinamento_id, item.nome, data_chamada]
+        );
 
-      if (existentes.length) {
-        await db.query(
-          `
-          UPDATE presencas
-          SET presente = ?, status = ?, justificativa = ?, data_chamada = ?
-          WHERE id = ?
-          `,
-          [
-            presente,
-            status,
-            item.justificativa || null,
-            data_chamada,
-            existentes[0].id,
-          ]
-        );
-      } else {
-        // Fase 4 (isolamento multi-tenant): faltava gravar empresa_id aqui —
-        // era o único caminho de criação de `presencas` que não preenchia a
-        // coluna (o CRUD genérico de /api/presencas injeta automaticamente).
-        // Sem isso, a chamada salva por esta tela nunca aparecia em
-        // GET /api/presencas (que filtra por empresa_id) e não podia ser
-        // editada/excluída por lá.
-        await db.query(
-          `
-          INSERT INTO presencas
-          (treinamento_id, treinando_nome, data_chamada, presente, status, justificativa, empresa_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          `,
-          [
-            treinamento_id,
-            item.nome,
-            data_chamada,
-            presente,
-            status,
-            item.justificativa || null,
-            empresaIdParaGravar,
-          ]
-        );
+        if (existentes.length) {
+          await conn.query(
+            `
+            UPDATE presencas
+            SET presente = ?, status = ?, justificativa = ?, data_chamada = ?
+            WHERE id = ?
+            `,
+            [
+              presente,
+              status,
+              item.justificativa || null,
+              data_chamada,
+              existentes[0].id,
+            ]
+          );
+        } else {
+          // Fase 4 (isolamento multi-tenant): faltava gravar empresa_id aqui —
+          // era o único caminho de criação de `presencas` que não preenchia a
+          // coluna (o CRUD genérico de /api/presencas injeta automaticamente).
+          // Sem isso, a chamada salva por esta tela nunca aparecia em
+          // GET /api/presencas (que filtra por empresa_id) e não podia ser
+          // editada/excluída por lá.
+          await conn.query(
+            `
+            INSERT INTO presencas
+            (treinamento_id, treinando_nome, data_chamada, presente, status, justificativa, empresa_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+              treinamento_id,
+              item.nome,
+              data_chamada,
+              presente,
+              status,
+              item.justificativa || null,
+              empresaIdParaGravar,
+            ]
+          );
+        }
+
+        if (item.id) {
+          await conn.query(
+            `
+            UPDATE treinamento_participantes
+            SET status_presenca = ?, justificativa = ?
+            WHERE id = ? AND treinamento_id = ?
+            `,
+            [
+              status,
+              item.justificativa || null,
+              item.id,
+              treinamento_id,
+            ]
+          );
+        }
       }
-
-      if (item.id) {
-        await db.query(
-          `
-          UPDATE treinamento_participantes
-          SET status_presenca = ?, justificativa = ?
-          WHERE id = ? AND treinamento_id = ?
-          `,
-          [
-            status,
-            item.justificativa || null,
-            item.id,
-            treinamento_id,
-          ]
-        );
-      }
-    }
+    });
 
     return res.json({
       ok: true,
@@ -907,21 +911,24 @@ async function deleteParticipanteTreinamento(req, res) {
 
     const participante = rows[0];
 
-    await db.query(
-      `
-      DELETE FROM presencas
-      WHERE treinamento_id = ? AND treinando_nome = ?
-      `,
-      [participante.treinamento_id, participante.nome]
-    );
+    // Presenças + participante numa transação só (21/10/2026).
+    await comTransacao(async (conn) => {
+      await conn.query(
+        `
+        DELETE FROM presencas
+        WHERE treinamento_id = ? AND treinando_nome = ?
+        `,
+        [participante.treinamento_id, participante.nome]
+      );
 
-    await db.query(
-      `
-      DELETE FROM treinamento_participantes
-      WHERE id = ?
-      `,
-      [id]
-    );
+      await conn.query(
+        `
+        DELETE FROM treinamento_participantes
+        WHERE id = ?
+        `,
+        [id]
+      );
+    });
 
     return res.json({
       ok: true,
@@ -977,29 +984,31 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
       });
     }
 
-    for (const participante of rows) {
-      await db.query(
-        `
-        DELETE FROM presencas
-        WHERE treinamento_id = ? AND treinando_nome = ?
-        `,
-        [participante.treinamento_id, participante.nome]
-      );
-    }
-
     // Usa só os ids confirmados como do tenant (rows), não o `ids` bruto do
     // corpo da requisição — senão um id de outra empresa misturado na lista
     // seria excluído mesmo depois de barrado no SELECT acima.
     const idsConfirmados = rows.map((r) => r.id);
     const placeholdersConfirmados = idsConfirmados.map(() => "?").join(", ");
 
-    await db.query(
-      `
-      DELETE FROM treinamento_participantes
-      WHERE id IN (${placeholdersConfirmados})
-      `,
-      idsConfirmados
-    );
+    // Presenças de todos + participantes numa transação só (21/10/2026).
+    await comTransacao(async (conn) => {
+      for (const participante of rows) {
+        await conn.query(
+          `
+          DELETE FROM presencas
+          WHERE treinamento_id = ? AND treinando_nome = ?
+          `,
+          [participante.treinamento_id, participante.nome]
+        );
+      }
+      await conn.query(
+        `
+        DELETE FROM treinamento_participantes
+        WHERE id IN (${placeholdersConfirmados})
+        `,
+        idsConfirmados
+      );
+    });
 
     return res.json({
       ok: true,

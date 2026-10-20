@@ -1,4 +1,5 @@
 const pool = require("../lib/db");
+const { comTransacao } = require("../lib/tx");
 const { usuarioTemAcessoAoCliente, filtroClientesSQL } = require("../lib/acessoCliente");
 const { pessoaIdDoUsuario } = require("../services/pessoasService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
@@ -46,8 +47,15 @@ async function listMateriaisAvaliativos(req, res) {
     // mesmo tenant. Agora junta treinamentos e aplica o mesmo filtro de
     // cliente já usado em Biblioteca/Certificados/Mural.
     const clienteFiltro = filtroClientesSQL(req, "t.cliente");
-    const clienteWhere = clienteFiltro ? ` AND ${clienteFiltro.sql}` : "";
-    const params = clienteFiltro ? clienteFiltro.params : [];
+    let clienteWhere = clienteFiltro ? ` AND ${clienteFiltro.sql}` : "";
+    const params = clienteFiltro ? [...clienteFiltro.params] : [];
+
+    // Filtro opcional por turma (21/10/2026) — evita trazer as provas de todas as turmas.
+    const turmaFiltro = Number(req.query?.treinamento_id);
+    if (Number.isInteger(turmaFiltro) && turmaFiltro > 0) {
+      clienteWhere += " AND m.treinamento_id = ?";
+      params.push(turmaFiltro);
+    }
 
     const [rows] = await pool.query(
       `
@@ -357,25 +365,20 @@ async function deleteMaterialAvaliativo(req, res) {
 
     const material = materiais[0];
 
-    await pool.query(
-      `DELETE FROM respostas_avaliativas WHERE material_id = ?`,
-      [id]
-    );
-
-    await pool.query(
-      `
-      DELETE FROM avaliacoes
-      WHERE treinamento_id = ?
-        AND titulo = ?
-        AND comentario LIKE 'Resultado automático da prova/simulado:%'
-      `,
-      [material.treinamento_id, material.titulo]
-    );
-
-    await pool.query(
-      `DELETE FROM materiais_avaliativos WHERE id = ?`,
-      [id]
-    );
+    // Respostas, notas automáticas e o material saem juntos (transação, 21/10/2026).
+    await comTransacao(async (conn) => {
+      await conn.query(`DELETE FROM respostas_avaliativas WHERE material_id = ?`, [id]);
+      await conn.query(
+        `
+        DELETE FROM avaliacoes
+        WHERE treinamento_id = ?
+          AND titulo = ?
+          AND comentario LIKE 'Resultado automático da prova/simulado:%'
+        `,
+        [material.treinamento_id, material.titulo]
+      );
+      await conn.query(`DELETE FROM materiais_avaliativos WHERE id = ?`, [id]);
+    });
 
     return res.json({
       ok: true,

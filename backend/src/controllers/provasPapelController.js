@@ -15,6 +15,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const pool = require("../lib/db");
+const { comTransacao } = require("../lib/tx");
 const { registrarAuditoria } = require("../services/auditoria");
 const { acesso } = require("./rotinaController");
 const { pastaUploads, gerarQuery } = require("../lib/uploadAssinado");
@@ -251,6 +252,7 @@ async function salvarLote(req, res) {
     const totalQ = material ? parseQuestoes(material.questoes_json).length : 0;
     const entrada = Array.isArray(b.linhas) ? b.linhas : [];
     const erros = [];
+    const paraGravar = [];
     let salvas = 0;
 
     for (const l of entrada) {
@@ -277,22 +279,28 @@ async function salvarLote(req, res) {
         }
       }
       const nota10 = faltou ? null : P.converterNota10(notaOriginal, notaMaxima);
-      await pool.query(
-        `INSERT INTO prova_papel_resultados
-           (lote_id, participante_id, pessoa_id, nome, faltou, respostas_texto, acertos, total_questoes, nota_original, nota_10)
-         VALUES (?,?,?,?,?,?,?,?,?,?)
-         ON DUPLICATE KEY UPDATE pessoa_id = VALUES(pessoa_id), nome = VALUES(nome), faltou = VALUES(faltou),
-           respostas_texto = VALUES(respostas_texto), acertos = VALUES(acertos), total_questoes = VALUES(total_questoes),
-           nota_original = VALUES(nota_original), nota_10 = VALUES(nota_10)`,
-        [lote.id, pid, p.pessoa_id || null, p.nome, faltou ? 1 : 0, respostasTexto, acertos, totalQuestoes, notaOriginal, nota10]
-      );
+      paraGravar.push([lote.id, pid, p.pessoa_id || null, p.nome, faltou ? 1 : 0, respostasTexto, acertos, totalQuestoes, notaOriginal, nota10]);
       salvas += 1;
     }
 
-    await pool.query(
-      "UPDATE prova_papel_lotes SET titulo = ?, nota_maxima = ?, data_aplicacao = ? WHERE id = ?",
-      [titulo, notaMaxima, data, lote.id]
-    );
+    // Linhas + cabeçalho numa transação só: ou grava tudo, ou nada (21/10/2026).
+    await comTransacao(async (conn) => {
+      for (const valores of paraGravar) {
+        await conn.query(
+          `INSERT INTO prova_papel_resultados
+             (lote_id, participante_id, pessoa_id, nome, faltou, respostas_texto, acertos, total_questoes, nota_original, nota_10)
+           VALUES (?,?,?,?,?,?,?,?,?,?)
+           ON DUPLICATE KEY UPDATE pessoa_id = VALUES(pessoa_id), nome = VALUES(nome), faltou = VALUES(faltou),
+             respostas_texto = VALUES(respostas_texto), acertos = VALUES(acertos), total_questoes = VALUES(total_questoes),
+             nota_original = VALUES(nota_original), nota_10 = VALUES(nota_10)`,
+          valores
+        );
+      }
+      await conn.query(
+        "UPDATE prova_papel_lotes SET titulo = ?, nota_maxima = ?, data_aplicacao = ? WHERE id = ?",
+        [titulo, notaMaxima, data, lote.id]
+      );
+    });
     return res.json({ ok: true, salvas, erros });
   } catch (e) {
     console.error("[provasPapel.salvarLote]", e.message || e);
@@ -306,10 +314,13 @@ async function excluirLote(req, res) {
     if (!ctx) return;
     if (ctx.lote.status !== "rascunho") return erro(res, 409, "Só importações em rascunho podem ser excluídas.");
     const [arqs] = await pool.query("SELECT arquivo FROM prova_papel_arquivos WHERE lote_id = ?", [ctx.lote.id]);
+    // Banco primeiro, numa transação; os arquivos só saem do disco depois que deu certo (21/10/2026).
+    await comTransacao(async (conn) => {
+      await conn.query("DELETE FROM prova_papel_arquivos WHERE lote_id = ?", [ctx.lote.id]);
+      await conn.query("DELETE FROM prova_papel_resultados WHERE lote_id = ?", [ctx.lote.id]);
+      await conn.query("DELETE FROM prova_papel_lotes WHERE id = ?", [ctx.lote.id]);
+    });
     arqs.forEach((a) => { try { fs.unlinkSync(path.join(pastaScans(), path.basename(a.arquivo))); } catch (_) { /* já não existe */ } });
-    await pool.query("DELETE FROM prova_papel_arquivos WHERE lote_id = ?", [ctx.lote.id]);
-    await pool.query("DELETE FROM prova_papel_resultados WHERE lote_id = ?", [ctx.lote.id]);
-    await pool.query("DELETE FROM prova_papel_lotes WHERE id = ?", [ctx.lote.id]);
     return res.json({ ok: true });
   } catch (e) {
     console.error("[provasPapel.excluirLote]", e.message || e);

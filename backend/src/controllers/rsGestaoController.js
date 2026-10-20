@@ -2,6 +2,7 @@
 // R&S — gestão do cadastro (20/10/2026): sites, padronização da grafia dos dados
 // existentes e lixeira de RPs. CommonJS — nunca usar import/export.
 const db = require("../lib/db");
+const { comTransacao, ignorarTabelaAusente } = require("../lib/tx");
 const { registrarAuditoria } = require("../services/auditoria");
 const { tituloPadrao, chaveNormal, listarSites } = require("../lib/rsPadrao");
 
@@ -254,8 +255,11 @@ async function purgarLixeira(empresa_id = null) {
   if (!antigas.length) return 0;
   const ids = antigas.map((x) => x.id);
   const marcas = ids.map(() => "?").join(",");
-  await db.query(`DELETE FROM rps_comentarios WHERE rp_id IN (${marcas})`, ids).catch(() => {});
-  await db.query(`DELETE FROM rps WHERE id IN (${marcas})`, ids);
+  // Comentários + RPs numa transação só (21/10/2026): nunca sobram comentários órfãos nem RP sem eles.
+  await comTransacao(async (conn) => {
+    await ignorarTabelaAusente(conn.query(`DELETE FROM rps_comentarios WHERE rp_id IN (${marcas})`, ids));
+    await conn.query(`DELETE FROM rps WHERE id IN (${marcas})`, ids);
+  });
   return ids.length;
 }
 

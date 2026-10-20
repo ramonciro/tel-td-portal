@@ -620,4 +620,7 @@ async function exportarTreinamentos(req, res) {
 module.exports = {
   getDashboardTreinamentos,
   exportarTreinamentos,
+  // Reaproveitado pelo fechamento mensal (21/10/2026) — mesma fonte de presença/status.
+  carregarTurmasEnriquecidas,
+  parseHorasTexto,
 };

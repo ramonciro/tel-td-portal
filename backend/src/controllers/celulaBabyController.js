@@ -17,6 +17,7 @@
  */
 const ExcelJS = require("exceljs");
 const pool = require("../lib/db");
+const { comTransacao } = require("../lib/tx");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { usuarioTemAcessoAoCliente, filtroClientesSQL } = require("../lib/acessoCliente");
 const { sincronizarCelulas } = require("../lib/celulaBaby");
@@ -424,15 +425,19 @@ async function excluirIndicador(req, res) {
   try {
     const celula = await exigirEdicao(req, res);
     if (!celula) return;
-    await pool.query(`DELETE FROM celula_baby_lancamentos WHERE indicador_id = ? AND celula_id = ?`, [
-      req.params.indicadorId,
-      celula.id,
-    ]);
-    const [r] = await pool.query(`DELETE FROM celula_baby_indicadores WHERE id = ? AND celula_id = ?`, [
-      req.params.indicadorId,
-      celula.id,
-    ]);
-    if (!r.affectedRows) return erro(res, 404, "Indicador não encontrado.");
+    // Lançamentos + indicador numa transação (21/10/2026): nunca sobra um sem o outro.
+    const apagou = await comTransacao(async (conn) => {
+      await conn.query(`DELETE FROM celula_baby_lancamentos WHERE indicador_id = ? AND celula_id = ?`, [
+        req.params.indicadorId,
+        celula.id,
+      ]);
+      const [r] = await conn.query(`DELETE FROM celula_baby_indicadores WHERE id = ? AND celula_id = ?`, [
+        req.params.indicadorId,
+        celula.id,
+      ]);
+      return r.affectedRows > 0;
+    });
+    if (!apagou) return erro(res, 404, "Indicador não encontrado.");
     return res.json({ ok: true });
   } catch (e) {
     console.error("[celulaBaby.excluirIndicador]", e.message || e);
