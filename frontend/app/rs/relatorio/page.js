@@ -4,36 +4,35 @@ import { useState, useEffect, useCallback } from "react";
 import PortalShell from "../../../components/PortalShell";
 import PageHero    from "../../../components/PageHero";
 import StatCard    from "../../../components/StatCard";
+import {
+  MES_ATUAL, mesLabel, getMesesDisponiveis, fmtNum, fmtTaxa, Variacao, SetorToggle, SiteSelect,
+  LimiteDiasSelect, estiloSelect, estiloLabel, card, cardTitle, corTaxa, TabelaGrupo, CardPrazos, TabelaEmAndamento,
+} from "../../../components/RSRelatorios";
 import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 
-// ─── Helpers ───────────────────────────────────────────────────────
-
-const MES_ATUAL = () => {
-  const d = new Date();
+// ─── Período ───────────────────────────────────────────────────────
+function somarMeses(ym, n) {
+  const [a, m] = ym.split("-").map(Number);
+  const d = new Date(a, m - 1 + n, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
-
-const MESES_NOME = {
-  "01":"Janeiro","02":"Fevereiro","03":"Março","04":"Abril","05":"Maio","06":"Junho",
-  "07":"Julho","08":"Agosto","09":"Setembro","10":"Outubro","11":"Novembro","12":"Dezembro",
-};
-
-function mesLabel(mes) {
-  if (!mes) return "";
-  const [ano, mm] = mes.split("-");
-  return `${MESES_NOME[mm] || mm} ${ano}`;
 }
 
-function getMesesDisponiveis() {
-  const hoje = new Date();
-  return Array.from({ length: 18 }, (_, i) => {
-    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
-}
+const TIPOS = [
+  { v: "mes", l: "Um mês" },
+  { v: "tri", l: "3 meses" },
+  { v: "sem", l: "6 meses" },
+  { v: "ano", l: "Ano até o mês" },
+  { v: "custom", l: "Personalizado" },
+];
 
-const fmtNum = (v) => Number(v || 0).toLocaleString("pt-BR");
+function calcularPeriodo(tipo, fim, de) {
+  if (tipo === "mes") return { de: fim, ate: fim };
+  if (tipo === "tri") return { de: somarMeses(fim, -2), ate: fim };
+  if (tipo === "sem") return { de: somarMeses(fim, -5), ate: fim };
+  if (tipo === "ano") return { de: `${fim.slice(0, 4)}-01`, ate: fim };
+  return { de: de <= fim ? de : fim, ate: fim };
+}
 
 // ─── Distribuição de status com barras ─────────────────────────────
 const STATUS_CORES = {
@@ -76,237 +75,230 @@ function StatusBars({ dados }) {
   );
 }
 
-// ─── Tabela pivot (por produto ou por cargo) ────────────────────────
-function PivotTable({ titulo, linhas, colKey, colLabel }) {
-  if (!linhas || linhas.length === 0) return null;
-  const totHcs  = linhas.reduce((s, r) => s + (Number(r.hcs)           || 0), 0);
-  const totTo   = linhas.reduce((s, r) => s + (Number(r.hcs_com_to)    || 0), 0);
-  const totAprov= linhas.reduce((s, r) => s + (Number(r.hcs_aprovados) || 0), 0);
-  const totEntr = linhas.reduce((s, r) => s + (Number(r.qtd_entregue)  || 0), 0);
-
-  return (
-    <div style={{
-      background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14,
-      overflow: "hidden", marginBottom: 14,
-      boxShadow: "0 4px 12px rgba(15,23,42,0.04)",
-    }}>
-      <div style={{ padding: "14px 20px", borderBottom: "1px solid #f1f5f9" }}>
-        <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase",
-                       letterSpacing: ".06em", color: colors.accent }}>{titulo}</span>
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: "#f8fafc" }}>
-              <th style={thSt}>{colLabel}</th>
-              <th style={{ ...thSt, textAlign: "right" }}>HC'S</th>
-              <th style={{ ...thSt, textAlign: "right" }}>HC'S com TO</th>
-              <th style={{ ...thSt, textAlign: "right" }}>HC'S Aprovados</th>
-              <th style={{ ...thSt, textAlign: "right" }}>QTD Entregue</th>
-            </tr>
-          </thead>
-          <tbody>
-            {linhas.map((r, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc",
-                                   borderBottom: "1px solid #f1f5f9" }}>
-                <td style={{ padding: "10px 18px", color: colors.textPrimary, fontWeight: 500 }}>
-                  {r[colKey] || "—"}
-                </td>
-                <td style={{ padding: "10px 18px", textAlign: "right", color: colors.textSecondary }}>{fmtNum(r.hcs)}</td>
-                <td style={{ padding: "10px 18px", textAlign: "right", color: colors.textMuted }}>{fmtNum(r.hcs_com_to)}</td>
-                <td style={{ padding: "10px 18px", textAlign: "right", color: colors.textSecondary }}>{fmtNum(r.hcs_aprovados)}</td>
-                <td style={{ padding: "10px 18px", textAlign: "right", color: colors.success, fontWeight: 700 }}>{fmtNum(r.qtd_entregue)}</td>
-              </tr>
-            ))}
-            <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
-              <td style={{ padding: "11px 18px", fontWeight: 800, fontSize: 12,
-                           color: colors.accent, textTransform: "uppercase", letterSpacing: ".04em" }}>TOTAL</td>
-              <td style={tdTot}>{fmtNum(totHcs)}</td>
-              <td style={tdTot}>{fmtNum(totTo)}</td>
-              <td style={tdTot}>{fmtNum(totAprov)}</td>
-              <td style={{ ...tdTot, color: colors.success, fontSize: 15 }}>{fmtNum(totEntr)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ─── Tabela por site ────────────────────────────────────────────────
-function SiteCards({ por_site }) {
-  if (!por_site || por_site.length === 0) return null;
-  const total = por_site.reduce((s, r) => s + r.total_rps, 0);
-  return (
-    <div style={{
-      background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14,
-      padding: "18px 22px", marginBottom: 14,
-      boxShadow: "0 4px 12px rgba(15,23,42,0.04)",
-    }}>
-      <p style={cardTitleSt}>RPs por Site</p>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {por_site.map(s => (
-          <div key={s.site} style={{
-            background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10,
-            padding: "12px 18px", textAlign: "center", minWidth: 120,
-          }}>
-            <div style={{ fontSize: 26, fontWeight: 900, color: colors.textPrimary }}>{s.total_rps}</div>
-            <div style={{ fontSize: 10, color: colors.textMuted, marginTop: 3,
-                          textTransform: "uppercase", letterSpacing: ".04em" }}>{s.site}</div>
-          </div>
-        ))}
-        <div style={{
-          background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10,
-          padding: "12px 18px", textAlign: "center", minWidth: 120,
-        }}>
-          <div style={{ fontSize: 26, fontWeight: 900, color: colors.accent }}>{total}</div>
-          <div style={{ fontSize: 10, color: colors.accent, marginTop: 3,
-                        textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700 }}>Total</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Página ────────────────────────────────────────────────────────
 export default function RSRelatorioPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState("");
   const [exportando, setExportando] = useState(false);
-  const [mes, setMes] = useState(MES_ATUAL());
+  const [tipo, setTipo] = useState("mes");
+  const [fim, setFim] = useState(MES_ATUAL());
+  const [de, setDe] = useState(somarMeses(MES_ATUAL(), -2));
+  const [site, setSite] = useState("");
   const [setor, setSetor] = useState("");
+  const [limite, setLimite] = useState(15);
+
+  // Vem do botão "Relatório completo" do Dashboard: ?mes=&site=&setor=
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      if (/^\d{4}-\d{2}$/.test(q.get("mes") || "")) setFim(q.get("mes"));
+      if (q.get("site")) setSite(q.get("site"));
+      if (q.get("setor")) setSetor(q.get("setor"));
+    } catch {}
+  }, []);
+
+  const periodo = calcularPeriodo(tipo, fim, de);
+  const qs = useCallback(() => {
+    const p = new URLSearchParams({ de: periodo.de, ate: periodo.ate, limite_dias: String(limite) });
+    if (site) p.set("site", site);
+    if (setor) p.set("setor", setor);
+    return p;
+  }, [periodo.de, periodo.ate, site, setor, limite]);
 
   const carregar = useCallback(async () => {
-    setLoading(true);
-    try {
-      const p = new URLSearchParams({ mes });
-      if (setor) p.set("setor", setor);
-      const d = await apiFetch(`/rs/relatorio?${p}`);
-      setData(d);
-    } catch (e) { console.error(e); }
+    setLoading(true); setErro("");
+    try { setData(await apiFetch(`/rs/relatorio?${qs()}`)); }
+    catch (e) { setData(null); setErro(e.message || "Erro ao gerar o relatório."); }
     finally { setLoading(false); }
-  }, [mes, setor]);
+  }, [qs]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  // Usa apiDownload — já cuida de token, filename e download automático
+  const rotuloPeriodo = periodo.de === periodo.ate ? mesLabel(periodo.de, true) : `${mesLabel(periodo.de, true)} a ${mesLabel(periodo.ate, true)}`;
+
+  // O Excel leva exatamente os mesmos filtros da tela
   const handleExportar = async () => {
     setExportando(true);
     try {
-      await apiDownload(
-        `/rs/exportar?mes=${mes}`,
-        `relatorio_rs_${mes.replace("-", "_")}.xlsx`
-      );
+      const sufixo = periodo.de === periodo.ate ? periodo.de.replace("-", "_") : `${periodo.de.replace("-", "_")}_a_${periodo.ate.replace("-", "_")}`;
+      await apiDownload(`/rs/exportar?${qs()}`, `relatorio_rs_${sufixo}.xlsx`);
     } catch (e) { alert("Erro ao exportar: " + (e.message || "Tente novamente.")); }
     finally { setExportando(false); }
   };
 
-  const showOper = !setor || setor === "OPERACIONAL";
-  const showEstr = !setor || setor === "ESTRATÉGICO";
-
   const topRight = (
     <button onClick={handleExportar} disabled={exportando || loading}
       style={{
-        background: exportando ? "#f1f5f9" : colors.accent,
-        color: exportando ? colors.textMuted : "#fff",
-        border: "none", borderRadius: 10, padding: "10px 20px",
-        fontWeight: 700, fontSize: 13, cursor: exportando ? "not-allowed" : "pointer",
+        background: exportando ? "#f1f5f9" : colors.accent, color: exportando ? colors.textMuted : "#fff",
+        border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, fontSize: 13,
+        cursor: exportando ? "not-allowed" : "pointer",
       }}>
-      {exportando ? "⏳ Gerando..." : "⬇ Exportar Excel"}
+      {exportando ? "Gerando..." : "⬇ Exportar Excel"}
     </button>
   );
 
+  const K = data?.kpis, A = data?.anterior?.kpis, Y = data?.acumulado_ano?.kpis, V = data?.variacao || {};
+  const rotAnterior = data ? (data.anterior.periodo.de === data.anterior.periodo.ate ? mesLabel(data.anterior.periodo.de) : `${mesLabel(data.anterior.periodo.de)} a ${mesLabel(data.anterior.periodo.ate)}`) : "";
+
+  const linhasComparativo = data ? [
+    ["RPs recebidas", "total_rps", "n", "neutro"],
+    ["HC'S solicitados", "hcs", "n", "neutro"],
+    ["HC'S com TO", "hcs_com_to", "n", null],
+    ["HC'S aprovados", "hcs_aprovados", "n", "subir"],
+    ["HC'S entregues", "qtd_entregue", "n", "subir"],
+    ["Vagas pendentes (em andamento)", "pendentes", "n", "descer"],
+    ["Vagas não atendidas (não entregues)", "nao_atendidas", "n", null],
+    ["Taxa de aprovação", "taxa_aprovacao", "t", "subir"],
+    ["Taxa de entrega", "taxa_entrega", "t", "subir"],
+  ] : [];
+
   return (
     <PortalShell
-      title="Relatório Mensal"
-      subtitle={`${mesLabel(mes)} · ${setor || "Todos os setores"}`}
+      title="Relatório R&S"
+      subtitle={`${rotuloPeriodo} · ${site || "Todos os sites"} · ${setor || "Todos os setores"}`}
       topRight={topRight}
     >
       <PageHero
         eyebrow="Recrutamento & Seleção"
         title="Relatório de RPs"
-        subtitle="Equivalente digital das abas de dashboard da planilha — por produto, cargo e status."
-        stats={
-          data?.kpis ? [
-            { label: "Total de RPs",    value: fmtNum(data.kpis.total_rps)           },
-            { label: "HC'S Solicitados",value: fmtNum(data.kpis.total_hcs)           },
-            { label: "HC'S Aprovados",  value: fmtNum(data.kpis.total_hcs_aprovados) },
-            { label: "QTD Entregue",    value: fmtNum(data.kpis.total_entregue)      },
-          ] : []
-        }
+        subtitle="Volume, taxas, comparativo com o período anterior e acumulado do ano. O Excel exportado leva os mesmos filtros."
       />
 
       {/* Filtros */}
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", margin: "16px 0 14px" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", margin: "16px 0 14px" }}>
         <div>
-          <label style={filterLabelSt}>Mês</label>
-          <select value={mes} onChange={e => setMes(e.target.value)} style={filterSelectSt}>
-            {getMesesDisponiveis().map(m => <option key={m} value={m}>{mesLabel(m)}</option>)}
+          <label style={estiloLabel}>Período</label>
+          <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={estiloSelect}>
+            {TIPOS.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
           </select>
         </div>
-        <div>
-          <label style={filterLabelSt}>Setor</label>
-          <div style={{ display: "flex", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
-            {[{ v: "", l: "Todos" }, { v: "OPERACIONAL", l: "Operacional" }, { v: "ESTRATÉGICO", l: "Estratégico" }]
-              .map(({ v, l }) => (
-                <button key={v} onClick={() => setSetor(v)} style={{
-                  padding: "7px 14px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700,
-                  background: setor === v ? colors.accent : "#f8fafc",
-                  color:      setor === v ? "#fff"        : colors.neutral,
-                }}>{l}</button>
-              ))}
+        {tipo === "custom" && (
+          <div>
+            <label style={estiloLabel}>De</label>
+            <select value={de} onChange={(e) => setDe(e.target.value)} style={estiloSelect}>
+              {getMesesDisponiveis(36).map((m) => <option key={m} value={m}>{mesLabel(m, true)}</option>)}
+            </select>
           </div>
+        )}
+        <div>
+          <label style={estiloLabel}>{tipo === "mes" ? "Mês" : "Até o mês"}</label>
+          <select value={fim} onChange={(e) => setFim(e.target.value)} style={estiloSelect}>
+            {getMesesDisponiveis(36).map((m) => <option key={m} value={m}>{mesLabel(m, true)}</option>)}
+          </select>
         </div>
+        <SiteSelect valor={site} onChange={setSite} />
+        <SetorToggle valor={setor} onChange={setSetor} />
+        <LimiteDiasSelect valor={limite} onChange={setLimite} />
       </div>
 
       {loading ? (
         <div style={{ textAlign: "center", padding: 60, color: colors.textMuted }}>Gerando relatório...</div>
       ) : !data ? (
-        <div style={{ textAlign: "center", padding: 60, color: colors.textMuted }}>Sem dados para {mesLabel(mes)}.</div>
+        <div style={{ textAlign: "center", padding: 60, color: colors.danger }}>{erro || "Sem dados para o período."}</div>
       ) : (
         <>
-          {/* KPI cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 14 }}>
-            <StatCard title="Total RPs"      value={fmtNum(data.kpis?.total_rps)}           accent={colors.accent}  />
-            <StatCard title="HC'S Solicit."  value={fmtNum(data.kpis?.total_hcs)}           accent="#2563eb"        />
-            <StatCard title="HC'S com TO"    value={fmtNum(data.kpis?.total_hcs_to)}        accent={colors.neutral} />
-            <StatCard title="HC'S Aprovados" value={fmtNum(data.kpis?.total_hcs_aprovados)} accent="#7c3aed"        />
-            <StatCard title="QTD Entregue"   value={fmtNum(data.kpis?.total_entregue)}      accent={colors.success} />
+          {/* KPIs do período */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 14 }}>
+            <StatCard title="RPs" value={fmtNum(K.total_rps)} accent={colors.accent} />
+            <StatCard title="HC'S solicitados" value={fmtNum(K.hcs)} accent="#2563eb" />
+            <StatCard title="HC'S aprovados" value={fmtNum(K.hcs_aprovados)} accent="#7c3aed" subtitle={`Taxa ${fmtTaxa(K.taxa_aprovacao)}`} />
+            <StatCard title="HC'S entregues" value={fmtNum(K.qtd_entregue)} accent={colors.success}
+              subtitle={<span style={{ color: corTaxa(K.taxa_entrega), fontWeight: 700 }}>Taxa {fmtTaxa(K.taxa_entrega)}</span>} />
+            <StatCard title="Vagas pendentes" value={fmtNum(K.pendentes)} accent={colors.warning} subtitle="RPs em andamento" />
           </div>
 
-          {/* Por Site */}
-          <SiteCards por_site={data.por_site} />
+          {/* Comparativo */}
+          <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 14 }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #f1f5f9" }}>
+              <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", color: colors.accent }}>
+                Comparativo e acumulado do ano
+              </span>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    <th style={thSt}>Indicador</th>
+                    <th style={{ ...thSt, textAlign: "right" }}>{rotuloPeriodo}</th>
+                    <th style={{ ...thSt, textAlign: "right" }}>Anterior ({rotAnterior})</th>
+                    <th style={{ ...thSt, textAlign: "right" }}>Variação</th>
+                    <th style={{ ...thSt, textAlign: "right" }}>Acumulado {data.acumulado_ano.periodo.ate.slice(0, 4)}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhasComparativo.map(([rot, chave, tipoVal, melhor], i) => {
+                    const fmt = tipoVal === "t" ? fmtTaxa : fmtNum;
+                    return (
+                      <tr key={chave} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "10px 18px", color: colors.textPrimary, fontWeight: 600 }}>{rot}</td>
+                        <td style={{ ...tdR, fontWeight: 700, color: colors.textPrimary }}>{fmt(K[chave])}</td>
+                        <td style={tdR}>{fmt(A[chave])}</td>
+                        <td style={tdR}>{melhor === null ? "—" : <Variacao valor={V[chave]} tipo={tipoVal === "t" ? "pp" : "pct"} melhor={melhor} rotulo="" />}</td>
+                        <td style={tdR}>{fmt(Y[chave])}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p style={{ margin: 0, padding: "10px 20px", fontSize: 11, color: colors.textMuted, borderTop: "1px solid #f1f5f9" }}>
+              Anterior = os {data.periodo.meses === 1 ? "mês imediatamente anterior" : `${data.periodo.meses} meses imediatamente anteriores`}. Taxas = sobre HC'S solicitados; variação das taxas em pontos percentuais.
+              RPs canceladas contam como RP, mas não entram nos totais de HC'S.
+            </p>
+          </div>
 
-          {/* Por Produto — Operacional */}
-          {showOper && (
-            <PivotTable
-              titulo="Operacional — HC'S por Produto / Cliente"
-              linhas={data.por_produto}
-              colKey="produto"
-              colLabel="Produto / Cliente"
-            />
+          <TabelaGrupo titulo="Por site" rotuloColuna="Site" linhas={data.por_site} total={K} chave="site" />
+          {(!setor || setor === "OPERACIONAL") && (
+            <TabelaGrupo titulo="Operacional · por produto / cliente" rotuloColuna="Produto / cliente" linhas={data.por_produto} chave="produto" />
+          )}
+          {(!setor || setor === "ESTRATÉGICO") && (
+            <TabelaGrupo titulo="Estratégico · por cargo" rotuloColuna="Cargo" linhas={data.por_cargo} chave="cargo" />
           )}
 
-          {/* Por Cargo — Estratégico */}
-          {showEstr && (
-            <PivotTable
-              titulo="Estratégico — HC'S por Cargo"
-              linhas={data.por_cargo}
-              colKey="cargo"
-              colLabel="Cargo"
-            />
-          )}
-
-          {/* Distribuição de Status */}
-          {data.por_status && data.por_status.length > 0 && (
-            <div style={{
-              background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14,
-              padding: "20px 22px", boxShadow: "0 4px 12px rgba(15,23,42,0.04)",
-            }}>
-              <p style={cardTitleSt}>Distribuição de Status</p>
-              <StatusBars dados={data.por_status} />
+          {data.periodo.meses > 1 && (
+            <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 14 }}>
+              <div style={{ padding: "14px 20px", borderBottom: "1px solid #f1f5f9" }}>
+                <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", color: colors.accent }}>Mês a mês</span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      <th style={thSt}>Mês</th>
+                      {["RPs", "HC'S", "Aprovados", "Entregues", "Taxa aprovação", "Taxa entrega", "Pendentes"].map((h) => <th key={h} style={{ ...thSt, textAlign: "right" }}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.por_mes.map((m, i) => (
+                      <tr key={m.mes} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "10px 18px", color: colors.textPrimary, fontWeight: 600 }}>{mesLabel(m.mes, true)}</td>
+                        <td style={tdR}>{fmtNum(m.total_rps)}</td>
+                        <td style={tdR}>{fmtNum(m.hcs)}</td>
+                        <td style={tdR}>{fmtNum(m.hcs_aprovados)}</td>
+                        <td style={{ ...tdR, color: colors.success, fontWeight: 700 }}>{fmtNum(m.qtd_entregue)}</td>
+                        <td style={tdR}>{fmtTaxa(m.taxa_aprovacao)}</td>
+                        <td style={{ ...tdR, fontWeight: 700, color: corTaxa(m.taxa_entrega) }}>{fmtTaxa(m.taxa_entrega)}</td>
+                        <td style={tdR}>{fmtNum(m.pendentes)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 12, marginBottom: 14, alignItems: "start" }}>
+            {data.por_status && data.por_status.length > 0 && (
+              <div style={card}>
+                <p style={cardTitle}>Situação das RPs</p>
+                <StatusBars dados={data.por_status} />
+              </div>
+            )}
+            <CardPrazos sla={data.sla} />
+          </div>
+
+          <TabelaEmAndamento emAberto={data.em_aberto} />
         </>
       )}
     </PortalShell>
@@ -319,20 +311,4 @@ const thSt = {
   textTransform: "uppercase", letterSpacing: ".04em",
   borderBottom: "1px solid #e2e8f0", textAlign: "left", whiteSpace: "nowrap",
 };
-const tdTot = {
-  padding: "11px 18px", textAlign: "right", fontWeight: 700,
-  color: colors.textPrimary, fontSize: 14,
-};
-const filterLabelSt = {
-  display: "block", fontSize: 10, fontWeight: 700, color: colors.textMuted,
-  textTransform: "uppercase", marginBottom: 4,
-};
-const filterSelectSt = {
-  background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8,
-  color: colors.textPrimary, padding: "7px 11px",
-  fontSize: 12, outline: "none", cursor: "pointer", fontFamily: "inherit",
-};
-const cardTitleSt = {
-  margin: "0 0 16px", fontSize: 11, fontWeight: 800,
-  textTransform: "uppercase", letterSpacing: ".06em", color: colors.accent,
-};
+const tdR = { padding: "10px 18px", textAlign: "right", color: colors.textSecondary };
