@@ -612,7 +612,7 @@ export default function RPsPage() {
                 {totais && (
                   <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
                     <td colSpan={
-                      (showAmbos ? 3 : 2) + (showEstr ? 1 : 0) + 4 +
+                      (showAmbos ? 3 : 2) + (showEstr ? 1 : 0) + 5 +
                       ((showAmbos || filtroSetor === "OPERACIONAL") ? 2 : filtroSetor === "ESTRATÉGICO" ? 1 : 0)
                     }
                       style={{ padding: "12px 16px", fontWeight: 800, fontSize: 12,
