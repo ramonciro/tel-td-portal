@@ -298,12 +298,12 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
             {[
               { field: "hcs",           label: "HC'S Solicitados" },
-              { field: "hcs_com_to",    label: "HC'S com TO"      },
+              { field: "hcs_com_to",    label: "Meta com reserva"      },
               { field: "hcs_aprovados", label: "HC'S Aprovados"   },
               { field: "qtd_entregue",  label: "QTD Entregue"     },
             ].map(({ field, label }) => (
               <div key={field}>
-                <label style={{ ...labelSt, fontSize: 10 }}>{label}</label>
+                <label style={{ ...labelSt, fontSize: 10 }} title={field === "hcs_com_to" ? "Quantidade solicitada na RP somada a um percentual de reserva (turnover) para garantir a entrega." : undefined}>{label}</label>
                 <input type="number" min="0" value={form[field]}
                   onChange={e => set(field, e.target.value)}
                   style={{ ...inputSt, textAlign: "center", fontWeight: 800, fontSize: 20 }} />
@@ -554,7 +554,7 @@ export default function RPsPage() {
                   <Th>Chamado</Th><Th>Recebimento</Th><Th>Status</Th><Th>Prazo</Th>
                   {(showAmbos || filtroSetor === "OPERACIONAL") && <><Th>Início Av.</Th><Th>Final Av.</Th></>}
                   {filtroSetor === "ESTRATÉGICO" && <Th>Fechamento</Th>}
-                  <Th right>HC'S</Th><Th right>TO</Th><Th right>Aprovados</Th>
+                  <Th right>HC'S</Th><Th right>Meta c/ reserva</Th><Th right>Aprovados</Th>
                   <Th right>Entregue</Th>
                   <Th center>Comentários</Th>
                   {podeEditar && <Th center>Ações</Th>}
