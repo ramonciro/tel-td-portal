@@ -778,7 +778,12 @@ export default function UsuariosPage() {
     <PortalShell>
       <div style={{ marginBottom: 20 }}>
         <PageHero eyebrow="Governança" title="Usuários"
-          subtitle="Gestão de acessos, perfis e operações vinculadas." />
+          subtitle="Gestão de acessos, perfis e operações vinculadas."
+          actions={hasSomeRole(getStoredUser(), ["coordenador", "supervisor"]) ? (
+            <a href="/usuarios/acessos" style={{ background: "#fff", color: "#0f172a", borderRadius: 10, padding: "9px 14px", fontWeight: 800, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
+              Códigos de primeiro acesso
+            </a>
+          ) : null} />
       </div>
 
       {erro && <div style={errorBox}>{erro}</div>}
