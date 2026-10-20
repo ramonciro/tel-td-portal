@@ -63,7 +63,7 @@ async function calcularPresencaPerfeita(empresaId) {
   const params = empresaId ? [empresaId, empresaId] : [];
   const [linhas] = await pool.query(
     `
-    SELECT nome, treinamento_id, tema, data_fim, dias, presentes
+    SELECT nome, treinamento_id, tema, data_fim
     FROM (
       SELECT p.treinando_nome AS nome, t.id AS treinamento_id, t.tema, t.data_fim,
              COUNT(*) AS dias, SUM(CASE WHEN p.status = 'presente' THEN 1 ELSE 0 END) AS presentes
