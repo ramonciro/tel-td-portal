@@ -21,6 +21,7 @@ const bcrypt  = require("bcryptjs");
 const crypto  = require("crypto");
 const { signToken, authRequired, limparCacheConta } = require("../middlewares/auth");
 const { sendMail } = require("../services/mailer");
+const { canonico } = require("../lib/codigoAcesso");
 
 /* ─── RATE LIMITING (login) ─────────────────────────────────────────────── */
 // Melhoria: antes não havia nenhum limite de tentativas — dava pra tentar
@@ -248,6 +249,16 @@ router.post("/login", async (req, res) => {
       senhaValida = false;
     }
 
+    // Código de primeiro acesso (21/10/2026): o hash guardado é o do código
+    // sem hífen e em maiúsculas — aceita "k7m4-qx2r", "K7M4 QX2R" etc.
+    if (!senhaValida && user.codigo_acesso) {
+      try {
+        senhaValida = await bcrypt.compare(canonico(senha), user.senha);
+      } catch (_) {
+        senhaValida = false;
+      }
+    }
+
     // Fallback: senha em texto plano (legado) → converte para hash
     if (!senhaValida && String(user.senha) === String(senha)) {
       senhaValida = true;
@@ -258,6 +269,14 @@ router.post("/login", async (req, res) => {
     if (!senhaValida) {
       registrarTentativaFalha(emailNorm); registrarFalhaIp(req.ip);
       return res.status(401).json({ message: "E-mail ou senha inválidos" });
+    }
+
+    // Código vencido: a senha estava certa, então dizer o motivo não ajuda
+    // ninguém a adivinhar nada — e evita a pessoa tentar de novo sem saber.
+    if (user.codigo_acesso && user.codigo_acesso_expira && new Date(user.codigo_acesso_expira) < new Date()) {
+      return res.status(403).json({
+        message: "Seu código de primeiro acesso venceu. Peça um novo código ao seu coordenador ou instrutor.",
+      });
     }
 
     limparTentativas(emailNorm);
@@ -416,7 +435,7 @@ router.post("/alterar-senha", authRequired, async (req, res) => {
 
     const senhaHash = await bcrypt.hash(novaSenha, 10);
     await pool.query(
-      "UPDATE usuarios SET senha = ?, troca_senha_obrigatoria = 0 WHERE id = ?",
+      "UPDATE usuarios SET senha = ?, troca_senha_obrigatoria = 0, codigo_acesso = NULL, codigo_acesso_expira = NULL WHERE id = ?",
       [senhaHash, userId]
     );
     limparCacheConta(userId);
@@ -539,7 +558,7 @@ router.post("/redefinir-senha", async (req, res) => {
     const novoHash = await bcrypt.hash(nova_senha, 10);
 
     await pool.query(
-      "UPDATE usuarios SET senha = ?, troca_senha_obrigatoria = 0 WHERE id = ?",
+      "UPDATE usuarios SET senha = ?, troca_senha_obrigatoria = 0, codigo_acesso = NULL, codigo_acesso_expira = NULL WHERE id = ?",
       [novoHash, record.usuario_id]
     );
     limparCacheConta(record.usuario_id);

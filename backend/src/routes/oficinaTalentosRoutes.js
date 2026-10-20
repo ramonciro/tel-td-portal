@@ -3,6 +3,7 @@ const router = express.Router();
 const controller = require("../controllers/oficinaTalentosController");
 const certificados = require("../controllers/oficinaCertificadosController");
 const indicadores = require("../controllers/oficinaIndicadoresController");
+const pos = require("../controllers/oficinaPosController");
 
 // authRequired + authorizeRoles("metodologia") já são aplicados no app.use()
 // de index.js — mesmo padrão de metodologiaClientesRoutes.js.
@@ -28,5 +29,11 @@ router.delete("/certificados/:id", certificados.revogarCertificado);
 // Fase 3 — promoção (marcada pela Metodologia) e funil de indicadores.
 router.put("/inscricoes/:id/promocao", indicadores.registrarPromocao);
 router.get("/indicadores", indicadores.indicadores);
+
+// Depois do encontro (21/10/2026) — avaliação dos módulos, 30/60/90 dias e banco de talentos.
+router.get("/reacoes", pos.reacoes);
+router.get("/acompanhamentos", pos.acompanhamentos);
+router.put("/acompanhamentos/:id", pos.atualizarAcompanhamento);
+router.get("/banco-talentos", pos.bancoTalentos);
 
 module.exports = router;

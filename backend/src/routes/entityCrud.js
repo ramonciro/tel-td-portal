@@ -207,6 +207,14 @@ function createCrudRouter({
           params.push(...extra.params);
         }
 
+        // Filtro opcional por turma (21/10/2026): as telas da turma pediam a lista inteira do
+        // cliente e filtravam no navegador. Só vale para tabelas que têm treinamento_id.
+        const turmaFiltro = Number(req.query?.treinamento_id);
+        if (Number.isInteger(turmaFiltro) && turmaFiltro > 0 && fields.includes("treinamento_id")) {
+          condicoes.push("treinamento_id = ?");
+          params.push(turmaFiltro);
+        }
+
         if (condicoes.length) {
           query += ` WHERE ${condicoes.join(" AND ")}`;
         }
