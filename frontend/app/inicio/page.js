@@ -70,6 +70,7 @@ export default function InicioPage() {
   const [turmas, setTurmas] = useState([]);
   const [resumo, setResumo] = useState([]);
   const [necessidades, setNecessidades] = useState([]);
+  const [sequencia, setSequencia] = useState(null); // só instrutor: dias de aula seguidos com chamada lançada
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
   const [filtroCliente, setFiltroCliente] = useState("Todos");
@@ -122,6 +123,10 @@ export default function InicioPage() {
       setTurmas(minhasTurmas);
       setResumo(listaResumo);
       setNecessidades(Array.isArray(necessidadesData?.itens) ? necessidadesData.itens : []);
+      // Sequência de chamadas em dia — só instrutor; se falhar, o cartão simplesmente não aparece.
+      if (String(u?.perfil || "").toLowerCase().trim() === "instrutor") {
+        apiFetch("/minha-sequencia").then((r) => setSequencia(r?.aplicavel ? r : null)).catch(() => setSequencia(null));
+      }
       setErro("");
     } catch (error) {
       setErro(error.message || "Erro ao carregar sua home.");
@@ -290,6 +295,8 @@ export default function InicioPage() {
           {/* Melhoria: antes só o instrutor via "Meu Dia" — o treinando também
               se beneficia de ver o status da própria turma hoje, só que sem
               o botão de "Fazer chamada" (isso é ação do instrutor). */}
+          {!loading && perfilNorm === "instrutor" && sequencia && <CartaoSequencia dados={sequencia} />}
+
           {!loading && ["instrutor", "treinando"].includes(perfilNorm) && (
             <div className={`ini-cascade ${revelado ? "ini-play" : ""}`}>
               <MeuDia
@@ -413,6 +420,31 @@ export default function InicioPage() {
         </div>
       </div>
     </PortalShell>
+  );
+}
+
+// Cartão de sequência (21/10/2026): quantos dias de aula seguidos o instrutor teve com a
+// chamada lançada. Não é ranking nem cobrança — só um retorno positivo de quem está em dia.
+function CartaoSequencia({ dados }) {
+  const n = Number(dados.sequencia) || 0;
+  const faltaHoje = Number(dados.falta_lancar_hoje) || 0;
+  const texto =
+    n === 0
+      ? "Sua sequência recomeça na próxima chamada lançada."
+      : n === 1
+      ? "1 dia de aula com a chamada em dia."
+      : `${n} dias de aula seguidos com a chamada em dia.`;
+  return (
+    <div style={{ marginBottom: 20, background: colors.successLight, border: "1px solid #86efac", borderRadius: radius.md, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+      <span aria-hidden="true" style={{ fontSize: 26, lineHeight: 1 }}>🔥</span>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: colors.successText }}>{texto}</p>
+        <p style={{ margin: "2px 0 0", fontSize: 12.5, color: colors.successText }}>
+          {faltaHoje > 0 ? `Falta lançar a chamada de hoje (${faltaHoje}) para manter a sequência. ` : ""}
+          Melhor sequência dos últimos {dados.janela_dias} dias: {dados.melhor_sequencia}.
+        </p>
+      </div>
+    </div>
   );
 }
 
