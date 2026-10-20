@@ -336,6 +336,7 @@ export default function RPsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [rpEditando, setRpEditando] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [rpComentando, setRpComentando] = useState(null);
 
   const user = getStoredUser();
   // coordenador_rs pode criar/editar/excluir; gestor_rs só visualiza
@@ -474,6 +475,7 @@ export default function RPsPage() {
                   {filtroSetor === "ESTRATÉGICO" && <Th>Fechamento</Th>}
                   <Th right>HC'S</Th><Th right>TO</Th><Th right>Aprovados</Th>
                   <Th right>Entregue</Th>
+                  <Th center>Comentários</Th>
                   {podeEditar && <Th center>Ações</Th>}
                 </tr>
               </thead>
@@ -507,6 +509,12 @@ export default function RPsPage() {
                     <Td right muted>{fmtNum(rp.hcs_com_to)}</Td>
                     <Td right>{fmtNum(rp.hcs_aprovados)}</Td>
                     <Td right bold style={{ color: colors.success }}>{fmtNum(rp.qtd_entregue)}</Td>
+                    <td style={{ padding: "8px 12px", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <button onClick={() => setRpComentando(rp)} style={btnComentarios(Number(rp.qtd_comentarios) > 0)}
+                        title="Ver e adicionar comentários desta RP">
+                        💬 {Number(rp.qtd_comentarios) > 0 ? rp.qtd_comentarios : "Comentar"}
+                      </button>
+                    </td>
                     {podeEditar && (
                       <td style={{ padding: "8px 12px", textAlign: "center", whiteSpace: "nowrap" }}>
                         <button onClick={() => { setRpEditando(rp); setModalOpen(true); }}
@@ -533,6 +541,7 @@ export default function RPsPage() {
                     <td style={tdTotal}>{fmtNum(totais.hcs_com_to)}</td>
                     <td style={tdTotal}>{fmtNum(totais.hcs_aprovados)}</td>
                     <td style={{ ...tdTotal, color: colors.success }}>{fmtNum(totais.qtd_entregue)}</td>
+                    <td />
                     {podeEditar && <td />}
                   </tr>
                 )}
@@ -545,6 +554,12 @@ export default function RPsPage() {
       {/* Modal de cadastro/edição */}
       <RPModal open={modalOpen} rp={rpEditando} sites={sites}
         onClose={() => setModalOpen(false)} onSaved={carregar} />
+
+      {/* Comentários da RP */}
+      {rpComentando && (
+        <ComentariosRPModal rp={rpComentando} user={user}
+          onClose={() => setRpComentando(null)} onChanged={carregar} />
+      )}
 
       {/* Confirmação de exclusão */}
       {confirmDelete && (
@@ -571,6 +586,124 @@ export default function RPsPage() {
         </div>
       )}
     </PortalShell>
+  );
+}
+
+// ─── Comentários da RP (19/10/2026) ────────────────────────────────
+// Histórico de observações: cada comentário fica com autor e data/hora.
+function ComentariosRPModal({ rp, user, onClose, onChanged }) {
+  const [lista, setLista] = useState([]);
+  const [texto, setTexto] = useState("");
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  const carregarLista = useCallback(async () => {
+    try {
+      const r = await apiFetch(`/rs/rps/${rp.id}/comentarios`);
+      setLista(Array.isArray(r?.comentarios) ? r.comentarios : []);
+      setErro("");
+    } catch (e) { setErro(e.message || "Erro ao carregar comentários."); }
+    finally { setCarregando(false); }
+  }, [rp.id]);
+
+  useEffect(() => { carregarLista(); }, [carregarLista]);
+
+  async function enviar() {
+    const t = texto.trim();
+    if (!t) { setErro("Escreva o comentário antes de salvar."); return; }
+    setSalvando(true); setErro("");
+    try {
+      await apiFetch(`/rs/rps/${rp.id}/comentarios`, { method: "POST", body: JSON.stringify({ texto: t }) });
+      setTexto("");
+      await carregarLista();
+      onChanged && onChanged();
+    } catch (e) { setErro(e.message || "Erro ao salvar o comentário."); }
+    finally { setSalvando(false); }
+  }
+
+  async function apagar(c) {
+    if (!window.confirm("Apagar este comentário?")) return;
+    try {
+      await apiFetch(`/rs/rps/${rp.id}/comentarios/${c.id}`, { method: "DELETE" });
+      await carregarLista();
+      onChanged && onChanged();
+    } catch (e) { setErro(e.message || "Erro ao apagar o comentário."); }
+  }
+
+  const ehCoordRS = hasSomeRole(user, ["coordenador_rs", "super_admin"]);
+  const quando = (v) => {
+    const d = v ? new Date(v) : null;
+    return d && !isNaN(d.getTime())
+      ? d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "";
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+         onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+           style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 24,
+                    maxWidth: 560, width: "100%", maxHeight: "86vh", display: "flex", flexDirection: "column",
+                    boxShadow: "0 20px 48px rgba(15,23,42,0.15)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <h3 style={{ margin: 0, color: colors.textPrimary }}>Comentários da RP</h3>
+            <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 4 }}>
+              {rp.produto} · {rp.site} · {mesLabel(rp.mes_referencia?.slice(0, 7))}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ ...btnAcao, marginRight: 0 }} aria-label="Fechar">✕</button>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <label style={labelSt}>Novo comentário</label>
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={3} maxLength={2000}
+            placeholder="Escreva uma observação ou atualização sobre esta RP..."
+            style={{ ...inputSt, resize: "vertical", minHeight: 70 }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+            <span style={{ fontSize: 11, color: colors.textMuted }}>{texto.length}/2000</span>
+            <button onClick={enviar} disabled={salvando} style={{ ...btnPrim, padding: "8px 16px", opacity: salvando ? 0.6 : 1 }}>
+              {salvando ? "Salvando..." : "Adicionar comentário"}
+            </button>
+          </div>
+        </div>
+
+        {erro && (
+          <div style={{ marginTop: 10, padding: "8px 12px", background: colors.dangerLight,
+                        color: colors.dangerText, borderRadius: 8, fontSize: 13 }}>{erro}</div>
+        )}
+
+        <div style={{ marginTop: 14, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+          {carregando ? (
+            <div style={{ color: colors.textMuted, fontSize: 13 }}>Carregando...</div>
+          ) : lista.length === 0 ? (
+            <div style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 16,
+                          border: "1px dashed #e2e8f0", borderRadius: 10 }}>
+              Nenhum comentário ainda.
+            </div>
+          ) : lista.map((c) => (
+            <div key={c.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: colors.textMuted }}>
+                <span><strong style={{ color: colors.textPrimary }}>{c.autor_nome || "—"}</strong>
+                  {c.autor_perfil ? ` · ${c.autor_perfil === "gestor_rs" ? "Gestor R&S" : c.autor_perfil === "coordenador_rs" ? "Coordenação R&S" : c.autor_perfil}` : ""}
+                  {" · "}{quando(c.created_at)}</span>
+                {(ehCoordRS || Number(c.autor_id) === Number(user?.id)) && (
+                  <button onClick={() => apagar(c)} title="Apagar comentário"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: colors.danger, fontSize: 12 }}>
+                    🗑
+                  </button>
+                )}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 13, color: colors.textSecondary, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {c.texto}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -637,3 +770,8 @@ const tdTotal = {
   padding: "10px 14px", textAlign: "right", fontWeight: 700,
   color: colors.textPrimary, fontSize: 14,
 };
+const btnComentarios = (tem) => ({
+  background: tem ? "#eff6ff" : "none", border: `1px solid ${tem ? "#bfdbfe" : "#e2e8f0"}`,
+  borderRadius: 6, cursor: "pointer", padding: "4px 10px", fontSize: 12, fontWeight: tem ? 700 : 500,
+  color: tem ? "#1d4ed8" : colors.textMuted, fontFamily: "inherit",
+});
