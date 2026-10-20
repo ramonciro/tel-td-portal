@@ -7,7 +7,7 @@
  *
  * Regras de negócio (decisões do Ramon, 20/10/2026):
  *  - RP CANCELADA continua contando como RP e aparece na distribuição de status,
- *    mas NÃO entra nos totais de HC'S (solicitados, com TO, aprovados, entregues).
+ *    mas NÃO entra nos totais de HC'S (solicitados, meta com reserva, aprovados, entregues).
  *  - Taxa de aprovação = aprovados ÷ solicitados; taxa de entrega = entregues ÷ solicitados
  *    (em %, com 1 casa; null quando não há HC'S solicitados).
  *  - Pendentes = vagas ainda por entregar das RPs EM ANDAMENTO (solicitados − entregues, nunca negativo).

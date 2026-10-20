@@ -23,7 +23,7 @@ function ipDoCliente(req) {
   return req.socket?.remoteAddress || "desconhecido";
 }
 
-function criarLimitador({ janelaMs, max, chave, mensagem }) {
+function criarLimitador({ janelaMs, max, chave, mensagem, apenasFalhas = false }) {
   const acessos = new Map(); // chave -> { inicio, total }
 
   const limpeza = setInterval(() => {
@@ -44,9 +44,20 @@ function criarLimitador({ janelaMs, max, chave, mensagem }) {
       acessos.set(k, registro);
     }
 
-    registro.total += 1;
+    // apenasFalhas: só conta respostas de erro (4xx, exceto 429) — quem acerta os dados
+    // pode usar a rota à vontade (ex.: avaliar vários módulos); quem fica chutando é freado.
+    if (apenasFalhas) {
+      res.on("finish", () => {
+        if (res.statusCode >= 400 && res.statusCode !== 429) {
+          const atual = acessos.get(k);
+          if (atual) atual.total += 1;
+        }
+      });
+    } else {
+      registro.total += 1;
+    }
 
-    if (registro.total > max) {
+    if (registro.total > max || (apenasFalhas && registro.total >= max)) {
       const restanteSeg = Math.ceil((registro.inicio + janelaMs - agora) / 1000);
       res.setHeader("Retry-After", String(Math.max(restanteSeg, 1)));
       return res.status(429).json({
