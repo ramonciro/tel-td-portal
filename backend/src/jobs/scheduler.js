@@ -33,6 +33,7 @@ const { rodarCalculoConquistas } = require("./conquistasJob");
 const { rodarCertificadosAutomaticos } = require("./certificadosAutomaticos");
 const { sincronizarCelulas } = require("../lib/celulaBaby");
 const { rodarAvisoAtrasadas, rodarLimpezaLixeiraRS } = require("./rsAtrasadasDigest");
+const { configurado: backupConfigurado, rodarBackup, carregarUltimoDoBucket } = require("../services/backupService");
 
 function iniciarAgendamentos() {
   cron.schedule("0 5 * * *", async () => {
@@ -92,6 +93,27 @@ function iniciarAgendamentos() {
       console.error("[scheduler] Erro ao limpar a lixeira do R&S:", error.message);
     }
   });
+
+  // Backup externo (21/10/2026): 02h30 de Brasília, todo dia, independente da TZ
+  // do servidor. Só liga com as variáveis BACKUP_S3_* (services/backupService.js).
+  if (backupConfigurado()) {
+    cron.schedule(
+      "30 2 * * *",
+      async () => {
+        try {
+          const r = await rodarBackup({ origem: "agendado" });
+          console.log("[scheduler] Backup externo:", JSON.stringify(r));
+        } catch (error) {
+          console.error("[scheduler] Erro no backup externo:", error.message);
+        }
+      },
+      { timezone: "America/Sao_Paulo" }
+    );
+    carregarUltimoDoBucket();
+    console.log("[scheduler] Backup externo ligado (02h30 de Brasília, diário).");
+  } else {
+    console.log("[scheduler] Backup externo DESLIGADO (faltam as variáveis BACKUP_S3_*).");
+  }
 
   cron.schedule("0 17 * * *", async () => {
     try {
