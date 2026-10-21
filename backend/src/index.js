@@ -18,6 +18,16 @@ const { condicaoIdentidade } = require("./lib/identidadeTreinando");
 // de pendências para coordenadores e lembrete de aula do dia seguinte para
 // instrutores. Ver backend/src/jobs/.
 const { iniciarAgendamentos } = require("./jobs/scheduler");
+const {
+  erroDeConexao,
+  iniciarMonitoramento,
+  marcarMigracoesOk,
+  registrarTentativaMigracao,
+  protecaoIndisponibilidade,
+  snapshot: snapshotSaude,
+  sondarBanco,
+} = require("./lib/saudeBanco");
+const { rodarBackup, statusBackup } = require("./services/backupService");
 const { rodarDigestPendencias, montarResumoEmpresa } = require("./jobs/pendenciasDigest");
 const { rodarLembretesAula } = require("./jobs/lembretesAula");
 const { rodarCalculoConquistas } = require("./jobs/conquistasJob");
@@ -291,6 +301,41 @@ const uploadBiblioteca = multer({
 });
 
 app.use(cors());
+
+// Resiliência (21/10/2026): com o banco fora (ou as migrações ainda rodando) as
+// rotas /api respondem 503 na hora, com mensagem clara — em vez de o navegador
+// esperar minutos. Fica logo depois do CORS para o 503 chegar legível ao
+// frontend. Só /api/health* continua respondendo. Ver lib/saudeBanco.js.
+app.use(protecaoIndisponibilidade);
+
+// Verificações de saúde — sem login, sem tocar nos dados.
+//  /api/health        → o processo está de pé (SEMPRE 200; use no healthcheck
+//                        da hospedagem, para ela não reiniciar o servidor só
+//                        porque o banco caiu).
+//  /api/health/banco  → 200 se o banco responde, 503 se não (use no monitor
+//                        externo de disponibilidade, ex.: UptimeRobot).
+//  /api/health/backup → 503 se o último backup externo tem mais de 36 h.
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", ...snapshotSaude() });
+});
+app.get("/api/health/banco", async (req, res) => {
+  const ok = await sondarBanco();
+  res.status(ok ? 200 : 503).json({ status: ok ? "ok" : "fora", ...snapshotSaude() });
+});
+app.get("/api/health/backup", (req, res) => {
+  const st = statusBackup();
+  if (!st.configurado) return res.json({ status: "desligado" });
+  const horas = st.horas_desde_ultimo_ok;
+  if (horas !== null && horas > 36) {
+    return res.status(503).json({ status: "atrasado", horas_desde_ultimo_ok: horas });
+  }
+  return res.json({
+    status: horas === null ? "sem_registro" : "ok",
+    horas_desde_ultimo_ok: horas,
+    ultimo_ok: st.ultimo ? st.ultimo.ok : null,
+  });
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // Arquivos enviados (Biblioteca) são PRIVADOS (16/10/2026). Antes, qualquer
@@ -2479,16 +2524,82 @@ app.get(
   }
 );
 
+// Backup externo (21/10/2026) — roda sozinho todo dia às 02h30 (jobs/scheduler.js);
+// aqui dá para disparar na hora e consultar o estado. O disparo responde 202
+// e segue em segundo plano (pode levar minutos); o resultado aparece em
+// GET /api/admin/backup/status e nos registros do servidor.
+app.post(
+  "/api/admin/jobs/rodar-backup",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  async (req, res) => {
+    const st = statusBackup();
+    if (!st.configurado) {
+      return res.status(409).json({ ok: false, message: "Backup externo não está configurado (variáveis BACKUP_S3_*)." });
+    }
+    if (st.em_execucao) {
+      return res.status(409).json({ ok: false, message: "Já existe um backup em andamento." });
+    }
+    rodarBackup({ origem: `manual:${req.user?.nome || req.user?.id || "?"}` })
+      .then((r) => console.log("[backup] Manual concluído:", JSON.stringify(r)))
+      .catch((e) => console.error("[backup] Manual falhou:", e.message));
+    return res.status(202).json({ ok: true, message: "Backup iniciado. Acompanhe em /api/admin/backup/status." });
+  }
+);
+
+app.get(
+  "/api/admin/backup/status",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  (req, res) => res.json({ ok: true, ...statusBackup() })
+);
+
 const PORT = process.env.PORT || 3000;
 
-async function iniciarAplicacao() {
-  try {
-    await runMigrations();
-    iniciarAgendamentos();
+// Migrações com nova tentativa: se o banco estiver inalcançável (falha de rede
+// ou do provedor), espera e tenta de novo (5 s, 10 s... até 60 s) em vez de
+// encerrar o processo e entrar em loop de reinício. Erro de SQL/código (não de
+// conexão) continua derrubando o processo, como antes, para não esconder defeito.
+async function aplicarMigracoesComTentativas() {
+  let espera = 5000;
+  for (;;) {
+    registrarTentativaMigracao();
+    try {
+      await runMigrations();
+      return;
+    } catch (error) {
+      if (!erroDeConexao(error)) throw error;
+      console.error(`[boot] Banco indisponível (${error.code || error.message}). Nova tentativa das migrações em ${espera / 1000}s.`);
+      await new Promise((r) => setTimeout(r, espera));
+      espera = Math.min(espera * 2, 60000);
+    }
+  }
+}
 
-    app.listen(PORT, () => {
-      console.log(`Servidor rodando na porta ${PORT}`);
-    });
+// Erros soltos de conexão (ex.: o banco derruba uma conexão ociosa) não podem
+// matar o servidor; qualquer outro erro inesperado continua encerrando o
+// processo, que a hospedagem reinicia limpo.
+process.on("unhandledRejection", (motivo) => {
+  console.error("[boot] Promessa rejeitada sem tratamento:", motivo);
+});
+process.on("uncaughtException", (error) => {
+  console.error("[boot] Exceção não tratada:", error);
+  if (!erroDeConexao(error)) process.exit(1);
+});
+
+async function iniciarAplicacao() {
+  iniciarMonitoramento();
+
+  // Abre a porta ANTES das migrações: assim /api/health responde e o restante
+  // da API devolve 503 claro enquanto o banco não está pronto.
+  app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+  });
+
+  try {
+    await aplicarMigracoesComTentativas();
+    marcarMigracoesOk();
+    iniciarAgendamentos();
   } catch (error) {
     console.error("Erro crítico ao iniciar o servidor:", error);
     process.exit(1);
