@@ -2268,6 +2268,9 @@ const {
   exportar:         exportarRS,
   exportarLista:    exportarListaRPs,
   importarPlanilha: importarRSPlanilha,
+  listarConvocacoes: listarConvocacoesRP,
+  convocarBerco:     convocarBercoRP,
+  estornarConvocacao: estornarConvocacaoRP,
 } = require("./controllers/rsController");
 const {
   listarSitesGestao: listarRSSitesGestao,
@@ -2291,6 +2294,10 @@ app.post  ("/api/rs/rps",       authRequired, authorizeRoles("coordenador_rs"), 
 app.get   ("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs","gestor_rs"), detalheRP);
 app.put   ("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"),              editarRP);
 app.delete("/api/rs/rps/:id",   authRequired, authorizeRoles("coordenador_rs"),              excluirRP);
+// Berço (21/10/2026): convocar quem ficou na reserva, ver o histórico e estornar.
+app.get   ("/api/rs/rps/:id/convocacoes",     authRequired, authorizeRoles("coordenador_rs","gestor_rs"), listarConvocacoesRP);
+app.post  ("/api/rs/rps/:id/convocacoes",     authRequired, authorizeRoles("coordenador_rs"),              convocarBercoRP);
+app.delete("/api/rs/rps/:id/convocacoes/:cid", authRequired, authorizeRoles("coordenador_rs"),             estornarConvocacaoRP);
 // Comentários da RP (19/10/2026): coordenador_rs e gestor_rs leem e comentam.
 app.get   ("/api/rs/rps/:id/comentarios", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), listarComentariosRP);
 app.post  ("/api/rs/rps/:id/comentarios", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), criarComentarioRP);
