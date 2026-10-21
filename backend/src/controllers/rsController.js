@@ -5,6 +5,7 @@
 // CommonJS — nunca usar import/export
 
 const db      = require("../lib/db");
+const { comTransacao } = require("../lib/tx");
 const { registrarAuditoria } = require("../services/auditoria");
 const rel     = require("../lib/rsRelatorios");
 const { tituloPadrao, chaveNormal, listarSites, resolverSite } = require("../lib/rsPadrao");
@@ -100,6 +101,7 @@ function validarRP(b, { exigirDataRecebimento = false } = {}) {
   const hcs_com_to    = _inteiro(b.hcs_com_to, "hcs_com_to", erros);
   const hcs_aprovados = _inteiro(b.hcs_aprovados, "hcs_aprovados", erros);
   const qtd_entregue  = _inteiro(b.qtd_entregue, "qtd_entregue", erros);
+  const hcs_berco     = _inteiro(b.hcs_berco, "hcs_berco", erros);
 
   // Campos que só existem para um dos setores são zerados no outro.
   const dados = {
@@ -110,22 +112,31 @@ function validarRP(b, { exigirDataRecebimento = false } = {}) {
     inicio_av_tecnica:    setor === "OPERACIONAL" ? datas.inicio_av_tecnica : null,
     final_av_tecnica:     setor === "OPERACIONAL" ? datas.final_av_tecnica : null,
     data_recebimento: datas.data_recebimento,
-    hcs, hcs_com_to, hcs_aprovados, qtd_entregue,
+    hcs, hcs_com_to, hcs_aprovados, qtd_entregue, hcs_berco,
   };
   return { erros, dados };
 }
 
 /**
- * Números que não fecham (decisão 20/10/2026: bloquear com mensagem clara).
- * RP CANCELADA não entra nos totais, então não é checada.
+ * Números que não fecham. RP CANCELADA não entra nos totais, então não é checada.
+ *
+ * Berço (21/10/2026): aprovados PODE passar dos solicitados — o excedente fica
+ * "no berço" (reserva) e, se for convocado, vira entregue. Por isso a conta agora é
+ * entregues + berço <= aprovados (o antigo "aprovados <= solicitados" saiu).
+ * `hcs_convocados_berco` (quantos entregues vieram do berço) é mantido pela convocação.
  */
 function incoerencias(d) {
   if (d.status === "CANCELADA") return [];
   const msgs = [];
-  if (d.hcs_aprovados > d.hcs)
-    msgs.push(`HC'S aprovados (${d.hcs_aprovados}) não pode ser maior que HC'S solicitados (${d.hcs})`);
-  if (d.qtd_entregue > d.hcs_aprovados)
-    msgs.push(`Qtd entregue (${d.qtd_entregue}) não pode ser maior que HC'S aprovados (${d.hcs_aprovados})`);
+  const berco = Number(d.hcs_berco) || 0;
+  const convocados = Number(d.hcs_convocados_berco) || 0;
+  if (d.qtd_entregue + berco > d.hcs_aprovados) {
+    msgs.push(berco > 0
+      ? `Qtd entregue (${d.qtd_entregue}) + No berço (${berco}) não pode ser maior que HC'S aprovados (${d.hcs_aprovados})`
+      : `Qtd entregue (${d.qtd_entregue}) não pode ser maior que HC'S aprovados (${d.hcs_aprovados})`);
+  }
+  if (convocados > d.qtd_entregue)
+    msgs.push(`Qtd entregue (${d.qtd_entregue}) não pode ser menor que os convocados do berço (${convocados}). Estorne a convocação para reduzir`);
   if (d.status === "ENTREGUE" && !(d.qtd_entregue > 0))
     msgs.push("RP com status ENTREGUE precisa ter Qtd entregue maior que zero");
   return msgs;
@@ -134,7 +145,7 @@ function incoerencias(d) {
 const COLUNAS_RP = [
   "mes_referencia", "site", "setor", "chamado", "produto", "cargo", "data_recebimento", "status",
   "inicio_av_tecnica", "final_av_tecnica", "data_fechamento_vaga",
-  "hcs", "hcs_com_to", "hcs_aprovados", "qtd_entregue", "observacoes",
+  "hcs", "hcs_com_to", "hcs_aprovados", "qtd_entregue", "hcs_berco", "observacoes",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,7 +198,9 @@ const listar = async (req, res) => {
       `SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs ELSE 0 END),0) AS hcs,
               COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs_com_to ELSE 0 END),0) AS hcs_com_to,
               COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs_aprovados ELSE 0 END),0) AS hcs_aprovados,
-              COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN qtd_entregue ELSE 0 END),0) AS qtd_entregue
+              COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN qtd_entregue ELSE 0 END),0) AS qtd_entregue,
+              COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs_berco ELSE 0 END),0) AS hcs_berco,
+              COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs_convocados_berco ELSE 0 END),0) AS hcs_convocados_berco
        FROM rps r WHERE ${where}`, params
     );
     const itens = rps.map((r) => ({
@@ -198,6 +211,7 @@ const listar = async (req, res) => {
       // importação ou de antes da regra). Texto vazio = tudo certo.
       numeros_incoerentes: incoerencias({
         status: r.status, hcs: Number(r.hcs) || 0, hcs_aprovados: Number(r.hcs_aprovados) || 0, qtd_entregue: Number(r.qtd_entregue) || 0,
+        hcs_berco: Number(r.hcs_berco) || 0, hcs_convocados_berco: Number(r.hcs_convocados_berco) || 0,
       }).join(" · "),
     }));
     return res.json({ rps: itens, total, totais, page, limit, paginas: Math.max(Math.ceil(total / limit), 1), limite_dias: limiteDias });
@@ -290,10 +304,11 @@ const editar = async (req, res) => {
     const { erros, dados } = validarRP(mesclado, { exigirDataRecebimento: true });
     // Números incoerentes só travam se esta edição mexeu neles — assim uma RP antiga
     // que já estava inconsistente ainda pode ter observação, datas etc. corrigidas.
-    const mexeuNosNumeros = ["hcs", "hcs_aprovados", "qtd_entregue", "status"].some(
+    const mexeuNosNumeros = ["hcs", "hcs_aprovados", "qtd_entregue", "hcs_berco", "status"].some(
       (c) => String(dados[c] ?? "") !== String(antes[c] ?? "")
     );
-    if (!erros.length && mexeuNosNumeros) erros.push(...incoerencias(dados));
+    if (!erros.length && mexeuNosNumeros)
+      erros.push(...incoerencias({ ...dados, hcs_convocados_berco: antes.hcs_convocados_berco }));
     if (!erros.length) {
       const siteCanon = await resolverSite(empresa_id, dados.site);
       if (siteCanon) dados.site = siteCanon;
@@ -1200,6 +1215,7 @@ const exportarLista = async (req, res) => {
         dias_aberto: dias,
         inicio_av_tecnica: r.inicio_av_tecnica, final_av_tecnica: r.final_av_tecnica, data_fechamento_vaga: r.data_fechamento_vaga,
         hcs: r.hcs, hcs_com_to: r.hcs_com_to, hcs_aprovados: r.hcs_aprovados, qtd_entregue: r.qtd_entregue,
+        hcs_berco: r.hcs_berco, hcs_convocados_berco: r.hcs_convocados_berco,
         observacoes: r.observacoes || "", comentarios: (comentarios.get(r.id) || []).join("\n"),
       };
     });
@@ -1220,6 +1236,8 @@ const exportarLista = async (req, res) => {
         { titulo: "Meta com reserva", chave: "hcs_com_to", formato: "inteiro", largura: 10 },
         { titulo: "HC'S aprovados", chave: "hcs_aprovados", formato: "inteiro", largura: 10 },
         { titulo: "Entregues", chave: "qtd_entregue", formato: "inteiro", largura: 10 },
+        { titulo: "No berço", chave: "hcs_berco", formato: "inteiro", largura: 10 },
+        { titulo: "Convocados do berço", chave: "hcs_convocados_berco", formato: "inteiro", largura: 12 },
         { titulo: "Observações", chave: "observacoes", largura: 30 }, { titulo: "Comentários", chave: "comentarios", largura: 50 },
       ],
       linhas,
@@ -1234,10 +1252,119 @@ const exportarLista = async (req, res) => {
   }
 };
 
+/* ───────────────────────── Berço (21/10/2026) ─────────────────────────
+ * Aprovados que passam do pedido do gestor ficam "no berço" (reserva). Quando
+ * alguém do berço é convocado: sai de hcs_berco, soma em hcs_convocados_berco
+ * (quantos entregues vieram do berço) e em qtd_entregue (o total entregue). Cada
+ * convocação grava data, quantidade e quem convocou, e pode ser estornada. */
+
+const listarConvocacoes = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  try {
+    if (!(await _rpDaEmpresa(req.params.id, empresa_id))) return erro(res, 404, "RP não encontrada");
+    const [rows] = await db.query(
+      `SELECT c.id, c.quantidade, c.observacao, c.criado_em, c.estornado_em,
+              u.nome AS convocado_por_nome, ue.nome AS estornado_por_nome
+         FROM rps_convocacoes c
+         LEFT JOIN usuarios u  ON u.id  = c.convocado_por
+         LEFT JOIN usuarios ue ON ue.id = c.estornado_por
+        WHERE c.rp_id = ? AND c.empresa_id = ?
+        ORDER BY c.id DESC`,
+      [req.params.id, empresa_id]
+    );
+    return res.json({ convocacoes: rows });
+  } catch (err) {
+    console.error("[rsController.listarConvocacoes]", err);
+    return erro(res, 500, "Erro ao listar as convocações do berço");
+  }
+};
+
+const convocarBerco = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  const q = Number(req.body?.quantidade);
+  if (!Number.isInteger(q) || q < 1 || q > 100000)
+    return erro(res, 400, "Informe quantas pessoas do berço foram convocadas (número inteiro, 1 ou mais)");
+  const obs = String(req.body?.observacao ?? "").trim().slice(0, 500) || null;
+  try {
+    const r = await comTransacao(async (conn) => {
+      const [[rp]] = await conn.query(
+        "SELECT * FROM rps WHERE id = ? AND empresa_id = ? AND excluido_em IS NULL FOR UPDATE", [req.params.id, empresa_id]);
+      if (!rp) return { codigo: 404, msg: "RP não encontrada" };
+      if (rp.status === "CANCELADA") return { codigo: 409, msg: "Esta RP está cancelada; não dá para convocar do berço." };
+      if (q > Number(rp.hcs_berco))
+        return { codigo: 409, msg: Number(rp.hcs_berco) > 0
+          ? `O berço desta RP tem ${rp.hcs_berco} pessoa(s); não dá para convocar ${q}.`
+          : "Esta RP não tem ninguém no berço." };
+      await conn.query(
+        `UPDATE rps SET hcs_berco = hcs_berco - ?, hcs_convocados_berco = hcs_convocados_berco + ?,
+                qtd_entregue = qtd_entregue + ?, updated_by = ?
+          WHERE id = ? AND empresa_id = ?`,
+        [q, q, q, req.user?.id || null, rp.id, empresa_id]);
+      const [ins] = await conn.query(
+        "INSERT INTO rps_convocacoes (rp_id, empresa_id, quantidade, observacao, convocado_por) VALUES (?,?,?,?,?)",
+        [rp.id, empresa_id, q, obs, req.user?.id || null]);
+      return { ok: true, rp, convocacaoId: ins.insertId };
+    });
+    if (!r.ok) return erro(res, r.codigo, r.msg);
+    const { rp } = r;
+    registrarAuditoria({
+      usuario: req.user, acao: "convocar_berco", entidade: "rp", entidadeId: Number(rp.id),
+      resumo: `${req.user?.nome || "Alguém"} convocou ${q} do berço da RP ${rp.produto} · ${rp.site}`,
+      dadosAntes: { hcs_berco: rp.hcs_berco, hcs_convocados_berco: rp.hcs_convocados_berco, qtd_entregue: rp.qtd_entregue },
+      dadosDepois: { hcs_berco: Number(rp.hcs_berco) - q, hcs_convocados_berco: Number(rp.hcs_convocados_berco) + q, qtd_entregue: Number(rp.qtd_entregue) + q, observacao: obs },
+      ip: req.ip,
+    });
+    return res.status(201).json({ id: r.convocacaoId, message: `${q} convocado(s) do berço. Já contam como entregues.` });
+  } catch (err) {
+    console.error("[rsController.convocarBerco]", err);
+    return erro(res, 500, "Erro ao convocar do berço. Nada foi alterado.");
+  }
+};
+
+const estornarConvocacao = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  try {
+    const r = await comTransacao(async (conn) => {
+      const [[rp]] = await conn.query(
+        "SELECT * FROM rps WHERE id = ? AND empresa_id = ? AND excluido_em IS NULL FOR UPDATE", [req.params.id, empresa_id]);
+      if (!rp) return { codigo: 404, msg: "RP não encontrada" };
+      const [[c]] = await conn.query(
+        "SELECT * FROM rps_convocacoes WHERE id = ? AND rp_id = ? AND empresa_id = ? FOR UPDATE", [req.params.cid, rp.id, empresa_id]);
+      if (!c) return { codigo: 404, msg: "Convocação não encontrada" };
+      if (c.estornado_em) return { codigo: 409, msg: "Esta convocação já foi estornada." };
+      const q = Number(c.quantidade);
+      if (Number(rp.hcs_convocados_berco) < q || Number(rp.qtd_entregue) < q)
+        return { codigo: 409, msg: "Os números da RP mudaram depois dessa convocação; ajuste Qtd entregue na edição antes de estornar." };
+      await conn.query(
+        `UPDATE rps SET hcs_berco = hcs_berco + ?, hcs_convocados_berco = hcs_convocados_berco - ?,
+                qtd_entregue = qtd_entregue - ?, updated_by = ?
+          WHERE id = ? AND empresa_id = ?`,
+        [q, q, q, req.user?.id || null, rp.id, empresa_id]);
+      await conn.query("UPDATE rps_convocacoes SET estornado_em = NOW(), estornado_por = ? WHERE id = ?", [req.user?.id || null, c.id]);
+      return { ok: true, rp, q };
+    });
+    if (!r.ok) return erro(res, r.codigo, r.msg);
+    registrarAuditoria({
+      usuario: req.user, acao: "estornar_convocacao_berco", entidade: "rp", entidadeId: Number(r.rp.id),
+      resumo: `${req.user?.nome || "Alguém"} estornou a convocação de ${r.q} do berço da RP ${r.rp.produto} · ${r.rp.site}`,
+      ip: req.ip,
+    });
+    return res.json({ message: `Convocação estornada: ${r.q} voltou(aram) para o berço.` });
+  } catch (err) {
+    console.error("[rsController.estornarConvocacao]", err);
+    return erro(res, 500, "Erro ao estornar a convocação. Nada foi alterado.");
+  }
+};
+
 module.exports = {
   // Sprint 1
   listar, criar, detalhe, editar, excluir, getSites, getProdutos, exportarLista,
   listarComentarios, criarComentario, excluirComentario,
+  // Berço (21/10/2026)
+  listarConvocacoes, convocarBerco, estornarConvocacao,
   // Sprint 2
   getDashboard, getRelatorio, exportar,
   // Sprint 3
