@@ -49,6 +49,9 @@ export default function ProvaPapelEditorPage() {
   const [visorErro, setVisorErro] = useState("");
   const inputArq = useRef(null);
   const inputPlan = useRef(null);
+  const blobAtual = useRef(null); // endereço local (blob:) do PDF aberto, para liberar a memória
+
+  useEffect(() => () => { if (blobAtual.current) URL.revokeObjectURL(blobAtual.current); }, []);
   const [previa, setPrevia] = useState(null); // resultado da leitura da planilha
   const [verTodos, setVerTodos] = useState(false);
 
@@ -93,7 +96,23 @@ export default function ProvaPapelEditorPage() {
     setVisorErro("");
     try {
       const r = await apiFetch(`/provas-papel/lotes/${loteId}/arquivos/${arqId}/url`);
-      setVisor({ url: r.url, tipo: r.tipo });
+      let url = r.url;
+      if (blobAtual.current) { URL.revokeObjectURL(blobAtual.current); blobAtual.current = null; }
+      // 21/10/2026: o PDF vem de outro endereço (Railway) e o navegador recusava
+      // exibi-lo dentro do <iframe> ("A conexão ... foi recusada"). Baixamos o
+      // arquivo (link assinado de 5 min) e mostramos a cópia local; se o
+      // download falhar, cai no endereço original como antes.
+      if (/pdf/i.test(r.tipo || "")) {
+        try {
+          const resp = await fetch(r.url);
+          if (resp.ok) {
+            const blob = await resp.blob();
+            url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+            blobAtual.current = url;
+          }
+        } catch { /* mantém o endereço original */ }
+      }
+      setVisor({ url, tipo: r.tipo });
     } catch (e) {
       setVisorErro(e.message || "Não foi possível abrir a folha.");
     }
