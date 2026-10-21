@@ -1,3 +1,5 @@
+import AvisoIndisponibilidade from "../components/AvisoIndisponibilidade";
+
 export const metadata = {
   title: "Portal T&D",
   description: "Portal de Treinamento e Desenvolvimento",
@@ -14,6 +16,7 @@ export default function RootLayout({ children }) {
           color: "#0f172a",
         }}
       >
+        <AvisoIndisponibilidade />
         {children}
       </body>
     </html>
