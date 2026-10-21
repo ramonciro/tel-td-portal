@@ -307,6 +307,17 @@ app.use(
     // (HTML/script): sempre tratados como o tipo declarado, sem "adivinhar".
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "private, no-store");
+    // 21/10/2026: o portal (Vercel) mostra a folha da prova/PDF dentro de um
+    // <iframe> apontando para este endereço (Railway). O "X-Frame-Options:
+    // DENY" global (varredura de 20/10) bloqueava isso — o navegador mostrava
+    // "A conexão com ...railway.app foi recusada". Aqui, e só aqui, liberamos
+    // a incorporação pelas páginas do próprio portal. O arquivo continua
+    // exigindo o link assinado de 5 min (exigirAssinatura, logo abaixo).
+    // FRAME_ANCESTORS (opcional, separado por espaço) troca a lista padrão —
+    // útil se o portal ganhar domínio próprio.
+    const ancestrais = (process.env.FRAME_ANCESTORS || "https://*.vercel.app").trim();
+    res.removeHeader("X-Frame-Options");
+    res.setHeader("Content-Security-Policy", `frame-ancestors 'self' ${ancestrais}`);
     next();
   },
   exigirAssinatura,
