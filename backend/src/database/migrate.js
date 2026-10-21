@@ -2389,6 +2389,33 @@ async function runMigrations() {
       console.log(`  ↳ pacote 21/10 não concluído (${error.message}) — seguindo`);
     }
 
+    // 73. Berço das RPs (21/10/2026): o time pode aprovar mais gente do que o gestor
+    //     pediu e deixar o excedente "no berço" (reserva). Quando alguém do berço é
+    //     convocado, sai de `hcs_berco`, entra em `hcs_convocados_berco` (quantos vieram
+    //     do berço — já contados dentro de qtd_entregue) e a convocação fica em
+    //     `rps_convocacoes` (data, quantidade, quem convocou).
+    try {
+      await ensureColumn("rps", "hcs_berco", "INT NOT NULL DEFAULT 0");
+      await ensureColumn("rps", "hcs_convocados_berco", "INT NOT NULL DEFAULT 0");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rps_convocacoes (
+          id            INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+          rp_id         INT NOT NULL,
+          empresa_id    INT NOT NULL,
+          quantidade    INT NOT NULL,
+          observacao    VARCHAR(500) NULL,
+          convocado_por INT NULL,
+          criado_em     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          estornado_em  DATETIME NULL,
+          estornado_por INT NULL,
+          INDEX idx_rps_convocacoes_rp (rp_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      `);
+      console.log("  ↳ berço das RPs: ok");
+    } catch (error) {
+      console.log(`  ↳ berço das RPs não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
