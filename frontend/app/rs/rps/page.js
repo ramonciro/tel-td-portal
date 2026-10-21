@@ -64,7 +64,7 @@ const FORM_VAZIO = {
   chamado: "", produto: "", cargo: "",
   data_recebimento: "", status: "EM ANDAMENTO",
   inicio_av_tecnica: "", final_av_tecnica: "", data_fechamento_vaga: "",
-  hcs: "", hcs_com_to: "", hcs_aprovados: "", qtd_entregue: "",
+  hcs: "", hcs_com_to: "", hcs_aprovados: "", qtd_entregue: "", hcs_berco: "",
   observacoes: "",
 };
 
@@ -76,6 +76,28 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   const [sugestoes, setSugestoes] = useState([]);
   const [showSug, setShowSug] = useState(false);
   const [duplicadas, setDuplicadas] = useState(null); // RPs parecidas, à espera de confirmação
+  // Berço (21/10/2026): convocados já feitos, histórico e o painel "Convocar do berço".
+  const [convocados, setConvocados] = useState(0);
+  const [historico, setHistorico] = useState([]);
+  const [convQtd, setConvQtd] = useState("1");
+  const [convObs, setConvObs] = useState("");
+  const [convAberto, setConvAberto] = useState(false);
+  const [convOcupado, setConvOcupado] = useState(false);
+  const [convErro, setConvErro] = useState("");
+  const [convMsg, setConvMsg] = useState("");
+  const [estornando, setEstornando] = useState(null); // id da convocação aguardando confirmação
+
+  const carregarBerco = useCallback(async (id) => {
+    try {
+      const [d, h] = await Promise.all([
+        apiFetch(`/rs/rps/${id}`),
+        apiFetch(`/rs/rps/${id}/convocacoes`),
+      ]);
+      setForm(f => ({ ...f, hcs_berco: d.hcs_berco ?? 0, qtd_entregue: d.qtd_entregue ?? 0 }));
+      setConvocados(Number(d.hcs_convocados_berco) || 0);
+      setHistorico(h.convocacoes || []);
+    } catch { /* o resto do formulário continua valendo */ }
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -96,6 +118,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
         hcs_com_to:   rp.hcs_com_to   ?? "",
         hcs_aprovados:rp.hcs_aprovados ?? "",
         qtd_entregue: rp.qtd_entregue  ?? "",
+        hcs_berco:    rp.hcs_berco     ?? "",
         observacoes:  rp.observacoes || "",
       });
     } else {
@@ -103,15 +126,22 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
     }
     setErro("");
     setDuplicadas(null);
-  }, [rp, open]);
+    setConvocados(Number(rp?.hcs_convocados_berco) || 0);
+    setHistorico([]);
+    setConvAberto(false); setConvErro(""); setConvMsg(""); setEstornando(null);
+    setConvQtd("1"); setConvObs("");
+    if (rp?.id) carregarBerco(rp.id);
+  }, [rp, open, carregarBerco]);
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
-  // Ao marcar ENTREGUE sem quantidade entregue, sugere os HC'S aprovados (dá para mudar).
+  // Ao marcar ENTREGUE sem quantidade entregue, sugere os aprovados (menos o berço); dá para mudar.
   const mudarStatus = (novo) => {
     setForm(f => {
       const semQtd = f.qtd_entregue === "" || Number(f.qtd_entregue) === 0;
-      if (novo === "ENTREGUE" && semQtd && Number(f.hcs_aprovados) > 0) return { ...f, status: novo, qtd_entregue: f.hcs_aprovados };
+      // O que está no berço não é entrega: sugere aprovados menos o berço.
+      const sugestao = Math.max(Number(f.hcs_aprovados) - (Number(f.hcs_berco) || 0), 0);
+      if (novo === "ENTREGUE" && semQtd && sugestao > 0) return { ...f, status: novo, qtd_entregue: String(sugestao) };
       return { ...f, status: novo };
     });
   };
@@ -123,6 +153,34 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
       setSugestoes(data);
     } catch { setSugestoes([]); }
   }, []);
+
+  const convocar = async () => {
+    const q = Number(convQtd);
+    if (!Number.isInteger(q) || q < 1) { setConvErro("Informe quantas pessoas foram convocadas (1 ou mais)."); return; }
+    setConvOcupado(true); setConvErro(""); setConvMsg("");
+    try {
+      const r = await apiFetch(`/rs/rps/${rp.id}/convocacoes`, {
+        method: "POST", body: JSON.stringify({ quantidade: q, observacao: convObs }),
+      });
+      setConvMsg(r?.message || "Convocação registrada.");
+      setConvAberto(false); setConvQtd("1"); setConvObs("");
+      await carregarBerco(rp.id);
+      onSaved(); // atualiza a lista por trás, sem fechar esta janela
+    } catch (e) { setConvErro(e.message || "Não foi possível convocar."); }
+    finally { setConvOcupado(false); }
+  };
+
+  const estornar = async (cid) => {
+    setConvOcupado(true); setConvErro(""); setConvMsg("");
+    try {
+      const r = await apiFetch(`/rs/rps/${rp.id}/convocacoes/${cid}`, { method: "DELETE" });
+      setConvMsg(r?.message || "Convocação estornada.");
+      setEstornando(null);
+      await carregarBerco(rp.id);
+      onSaved();
+    } catch (e) { setConvErro(e.message || "Não foi possível estornar."); }
+    finally { setConvOcupado(false); }
+  };
 
   const handleSalvar = async (confirmarDuplicada = false) => {
     if (!form.site || !form.produto) { setErro("Site e Produto são obrigatórios."); return; }
@@ -295,15 +353,21 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
                       textTransform: "uppercase", letterSpacing: ".06em", color: colors.accent }}>
             Headcount
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))", gap: 14 }}>
             {[
               { field: "hcs",           label: "HC'S Solicitados" },
               { field: "hcs_com_to",    label: "Meta com reserva"      },
               { field: "hcs_aprovados", label: "HC'S Aprovados"   },
               { field: "qtd_entregue",  label: "QTD Entregue"     },
+              { field: "hcs_berco",     label: "No berço"         },
             ].map(({ field, label }) => (
               <div key={field}>
-                <label style={{ ...labelSt, fontSize: 10 }} title={field === "hcs_com_to" ? "Quantidade solicitada na RP somada a um percentual de reserva (turnover) para garantir a entrega." : undefined}>{label}</label>
+                <label style={{ ...labelSt, fontSize: 10 }} title={
+                  field === "hcs_com_to" ? "Quantidade solicitada na RP somada a um percentual de reserva (turnover) para garantir a entrega."
+                  : field === "hcs_berco" ? "Aprovados que ficaram de reserva (berço), além do que foi entregue. Quando um deles for convocado, use o botão 'Convocar do berço'."
+                  : field === "hcs_aprovados" ? "Pode ser maior que os solicitados: o excedente fica no berço."
+                  : undefined
+                }>{label}</label>
                 <input type="number" min="0" value={form[field]}
                   onChange={e => set(field, e.target.value)}
                   style={{ ...inputSt, textAlign: "center", fontWeight: 800, fontSize: 20 }} />
@@ -311,6 +375,69 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
             ))}
           </div>
         </div>
+
+        {/* Berço (21/10/2026) */}
+        <div style={{ marginTop: 10, fontSize: 12, color: colors.textMuted }}>
+          Aprovados podem passar do pedido do gestor: o excedente fica <strong>no berço</strong>.
+          {" "}Regra: QTD Entregue + No berço não pode passar de HC'S Aprovados.
+        </div>
+        {rp && (
+          <div style={{ marginTop: 12, padding: 14, border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13, color: colors.textPrimary }}>
+                <strong>Convocados do berço:</strong> {convocados}
+                <span style={{ color: colors.textMuted }}> (já contam dentro da QTD Entregue)</span>
+              </div>
+              <button type="button" disabled={convOcupado || !(Number(rp.hcs_berco) > 0 || Number(form.hcs_berco) > 0)}
+                onClick={() => { setConvAberto(v => !v); setConvErro(""); setConvMsg(""); }}
+                style={{ ...btnSec, padding: "7px 14px", opacity: (Number(form.hcs_berco) > 0) ? 1 : 0.5 }}
+                title={Number(form.hcs_berco) > 0 ? "Tira do berço e soma na QTD Entregue" : "Não há ninguém no berço"}>
+                Convocar do berço
+              </button>
+            </div>
+            {convAberto && (
+              <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                <div>
+                  <label style={{ ...labelSt, fontSize: 10 }}>Quantos?</label>
+                  <input type="number" min="1" max={Number(form.hcs_berco) || undefined} value={convQtd}
+                    onChange={e => setConvQtd(e.target.value)} style={{ ...inputSt, width: 90, textAlign: "center" }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <label style={{ ...labelSt, fontSize: 10 }}>Observação (opcional)</label>
+                  <input type="text" maxLength={500} value={convObs} onChange={e => setConvObs(e.target.value)}
+                    placeholder="Ex.: vaga aberta por desligamento" style={inputSt} />
+                </div>
+                <button type="button" onClick={convocar} disabled={convOcupado} style={{ ...btnPrim, padding: "9px 16px" }}>
+                  {convOcupado ? "Registrando..." : "Confirmar convocação"}
+                </button>
+              </div>
+            )}
+            {convErro && <div style={{ marginTop: 10, fontSize: 13, color: colors.dangerText }}>{convErro}</div>}
+            {convMsg && <div style={{ marginTop: 10, fontSize: 13, color: colors.successText }}>{convMsg}</div>}
+            {historico.length > 0 && (
+              <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, fontSize: 12, color: colors.textMuted }}>
+                {historico.map(h => (
+                  <li key={h.id} style={{ padding: "6px 0", borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ textDecoration: h.estornado_em ? "line-through" : "none" }}>
+                      {new Date(h.criado_em).toLocaleString("pt-BR")} · {h.quantidade} convocado(s) · {h.convocado_por_nome || "—"}
+                      {h.observacao ? ` · ${h.observacao}` : ""}
+                      {h.estornado_em ? ` (estornada em ${new Date(h.estornado_em).toLocaleDateString("pt-BR")}${h.estornado_por_nome ? ` por ${h.estornado_por_nome}` : ""})` : ""}
+                    </span>
+                    {!h.estornado_em && (estornando === h.id ? (
+                      <span>
+                        Estornar? {" "}
+                        <button type="button" onClick={() => estornar(h.id)} disabled={convOcupado} style={{ ...btnAcao, color: colors.danger }}>Sim</button>
+                        <button type="button" onClick={() => setEstornando(null)} disabled={convOcupado} style={btnAcao}>Não</button>
+                      </span>
+                    ) : (
+                      <button type="button" onClick={() => setEstornando(h.id)} disabled={convOcupado} style={btnAcao}>Estornar</button>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* Observações */}
         <div style={{ marginTop: 14 }}>
@@ -471,6 +598,7 @@ export default function RPsPage() {
             { label: "HC'S Solicitados", value: fmtNum(totais.hcs) },
             { label: "HC'S Aprovados",   value: fmtNum(totais.hcs_aprovados) },
             { label: "QTD Entregue",     value: fmtNum(totais.qtd_entregue) },
+            ...(Number(totais.hcs_berco) > 0 ? [{ label: "No berço", value: fmtNum(totais.hcs_berco) }] : []),
           ] : []
         }
       />
@@ -596,7 +724,13 @@ export default function RPsPage() {
                     <Td right bold>{fmtNum(rp.hcs)}</Td>
                     <Td right muted>{fmtNum(rp.hcs_com_to)}</Td>
                     <Td right>{fmtNum(rp.hcs_aprovados)}</Td>
-                    <Td right bold style={{ color: colors.success }}>{fmtNum(rp.qtd_entregue)}</Td>
+                    <Td right bold style={{ color: colors.success }}>
+                      {fmtNum(rp.qtd_entregue)}
+                      {Number(rp.hcs_berco) > 0 ? (
+                        <span title={`${rp.hcs_berco} aprovado(s) no berço (reserva)`}
+                              style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#b45309" }}>+{rp.hcs_berco} berço</span>
+                      ) : null}
+                    </Td>
                     <td style={{ padding: "8px 12px", textAlign: "center", whiteSpace: "nowrap" }}>
                       <button onClick={() => setRpComentando(rp)} style={btnComentarios(Number(rp.qtd_comentarios) > 0)}
                         title="Ver e adicionar comentários desta RP">
