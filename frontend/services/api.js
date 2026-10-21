@@ -48,6 +48,21 @@ export function hasSomeRole(user, allowedRoles = []) {
   return userRoles.some((r) => normalizedAllowed.includes(r));
 }
 
+// 21/10/2026: avisa a tela inteira (faixa no topo, ver
+// components/AvisoIndisponibilidade.js) quando o servidor ou o banco estão
+// fora do ar, e some sozinha quando uma chamada volta a funcionar.
+function avisarIndisponibilidade(indisponivel, mensagem) {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent("portal:disponibilidade", { detail: { indisponivel, mensagem } })
+    );
+  } catch {}
+}
+
+const MSG_SEM_CONEXAO =
+  "Não consegui falar com o servidor. Verifique sua internet ou tente de novo em alguns minutos.";
+
 export async function apiFetch(path, options = {}) {
   const url = `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
   const token = getToken();
@@ -67,13 +82,24 @@ export async function apiFetch(path, options = {}) {
   try {
     response = await fetch(url, { ...options, headers });
   } catch {
-    throw new Error("Falha de conexão com a API.");
+    avisarIndisponibilidade(true, MSG_SEM_CONEXAO);
+    throw new Error(MSG_SEM_CONEXAO);
   }
 
   let data = {};
   try {
     data = await response.json();
   } catch {}
+
+  // 503 = servidor/banco fora do ar (o backend devolve a mensagem pronta).
+  if (response.status === 503 || response.status === 502 || response.status === 504) {
+    const msg =
+      (data && (data.message || data.error)) ||
+      "O portal está temporariamente indisponível. Tente novamente em alguns minutos.";
+    avisarIndisponibilidade(true, msg);
+    throw new Error(msg);
+  }
+  avisarIndisponibilidade(false);
 
   if (!response.ok) {
     let message = `Erro ${response.status}`;
@@ -102,7 +128,8 @@ export async function apiDownload(path, filenameFallback = "arquivo.xlsx") {
       },
     });
   } catch {
-    throw new Error("Falha de conexão com a API durante o download.");
+    avisarIndisponibilidade(true, MSG_SEM_CONEXAO);
+    throw new Error(MSG_SEM_CONEXAO);
   }
 
   if (!response.ok) {
