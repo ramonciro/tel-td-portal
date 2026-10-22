@@ -47,6 +47,8 @@ const PERFIL_TOM = {
   // "assistente_treinamento"), mas não dava pra criar um usuário com esse
   // perfil pela tela — faltava aqui.
   assistente_treinamento: chart.orange,
+  // Produção de conteúdo (22/10/2026).
+  analista_conteudo: "#65a30d",
   treinando: colors.neutral,
   // Fase 1 (unificação de cadastro de usuários, 22/09/2026): usuários do
   // módulo R&S (hoje só criados/vistos em RS → Configurações) passam a
@@ -81,6 +83,7 @@ const PERFIL_LABEL = {
   treinando: "Treinando", superintendente: "Superintendente",
   coaching: "Coaching", metodologia: "Metodologia",
   assistente_treinamento: "Assistente de Treinamento",
+  analista_conteudo: "Analista de Conteúdo",
   // Fase 1 — ver nota em PERFIL_TOM.
   coordenador_rs: "Coordenador R&S",
   gestor_rs: "Gestor R&S",
@@ -96,6 +99,7 @@ const PERFIL_OPTIONS = [
   { value: "coaching",        label: "Coaching"         },
   { value: "metodologia",     label: "Metodologia"      },
   { value: "assistente_treinamento", label: "Assistente de Treinamento" },
+  { value: "analista_conteudo", label: "Analista de Conteúdo" },
   // Fase 1 (22/09/2026) — ver nota em PERFIL_TOM.
   { value: "coordenador_rs",  label: "Coordenador R&S"  },
   { value: "gestor_rs",       label: "Gestor R&S"       },
