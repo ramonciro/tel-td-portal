@@ -33,6 +33,8 @@ const { rodarLembretesAula } = require("./jobs/lembretesAula");
 const { rodarCalculoConquistas } = require("./jobs/conquistasJob");
 const { rodarCertificadosAutomaticos } = require("./jobs/certificadosAutomaticos");
 const { gerarTextoResumo, getResumoCacheadoDoDia } = require("./services/resumoExecutivoService");
+const instrutoresTurmaCtrl = require("./controllers/instrutoresTurmaController");
+const { condicaoInstrutor } = require("./lib/instrutoresTurma");
 const { listarConquistas } = require("./services/gamificacaoService");
 const { getAnaliseComentarios } = require("./services/analiseComentariosService");
 
@@ -933,6 +935,13 @@ function vazioParaNulo(dados, campos) {
 async function sanitizarEscritaTreinamento(data, req, ctx) {
   const dados = { ...data };
 
+  // TBT (22/10/2026): um instrutor ADICIONAL também edita a turma. A tela do
+  // instrutor manda o próprio nome em "instrutor" — sem esta trava, o co-instrutor
+  // ao salvar viraria o instrutor principal. Instrutor nunca troca o principal.
+  if (String(req?.user?.perfil || "").toLowerCase().trim() === "instrutor" && ctx?.antes?.id) {
+    dados.instrutor = ctx.antes.instrutor;
+  }
+
   if ("subtipo" in dados) {
     dados.subtipo = await normalizeSubtipo(dados.subtipo, ctx?.antes?.subtipo);
   }
@@ -1262,6 +1271,26 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento"),
   getParticipantesByTreinamento
+);
+
+// Instrutores adicionais da turma (TBT, 22/10/2026) — ver controllers/instrutoresTurmaController.js
+app.get(
+  "/api/treinamentos-instrutores",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  instrutoresTurmaCtrl.mapa
+);
+app.get(
+  "/api/treinamentos/:id/instrutores",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  instrutoresTurmaCtrl.obter
+);
+app.put(
+  "/api/treinamentos/:id/instrutores",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  instrutoresTurmaCtrl.salvar
 );
 
 // FIX: rota POST que o frontend chama ao adicionar participante manualmente.
@@ -2010,11 +2039,13 @@ app.get(
             `SELECT t.*, COUNT(tp.id) AS total_participantes
              FROM treinamentos t
              LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
-             WHERE LOWER(t.instrutor) = LOWER(?)
+             WHERE ${condicaoInstrutor("t")}
                ${empresaId ? "AND t.empresa_id = ?" : ""}
              GROUP BY t.id
              ORDER BY t.id DESC`,
-            empresaId ? [userName, empresaId] : [userName]
+            empresaId
+              ? [String(userName || "").trim().toLowerCase(), String(userName || "").trim().toLowerCase(), empresaId]
+              : [String(userName || "").trim().toLowerCase(), String(userName || "").trim().toLowerCase()]
           );
         } else {
           // Treinando: por nome — treinamento_participantes não tem coluna
