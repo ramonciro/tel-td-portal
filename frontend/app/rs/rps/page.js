@@ -130,7 +130,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
     setHistorico([]);
     setConvAberto(false); setConvErro(""); setConvMsg(""); setEstornando(null);
     setConvQtd("1"); setConvObs("");
-    if (rp?.id) carregarBerco(rp.id);
+    if (rp?.id && rp.setor === "ESTRATÉGICO") carregarBerco(rp.id);
   }, [rp, open, carregarBerco]);
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
@@ -140,7 +140,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
     setForm(f => {
       const semQtd = f.qtd_entregue === "" || Number(f.qtd_entregue) === 0;
       // O que está no berço não é entrega: sugere aprovados menos o berço.
-      const sugestao = Math.max(Number(f.hcs_aprovados) - (Number(f.hcs_berco) || 0), 0);
+      const sugestao = Math.max(Number(f.hcs_aprovados) - (f.setor === "ESTRATÉGICO" ? (Number(f.hcs_berco) || 0) : 0), 0);
       if (novo === "ENTREGUE" && semQtd && sugestao > 0) return { ...f, status: novo, qtd_entregue: String(sugestao) };
       return { ...f, status: novo };
     });
@@ -356,16 +356,16 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))", gap: 14 }}>
             {[
               { field: "hcs",           label: "HC'S Solicitados" },
-              { field: "hcs_com_to",    label: "Meta com reserva"      },
+              { field: "hcs_com_to",    label: "HC'S com TO"      },
               { field: "hcs_aprovados", label: "HC'S Aprovados"   },
               { field: "qtd_entregue",  label: "QTD Entregue"     },
-              { field: "hcs_berco",     label: "No berço"         },
+              ...(isEstr ? [{ field: "hcs_berco", label: "No berço" }] : []),
             ].map(({ field, label }) => (
               <div key={field}>
                 <label style={{ ...labelSt, fontSize: 10 }} title={
                   field === "hcs_com_to" ? "Quantidade solicitada na RP somada a um percentual de reserva (turnover) para garantir a entrega."
                   : field === "hcs_berco" ? "Aprovados que ficaram de reserva (berço), além do que foi entregue. Quando um deles for convocado, use o botão 'Convocar do berço'."
-                  : field === "hcs_aprovados" ? "Pode ser maior que os solicitados: o excedente fica no berço."
+                  : field === "hcs_aprovados" ? (isEstr ? "Pode ser maior que os solicitados: o excedente fica no berço." : "Pode ser maior que os solicitados, até o HC'S com TO.")
                   : undefined
                 }>{label}</label>
                 <input type="number" min="0" value={form[field]}
@@ -376,12 +376,22 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
           </div>
         </div>
 
-        {/* Berço (21/10/2026) */}
+        {/* Regras de headcount: berço só nas estratégicas (22/10/2026) */}
         <div style={{ marginTop: 10, fontSize: 12, color: colors.textMuted }}>
-          Aprovados podem passar do pedido do gestor: o excedente fica <strong>no berço</strong>.
-          {" "}Regra: QTD Entregue + No berço não pode passar de HC'S Aprovados.
+          {isEstr ? (
+            <>
+              Aprovados podem passar do pedido do gestor: o excedente fica <strong>no berço</strong>.
+              {" "}Regra: QTD Entregue + No berço não pode passar de HC'S Aprovados.
+            </>
+          ) : (
+            <>
+              Aprovados podem passar do pedido do gestor, <strong>até o HC'S com TO</strong>
+              {" "}(sem HC'S com TO preenchido, até os solicitados).
+              {" "}Regra: QTD Entregue não pode passar de HC'S Aprovados.
+            </>
+          )}
         </div>
-        {rp && (
+        {rp && isEstr && (
           <div style={{ marginTop: 12, padding: 14, border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={{ fontSize: 13, color: colors.textPrimary }}>
@@ -682,7 +692,7 @@ export default function RPsPage() {
                   <Th>Chamado</Th><Th>Recebimento</Th><Th>Status</Th><Th>Prazo</Th>
                   {(showAmbos || filtroSetor === "OPERACIONAL") && <><Th>Início Av.</Th><Th>Final Av.</Th></>}
                   {filtroSetor === "ESTRATÉGICO" && <Th>Fechamento</Th>}
-                  <Th right>HC'S</Th><Th right>Meta c/ reserva</Th><Th right>Aprovados</Th>
+                  <Th right>HC'S</Th><Th right>HC'S com TO</Th><Th right>Aprovados</Th>
                   <Th right>Entregue</Th>
                   <Th center>Comentários</Th>
                   {podeEditar && <Th center>Ações</Th>}
@@ -726,7 +736,7 @@ export default function RPsPage() {
                     <Td right>{fmtNum(rp.hcs_aprovados)}</Td>
                     <Td right bold style={{ color: colors.success }}>
                       {fmtNum(rp.qtd_entregue)}
-                      {Number(rp.hcs_berco) > 0 ? (
+                      {rp.setor !== "OPERACIONAL" && Number(rp.hcs_berco) > 0 ? (
                         <span title={`${rp.hcs_berco} aprovado(s) no berço (reserva)`}
                               style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#b45309" }}>+{rp.hcs_berco} berço</span>
                       ) : null}
