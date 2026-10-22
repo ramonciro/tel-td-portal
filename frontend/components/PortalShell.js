@@ -67,6 +67,9 @@ const menuItems = [
   { href: "/rotina-catalogo",   label: "Catálogo da rotina", icon: "settings", roles: ["coordenador", "assistente_treinamento"] },
   // Painel de aderência da rotina (Fase 3): leitura para a gestão; o instrutor vê a aderência dele em Meu Desempenho.
   { href: "/rotina-aderencia",  label: "Aderência da rotina", icon: "chart", roles: ["coordenador", "assistente_treinamento", "supervisor", "superintendente"] },
+  // Produção de conteúdo (22/10/2026): pedidos de material dos analistas de conteúdo.
+  // Analista vê tudo e edita só os próprios (checado na API); superintendente só lê.
+  { href: "/conteudo",      label: "Produção de conteúdo",   icon: "folder", roles: ["coordenador", "supervisor", "assistente_treinamento", "analista_conteudo", "superintendente"] },
   { href: "/celulas-baby",  label: "Células baby",           icon: "trending", roles: ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"] },
   { href: "/certificados",  label: "Certificados",           icon: "award", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/indicadores",  label: "Indicadores",             icon: "trending", roles: ["coordenador", "supervisor", "superintendente"] },
