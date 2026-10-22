@@ -46,6 +46,16 @@ async function nomesDoHistorico(empresaId) {
      WHERE empresa_id = ? AND instrutor IS NOT NULL AND TRIM(instrutor) <> '' GROUP BY TRIM(instrutor)`,
     [empresaId]
   );
+  // TBT (22/10/2026): instrutores adicionais da turma também são "histórico" do nome.
+  let adicionais = [];
+  try {
+    [adicionais] = await pool.query(
+      `SELECT TRIM(ti.instrutor) AS nome, COUNT(*) AS n FROM treinamento_instrutores ti
+       JOIN treinamentos t ON t.id = ti.treinamento_id
+       WHERE t.empresa_id = ? AND TRIM(ti.instrutor) <> '' GROUP BY TRIM(ti.instrutor)`,
+      [empresaId]
+    );
+  } catch (_) { /* tabela ainda não criada */ }
   const mapa = new Map(); // chave -> { nome (primeira grafia), turmas, aulas, metas }
   const somar = (linhas, campo) => {
     for (const l of linhas) {
@@ -55,6 +65,7 @@ async function nomesDoHistorico(empresaId) {
     }
   };
   somar(turmas, "turmas");
+  somar(adicionais, "turmas");
   somar(aulas, "aulas");
   somar(metas, "metas");
   return mapa;
@@ -252,7 +263,24 @@ async function reescreverHistorico(conn, empresaId, de, para, aplicar) {
     [empresaId, de, para]
   );
   r.turmas = Number(t.n); r.aulas = Number(a.n); r.metas = Number(m.n);
+  let temAdicionais = true;
+  try {
+    const [[ad]] = await conn.query(
+      `SELECT COUNT(*) n FROM treinamento_instrutores ti JOIN treinamentos t ON t.id = ti.treinamento_id
+       WHERE t.empresa_id = ? AND LOWER(TRIM(ti.instrutor)) = LOWER(TRIM(?)) AND ti.instrutor <> ?`,
+      [empresaId, de, para]
+    );
+    r.turmas += Number(ad.n);
+  } catch (_) { temAdicionais = false; }
   if (!aplicar) return r;
+  if (temAdicionais) {
+    // UPDATE IGNORE: se a turma já tem o nome oficial como adicional, mantém o que já existe.
+    await conn.query(
+      `UPDATE IGNORE treinamento_instrutores ti JOIN treinamentos t ON t.id = ti.treinamento_id
+       SET ti.instrutor = ? WHERE t.empresa_id = ? AND LOWER(TRIM(ti.instrutor)) = LOWER(TRIM(?))`,
+      [para, empresaId, de]
+    );
+  }
   await conn.query(
     "UPDATE treinamentos SET instrutor = ? WHERE empresa_id = ? AND LOWER(TRIM(instrutor)) = LOWER(TRIM(?))",
     [para, empresaId, de]

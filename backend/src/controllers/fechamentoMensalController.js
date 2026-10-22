@@ -18,6 +18,7 @@ const pool = require("../lib/db");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { registrarAuditoria } = require("../services/auditoria");
 const { carregarTurmasEnriquecidas, parseHorasTexto } = require("./dashboardTreinamentosController");
+const { todosOsInstrutores } = require("../lib/instrutoresTurma");
 const { novoWorkbook, adicionarTabela, escreverTabela } = require("../lib/excelExport");
 
 const CROSS = ["superintendente"];
@@ -109,10 +110,12 @@ async function calcularMes(req, cliente, mes) {
     horasTurma += ch; horasTrein += ch * part; participantes += part;
     pres += n(t.presenca?.diasPresente); ause += n(t.presenca?.diasAusente);
     if (t.status_canonico === "Chamada pendente") chamadasPend += 1;
-    if (t.instrutor) instrutores.add(String(t.instrutor).trim());
+    // TBT: o resumo conta a ação uma vez (horas, participantes); os instrutores envolvidos são todos.
+    const nomesInstrutores = todosOsInstrutores(t.instrutor, t.instrutores_adicionais || []);
+    nomesInstrutores.forEach((nm) => instrutores.add(nm));
     const g = porTurma.get(Number(t.id));
     return {
-      id: t.id, tema: t.tema, instrutor: t.instrutor || "", inicio: i, fim: f, carga_horaria: ch,
+      id: t.id, tema: t.tema, instrutor: nomesInstrutores.join(", "), inicio: i, fim: f, carga_horaria: ch,
       participantes: part, presenca_pct: n(t.presenca?.diasPresente) + n(t.presenca?.diasAusente) > 0 ? n(t.presenca.taxaPresenca) : null,
       nps_media: g ? media(g.nps) : null, status: t.status_canonico || "",
     };
@@ -137,7 +140,7 @@ async function calcularMes(req, cliente, mes) {
   return {
     kpis,
     turmas: turmas.sort((a, b) => String(a.fim).localeCompare(String(b.fim)) || String(a.tema).localeCompare(String(b.tema))),
-    continuam: continuam.map((t) => ({ id: t.id, tema: t.tema, instrutor: t.instrutor || "", fim: periodoDe(t).f })),
+    continuam: continuam.map((t) => ({ id: t.id, tema: t.tema, instrutor: todosOsInstrutores(t.instrutor, t.instrutores_adicionais || []).join(", "), fim: periodoDe(t).f })),
     instrutores: [...instrutores].sort(),
   };
 }

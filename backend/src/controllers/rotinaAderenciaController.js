@@ -8,6 +8,8 @@ const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const A = require("../lib/rotinaAderencia");
 
 const chave = (s) => String(s || "").trim().toLowerCase();
+// Principal + adicionais (TBT) de uma turma — aceita a linha crua (_adicionais) ou a calculada.
+const nomesDaTurma = (t) => [t.instrutor, ...(t._adicionais || t.instrutores_adicionais || [])].map((n) => String(n || "").trim()).filter(Boolean);
 const perfilDe = (req) => chave(req.user?.perfil);
 const erro = (res, status, msg) => res.status(status).json({ ok: false, message: msg, error: msg });
 const escopo = (req) => tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] }).empresaId;
@@ -18,7 +20,7 @@ function recorte(req) {
     empresaId: escopo(req),
     instrutorLogin,
     podeVer: (t) => {
-      if (instrutorLogin) return !!t.instrutor && chave(t.instrutor) === chave(instrutorLogin);
+      if (instrutorLogin) return nomesDaTurma(t).some((n) => chave(n) === chave(instrutorLogin));
       return usuarioTemAcessoAoCliente(req, t.cliente);
     },
   };
@@ -32,7 +34,9 @@ async function montar(req) {
   const cliente = String(req.query.cliente || "").trim() || undefined;
   const instrutor = instrutorLogin || String(req.query.instrutor || "").trim() || undefined;
   const turmas = await A.calcularTurmas({ empresaId, de, ate, cliente, instrutor, podeVer });
-  const instrutores = A.resumirInstrutores(turmas);
+  let instrutores = A.resumirInstrutores(turmas);
+  // Com um instrutor selecionado, o resumo mostra só ele (os co-instrutores da TBT não entram).
+  if (instrutor) instrutores = instrutores.filter((i) => chave(i.instrutor) === chave(instrutor));
   const atividades = await A.atividadesPorOperacao({
     empresaId, de, ate, cliente, instrutor,
     clientesComTurma: [...new Set(turmas.map((t) => t.cliente).filter(Boolean))],
@@ -51,7 +55,7 @@ async function montar(req) {
     },
     filtros: {
       clientes: [...new Set(turmas.map((t) => t.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")),
-      instrutores: [...new Set(turmas.map((t) => String(t.instrutor || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")),
+      instrutores: [...new Set(turmas.flatMap((t) => nomesDaTurma(t)))].sort((a, b) => a.localeCompare(b, "pt-BR")),
     },
     so_proprias: !!instrutorLogin,
   };
@@ -102,7 +106,7 @@ async function exportar(req, res) {
         { titulo: "Pendências", chave: "pendencias", largura: 70 },
       ],
       linhas: d.turmas.map((t) => ({
-        tema: t.tema, cliente: t.cliente, instrutor: t.instrutor || "",
+        tema: t.tema, cliente: t.cliente, instrutor: nomesDaTurma(t).join(", "),
         modelo: t.modo === "avaliacao_tecnica" ? "Avaliação Técnica" : "Formação continuada",
         inicio: t.inicio || "", fim: t.fim || "", farol: ROTULO_FAROL[t.farol] || t.farol,
         aderencia_pct: t.aderencia_pct,

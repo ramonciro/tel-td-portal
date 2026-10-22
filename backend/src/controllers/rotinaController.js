@@ -459,7 +459,9 @@ async function criarRegistro(req, res) {
       req.params.id = req.body.treinamento_id;
       t = await exigirTurma(req, res, { editar: true });
       if (!t) return;
-      instrutor = texto(t.instrutor, 150);
+      // TBT: o instrutor (principal ou adicional) que registra fica como dono da atividade;
+      // a coordenação registra em nome do instrutor principal da turma.
+      instrutor = perfilDe(req) === "instrutor" ? texto(req.user?.nome, 150) : texto(t.instrutor, 150);
       if (!instrutor) return erro(res, 400, "A turma não tem instrutor definido; defina o instrutor antes de registrar atividades.");
       cliente = texto(t.cliente, 150);
       empresaId = t.empresa_id || null;

@@ -1,6 +1,7 @@
 const pool = require("../lib/db");
 const { getResumoPresenca } = require("../services/presencaResolver");
 const { tenantScopeFor } = require("../lib/tenantScope");
+const { mapaAdicionais, adicionaisDisponiveis, todosOsInstrutores } = require("../lib/instrutoresTurma");
 
 // Pacote Superintendente (24/09/2026): o Dashboard é leitura pura (nenhum
 // endpoint deste arquivo grava nada) — cross-tenant liberado por inteiro
@@ -111,7 +112,7 @@ function resolvePresenca(resumo) {
 // querystring — extraído para ser reaproveitado tanto pelo carregamento
 // normal do Dashboard quanto pela exportação em Excel, que precisa do
 // MESMO recorte de dados que o coordenador está vendo na tela.
-function buildFiltroTreinamentos(req) {
+function buildFiltroTreinamentos(req, comAdicionais = false) {
   const query = req.query || {};
   const conditions = [];
   const params = [];
@@ -133,8 +134,14 @@ function buildFiltroTreinamentos(req) {
   }
 
   if (query.instrutor) {
-    conditions.push("t.instrutor = ?");
-    params.push(query.instrutor);
+    // TBT: o instrutor também enxerga as turmas em que é adicional.
+    if (comAdicionais) {
+      conditions.push("(t.instrutor = ? OR EXISTS (SELECT 1 FROM treinamento_instrutores ti WHERE ti.treinamento_id = t.id AND ti.instrutor = ?))");
+      params.push(query.instrutor, query.instrutor);
+    } else {
+      conditions.push("t.instrutor = ?");
+      params.push(query.instrutor);
+    }
   }
 
   // Status saiu do WHERE do SQL (ver statusCanonicoDaTurma acima) — agora é
@@ -175,7 +182,8 @@ async function carregarTurmasEnriquecidas(req) {
   const participantCountExpr = "COALESCE(t.participantes, 0)";
   const dateOrderExpr = "COALESCE(t.data_inicio, t.data)";
 
-  const { params, whereSql } = buildFiltroTreinamentos(req);
+  const comAdicionais = await adicionaisDisponiveis();
+  const { params, whereSql } = buildFiltroTreinamentos(req, comAdicionais);
 
   // query completa: inclui histórico real de presença (tabela `presencas`) e supervisor
   // se alguma coluna não existir no ambiente, cai para a query simplificada
@@ -304,18 +312,20 @@ async function carregarTurmasEnriquecidas(req) {
     // três fórmulas divergentes que existiam entre KPI geral / cliente / instrutor,
     // e agora também com o cronograma como fonte de maior prioridade) e com o
     // status canônico (mesma fonte usada pelo filtro acima, nunca divergem).
+    const adicionaisPorTurma = comAdicionais ? await mapaAdicionais(tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES }).empresaId) : new Map();
     const enriched = filteredRows.map((row) => ({
       ...row,
+      instrutores_adicionais: adicionaisPorTurma.get(Number(row.id)) || [],
       presenca: resolvePresenca(resumoPresencaPorId.get(Number(row.id))),
       status_canonico: statusCanonicoDaTurma(row, resumoPresencaPorId),
     }));
 
-  return { baseRows, filteredRows, enriched, resumoPresencaPorId };
+  return { baseRows, filteredRows, enriched, resumoPresencaPorId, adicionaisPorTurma };
 }
 
 async function getDashboardTreinamentos(req, res) {
   try {
-    const { baseRows, filteredRows, enriched, resumoPresencaPorId } = await carregarTurmasEnriquecidas(req);
+    const { baseRows, filteredRows, enriched, resumoPresencaPorId, adicionaisPorTurma } = await carregarTurmasEnriquecidas(req);
 
     const totalTreinamentos = enriched.length;
     const totalPrevistos = enriched.reduce((acc, item) => acc + n(item.participantes_previstos), 0);
@@ -370,7 +380,7 @@ async function getDashboardTreinamentos(req, res) {
 
     for (const row of baseRows) {
       if (row.cliente && row.cliente !== "Sem cliente") clientesSet.add(row.cliente);
-      if (row.instrutor) instrutoresSet.add(row.instrutor);
+      todosOsInstrutores(row.instrutor, adicionaisPorTurma.get(Number(row.id)) || []).forEach((nm) => instrutoresSet.add(nm));
       if (row.supervisor && String(row.supervisor).trim()) supervisoresSet.add(String(row.supervisor).trim());
       const modalidade = parseModalidadeFromDescricao(row.descricao);
       // Ver statusCanonicoDaTurma acima — mesma fonte usada pelo filtro, para
@@ -386,7 +396,6 @@ async function getDashboardTreinamentos(req, res) {
 
     for (const row of enriched) {
       const cliente = row.cliente || "Sem cliente";
-      const instrutor = row.instrutor || "Sem instrutor";
       const p = row.presenca;
 
       if (!byCliente.has(cliente)) {
@@ -400,14 +409,19 @@ async function getDashboardTreinamentos(req, res) {
       c.ausentes += p.diasAusente;
       c.justificados += p.diasJustificado;
 
-      if (!byInstrutor.has(instrutor)) {
-        byInstrutor.set(instrutor, { instrutor, total_turmas: 0, total_treinados: 0, presentes: 0, ausentes: 0 });
+      // Por instrutor, a TBT conta cheia para cada um (decisão do Ramon, 22/10/2026);
+      // os totais acima (cliente, KPIs) contam a turma uma vez só.
+      const nomesInstrutor = todosOsInstrutores(row.instrutor, row.instrutores_adicionais || []);
+      for (const instrutor of (nomesInstrutor.length ? nomesInstrutor : ["Sem instrutor"])) {
+        if (!byInstrutor.has(instrutor)) {
+          byInstrutor.set(instrutor, { instrutor, total_turmas: 0, total_treinados: 0, presentes: 0, ausentes: 0 });
+        }
+        const i = byInstrutor.get(instrutor);
+        i.total_turmas += 1;
+        i.total_treinados += p.baseParticipantes;
+        i.presentes += p.diasPresente;
+        i.ausentes += p.diasAusente;
       }
-      const i = byInstrutor.get(instrutor);
-      i.total_turmas += 1;
-      i.total_treinados += p.baseParticipantes;
-      i.presentes += p.diasPresente;
-      i.ausentes += p.diasAusente;
     }
 
     // taxa_presenca por cliente/instrutor agora usa a MESMA regra do KPI geral
@@ -572,7 +586,7 @@ async function exportarTreinamentos(req, res) {
     const linhas = enriched.map((item) => ({
       tema: item.tema || "-",
       cliente: item.cliente || "-",
-      instrutor: item.instrutor || "-",
+      instrutor: todosOsInstrutores(item.instrutor, item.instrutores_adicionais || []).join(", ") || "-",
       modalidade:
         parseModalidadeFromDescricao(item.descricao) === "online" ? "Online"
           : parseModalidadeFromDescricao(item.descricao) === "presencial" ? "Presencial" : "-",
