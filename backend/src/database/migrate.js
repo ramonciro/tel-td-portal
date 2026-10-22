@@ -2389,6 +2389,14 @@ async function runMigrations() {
       console.log(`  ↳ pacote 21/10 não concluído (${error.message}) — seguindo`);
     }
 
+    // 72b. Produção de conteúdo (22/10/2026): pedidos de material, etapas com
+    //      Iniciar/Concluir, catálogo de tipos. Ver ensureConteudo().
+    try {
+      await ensureConteudo();
+    } catch (error) {
+      console.log(`  ↳ produção de conteúdo não concluído (${error.message}) — seguindo`);
+    }
+
     // 73. Berço das RPs (21/10/2026): o time pode aprovar mais gente do que o gestor
     //     pediu e deixar o excedente "no berço" (reserva). Quando alguém do berço é
     //     convocado, sai de `hcs_berco`, entra em `hcs_convocados_berco` (quantos vieram
@@ -3042,6 +3050,96 @@ async function ensurePacote20261021() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
   console.log("  ↳ pacote 21/10 (mural, código de acesso, avisos, fechamento, Oficina): ok");
+}
+
+// Produção de conteúdo (22/10/2026, pedido do Ramon): substitui a planilha
+// "Acompanhamento Analistas Conteudo". O perfil analista_conteudo não precisa
+// de mudança de schema (usuarios.perfil é VARCHAR(50)).
+//  - conteudo_tipos: catálogo (prazo em HORAS ÚTEIS por etapa + pontos), editável.
+//  - conteudo_pedidos: um pedido de material (cliente, tipo, analista, validador).
+//  - conteudo_etapas: cada passagem por criação/validação/postagem, com rodada
+//    (cada pedido de ajuste abre uma nova rodada). Horário gravado no clique.
+//  - conteudo_config: expediente (horário útil) usado nos prazos.
+// Datas são DATETIME "de parede" no horário de Salvador (America/Bahia).
+async function ensureConteudo() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conteudo_tipos (
+      id                INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id        INT NULL,
+      nome              VARCHAR(120) NOT NULL,
+      prazo_criacao_h   DECIMAL(6,2) NOT NULL DEFAULT 0,
+      prazo_validacao_h DECIMAL(6,2) NOT NULL DEFAULT 0,
+      prazo_postagem_h  DECIMAL(6,2) NOT NULL DEFAULT 0,
+      pontos            DECIMAL(5,1) NOT NULL DEFAULT 1,
+      ativo             TINYINT(1) NOT NULL DEFAULT 1,
+      ordem             INT NOT NULL DEFAULT 0,
+      created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_conteudo_tipo (empresa_id, nome),
+      INDEX idx_conteudo_tipo_empresa (empresa_id, ativo)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conteudo_pedidos (
+      id               INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id       INT NULL,
+      codigo_legado    INT NULL,
+      cliente          VARCHAR(150) NOT NULL,
+      tipo_id          INT NULL,
+      tipo_nome        VARCHAR(120) NULL,
+      titulo           VARCHAR(255) NOT NULL,
+      descricao        TEXT NULL,
+      solicitante      VARCHAR(150) NULL,
+      analista_id      INT NULL,
+      analista_nome    VARCHAR(150) NULL,
+      aberto_em        DATETIME NOT NULL,
+      validador_tipo   VARCHAR(10) NOT NULL DEFAULT 'cliente',
+      status           VARCHAR(24) NOT NULL DEFAULT 'a_fazer',
+      origem           VARCHAR(10) NOT NULL DEFAULT 'portal',
+      revisao          VARCHAR(10) NULL,
+      revisao_motivo   VARCHAR(500) NULL,
+      revisado_por_id  INT NULL,
+      revisado_em      DATETIME NULL,
+      lembrar_em       DATE NULL,
+      concluido_em     DATETIME NULL,
+      cancelado_em     DATETIME NULL,
+      cancelado_motivo VARCHAR(500) NULL,
+      criado_por_id    INT NULL,
+      created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_conteudo_legado (empresa_id, codigo_legado),
+      INDEX idx_conteudo_ped_empresa (empresa_id, status),
+      INDEX idx_conteudo_ped_analista (analista_id),
+      INDEX idx_conteudo_ped_aberto (aberto_em)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conteudo_etapas (
+      id            INT AUTO_INCREMENT PRIMARY KEY,
+      pedido_id     INT NOT NULL,
+      etapa         VARCHAR(12) NOT NULL,
+      rodada        INT NOT NULL DEFAULT 1,
+      inicio        DATETIME NULL,
+      fim           DATETIME NULL,
+      resultado     VARCHAR(10) NULL,
+      retroativo    TINYINT(1) NOT NULL DEFAULT 0,
+      justificativa VARCHAR(500) NULL,
+      observacao    VARCHAR(500) NULL,
+      usuario_id    INT NULL,
+      created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_conteudo_etapa_pedido (pedido_id, etapa, rodada)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conteudo_config (
+      empresa_id INT NOT NULL DEFAULT 0,
+      chave      VARCHAR(40) NOT NULL,
+      valor      VARCHAR(200) NOT NULL,
+      PRIMARY KEY (empresa_id, chave)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  console.log("  ↳ produção de conteúdo: ok");
 }
 
 module.exports = { runMigrations };
