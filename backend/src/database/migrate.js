@@ -2434,6 +2434,27 @@ async function runMigrations() {
       console.log(`  ↳ alinhamento das datas da chamada não concluído (${error.message}) — seguindo`);
     }
 
+    // 53c. Instrutores adicionais da turma (22/10/2026) — a TBT é feita por mais
+    //      de um instrutor. treinamentos.instrutor continua sendo o PRINCIPAL;
+    //      aqui ficam os demais. Ver lib/instrutoresTurma.js.
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS treinamento_instrutores (
+          id             INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+          empresa_id     INT NULL,
+          treinamento_id INT NOT NULL,
+          instrutor      VARCHAR(150) NOT NULL,
+          criado_por     VARCHAR(150) NULL,
+          criado_em      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_ti_turma_instrutor (treinamento_id, instrutor),
+          KEY idx_ti_instrutor (instrutor)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      `);
+      console.log("  ↳ instrutores adicionais da turma: ok");
+    } catch (error) {
+      console.log(`  ↳ instrutores adicionais da turma não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
