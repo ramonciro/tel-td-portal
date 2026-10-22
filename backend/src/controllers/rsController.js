@@ -112,7 +112,10 @@ function validarRP(b, { exigirDataRecebimento = false } = {}) {
     inicio_av_tecnica:    setor === "OPERACIONAL" ? datas.inicio_av_tecnica : null,
     final_av_tecnica:     setor === "OPERACIONAL" ? datas.final_av_tecnica : null,
     data_recebimento: datas.data_recebimento,
-    hcs, hcs_com_to, hcs_aprovados, qtd_entregue, hcs_berco,
+    hcs, hcs_com_to, hcs_aprovados, qtd_entregue,
+    // 22/10/2026: berço só existe nas RPs ESTRATÉGICAS. Nas operacionais o berço
+    // acontece depois da avaliação técnica, já no módulo Treinamento.
+    hcs_berco: setor === "ESTRATÉGICO" ? hcs_berco : 0,
   };
   return { erros, dados };
 }
@@ -120,14 +123,40 @@ function validarRP(b, { exigirDataRecebimento = false } = {}) {
 /**
  * Números que não fecham. RP CANCELADA não entra nos totais, então não é checada.
  *
- * Berço (21/10/2026): aprovados PODE passar dos solicitados — o excedente fica
- * "no berço" (reserva) e, se for convocado, vira entregue. Por isso a conta agora é
- * entregues + berço <= aprovados (o antigo "aprovados <= solicitados" saiu).
- * `hcs_convocados_berco` (quantos entregues vieram do berço) é mantido pela convocação.
+ * ESTRATÉGICAS (berço, 21/10/2026): aprovados PODE passar dos solicitados — o
+ * excedente fica "no berço" (reserva) e, se for convocado, vira entregue. A conta é
+ * entregues + berço <= aprovados. `hcs_convocados_berco` (quantos entregues vieram do
+ * berço) é mantido pela convocação.
+ *
+ * OPERACIONAIS (22/10/2026): sem berço (ele acontece depois da avaliação técnica, no
+ * módulo Treinamento). Aprovados pode passar dos solicitados, mas só até o HC'S com TO
+ * (solicitados + reserva de turnover); sem HC'S com TO preenchido, vale o limite dos
+ * solicitados. Entregue não passa de aprovados.
  */
+function ehOperacional(d) {
+  return String(d.setor || "").toUpperCase().startsWith("OPER");
+}
+
 function incoerencias(d) {
   if (d.status === "CANCELADA") return [];
   const msgs = [];
+
+  if (ehOperacional(d)) {
+    const solicitados = Number(d.hcs) || 0;
+    const comTO = Number(d.hcs_com_to) || 0;
+    const teto = Math.max(comTO, solicitados);
+    if (d.hcs_aprovados > teto) {
+      msgs.push(comTO > solicitados
+        ? `HC'S aprovados (${d.hcs_aprovados}) não pode ser maior que HC'S com TO (${comTO})`
+        : `HC'S aprovados (${d.hcs_aprovados}) não pode ser maior que HC'S solicitados (${solicitados})`);
+    }
+    if (d.qtd_entregue > d.hcs_aprovados)
+      msgs.push(`Qtd entregue (${d.qtd_entregue}) não pode ser maior que HC'S aprovados (${d.hcs_aprovados})`);
+    if (d.status === "ENTREGUE" && !(d.qtd_entregue > 0))
+      msgs.push("RP com status ENTREGUE precisa ter Qtd entregue maior que zero");
+    return msgs;
+  }
+
   const berco = Number(d.hcs_berco) || 0;
   const convocados = Number(d.hcs_convocados_berco) || 0;
   if (d.qtd_entregue + berco > d.hcs_aprovados) {
@@ -210,7 +239,7 @@ const listar = async (req, res) => {
       // Varredura 20/10/2026: marca RPs cujos números não fecham (vindas de
       // importação ou de antes da regra). Texto vazio = tudo certo.
       numeros_incoerentes: incoerencias({
-        status: r.status, hcs: Number(r.hcs) || 0, hcs_aprovados: Number(r.hcs_aprovados) || 0, qtd_entregue: Number(r.qtd_entregue) || 0,
+        status: r.status, setor: r.setor, hcs: Number(r.hcs) || 0, hcs_com_to: Number(r.hcs_com_to) || 0, hcs_aprovados: Number(r.hcs_aprovados) || 0, qtd_entregue: Number(r.qtd_entregue) || 0,
         hcs_berco: Number(r.hcs_berco) || 0, hcs_convocados_berco: Number(r.hcs_convocados_berco) || 0,
       }).join(" · "),
     }));
@@ -304,7 +333,7 @@ const editar = async (req, res) => {
     const { erros, dados } = validarRP(mesclado, { exigirDataRecebimento: true });
     // Números incoerentes só travam se esta edição mexeu neles — assim uma RP antiga
     // que já estava inconsistente ainda pode ter observação, datas etc. corrigidas.
-    const mexeuNosNumeros = ["hcs", "hcs_aprovados", "qtd_entregue", "hcs_berco", "status"].some(
+    const mexeuNosNumeros = ["hcs", "hcs_com_to", "hcs_aprovados", "qtd_entregue", "hcs_berco", "status", "setor"].some(
       (c) => String(dados[c] ?? "") !== String(antes[c] ?? "")
     );
     if (!erros.length && mexeuNosNumeros)
@@ -546,7 +575,7 @@ const exportar = async (req, res) => {
     const linhasKpi = [
       ["RPs recebidas", "total_rps", "inteiro", "pct"],
       ["HC'S solicitados", "hcs", "inteiro", "pct"],
-      ["Meta com reserva", "hcs_com_to", "inteiro", null],
+      ["HC'S com TO", "hcs_com_to", "inteiro", null],
       ["HC'S aprovados", "hcs_aprovados", "inteiro", "pct"],
       ["HC'S entregues", "qtd_entregue", "inteiro", "pct"],
       ["Vagas pendentes (RPs em andamento)", "pendentes", "inteiro", "pct"],
@@ -623,7 +652,7 @@ const exportar = async (req, res) => {
     });
     const colFinais = [
       { titulo: "HC'S", chave: "hcs", largura: 8, formato: "inteiro" },
-      { titulo: "META COM RESERVA", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
+      { titulo: "HC'S COM TO", chave: "hcs_com_to", largura: 12, formato: "inteiro" },
       { titulo: "HC'S APROVADOS", chave: "hcs_aprovados", largura: 14, formato: "inteiro" },
       { titulo: "QTD ENTREGUE", chave: "qtd_entregue", largura: 13, formato: "inteiro" },
       { titulo: "OBSERVAÇÕES", chave: "observacoes", largura: 36 },
@@ -669,7 +698,7 @@ const exportar = async (req, res) => {
     wsPC.columns = [{ width: 34 }, { width: 10 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 12 }];
     const colPC = (t) => [
       { titulo: t, chave: "rotulo" }, { titulo: "RPs", chave: "total_rps", formato: "inteiro" },
-      { titulo: "HC'S", chave: "hcs", formato: "inteiro" }, { titulo: "COM RESERVA", chave: "hcs_com_to", formato: "inteiro" },
+      { titulo: "HC'S", chave: "hcs", formato: "inteiro" }, { titulo: "COM TO", chave: "hcs_com_to", formato: "inteiro" },
       { titulo: "APROVADOS", chave: "hcs_aprovados", formato: "inteiro" }, { titulo: "ENTREGUES", chave: "qtd_entregue", formato: "inteiro" },
       { titulo: "TAXA ENTREGA", chave: "taxa_entrega", formato: "percentual" }, { titulo: "PENDENTES", chave: "pendentes", formato: "inteiro" },
     ];
@@ -928,7 +957,7 @@ const importarPlanilha = async (req, res) => {
           cargo:   setor==="ESTRATÉGICO" ? (tituloPadrao(row["CARGO"]).slice(0, 200)||null) : null,
           chamado: String(row["CHAMADO"]??row["N CHAMADO"]??"").trim().slice(0, 200)||null,
           hcs:           _normInt(row["HCS"] ?? row["HC'S"] ?? row["HCS SOLICITADOS"]),
-          hcs_com_to:    _normInt(row["META COM RESERVA"] ?? row["HCS COM TO"] ?? row["HC'S COM TO"]),
+          hcs_com_to:    _normInt(row["HC'S COM TO"] ?? row["HCS COM TO"] ?? row["META COM RESERVA"]),
           hcs_aprovados: _normInt(row["HCS APROVADOS"] ?? row["HC'S APROVADOS"]),
           qtd_entregue:  _normInt(row["QTD ENTREGUE"] ?? row["ENTREGUE"]),
         };
@@ -1215,7 +1244,7 @@ const exportarLista = async (req, res) => {
         dias_aberto: dias,
         inicio_av_tecnica: r.inicio_av_tecnica, final_av_tecnica: r.final_av_tecnica, data_fechamento_vaga: r.data_fechamento_vaga,
         hcs: r.hcs, hcs_com_to: r.hcs_com_to, hcs_aprovados: r.hcs_aprovados, qtd_entregue: r.qtd_entregue,
-        hcs_berco: r.hcs_berco, hcs_convocados_berco: r.hcs_convocados_berco,
+        hcs_berco: ehOperacional(r) ? "" : r.hcs_berco, hcs_convocados_berco: ehOperacional(r) ? "" : r.hcs_convocados_berco,
         observacoes: r.observacoes || "", comentarios: (comentarios.get(r.id) || []).join("\n"),
       };
     });
@@ -1233,11 +1262,11 @@ const exportarLista = async (req, res) => {
         { titulo: "Final av. técnica", chave: "final_av_tecnica", formato: "data", largura: 13 },
         { titulo: "Fechamento da vaga", chave: "data_fechamento_vaga", formato: "data", largura: 13 },
         { titulo: "HC'S", chave: "hcs", formato: "inteiro", largura: 8 },
-        { titulo: "Meta com reserva", chave: "hcs_com_to", formato: "inteiro", largura: 10 },
+        { titulo: "HC'S com TO", chave: "hcs_com_to", formato: "inteiro", largura: 10 },
         { titulo: "HC'S aprovados", chave: "hcs_aprovados", formato: "inteiro", largura: 10 },
         { titulo: "Entregues", chave: "qtd_entregue", formato: "inteiro", largura: 10 },
-        { titulo: "No berço", chave: "hcs_berco", formato: "inteiro", largura: 10 },
-        { titulo: "Convocados do berço", chave: "hcs_convocados_berco", formato: "inteiro", largura: 12 },
+        { titulo: "No berço", chave: "hcs_berco", largura: 10 },
+        { titulo: "Convocados do berço", chave: "hcs_convocados_berco", largura: 12 },
         { titulo: "Observações", chave: "observacoes", largura: 30 }, { titulo: "Comentários", chave: "comentarios", largura: 50 },
       ],
       linhas,
@@ -1292,6 +1321,7 @@ const convocarBerco = async (req, res) => {
       const [[rp]] = await conn.query(
         "SELECT * FROM rps WHERE id = ? AND empresa_id = ? AND excluido_em IS NULL FOR UPDATE", [req.params.id, empresa_id]);
       if (!rp) return { codigo: 404, msg: "RP não encontrada" };
+      if (ehOperacional(rp)) return { codigo: 409, msg: "Berço existe só nas RPs estratégicas. Nas operacionais ele acontece depois da avaliação técnica, no módulo Treinamento." };
       if (rp.status === "CANCELADA") return { codigo: 409, msg: "Esta RP está cancelada; não dá para convocar do berço." };
       if (q > Number(rp.hcs_berco))
         return { codigo: 409, msg: Number(rp.hcs_berco) > 0
