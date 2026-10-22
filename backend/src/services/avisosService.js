@@ -14,6 +14,7 @@
  * O cálculo pesado (resumo da empresa) é guardado em memória por 10 minutos.
  */
 const pool = require("../lib/db");
+const { mapaAdicionais, adicionaisDisponiveis } = require("../lib/instrutoresTurma");
 
 const CACHE_RESUMO_MS = 10 * 60 * 1000;
 const cacheResumo = new Map(); // empresaId -> { quando, dados }
@@ -94,25 +95,31 @@ async function avisosCodigosAcesso(empresaId) {
 async function avisosInstrutor(user, empresaId) {
   const out = [];
   const r = await resumoEmpresa(empresaId);
-  const minhas = r.chamadasPendentes.filter((t) => norm(t.instrutor) === norm(user.nome));
+  // TBT: quem é instrutor adicional da turma também recebe o aviso dela.
+  const adic = await mapaAdicionais(empresaId);
+  const meu = (turmaId, principal) => norm(principal) === norm(user.nome) || (adic.get(Number(turmaId)) || []).some((n) => norm(n) === norm(user.nome));
+  const minhas = r.chamadasPendentes.filter((t) => meu(t.id, t.instrutor));
   if (minhas.length) {
     out.push({ chave: "chamadas-pendentes", tipo: "presenca", gravidade: "atencao", valor: minhas.length,
       titulo: `${plural(minhas.length, "chamada pendente", "chamadas pendentes")}`,
       mensagem: minhas.slice(0, 3).map((t) => t.tema).join(" · "), link: "/presencas" });
   }
-  const pend = (r.rotina || []).filter((i) => norm(i.instrutor) === norm(user.nome));
+  const pend = (r.rotina || []).filter((i) => meu(i.turma_id, i.instrutor));
   if (pend.length) {
     const atras = pend.filter((i) => i.severidade === "vermelho").length;
     out.push({ chave: "rotina-pendente", tipo: "rotina", gravidade: atras ? "atencao" : "info", valor: pend.length,
       titulo: `${plural(pend.length, "pendência na sua rotina", "pendências na sua rotina")}${atras ? ` (${atras} atrasada${atras > 1 ? "s" : ""})` : ""}`,
       mensagem: pend.slice(0, 2).map((i) => `${i.tema}: ${i.texto}`).join(" · "), link: "/minhas-atividades" });
   }
+  const comAdic = await adicionaisDisponiveis();
   const [aulas] = await pool.query(
     `SELECT ta.data_aula, t.tema, t.cliente FROM turma_aulas ta JOIN treinamentos t ON t.id = ta.treinamento_id
       WHERE ta.data_aula BETWEEN ? AND ? AND ta.status_execucao NOT IN ('cancelada','concluida')
-        AND LOWER(TRIM(ta.instrutor_responsavel)) = ? ${empresaId ? "AND t.empresa_id = ?" : ""}
+        AND (LOWER(TRIM(ta.instrutor_responsavel)) = ?${comAdic ? ` OR EXISTS (SELECT 1 FROM treinamento_instrutores ti
+              WHERE ti.treinamento_id = t.id AND LOWER(TRIM(ti.instrutor)) = ?)` : ""})
+        ${empresaId ? "AND t.empresa_id = ?" : ""}
       ORDER BY ta.data_aula`,
-    empresaId ? [hojeISO(0), hojeISO(1), norm(user.nome), empresaId] : [hojeISO(0), hojeISO(1), norm(user.nome)]
+    [hojeISO(0), hojeISO(1), norm(user.nome), ...(comAdic ? [norm(user.nome)] : []), ...(empresaId ? [empresaId] : [])]
   );
   if (aulas.length) {
     out.push({ chave: "aulas-proximas", tipo: "aula", gravidade: "info", valor: aulas.length,

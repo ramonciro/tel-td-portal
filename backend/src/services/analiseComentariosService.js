@@ -20,6 +20,7 @@
  */
 
 const pool = require("../lib/db");
+const { adicionaisDisponiveis } = require("../lib/instrutoresTurma");
 
 // Listas fixas, em português, no vocabulário de avaliação de treinamento —
 // não é NLP, é contagem de ocorrência de expressão. Ajustável aqui sem
@@ -122,7 +123,16 @@ async function getAnaliseComentarios({ empresaId, treinamentoId, instrutor, clie
 
   if (empresaId) { wheres.push("t.empresa_id = ?"); params.push(empresaId); }
   if (treinamentoId) { wheres.push("t.id = ?"); params.push(treinamentoId); }
-  if (instrutor) { wheres.push("LOWER(TRIM(t.instrutor)) = LOWER(TRIM(?))"); params.push(instrutor); }
+  if (instrutor) {
+    // TBT: os comentários da turma contam também para os instrutores adicionais.
+    if (await adicionaisDisponiveis()) {
+      wheres.push(`(LOWER(TRIM(t.instrutor)) = LOWER(TRIM(?)) OR EXISTS (
+        SELECT 1 FROM treinamento_instrutores ti WHERE ti.treinamento_id = t.id AND LOWER(TRIM(ti.instrutor)) = LOWER(TRIM(?))))`);
+      params.push(instrutor, instrutor);
+    } else {
+      wheres.push("LOWER(TRIM(t.instrutor)) = LOWER(TRIM(?))"); params.push(instrutor);
+    }
+  }
   if (cliente) { wheres.push("t.cliente = ?"); params.push(cliente); }
   if (inicio) { wheres.push("DATE(at.created_at) >= ?"); params.push(inicio); }
   if (fim) { wheres.push("DATE(at.created_at) <= ?"); params.push(fim); }

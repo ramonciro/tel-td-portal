@@ -41,6 +41,7 @@
  */
 
 const pool = require("../lib/db");
+const { adicionaisDisponiveis } = require("../lib/instrutoresTurma");
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -174,8 +175,61 @@ const FONTE_ATIVIDADES_SQL = `
     WHERE r.instrutor IS NOT NULL AND TRIM(r.instrutor) <> ''
 `;
 
+// TBT (22/10/2026): a ação tem instrutores ADICIONAIS e cada um recebe as horas
+// CHEIAS. Estas linhas extras (mesmas colunas) só entram nos relatórios POR
+// INSTRUTOR (fonteHoras({ comAdicionais: true })). Os relatórios de TOTAL
+// (por operação, por tema, total geral, por turma) usam a fonte sem elas — a
+// ação conta uma vez só. Uma aula cujo instrutor_responsavel já é o adicional
+// não duplica a linha.
+const FONTE_ADICIONAIS_SQL = `
+    UNION ALL
+
+    SELECT
+      t.id AS treinamento_id,
+      t.empresa_id AS empresa_id,
+      TRIM(ti.instrutor) AS instrutor,
+      t.cliente AS cliente,
+      t.tema AS tema,
+      YEAR(ta.data_aula) AS ano,
+      MONTH(ta.data_aula) AS mes,
+      CASE WHEN LOWER(TRIM(COALESCE(ta.status_execucao,''))) = 'concluida'
+           THEN COALESCE(NULLIF(ta.carga_horaria_real, 0), ta.carga_horaria_planejada, 0)
+           ELSE 0 END AS horas_real,
+      COALESCE(ta.carga_horaria_planejada, 0) AS horas_planejada,
+      'aula_adic' AS fonte
+    FROM turma_aulas ta
+    JOIN treinamentos t ON t.id = ta.treinamento_id
+    JOIN treinamento_instrutores ti ON ti.treinamento_id = t.id
+    WHERE TRIM(ti.instrutor) <> ''
+      AND LOWER(TRIM(COALESCE(ta.instrutor_responsavel, ''))) <> LOWER(TRIM(ti.instrutor))
+
+    UNION ALL
+
+    SELECT
+      t.id AS treinamento_id,
+      t.empresa_id AS empresa_id,
+      TRIM(ti.instrutor) AS instrutor,
+      t.cliente AS cliente,
+      t.tema AS tema,
+      YEAR(COALESCE(t.data_inicio, t.data)) AS ano,
+      MONTH(COALESCE(t.data_inicio, t.data)) AS mes,
+      CASE WHEN LOWER(TRIM(COALESCE(t.status,''))) NOT LIKE '%planej%'
+             AND LOWER(TRIM(COALESCE(t.status,''))) NOT LIKE '%cancel%'
+             AND LOWER(TRIM(COALESCE(t.status,''))) <> 'agendado'
+           THEN COALESCE(t.carga_horaria, 0) ELSE 0 END AS horas_real,
+      COALESCE(t.carga_horaria, 0) AS horas_planejada,
+      'turma_adic' AS fonte
+    FROM treinamentos t
+    JOIN treinamento_instrutores ti ON ti.treinamento_id = t.id
+    WHERE TRIM(ti.instrutor) <> ''
+      AND COALESCE(t.data_inicio, t.data) IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM turma_aulas ta2 WHERE ta2.treinamento_id = t.id)
+`;
+
 const FONTE_SEM_ATIVIDADES = `( ${FONTE_AULAS_SQL} ) fonte_horas`;
 const FONTE_COM_ATIVIDADES = `( ${FONTE_AULAS_SQL} ${FONTE_ATIVIDADES_SQL} ) fonte_horas`;
+const FONTE_SEM_ATIVIDADES_ADIC = `( ${FONTE_AULAS_SQL} ${FONTE_ADICIONAIS_SQL} ) fonte_horas`;
+const FONTE_COM_ATIVIDADES_ADIC = `( ${FONTE_AULAS_SQL} ${FONTE_ADICIONAIS_SQL} ${FONTE_ATIVIDADES_SQL} ) fonte_horas`;
 
 // Só usa a terceira origem se a tabela existir (migração da Rotina rodou).
 // Resultado em cache por 60 s para não testar a cada consulta.
@@ -191,8 +245,12 @@ async function rotinaDisponivel() {
   }
   return _rotinaCache.ok;
 }
-async function fonteHoras() {
-  return (await rotinaDisponivel()) ? FONTE_COM_ATIVIDADES : FONTE_SEM_ATIVIDADES;
+async function fonteHoras({ comAdicionais = false } = {}) {
+  const comRotina = await rotinaDisponivel();
+  if (comAdicionais && (await adicionaisDisponiveis())) {
+    return comRotina ? FONTE_COM_ATIVIDADES_ADIC : FONTE_SEM_ATIVIDADES_ADIC;
+  }
+  return comRotina ? FONTE_COM_ATIVIDADES : FONTE_SEM_ATIVIDADES;
 }
 
 // Dashboard/ROI (horas aplicadas a pessoas): por padrão só horas em sala.
@@ -401,7 +459,10 @@ async function listarInstrutoresConhecidos(empresaId, { apenasAtivos = false } =
     return comDesligados ? [empresaId, empresaId] : [empresaId];
   };
   const comRotina = await rotinaDisponivel();
-  const paramsBase = empresaId ? (comRotina ? [empresaId, empresaId, empresaId] : [empresaId, empresaId]) : [];
+  const comAdicionais = await adicionaisDisponiveis();
+  const paramsBase = empresaId
+    ? Array((comRotina ? 3 : 2) + (comAdicionais ? 1 : 0)).fill(empresaId)
+    : [];
   const consulta = (comDesligados) => pool.query(
     `
     SELECT nome FROM (
@@ -409,7 +470,9 @@ async function listarInstrutoresConhecidos(empresaId, { apenasAtivos = false } =
       UNION
       SELECT DISTINCT TRIM(instrutor_responsavel) AS nome FROM turma_aulas WHERE instrutor_responsavel IS NOT NULL AND TRIM(instrutor_responsavel) <> ''${tenantAulas}${comRotina ? `
       UNION
-      SELECT DISTINCT TRIM(instrutor) AS nome FROM rotina_atividades_registros WHERE instrutor IS NOT NULL AND TRIM(instrutor) <> ''${tenantTreinamentos}` : ""}
+      SELECT DISTINCT TRIM(instrutor) AS nome FROM rotina_atividades_registros WHERE instrutor IS NOT NULL AND TRIM(instrutor) <> ''${tenantTreinamentos}` : ""}${comAdicionais ? `
+      UNION
+      SELECT DISTINCT TRIM(instrutor) AS nome FROM treinamento_instrutores WHERE instrutor IS NOT NULL AND TRIM(instrutor) <> ''${tenantTreinamentos}` : ""}
     ) todos
     ${montarFiltro(comDesligados)}
     ORDER BY nome ASC
@@ -496,8 +559,9 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
     `SELECT fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes,
             SUM(fonte_horas.horas_real) AS horas,
             SUM(CASE WHEN fonte_horas.fonte = 'atividade' THEN fonte_horas.horas_real ELSE 0 END) AS horas_atividades,
+            SUM(CASE WHEN fonte_horas.fonte IN ('aula_adic','turma_adic') THEN fonte_horas.horas_real ELSE 0 END) AS horas_adicionais,
             COUNT(DISTINCT CASE WHEN fonte_horas.horas_real > 0 AND fonte_horas.fonte <> 'atividade' THEN fonte_horas.treinamento_id END) AS turmas
-     FROM ${await fonteHoras()}
+     FROM ${await fonteHoras({ comAdicionais: true })}
      WHERE fonte_horas.instrutor IN (${placeholdersInstrutores})
        AND (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses})
        ${clienteSql}
@@ -521,6 +585,9 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
   const mapaHoras = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas)]));
   const mapaTurmas = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.turmas)]));
   const mapaAtividades = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas_atividades || 0)]));
+  // horas que vêm de ser instrutor ADICIONAL de uma ação (TBT): contam cheias para o
+  // instrutor, mas o TOTAL do time não pode somá-las de novo (ver getPainel).
+  const mapaAdicionais = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas_adicionais || 0)]));
   const mapaOverrides = new Map(overridesRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, r]));
 
   const resultado = [];
@@ -569,6 +636,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
         horas_realizadas: horasRealizadas,
         horas_sala: horasSala,
         horas_atividades: horasAtividades,
+        horas_adicionais: Number((mapaAdicionais.get(chave) || 0).toFixed(2)),
         turmas,
         tem_meta: temMeta,
         capacidade_horas: capacidadeHoras,
@@ -601,7 +669,10 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
     const capacidadeNominal = comMeta.reduce((acc, i) => acc + i.capacidade_horas, 0);
     const hcRealizadoComMeta = comMeta.reduce((acc, i) => acc + i.horas_realizadas, 0);
     const hcRealizadoSemMeta = semMeta.reduce((acc, i) => acc + i.horas_realizadas, 0);
-    const hcRealizado = hcRealizadoComMeta + hcRealizadoSemMeta;
+    // Total do time: cada ação conta UMA vez — tira as horas que o instrutor adicional
+    // (TBT) recebe cheias. A ocupação (com meta) segue com as horas cheias de cada um.
+    const horasDuplicadas = instrutor ? 0 : itens.reduce((acc, i) => acc + Number(i.horas_adicionais || 0), 0);
+    const hcRealizado = hcRealizadoComMeta + hcRealizadoSemMeta - horasDuplicadas;
     const desvio = capacidadeNominal > 0 ? Number((hcRealizadoComMeta - capacidadeNominal).toFixed(2)) : null;
     const ocupacaoPct = capacidadeNominal > 0 ? Number(((hcRealizadoComMeta / capacidadeNominal) * 100).toFixed(1)) : null;
     const { emoji } = statusOcupacao(ocupacaoPct);
@@ -610,6 +681,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
       mes_extenso: new Date(Date.UTC(ano, mes - 1, 1)).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }),
       capacidade_nominal: Number(capacidadeNominal.toFixed(2)),
       hc_realizado: Number(hcRealizado.toFixed(2)),
+      horas_tbt_repetidas: Number(horasDuplicadas.toFixed(2)),
       hc_realizado_com_meta: Number(hcRealizadoComMeta.toFixed(2)),
       hc_realizado_sem_meta: Number(hcRealizadoSemMeta.toFixed(2)),
       instrutores_com_meta: comMeta.length,
@@ -665,6 +737,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
       capacidade_nominal_periodo: Number(capacidadeTotalPeriodo.toFixed(2)),
       hc_programado_periodo: Number(Number(programadoRow.total).toFixed(2)),
       hc_realizado_periodo: Number(hcRealizadoPeriodo.toFixed(2)),
+      horas_tbt_repetidas_periodo: Number(linhasPorMes.reduce((acc, l) => acc + (l.horas_tbt_repetidas || 0), 0).toFixed(2)),
       aderencia_geral_pct: Number(programadoRow.total) > 0
         ? Number(((hcRealizadoPeriodo / Number(programadoRow.total)) * 100).toFixed(1))
         : null,
@@ -870,7 +943,7 @@ async function getCapacidadePorInstrutorCliente({ meses: totalMeses = 3, empresa
     `SELECT fonte_horas.instrutor AS instrutor,
             COALESCE(NULLIF(fonte_horas.cliente, ''), 'Sem operação') AS cliente,
             SUM(fonte_horas.horas_real) AS horas
-     FROM ${await fonteHoras()}
+     FROM ${await fonteHoras({ comAdicionais: true })}
      WHERE fonte_horas.instrutor IN (${placeholdersInstrutores})
        AND (fonte_horas.ano, fonte_horas.mes) IN (${placeholdersMeses})
        ${tenantFonteHoras(empresaId)}
@@ -1052,7 +1125,7 @@ async function getHorasAplicadasPorInstrutor({ empresaId, cliente, dataInicio, d
     `SELECT COALESCE(NULLIF(fonte_horas.instrutor, ''), '(sem instrutor)') AS instrutor,
             COALESCE(SUM(fonte_horas.horas_real), 0) AS horas,
             COUNT(DISTINCT CASE WHEN fonte_horas.fonte <> 'atividade' THEN fonte_horas.treinamento_id END) AS turmas
-     FROM ${await fonteHoras()}
+     FROM ${await fonteHoras({ comAdicionais: true })}
      ${where}
      GROUP BY COALESCE(NULLIF(fonte_horas.instrutor, ''), '(sem instrutor)')
      ORDER BY horas DESC

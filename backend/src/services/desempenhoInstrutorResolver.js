@@ -41,6 +41,7 @@
  */
 
 const pool = require("../lib/db");
+const { turmasPorInstrutorSql, mapaAdicionais } = require("../lib/instrutoresTurma");
 const {
   listarInstrutoresConhecidos,
   getCapacidadeVsRealizado,
@@ -160,22 +161,23 @@ async function getAvaliacaoPorInstrutor({ instrutores, meses, empresaId }) {
   const placeholdersMeses = meses.map(() => "(?, ?)").join(",");
   const mesesParams = meses.flatMap((m) => [m.ano, m.mes]);
 
+  const turmasPorInstrutor = await turmasPorInstrutorSql(); // TBT: cada instrutor da turma
   const [rows] = await pool.query(
     `
     SELECT
-      TRIM(t.instrutor) AS instrutor,
+      t.instrutor_ref AS instrutor,
       COUNT(DISTINCT t.id) AS turmas_no_periodo,
       COUNT(DISTINCT a.treinamento_id) AS turmas_com_avaliacao,
       COUNT(a.id) AS lancamentos,
       AVG(a.nota_prova) AS nota_prova_media,
       AVG(a.nota_qualidade) AS nota_qualidade_media
-    FROM treinamentos t
+    FROM ${turmasPorInstrutor} t
     LEFT JOIN avaliacoes a ON a.treinamento_id = t.id
-    WHERE TRIM(t.instrutor) IN (${placeholdersInstrutores})
+    WHERE t.instrutor_ref IN (${placeholdersInstrutores})
       AND COALESCE(t.data_inicio, t.data) IS NOT NULL
       AND (YEAR(COALESCE(t.data_inicio, t.data)), MONTH(COALESCE(t.data_inicio, t.data))) IN (${placeholdersMeses})
       ${tenantWhereTreinamentos(empresaId)}
-    GROUP BY TRIM(t.instrutor)
+    GROUP BY t.instrutor_ref
     `,
     [...instrutores, ...mesesParams, ...(empresaId ? [empresaId] : [])]
   );
@@ -203,15 +205,16 @@ async function getNpsPorInstrutor({ instrutores, meses, empresaId }) {
   const placeholdersMeses = meses.map(() => "(?, ?)").join(",");
   const mesesParams = meses.flatMap((m) => [m.ano, m.mes]);
 
+  const turmasPorInstrutor = await turmasPorInstrutorSql(); // TBT: o NPS da turma conta para cada instrutor dela
   const [rows] = await pool.query(
     `
     SELECT
-      TRIM(t.instrutor) AS instrutor,
+      t.instrutor_ref AS instrutor,
       at.nota_nps AS nota_nps,
       at.respostas_json AS respostas_json
     FROM avaliacoes_treinandos at
-    JOIN treinamentos t ON t.id = at.treinamento_id
-    WHERE TRIM(t.instrutor) IN (${placeholdersInstrutores})
+    JOIN ${turmasPorInstrutor} t ON t.id = at.treinamento_id
+    WHERE t.instrutor_ref IN (${placeholdersInstrutores})
       AND at.nota_nps IS NOT NULL
       AND COALESCE(t.data_inicio, t.data) IS NOT NULL
       AND (YEAR(COALESCE(t.data_inicio, t.data)), MONTH(COALESCE(t.data_inicio, t.data))) IN (${placeholdersMeses})
@@ -273,9 +276,16 @@ async function getFrequenciaPorInstrutor({ instrutores, meses, empresaId }) {
   const setInstrutores = new Set(instrutores);
 
   const acumulado = new Map(instrutores.map((nome) => [nome, { somaPonderada: 0, pesoTotal: 0, turmas: 0 }]));
+  const adicionaisPorTurma = await mapaAdicionais(empresaId); // TBT: a frequência da turma conta para cada instrutor dela
 
+  // uma linha por (turma, instrutor): principal + adicionais
+  const linhas = [];
   for (const t of resumo) {
-    const nomeInstrutor = String(t.instrutor || "").trim();
+    const nomes = new Set([String(t.instrutor || "").trim(), ...(adicionaisPorTurma.get(Number(t.id)) || [])]);
+    for (const nome of nomes) if (nome) linhas.push({ t, nomeInstrutor: nome });
+  }
+
+  for (const { t, nomeInstrutor } of linhas) {
     if (!setInstrutores.has(nomeInstrutor)) continue;
     const dataRef = t.data_inicio || t.data;
     if (!dataRef) continue;
