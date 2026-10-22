@@ -1,0 +1,1728 @@
+[
+ {
+  "id": 1,
+  "abertura": "2026-05-12",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "Treinamento MB Facilita",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-05-12 08:00:00",
+    "fim": "2026-05-12 15:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-05-12 16:00:00",
+    "fim": "2026-05-12 17:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-05-12 08:00:00",
+    "fim": "2026-05-12 09:00:00"
+   }
+  }
+ },
+ {
+  "id": 2,
+  "abertura": "2026-05-13",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "CAC - Refresh",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-05-13 08:00:00",
+    "fim": "2026-05-14 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-05-14 08:00:00",
+    "fim": "2026-05-14 09:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-05-14 10:00:00",
+    "fim": "2026-05-14 11:30:00"
+   }
+  }
+ },
+ {
+  "id": 3,
+  "abertura": "2026-05-15",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "Reclame Aqui - Refresh",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-05-15 08:00:00",
+    "fim": "2026-05-16 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-05-16 09:00:00",
+    "fim": "2026-05-16 10:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-05-16 11:00:00",
+    "fim": "2026-05-16 13:00:00"
+   }
+  }
+ },
+ {
+  "id": 4,
+  "abertura": "2026-05-18",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "Retenção Meu+",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-05-18 08:00:00",
+    "fim": "2026-05-18 15:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-05-18 15:30:00",
+    "fim": "2026-05-18 16:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-05-18 17:00:00",
+    "fim": "2026-05-18 18:00:00"
+   }
+  }
+ },
+ {
+  "id": 5,
+  "abertura": "2026-05-20",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "Cartão Consignado ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-05-20 08:00:00",
+    "fim": "2026-05-20 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-05-20 16:10:00",
+    "fim": "2026-05-20 17:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-05-20 17:00:00",
+    "fim": "2026-05-20 18:00:00"
+   }
+  }
+ },
+ {
+  "id": 6,
+  "abertura": "2026-05-22",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Célula Qualidade TDB ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-05-22 08:00:00",
+    "fim": "2026-05-22 11:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-05-22 11:00:00",
+    "fim": "2026-05-22 14:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-05-22 14:10:00",
+    "fim": "2026-05-22 16:10:00"
+   }
+  }
+ },
+ {
+  "id": 7,
+  "abertura": "2026-05-24",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "Refresh Cartão Consignado ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-05-24 08:00:00",
+    "fim": "2026-05-24 11:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-05-24 11:00:00",
+    "fim": "2026-05-24 13:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-05-24 13:00:00",
+    "fim": "2026-05-24 14:00:00"
+   }
+  }
+ },
+ {
+  "id": 8,
+  "abertura": "2026-06-01",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Vision Cartões",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-01 08:00:00",
+    "fim": "2026-06-02 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-06-02 09:00:00",
+    "fim": "2026-06-03 09:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-06-03 10:00:00",
+    "fim": "2026-06-03 11:30:00"
+   }
+  }
+ },
+ {
+  "id": 9,
+  "abertura": "2026-06-04",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "Retenção Meu+",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-04 08:00:00",
+    "fim": "2026-06-04 15:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-06-04 15:00:00",
+    "fim": "2026-06-05 08:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-06-05 08:00:00",
+    "fim": "2026-06-05 09:00:00"
+   }
+  }
+ },
+ {
+  "id": 10,
+  "abertura": "2026-06-08",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "Manual da Demanda",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-08 08:00:00",
+    "fim": "2026-06-09 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-06-09 09:00:00",
+    "fim": "2026-06-09 12:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-06-09 12:00:00",
+    "fim": "2026-06-09 13:00:00"
+   }
+  }
+ },
+ {
+  "id": 11,
+  "abertura": "2026-06-10",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Manual sistemas - 0800",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-10 08:00:00",
+    "fim": "2026-06-12 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-06-12 08:00:00",
+    "fim": "2026-06-12 09:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-06-12 09:00:00",
+    "fim": "2026-06-12 10:00:00"
+   }
+  }
+ },
+ {
+  "id": 12,
+  "abertura": "2026-06-15",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Sondagem Assertiva",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-15 08:00:00",
+    "fim": "2026-06-17 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-06-17 09:00:00",
+    "fim": "2026-06-17 12:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-06-17 12:00:00",
+    "fim": "2026-06-17 13:00:00"
+   }
+  }
+ },
+ {
+  "id": 13,
+  "abertura": "2026-06-18",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Comunicação Objetiva /  Cond. Eficiente/ Encerramento Assertivo",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-18 08:00:00",
+    "fim": "2026-06-22 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-06-22 09:00:00",
+    "fim": "2026-06-22 10:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-06-22 10:00:00",
+    "fim": "2026-06-22 11:00:00"
+   }
+  }
+ },
+ {
+  "id": 14,
+  "abertura": "2026-06-25",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Guia de Identificação Positiva",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-25 08:00:00",
+    "fim": "2026-06-25 11:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-06-25 12:00:00",
+    "fim": "2026-06-25 13:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-06-25 13:00:00",
+    "fim": "2026-06-25 13:30:00"
+   }
+  }
+ },
+ {
+  "id": 15,
+  "abertura": "2026-06-24",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Scripts de Atendimento",
+  "titulo": "Célula Reconquista NPS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-24 08:00:00",
+    "fim": "2026-06-26 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-06-26 08:00:00",
+    "fim": "2026-06-26 09:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-06-26 09:00:00",
+    "fim": "2026-06-26 09:10:00"
+   }
+  }
+ },
+ {
+  "id": 16,
+  "abertura": "2026-06-29",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Célula Reconquista NPS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-06-29 08:00:00",
+    "fim": "2026-07-02 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-02 08:00:00",
+    "fim": "2026-07-02 12:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-02 12:00:00",
+    "fim": "2026-07-02 14:00:00"
+   }
+  }
+ },
+ {
+  "id": 17,
+  "abertura": "2026-07-06",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Comunicação Assertiva - Reclame Aqui",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-06 08:00:00",
+    "fim": "2026-07-07 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-07 08:00:00",
+    "fim": "2026-07-07 08:30:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-07 09:00:00",
+    "fim": "2026-07-07 10:00:00"
+   }
+  }
+ },
+ {
+  "id": 18,
+  "abertura": "2026-07-08",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material de Reciclagem",
+  "titulo": "Cartões e Consignado Privado - Reclame Aqui ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-08 08:00:00",
+    "fim": "2026-07-09 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-09 08:00:00",
+    "fim": "2026-07-09 09:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-09 09:00:00",
+    "fim": "2026-07-09 10:00:00"
+   }
+  }
+ },
+ {
+  "id": 19,
+  "abertura": "2026-07-10",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Emissão de Boleto / Credito consignado Privado / Desenrola Brasil",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-10 08:00:00",
+    "fim": "2026-07-15 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-15 08:00:00",
+    "fim": "2026-07-15 09:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-15 10:00:00",
+    "fim": "2026-07-15 11:30:00"
+   }
+  }
+ },
+ {
+  "id": 20,
+  "abertura": "2026-07-16",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Desenrola Brasil ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-16 08:00:00",
+    "fim": "2026-07-16 13:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-16 13:30:00",
+    "fim": "2026-07-16 14:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-16 14:00:00",
+    "fim": "2026-07-16 15:00:00"
+   }
+  }
+ },
+ {
+  "id": 21,
+  "abertura": "2026-07-16",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Avaliações",
+  "titulo": "Desenrola Brasil ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-16 13:00:00",
+    "fim": "2026-07-16 13:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-16 13:30:00",
+    "fim": "2026-07-16 14:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-16 14:00:00",
+    "fim": "2026-07-16 15:00:00"
+   }
+  }
+ },
+ {
+  "id": 22,
+  "abertura": "2026-07-20",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "Mudanças Desenrola Brasil ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-20 08:00:00",
+    "fim": "2026-07-20 11:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-20 11:00:00",
+    "fim": "2026-07-20 12:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-20 12:00:00",
+    "fim": "2026-07-20 12:10:00"
+   }
+  }
+ },
+ {
+  "id": 23,
+  "abertura": "2026-07-21",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "Passo a Passo Sales Force - Reconquista NPS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-21 08:00:00",
+    "fim": "2026-07-23 10:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-23 11:00:00",
+    "fim": "2026-07-23 12:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-23 12:00:00",
+    "fim": "2026-07-23 13:00:00"
+   }
+  }
+ },
+ {
+  "id": 24,
+  "abertura": "2026-07-21",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Avaliações",
+  "titulo": "Passo a Passo Sales Force - Reconquista NPS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-21 10:00:00",
+    "fim": "2026-07-23 10:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-23 11:00:00",
+    "fim": "2026-07-23 12:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-23 12:00:00",
+    "fim": "2026-07-23 13:00:00"
+   }
+  }
+ },
+ {
+  "id": 25,
+  "abertura": "2026-07-24",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "Sonsagem e Argumentação - 1° Agendamento",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-24 08:00:00",
+    "fim": "2026-07-24 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-24 16:00:00",
+    "fim": "2026-07-24 17:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-07-24 17:00:00",
+    "fim": "2026-07-24 17:10:00"
+   }
+  }
+ },
+ {
+  "id": 26,
+  "abertura": "2026-08-03",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Tabulação - Reconquista NPS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-08-03 08:00:00",
+    "fim": "2026-08-05 08:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-08-05 08:00:00",
+    "fim": "2026-08-05 09:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-08-05 09:00:00",
+    "fim": "2026-08-05 10:00:00"
+   }
+  }
+ },
+ {
+  "id": 27,
+  "abertura": "2026-09-15",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Scripts de Atendimento",
+  "titulo": 0,
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-15 10:00:00",
+    "fim": "2026-09-15 13:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-15 13:35:00",
+    "fim": null
+   }
+  }
+ },
+ {
+  "id": 28,
+  "abertura": "2026-09-09",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "Fixação da Antecedência de 30min; Oferta ativa de consultas e exames",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-09 10:00:00",
+    "fim": "2026-09-09 11:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-09 10:30:00",
+    "fim": "2026-09-09 11:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-09 11:00:00",
+    "fim": "2026-09-09 11:00:00"
+   }
+  }
+ },
+ {
+  "id": 29,
+  "abertura": "2026-09-15",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "Post no Lorni: Vídeos Jornada de Atendimento Nota 100",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-07-23 08:00:00",
+    "fim": "2026-09-04 17:20:00"
+   },
+   "validacao": {
+    "inicio": "2026-07-23 08:00:00",
+    "fim": "2026-07-30 18:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-15 09:00:00",
+    "fim": "2026-09-18 09:00:00"
+   }
+  }
+ },
+ {
+  "id": 30,
+  "abertura": "2026-09-17",
+  "cliente": "Siclos",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT Siclos Bank",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-17 11:00:00",
+    "fim": "2026-09-17 12:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-17 11:00:00",
+    "fim": "2026-09-17 12:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-17 12:00:00",
+    "fim": "2026-09-17 12:00:00"
+   }
+  }
+ },
+ {
+  "id": 31,
+  "abertura": "2026-09-17",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "TBT - JMA ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-17 12:30:00",
+    "fim": "2026-09-17 13:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-17 13:00:00",
+    "fim": "2026-09-17 13:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-17 13:05:00",
+    "fim": "2026-09-17 13:05:00"
+   }
+  }
+ },
+ {
+  "id": 32,
+  "abertura": "2026-09-17",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT PMS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-17 12:30:00",
+    "fim": "2026-09-17 13:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-17 13:10:00",
+    "fim": "2026-09-17 13:11:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-17 13:20:00",
+    "fim": "2026-09-17 13:21:00"
+   }
+  }
+ },
+ {
+  "id": 33,
+  "abertura": "2026-09-17",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT Rede Américas",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-17 12:30:00",
+    "fim": "2026-09-17 13:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-17 13:01:00",
+    "fim": "2026-09-17 13:02:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-17 14:00:00",
+    "fim": "2026-09-17 14:00:00"
+   }
+  }
+ },
+ {
+  "id": 34,
+  "abertura": "2026-09-17",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "Destaques: Disque 125",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-17 15:00:00",
+    "fim": "2026-09-17 15:10:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-17 15:11:00",
+    "fim": "2026-09-17 15:12:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-17 15:20:00",
+    "fim": "2026-09-17 15:21:00"
+   }
+  }
+ },
+ {
+  "id": 35,
+  "abertura": "2026-09-17",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "Destaques: HBA + Tasy",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-17 15:50:00",
+    "fim": "2026-09-17 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-17 16:00:00",
+    "fim": "2026-09-17 16:01:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-17 16:10:00",
+    "fim": "2026-09-17 16:10:00"
+   }
+  }
+ },
+ {
+  "id": 36,
+  "abertura": "2026-09-18",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Scripts de Atendimento",
+  "titulo": "Jornada de atendimento - Meu+",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-18 10:00:00",
+    "fim": "2026-09-18 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-18 16:00:00",
+    "fim": "2026-09-18 16:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-18 16:10:00",
+    "fim": "2026-09-18 16:10:00"
+   }
+  }
+ },
+ {
+  "id": 37,
+  "abertura": "2026-09-21",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "Alteração na vigência do Eleve",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-21 08:00:00",
+    "fim": "2026-09-21 12:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-21 13:00:00",
+    "fim": "2026-09-21 13:10:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-21 13:10:00",
+    "fim": "2026-09-21 13:30:00"
+   }
+  }
+ },
+ {
+  "id": 38,
+  "abertura": "2026-09-21",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Abertura de caso - Suspeita de Fraude ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-21 10:00:00",
+    "fim": "2026-09-21 13:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-21 13:00:00",
+    "fim": "2026-09-25 08:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-25 08:00:00",
+    "fim": "2026-09-25 08:00:00"
+   }
+  }
+ },
+ {
+  "id": 39,
+  "abertura": "2026-09-21",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Eleve",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-21 08:00:00",
+    "fim": "2026-09-21 10:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-21 10:00:00",
+    "fim": "2026-09-21 10:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-21 10:00:00",
+    "fim": "2026-09-21 10:40:00"
+   }
+  }
+ },
+ {
+  "id": 40,
+  "abertura": "2026-09-21",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "Registro Assertivo em Sistema (linguagem)",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-21 10:00:00",
+    "fim": "2026-09-21 10:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-21 10:31:00",
+    "fim": "2026-09-21 10:35:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-21 10:40:00",
+    "fim": "2026-09-21 10:50:00"
+   }
+  }
+ },
+ {
+  "id": 41,
+  "abertura": "2026-09-22",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "Oferta da Pesquisa de Satisfação",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-22 14:00:00",
+    "fim": "2026-09-22 14:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-22 14:31:00",
+    "fim": "2026-09-22 14:40:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-22 15:00:00",
+    "fim": "2026-09-22 15:10:00"
+   }
+  }
+ },
+ {
+  "id": 42,
+  "abertura": "2026-09-24",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Cards para Reforço",
+  "titulo": "PUSH - INSS ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-24 12:00:00",
+    "fim": "2026-09-24 14:25:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-24 14:30:00",
+    "fim": "2026-09-24 14:33:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-24 14:35:00",
+    "fim": "2026-09-24 14:40:00"
+   }
+  }
+ },
+ {
+  "id": 43,
+  "abertura": "2026-09-24",
+  "cliente": "Siclos",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT Siclos Bank",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-24 16:00:00",
+    "fim": "2026-09-24 16:10:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-24 16:11:00",
+    "fim": "2026-09-24 16:15:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-24 16:16:00",
+    "fim": "2026-09-24 16:20:00"
+   }
+  }
+ },
+ {
+  "id": 44,
+  "abertura": "2026-09-24",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT PMS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-24 15:00:00",
+    "fim": "2026-09-24 15:10:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-24 15:11:00",
+    "fim": "2026-09-24 15:15:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-24 15:16:00",
+    "fim": "2026-09-24 15:20:00"
+   }
+  }
+ },
+ {
+  "id": 45,
+  "abertura": "2026-09-24",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "Vídeo #TBT Rede Américas",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-24 11:00:00",
+    "fim": "2026-09-24 12:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-24 14:00:00",
+    "fim": "2026-09-24 14:30:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-24 15:00:00",
+    "fim": "2026-09-24 15:10:00"
+   }
+  }
+ },
+ {
+  "id": 46,
+  "abertura": "2026-09-25",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Scripts de Atendimento",
+  "titulo": "Script e Mascara de atendimento - Reconquista NPS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-25 08:00:00",
+    "fim": "2026-09-28 08:00:00"
+   }
+  }
+ },
+ {
+  "id": 47,
+  "abertura": "2026-09-25",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Treinamento",
+  "titulo": "SPMJ - PMS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-25 11:00:00",
+    "fim": "2026-09-25 12:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-25 12:01:00",
+    "fim": "2026-09-25 12:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-25 13:00:00",
+    "fim": "2026-09-25 13:05:00"
+   }
+  }
+ },
+ {
+  "id": 48,
+  "abertura": "2026-09-25",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Treinamento",
+  "titulo": "SEINFRA - PMS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-25 13:00:00",
+    "fim": "2026-09-25 14:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-25 14:01:00",
+    "fim": "2026-09-25 14:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-25 14:06:00",
+    "fim": "2026-09-25 14:30:00"
+   }
+  }
+ },
+ {
+  "id": 49,
+  "abertura": "2026-09-28",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "Atualização no HUB do HBR",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-28 12:00:00",
+    "fim": "2026-09-28 12:20:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-28 12:21:00",
+    "fim": "2026-09-25 12:30:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-28 13:00:00",
+    "fim": "2026-09-28 13:15:00"
+   }
+  }
+ },
+ {
+  "id": 50,
+  "abertura": "2026-09-29",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Treinamento",
+  "titulo": "SECIS - PMS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-29 11:00:00",
+    "fim": "2026-09-29 11:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-29 11:31:00",
+    "fim": "2026-09-29 11:35:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-29 12:00:00",
+    "fim": "2026-09-29 12:03:00"
+   }
+  }
+ },
+ {
+  "id": 51,
+  "abertura": "2026-09-29",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Treinamento",
+  "titulo": "Guia de Sistemas da PMS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-29 15:00:00",
+    "fim": "2026-09-30 14:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-30 14:01:00",
+    "fim": "2026-09-30 14:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-30 14:06:00",
+    "fim": "2026-09-30 14:10:00"
+   }
+  }
+ },
+ {
+  "id": 52,
+  "abertura": "2026-09-30",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Treinamento",
+  "titulo": "SMED - PMS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-30 11:00:00",
+    "fim": "2026-09-30 11:50:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-30 12:00:00",
+    "fim": "2026-09-30 12:10:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-30 12:30:00",
+    "fim": "2026-09-30 13:00:00"
+   }
+  }
+ },
+ {
+  "id": 53,
+  "abertura": "2026-09-29",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Treinamento",
+  "titulo": "Plano de Ação - Tom de voz ",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-29 08:00:00",
+    "fim": "2026-09-29 11:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-29 15:00:00",
+    "fim": "2026-09-29 16:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-29 16:00:00",
+    "fim": "2026-09-29 16:30:00"
+   }
+  }
+ },
+ {
+  "id": 54,
+  "abertura": "2026-09-30",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Scripts de Atendimento",
+  "titulo": "Script Vendas Meu+",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-30 08:00:00",
+    "fim": "2026-09-30 14:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-30 14:00:00",
+    "fim": "2026-10-01 14:10:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-30 14:10:00",
+    "fim": "2026-09-30 14:10:00"
+   }
+  }
+ },
+ {
+  "id": 55,
+  "abertura": "2026-09-30",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": " Consignado - Módulo 1 Portabilidade Consignado INSS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-30 08:00:00",
+    "fim": "2026-10-02 10:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-02 10:00:00",
+    "fim": "2026-10-02 10:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-02 10:00:00",
+    "fim": null
+   }
+  }
+ },
+ {
+  "id": 56,
+  "abertura": "2026-09-30",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "Atualização no atendimento - Porto Seguro",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-09-30 17:00:00",
+    "fim": "2026-09-30 17:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-09-30 17:31:00",
+    "fim": "2026-09-30 17:35:00"
+   },
+   "postagem": {
+    "inicio": "2026-09-30 17:36:00",
+    "fim": "2026-09-30 17:40:00"
+   }
+  }
+ },
+ {
+  "id": 57,
+  "abertura": "2026-10-02",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "Ações Preventivas do mês de Outubro",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-02 15:00:00",
+    "fim": "2026-10-02 15:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-02 15:31:00",
+    "fim": "2026-10-02 15:35:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-02 15:40:00",
+    "fim": "2026-10-02 15:45:00"
+   }
+  }
+ },
+ {
+  "id": 58,
+  "abertura": "2026-10-02",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "GEAP - Suspensão de Atendimento",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-02 15:50:00",
+    "fim": "2026-10-02 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-02 16:01:00",
+    "fim": "2026-10-02 16:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-02 16:06:00",
+    "fim": "2026-10-02 16:10:00"
+   }
+  }
+ },
+ {
+  "id": 59,
+  "abertura": "2026-10-02",
+  "cliente": "Buser",
+  "analista": "Hiago",
+  "tipo": "Material para Treinamento",
+  "titulo": "Pit Stop Buser",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-02 13:30:00",
+    "fim": "2026-10-03 17:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-03 17:01:00",
+    "fim": "2026-10-03 17:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-03 17:06:00",
+    "fim": "2026-10-02 17:10:00"
+   }
+  }
+ },
+ {
+  "id": 60,
+  "abertura": "2026-10-07",
+  "cliente": "Siclos",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "COMUNICADO: Atendimento Siclos Bank",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-07 13:00:00",
+    "fim": "2026-10-07 13:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-07 13:01:00",
+    "fim": "2026-10-07 13:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-07 13:06:00",
+    "fim": "2026-10-07 13:10:00"
+   }
+  }
+ },
+ {
+  "id": 61,
+  "abertura": "2026-10-08",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT Rede Américas",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-08 14:00:00",
+    "fim": "2026-10-08 14:05:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-08 14:06:00",
+    "fim": "2026-10-08 14:10:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-08 14:11:00",
+    "fim": "2026-10-08 14:15:00"
+   }
+  }
+ },
+ {
+  "id": 62,
+  "abertura": "2026-10-09",
+  "cliente": "Siclos",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "Wiki: Guia de Telas do APP",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-09 12:00:00",
+    "fim": "2026-10-09 13:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-13 10:00:00",
+    "fim": "2026-10-13 10:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-13 11:15:00",
+    "fim": "2026-10-13 11:20:00"
+   }
+  }
+ },
+ {
+  "id": 63,
+  "abertura": "2026-10-09",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT - Eleve",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-09 12:00:00",
+    "fim": "2026-10-09 12:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-09 12:30:00",
+    "fim": "2026-10-09 12:35:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-09 12:35:00",
+    "fim": "2026-10-09 12:40:00"
+   }
+  }
+ },
+ {
+  "id": 64,
+  "abertura": "2026-10-09",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT - Eleve",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-09 16:00:00",
+    "fim": "2026-10-09 16:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-09 16:30:00",
+    "fim": "2026-10-09 16:35:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-09 16:35:00",
+    "fim": "2026-10-09 16:40:00"
+   }
+  }
+ },
+ {
+  "id": 65,
+  "abertura": "2026-10-14",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Roteiro de Vídeo",
+  "titulo": "Roteiro Minuto Mercantil - Módulo 1 O que é Portabilidade do Consignado INSS?",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-14 09:30:00",
+    "fim": "2026-10-14 09:50:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-14 09:50:00",
+    "fim": "2026-10-14 09:55:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-14 10:00:00",
+    "fim": "2026-10-14 10:05:00"
+   }
+  }
+ },
+ {
+  "id": 66,
+  "abertura": "2026-10-14",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "Card: Escuta ativa e Registro Assertivo",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-14 10:30:00",
+    "fim": "2026-10-14 11:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-14 11:01:00",
+    "fim": "2026-10-14 11:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-14 11:06:00",
+    "fim": "2026-10-14 11:10:00"
+   }
+  }
+ },
+ {
+  "id": 67,
+  "abertura": "2026-10-14",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "Consignado - Módulo 2 Consignado Privado",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-14 11:00:00",
+    "fim": "2026-10-15 10:15:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-15 10:15:00",
+    "fim": "2026-10-15 10:20:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-15 10:20:00",
+    "fim": "2026-10-15 10:25:00"
+   }
+  }
+ },
+ {
+  "id": 68,
+  "abertura": "2026-10-15",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "Minuto Mercantil - O que é portabilidade Consignado INSS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-15 10:25:00",
+    "fim": "2026-10-15 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-15 16:00:00",
+    "fim": "2026-10-15 16:10:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-15 16:10:00",
+    "fim": "2026-10-15 16:15:00"
+   }
+  }
+ },
+ {
+  "id": 69,
+  "abertura": "2026-10-15",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Cards para Reforço",
+  "titulo": "Card comunicação Consignado - Curso",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-15 12:23:00",
+    "fim": "2026-10-15 12:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-15 12:30:00",
+    "fim": "2026-10-15 12:35:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-15 12:35:00",
+    "fim": "2026-10-15 12:40:00"
+   }
+  }
+ },
+ {
+  "id": 70,
+  "abertura": "2026-10-16",
+  "cliente": "Rede Américas",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "Vídeo: A importância da verificação de elegibilidade",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-15 12:00:00",
+    "fim": "2026-10-15 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-15 16:01:00",
+    "fim": "2026-10-15 16:05:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-16 09:15:00",
+    "fim": "2026-10-16 09:20:00"
+   }
+  }
+ },
+ {
+  "id": 71,
+  "abertura": "2026-10-16",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT PMS",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-16 08:00:00",
+    "fim": "2026-10-16 08:30:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-16 08:31:00",
+    "fim": "2026-10-16 08:35:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-16 08:40:00",
+    "fim": "2026-10-16 08:50:00"
+   }
+  }
+ },
+ {
+  "id": 72,
+  "abertura": "2026-10-16",
+  "cliente": "Siclos",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "#TBT Siclos Bank",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-16 08:40:00",
+    "fim": "2026-10-16 08:50:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-16 08:51:00",
+    "fim": "2026-10-16 09:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-16 09:01:00",
+    "fim": "2026-10-16 09:10:00"
+   }
+  }
+ },
+ {
+  "id": 73,
+  "abertura": "2026-10-19",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Material para Postagem",
+  "titulo": "Vídeo: Minuto Prefs: Iluminação Pública - SEMOP",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-19 09:00:00",
+    "fim": "2026-10-19 13:40:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-19 13:41:00",
+    "fim": "2026-10-19 14:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-19 14:30:00",
+    "fim": "2026-10-19 14:35:00"
+   }
+  }
+ },
+ {
+  "id": 74,
+  "abertura": "2026-10-19",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "Minuto Mercantil - Saldo Devedor portabilidade consignado",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-19 15:00:00",
+    "fim": "2026-10-19 17:54:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-19 17:54:00",
+    "fim": "2026-10-19 18:00:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-19 18:00:00",
+    "fim": "2026-10-19 18:05:00"
+   }
+  }
+ },
+ {
+  "id": 75,
+  "abertura": "2026-10-20",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": " Consignado - Módulo 3 Cartão Consignado",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-20 08:00:00",
+    "fim": "2026-10-20 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-20 16:00:00",
+    "fim": "2026-10-20 16:10:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-20 16:10:00",
+    "fim": "2026-10-20 16:05:00"
+   }
+  }
+ },
+ {
+  "id": 76,
+  "abertura": "2026-10-21",
+  "cliente": "Prefeitura de Salvador",
+  "analista": "Hiago",
+  "tipo": "Cards para Reforço",
+  "titulo": "Card: LIMPURB - Remoção de entulho",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-21 12:00:00",
+    "fim": "2026-10-21 12:15:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-21 12:16:00",
+    "fim": "2026-10-21 12:20:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-21 13:30:00",
+    "fim": "2026-10-21 13:35:00"
+   }
+  }
+ },
+ {
+  "id": 77,
+  "abertura": "2026-10-21",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "Minuto Mercantil - Troco da portabilidade Consignado",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-21 08:00:00",
+    "fim": "2026-10-21 16:00:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-21 16:00:00",
+    "fim": "2026-10-21 16:10:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-21 16:10:00",
+    "fim": "2026-10-21 16:15:00"
+   }
+  }
+ },
+ {
+  "id": 78,
+  "abertura": "2026-10-22",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "TBT - Cartões",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-22 12:00:00",
+    "fim": "2026-10-22 12:20:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-22 12:20:00",
+    "fim": "2026-10-22 12:30:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-22 12:30:00",
+    "fim": "2026-10-22 12:35:00"
+   }
+  }
+ },
+ {
+  "id": 79,
+  "abertura": "2026-10-22",
+  "cliente": "Mercantil",
+  "analista": "Fabiane",
+  "tipo": "Material para Postagem",
+  "titulo": "TBT - Cartões",
+  "etapas": {
+   "criacao": {
+    "inicio": "2026-10-22 16:00:00",
+    "fim": "2026-10-22 16:20:00"
+   },
+   "validacao": {
+    "inicio": "2026-10-22 16:20:00",
+    "fim": "2026-10-22 16:30:00"
+   },
+   "postagem": {
+    "inicio": "2026-10-22 16:30:00",
+    "fim": "2026-10-22 16:35:00"
+   }
+  }
+ }
+]
