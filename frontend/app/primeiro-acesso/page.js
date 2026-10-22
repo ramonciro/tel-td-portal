@@ -58,6 +58,8 @@ export default function PrimeiroAcessoPage() {
           ? "/salas"
           : perfil === "superintendente"
           ? "/dashboard"
+          : perfil === "analista_conteudo"
+          ? "/conteudo"
           : ["coordenador_rs", "gestor_rs"].includes(perfil)
           ? "/rs/rps"
           : "/inicio"
