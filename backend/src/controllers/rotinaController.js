@@ -22,6 +22,7 @@ const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
 const { registrarAuditoria } = require("../services/auditoria");
 const R = require("../lib/rotina");
+const { adicionaisDaTurma } = require("../lib/instrutoresTurma");
 const AV = require("../lib/rotinaAvaliacao");
 
 const GESTAO = ["coordenador", "assistente_treinamento", "super_admin"];
@@ -47,12 +48,18 @@ async function buscarTurma(req, id) {
     `SELECT * FROM treinamentos WHERE id = ?${empresaId ? " AND empresa_id = ?" : ""} LIMIT 1`,
     empresaId ? [id, empresaId] : [id]
   );
-  return rows[0] || null;
+  const turma = rows[0] || null;
+  // TBT (22/10/2026): instrutores adicionais da turma — ver lib/instrutoresTurma.js
+  if (turma) turma.adicionais = (await adicionaisDaTurma(turma.id)).map(chave);
+  return turma;
 }
 
 function podeEditarTurma(req, t) {
   if (ehGestao(req)) return true;
-  return perfilDe(req) === "instrutor" && !!t.instrutor && chave(t.instrutor) === chave(req.user?.nome);
+  if (perfilDe(req) !== "instrutor") return false;
+  const eu = chave(req.user?.nome);
+  if (!eu) return false;
+  return (!!t.instrutor && chave(t.instrutor) === eu) || (Array.isArray(t.adicionais) && t.adicionais.includes(eu));
 }
 
 function podeVerTurma(req, t) {
@@ -73,7 +80,7 @@ async function exigirTurma(req, res, { editar = false } = {}) {
     return null;
   }
   if (editar ? !podeEditarTurma(req, t) : !podeVerTurma(req, t)) {
-    erro(res, 403, editar ? "Você só pode editar a rotina das suas próprias turmas." : "Sem acesso a esta turma.");
+    erro(res, 403, editar ? "Você só pode editar a rotina das turmas em que é instrutor." : "Sem acesso a esta turma.");
     return null;
   }
   return t;

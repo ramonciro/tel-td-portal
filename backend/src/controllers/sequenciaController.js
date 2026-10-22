@@ -12,6 +12,7 @@
  * presenca_aulas, que já existem.
  */
 const db = require("../lib/db");
+const { condicaoInstrutor } = require("../lib/instrutoresTurma");
 
 const JANELA_DIAS = 120;
 const hojeISO = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Bahia" });
@@ -27,7 +28,7 @@ async function minhaSequencia(req, res) {
     if (!nome) return res.json({ ok: true, aplicavel: false });
     const hoje = hojeISO();
     const desde = somarDias(hoje, -JANELA_DIAS);
-    const params = [nome.toLowerCase(), desde, hoje];
+    const params = [nome.toLowerCase(), nome.toLowerCase(), desde, hoje];
     let tenant = "";
     if (req.empresaId) { tenant = " AND t.empresa_id = ?"; params.push(req.empresaId); }
 
@@ -36,7 +37,7 @@ async function minhaSequencia(req, res) {
               EXISTS(SELECT 1 FROM presenca_aulas p WHERE p.turma_aula_id = a.id) AS lancada
          FROM turma_aulas a
          JOIN treinamentos t ON t.id = a.treinamento_id
-        WHERE LOWER(TRIM(t.instrutor)) = ?
+        WHERE ${condicaoInstrutor("t")}
           AND a.data_aula BETWEEN ? AND ?
           AND LOWER(COALESCE(t.status, '')) NOT IN ('cancelada','cancelado')
           AND COALESCE(a.status_execucao, '') <> 'cancelada'${tenant}`,
