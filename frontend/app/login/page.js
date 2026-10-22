@@ -131,6 +131,8 @@ export default function LoginPage() {
           ? "/salas"
           : perfil === "superintendente"
           ? "/dashboard"
+          : perfil === "analista_conteudo"
+          ? "/conteudo"
           : "/inicio";
         router.push(destino);
       }
