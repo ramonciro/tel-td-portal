@@ -34,7 +34,28 @@ const EMPTY_FORM = {
   sala_id: "",
   sala_outro_local: "",
   subtipo: "",
+  // TBT (22/10/2026): instrutores adicionais da turma (o principal fica em `instrutor`)
+  instrutores_adicionais: [],
 };
+
+// TBT (22/10/2026): a turma tem o instrutor principal (`instrutor`) e, às vezes,
+// instrutores adicionais. "Minha turma" vale para os dois.
+function nomesInstrutores(item) {
+  const vistos = new Set();
+  const out = [];
+  for (const n of [item?.instrutor, ...(Array.isArray(item?.instrutores_adicionais) ? item.instrutores_adicionais : [])]) {
+    const nome = String(n || "").trim();
+    if (!nome || vistos.has(nome.toLowerCase())) continue;
+    vistos.add(nome.toLowerCase());
+    out.push(nome);
+  }
+  return out;
+}
+
+function ehDoInstrutor(item, nome) {
+  const alvo = String(nome || "").trim().toLowerCase();
+  return !!alvo && nomesInstrutores(item).some((n) => n.toLowerCase() === alvo);
+}
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -309,7 +330,7 @@ function TurmaCard({ item, necessidade, resumo, salaNome, sala, canEdit, canDele
 
       <div style={cardBottom}>
         <div style={ownerLine}>
-          <span>{item.instrutor || "Sem instrutor"}</span>
+          <span>{nomesInstrutores(item).join(", ") || "Sem instrutor"}</span>
           {item.supervisor && <span>· {item.supervisor}</span>}
         </div>
         <div style={cardActions}>
@@ -395,7 +416,7 @@ function TreinamentosConteudo() {
     try {
       setLoading(true);
       setError("");
-      const [turmasData, usuariosData, clientesData, resumoData, necessidadesData, salasData, subtiposData] = await Promise.all([
+      const [turmasData, usuariosData, clientesData, resumoData, necessidadesData, salasData, subtiposData, adicionaisData] = await Promise.all([
         apiFetch("/treinamentos"),
         apiFetch("/usuarios").catch(() => []),
         apiFetch("/clientes").catch(() => []),
@@ -403,8 +424,10 @@ function TreinamentosConteudo() {
         apiFetch("/necessidades").catch(() => null),
         apiFetch("/salas").catch(() => []),
         apiFetch("/subtipos").catch(() => []),
+        apiFetch("/treinamentos-instrutores").catch(() => null),
       ]);
-      setTurmas(Array.isArray(turmasData) ? turmasData : []);
+      const mapaAdicionais = (adicionaisData && adicionaisData.mapa) || {};
+      setTurmas(Array.isArray(turmasData) ? turmasData.map((x) => ({ ...x, instrutores_adicionais: mapaAdicionais[x.id] || [] })) : []);
       setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
       setClientes(Array.isArray(clientesData) ? clientesData : []);
       setResumoPresenca(Array.isArray(resumoData?.itens) ? resumoData.itens : []);
@@ -460,7 +483,7 @@ function TreinamentosConteudo() {
   }, [necessidades, form.cliente]);
 
   const kpis = useMemo(() => {
-    const base = isInstructor ? turmas.filter((x) => String(x.instrutor || "").toLowerCase() === nomeLogado.toLowerCase()) : turmas;
+    const base = isInstructor ? turmas.filter((x) => ehDoInstrutor(x, nomeLogado)) : turmas;
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
     const andamento = base.filter((x) => getStatus(x) === "em_andamento").length;
     const proximas = base.filter((x) => {
@@ -489,7 +512,7 @@ function TreinamentosConteudo() {
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
     const limite = new Date(hoje.getTime() + 30 * 86400000);
     return turmas.filter((item) => {
-      if (onlyMine && String(item.instrutor || "").toLowerCase() !== nomeLogado.toLowerCase()) return false;
+      if (onlyMine && !ehDoInstrutor(item, nomeLogado)) return false;
       if (statusFilter !== "todas" && getStatus(item) !== statusFilter) return false;
       if (clientFilter !== "todos" && String(item.cliente || "") !== clientFilter) return false;
       if (periodFilter !== "todos") {
@@ -503,7 +526,7 @@ function TreinamentosConteudo() {
       }
       if (!q) return true;
       const necessidade = necessidadePorId.get(Number(item.necessidade_id));
-      const haystack = [item.tema, item.cliente, item.instrutor, item.supervisor, necessidade?.tema].join(" ").toLowerCase();
+      const haystack = [item.tema, item.cliente, ...nomesInstrutores(item), item.supervisor, necessidade?.tema].join(" ").toLowerCase();
       return haystack.includes(q);
     });
   }, [turmas, search, statusFilter, clientFilter, periodFilter, onlyMine, nomeLogado, necessidadePorId]);
@@ -524,6 +547,7 @@ function TreinamentosConteudo() {
       cliente: item.cliente || "",
       necessidade_id: item.necessidade_id ? String(item.necessidade_id) : "",
       instrutor: item.instrutor || "",
+      instrutores_adicionais: Array.isArray(item.instrutores_adicionais) ? item.instrutores_adicionais : [],
       supervisor: item.supervisor || "",
       publico: item.publico || "",
       carga_horaria: item.carga_horaria ?? "",
@@ -614,7 +638,7 @@ function TreinamentosConteudo() {
     try {
       setSaving(true); setError(""); setSuccess("");
       const payload = {
-        tema: form.tema.trim(), cliente: form.cliente, necessidade_id: form.necessidade_id ? Number(form.necessidade_id) : null, instrutor: isInstructor ? nomeLogado : form.instrutor,
+        tema: form.tema.trim(), cliente: form.cliente, necessidade_id: form.necessidade_id ? Number(form.necessidade_id) : null, instrutor: isInstructor && !editingId ? nomeLogado : form.instrutor,
         supervisor: perfil === "supervisor" ? nomeLogado : form.supervisor, publico: form.publico, carga_horaria: form.carga_horaria,
         participantes: Number(form.participantes || 0), participantes_previstos: Number(form.participantes || 0), status: form.status || "planejado",
         data_inicio: form.data_inicio, data_fim: form.data_fim, data: form.data_inicio, descricao: buildDescricao(form),
@@ -627,8 +651,19 @@ function TreinamentosConteudo() {
         sala_outro_local: form.sala_id === "outro" ? form.sala_outro_local.trim() : null,
         subtipo: form.subtipo || null,
       };
+      let turmaId = editingId;
       if (editingId) await apiFetch(`/treinamentos/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
-      else await apiFetch("/treinamentos", { method: "POST", body: JSON.stringify(payload) });
+      else {
+        const criada = await apiFetch("/treinamentos", { method: "POST", body: JSON.stringify(payload) });
+        turmaId = criada?.id || null;
+      }
+      // TBT: instrutores adicionais (só a gestão mexe na lista; o instrutor vê a dele)
+      if (!isInstructor && turmaId && (editingId || form.instrutores_adicionais.length)) {
+        await apiFetch(`/treinamentos/${turmaId}/instrutores`, {
+          method: "PUT",
+          body: JSON.stringify({ instrutores: form.instrutores_adicionais }),
+        });
+      }
       setSuccess(editingId ? "Turma atualizada com sucesso." : "Turma criada com sucesso.");
       setModalOpen(false);
       await carregar();
@@ -807,7 +842,26 @@ function TreinamentosConteudo() {
               <Field label="Turma / treinamento" required error={formErrors.tema}><Input value={form.tema} onChange={(e) => setField("tema", e.target.value)} placeholder="Ex.: Reciclagem de Crédito" /></Field>
               <Field label="Cliente" required error={formErrors.cliente}><Select value={form.cliente} onChange={(e) => setField("cliente", e.target.value)} options={clientesOptions.map((x) => ({ value: x, label: x }))} placeholder="Selecione o cliente" /></Field>
               <Field label="Público"><Input value={form.publico} onChange={(e) => setField("publico", e.target.value)} placeholder="Ex.: Operação, onboarding, reciclagem" /></Field>
-              <Field label="Instrutor" required error={formErrors.instrutor}><Select value={form.instrutor} disabled={isInstructor} onChange={(e) => setField("instrutor", e.target.value)} options={instrutores.map((x) => ({ value: x.nome, label: usuarioLabel(x) }))} placeholder="Selecione o instrutor" /></Field>
+              <Field label="Instrutor" required error={formErrors.instrutor}><Select value={form.instrutor} disabled={isInstructor} onChange={(e) => setField("instrutor", e.target.value)} options={[...instrutores.map((x) => ({ value: x.nome, label: usuarioLabel(x) })), ...(form.instrutor && !instrutores.some((x) => x.nome === form.instrutor) ? [{ value: form.instrutor, label: form.instrutor }] : [])]} placeholder="Selecione o instrutor" /></Field>
+              <Field label="Instrutores adicionais" hint={isInstructor ? "Quem cadastra a lista é a coordenação. Todos os instrutores da turma preenchem a chamada, o diário e a rotina e recebem as horas cheias." : "Opcional — para ações com mais de um instrutor, como a TBT. Todos veem a turma, preenchem chamada, diário e rotina e recebem as horas cheias."}>
+                {isInstructor ? (
+                  <div style={chipsWrap}>{form.instrutores_adicionais.length ? form.instrutores_adicionais.map((n) => <span key={n} style={chipStyle}>{n}</span>) : <span style={{ color: "#94a3b8", fontSize: 13 }}>Nenhum</span>}</div>
+                ) : (
+                  <>
+                    <Select value="" onChange={(e) => { const v = e.target.value; if (v) setField("instrutores_adicionais", [...form.instrutores_adicionais, v]); }}
+                      options={instrutores.filter((x) => x.nome !== form.instrutor && !form.instrutores_adicionais.includes(x.nome)).map((x) => ({ value: x.nome, label: usuarioLabel(x) }))} placeholder="+ Adicionar instrutor" />
+                    {form.instrutores_adicionais.length > 0 && (
+                      <div style={chipsWrap}>
+                        {form.instrutores_adicionais.map((n) => (
+                          <span key={n} style={chipStyle}>{n}
+                            <button type="button" aria-label={`Remover ${n}`} style={chipRemove} onClick={() => setField("instrutores_adicionais", form.instrutores_adicionais.filter((x) => x !== n))}>×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </Field>
               <Field label="Supervisor"><Select value={form.supervisor} disabled={perfil === "supervisor"} onChange={(e) => setField("supervisor", e.target.value)} options={supervisores.map((x) => ({ value: x.nome, label: usuarioLabel(x) }))} placeholder="Selecione o supervisor" /></Field>
             </FormSection>
 
@@ -906,6 +960,9 @@ const cardBottom = { display: "flex", justifyContent: "space-between", alignItem
 const ownerLine = { display: "flex", flexWrap: "wrap", gap: 7, color: "#64748b", fontSize: 11 };
 const cardActions = { display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" };
 const primarySmall = { border: 0, background: "#1d4ed8", color: "#fff", borderRadius: 9, padding: "8px 11px", fontWeight: 800, fontSize: 11, cursor: "pointer" };
+const chipsWrap = { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 };
+const chipStyle = { display: "inline-flex", alignItems: "center", gap: 6, background: "#dbeafe", color: "#1e3a8a", borderRadius: 999, padding: "5px 6px 5px 11px", fontWeight: 650, fontSize: 12.5 };
+const chipRemove = { border: 0, background: "#fff", color: "#1e3a8a", borderRadius: "50%", width: 18, height: 18, lineHeight: "16px", fontSize: 13, cursor: "pointer", padding: 0 };
 const ghostButton = { border: "1px solid #e2e8f0", background: "#fff", color: "#475569", borderRadius: 9, padding: "8px 10px", fontWeight: 750, fontSize: 11, cursor: "pointer" };
 const dangerGhost = { ...ghostButton, color: "#b91c1c", borderColor: "#fecaca" };
 const emptyState = { display: "grid", placeItems: "center", gap: 7, minHeight: 260, background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 20, color: "#64748b", textAlign: "center", padding: 24 };
