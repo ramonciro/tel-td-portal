@@ -99,7 +99,7 @@ function abrirConexaoDump() {
     dateStrings: true,
     supportBigNumbers: true,
     bigNumberStrings: true,
-    typeCast: (field, next) => (field.type === "JSON" ? field.string() : next()),
+    typeCast: (field, next) => (field.type === "JSON" ? field.string("utf8") : next()),
   });
 }
 
