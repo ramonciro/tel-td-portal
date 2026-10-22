@@ -448,6 +448,11 @@ function CapacidadePageInner() {
                 <div style={{ fontSize: 11, color: "#94a3b8" }}>
                   {fmt(hcRealizadoSemMetaPeriodo)}h vieram de quem não tem meta cadastrada
                 </div>
+                {Number(ind.horas_tbt_repetidas_periodo || 0) > 0 && (
+                  <div style={{ fontSize: 11, color: "#94a3b8", maxWidth: 300, marginLeft: "auto" }}>
+                    Ações com mais de um instrutor (TBT) contam uma vez no total; em cada instrutor entram cheias (+{fmt(ind.horas_tbt_repetidas_periodo)}h somadas nos instrutores).
+                  </div>
+                )}
               </div>
             </div>
 
