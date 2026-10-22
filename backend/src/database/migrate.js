@@ -2416,6 +2416,24 @@ async function runMigrations() {
       console.log(`  ↳ berço das RPs não concluído (${error.message}) — seguindo`);
     }
 
+    // 53b. Chamada com data antiga (22/10/2026): presenca_aulas.data_aula é
+    //      gravada quando a chamada é criada e não acompanhava a edição da
+    //      data da aula no Cronograma. O Diário de bordo agrupava por essa data
+    //      e divergia do Painel por dia (um dia com o dobro de presentes, outro
+    //      "sem chamada"). Acerta o que já está gravado; a edição passou a
+    //      sincronizar sozinha (turmaAulasController.updateTurmaAula).
+    try {
+      const [r] = await pool.query(`
+        UPDATE presenca_aulas pa
+        JOIN turma_aulas ta ON ta.id = pa.turma_aula_id
+        SET pa.data_aula = ta.data_aula
+        WHERE pa.data_aula <> ta.data_aula
+      `);
+      console.log(`  ↳ datas da chamada alinhadas ao Cronograma: ${r.affectedRows || 0} registro(s)`);
+    } catch (error) {
+      console.log(`  ↳ alinhamento das datas da chamada não concluído (${error.message}) — seguindo`);
+    }
+
     // 54. "Erro ao criar jornada" (13/10/2026) — ver ensureStatusVarchar().
     await ensureStatusVarchar("jornadas_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("jornadas_etapas", 30, "planejada");
