@@ -17,6 +17,7 @@
 const pool = require("./db");
 const R = require("./rotina");
 const { nomesAvaliacaoTecnica } = require("./subtipos");
+const { mapaAdicionais, todosOsInstrutores } = require("./instrutoresTurma");
 
 const chave = (s) => String(s || "").trim().toLowerCase();
 const semAcento = (s) => chave(s).normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -77,8 +78,10 @@ async function calcularTurmas({ empresaId, de, ate, cliente, instrutor, podeVer 
        FROM treinamentos t WHERE ${where.join(" AND ")} ORDER BY COALESCE(t.data_inicio, t.data), t.id`,
     params
   );
-  let turmas = turmasBrutas;
-  if (instrutor) turmas = turmas.filter((t) => chave(t.instrutor) === chave(instrutor));
+  // TBT: a turma pode ter instrutores adicionais; quem é adicional também "tem" a turma.
+  const adic = await mapaAdicionais(empresaId);
+  let turmas = turmasBrutas.map((t) => ({ ...t, _adicionais: adic.get(t.id) || [] }));
+  if (instrutor) turmas = turmas.filter((t) => chave(t.instrutor) === chave(instrutor) || t._adicionais.some((n) => chave(n) === chave(instrutor)));
   if (podeVer) turmas = turmas.filter((t) => podeVer(t));
   if (!turmas.length) return [];
 
@@ -266,7 +269,8 @@ async function calcularTurmas({ empresaId, de, ate, cliente, instrutor, podeVer 
     if (!pend.length && inicio && inicio > hoje) farol = "cinza";
 
     linhas.push({
-      id: t.id, tema: t.tema, cliente: t.cliente, instrutor: t.instrutor || null, subtipo: t.subtipo || null,
+      id: t.id, tema: t.tema, cliente: t.cliente, instrutor: t.instrutor || null,
+      instrutores_adicionais: t._adicionais || [], subtipo: t.subtipo || null,
       modo: avTec ? "avaliacao_tecnica" : "formacao_continuada", status: t.status || null,
       inicio, fim, farol,
       rotina_aberta: rotinaAberta,
@@ -287,16 +291,19 @@ async function calcularTurmas({ empresaId, de, ate, cliente, instrutor, podeVer 
 function resumirInstrutores(turmas) {
   const mapa = new Map();
   for (const t of turmas) {
-    const nome = String(t.instrutor || "").trim() || "Sem instrutor";
-    const a = mapa.get(nome) || { instrutor: nome, turmas: 0, num: 0, den: 0, vermelhas: 0, amarelas: 0, verdes: 0, pendencias: 0 };
-    a.turmas += 1;
-    a.num += t._num;
-    a.den += t._den;
-    if (t.farol === "vermelho") a.vermelhas += 1;
-    else if (t.farol === "amarelo") a.amarelas += 1;
-    else if (t.farol === "verde") a.verdes += 1;
-    a.pendencias += t.pendencias.length;
-    mapa.set(nome, a);
+    // A turma conta cheia para o principal e para cada instrutor adicional (TBT).
+    const nomes = todosOsInstrutores(t.instrutor, t.instrutores_adicionais || []);
+    for (const nome of (nomes.length ? nomes : ["Sem instrutor"])) {
+      const a = mapa.get(nome) || { instrutor: nome, turmas: 0, num: 0, den: 0, vermelhas: 0, amarelas: 0, verdes: 0, pendencias: 0 };
+      a.turmas += 1;
+      a.num += t._num;
+      a.den += t._den;
+      if (t.farol === "vermelho") a.vermelhas += 1;
+      else if (t.farol === "amarelo") a.amarelas += 1;
+      else if (t.farol === "verde") a.verdes += 1;
+      a.pendencias += t.pendencias.length;
+      mapa.set(nome, a);
+    }
   }
   return [...mapa.values()]
     .map((a) => ({

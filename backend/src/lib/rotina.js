@@ -17,6 +17,7 @@
  *    trabalho já está dentro da CH da turma.
  */
 const pool = require("./db");
+const { turmasPorInstrutorSql } = require("./instrutoresTurma");
 
 /* ───────────────────────── modelos padrão ───────────────────────── */
 
@@ -319,13 +320,14 @@ async function getResumoRotinaPorInstrutor({ instrutores, meses, empresaId }) {
   // Aderência: turmas de Avaliação Técnica do instrutor com a rotina aberta.
   try {
     const hoje = hojeBR();
+    const turmasPorInstrutor = await turmasPorInstrutorSql();
     const [turmas] = await pool.query(
-      `SELECT TRIM(t.instrutor) AS instrutor,
+      `SELECT t.instrutor_ref AS instrutor,
               (SELECT COUNT(*) FROM rotina_checklist c WHERE c.treinamento_id = t.id) AS check_total,
               (SELECT COUNT(*) FROM rotina_checklist c WHERE c.treinamento_id = t.id AND c.resposta IS NOT NULL) AS check_resp,
               (SELECT COUNT(*) FROM rotina_tarefas x WHERE x.treinamento_id = t.id AND x.feito = 1) AS tar_feitas
-         FROM treinamentos t
-        WHERE TRIM(t.instrutor) IN (${instSql})
+         FROM ${turmasPorInstrutor} t
+        WHERE t.instrutor_ref IN (${instSql})
           AND (YEAR(COALESCE(t.data_inicio, t.data)), MONTH(COALESCE(t.data_inicio, t.data))) IN (${mesesSql})
           AND EXISTS (SELECT 1 FROM rotina_checklist c0 WHERE c0.treinamento_id = t.id)${empresaId ? " AND t.empresa_id = ?" : ""}`,
       [...instrutores, ...mesesParams, ...(empresaId ? [empresaId] : [])]
@@ -339,10 +341,10 @@ async function getResumoRotinaPorInstrutor({ instrutores, meses, empresaId }) {
     }
     // Responsabilidades vencidas e não feitas entram só no denominador.
     const [venc] = await pool.query(
-      `SELECT TRIM(t.instrutor) AS instrutor, x.ancora, x.offset_dias, x.dias_uteis,
+      `SELECT t.instrutor_ref AS instrutor, x.ancora, x.offset_dias, x.dias_uteis,
               COALESCE(t.data_inicio, t.data) AS ini, t.data_fim
-         FROM rotina_tarefas x JOIN treinamentos t ON t.id = x.treinamento_id
-        WHERE x.feito = 0 AND x.ancora <> 'continuo' AND TRIM(t.instrutor) IN (${instSql})
+         FROM rotina_tarefas x JOIN ${turmasPorInstrutor} t ON t.id = x.treinamento_id
+        WHERE x.feito = 0 AND x.ancora <> 'continuo' AND t.instrutor_ref IN (${instSql})
           AND (YEAR(COALESCE(t.data_inicio, t.data)), MONTH(COALESCE(t.data_inicio, t.data))) IN (${mesesSql})${empresaId ? " AND t.empresa_id = ?" : ""}`,
       [...instrutores, ...mesesParams, ...(empresaId ? [empresaId] : [])]
     );

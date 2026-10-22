@@ -59,4 +59,60 @@ function todosOsInstrutores(principal, adicionais = []) {
   return out;
 }
 
-module.exports = { chave, condicaoInstrutor, adicionaisDaTurma, ehInstrutorAdicional, todosOsInstrutores };
+// A tabela treinamento_instrutores só existe depois da migração; consulta em cache
+// por 60 s para os relatórios não testarem a cada chamada.
+let _disp = { ok: false, ts: 0 };
+async function adicionaisDisponiveis() {
+  const agora = Date.now();
+  if (agora - _disp.ts < 60000) return _disp.ok;
+  try {
+    await pool.query("SELECT 1 FROM treinamento_instrutores LIMIT 1");
+    _disp = { ok: true, ts: agora };
+  } catch (_) {
+    _disp = { ok: false, ts: agora };
+  }
+  return _disp.ok;
+}
+
+/**
+ * Tabela derivada "uma linha por (turma, instrutor)": as colunas de treinamentos
+ * mais `instrutor_ref` (o instrutor daquela linha — principal ou adicional).
+ * É o que faz cada instrutor ver a turma inteira (horas cheias, NPS, avaliação)
+ * nos relatórios POR INSTRUTOR. Relatórios de TOTAL continuam em `treinamentos`
+ * (uma linha por turma), para a ação não contar duas vezes.
+ *   FROM ${await turmasPorInstrutorSql()} t   →   use t.instrutor_ref
+ */
+async function turmasPorInstrutorSql() {
+  const base = "SELECT t0.*, TRIM(t0.instrutor) AS instrutor_ref FROM treinamentos t0";
+  if (!(await adicionaisDisponiveis())) return `(${base})`;
+  return `(${base}
+    UNION ALL
+    SELECT t0.*, TRIM(ti.instrutor) AS instrutor_ref
+      FROM treinamentos t0
+      JOIN treinamento_instrutores ti ON ti.treinamento_id = t0.id
+     WHERE TRIM(ti.instrutor) <> ''
+       AND LOWER(TRIM(ti.instrutor)) <> LOWER(TRIM(COALESCE(t0.instrutor, ''))))`;
+}
+
+/** Mapa treinamento_id → [nomes dos adicionais], para quem já tem a lista de turmas em memória. */
+async function mapaAdicionais(empresaId = null, db = pool) {
+  const out = new Map();
+  if (!(await adicionaisDisponiveis())) return out;
+  const [rows] = await db.query(
+    `SELECT ti.treinamento_id, TRIM(ti.instrutor) AS instrutor
+       FROM treinamento_instrutores ti
+       ${empresaId ? "JOIN treinamentos t ON t.id = ti.treinamento_id WHERE t.empresa_id = ?" : ""}
+      ORDER BY ti.treinamento_id, ti.id`,
+    empresaId ? [empresaId] : []
+  );
+  for (const r of rows) {
+    if (!out.has(r.treinamento_id)) out.set(r.treinamento_id, []);
+    out.get(r.treinamento_id).push(r.instrutor);
+  }
+  return out;
+}
+
+module.exports = {
+  chave, condicaoInstrutor, adicionaisDaTurma, ehInstrutorAdicional, todosOsInstrutores,
+  adicionaisDisponiveis, turmasPorInstrutorSql, mapaAdicionais,
+};
