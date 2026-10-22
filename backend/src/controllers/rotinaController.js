@@ -237,7 +237,14 @@ async function montarEstado(req, t) {
     let presMap = new Map();
     try {
       const [pres] = await pool.query(
-        `SELECT data_aula, status, COUNT(*) AS n FROM presenca_aulas WHERE treinamento_id = ? GROUP BY data_aula, status`,
+        // A data vem da AULA atual (turma_aulas), não da cópia gravada na chamada:
+        // se a data da aula for editada, o diário acompanha e bate com o Painel
+        // por dia. Chamada de aula que não existe mais não entra na conta.
+        `SELECT ta.data_aula AS data_aula, pa.status, COUNT(*) AS n
+           FROM presenca_aulas pa
+           JOIN turma_aulas ta ON ta.id = pa.turma_aula_id
+          WHERE ta.treinamento_id = ?
+          GROUP BY ta.data_aula, pa.status`,
         [t.id]
       );
       for (const p of pres) {

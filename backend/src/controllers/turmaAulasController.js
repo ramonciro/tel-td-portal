@@ -410,6 +410,13 @@ async function updateTurmaAula(req, res) {
       ]
     );
 
+    // A chamada guarda uma cópia da data da aula: ao mudar a data da aula, a
+    // chamada vai junto (senão o Diário de bordo e os relatórios divergem).
+    await pool.query(
+      "UPDATE presenca_aulas SET data_aula = ? WHERE turma_aula_id = ?",
+      [toDateOnly(data_aula), id]
+    );
+
     return res.json({
       ok: true,
       message: "Aula atualizada com sucesso",
