@@ -89,6 +89,7 @@ const avisosRoutes = require("./routes/avisosRoutes");
 const fechamentoCtrl = require("./controllers/fechamentoMensalController");
 const instrutoresCtrl = require("./controllers/instrutoresController");
 const celulaBabyCtrl = require("./controllers/celulaBabyController");
+const conteudoCtrl = require("./controllers/conteudoController");
 const rotinaCtrl = require("./controllers/rotinaController");
 const {
   getDesempenho: getDesempenhoInstrutor,
@@ -674,6 +675,7 @@ const PERFIL_LABEL_EXPORT = {
   coaching: "Coaching",
   metodologia: "Metodologia",
   assistente_treinamento: "Assistente de Treinamento",
+  analista_conteudo: "Analista de Conteúdo",
   coordenador_rs: "Coordenador R&S",
   gestor_rs: "Gestor R&S",
   super_admin: "Super Admin",
@@ -2204,6 +2206,30 @@ app.use(
   },
   capacidadeRoutes
 );
+
+// Produção de conteúdo (22/10/2026, pedido do Ramon) — pedidos de material dos
+// analistas de conteúdo, com Iniciar/Concluir e validação por cliente ou
+// coordenação. Ver controllers/conteudoController.js. O analista vê tudo e só
+// edita os próprios pedidos (checado no controller); superintendente só lê.
+const CONTEUDO_LER = ["coordenador", "supervisor", "assistente_treinamento", "analista_conteudo", "superintendente"];
+const CONTEUDO_ESCREVER = ["coordenador", "supervisor", "assistente_treinamento", "analista_conteudo"];
+const CONTEUDO_GESTAO = ["coordenador", "supervisor", "assistente_treinamento"];
+app.get("/api/conteudo/resumo", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.resumo);
+app.get("/api/conteudo/tipos", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.listarTipos);
+app.post("/api/conteudo/tipos", authRequired, authorizeRoles("coordenador"), conteudoCtrl.salvarTipo);
+app.put("/api/conteudo/tipos/:id", authRequired, authorizeRoles("coordenador"), conteudoCtrl.salvarTipo);
+app.get("/api/conteudo/analistas", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.listarAnalistas);
+app.get("/api/conteudo/clientes", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.listarClientes);
+app.get("/api/conteudo/expediente", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.lerExpediente);
+app.put("/api/conteudo/expediente", authRequired, authorizeRoles("coordenador"), conteudoCtrl.salvarExpediente);
+app.post("/api/conteudo/importar-historico", authRequired, authorizeRoles("coordenador"), conteudoCtrl.importarHistorico);
+app.get("/api/conteudo/pedidos", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.listarPedidos);
+app.post("/api/conteudo/pedidos", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoCtrl.criarPedido);
+app.get("/api/conteudo/pedidos/:id", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.detalharPedido);
+app.put("/api/conteudo/pedidos/:id", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoCtrl.atualizarPedido);
+app.post("/api/conteudo/pedidos/:id/acao", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoCtrl.executarAcao);
+app.put("/api/conteudo/pedidos/:id/revisao", authRequired, authorizeRoles(...CONTEUDO_GESTAO), conteudoCtrl.definirRevisao);
+app.put("/api/conteudo/etapas/:id", authRequired, authorizeRoles(...CONTEUDO_GESTAO), conteudoCtrl.corrigirEtapa);
 
 // Célula baby (16/10/2026) — acompanhamento da curva de aprendizagem feito pelo
 // instrutor nos 7 primeiros dias de operação. Ver controllers/celulaBabyController.js.
