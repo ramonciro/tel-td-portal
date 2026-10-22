@@ -144,7 +144,7 @@ export default function RSRelatorioPage() {
   const linhasComparativo = data ? [
     ["RPs recebidas", "total_rps", "n", "neutro"],
     ["HC'S solicitados", "hcs", "n", "neutro"],
-    ["Meta com reserva", "hcs_com_to", "n", null],
+    ["HC'S com TO", "hcs_com_to", "n", null],
     ["HC'S aprovados", "hcs_aprovados", "n", "subir"],
     ["HC'S entregues", "qtd_entregue", "n", "subir"],
     ["Vagas pendentes (em andamento)", "pendentes", "n", "descer"],
