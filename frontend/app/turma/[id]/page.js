@@ -53,6 +53,7 @@ export default function GestaoTurmaPage() {
   const dataAula     = searchParams.get("data_aula");
 
   const [treinamento,         setTreinamento]         = useState(null);
+  const [instrutoresTurma,   setInstrutoresTurma]   = useState(null); // TBT: principal + adicionais
   const [participantes,       setParticipantes]       = useState([]);
   const [aulas,               setAulas]               = useState([]);
   const [resumoAulaSelecionada, setResumoAulaSelecionada] = useState(null);
@@ -70,12 +71,14 @@ export default function GestaoTurmaPage() {
     try {
       setLoading(true);
       setErro("");
-      const [dadosTreinamento, listaParticipantes, listaAulas] = await Promise.all([
+      const [dadosTreinamento, listaParticipantes, listaAulas, listaInstrutores] = await Promise.all([
         apiFetch(`/treinamentos/${id}`),
         apiFetch(`/treinamentos/${id}/participantes`).catch(() => []),
         apiFetch(`/turma-aulas?treinamento_id=${id}`).catch(() => []),
+        apiFetch(`/treinamentos/${id}/instrutores`).catch(() => null),
       ]);
       setTreinamento(dadosTreinamento || null);
+      setInstrutoresTurma(listaInstrutores && Array.isArray(listaInstrutores.todos) ? listaInstrutores : null);
       setParticipantes(Array.isArray(listaParticipantes) ? listaParticipantes : []);
       setAulas(Array.isArray(listaAulas) ? listaAulas : []);
 
@@ -210,6 +213,14 @@ export default function GestaoTurmaPage() {
             {resumo.status.label}
           </span>
         </div>
+        {instrutoresTurma && instrutoresTurma.todos.length > 1 && (
+          <div style={statusCard}>
+            <span style={infoLabel}>Instrutores</span>
+            <span style={{ ...statusBadge, background: "#dbeafe", color: "#1e3a8a" }}>
+              {instrutoresTurma.todos.join(" · ")}
+            </span>
+          </div>
+        )}
         {resumo.proximaAula && (
           <div style={statusCard}>
             <span style={infoLabel}>Próxima aula</span>
@@ -275,7 +286,7 @@ export default function GestaoTurmaPage() {
               <div style={aulaMeta}>
                 {formatDate(aulaSelecionada.data_aula)} ·{" "}
                 {statusExecucaoLabel(aulaSelecionada.status_execucao)} ·{" "}
-                {aulaSelecionada.instrutor_responsavel || treinamento?.instrutor || "—"}
+                {aulaSelecionada.instrutor_responsavel || (instrutoresTurma && instrutoresTurma.todos.join(", ")) || treinamento?.instrutor || "—"}
               </div>
             </div>
           </div>
