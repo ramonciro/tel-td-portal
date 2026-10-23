@@ -72,6 +72,21 @@ async function avisos(user, empresaId) {
 
   if (perfil === "superintendente") return out;
 
+  // Pacote 3: TBT já realizada em piso e ainda sem material (o gatilho do #TBT do analista).
+  try {
+    const tbt = await require("./conteudoTbt").tbtPendentes(empresaId);
+    if (tbt.length) {
+      const clientes = [...new Set(tbt.map((t) => t.cliente))];
+      out.push({
+        chave: "conteudo-tbt-pendentes", tipo: "conteudo", gravidade: "info", valor: tbt.length,
+        titulo: `${plural(tbt.length, "TBT realizada aguardando material", "TBT realizadas aguardando material")}`,
+        mensagem: clientes.slice(0, 4).join(" · "), link: "/conteudo?aba=tbt",
+      });
+    }
+  } catch (e) {
+    /* melhor esforço: o aviso não pode derrubar o sino */
+  }
+
   const semRetorno = visiveis.filter((p) => p.espera_cliente && (p.etapa_atual?.dias_corridos ?? 0) >= 2);
   if (semRetorno.length) {
     out.push({

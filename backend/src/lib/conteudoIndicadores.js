@@ -87,7 +87,15 @@ function metricasDoPedido(e) {
     cicloDias = h === null ? null : h / 24;
   }
 
+  // Pacote 3: da ação em piso (fim da turma) até o material concluído, em dias corridos.
+  let turmaAoMaterial = null;
+  if (e.turma_fim && e.concluido_em) {
+    const d = (Date.parse(`${String(e.concluido_em).slice(0, 10)}T00:00:00Z`) - Date.parse(`${e.turma_fim}T00:00:00Z`)) / 86400000;
+    turmaAoMaterial = d >= 0 ? d : null;
+  }
+
   return {
+    turma_ao_material_dias: turmaAoMaterial,
     criacao_h: cri1 ? cri1.horas_uteis : null,
     postagem_h: pos ? pos.horas_uteis : null,
     esforco_h: esforco,
@@ -128,6 +136,7 @@ function resumirGrupo(metricas) {
     espera_cliente_dias: serie(metricas.map((m) => m.espera_cliente_dias), 2),
     validacao_interna_h: serie(metricas.map((m) => m.validacao_interna_h)),
     ciclo_dias: serie(metricas.map((m) => m.ciclo_dias), 2),
+    turma_ao_material_dias: serie(metricas.map((m) => m.turma_ao_material_dias), 1),
   };
 }
 
