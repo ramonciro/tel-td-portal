@@ -6,6 +6,8 @@ import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import ConteudoIndicadores from "../../components/ConteudoIndicadores";
+import ConteudoTbt from "../../components/ConteudoTbt";
+import ConteudoTurmaPicker from "../../components/ConteudoTurmaPicker";
 import { apiFetch, getStoredUser } from "../../services/api";
 import { colors, radius, corDoCliente } from "../../lib/theme";
 import {
@@ -27,6 +29,7 @@ const COLUNAS = [
 ];
 const ABAS = [
   { id: "fila", label: "Fila" },
+  { id: "tbt", label: "TBT e séries" },
   { id: "concluidos", label: "Concluídos" },
   { id: "indicadores", label: "Indicadores" },
   { id: "revisar", label: "Revisar histórico", gestao: true },
@@ -39,9 +42,22 @@ export default function ConteudoPage() {
   const [aba, setAba] = useState("fila");
   const [resumo, setResumo] = useState(null);
   const [erro, setErro] = useState("");
-  const [novo, setNovo] = useState(false);
+  const [novo, setNovo] = useState(null); // null = fechado; objeto = pedido novo (pode vir preenchido)
+  const [tbtPendentes, setTbtPendentes] = useState(0);
 
   useEffect(() => { setUser(getStoredUser()); }, []);
+  // Links do sino e da página da turma: /conteudo?aba=tbt[&turma=ID]
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const abaUrl = q.get("aba");
+    if (abaUrl && ABAS.some((a) => a.id === abaUrl)) queueMicrotask(() => setAba(abaUrl));
+    const turmaId = Number(q.get("turma"));
+    if (turmaId) {
+      apiFetch(`/conteudo/turmas/${turmaId}/pedidos`).then((r) => {
+        if (r?.turma) setNovo({ turma: { id: r.turma.id, tema: r.turma.tema, cliente: r.turma.cliente }, cliente: r.turma.cliente, titulo: "" });
+      }).catch(() => {});
+    }
+  }, []);
   const perfil = String(user?.perfil || "").toLowerCase();
   const gestao = GESTAO.includes(perfil);
   const somenteLeitura = perfil === "superintendente";
@@ -50,6 +66,10 @@ export default function ConteudoPage() {
     apiFetch("/conteudo/resumo").then(setResumo).catch((e) => setErro(e.message));
   }, []);
   useEffect(() => { carregarResumo(); }, [carregarResumo]);
+  const carregarTbt = useCallback(() => {
+    apiFetch("/conteudo/tbt/pendentes").then((r) => setTbtPendentes(r.total || 0)).catch(() => {});
+  }, []);
+  useEffect(() => { carregarTbt(); }, [carregarTbt]);
 
   return (
     <PortalShell>
@@ -59,7 +79,7 @@ export default function ConteudoPage() {
           title="Produção de conteúdo"
           subtitle="Pedidos de material dos analistas: criação, validação e postagem, com o tempo medido em horas úteis."
           actions={!somenteLeitura && user ? (
-            <button type="button" onClick={() => setNovo(true)} style={{ ...estiloBtn.base, background: "#fff", color: colors.navy, border: "1px solid #fff" }}>
+            <button type="button" onClick={() => setNovo({})} style={{ ...estiloBtn.base, background: "#fff", color: colors.navy, border: "1px solid #fff" }}>
               + Novo pedido
             </button>
           ) : null}
@@ -77,12 +97,15 @@ export default function ConteudoPage() {
           {ABAS.filter((a) => !a.gestao || gestao).map((a) => (
             <button key={a.id} type="button" role="tab" aria-selected={aba === a.id} onClick={() => setAba(a.id)}
               style={{ ...chip, ...(aba === a.id ? chipAtivo : null) }}>
-              {a.label}{a.id === "revisar" && resumo?.revisar ? ` (${resumo.revisar})` : ""}
+              {a.label}
+              {a.id === "revisar" && resumo?.revisar ? ` (${resumo.revisar})` : ""}
+              {a.id === "tbt" && tbtPendentes ? ` (${tbtPendentes})` : ""}
             </button>
           ))}
         </div>
 
         {aba === "fila" && <Fila user={user} gestao={gestao} resumo={resumo} onMudou={carregarResumo} router={router} />}
+        {aba === "tbt" && <ConteudoTbt perfil={perfil} onCriarPedido={(ini) => setNovo(ini)} onMudou={() => { carregarResumo(); carregarTbt(); }} />}
         {aba === "concluidos" && <Concluidos router={router} />}
         {aba === "indicadores" && <ConteudoIndicadores perfil={perfil} />}
         {aba === "revisar" && gestao && <Revisar router={router} onMudou={carregarResumo} />}
@@ -92,8 +115,9 @@ export default function ConteudoPage() {
       {novo && (
         <NovoPedido
           gestao={gestao}
-          onFechar={() => setNovo(false)}
-          onCriado={(id) => { setNovo(false); router.push(`/conteudo/${id}`); }}
+          inicial={novo}
+          onFechar={() => setNovo(null)}
+          onCriado={(id) => { setNovo(null); carregarTbt(); router.push(`/conteudo/${id}`); }}
         />
       )}
     </PortalShell>
@@ -504,11 +528,12 @@ function LinhaTipo({ t, editavel, onSalvar }) {
 
 /* ------------------------------------------------------------ novo pedido */
 
-function NovoPedido({ gestao, onFechar, onCriado }) {
+function NovoPedido({ gestao, inicial = {}, onFechar, onCriado }) {
   const [tipos, setTipos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [analistas, setAnalistas] = useState([]);
-  const [f, setF] = useState({ titulo: "", cliente: "", tipo_id: "", validador_tipo: "cliente", analista_id: "", solicitante: "", descricao: "", aberto_em: "" });
+  const [f, setF] = useState({ titulo: inicial.titulo || "", cliente: inicial.cliente || "", tipo_id: inicial.tipo_id || "", validador_tipo: "cliente", analista_id: "", solicitante: "", descricao: "", aberto_em: "" });
+  const [turma, setTurma] = useState(inicial.turma || null);
   const [retro, setRetro] = useState(false);
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
@@ -525,7 +550,7 @@ function NovoPedido({ gestao, onFechar, onCriado }) {
     if (!f.titulo.trim() || !f.cliente.trim() || !f.tipo_id) { setErro("Preencha título, cliente e tipo de material."); return; }
     setSalvando(true);
     try {
-      const corpo = { ...f, tipo_id: Number(f.tipo_id), analista_id: f.analista_id ? Number(f.analista_id) : undefined };
+      const corpo = { ...f, tipo_id: Number(f.tipo_id), analista_id: f.analista_id ? Number(f.analista_id) : undefined, treinamento_id: turma ? turma.id : undefined };
       if (!retro || !f.aberto_em) delete corpo.aberto_em;
       const r = await apiFetch("/conteudo/pedidos", { method: "POST", body: JSON.stringify(corpo) });
       onCriado(r.id);
@@ -544,6 +569,11 @@ function NovoPedido({ gestao, onFechar, onCriado }) {
           <label style={rotulo}>Título
             <input autoFocus value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} style={campoCheio} maxLength={255} />
           </label>
+          <ConteudoTurmaPicker
+            value={turma}
+            onChange={(t) => { setTurma(t); if (t && !f.cliente.trim()) setF((x) => ({ ...x, cliente: t.cliente || "" })); }}
+            ajuda={inicial.serie_nome ? `Entra na série ${inicial.serie_nome}.` : "Liga o material à ação em piso que o originou. Se o cliente tiver série de #TBT, o pedido entra nela."}
+          />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
             <label style={rotulo}>Cliente
               <input list="clientes-conteudo" value={f.cliente} onChange={(e) => setF({ ...f, cliente: e.target.value })} style={campoCheio} maxLength={150} />
