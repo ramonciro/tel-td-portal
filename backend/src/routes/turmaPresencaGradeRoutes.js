@@ -12,7 +12,7 @@ router.get("/turmas/:id/exportar", controller.exportar);
 router.get("/turmas/:id/participantes/:pid/extrato", controller.extratoParticipante);
 
 // Mudar a presença mínima da turma: só quem gere turmas.
-router.put("/turmas/:id/config", authorizeRoles("coordenador", "assistente_treinamento"), controller.salvarConfig);
+router.put("/turmas/:id/config", authorizeRoles("coordenador", "assistente_treinamento", "analista_conteudo"), controller.salvarConfig);
 
 router.put("/aulas/:id/presenca", controller.registrarPresenca);
 router.post("/aulas/:id/presenca-lote", controller.presencaEmLote);
