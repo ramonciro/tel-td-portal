@@ -465,7 +465,7 @@ export default function AvaliacoesTurmaPage() {
           </div>
 
           {/* Provas feitas no papel: foto/PDF guardado + digitação assistida (16/10/2026) */}
-          {["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"].includes(usuario?.perfil) && (
+          {["coordenador", "assistente_treinamento", "analista_conteudo", "instrutor", "supervisor", "superintendente"].includes(usuario?.perfil) && (
             <div style={papelBox}>
               <div>
                 <strong style={{ fontSize: 14, color: colors.navy }}>Provas feitas no papel</strong>
