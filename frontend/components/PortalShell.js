@@ -29,11 +29,11 @@ const menuItems = [
   // telas), mas o menu nunca tinha sido atualizado porque não existia como
   // criar um usuário com esse perfil. Sem isso, o usuário Assistente
   // logaria e veria o menu lateral vazio, mesmo com acesso de API completo.
-  { href: "/treinamentos",  label: "Treinamentos",           icon: "cap", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento"] },
+  { href: "/treinamentos",  label: "Treinamentos",           icon: "cap", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"] },
   // Pacote Superintendente (24/09/2026): mesma correção do Dashboard acima —
   // "Gestão de Turmas" é uma das 4 telas cross-tenant dela (backend já
   // pronto em presencaResumoController.js), faltava só liberar aqui.
-  { href: "/presencas",     label: "Gestão de Turmas",       icon: "folder", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"] },
+  { href: "/presencas",     label: "Gestão de Turmas",       icon: "folder", roles: ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo", "superintendente"] },
   // Ajuste pós-entrega do Pacote Salas (15/09/2026), pedido do Ramon: o
   // perfil Assistente de Treinamento também precisa ver Salas e Reembolso de
   // Transporte no próprio menu — sem isso, ela só alcançava essas telas
@@ -131,8 +131,8 @@ const versaoStyle = { marginTop: 10, fontSize: 10.5, color: "rgba(255,255,255,.4
 const ROTAS_FORA_DO_MENU = [
   { href: "/alterar-senha", roles: null },
   { href: "/primeiro-acesso", roles: null },
-  { href: "/turma", roles: ["coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "superintendente"] },
-  { href: "/presenca-turma", roles: ["coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "superintendente"] },
+  { href: "/turma", roles: ["coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "analista_conteudo", "superintendente"] },
+  { href: "/presenca-turma", roles: ["coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "analista_conteudo", "superintendente"] },
   { href: "/nps", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/responder-nps", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/responder-avaliacao", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
