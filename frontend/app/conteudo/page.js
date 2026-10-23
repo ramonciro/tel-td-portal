@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
+import ConteudoIndicadores from "../../components/ConteudoIndicadores";
 import { apiFetch, getStoredUser } from "../../services/api";
 import { colors, radius, corDoCliente } from "../../lib/theme";
 import {
@@ -27,6 +28,7 @@ const COLUNAS = [
 const ABAS = [
   { id: "fila", label: "Fila" },
   { id: "concluidos", label: "Concluídos" },
+  { id: "indicadores", label: "Indicadores" },
   { id: "revisar", label: "Revisar histórico", gestao: true },
   { id: "catalogo", label: "Tipos e prazos" },
 ];
@@ -82,6 +84,7 @@ export default function ConteudoPage() {
 
         {aba === "fila" && <Fila user={user} gestao={gestao} resumo={resumo} onMudou={carregarResumo} router={router} />}
         {aba === "concluidos" && <Concluidos router={router} />}
+        {aba === "indicadores" && <ConteudoIndicadores perfil={perfil} />}
         {aba === "revisar" && gestao && <Revisar router={router} onMudou={carregarResumo} />}
         {aba === "catalogo" && <Catalogo coordenador={perfil === "coordenador" || perfil === "super_admin"} onMudou={carregarResumo} />}
       </div>
