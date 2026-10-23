@@ -1011,4 +1011,6 @@ module.exports = {
   lerExpediente,
   salvarExpediente,
   importarHistorico,
+  // Reaproveitados pelos indicadores, avisos e Fechamento mensal (Pacote 2).
+  interno: { enriquecer, etapasDe, SELECT_PEDIDO, escopo, filtroEmpresa, vincularLegado, GESTAO },
 };

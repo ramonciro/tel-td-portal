@@ -121,6 +121,14 @@ async function calcularMes(req, cliente, mes) {
     };
   });
 
+  // Produção de conteúdo do cliente no mês (Pacote 2). Melhor esforço: nunca derruba o fechamento.
+  let conteudo = null;
+  try {
+    conteudo = await require("./conteudoIndicadoresController").resumoMesCliente(escopo(req), cliente, mes);
+  } catch (e) {
+    console.error("[fechamento] conteúdo:", e.message);
+  }
+
   const kpis = {
     turmas_encerradas: turmas.length,
     turmas_canceladas: canceladas,
@@ -142,6 +150,7 @@ async function calcularMes(req, cliente, mes) {
     turmas: turmas.sort((a, b) => String(a.fim).localeCompare(String(b.fim)) || String(a.tema).localeCompare(String(b.tema))),
     continuam: continuam.map((t) => ({ id: t.id, tema: t.tema, instrutor: todosOsInstrutores(t.instrutor, t.instrutores_adicionais || []).join(", "), fim: periodoDe(t).f })),
     instrutores: [...instrutores].sort(),
+    conteudo,
   };
 }
 
@@ -346,6 +355,29 @@ async function exportar(req, res) {
       ],
       linhas: dados.turmas || [],
     });
+    if (dados.conteudo && dados.conteudo.entregues > 0) {
+      const c = dados.conteudo;
+      const wsC = wb.addWorksheet("Conteúdo");
+      wsC.columns = [{ width: 46 }, { width: 16 }];
+      const prox = escreverTabela(wsC, {
+        startRow: 1,
+        titulo: `Produção de conteúdo — ${fmtMes} — ${p.cliente}`,
+        colunas: [{ titulo: "Indicador", chave: "nome" }, { titulo: "Valor", chave: "valor" }],
+        linhas: [
+          { nome: "Pedidos entregues", valor: c.entregues },
+          { nome: "Pontos entregues", valor: c.pontos },
+          { nome: "Criação — mediana (h úteis)", valor: c.criacao_mediana_h ?? "—" },
+          { nome: "Entregues no prazo (%)", valor: c.no_prazo_pct ?? "—" },
+          { nome: "Pedidos com retrabalho (%)", valor: c.retrabalho_pct ?? "—" },
+          { nome: "Espera do cliente — mediana (dias)", valor: c.espera_cliente_mediana_dias ?? "—" },
+        ],
+      });
+      escreverTabela(wsC, {
+        startRow: prox + 1,
+        colunas: [{ titulo: "Tipo de material", chave: "tipo" }, { titulo: "Entregues", chave: "entregues", formato: "inteiro" }],
+        linhas: c.por_tipo || [],
+      });
+    }
     const buf = await wb.xlsx.writeBuffer();
     registrarAuditoria({ usuario: req.user, acao: "exportar", entidade: "fechamento_mensal", entidadeId: null,
       resumo: `${req.user?.nome || "Alguém"} exportou o fechamento ${p.mes} de ${p.cliente}`, ip: req.ip });
