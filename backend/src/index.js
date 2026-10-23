@@ -403,13 +403,14 @@ app.get(
   // Pacote Superintendente: ela vê a Gestão de Turmas de todos os tenants
   // (presencaResumoController.js já tem "superintendente" no
   // CROSS_TENANT_ROLES, junto com assistente_treinamento).
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "superintendente"),
+  // 23/10/2026: o analista de conteúdo só LÊ a lista de turmas (precisa saber o que foi realizado para criar o material).
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "superintendente", "analista_conteudo"),
   listarResumoGeral
 );
 app.get(
   "/api/presenca-resumo/:treinamento_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente", "analista_conteudo"),
   obterResumoPorTreinamento
 );
 
@@ -420,7 +421,7 @@ app.get(
 app.post(
   "/api/presenca-resumo/exportar-relatorio",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo", "superintendente"),
   exportarRelatorioPresenca
 );
 
@@ -437,25 +438,25 @@ app.get(
 app.get(
   "/api/turma-mural/:treinamento_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo", "treinando"),
   obterMural
 );
 app.post(
   "/api/turma-mural/:treinamento_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo"),
   criarPublicacaoHandler
 );
 app.put(
   "/api/turma-mural/publicacao/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo"),
   editarPublicacaoHandler
 );
 app.delete(
   "/api/turma-mural/publicacao/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo"),
   excluirPublicacaoHandler
 );
 
@@ -520,7 +521,7 @@ app.use(
     fields: ["nome", "segmento", "status", "gestor", "descricao"],
     orderBy: "nome ASC",
     multiTenant: true, // Sprint 1
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
@@ -1008,7 +1009,7 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
 app.get("/api/treinamentos/exportar-selecionadas", authRequired,
   // Varredura 20/10/2026: antes bastava estar logado (inclusive treinando) e
   // não havia recorte por cliente.
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo", "superintendente"),
   async (req, res) => {
   try {
     const ids = String(req.query.ids || "")
@@ -1134,7 +1135,7 @@ app.use(
     // as mesmas funções (mesma razão de tenantScopeFor nunca entrar no
     // clientMiddleware — ver lib/tenantScope.js).
     listFiltro: (req) =>
-      String(req.user?.perfil || "").toLowerCase() === "assistente_treinamento"
+      ["assistente_treinamento", "analista_conteudo"].includes(String(req.user?.perfil || "").toLowerCase())
         ? null
         : filtroClientesSQL(req, "cliente"),
     fields: [
@@ -1167,9 +1168,9 @@ app.use(
       "subtipo",
     ],
     orderBy: "id DESC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "analista_conteudo")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador")],
     auditoria: {
       entidade: "treinamento",
@@ -1182,7 +1183,7 @@ app.use(
 app.get(
   "/api/treinamentos/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "treinando"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "treinando", "analista_conteudo"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -1273,7 +1274,7 @@ app.get(
 app.get(
   "/api/treinamentos/:id/participantes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "analista_conteudo"),
   getParticipantesByTreinamento
 );
 
@@ -1281,19 +1282,19 @@ app.get(
 app.get(
   "/api/treinamentos-instrutores",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   instrutoresTurmaCtrl.mapa
 );
 app.get(
   "/api/treinamentos/:id/instrutores",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   instrutoresTurmaCtrl.obter
 );
 app.put(
   "/api/treinamentos/:id/instrutores",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   instrutoresTurmaCtrl.salvar
 );
 
@@ -1303,14 +1304,14 @@ app.put(
 app.post(
   "/api/treinamentos/:id/participantes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   createParticipanteTreinamento
 );
 
 app.post(
   "/api/treinamentos/importar-participantes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   comUploadTratado(upload.single("arquivo")),
   importarParticipantesExcel
 );
@@ -1321,119 +1322,119 @@ app.post(
 app.get(
   "/api/treinamentos/:id/modelo-importacao-participantes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   baixarModeloImportacaoParticipantes
 );
 
 app.get(
   "/api/treinamentos/:id/exportar-primeira-aula",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   exportarPrimeiraAula
 );
 
 app.post(
   "/api/treinamentos/salvar-chamada",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   salvarChamadaParticipantes
 );
 
 app.delete(
   "/api/treinamentos/participantes/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   deleteParticipanteTreinamento
 );
 
 app.post(
   "/api/treinamentos/participantes/excluir-lote",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   deleteParticipantesTreinamentoBulk
 );
 
 app.get(
   "/api/turma-aulas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   listTurmaAulas
 );
 
 app.get(
   "/api/turma-aulas/resumo/:treinamento_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   getResumoTurmaAulas
 );
 
 app.get(
   "/api/turma-aulas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   getTurmaAulaById
 );
 
 app.post(
   "/api/turma-aulas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   createTurmaAula
 );
 
 app.put(
   "/api/turma-aulas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   updateTurmaAula
 );
 
 app.delete(
   "/api/turma-aulas/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   deleteTurmaAula
 );
 
 app.post(
   "/api/turma-aulas/gerar-cronograma",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   gerarCronogramaTurma
 );
 
 app.post(
   "/api/turma-aulas/duplicar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   duplicarPlanoAulas
 );
 
 app.get(
   "/api/presenca-aulas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   listarPresencaAula
 );
 
 app.post(
   "/api/presenca-aulas/inicializar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   inicializarPresencaAula
 );
 
 app.post(
   "/api/presenca-aulas/salvar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   salvarPresencaAula
 );
 
 app.get(
   "/api/presenca-aulas/resumo/:turma_aula_id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   resumoPresencaAula
 );
 
@@ -1449,14 +1450,14 @@ app.get(
 app.get(
   "/api/salas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   listarSalas
 );
 
 app.get(
   "/api/salas/disponibilidade",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   disponibilidadeSalas
 );
 
@@ -1499,7 +1500,7 @@ app.get(
   authRequired,
   // "metodologia" lê o catálogo para o formulário de Ações do Mapa de
   // Desenvolvimento (antes esse formulário usava uma lista fixa no código).
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "metodologia"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo", "metodologia"),
   listarSubtipos
 );
 
@@ -1618,7 +1619,7 @@ async function validarTreinamentoDaAvaliacao(data, req) {
 app.post(
   "/api/avaliacoes-lote",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo"),
   lancarAvaliacaoParaTurma
 );
 
@@ -1642,9 +1643,9 @@ app.use(
       "treinando_nome",
     ],
     orderBy: "id DESC",
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     auditoria: {
       entidade: "avaliacao",
@@ -1671,7 +1672,7 @@ app.get(
   // esta rota, sem essa liberação, respondia 403 para turmas de outro
   // tenant. Ver tenantScopeFor em frequenciaIndividualController.js para o
   // isolamento de dados correspondente.
-  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "treinando"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo", "superintendente", "treinando"),
   getFrequenciaIndividual
 );
 
@@ -1704,7 +1705,7 @@ app.get("/api/minhas-avaliacoes", authRequired, async (req, res) => {
 app.get(
   "/api/avaliacoes-treinandos",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "treinando"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo", "treinando"),
   listAvaliacoesTreinandos
 );
 
@@ -1725,7 +1726,7 @@ app.post(
 app.get(
   "/api/materiais-avaliativos",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo"),
   listMateriaisAvaliativos
 );
 
@@ -1742,14 +1743,14 @@ app.get(
 app.post(
   "/api/materiais-avaliativos",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo"),
   createMaterialAvaliativo
 );
 
 app.put(
   "/api/materiais-avaliativos/:id",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo"),
   updateMaterialAvaliativo
 );
 
@@ -2185,7 +2186,7 @@ app.use("/api/trilha-pessoas", authRequired, authorizeRoles("metodologia"), tril
 app.use(
   "/api/turma-presenca",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   turmaPresencaGradeRoutes
 );
 
@@ -2242,6 +2243,7 @@ app.get("/api/conteudo/pedidos", authRequired, authorizeRoles(...CONTEUDO_LER), 
 app.post("/api/conteudo/pedidos", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoCtrl.criarPedido);
 app.get("/api/conteudo/pedidos/:id", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.detalharPedido);
 app.put("/api/conteudo/pedidos/:id", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoCtrl.atualizarPedido);
+app.delete("/api/conteudo/pedidos/:id", authRequired, authorizeRoles("coordenador", "analista_conteudo"), conteudoCtrl.excluirPedido);
 app.post("/api/conteudo/pedidos/:id/acao", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoCtrl.executarAcao);
 app.put("/api/conteudo/pedidos/:id/revisao", authRequired, authorizeRoles(...CONTEUDO_GESTAO), conteudoCtrl.definirRevisao);
 app.put("/api/conteudo/etapas/:id", authRequired, authorizeRoles(...CONTEUDO_GESTAO), conteudoCtrl.corrigirEtapa);
@@ -2271,6 +2273,9 @@ app.post("/api/celulas-baby/:id/reabrir", authRequired, authorizeRoles("coordena
 const ROTINA_LER = ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente"];
 const ROTINA_ESCREVER = ["coordenador", "assistente_treinamento", "instrutor"];
 const ROTINA_GESTAO = ["coordenador", "assistente_treinamento"];
+// Provas no papel: o analista de conteúdo também importa e lança (Gestão de Turmas completa, 23/10/2026).
+const PROVAS_LER = [...ROTINA_LER, "analista_conteudo"];
+const PROVAS_ESCREVER = [...ROTINA_ESCREVER, "analista_conteudo"];
 // Painel de aderência (Fase 3): leitura; o instrutor vê só as próprias turmas (checado no controller).
 const rotinaAderenciaCtrl = require("./controllers/rotinaAderenciaController");
 app.get("/api/rotina/aderencia", authRequired, authorizeRoles(...ROTINA_LER), rotinaAderenciaCtrl.painel);
@@ -2289,19 +2294,19 @@ app.get("/api/rotina/turmas/:id/avaliacao/exportar", authRequired, authorizeRole
 // Importação de provas feitas no papel (16/10/2026): foto/PDF + lançamento assistido.
 // Só a confirmação grava notas; desfazer é da coordenação.
 const provasPapelCtrl = require("./controllers/provasPapelController");
-app.get   ("/api/provas-papel/turmas/:id", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.listarDaTurma);
-app.post  ("/api/provas-papel/turmas/:id/lotes", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.criarLote);
-app.get   ("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.obterLote);
-app.put   ("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.salvarLote);
-app.delete("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.excluirLote);
-app.post  ("/api/provas-papel/lotes/:id/confirmar", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.confirmarLote);
+app.get   ("/api/provas-papel/turmas/:id", authRequired, authorizeRoles(...PROVAS_LER), provasPapelCtrl.listarDaTurma);
+app.post  ("/api/provas-papel/turmas/:id/lotes", authRequired, authorizeRoles(...PROVAS_ESCREVER), provasPapelCtrl.criarLote);
+app.get   ("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...PROVAS_LER), provasPapelCtrl.obterLote);
+app.put   ("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...PROVAS_ESCREVER), provasPapelCtrl.salvarLote);
+app.delete("/api/provas-papel/lotes/:id", authRequired, authorizeRoles(...PROVAS_ESCREVER), provasPapelCtrl.excluirLote);
+app.post  ("/api/provas-papel/lotes/:id/confirmar", authRequired, authorizeRoles(...PROVAS_ESCREVER), provasPapelCtrl.confirmarLote);
 app.post  ("/api/provas-papel/lotes/:id/desfazer", authRequired, authorizeRoles(...ROTINA_GESTAO), provasPapelCtrl.desfazerLote);
-app.get   ("/api/provas-papel/lotes/:id/exportar", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.exportarLote);
-app.get   ("/api/provas-papel/lotes/:id/modelo", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.modeloPlanilha);
-app.post  ("/api/provas-papel/lotes/:id/planilha", authRequired, authorizeRoles(...ROTINA_ESCREVER), comUploadTratado(upload.single("arquivo")), provasPapelCtrl.lerPlanilha);
-app.post  ("/api/provas-papel/lotes/:id/arquivos", authRequired, authorizeRoles(...ROTINA_ESCREVER), comUploadTratado(upload.single("arquivo")), provasPapelCtrl.anexarArquivo);
-app.delete("/api/provas-papel/lotes/:id/arquivos/:arquivoId", authRequired, authorizeRoles(...ROTINA_ESCREVER), provasPapelCtrl.removerArquivo);
-app.get   ("/api/provas-papel/lotes/:id/arquivos/:arquivoId/url", authRequired, authorizeRoles(...ROTINA_LER), provasPapelCtrl.urlArquivo);
+app.get   ("/api/provas-papel/lotes/:id/exportar", authRequired, authorizeRoles(...PROVAS_LER), provasPapelCtrl.exportarLote);
+app.get   ("/api/provas-papel/lotes/:id/modelo", authRequired, authorizeRoles(...PROVAS_ESCREVER), provasPapelCtrl.modeloPlanilha);
+app.post  ("/api/provas-papel/lotes/:id/planilha", authRequired, authorizeRoles(...PROVAS_ESCREVER), comUploadTratado(upload.single("arquivo")), provasPapelCtrl.lerPlanilha);
+app.post  ("/api/provas-papel/lotes/:id/arquivos", authRequired, authorizeRoles(...PROVAS_ESCREVER), comUploadTratado(upload.single("arquivo")), provasPapelCtrl.anexarArquivo);
+app.delete("/api/provas-papel/lotes/:id/arquivos/:arquivoId", authRequired, authorizeRoles(...PROVAS_ESCREVER), provasPapelCtrl.removerArquivo);
+app.get   ("/api/provas-papel/lotes/:id/arquivos/:arquivoId/url", authRequired, authorizeRoles(...PROVAS_LER), provasPapelCtrl.urlArquivo);
 app.post("/api/rotina/registros", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.criarRegistro);
 app.put("/api/rotina/registros/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.editarRegistro);
 app.delete("/api/rotina/registros/:id", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.excluirRegistro);
@@ -2318,7 +2323,7 @@ app.put("/api/rotina/modelos", authRequired, authorizeRoles(...ROTINA_GESTAO), r
 // superintendente. /opcoes (lista de ativos para os formulários) é aberta aos
 // perfis que montam turma/cronograma.
 app.get("/api/instrutores/opcoes", authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo", "superintendente"),
   instrutoresCtrl.opcoes);
 app.get("/api/instrutores/a-classificar", authRequired,
   authorizeRoles("coordenador", "supervisor", "superintendente"), instrutoresCtrl.aClassificar);
