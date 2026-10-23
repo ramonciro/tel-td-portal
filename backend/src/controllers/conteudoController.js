@@ -915,11 +915,43 @@ async function corrigirEtapa(req, res) {
       resumo: `Corrigiu o horário da etapa ${e.etapa} (rodada ${e.rodada}) do pedido "${p.titulo}": ${just.slice(0, 120)}`,
       dadosAntes: { inicio: e.inicio, fim: e.fim }, dadosDepois: { inicio: ini, fim }, ip: req.ip,
     });
-    return res.json({ ok: true });
+    const revisao = await reavaliarRevisao(req, p);
+    return res.json({ ok: true, ...revisao });
   } catch (e) {
     console.error("[conteudo] corrigirEtapa", e.message || e);
     return erro(res, 500, "Erro ao corrigir a etapa");
   }
+}
+
+/**
+ * Depois de corrigir um horário, reavalia o pedido do histórico que estava "para revisar"
+ * com as mesmas regras da importação. Sem motivos restantes, o aviso sai e o pedido passa a contar
+ * nos indicadores; com motivos restantes, o aviso passa a listar só os que faltam.
+ * Pedido que já foi revisado (ok/ignorado) não é mexido.
+ */
+async function reavaliarRevisao(req, p) {
+  if (p.revisao !== "pendente") return { revisao: p.revisao || null };
+  const [ets] = await pool.query(
+    `SELECT etapa, rodada, ${FMT("inicio")} AS inicio, ${FMT("fim")} AS fim FROM conteudo_etapas WHERE pedido_id = ? ORDER BY rodada ASC, id ASC`,
+    [p.id]
+  );
+  const reg = { etapas: {}, abertura: String(p.aberto_em || "").slice(0, 10) };
+  for (const x of ets) if (!reg.etapas[x.etapa]) reg.etapas[x.etapa] = { inicio: x.inicio, fim: x.fim };
+  const motivos = motivosDeRevisao(reg, null);
+  if (motivos.length) {
+    await pool.query("UPDATE conteudo_pedidos SET revisao_motivo = ? WHERE id = ?", [motivos.join("; ").slice(0, 500), p.id]);
+    return { revisao: "pendente", revisao_motivo: motivos.join("; ") };
+  }
+  await pool.query(
+    "UPDATE conteudo_pedidos SET revisao = 'ok', revisao_motivo = NULL, revisado_por_id = ?, revisado_em = ? WHERE id = ?",
+    [req.user?.id || null, C.agoraBahia(), p.id]
+  );
+  registrarAuditoria({
+    usuario: req.user, acao: "editar", entidade: "conteudo_pedido", entidadeId: p.id,
+    resumo: `Revisão do histórico do pedido "${p.titulo}": o aviso saiu sozinho depois da correção do horário e o pedido passou a contar nos indicadores`,
+    ip: req.ip,
+  });
+  return { revisao: "ok", revisao_resolvida: true };
 }
 
 async function definirRevisao(req, res) {
