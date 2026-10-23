@@ -90,6 +90,7 @@ const fechamentoCtrl = require("./controllers/fechamentoMensalController");
 const instrutoresCtrl = require("./controllers/instrutoresController");
 const celulaBabyCtrl = require("./controllers/celulaBabyController");
 const conteudoCtrl = require("./controllers/conteudoController");
+const conteudoIndCtrl = require("./controllers/conteudoIndicadoresController");
 const rotinaCtrl = require("./controllers/rotinaController");
 const {
   getDesempenho: getDesempenhoInstrutor,
@@ -2215,6 +2216,9 @@ const CONTEUDO_LER = ["coordenador", "supervisor", "assistente_treinamento", "an
 const CONTEUDO_ESCREVER = ["coordenador", "supervisor", "assistente_treinamento", "analista_conteudo"];
 const CONTEUDO_GESTAO = ["coordenador", "supervisor", "assistente_treinamento"];
 app.get("/api/conteudo/resumo", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.resumo);
+// Pacote 2 (23/10/2026): indicadores e Excel. O analista vê a equipe somada e só a própria linha.
+app.get("/api/conteudo/indicadores", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoIndCtrl.indicadores);
+app.get("/api/conteudo/exportar", authRequired, authorizeRoles("coordenador", "supervisor", "assistente_treinamento", "superintendente"), conteudoIndCtrl.exportar);
 app.get("/api/conteudo/tipos", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.listarTipos);
 app.post("/api/conteudo/tipos", authRequired, authorizeRoles("coordenador"), conteudoCtrl.salvarTipo);
 app.put("/api/conteudo/tipos/:id", authRequired, authorizeRoles("coordenador"), conteudoCtrl.salvarTipo);
