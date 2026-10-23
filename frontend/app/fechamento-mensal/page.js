@@ -166,6 +166,23 @@ export default function FechamentoMensalPage() {
                 ) : null}
               </SectionCard>
 
+              {base.conteudo ? (
+                <SectionCard title="Produção de conteúdo no mês" subtitle="Materiais deste cliente entregues no mês (horas úteis; a espera do cliente é à parte).">
+                  <div style={grade}>
+                    <StatCard title="Pedidos entregues" value={fmt(base.conteudo.entregues)} subtitle={`${fmt(base.conteudo.pontos)} ponto(s)`} accent={chart.blue} />
+                    <StatCard title="Criação (mediana)" value={fmt(base.conteudo.criacao_mediana_h, " h")} subtitle="1ª rodada, horas úteis" accent={chart.cyan} />
+                    <StatCard title="Entregues no prazo" value={fmt(base.conteudo.no_prazo_pct, "%")} subtitle="criação e postagem" accent={colors.success} />
+                    <StatCard title="Retrabalho" value={fmt(base.conteudo.retrabalho_pct, "%")} subtitle="pedidos com ajustes" accent={chart.orange} />
+                    <StatCard title="Espera do cliente" value={fmt(base.conteudo.espera_cliente_mediana_dias, " d")} subtitle="mediana, dias corridos" accent={chart.purple} />
+                  </div>
+                  {(base.conteudo.por_tipo || []).length ? (
+                    <p style={{ margin: "0 16px 16px", fontSize: 12.5, color: colors.textSecondary }}>
+                      Por tipo: {base.conteudo.por_tipo.map((t) => `${t.tipo} (${t.entregues})`).join(" · ")}
+                    </p>
+                  ) : null}
+                </SectionCard>
+              ) : null}
+
               <SectionCard title="Turmas encerradas no mês">
                 {!(base.turmas || []).length ? <p style={{ padding: 16, color: colors.textMuted }}>Nenhuma turma encerrada neste mês para este cliente.</p> : (
                   <div style={{ overflowX: "auto" }}>
