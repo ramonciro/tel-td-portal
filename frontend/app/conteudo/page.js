@@ -6,6 +6,7 @@ import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import ConteudoIndicadores from "../../components/ConteudoIndicadores";
+import ConteudoExcluir from "../../components/ConteudoExcluir";
 import ConteudoTbt from "../../components/ConteudoTbt";
 import ConteudoTurmaPicker from "../../components/ConteudoTurmaPicker";
 import { apiFetch, getStoredUser } from "../../services/api";
@@ -106,7 +107,7 @@ export default function ConteudoPage() {
 
         {aba === "fila" && <Fila user={user} gestao={gestao} resumo={resumo} onMudou={carregarResumo} router={router} />}
         {aba === "tbt" && <ConteudoTbt perfil={perfil} onCriarPedido={(ini) => setNovo(ini)} onMudou={() => { carregarResumo(); carregarTbt(); }} />}
-        {aba === "concluidos" && <Concluidos router={router} />}
+        {aba === "concluidos" && <Concluidos router={router} perfil={perfil} onMudou={carregarResumo} />}
         {aba === "indicadores" && <ConteudoIndicadores perfil={perfil} />}
         {aba === "revisar" && gestao && <Revisar router={router} onMudou={carregarResumo} />}
         {aba === "catalogo" && <Catalogo coordenador={perfil === "coordenador" || perfil === "super_admin"} onMudou={carregarResumo} />}
@@ -277,13 +278,19 @@ function Cartao({ p, ocupado, onAbrir, onAcao }) {
 
 /* ------------------------------------------------------------ concluídos */
 
-function Concluidos({ router }) {
+function Concluidos({ router, perfil, onMudou }) {
+  const coordenador = perfil === "coordenador" || perfil === "super_admin";
+  const analista = perfil === "analista_conteudo";
+  const mostraExcluir = coordenador || analista;
+  const podeExcluir = (p) => coordenador || (analista && p.sou_dono);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
   const [busca, setBusca] = useState("");
-  useEffect(() => {
+  const [excluindo, setExcluindo] = useState(null);
+  const carregar = useCallback(() => {
     apiFetch("/conteudo/pedidos?escopo=concluidos&limite=400").then(setDados).catch((e) => setErro(e.message));
   }, []);
+  useEffect(() => { carregar(); }, [carregar]);
   const lista = useMemo(() => (dados || []).filter((p) => !busca || [p.titulo, p.cliente, p.analista_nome, p.tipo].some((x) => String(x || "").toLowerCase().includes(busca.toLowerCase()))), [dados, busca]);
   if (erro) return <div style={alerta}>{erro}</div>;
   if (!dados) return <div style={vazio}>Carregando…</div>;
@@ -295,7 +302,7 @@ function Concluidos({ router }) {
       <div style={{ overflowX: "auto" }}>
         <table style={tabela}>
           <thead>
-            <tr>{["Pedido", "Cliente", "Tipo", "Analista", "Concluído em", "Criação", "Validação", "Postagem", "Rodadas"].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+            <tr>{["Pedido", "Cliente", "Tipo", "Analista", "Concluído em", "Criação", "Validação", "Postagem", "Rodadas", ...(mostraExcluir ? [""] : [])].map((h) => <th key={h || "acoes"} style={th}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {lista.map((p) => (
@@ -309,12 +316,21 @@ function Concluidos({ router }) {
                 <td style={td}>{fmtHoras(p.horas_validacao)}</td>
                 <td style={td}>{fmtHoras(p.horas_postagem)}</td>
                 <td style={td}>{p.rodadas}</td>
+                {mostraExcluir && (
+                  <td style={{ ...td, textAlign: "right" }}>
+                    {podeExcluir(p) && (
+                      <button type="button" aria-label={`Excluir ${p.titulo}`} onClick={(e) => { e.stopPropagation(); setExcluindo(p); }}
+                        style={{ ...estiloBtn.base, ...estiloBtn.perigo, padding: "5px 10px", fontSize: 12.5 }}>Excluir</button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
-            {lista.length === 0 && <tr><td style={{ ...td, textAlign: "center", color: colors.textMuted }} colSpan={9}>Nenhum pedido concluído.</td></tr>}
+            {lista.length === 0 && <tr><td style={{ ...td, textAlign: "center", color: colors.textMuted }} colSpan={mostraExcluir ? 10 : 9}>Nenhum pedido concluído.</td></tr>}
           </tbody>
         </table>
       </div>
+      {excluindo && <ConteudoExcluir pedido={excluindo} onFechar={() => setExcluindo(null)} onExcluido={() => { setExcluindo(null); carregar(); onMudou?.(); }} />}
     </SectionCard>
   );
 }
