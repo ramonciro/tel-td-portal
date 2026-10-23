@@ -57,10 +57,14 @@ const SELECT_PEDIDO = `
          p.validador_tipo, p.status, p.origem, p.revisao, p.revisao_motivo,
          DATE_FORMAT(p.lembrar_em, '%Y-%m-%d') AS lembrar_em,
          ${FMT("p.concluido_em")} AS concluido_em, ${FMT("p.cancelado_em")} AS cancelado_em,
-         p.cancelado_motivo, p.criado_por_id,
+         p.cancelado_motivo, p.criado_por_id, p.treinamento_id, p.serie_id,
+         s.nome AS serie_nome, tr.tema AS turma_tema, tr.cliente AS turma_cliente,
+         DATE_FORMAT(COALESCE(tr.data_fim, tr.data_inicio, tr.data), '%Y-%m-%d') AS turma_fim,
          t.prazo_criacao_h, t.prazo_validacao_h, t.prazo_postagem_h, t.pontos
     FROM conteudo_pedidos p
-    LEFT JOIN conteudo_tipos t ON t.id = p.tipo_id`;
+    LEFT JOIN conteudo_tipos t ON t.id = p.tipo_id
+    LEFT JOIN conteudo_series s ON s.id = p.serie_id
+    LEFT JOIN treinamentos tr ON tr.id = p.treinamento_id`;
 
 const SELECT_ETAPA = `
   SELECT e.id, e.pedido_id, e.etapa, e.rodada, ${FMT("e.inicio")} AS inicio, ${FMT("e.fim")} AS fim,
@@ -520,6 +524,49 @@ async function resolverAnalista(req, empresaId, body, padraoSelf) {
   return { id: null, nome: null };
 }
 
+/**
+ * Turma e série do pedido (Pacote 3). A turma tem de ser da mesma empresa; a série, ativa.
+ * Com turma e sem série informada, usa a série do cliente da turma (se houver).
+ * `parcial` = só os campos presentes no corpo (edição).
+ */
+async function resolverVinculo(empresaId, b, cliente, parcial = false) {
+  const T = require("../lib/conteudoTbt");
+  const out = {};
+  const temTurma = parcial ? "treinamento_id" in b : true;
+  const temSerie = parcial ? "serie_id" in b : true;
+  if (temTurma) {
+    const id = Number(b.treinamento_id) || 0;
+    if (b.treinamento_id === null || b.treinamento_id === "" || b.treinamento_id === undefined || id === 0) {
+      out.treinamento_id = null;
+    } else {
+      const f = filtroEmpresa(empresaId);
+      const [[t]] = await pool.query(`SELECT id, cliente FROM treinamentos WHERE id = ?${f.sql} LIMIT 1`, [id, ...f.params]);
+      if (!t) throw Object.assign(new Error("Turma não encontrada"), { status: 400 });
+      out.treinamento_id = t.id;
+      out.turma_cliente = t.cliente;
+    }
+  }
+  if (temSerie) {
+    const id = Number(b.serie_id) || 0;
+    if (!id) out.serie_id = null;
+    else {
+      const f = filtroEmpresa(empresaId);
+      const [[s]] = await pool.query(`SELECT id FROM conteudo_series WHERE id = ? AND ativo = 1${f.sql} LIMIT 1`, [id, ...f.params]);
+      if (!s) throw Object.assign(new Error("Série não encontrada"), { status: 400 });
+      out.serie_id = s.id;
+    }
+  }
+  // Sem série escolhida, mas com turma: usa a série do cliente.
+  if (out.treinamento_id && !b.serie_id && (!parcial || temTurma)) {
+    await T.garantirSeries(empresaId);
+    const s = await T.serieDoCliente(empresaId, out.turma_cliente || cliente);
+    if (s) out.serie_id = s.id;
+  }
+  if (out.serie_id === undefined && !parcial) out.serie_id = null;
+  if (out.treinamento_id === undefined && !parcial) out.treinamento_id = null;
+  return out;
+}
+
 async function criarPedido(req, res) {
   try {
     const empresaId = escopo(req);
@@ -547,19 +594,22 @@ async function criarPedido(req, res) {
       aberto = n;
       retroAbertura = true;
     }
+    const vinculo = await resolverVinculo(empresaId, b, cliente);
     const [r] = await pool.query(
       `INSERT INTO conteudo_pedidos
          (empresa_id, cliente, tipo_id, tipo_nome, titulo, descricao, solicitante, analista_id, analista_nome,
-          aberto_em, validador_tipo, status, origem, criado_por_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'a_fazer', 'portal', ?)`,
+          aberto_em, validador_tipo, status, origem, criado_por_id, treinamento_id, serie_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'a_fazer', 'portal', ?, ?, ?)`,
       [
         empresaId || null, cliente, tipo.id, tipo.nome, titulo, String(b.descricao || "").trim() || null,
         String(b.solicitante || "").trim().slice(0, 150) || null, analista.id, analista.nome, aberto, validador, req.user?.id || null,
+        vinculo.treinamento_id, vinculo.serie_id,
       ]
     );
+    require("../lib/conteudoTbt").limparCache();
     registrarAuditoria({
       usuario: req.user, acao: "criar", entidade: "conteudo_pedido", entidadeId: r.insertId,
-      resumo: `Abriu o pedido "${titulo}" (${cliente}, ${tipo.nome})${retroAbertura ? " com abertura retroativa" : ""}`, ip: req.ip,
+      resumo: `Abriu o pedido "${titulo}" (${cliente}, ${tipo.nome})${retroAbertura ? " com abertura retroativa" : ""}${vinculo.treinamento_id ? ` ligado à turma #${vinculo.treinamento_id}` : ""}`, ip: req.ip,
     });
     return res.status(201).json({ ok: true, id: r.insertId });
   } catch (e) {
@@ -608,6 +658,11 @@ async function atualizarPedido(req, res) {
       vals.analista_id = a.id;
       vals.analista_nome = a.nome;
     }
+    if ("treinamento_id" in b || "serie_id" in b) {
+      const v = await resolverVinculo(empresaId, b, vals.cliente || p.cliente, true);
+      if ("treinamento_id" in v) vals.treinamento_id = v.treinamento_id;
+      if ("serie_id" in v) vals.serie_id = v.serie_id;
+    }
     if ("aberto_em" in b) {
       if (!ehGestao(req)) return erro(res, 403, "Só a coordenação corrige a data de abertura.");
       const n = C.normalizarDataHora(b.aberto_em);
@@ -620,6 +675,7 @@ async function atualizarPedido(req, res) {
       `UPDATE conteudo_pedidos SET ${campos.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`,
       [...campos.map((c) => vals[c]), p.id]
     );
+    require("../lib/conteudoTbt").limparCache();
     registrarAuditoria({
       usuario: req.user, acao: "editar", entidade: "conteudo_pedido", entidadeId: p.id,
       resumo: `Editou o pedido "${p.titulo}"`, dadosAntes: Object.fromEntries(campos.map((c) => [c, p[c]])), dadosDepois: vals, ip: req.ip,
@@ -783,6 +839,7 @@ async function executarAcao(req, res) {
       throw Object.assign(new Error("Ação desconhecida"), { status: 400 });
     });
 
+    require("../lib/conteudoTbt").limparCache();
     if (!resultado.quiet) {
       registrarAuditoria({
         usuario: req.user, acao: "editar", entidade: "conteudo_pedido", entidadeId: id,
@@ -1012,5 +1069,5 @@ module.exports = {
   salvarExpediente,
   importarHistorico,
   // Reaproveitados pelos indicadores, avisos e Fechamento mensal (Pacote 2).
-  interno: { enriquecer, etapasDe, SELECT_PEDIDO, escopo, filtroEmpresa, vincularLegado, GESTAO },
+  interno: { enriquecer, etapasDe, SELECT_PEDIDO, escopo, filtroEmpresa, vincularLegado, garantirTipos, GESTAO },
 };

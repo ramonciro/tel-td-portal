@@ -61,6 +61,7 @@ async function montar(req, filtros) {
   const exp = await C.carregarExpediente(empresaId);
   const agora = C.agoraBahia();
   const w = condicoes(empresaId, filtros);
+  await require("../lib/conteudoTbt").garantirSeries(empresaId); // liga o histórico "#TBT" às séries
 
   /* concluídos no período (conta ou não nos indicadores) */
   const [rows] = await pool.query(
@@ -84,6 +85,9 @@ async function montar(req, filtros) {
 
   const porTipo = S.agruparPor(itens.map(({ e, m }) => ({ chave: String(e.tipo_id || e.tipo), rotulo: e.tipo || "Sem tipo", extra: { tipo_id: e.tipo_id || null }, m })));
   const porCliente = S.agruparPor(itens.map(({ e, m }) => ({ chave: chave(e.cliente), rotulo: e.cliente || "Sem cliente", m })));
+  const porSerie = S.agruparPor(
+    itens.filter(({ e }) => e.serie_id).map(({ e, m }) => ({ chave: String(e.serie_id), rotulo: e.serie_nome || "Série", extra: { serie_id: e.serie_id }, m }))
+  );
 
   /* por mês: entregas (concluídos) e entradas (pedidos abertos no mês) */
   const meses = S.mesesEntre(filtros.de, filtros.ate);
@@ -130,6 +134,7 @@ async function montar(req, filtros) {
     por_analista: porAnalista,
     por_tipo: porTipo,
     por_cliente: porCliente,
+    por_serie: porSerie,
     por_mes: porMes,
     visao: ehAnalista(req) ? "analista" : "gestao",
   };
@@ -211,6 +216,11 @@ async function exportar(req, res) {
     adicionarTabela(wb, { nomeAba: "Por analista", colunas: colunasGrupo("Analista"), linhas: dados.por_analista.map(achatar) });
     adicionarTabela(wb, { nomeAba: "Por tipo", colunas: colunasGrupo("Tipo de material"), linhas: dados.por_tipo.map(achatar) });
     adicionarTabela(wb, { nomeAba: "Por cliente", colunas: colunasGrupo("Cliente"), linhas: dados.por_cliente.map(achatar) });
+    if ((dados.por_serie || []).length) {
+      const colSerie = colunasGrupo("Série");
+      colSerie.push({ titulo: "Da turma ao material mediana (dias)", chave: "tm_med", formato: "decimal1", largura: 24 });
+      adicionarTabela(wb, { nomeAba: "Por série", colunas: colSerie, linhas: dados.por_serie.map((x) => ({ ...achatar(x), tm_med: x.turma_ao_material_dias?.mediana ?? null })) });
+    }
     const colMes = colunasGrupo("Mês");
     colMes.splice(1, 0, { titulo: "Pedidos abertos no mês", chave: "entradas", formato: "inteiro", largura: 18 });
     adicionarTabela(wb, { nomeAba: "Por mês", colunas: colMes, linhas: dados.por_mes.map((x) => achatar({ ...x, rotulo: x.mes.split("-").reverse().join("/") })) });
