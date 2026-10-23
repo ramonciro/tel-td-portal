@@ -408,7 +408,7 @@ function TreinamentosConteudo() {
   // tenant nesta tela, mas não cria turma nova (ela atua sobre turmas já
   // existentes de clientes que não são o dela — ver entityCrud.js,
   // createMiddlewares desta rota não inclui assistente_treinamento).
-  const canEdit = hasSomeRole(usuario, ["coordenador", "supervisor", "instrutor", "assistente_treinamento"]);
+  const canEdit = hasSomeRole(usuario, ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"]);
   const canDelete = hasSomeRole(usuario, ["coordenador"]);
   const isInstructor = perfil === "instrutor";
 
@@ -418,7 +418,10 @@ function TreinamentosConteudo() {
       setError("");
       const [turmasData, usuariosData, clientesData, resumoData, necessidadesData, salasData, subtiposData, adicionaisData] = await Promise.all([
         apiFetch("/treinamentos"),
-        apiFetch("/usuarios").catch(() => []),
+        // Quem não lista usuários (analista de conteúdo) escolhe o instrutor pelo cadastro de instrutores.
+        apiFetch("/usuarios").catch(() => apiFetch("/instrutores/opcoes")
+          .then((r) => (Array.isArray(r?.nomes) ? r.nomes.map((nome, i) => ({ id: `opc-${i}`, nome, perfil: "instrutor", cliente: "" })) : []))
+          .catch(() => [])),
         apiFetch("/clientes").catch(() => []),
         apiFetch("/presenca-resumo").catch(() => null),
         apiFetch("/necessidades").catch(() => null),
