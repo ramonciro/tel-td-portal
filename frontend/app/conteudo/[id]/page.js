@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import PortalShell from "../../../components/PortalShell";
 import PageHero from "../../../components/PageHero";
 import SectionCard from "../../../components/SectionCard";
+import ConteudoTurmaPicker from "../../../components/ConteudoTurmaPicker";
 import { apiFetch, getStoredUser } from "../../../services/api";
 import { colors, radius } from "../../../lib/theme";
 import {
@@ -169,6 +171,17 @@ export default function PedidoConteudoPage() {
               <Dado k="Quem valida" v={cliente ? "Cliente (por e-mail)" : "Coordenação"} />
               <Dado k="Aberto em" v={fmtDataHora(p.aberto_em)} />
               <Dado k="Quem pediu" v={p.solicitante || "—"} />
+              {p.serie_nome && <Dado k="Série" v={p.serie_nome} />}
+              {p.treinamento_id && (
+                <Dado k="Turma de origem" v={
+                  <span>
+                    {p.turma_tema || `Turma ${p.treinamento_id}`}
+                    {p.turma_fim ? ` · realizada em ${fmtData(p.turma_fim)}` : ""}
+                    {" "}
+                    <Link href={`/turma/${p.treinamento_id}`} style={{ color: colors.primary, fontWeight: 700 }}>Abrir a turma</Link>
+                  </span>
+                } />
+              )}
               <Dado k="Prazos (h úteis)" v={`criação ${fmtHoras(p.prazo_criacao_h)} · validação ${fmtHoras(p.prazo_validacao_h)} · postagem ${fmtHoras(p.prazo_postagem_h)}`} />
               <Dado k="Pontos" v={p.pontos ?? "—"} />
             </dl>
@@ -371,6 +384,7 @@ function ModalEditar({ p, gestao, onFechar, onSalvo }) {
     titulo: p.titulo, cliente: p.cliente, tipo_id: p.tipo_id || "", validador_tipo: p.validador_tipo,
     solicitante: p.solicitante || "", descricao: p.descricao || "", analista_id: p.analista_id || "",
   });
+  const [turma, setTurma] = useState(p.treinamento_id ? { id: p.treinamento_id, tema: p.turma_tema || `Turma ${p.treinamento_id}`, cliente: p.turma_cliente || p.cliente, realizada_em: p.turma_fim } : null);
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
   useEffect(() => {
@@ -383,6 +397,10 @@ function ModalEditar({ p, gestao, onFechar, onSalvo }) {
     setSalvando(true); setErro("");
     const corpo = { titulo: f.titulo, cliente: f.cliente, validador_tipo: f.validador_tipo, solicitante: f.solicitante, descricao: f.descricao };
     if (f.tipo_id) corpo.tipo_id = Number(f.tipo_id);
+    if ((turma ? turma.id : null) !== (p.treinamento_id || null)) {
+      corpo.treinamento_id = turma ? turma.id : null;
+      if (!turma) corpo.serie_id = null; // tirou a turma: sai da série automática
+    }
     if (gestao && String(f.analista_id) !== String(p.analista_id || "")) corpo.analista_id = f.analista_id ? Number(f.analista_id) : null;
     try {
       await apiFetch(`/conteudo/pedidos/${p.id}`, { method: "PUT", body: JSON.stringify(corpo) });
@@ -402,6 +420,7 @@ function ModalEditar({ p, gestao, onFechar, onSalvo }) {
             {tipos.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
           </select>
         </label>
+        <ConteudoTurmaPicker value={turma} onChange={setTurma} ajuda={p.serie_nome ? `Hoje o pedido está na série ${p.serie_nome}.` : undefined} />
         <label style={rotuloStyle}>Quem valida
           <select value={f.validador_tipo} onChange={(e) => setF({ ...f, validador_tipo: e.target.value })} style={campoCheio}>
             <option value="cliente">Cliente (por e-mail)</option>
