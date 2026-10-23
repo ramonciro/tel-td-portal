@@ -203,6 +203,10 @@ async function calcular(user, empresaId) {
   if (perfil === "treinando") out.push(...(await avisosTreinando(user, empresaId)));
   if (["coordenador_rs", "gestor_rs"].includes(perfil)) out.push(...(await avisosRS(user, empresaId)));
   if (perfil === "metodologia") out.push(...(await require("../controllers/oficinaPosController").alertasOficina(empresaId)));
+  if (require("../lib/conteudoAvisos").PERFIS_CONTEUDO.includes(perfil)) {
+    try { out.push(...(await require("../lib/conteudoAvisos").avisos(user, empresaId))); }
+    catch (e) { console.error("[avisos] conteúdo:", e.message); }
+  }
   for (const fn of FONTES_EXTRAS) {
     try { out.push(...(await fn(user, empresaId)) || []); } catch (e) { console.error("[avisos] fonte extra:", e.message); }
   }
