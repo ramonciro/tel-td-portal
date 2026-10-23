@@ -18,7 +18,7 @@ import { btnPrimario, btnSecundario, entrada, rotulo, painel, dica, acoes, vazio
 // Endereço: /presenca-turma?turma=<id> (page.js só reexporta este arquivo)
 
 const PROXIMA = { "": "presente", presente: "justificado", justificado: "ausente", ausente: null };
-const PODE_CONFIGURAR = ["coordenador", "assistente_treinamento", "super_admin"];
+const PODE_CONFIGURAR = ["coordenador", "assistente_treinamento", "analista_conteudo", "super_admin"];
 
 export default function PresencaTurmaPage() {
   const [id, setId] = useState("");
