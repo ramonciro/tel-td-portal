@@ -688,6 +688,42 @@ async function atualizarPedido(req, res) {
   }
 }
 
+/**
+ * Exclui um pedido FINALIZADO (concluído ou cancelado) e as suas etapas. Coordenador exclui qualquer um;
+ * o analista de conteúdo, só os seus.
+ * Pedido em andamento precisa ser cancelado antes. A auditoria guarda uma foto do que foi apagado.
+ */
+async function excluirPedido(req, res) {
+  try {
+    const empresaId = escopo(req);
+    const id = Number(req.params.id);
+    const p = await buscarPedido(req, id);
+    if (!p) return erro(res, 404, "Pedido não encontrado");
+    if (!(perfilDe(req) === "coordenador" || perfilDe(req) === "super_admin" || (ehAnalista(req) && souDono(req, p)))) {
+      return erro(res, 403, "Você só exclui os seus pedidos.");
+    }
+    if (!C.STATUS_FINAIS.includes(p.status)) return erro(res, 409, "Só dá para excluir pedido concluído ou cancelado. Cancele o pedido antes.");
+    const mapa = await etapasDe([p.id]);
+    const etapas = (mapa.get(p.id) || []).map((e) => ({ etapa: e.etapa, rodada: e.rodada, inicio: e.inicio, fim: e.fim, resultado: e.resultado }));
+    await comTransacao(async (conn) => {
+      await conn.query("DELETE FROM conteudo_etapas WHERE pedido_id = ?", [p.id]);
+      const f = filtroEmpresa(empresaId);
+      await conn.query(`DELETE FROM conteudo_pedidos WHERE id = ?${f.sql}`, [p.id, ...f.params]);
+    });
+    require("../lib/conteudoTbt").limparCache();
+    registrarAuditoria({
+      usuario: req.user, acao: "excluir", entidade: "conteudo_pedido", entidadeId: p.id,
+      resumo: `Excluiu o pedido ${p.status === "concluido" ? "concluído" : "cancelado"} "${p.titulo}" (${p.cliente}, ${p.tipo || "sem tipo"})`,
+      dadosAntes: { codigo_legado: p.codigo_legado, cliente: p.cliente, tipo: p.tipo, titulo: p.titulo, analista: p.analista_nome, status: p.status, aberto_em: p.aberto_em, concluido_em: p.concluido_em, origem: p.origem, treinamento_id: p.treinamento_id, serie_id: p.serie_id, etapas },
+      ip: req.ip,
+    });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("[conteudo] excluirPedido", e.message || e);
+    return erro(res, 500, "Erro ao excluir o pedido");
+  }
+}
+
 /* -------------------------------------------------------------------- ações */
 
 /**
@@ -1053,6 +1089,7 @@ async function importarHistorico(req, res) {
 }
 
 module.exports = {
+  excluirPedido,
   listarTipos,
   salvarTipo,
   listarAnalistas,

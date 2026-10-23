@@ -14,7 +14,7 @@ const { tenantScopeFor } = require("../lib/tenantScope");
 const { registrarAuditoria } = require("../services/auditoria");
 const { chave, adicionaisDaTurma, todosOsInstrutores } = require("../lib/instrutoresTurma");
 
-const GESTAO = ["coordenador", "supervisor", "assistente_treinamento", "super_admin"];
+const GESTAO = ["coordenador", "supervisor", "assistente_treinamento", "analista_conteudo", "super_admin"];
 const MAX_ADICIONAIS = 10;
 const erro = (res, status, msg) => res.status(status).json({ ok: false, message: msg, error: msg });
 const escopo = (req) => tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] }).empresaId;
