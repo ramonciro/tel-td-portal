@@ -265,7 +265,7 @@ export default function PedidoConteudoPage() {
         <ModalRetro acoes={acoesTempo} rotuloAcao={rotuloAcao} minimo={p.aberto_em} onFechar={() => setModal(null)} onConfirmar={executar} ocupado={ocupado} />
       )}
       {modal?.tipo === "etapa" && (
-        <ModalEtapa etapa={modal.etapa} onFechar={() => setModal(null)} onSalvo={() => { setModal(null); setMsg("Horário corrigido."); carregar(); }} />
+        <ModalEtapa etapa={modal.etapa} onFechar={() => setModal(null)} onSalvo={(r) => { setModal(null); setMsg(r?.revisao_resolvida ? "Horário corrigido. O aviso de revisão saiu e o pedido já conta nos indicadores." : "Horário corrigido."); carregar(); }} />
       )}
       {modal?.tipo === "excluir" && (
         <ConteudoExcluir pedido={p} onFechar={() => setModal(null)} onExcluido={() => router.push("/conteudo")} />
@@ -363,8 +363,8 @@ function ModalEtapa({ etapa, onFechar, onSalvo }) {
   async function salvar() {
     setSalvando(true); setErro("");
     try {
-      await apiFetch(`/conteudo/etapas/${etapa.id}`, { method: "PUT", body: JSON.stringify({ inicio: ini, fim: fim || null, justificativa: just.trim() }) });
-      onSalvo();
+      const r = await apiFetch(`/conteudo/etapas/${etapa.id}`, { method: "PUT", body: JSON.stringify({ inicio: ini, fim: fim || null, justificativa: just.trim() }) });
+      onSalvo(r);
     } catch (e) { setErro(e.message); setSalvando(false); }
   }
   return (
