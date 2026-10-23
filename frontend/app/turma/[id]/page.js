@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState }   from "react";
 import { useParams, useSearchParams }      from "next/navigation";
 import TurmaPageShell                      from "../../../components/TurmaPageShell";
 import StatCard                            from "../../../components/StatCard";
+import MateriaisDaTurma                    from "../../../components/MateriaisDaTurma";
 import { apiFetch, getStoredUser }         from "../../../services/api";
 import { gerarCronogramaEAbrirChamada }   from "../../../lib/gerarCronogramaEAbrirChamada";
 import { colors, chart, estiloBadgeStatus } from "../../../lib/theme";
@@ -231,6 +232,9 @@ export default function GestaoTurmaPage() {
           </div>
         )}
       </div>
+
+      {/* ── Materiais de conteúdo (#TBT e afins) ── */}
+      <MateriaisDaTurma turmaId={id} />
 
       {/* ── Ações rápidas ── */}
       <div style={acoes}>
