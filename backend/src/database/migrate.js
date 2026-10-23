@@ -3139,6 +3139,40 @@ async function ensureConteudo() {
       PRIMARY KEY (empresa_id, chave)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+  // Pacote 3 (23/10/2026): séries (#TBT por cliente), vínculo do pedido com a turma e
+  // "não precisa de material" para TBT. A turma é referência por id sem FK dura (o
+  // plano de FKs é um item à parte); ao apagar a turma o pedido segue existindo.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conteudo_series (
+      id         INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NULL,
+      nome       VARCHAR(120) NOT NULL,
+      cliente    VARCHAR(150) NOT NULL,
+      gatilho    VARCHAR(10) NOT NULL DEFAULT 'tbt',
+      tipo_id    INT NULL,
+      ativo      TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_conteudo_serie (empresa_id, nome)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  await ensureColumn("conteudo_pedidos", "treinamento_id", "INT NULL");
+  await ensureColumn("conteudo_pedidos", "serie_id", "INT NULL");
+  for (const [nome, col] of [["idx_conteudo_ped_turma", "treinamento_id"], ["idx_conteudo_ped_serie", "serie_id"]]) {
+    try { await pool.query(`ALTER TABLE conteudo_pedidos ADD INDEX ${nome} (${col})`); }
+    catch (e) { if (!/duplicate key name/i.test(e.message || "")) throw e; }
+  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conteudo_tbt_dispensas (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id     INT NULL,
+      treinamento_id INT NOT NULL,
+      motivo         VARCHAR(300) NULL,
+      usuario_id     INT NULL,
+      usuario_nome   VARCHAR(150) NULL,
+      created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_conteudo_dispensa (treinamento_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
   console.log("  ↳ produção de conteúdo: ok");
 }
 
