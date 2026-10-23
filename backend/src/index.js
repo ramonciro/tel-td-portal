@@ -91,6 +91,7 @@ const instrutoresCtrl = require("./controllers/instrutoresController");
 const celulaBabyCtrl = require("./controllers/celulaBabyController");
 const conteudoCtrl = require("./controllers/conteudoController");
 const conteudoIndCtrl = require("./controllers/conteudoIndicadoresController");
+const conteudoTbtCtrl = require("./controllers/conteudoTbtController");
 const rotinaCtrl = require("./controllers/rotinaController");
 const {
   getDesempenho: getDesempenhoInstrutor,
@@ -2219,6 +2220,16 @@ app.get("/api/conteudo/resumo", authRequired, authorizeRoles(...CONTEUDO_LER), c
 // Pacote 2 (23/10/2026): indicadores e Excel. O analista vê a equipe somada e só a própria linha.
 app.get("/api/conteudo/indicadores", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoIndCtrl.indicadores);
 app.get("/api/conteudo/exportar", authRequired, authorizeRoles("coordenador", "supervisor", "assistente_treinamento", "superintendente"), conteudoIndCtrl.exportar);
+// Pacote 3 (23/10/2026): #TBT e séries. A turma realizada é o gatilho do material.
+app.get("/api/conteudo/tbt/pendentes", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoTbtCtrl.pendentes);
+app.get("/api/conteudo/tbt/dispensadas", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoTbtCtrl.listarDispensadas);
+app.post("/api/conteudo/tbt/:id/dispensar", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoTbtCtrl.dispensar);
+app.delete("/api/conteudo/tbt/:id/dispensar", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoTbtCtrl.desfazerDispensa);
+app.get("/api/conteudo/turmas", authRequired, authorizeRoles(...CONTEUDO_ESCREVER), conteudoTbtCtrl.buscarTurmas);
+app.get("/api/conteudo/turmas/:id/pedidos", authRequired, authorizeRoles(...CONTEUDO_LER, "instrutor"), conteudoTbtCtrl.pedidosDaTurma);
+app.get("/api/conteudo/series", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoTbtCtrl.listarSeries);
+app.post("/api/conteudo/series", authRequired, authorizeRoles("coordenador"), conteudoTbtCtrl.salvarSerie);
+app.put("/api/conteudo/series/:id", authRequired, authorizeRoles("coordenador"), conteudoTbtCtrl.salvarSerie);
 app.get("/api/conteudo/tipos", authRequired, authorizeRoles(...CONTEUDO_LER), conteudoCtrl.listarTipos);
 app.post("/api/conteudo/tipos", authRequired, authorizeRoles("coordenador"), conteudoCtrl.salvarTipo);
 app.put("/api/conteudo/tipos/:id", authRequired, authorizeRoles("coordenador"), conteudoCtrl.salvarTipo);
