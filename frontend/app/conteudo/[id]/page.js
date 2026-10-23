@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import PortalShell from "../../../components/PortalShell";
 import PageHero from "../../../components/PageHero";
 import SectionCard from "../../../components/SectionCard";
+import ConteudoExcluir from "../../../components/ConteudoExcluir";
 import ConteudoTurmaPicker from "../../../components/ConteudoTurmaPicker";
 import { apiFetch, getStoredUser } from "../../../services/api";
 import { colors, radius } from "../../../lib/theme";
@@ -154,6 +155,9 @@ export default function PedidoConteudoPage() {
               {p.status === "em_validacao" && p.validador_tipo === "interno" && !gestao && (
                 <div style={{ fontSize: 12.5, color: colors.textSecondary }}>A validação deste pedido é da coordenação; ela registra a aprovação aqui no portal.</div>
               )}
+              {(perfil === "coordenador" || perfil === "super_admin" || (perfil === "analista_conteudo" && p.sou_dono)) && (p.status === "concluido" || p.status === "cancelado") && (
+                <div><button type="button" style={{ ...estiloBtn.base, ...estiloBtn.perigo }} onClick={() => setModal({ tipo: "excluir" })}>Excluir pedido</button></div>
+              )}
               {acoesTempo.length > 0 && (
                 <button type="button" style={linkBtn} onClick={() => setModal({ tipo: "retro" })}>Esqueci de clicar na hora: registrar em outro horário</button>
               )}
@@ -262,6 +266,9 @@ export default function PedidoConteudoPage() {
       )}
       {modal?.tipo === "etapa" && (
         <ModalEtapa etapa={modal.etapa} onFechar={() => setModal(null)} onSalvo={() => { setModal(null); setMsg("Horário corrigido."); carregar(); }} />
+      )}
+      {modal?.tipo === "excluir" && (
+        <ConteudoExcluir pedido={p} onFechar={() => setModal(null)} onExcluido={() => router.push("/conteudo")} />
       )}
       {modal?.tipo === "editar" && (
         <ModalEditar p={p} gestao={gestao} onFechar={() => setModal(null)} onSalvo={() => { setModal(null); setMsg("Dados salvos."); carregar(); }} />
