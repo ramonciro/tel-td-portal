@@ -135,12 +135,13 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
-  // Ao marcar ENTREGUE sem quantidade entregue, sugere os aprovados (menos o berço); dá para mudar.
+  // Ao marcar ENTREGUE sem quantidade entregue, sugere os aprovados da vaga (limitado ao pedido do gestor,
+  // quando há pedido); o berço não conta como entrega. Dá para mudar.
   const mudarStatus = (novo) => {
     setForm(f => {
       const semQtd = f.qtd_entregue === "" || Number(f.qtd_entregue) === 0;
-      // O que está no berço não é entrega: sugere aprovados menos o berço.
-      const sugestao = Math.max(Number(f.hcs_aprovados) - (f.setor === "ESTRATÉGICO" ? (Number(f.hcs_berco) || 0) : 0), 0);
+      const apr = Number(f.hcs_aprovados) || 0, sol = Number(f.hcs) || 0;
+      const sugestao = f.setor === "ESTRATÉGICO" && sol > 0 ? Math.min(apr, sol) : apr;
       if (novo === "ENTREGUE" && semQtd && sugestao > 0) return { ...f, status: novo, qtd_entregue: String(sugestao) };
       return { ...f, status: novo };
     });
@@ -364,8 +365,8 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
               <div key={field}>
                 <label style={{ ...labelSt, fontSize: 10 }} title={
                   field === "hcs_com_to" ? "Quantidade solicitada na RP somada a um percentual de reserva (turnover) para garantir a entrega."
-                  : field === "hcs_berco" ? "Aprovados que ficaram de reserva (berço), além do que foi entregue. Quando um deles for convocado, use o botão 'Convocar do berço'."
-                  : field === "hcs_aprovados" ? (isEstr ? "Pode ser maior que os solicitados: o excedente fica no berço." : "Pode ser maior que os solicitados, até o HC'S com TO.")
+                  : field === "hcs_berco" ? "Reserva: gente que passou na avaliação, mas não entrou na vaga. É à parte dos aprovados e da quantidade entregue. Quando um deles for convocado, use o botão 'Convocar do berço'."
+                  : field === "hcs_aprovados" ? (isEstr ? "Pode ser maior que os solicitados. O berço (reserva) é informado à parte." : "Pode ser maior que os solicitados, até o HC'S com TO.")
                   : undefined
                 }>{label}</label>
                 <input type="number" min="0" value={form[field]}
@@ -380,8 +381,9 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
         <div style={{ marginTop: 10, fontSize: 12, color: colors.textMuted }}>
           {isEstr ? (
             <>
-              Aprovados podem passar do pedido do gestor: o excedente fica <strong>no berço</strong>.
-              {" "}Regra: QTD Entregue + No berço não pode passar de HC'S Aprovados.
+              O <strong>berço</strong> é a reserva de quem passou na avaliação mas não entrou na vaga. Ele fica à parte:
+              {" "}não entra em HC'S Aprovados nem em QTD Entregue, e a vaga pode ser fechada com 0 aprovados e gente no berço.
+              {" "}Regra: QTD Entregue (sem contar quem foi convocado do berço) não pode passar de HC'S Aprovados.
             </>
           ) : (
             <>
@@ -737,7 +739,7 @@ export default function RPsPage() {
                     <Td right bold style={{ color: colors.success }}>
                       {fmtNum(rp.qtd_entregue)}
                       {rp.setor !== "OPERACIONAL" && Number(rp.hcs_berco) > 0 ? (
-                        <span title={`${rp.hcs_berco} aprovado(s) no berço (reserva)`}
+                        <span title={`${rp.hcs_berco} pessoa(s) no berço (reserva)`}
                               style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#b45309" }}>+{rp.hcs_berco} berço</span>
                       ) : null}
                     </Td>
