@@ -123,10 +123,12 @@ function validarRP(b, { exigirDataRecebimento = false } = {}) {
 /**
  * Números que não fecham. RP CANCELADA não entra nos totais, então não é checada.
  *
- * ESTRATÉGICAS (berço, 21/10/2026): aprovados PODE passar dos solicitados — o
- * excedente fica "no berço" (reserva) e, se for convocado, vira entregue. A conta é
- * entregues + berço <= aprovados. `hcs_convocados_berco` (quantos entregues vieram do
- * berço) é mantido pela convocação.
+ * ESTRATÉGICAS (berço, 21/10/2026; regra revista em 26/10/2026): aprovados PODE passar dos
+ * solicitados. O BERÇO É À PARTE dos aprovados: é a reserva de quem passou na avaliação mas não
+ * entrou na vaga (a vaga pode ser fechada com 0 aprovados e gente no berço). Por isso o berço
+ * não entra na conta. A regra é: (entregues - convocados do berço) <= aprovados — quem entra
+ * por convocação não precisa estar nos aprovados. `hcs_convocados_berco` é mantido pela
+ * convocação. Dados antigos (berço contado dentro dos aprovados) continuam válidos.
  *
  * OPERACIONAIS (22/10/2026): sem berço (ele acontece depois da avaliação técnica, no
  * módulo Treinamento). Aprovados pode passar dos solicitados, mas só até o HC'S com TO
@@ -157,12 +159,12 @@ function incoerencias(d) {
     return msgs;
   }
 
-  const berco = Number(d.hcs_berco) || 0;
   const convocados = Number(d.hcs_convocados_berco) || 0;
-  if (d.qtd_entregue + berco > d.hcs_aprovados) {
-    msgs.push(berco > 0
-      ? `Qtd entregue (${d.qtd_entregue}) + No berço (${berco}) não pode ser maior que HC'S aprovados (${d.hcs_aprovados})`
-      : `Qtd entregue (${d.qtd_entregue}) não pode ser maior que HC'S aprovados (${d.hcs_aprovados})`);
+  const diretos = d.qtd_entregue - convocados; // entregues que NÃO vieram do berço
+  if (diretos > d.hcs_aprovados) {
+    msgs.push(convocados > 0
+      ? `Qtd entregue (${d.qtd_entregue}), sem contar os ${convocados} convocado(s) do berço, não pode ser maior que HC'S aprovados (${d.hcs_aprovados})`
+      : `Qtd entregue (${d.qtd_entregue}) não pode ser maior que HC'S aprovados (${d.hcs_aprovados}). Quem está no berço não conta como entregue: use "Convocar do berço"`);
   }
   if (convocados > d.qtd_entregue)
     msgs.push(`Qtd entregue (${d.qtd_entregue}) não pode ser menor que os convocados do berço (${convocados}). Estorne a convocação para reduzir`);
