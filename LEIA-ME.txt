@@ -1,0 +1,5 @@
+Pacote Radar 1 (26/10/2026) - Prontidao da turma + Risco de certificacao
+Suba os 6 arquivos mantendo as pastas, em um unico commit.
+Sem migracao de banco: o Radar so le dados que ja existem.
+Novos: backend/src/services/preventivoService.js, backend/src/controllers/preventivoController.js, frontend/app/radar/page.js
+Alterados: backend/src/index.js (2 rotas /api/preventivo), backend/src/services/avisosService.js (2 avisos no sino), frontend/components/PortalShell.js (item de menu Radar)

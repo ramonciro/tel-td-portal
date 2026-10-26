@@ -22,6 +22,8 @@ const menuItems = [
   // atualizado. Sem isso, ela caía direto em "Acesso restrito" ao tentar
   // abrir /dashboard, mesmo com a API já pronta.
   { href: "/dashboard",     label: "Dashboard",              icon: "chart", roles: ["coordenador", "supervisor", "superintendente"] },
+  // Radar preventivo (26/10/2026): prontidão das turmas que vão começar e risco de certificação das que estão em andamento. Espelha /api/preventivo.
+  { href: "/radar",         label: "Radar",                  icon: "compass", roles: ["coordenador", "assistente_treinamento", "supervisor", "superintendente", "instrutor"] },
   { href: "/necessidades",  label: "Necessidades",           icon: "target", roles: ["coordenador", "supervisor", "superintendente"] },
   // Ajuste pós-entrega do Pacote Salas (15/09/2026): o backend já liberava
   // Treinamentos e Presenças (Gestão de Turmas) para o perfil Assistente de

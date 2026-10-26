@@ -2281,6 +2281,10 @@ const rotinaAderenciaCtrl = require("./controllers/rotinaAderenciaController");
 app.get("/api/rotina/aderencia", authRequired, authorizeRoles(...ROTINA_LER), rotinaAderenciaCtrl.painel);
 app.get("/api/rotina/aderencia/pendencias", authRequired, authorizeRoles(...ROTINA_LER), rotinaAderenciaCtrl.pendencias);
 app.get("/api/rotina/aderencia/exportar", authRequired, authorizeRoles(...ROTINA_LER), rotinaAderenciaCtrl.exportar);
+// Radar preventivo (Pacote 1): prontidão da turma e risco de certificação. Leitura; o instrutor vê só as próprias (checado no controller).
+const preventivoCtrl = require("./controllers/preventivoController");
+app.get("/api/preventivo/prontidao", authRequired, authorizeRoles(...ROTINA_LER), preventivoCtrl.prontidao);
+app.get("/api/preventivo/risco-certificacao", authRequired, authorizeRoles(...ROTINA_LER), preventivoCtrl.riscoCertificacao);
 app.get("/api/rotina/turmas/:id", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.estadoDaTurma);
 app.put("/api/rotina/turmas/:id/checklist/:itemId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.responderChecklist);
 app.put("/api/rotina/turmas/:id/tarefas/:tarefaId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.marcarTarefa);

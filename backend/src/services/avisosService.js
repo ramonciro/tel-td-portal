@@ -190,6 +190,48 @@ async function avisosRS(user, empresaId) {
     mensagem: itens.slice(0, 2).map((r) => `${r.produto} · ${r.site} (${r.dias} dias)`).join(" · "), link: "/rs/rps" }];
 }
 
+
+/* ─── Radar preventivo (Pacote 1): prontidão da turma + risco de certificação ─── */
+const CACHE_PREV_MS = 5 * 60 * 1000;
+const cachePrev = new Map();
+
+async function avisosPreventivo(user, empresaId) {
+  const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
+  const P = require("./preventivoService");
+  const instrutor = norm(user.perfil) === "instrutor" ? user.nome : undefined;
+  const k = `${empresaId ?? "g"}|${instrutor || ""}|${norm(user.perfil)}|${norm(user.cliente)}`;
+  const c = cachePrev.get(k);
+  let dados;
+  if (c && Date.now() - c.quando < CACHE_PREV_MS) dados = c.dados;
+  else {
+    const podeVer = (t) => usuarioTemAcessoAoCliente({ user }, t.cliente);
+    const [pr, rc] = await Promise.all([
+      P.calcularProntidao({ empresaId, instrutor, podeVer, dias: 7 }),
+      P.calcularRiscoCertificacao({ empresaId, instrutor, podeVer }),
+    ]);
+    dados = { pr, rc };
+    cachePrev.set(k, { quando: Date.now(), dados });
+    if (cachePrev.size > 500) cachePrev.clear();
+  }
+  const out = [];
+  const { pr, rc } = dados;
+  if (pr.turmas.length) {
+    const graves = pr.turmas.filter((t) => t.gravidade === "critica").length;
+    out.push({ chave: "prontidao-turmas", tipo: "prontidao", gravidade: graves ? "critico" : "atencao", valor: pr.turmas.length,
+      titulo: `${plural(pr.turmas.length, "turma começa em até 7 dias com pendência", "turmas começam em até 7 dias com pendência")}`,
+      mensagem: pr.turmas.slice(0, 3).map((t) => `${t.tema} (${t.dias_para_inicio === 0 ? "hoje" : `em ${t.dias_para_inicio}d`}): ${t.itens[0].titulo.toLowerCase()}`).join(" · "),
+      link: "/radar" });
+  }
+  const urgentes = rc.resumo.pessoas_perderam + rc.resumo.pessoas_no_limite;
+  if (urgentes) {
+    out.push({ chave: "risco-certificacao", tipo: "certificacao", gravidade: rc.resumo.pessoas_perderam ? "critico" : "atencao", valor: urgentes,
+      titulo: `${plural(urgentes, "participante em risco de não certificar", "participantes em risco de não certificar")}`,
+      mensagem: `${rc.resumo.pessoas_perderam} já não alcançam a presença mínima · ${rc.resumo.pessoas_no_limite} no limite. ${rc.turmas.slice(0, 2).map((t) => t.tema).join(" · ")}`,
+      link: "/radar" });
+  }
+  return out;
+}
+
 const FONTES_EXTRAS = []; // outros módulos (ex.: Oficina de Talentos) registram aqui
 function registrarFonte(fn) { FONTES_EXTRAS.push(fn); }
 
@@ -200,6 +242,10 @@ async function calcular(user, empresaId) {
   if (["coordenador", "supervisor", "assistente_treinamento"].includes(perfil)) out.push(...(await avisosCodigosAcesso(empresaId)));
   if (perfil === "assistente_treinamento") out.push(...(await avisosGestao(user, empresaId, { completo: false })));
   if (perfil === "instrutor") out.push(...(await avisosInstrutor(user, empresaId)));
+  if ([...PERFIS_GESTAO, "assistente_treinamento", "instrutor"].includes(perfil)) {
+    try { out.push(...(await avisosPreventivo(user, empresaId))); }
+    catch (e) { console.error("[avisos] preventivo:", e.message); }
+  }
   if (perfil === "treinando") out.push(...(await avisosTreinando(user, empresaId)));
   if (["coordenador_rs", "gestor_rs"].includes(perfil)) out.push(...(await avisosRS(user, empresaId)));
   if (perfil === "metodologia") out.push(...(await require("../controllers/oficinaPosController").alertasOficina(empresaId)));
