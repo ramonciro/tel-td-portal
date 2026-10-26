@@ -36,7 +36,9 @@ export default function DemandaRS() {
 
       {r.rps_ocultas_produto_inativo > 0 && (
         <p style={{ ...mini, margin: 0 }}>
-          {r.rps_ocultas_produto_inativo} RP(s) de produto inativo ou fora do cadastro de produtos não aparecem aqui. Para vê-las, ative o produto no cadastro do R&S.
+          {r.rps_ocultas_produto_inativo} RP(s) não aparecem porque o produto não corresponde a um cliente ativo do ambiente (menu Clientes)
+          {r.produtos_ocultos?.length ? `: ${r.produtos_ocultos.join(", ")}${r.rps_ocultas_produto_inativo > r.produtos_ocultos.length ? "…" : ""}` : ""}.
+          Se algum deveria aparecer, confira se o nome do cliente é igual ao do produto.
         </p>
       )}
 
@@ -49,7 +51,7 @@ export default function DemandaRS() {
 
       <SectionCard
         title="Avaliações Técnicas planejadas pelo R&S"
-        subtitle="RPs em andamento, de produtos ativos do ambiente, com Avaliação Técnica nos próximos 30 dias (ou já em curso). Procuramos no T&D uma turma de Avaliação Técnica do mesmo cliente com início até 3 dias de diferença; não há vínculo direto entre RP e turma, por isso conferimos pelo nome."
+        subtitle="RPs em andamento, de produtos que são clientes ativos do ambiente, com Avaliação Técnica nos próximos 30 dias (ou já em curso). Procuramos no T&D uma turma de Avaliação Técnica do mesmo cliente com início até 3 dias de diferença; não há vínculo direto entre RP e turma, por isso conferimos pelo nome."
       >
         {!d.avaliacoes.length ? <p style={vazio}>Nenhuma Avaliação Técnica planejada para os próximos 30 dias.</p> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

@@ -324,20 +324,34 @@ async function calcularDemandaRS({ empresaId } = {}) {
     if (!(e && (e.code === "ER_NO_SUCH_TABLE" || e.code === "ER_BAD_FIELD_ERROR"))) throw e;
   }
 
-  // Só entram RPs de produtos ATIVOS no cadastro do ambiente (rs_produtos). Produto desativado
-  // ou ausente do cadastro fica de fora; o total oculto é informado na tela.
+  // Só entram RPs de produtos que correspondem a um CLIENTE ATIVO do ambiente (menu Clientes).
+  // A correspondência é pelo nome (sem acento/maiúscula; um contém o outro). Ambiente sem nenhum cliente
+  // ativo cadastrado não filtra (não há lista para comparar). Os nomes ocultos são devolvidos para conferência.
   let rpsOcultas = 0;
+  let produtosOcultos = [];
   let nomesEmpresa = {};
   if (rps.length) {
     try {
       const ids = [...new Set(rps.map((r) => r.empresa_id))];
-      const [prods] = await pool.query(
-        `SELECT empresa_id, nome FROM rs_produtos WHERE ativo = 1 AND empresa_id IN (${ids.map(() => "?").join(",")})`, ids
+      const [cli] = await pool.query(
+        `SELECT empresa_id, nome FROM clientes WHERE (status IS NULL OR status <> 'Inativo') AND empresa_id IN (${ids.map(() => "?").join(",")})`, ids
       );
-      const ativos = new Set(prods.map((x) => `${x.empresa_id}|${semAcento(x.nome)}`));
+      const porEmpresa = {};
+      for (const c of cli) {
+        const n = semAcento(c.nome);
+        if (n.length >= 3) (porEmpresa[c.empresa_id] = porEmpresa[c.empresa_id] || []).push(n);
+      }
+      const casa = (emp, produto) => {
+        const lista = porEmpresa[emp];
+        if (!lista) return true; // ambiente sem clientes ativos cadastrados: não filtra
+        const p = semAcento(produto);
+        return lista.some((c) => p.includes(c) || (p.length >= 3 && c.includes(p)));
+      };
+      const ocultos = new Set();
       const antes = rps.length;
-      rps = rps.filter((r) => ativos.has(`${r.empresa_id}|${semAcento(r.produto)}`));
+      rps = rps.filter((r) => (casa(r.empresa_id, r.produto) ? true : (ocultos.add(r.produto), false)));
       rpsOcultas = antes - rps.length;
+      produtosOcultos = [...ocultos].sort().slice(0, 15);
     } catch (e) {
       if (!(e && (e.code === "ER_NO_SUCH_TABLE" || e.code === "ER_BAD_FIELD_ERROR"))) throw e;
     }
@@ -419,6 +433,7 @@ async function calcularDemandaRS({ empresaId } = {}) {
     berco_parado: berco.filter((b) => b.gravidade).length,
     berco_com_oportunidade: berco.filter((b) => b.oportunidades.length).length,
     rps_ocultas_produto_inativo: rpsOcultas,
+    produtos_ocultos: produtosOcultos,
   };
   const varios = new Set(rps.map((r) => r.empresa_id)).size > 1;
   return { hoje, dias_berco_atencao: DIAS_BERCO_ATENCAO, dias_berco_alta: DIAS_BERCO_ALTA, varios_ambientes: varios, avaliacoes, berco, resumo };
