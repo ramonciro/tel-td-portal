@@ -34,6 +34,12 @@ export default function DemandaRS() {
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {tudoCerto && <div style={ok}>Tudo em ordem: toda Avaliação Técnica planejada pelo R&S tem turma e não há pessoas paradas no berço.</div>}
 
+      {r.rps_ocultas_produto_inativo > 0 && (
+        <p style={{ ...mini, margin: 0 }}>
+          {r.rps_ocultas_produto_inativo} RP(s) de produto inativo ou fora do cadastro de produtos não aparecem aqui. Para vê-las, ative o produto no cadastro do R&S.
+        </p>
+      )}
+
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Kpi rotulo="Avaliações Técnicas sem turma" valor={r.avaliacoes_sem_turma} cor={r.avaliacoes_sem_turma ? colors.dangerText : undefined} nota={`de ${r.avaliacoes_planejadas} planejadas (30 dias)`} />
         <Kpi rotulo="Candidatos esperados sem turma" valor={r.candidatos_sem_turma} />
@@ -43,7 +49,7 @@ export default function DemandaRS() {
 
       <SectionCard
         title="Avaliações Técnicas planejadas pelo R&S"
-        subtitle="RPs em andamento com Avaliação Técnica nos próximos 30 dias (ou já em curso). Procuramos no T&D uma turma de Avaliação Técnica do mesmo cliente com início até 3 dias de diferença; não há vínculo direto entre RP e turma, por isso conferimos pelo nome."
+        subtitle="RPs em andamento, de produtos ativos do ambiente, com Avaliação Técnica nos próximos 30 dias (ou já em curso). Procuramos no T&D uma turma de Avaliação Técnica do mesmo cliente com início até 3 dias de diferença; não há vínculo direto entre RP e turma, por isso conferimos pelo nome."
       >
         {!d.avaliacoes.length ? <p style={vazio}>Nenhuma Avaliação Técnica planejada para os próximos 30 dias.</p> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -53,7 +59,7 @@ export default function DemandaRS() {
                 <div key={a.rp_id} style={{ ...caixa, borderLeft: `4px solid ${g ? g.cor : colors.success}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div>
-                      <strong style={{ fontSize: 15 }}>{a.produto}</strong>
+                      <strong style={{ fontSize: 15 }}>{a.produto}</strong>{d.varios_ambientes && a.ambiente ? <span style={{ ...badgePeq, marginLeft: 8, color: colors.textSecondary, background: colors.neutralLight }}>{a.ambiente}</span> : null}
                       <div style={mini}>
                         {a.site} · {a.cargo}{a.chamado ? ` · chamado ${a.chamado}` : ""} · {a.candidatos_esperados} candidato(s) esperado(s)
                       </div>
@@ -94,7 +100,7 @@ export default function DemandaRS() {
                 <div key={b.rp_id} style={{ ...caixa, borderLeft: `4px solid ${g.cor}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div>
-                      <strong style={{ fontSize: 15 }}>{b.produto}</strong>
+                      <strong style={{ fontSize: 15 }}>{b.produto}</strong>{d.varios_ambientes && b.ambiente ? <span style={{ ...badgePeq, marginLeft: 8, color: colors.textSecondary, background: colors.neutralLight }}>{b.ambiente}</span> : null}
                       <div style={mini}>
                         {b.site} · {b.cargo}{b.chamado ? ` · chamado ${b.chamado}` : ""} · {b.saldo_berco} pessoa(s) no berço · parado há {b.dias_parado} dias (desde {fmtData(b.desde)})
                       </div>

@@ -324,6 +324,30 @@ async function calcularDemandaRS({ empresaId } = {}) {
     if (!(e && (e.code === "ER_NO_SUCH_TABLE" || e.code === "ER_BAD_FIELD_ERROR"))) throw e;
   }
 
+  // Só entram RPs de produtos ATIVOS no cadastro do ambiente (rs_produtos). Produto desativado
+  // ou ausente do cadastro fica de fora; o total oculto é informado na tela.
+  let rpsOcultas = 0;
+  let nomesEmpresa = {};
+  if (rps.length) {
+    try {
+      const ids = [...new Set(rps.map((r) => r.empresa_id))];
+      const [prods] = await pool.query(
+        `SELECT empresa_id, nome FROM rs_produtos WHERE ativo = 1 AND empresa_id IN (${ids.map(() => "?").join(",")})`, ids
+      );
+      const ativos = new Set(prods.map((x) => `${x.empresa_id}|${semAcento(x.nome)}`));
+      const antes = rps.length;
+      rps = rps.filter((r) => ativos.has(`${r.empresa_id}|${semAcento(r.produto)}`));
+      rpsOcultas = antes - rps.length;
+    } catch (e) {
+      if (!(e && (e.code === "ER_NO_SUCH_TABLE" || e.code === "ER_BAD_FIELD_ERROR"))) throw e;
+    }
+    try {
+      const [emps] = await pool.query(`SELECT id, nome FROM empresas WHERE id IN (${[...new Set(rps.map((r) => r.empresa_id))].map(() => "?").join(",") || "NULL"})`,
+        [...new Set(rps.map((r) => r.empresa_id))]);
+      nomesEmpresa = Object.fromEntries(emps.map((e) => [e.id, e.nome]));
+    } catch (_) { /* nome é só rótulo */ }
+  }
+
   // Avaliações Técnicas planejadas pelo R&S × turmas de Avaliação Técnica já agendadas.
   const { nomes } = await nomesAvaliacaoTecnica();
   let turmasAT = [];
@@ -351,7 +375,8 @@ async function calcularDemandaRS({ empresaId } = {}) {
     let gravidade = null;
     if (semTurma) gravidade = emCurso || dias <= 3 ? "critica" : dias <= 7 ? "alta" : "media";
     avaliacoes.push({
-      rp_id: r.id, site: r.site, produto: r.produto, cargo: r.cargo, chamado: r.chamado,
+      rp_id: r.id, empresa_id: r.empresa_id, ambiente: nomesEmpresa[r.empresa_id] || null,
+      site: r.site, produto: r.produto, cargo: r.cargo, chamado: r.chamado,
       inicio: r.inicio_av, final: r.final_av, dias_para_inicio: dias, em_curso: !!emCurso,
       candidatos_esperados: Number(r.hcs_com_to) || Number(r.hcs) || 0,
       situacao: semTurma ? "sem_turma" : "com_turma",
@@ -377,7 +402,8 @@ async function calcularDemandaRS({ empresaId } = {}) {
           .map((o) => ({ rp_id: o.id, site: o.site, produto: o.produto, chamado: o.chamado, vagas_abertas: Number(o.hcs) - Number(o.qtd_entregue), mesmo_site: o.site === r.site }))
       : [];
     berco.push({
-      rp_id: r.id, site: r.site, produto: r.produto, cargo: r.cargo, chamado: r.chamado, status: r.status,
+      rp_id: r.id, empresa_id: r.empresa_id, ambiente: nomesEmpresa[r.empresa_id] || null,
+      site: r.site, produto: r.produto, cargo: r.cargo, chamado: r.chamado, status: r.status,
       saldo_berco: saldo, dias_parado: parado, desde: ref,
       gravidade: parado >= DIAS_BERCO_ALTA ? "alta" : parado >= DIAS_BERCO_ATENCAO ? "media" : null,
       oportunidades,
@@ -392,8 +418,10 @@ async function calcularDemandaRS({ empresaId } = {}) {
     pessoas_no_berco: berco.reduce((s, b) => s + b.saldo_berco, 0),
     berco_parado: berco.filter((b) => b.gravidade).length,
     berco_com_oportunidade: berco.filter((b) => b.oportunidades.length).length,
+    rps_ocultas_produto_inativo: rpsOcultas,
   };
-  return { hoje, dias_berco_atencao: DIAS_BERCO_ATENCAO, dias_berco_alta: DIAS_BERCO_ALTA, avaliacoes, berco, resumo };
+  const varios = new Set(rps.map((r) => r.empresa_id)).size > 1;
+  return { hoje, dias_berco_atencao: DIAS_BERCO_ATENCAO, dias_berco_alta: DIAS_BERCO_ALTA, varios_ambientes: varios, avaliacoes, berco, resumo };
 }
 
 module.exports = { calcularCargaFutura, calcularDemandaRS, calcularSalas, carregarEntradas, segundaDe, diasUteisEntre };
