@@ -129,6 +129,7 @@ function validarRP(b, { exigirDataRecebimento = false } = {}) {
  * não entra na conta. A regra é: (entregues - convocados do berço) <= aprovados — quem entra
  * por convocação não precisa estar nos aprovados. `hcs_convocados_berco` é mantido pela
  * convocação. Dados antigos (berço contado dentro dos aprovados) continuam válidos.
+ * Status ENTREGUE nas estratégicas não exige Qtd entregue > 0 (vaga encerrada pode ter 0 aprovados).
  *
  * OPERACIONAIS (22/10/2026): sem berço (ele acontece depois da avaliação técnica, no
  * módulo Treinamento). Aprovados pode passar dos solicitados, mas só até o HC'S com TO
@@ -168,8 +169,8 @@ function incoerencias(d) {
   }
   if (convocados > d.qtd_entregue)
     msgs.push(`Qtd entregue (${d.qtd_entregue}) não pode ser menor que os convocados do berço (${convocados}). Estorne a convocação para reduzir`);
-  if (d.status === "ENTREGUE" && !(d.qtd_entregue > 0))
-    msgs.push("RP com status ENTREGUE precisa ter Qtd entregue maior que zero");
+  // 26/10/2026: nas ESTRATÉGICAS o encerramento da vaga não depende de entrega — dá para encerrar
+  // sem aprovados, com ou sem berço. Por isso aqui NÃO se exige Qtd entregue > 0 para o status ENTREGUE.
   return msgs;
 }
 
