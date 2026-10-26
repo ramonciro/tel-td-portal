@@ -232,6 +232,44 @@ async function avisosPreventivo(user, empresaId) {
   return out;
 }
 
+/* ─── Radar preventivo (Pacote 2): carga futura e demanda do R&S (só gestão e assistente) ─── */
+async function avisosPreventivoCarga(user, empresaId) {
+  const C = require("./preventivoCargaService");
+  const k = `carga|${empresaId ?? "g"}`;
+  const c = cachePrev.get(k);
+  let dados;
+  if (c && Date.now() - c.quando < CACHE_PREV_MS) dados = c.dados;
+  else {
+    const [cf, rs] = await Promise.all([C.calcularCargaFutura({ empresaId }), C.calcularDemandaRS({ empresaId })]);
+    dados = { cf, rs };
+    cachePrev.set(k, { quando: Date.now(), dados });
+  }
+  const { cf, rs } = dados;
+  const out = [];
+  const alertas = cf.resumo.alertas;
+  if (alertas) {
+    const crit = cf.instrutores.some((i) => i.gravidade === "critica");
+    const partes = [];
+    if (cf.resumo.instrutores_sobrecarga) partes.push(`${plural(cf.resumo.instrutores_sobrecarga, "instrutor em sobrecarga", "instrutores em sobrecarga")}`);
+    if (cf.resumo.instrutores_semana_pico) partes.push(`${plural(cf.resumo.instrutores_semana_pico, "com semana de pico", "com semana de pico")}`);
+    if (cf.resumo.salas_saturadas) partes.push(`${plural(cf.resumo.salas_saturadas, "sala saturada", "salas saturadas")}`);
+    out.push({ chave: "carga-futura", tipo: "carga", gravidade: crit ? "critico" : "atencao", valor: alertas,
+      titulo: `${plural(alertas, "alerta de carga futura (instrutores e salas)", "alertas de carga futura (instrutores e salas)")}`,
+      mensagem: partes.join(" · ") || cf.instrutores.filter((i) => i.gravidade).slice(0, 3).map((i) => i.instrutor).join(" · "), link: "/radar?aba=carga" });
+  }
+  const semTurma = rs.resumo.avaliacoes_sem_turma;
+  const bercoAlto = rs.berco.filter((b) => b.gravidade === "alta").length;
+  if (semTurma || bercoAlto) {
+    const partes = [];
+    if (semTurma) partes.push(`${plural(semTurma, "Avaliação Técnica do R&S sem turma agendada", "Avaliações Técnicas do R&S sem turma agendada")} (${rs.resumo.candidatos_sem_turma} candidato(s))`);
+    if (bercoAlto) partes.push(`${plural(bercoAlto, "berço parado há 30 dias ou mais", "berços parados há 30 dias ou mais")}`);
+    const crit = rs.avaliacoes.some((a) => a.gravidade === "critica");
+    out.push({ chave: "demanda-rs", tipo: "demanda_rs", gravidade: crit ? "critico" : "atencao", valor: semTurma + bercoAlto,
+      titulo: `R&S pede turma: ${partes[0]}`, mensagem: partes.join(" · "), link: "/radar?aba=rs" });
+  }
+  return out;
+}
+
 const FONTES_EXTRAS = []; // outros módulos (ex.: Oficina de Talentos) registram aqui
 function registrarFonte(fn) { FONTES_EXTRAS.push(fn); }
 
@@ -245,6 +283,10 @@ async function calcular(user, empresaId) {
   if ([...PERFIS_GESTAO, "assistente_treinamento", "instrutor"].includes(perfil)) {
     try { out.push(...(await avisosPreventivo(user, empresaId))); }
     catch (e) { console.error("[avisos] preventivo:", e.message); }
+  }
+  if ([...PERFIS_GESTAO, "assistente_treinamento"].includes(perfil)) {
+    try { out.push(...(await avisosPreventivoCarga(user, empresaId))); }
+    catch (e) { console.error("[avisos] preventivo carga:", e.message); }
   }
   if (perfil === "treinando") out.push(...(await avisosTreinando(user, empresaId)));
   if (["coordenador_rs", "gestor_rs"].includes(perfil)) out.push(...(await avisosRS(user, empresaId)));

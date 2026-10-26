@@ -1,0 +1,124 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import SectionCard from "../../components/SectionCard";
+import { apiFetch } from "../../services/api";
+import { colors } from "../../lib/theme";
+import { GRAV, fmtData, quando, Kpi, alerta, ok, caixa, mini, vazio, badge, badgePeq, link } from "./ui";
+
+// Radar, aba "R&S → T&D" (Pacote 2, 26/10/2026).
+// 1) Avaliações Técnicas que o R&S planejou e ainda não têm turma no T&D.
+// 2) Pessoas no berço paradas há muito tempo, com as vagas abertas que poderiam aproveitá-las.
+
+export default function DemandaRS() {
+  const [d, setD] = useState(null);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    let vivo = true;
+    apiFetch("/preventivo/demanda-rs")
+      .then((r) => { if (vivo) { setD(r); setErro(""); } })
+      .catch((e) => { if (vivo) setErro(e.message || "Não foi possível carregar a demanda do R&S."); });
+    return () => { vivo = false; };
+  }, []);
+
+  if (erro) return <div style={alerta}>{erro}</div>;
+  if (!d) return <p style={vazio}>Carregando…</p>;
+
+  const r = d.resumo;
+  const semTurma = d.avaliacoes.filter((a) => a.situacao === "sem_turma");
+  const comTurma = d.avaliacoes.filter((a) => a.situacao === "com_turma");
+  const tudoCerto = !semTurma.length && !d.berco.length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {tudoCerto && <div style={ok}>Tudo em ordem: toda Avaliação Técnica planejada pelo R&S tem turma e não há pessoas paradas no berço.</div>}
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Kpi rotulo="Avaliações Técnicas sem turma" valor={r.avaliacoes_sem_turma} cor={r.avaliacoes_sem_turma ? colors.dangerText : undefined} nota={`de ${r.avaliacoes_planejadas} planejadas (30 dias)`} />
+        <Kpi rotulo="Candidatos esperados sem turma" valor={r.candidatos_sem_turma} />
+        <Kpi rotulo="Pessoas no berço" valor={r.pessoas_no_berco} nota={`${r.berco_parado} RP(s) parado(s)`} cor={r.berco_parado ? colors.warningText : undefined} />
+        <Kpi rotulo="Berço com vaga para reaproveitar" valor={r.berco_com_oportunidade} />
+      </div>
+
+      <SectionCard
+        title="Avaliações Técnicas planejadas pelo R&S"
+        subtitle="RPs em andamento com Avaliação Técnica nos próximos 30 dias (ou já em curso). Procuramos no T&D uma turma de Avaliação Técnica do mesmo cliente com início até 3 dias de diferença; não há vínculo direto entre RP e turma, por isso conferimos pelo nome."
+      >
+        {!d.avaliacoes.length ? <p style={vazio}>Nenhuma Avaliação Técnica planejada para os próximos 30 dias.</p> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[...semTurma, ...comTurma].map((a) => {
+              const g = a.gravidade ? GRAV[a.gravidade] : null;
+              return (
+                <div key={a.rp_id} style={{ ...caixa, borderLeft: `4px solid ${g ? g.cor : colors.success}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <strong style={{ fontSize: 15 }}>{a.produto}</strong>
+                      <div style={mini}>
+                        {a.site} · {a.cargo}{a.chamado ? ` · chamado ${a.chamado}` : ""} · {a.candidatos_esperados} candidato(s) esperado(s)
+                      </div>
+                      <div style={mini}>
+                        Avaliação {fmtData(a.inicio)} a {fmtData(a.final)} · {a.em_curso ? "já em curso" : `começa ${quando(a.dias_para_inicio)}`}
+                      </div>
+                    </div>
+                    {a.situacao === "sem_turma" ? (
+                      <span style={{ ...badge, color: g.cor, background: g.bg }}>Sem turma no T&D · {g.texto}</span>
+                    ) : (
+                      <span style={{ ...badge, color: colors.successText, background: colors.successLight }}>Turma encontrada</span>
+                    )}
+                  </div>
+                  {a.situacao === "sem_turma" ? (
+                    <p style={{ ...mini, marginTop: 8 }}>→ Criar a turma de Avaliação Técnica e avisar o instrutor antes do início.</p>
+                  ) : (
+                    <p style={{ ...mini, marginTop: 8 }}>
+                      <a href={`/turma/${a.turma.id}`} style={{ ...link, fontSize: 13 }}>{a.turma.tema}</a> · {a.turma.cliente} · início {fmtData(a.turma.data_inicio)}
+                      {a.turma.confere_pelo_nome ? "" : " — o nome não parece o do produto do RP; confira se é a turma certa."}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Berço parado"
+        subtitle={`Pessoas aprovadas que continuam no berço sem serem convocadas (atenção a partir de ${d.dias_berco_atencao} dias, alta a partir de ${d.dias_berco_alta}). Quando há outra vaga aberta para o mesmo cargo, ela aparece como oportunidade de reaproveitamento.`}
+      >
+        {!d.berco.length ? <p style={vazio}>Nenhum berço parado.</p> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {d.berco.map((b) => {
+              const g = GRAV[b.gravidade] || GRAV.media;
+              return (
+                <div key={b.rp_id} style={{ ...caixa, borderLeft: `4px solid ${g.cor}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <strong style={{ fontSize: 15 }}>{b.produto}</strong>
+                      <div style={mini}>
+                        {b.site} · {b.cargo}{b.chamado ? ` · chamado ${b.chamado}` : ""} · {b.saldo_berco} pessoa(s) no berço · parado há {b.dias_parado} dias (desde {fmtData(b.desde)})
+                      </div>
+                    </div>
+                    <span style={{ ...badge, color: g.cor, background: g.bg }}>{g.texto}</span>
+                  </div>
+                  {b.oportunidades?.length ? (
+                    <ul style={{ margin: "10px 0 0", paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+                      {b.oportunidades.map((o) => (
+                        <li key={o.rp_id} style={{ fontSize: 14 }}>
+                          <span style={{ ...badgePeq, color: colors.successText, background: colors.successLight }}>Oportunidade</span>{" "}
+                          {o.produto} ({o.site}{o.mesmo_site ? ", mesmo site" : ""}) com {o.vagas_abertas} vaga(s) aberta(s){o.chamado ? ` · chamado ${o.chamado}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{ ...mini, marginTop: 8 }}>Nenhuma vaga aberta do mesmo cargo para reaproveitar agora.</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}

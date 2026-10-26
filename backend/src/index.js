@@ -2285,6 +2285,9 @@ app.get("/api/rotina/aderencia/exportar", authRequired, authorizeRoles(...ROTINA
 const preventivoCtrl = require("./controllers/preventivoController");
 app.get("/api/preventivo/prontidao", authRequired, authorizeRoles(...ROTINA_LER), preventivoCtrl.prontidao);
 app.get("/api/preventivo/risco-certificacao", authRequired, authorizeRoles(...ROTINA_LER), preventivoCtrl.riscoCertificacao);
+// Pacote 2: carga futura (instrutor vê só a própria linha) e demanda do R&S para o T&D (só gestão e assistente).
+app.get("/api/preventivo/carga-futura", authRequired, authorizeRoles(...ROTINA_LER), preventivoCtrl.cargaFutura);
+app.get("/api/preventivo/demanda-rs", authRequired, authorizeRoles("coordenador", "assistente_treinamento", "supervisor", "superintendente"), preventivoCtrl.demandaRS);
 app.get("/api/rotina/turmas/:id", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.estadoDaTurma);
 app.put("/api/rotina/turmas/:id/checklist/:itemId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.responderChecklist);
 app.put("/api/rotina/turmas/:id/tarefas/:tarefaId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.marcarTarefa);

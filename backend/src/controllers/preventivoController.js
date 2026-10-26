@@ -7,6 +7,7 @@
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const P = require("../services/preventivoService");
+const C = require("../services/preventivoCargaService");
 
 const chave = (s) => String(s || "").trim().toLowerCase();
 const erro = (res, status, msg) => res.status(status).json({ ok: false, message: msg, error: msg });
@@ -43,4 +44,27 @@ async function riscoCertificacao(req, res) {
   }
 }
 
-module.exports = { prontidao, riscoCertificacao };
+async function cargaFutura(req, res) {
+  try {
+    const r = recorte(req);
+    const dados = await C.calcularCargaFutura({ empresaId: r.empresaId, instrutor: r.instrutor });
+    return res.json({ ok: true, ...dados, so_proprias: r.so_proprias });
+  } catch (e) {
+    console.error("[preventivo.cargaFutura]", e.message || e);
+    return erro(res, 500, "Erro ao carregar a carga futura.");
+  }
+}
+
+// R&S → T&D: só dados de planejamento das RPs (sem nome de candidato). Instrutor não acessa (barrado na rota).
+async function demandaRS(req, res) {
+  try {
+    const r = recorte(req);
+    const dados = await C.calcularDemandaRS({ empresaId: r.empresaId });
+    return res.json({ ok: true, ...dados });
+  } catch (e) {
+    console.error("[preventivo.demandaRS]", e.message || e);
+    return erro(res, 500, "Erro ao carregar a demanda do R&S.");
+  }
+}
+
+module.exports = { prontidao, riscoCertificacao, cargaFutura, demandaRS };
