@@ -5,7 +5,7 @@ import { useParams, useSearchParams }      from "next/navigation";
 import TurmaPageShell                      from "../../../components/TurmaPageShell";
 import StatCard                            from "../../../components/StatCard";
 import MateriaisDaTurma                    from "../../../components/MateriaisDaTurma";
-import { apiFetch, getStoredUser }         from "../../../services/api";
+import { apiFetch, apiDownload, getStoredUser } from "../../../services/api";
 import { gerarCronogramaEAbrirChamada }   from "../../../lib/gerarCronogramaEAbrirChamada";
 import { colors, chart, estiloBadgeStatus } from "../../../lib/theme";
 import { compareLocalDatesAsc, formatDateBR, parseLocalDate } from "../../../lib/date";
@@ -65,6 +65,20 @@ export default function GestaoTurmaPage() {
 
   // Rotina do instrutor (16/10/2026): treinando não vê; os demais perfis seguem a API.
   const perfilAtual = String(getStoredUser()?.perfil || "").toLowerCase();
+  const podeVerRelatorio = ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo", "superintendente", "super_admin"].includes(perfilAtual);
+  const [baixandoRelatorio, setBaixandoRelatorio] = useState(false);
+  const [erroRelatorio, setErroRelatorio] = useState("");
+  async function baixarRelatorioExcel() {
+    try {
+      setBaixandoRelatorio(true);
+      setErroRelatorio("");
+      await apiDownload(`/treinamentos/${id}/relatorio?formato=xlsx`, "relatorio-turma.xlsx");
+    } catch (e) {
+      setErroRelatorio(e.message || "Não foi possível gerar o relatório da turma.");
+    } finally {
+      setBaixandoRelatorio(false);
+    }
+  }
   const podeVerRotina = ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente", "super_admin"].includes(perfilAtual);
 
   async function carregarTudo() {
@@ -267,10 +281,21 @@ export default function GestaoTurmaPage() {
               Selecionar aula para chamada
             </button>
           )}
+          {podeVerRelatorio && (
+            <>
+              <button style={btnOutline} onClick={baixarRelatorioExcel} disabled={baixandoRelatorio}>
+                {baixandoRelatorio ? "Gerando…" : "Relatório geral (Excel)"}
+              </button>
+              <button style={btnOutline} onClick={() => window.open(`/relatorio-turma?ids=${id}`, "_blank")}>
+                Relatório geral (PDF)
+              </button>
+            </>
+          )}
           <button style={btnGhost} onClick={carregarTudo}>
             Atualizar
           </button>
         </div>
+        {erroRelatorio ? <div role="alert" style={{ color: "#b91c1c", fontSize: 13, marginTop: 8 }}>{erroRelatorio}</div> : null}
       </div>
 
       {erroCron && (

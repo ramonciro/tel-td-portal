@@ -716,6 +716,28 @@ function TreinamentosConteudo() {
     }
   }
 
+  async function relatorioSelecionadasExcel() {
+    if (!selecionadas.size) return;
+    try {
+      setExportando(true);
+      setError("");
+      await apiDownload(`/treinamentos/relatorio-lote?ids=${[...selecionadas].join(",")}&formato=xlsx`, "relatorio-turmas.xlsx");
+    } catch (err) {
+      setError(err.message || "Não foi possível gerar o relatório das turmas selecionadas.");
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  function relatorioSelecionadasPdf() {
+    if (!selecionadas.size) return;
+    if (selecionadas.size > 40) {
+      setError("Selecione no máximo 40 turmas por relatório.");
+      return;
+    }
+    window.open(`/relatorio-turma?ids=${[...selecionadas].join(",")}`, "_blank");
+  }
+
   async function excluirSelecionadas() {
     if (!canDelete || !selecionadas.size) return;
     if (!window.confirm(`Excluir ${selecionadas.size} turma(s) selecionada(s)? Essa ação remove os dados relacionados de cada uma.`)) return;
@@ -789,6 +811,12 @@ function TreinamentosConteudo() {
               <button type="button" style={ghostButton} onClick={() => setSelecionadas(new Set())}>Limpar</button>
               <button type="button" style={primarySmall} disabled={!selecionadas.size || exportando} onClick={exportarSelecionadas}>
                 {exportando ? "Exportando..." : "Exportar Excel"}
+              </button>
+              <button type="button" style={ghostButton} disabled={!selecionadas.size || exportando} onClick={relatorioSelecionadasExcel} title="Relatório geral de cada turma selecionada, em Excel (resumo, participantes, cronograma, NPS e avaliações)">
+                Relatório geral (Excel)
+              </button>
+              <button type="button" style={ghostButton} disabled={!selecionadas.size} onClick={relatorioSelecionadasPdf} title="Abre o relatório geral das turmas selecionadas para imprimir ou salvar em PDF">
+                Relatório geral (PDF)
               </button>
               {canDelete && (
                 <button type="button" style={dangerGhost} disabled={!selecionadas.size || excluindoLote} onClick={excluirSelecionadas}>

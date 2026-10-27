@@ -1102,6 +1102,96 @@ app.get("/api/treinamentos/exportar-selecionadas", authRequired,
   }
 });
 
+// ─── Relatório geral da turma (27/10/2026) ───────────────────────────────────
+// JSON (tela de impressão/PDF) e Excel, de uma turma ou de várias (lote).
+// Ficam ANTES do mount do CRUD pelo mesmo motivo de exportar-selecionadas.
+const PERFIS_RELATORIO_TURMA = ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo", "superintendente"];
+const LIMITE_RELATORIO_LOTE = 40;
+
+async function carregarRelatoriosTurma(req, ids) {
+  const { montarRelatoriosTurmas } = require("./services/relatorioTurmaService");
+  const { empresaId } = tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] });
+  const ehAssistente = String(req.user?.perfil || "").toLowerCase() === "assistente_treinamento";
+  // Mesmo recorte por cliente da listagem: instrutor/supervisor ligados a um cliente só veem turmas dele.
+  return montarRelatoriosTurmas(ids, {
+    empresaId,
+    perfil: req.user?.perfil,
+    nomeUsuario: req.user?.nome,
+    filtro: (r) => ehAssistente || usuarioTemAcessoAoCliente(req, r.turma.cliente),
+  });
+}
+
+function idsDaQuery(req) {
+  return [...new Set(String(req.query.ids || "").split(",").map((v) => Number(v.trim())).filter((v) => Number.isInteger(v) && v > 0))];
+}
+
+function enviarExcelRelatorio(res, wb, nome) {
+  return wb.xlsx.writeBuffer().then((buf) => {
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${nome}"`);
+    return res.send(Buffer.from(buf));
+  });
+}
+
+// Lote: GET /api/treinamentos/relatorio-lote?ids=1,2,3[&formato=xlsx]
+app.get("/api/treinamentos/relatorio-lote", authRequired, authorizeRoles(...PERFIS_RELATORIO_TURMA), async (req, res) => {
+  try {
+    const ids = idsDaQuery(req);
+    if (!ids.length) return res.status(400).json({ ok: false, message: "Informe ao menos um id em ?ids=" });
+    if (ids.length > LIMITE_RELATORIO_LOTE) {
+      return res.status(400).json({ ok: false, message: `Selecione no máximo ${LIMITE_RELATORIO_LOTE} turmas por vez.` });
+    }
+    const relatorios = await carregarRelatoriosTurma(req, ids);
+    if (!relatorios.length) return res.status(404).json({ ok: false, message: "Nenhuma das turmas foi encontrada." });
+
+    const xlsx = String(req.query.formato || "").toLowerCase() === "xlsx";
+    registrarAuditoria({
+      usuario: req.user,
+      acao: "exportar",
+      entidade: "treinamento",
+      entidadeId: null,
+      resumo: `${req.user?.nome || "Alguém"} gerou o relatório geral de ${relatorios.length} turma(s) (${xlsx ? "Excel" : "tela/PDF"}) (ids: ${ids.join(",")})`,
+      ip: req.ip,
+    });
+    if (xlsx) {
+      const { excelDoLote } = require("./services/relatorioTurmaExcel");
+      return await enviarExcelRelatorio(res, excelDoLote(relatorios), "relatorio-turmas.xlsx");
+    }
+    return res.json({ ok: true, relatorios });
+  } catch (error) {
+    console.error("[treinamentos] relatorioLote:", error.message);
+    return res.status(500).json({ ok: false, message: "Erro ao gerar o relatório das turmas" });
+  }
+});
+
+// Uma turma: GET /api/treinamentos/:id/relatorio[?formato=xlsx]
+app.get("/api/treinamentos/:id/relatorio", authRequired, authorizeRoles(...PERFIS_RELATORIO_TURMA), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, message: "Turma inválida" });
+    const [relatorio] = await carregarRelatoriosTurma(req, [id]);
+    if (!relatorio) return res.status(404).json({ ok: false, message: "Turma não encontrada" });
+
+    const xlsx = String(req.query.formato || "").toLowerCase() === "xlsx";
+    registrarAuditoria({
+      usuario: req.user,
+      acao: "exportar",
+      entidade: "treinamento",
+      entidadeId: id,
+      resumo: `${req.user?.nome || "Alguém"} gerou o relatório geral da turma "${relatorio.turma.tema}" (${xlsx ? "Excel" : "tela/PDF"})`,
+      ip: req.ip,
+    });
+    if (xlsx) {
+      const { excelDaTurma, nomeArquivoSeguro } = require("./services/relatorioTurmaExcel");
+      return await enviarExcelRelatorio(res, excelDaTurma(relatorio), `relatorio-turma-${nomeArquivoSeguro(relatorio.turma.tema)}.xlsx`);
+    }
+    return res.json({ ok: true, relatorio });
+  } catch (error) {
+    console.error("[treinamentos] relatorioTurma:", error.message);
+    return res.status(500).json({ ok: false, message: "Erro ao gerar o relatório da turma" });
+  }
+});
+
 app.use(
   "/api/treinamentos",
   createCrudRouter({
