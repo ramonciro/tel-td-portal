@@ -1414,4 +1414,5 @@ module.exports = {
   // exportados para testes
   _totaisDaPessoa: totaisDaPessoa,
   _somarMeses: somarMeses,
+  _montarGrade: montarGrade, // usado pelo Radar (vencimentos de reciclagem)
 };

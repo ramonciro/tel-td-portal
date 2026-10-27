@@ -9,6 +9,7 @@ const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const P = require("../services/preventivoService");
 const C = require("../services/preventivoCargaService");
 const R = require("../services/radarSemanalService");
+const Q = require("../services/preventivoQualidadeService");
 
 const chave = (s) => String(s || "").trim().toLowerCase();
 const erro = (res, status, msg) => res.status(status).json({ ok: false, message: msg, error: msg });
@@ -80,6 +81,23 @@ async function radarSemanal(req, res) {
   }
 }
 
+// Tendência de qualidade (Pacote 4): NPS e presença por instrutor, tema e cliente, em janela móvel de 3 turmas.
+async function qualidade(req, res) {
+  try {
+    const r = recorte(req);
+    const dados = await Q.calcularTendencias({ empresaId: r.empresaId });
+    const grupos = dados.grupos.filter((g) => usuarioTemAcessoAoCliente(req, g.cliente));
+    const itens = dados.itens.filter((g) => usuarioTemAcessoAoCliente(req, g.cliente));
+    return res.json({
+      ok: true, hoje: dados.hoje, grupos,
+      resumo: { ...dados.resumo, em_queda: itens.length, melhorando: grupos.filter((g) => g.status === "melhorando").length },
+    });
+  } catch (e) {
+    console.error("[preventivo.qualidade]", e.message || e);
+    return erro(res, 500, "Erro ao carregar a tendência de qualidade.");
+  }
+}
+
 // Só mexe em item do próprio ambiente (ou compartilhado, empresa_id 0) e do cliente a que o usuário tem acesso.
 async function _acao(req, res, fn, okMsg) {
   try {
@@ -102,4 +120,4 @@ const radarResolver = (req, res) => _acao(req, res, (id) => R.resolverItem(req, 
 const radarIgnorar = (req, res) => _acao(req, res, (id) => R.ignorarItem(req, id, req.body?.motivo, req.body?.dias), "Item ignorado.");
 const radarReabrir = (req, res) => _acao(req, res, (id) => R.reabrirItem(req, id), "Item reaberto.");
 
-module.exports = { prontidao, riscoCertificacao, cargaFutura, demandaRS, radarSemanal, radarResolver, radarIgnorar, radarReabrir };
+module.exports = { prontidao, riscoCertificacao, cargaFutura, demandaRS, radarSemanal, qualidade, radarResolver, radarIgnorar, radarReabrir };

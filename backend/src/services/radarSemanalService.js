@@ -20,6 +20,7 @@
 const pool = require("../lib/db");
 const P = require("./preventivoService");
 const C = require("./preventivoCargaService");
+const Q = require("./preventivoQualidadeService");
 const { registrarAuditoria } = require("./auditoria");
 
 const { hojeBahia, somarDias, diasEntre } = P;
@@ -38,6 +39,9 @@ const ORIGENS = {
   sala: { nome: "Salas", farol: "Salas saturadas" },
   "rs-av": { nome: "R&S → T&D (avaliação)", farol: "Avaliações Técnicas sem turma" },
   "rs-berco": { nome: "R&S → T&D (berço)", farol: "RPs com berço parado" },
+  qualidade: { nome: "Qualidade em queda", farol: "Qualidade em queda (NPS e presença)" },
+  necessidade: { nome: "Necessidade vencendo", farol: "Necessidades vencendo sem turma" },
+  reciclagem: { nome: "Reciclagem de jornada", farol: "Reciclagens vencidas ou a vencer" },
 };
 
 const fmt = (d) => { if (!d) return ""; const [a, m, dia] = String(d).slice(0, 10).split("-"); return `${dia}/${m}/${a.slice(2)}`; };
@@ -176,6 +180,58 @@ function itensRS(r) {
   return out;
 }
 
+const slug = (s, n = 40) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, n);
+
+function itensQualidade(r, empresaId) {
+  const acaoPorDim = { instrutor: "Conversar com o instrutor", tema: "Revisar o conteúdo", cliente: "Revisar a operação com o cliente" };
+  return (r.itens || []).map((it) => {
+    const partes = it.metricas.map((m) => {
+      const v = m.serie.slice(-3).map((x) => (m.metrica === "presenca" ? `${x.valor}%` : x.valor));
+      return `${m.metrica_rotulo} ${v.join(" → ")}`;
+    });
+    const turmas = (it.metricas[0]?.serie || []).slice(-3).map((x) => `${corta(x.tema, 40)} (${fmt(x.fim)})`);
+    const coment = it.metricas.flatMap((m) => m.comentarios || []).slice(0, 3).map((c) => `“${c.texto}”`);
+    const prox = it.proxima_turma;
+    const decisao = it.dimensao === "instrutor"
+      ? `Conversar com ${it.nome} sobre as 3 últimas turmas e combinar um ajuste${prox ? ` antes da próxima turma (${fmt(prox)})` : ""}.`
+      : it.dimensao === "tema"
+        ? `Rever conteúdo, material e instrutor do tema ${corta(it.nome, 60)}${prox ? ` antes da próxima turma (${fmt(prox)})` : ""}.`
+        : `Alinhar com o cliente ${it.nome} o que mudou nas últimas turmas${prox ? ` antes da próxima (${fmt(prox)})` : ""}.`;
+    return {
+      empresa_id: it.empresa_id ?? empresaId, chave: `qualidade:${it.dimensao}:${slug(it.cliente, 30)}:${slug(it.nome, 40)}`, origem: "qualidade", gravidade: it.gravidade,
+      titulo: `${it.dimensao === "instrutor" ? "Instrutor " : it.dimensao === "tema" ? "Tema " : "Cliente "}${corta(it.nome, 60)}${it.dimensao !== "cliente" && it.cliente ? ` (${it.cliente})` : ""}: ${partes.join(" · ")} nas 3 últimas turmas`,
+      detalhe: `Turmas: ${turmas.join(", ")}.${coment.length ? ` Detratores disseram: ${coment.join(" ")}` : ""}`,
+      acao: acaoPorDim[it.dimensao], decisao,
+      dono: it.supervisor || "Coordenação", cliente: it.cliente || null, link: "/radar?aba=qualidade", prazo: prox || null,
+    };
+  });
+}
+
+function itensNecessidades(lista, empresaId) {
+  return (lista || []).map((n) => ({
+    empresa_id: n.empresa_id ?? empresaId, chave: `necessidade:${n.id}`, origem: "necessidade", gravidade: n.gravidade,
+    titulo: `Necessidade de ${corta(n.tema, 70)} (${n.cliente}) ${n.dias_para_prazo < 0 ? `venceu há ${-n.dias_para_prazo} dia(s)` : `vence ${quando(n.dias_para_prazo)}`}, ${n.sem_turma ? "sem turma" : `faltam ${n.horas_faltantes}h`}`,
+    detalhe: `${n.horas_necessarias}h necessárias, ${n.horas_atendidas}h atendidas, ${plural(n.turmas_vinculadas, "turma vinculada", "turmas vinculadas")}${n.solicitante ? ` · solicitante ${n.solicitante}` : ""}.`,
+    acao: "Criar a turma", decisao: `Criar ${n.sem_turma ? "a turma" : "as turmas que faltam"} de ${corta(n.tema, 60)} para ${n.cliente} (${n.horas_faltantes || n.horas_necessarias}h) antes de ${fmt(n.prazo)}.`,
+    dono: n.solicitante || "Coordenação", cliente: n.cliente || null, link: "/necessidades", prazo: n.prazo,
+  }));
+}
+
+function itensReciclagem(lista, empresaId) {
+  return (lista || []).map((j) => {
+    const partes = [];
+    if (j.vencidas) partes.push(plural(j.vencidas, "reciclagem vencida", "reciclagens vencidas"));
+    if (j.vencem_em_breve) partes.push(`${plural(j.vencem_em_breve, "vence", "vencem")} em até 30 dias`);
+    return {
+      empresa_id: j.empresa_id ?? empresaId, chave: `reciclagem:${j.jornada_id}`, origem: "reciclagem", gravidade: j.gravidade,
+      titulo: `${corta(j.nome, 70)}${j.cliente ? ` (${j.cliente})` : ""}: ${partes.join(" e ")}`,
+      detalhe: `Reciclagem a cada ${j.periodicidade_meses} meses · ${j.participantes} participante(s) na jornada.`,
+      acao: "Agendar a reciclagem", decisao: `Agendar a reciclagem de ${corta(j.nome, 60)} para quem está vencido ou vence em até 30 dias${j.vencem_em_breve ? ` (próximo vencimento ${fmt(j.prazo)})` : ""}.`,
+      dono: "Metodologia", cliente: j.cliente || null, link: `/mapa-desenvolvimento/presenca?jornada=${j.jornada_id}`, prazo: j.prazo,
+    };
+  });
+}
+
 /** Roda os calculadores e devolve { itens, origensOk }. Calculador que falha não derruba os demais. */
 async function coletar(empresaIds, { comSalas }) {
   const itens = [];
@@ -191,6 +247,9 @@ async function coletar(empresaIds, { comSalas }) {
     await tenta(`certificação ${E}`, [], async () => { const r = await P.calcularRiscoCertificacao({ empresaId: E }); ok.add("certificacao"); return itensCertificacao(r); });
     await tenta(`carga ${E}`, [], async () => { const r = await C.calcularCargaFutura({ empresaId: E }); ok.add("carga"); return itensCarga(r, E); });
     await tenta(`R&S ${E}`, [], async () => { const r = await C.calcularDemandaRS({ empresaId: E }); ok.add("rs-av"); ok.add("rs-berco"); return itensRS(r); });
+    await tenta(`qualidade ${E}`, [], async () => { const r = await Q.calcularTendencias({ empresaId: E }); ok.add("qualidade"); return itensQualidade(r, E); });
+    await tenta(`necessidades ${E}`, [], async () => { const r = await Q.calcularNecessidadesVencendo({ empresaId: E }); ok.add("necessidade"); return itensNecessidades(r, E); });
+    await tenta(`reciclagem ${E}`, [], async () => { const r = await Q.calcularReciclagens({ empresaId: E }); ok.add("reciclagem"); return itensReciclagem(r, E); });
     for (const o of ok) origensOk.add(`${E}|${o}`);
   }
   if (comSalas) {

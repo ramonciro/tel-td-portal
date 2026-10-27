@@ -10,9 +10,10 @@ import AbaTurmas from "./AbaTurmas";
 import RadarSemana from "./RadarSemana";
 import CargaFutura from "./CargaFutura";
 import DemandaRS from "./DemandaRS";
+import AbaQualidade from "./AbaQualidade";
 
 // Radar preventivo (26/10/2026): o que vai dar errado se ninguém agir, enquanto ainda dá tempo.
-//  Semana (Pacote 3) · Turmas e certificação (Pacote 1) · Carga futura e R&S → T&D (Pacote 2)
+//  Semana (Pacote 3) · Turmas e certificação (Pacote 1) · Carga futura e R&S → T&D (Pacote 2) · Qualidade (Pacote 4)
 
 function Radar() {
   const router = useRouter();
@@ -29,7 +30,7 @@ function Radar() {
     ...(instrutor ? [] : [{ id: "semana", rotulo: "Semana" }]),
     { id: "turmas", rotulo: "Turmas e certificação" },
     { id: "carga", rotulo: "Carga futura" },
-    ...(instrutor ? [] : [{ id: "rs", rotulo: "R&S → T&D" }]),
+    ...(instrutor ? [] : [{ id: "rs", rotulo: "R&S → T&D" }, { id: "qualidade", rotulo: "Qualidade" }]),
   ];
   const padrao = instrutor ? "turmas" : "semana";
   const pedida = params.get("aba");
@@ -43,7 +44,7 @@ function Radar() {
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: colors.textPrimary }}>Radar</h1>
           <p style={{ fontSize: 13, color: colors.textSecondary, margin: "4px 0 0", maxWidth: 760 }}>
             O que vai dar errado se ninguém agir — e ainda dá tempo de agir: turmas que começam com algo faltando, pessoas
-            perdendo a chance de certificar, instrutores e salas sobrecarregados nos próximos meses e demanda do R&S sem turma.
+            perdendo a chance de certificar, instrutores e salas sobrecarregados nos próximos meses, demanda do R&S sem turma, qualidade caindo turma após turma e vencimentos.
             {soProprias || instrutor ? " Você vê apenas as suas turmas e a sua carga." : ""}
           </p>
         </div>
@@ -60,6 +61,7 @@ function Radar() {
         {aba === "turmas" && <AbaTurmas onSoProprias={setSoProprias} />}
         {aba === "carga" && <CargaFutura />}
         {aba === "rs" && !instrutor && <DemandaRS />}
+        {aba === "qualidade" && !instrutor && <AbaQualidade />}
       </div>
     </PortalShell>
   );

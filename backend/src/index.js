@@ -2290,6 +2290,7 @@ app.get("/api/preventivo/carga-futura", authRequired, authorizeRoles(...ROTINA_L
 app.get("/api/preventivo/demanda-rs", authRequired, authorizeRoles("coordenador", "assistente_treinamento", "supervisor", "superintendente"), preventivoCtrl.demandaRS);
 const RADAR_SEMANAL = ["coordenador", "assistente_treinamento", "supervisor", "superintendente"];
 app.get("/api/preventivo/radar-semanal", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarSemanal);
+app.get("/api/preventivo/qualidade", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.qualidade);
 app.post("/api/preventivo/radar-itens/:id/resolver", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarResolver);
 app.post("/api/preventivo/radar-itens/:id/ignorar", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarIgnorar);
 app.post("/api/preventivo/radar-itens/:id/reabrir", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarReabrir);
