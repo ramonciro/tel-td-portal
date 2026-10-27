@@ -208,7 +208,7 @@ async function calcularProntidao({ empresaId, dias = 7, instrutor, podeVer } = {
     if (!itens.length) continue;
     itens.sort((a, b) => GRAV_ORDEM[b.gravidade] - GRAV_ORDEM[a.gravidade]);
     out.push({
-      id: t.id, tema: t.tema, cliente: t.cliente, turma: t.turma, instrutor: t.instrutor, supervisor: t.supervisor,
+      id: t.id, empresa_id: t.empresa_id, tema: t.tema, cliente: t.cliente, turma: t.turma, instrutor: t.instrutor, supervisor: t.supervisor,
       instrutores_adicionais: t._adicionais, modalidade: modalidade || null,
       data_inicio: t.data_inicio, hora_inicio: t.hora_inicio || null, dias_para_inicio: diasParaInicio,
       participantes, gravidade: itens[0].gravidade, itens,
@@ -338,7 +338,7 @@ async function calcularRiscoCertificacao({ empresaId, instrutor, podeVer } = {})
     if (!risco.length) continue;
     risco.sort((a, b) => GRAV_ORDEM[b.gravidade] - GRAV_ORDEM[a.gravidade] || a.melhor_final - b.melhor_final || a.nome.localeCompare(b.nome, "pt-BR"));
     out.push({
-      id: t.id, tema: t.tema, cliente: t.cliente, turma: t.turma, instrutor: t.instrutor, supervisor: t.supervisor,
+      id: t.id, empresa_id: t.empresa_id, tema: t.tema, cliente: t.cliente, turma: t.turma, instrutor: t.instrutor, supervisor: t.supervisor,
       instrutores_adicionais: t._adicionais,
       data_inicio: t.data_inicio, data_fim: t.data_fim, presenca_minima_pct: minimo,
       participantes: partes.length, aulas: aulas.length, aulas_restantes: aulasRestantes + 0,

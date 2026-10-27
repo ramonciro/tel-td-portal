@@ -2397,6 +2397,13 @@ async function runMigrations() {
       console.log(`  ↳ produção de conteúdo não concluído (${error.message}) — seguindo`);
     }
 
+    // 72c. Radar semanal (Pacote 3, 26/10/2026): itens de risco com estado + retrato semanal.
+    try {
+      await ensureRadar();
+    } catch (error) {
+      console.log(`  ↳ Radar semanal não concluído (${error.message}) — seguindo`);
+    }
+
     // 73. Berço das RPs (21/10/2026): o time pode aprovar mais gente do que o gestor
     //     pediu e deixar o excedente "no berço" (reserva). Quando alguém do berço é
     //     convocado, sai de `hcs_berco`, entra em `hcs_convocados_berco` (quantos vieram
@@ -3061,6 +3068,60 @@ async function ensurePacote20261021() {
 //    (cada pedido de ajuste abre uma nova rodada). Horário gravado no clique.
 //  - conteudo_config: expediente (horário útil) usado nos prazos.
 // Datas são DATETIME "de parede" no horário de Salvador (America/Bahia).
+// Radar semanal (26/10/2026). Ver services/radarSemanalService.js.
+//  - radar_itens: uma linha por risco acionável (turma, instrutor, sala, RP...), com estado
+//    (aberto/resolvido/ignorado), motivo de quem ignorou e se foi tratado antes do prazo.
+//    empresa_id = 0 é "compartilhado" (salas). Sem FK (mesmo motivo do passo 57).
+//  - radar_semanal: retrato guardado na segunda de manhã, por escopo (0 = todos os ambientes).
+async function ensureRadar() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS radar_itens (
+      id                 INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id         INT NOT NULL DEFAULT 0,
+      chave              VARCHAR(150) NOT NULL,
+      origem             VARCHAR(20) NOT NULL,
+      gravidade          VARCHAR(10) NOT NULL,
+      titulo             VARCHAR(300) NOT NULL,
+      detalhe            TEXT NULL,
+      acao               VARCHAR(200) NULL,
+      decisao            TEXT NULL,
+      dono               VARCHAR(150) NULL,
+      cliente            VARCHAR(150) NULL,
+      link               VARCHAR(200) NULL,
+      prazo              DATE NULL,
+      estado             VARCHAR(12) NOT NULL DEFAULT 'aberto',
+      primeira_vez       DATE NOT NULL,
+      ultima_vez         DATE NOT NULL,
+      resolvido_em       DATE NULL,
+      resolvido_por      VARCHAR(10) NULL,
+      a_tempo            TINYINT NULL,
+      ignorado_motivo    VARCHAR(255) NULL,
+      ignorado_ate       DATE NULL,
+      gravidade_ignorada VARCHAR(10) NULL,
+      observacao         VARCHAR(255) NULL,
+      usuario_id         INT NULL,
+      usuario_nome       VARCHAR(150) NULL,
+      reabertos          INT NOT NULL DEFAULT 0,
+      created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_radar_item (empresa_id, chave),
+      KEY idx_radar_estado (empresa_id, estado),
+      KEY idx_radar_resolvido (resolvido_em)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS radar_semanal (
+      id            INT AUTO_INCREMENT PRIMARY KEY,
+      escopo        INT NOT NULL DEFAULT 0,
+      semana_inicio DATE NOT NULL,
+      gerado_em     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      dados         MEDIUMTEXT NULL,
+      UNIQUE KEY uk_radar_semana (escopo, semana_inicio)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  console.log("  ↳ Radar semanal: ok");
+}
+
 async function ensureConteudo() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conteudo_tipos (

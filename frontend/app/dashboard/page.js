@@ -9,6 +9,7 @@ import { apiFetch, apiDownload } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
 import { colors, chart } from "../../lib/theme";
 import { ContadorAnimado, BarraHorizontal } from "../../components/Charts";
+import RadarResumoCard from "../radar/RadarResumoCard";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -383,6 +384,8 @@ export default function DashboardPage() {
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`}>
             <AlertasDashboard alertas={alertas} onAbrirTurma={abrirDrillDown} />
           </div>
+
+          <RadarResumoCard />
 
           <SectionCard
             title="Filtros do painel"

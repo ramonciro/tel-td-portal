@@ -220,14 +220,14 @@ async function avisosPreventivo(user, empresaId) {
     out.push({ chave: "prontidao-turmas", tipo: "prontidao", gravidade: graves ? "critico" : "atencao", valor: pr.turmas.length,
       titulo: `${plural(pr.turmas.length, "turma começa em até 7 dias com pendência", "turmas começam em até 7 dias com pendência")}`,
       mensagem: pr.turmas.slice(0, 3).map((t) => `${t.tema} (${t.dias_para_inicio === 0 ? "hoje" : `em ${t.dias_para_inicio}d`}): ${t.itens[0].titulo.toLowerCase()}`).join(" · "),
-      link: "/radar" });
+      link: "/radar?aba=turmas" });
   }
   const urgentes = rc.resumo.pessoas_perderam + rc.resumo.pessoas_no_limite;
   if (urgentes) {
     out.push({ chave: "risco-certificacao", tipo: "certificacao", gravidade: rc.resumo.pessoas_perderam ? "critico" : "atencao", valor: urgentes,
       titulo: `${plural(urgentes, "participante em risco de não certificar", "participantes em risco de não certificar")}`,
       mensagem: `${rc.resumo.pessoas_perderam} já não alcançam a presença mínima · ${rc.resumo.pessoas_no_limite} no limite. ${rc.turmas.slice(0, 2).map((t) => t.tema).join(" · ")}`,
-      link: "/radar" });
+      link: "/radar?aba=turmas" });
   }
   return out;
 }
@@ -287,6 +287,10 @@ async function calcular(user, empresaId) {
   if ([...PERFIS_GESTAO, "assistente_treinamento"].includes(perfil)) {
     try { out.push(...(await avisosPreventivoCarga(user, empresaId))); }
     catch (e) { console.error("[avisos] preventivo carga:", e.message); }
+  }
+  if ([...PERFIS_GESTAO, "assistente_treinamento"].includes(perfil)) {
+    try { out.push(...(await require("./radarSemanalService").avisoDoSino(user, empresaId))); }
+    catch (e) { console.error("[avisos] radar semanal:", e.message); }
   }
   if (perfil === "treinando") out.push(...(await avisosTreinando(user, empresaId)));
   if (["coordenador_rs", "gestor_rs"].includes(perfil)) out.push(...(await avisosRS(user, empresaId)));

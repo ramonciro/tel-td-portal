@@ -2288,6 +2288,21 @@ app.get("/api/preventivo/risco-certificacao", authRequired, authorizeRoles(...RO
 // Pacote 2: carga futura (instrutor vê só a própria linha) e demanda do R&S para o T&D (só gestão e assistente).
 app.get("/api/preventivo/carga-futura", authRequired, authorizeRoles(...ROTINA_LER), preventivoCtrl.cargaFutura);
 app.get("/api/preventivo/demanda-rs", authRequired, authorizeRoles("coordenador", "assistente_treinamento", "supervisor", "superintendente"), preventivoCtrl.demandaRS);
+const RADAR_SEMANAL = ["coordenador", "assistente_treinamento", "supervisor", "superintendente"];
+app.get("/api/preventivo/radar-semanal", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarSemanal);
+app.post("/api/preventivo/radar-itens/:id/resolver", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarResolver);
+app.post("/api/preventivo/radar-itens/:id/ignorar", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarIgnorar);
+app.post("/api/preventivo/radar-itens/:id/reabrir", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarReabrir);
+// Radar semanal: gera o retrato da semana na hora (o agendamento é toda segunda às 07h, em jobs/scheduler.js).
+app.post("/api/admin/jobs/rodar-radar-semanal", authRequired, authorizeRoles("coordenador", "supervisor", "superintendente"), async (req, res) => {
+  try {
+    const resultado = await require("./services/radarSemanalService").gerarSemana({ forcar: true });
+    return res.json({ ok: true, resultado });
+  } catch (error) {
+    console.error("Erro ao gerar o Radar semanal:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao gerar o Radar semanal." });
+  }
+});
 app.get("/api/rotina/turmas/:id", authRequired, authorizeRoles(...ROTINA_LER), rotinaCtrl.estadoDaTurma);
 app.put("/api/rotina/turmas/:id/checklist/:itemId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.responderChecklist);
 app.put("/api/rotina/turmas/:id/tarefas/:tarefaId", authRequired, authorizeRoles(...ROTINA_ESCREVER), rotinaCtrl.marcarTarefa);

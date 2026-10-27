@@ -33,6 +33,7 @@ const { rodarCalculoConquistas } = require("./conquistasJob");
 const { rodarCertificadosAutomaticos } = require("./certificadosAutomaticos");
 const { sincronizarCelulas } = require("../lib/celulaBaby");
 const { rodarAvisoAtrasadas, rodarLimpezaLixeiraRS } = require("./rsAtrasadasDigest");
+const radarSemanal = require("../services/radarSemanalService");
 const { configurado: backupConfigurado, rodarBackup, carregarUltimoDoBucket } = require("../services/backupService");
 
 function iniciarAgendamentos() {
@@ -115,6 +116,25 @@ function iniciarAgendamentos() {
     console.log("[scheduler] Backup externo DESLIGADO (faltam as variáveis BACKUP_S3_*).");
   }
 
+  // Radar semanal (26/10/2026): segunda 07h de Brasília guarda o retrato da semana (itens de risco,
+  // top 5 e faróis); todo dia 06h30 sincroniza os itens para medir se os alertas foram tratados a tempo.
+  cron.schedule("0 7 * * 1", async () => {
+    try {
+      const r = await radarSemanal.gerarSemana({ forcar: true });
+      console.log("[scheduler] Radar semanal gerado:", JSON.stringify(r.resumo));
+    } catch (error) {
+      console.error("[scheduler] Erro ao gerar o Radar semanal:", error.message);
+    }
+  }, { timezone: "America/Sao_Paulo" });
+  cron.schedule("30 6 * * *", async () => {
+    try {
+      const r = await radarSemanal.sincronizar({ forcar: true });
+      console.log("[scheduler] Radar sincronizado:", JSON.stringify({ novos: r.novos, resolvidos: r.resolvidos, reabertos: r.reabertos }));
+    } catch (error) {
+      console.error("[scheduler] Erro ao sincronizar o Radar:", error.message);
+    }
+  }, { timezone: "America/Sao_Paulo" });
+
   cron.schedule("0 17 * * *", async () => {
     try {
       const resultado = await rodarLembretesAula();
@@ -125,7 +145,7 @@ function iniciarAgendamentos() {
   });
 
   console.log(
-    "[scheduler] Agendamentos automáticos registrados (certificados 05h diário, conquistas 06h diário, pendências 07h dias úteis, RPs atrasadas R&S 07h10 dias úteis, lixeira R&S 04h diário, lembretes 17h diário)."
+    "[scheduler] Agendamentos automáticos registrados (certificados 05h diário, conquistas 06h diário, pendências 07h dias úteis, RPs atrasadas R&S 07h10 dias úteis, lixeira R&S 04h diário, lembretes 17h diário, Radar semanal segunda 07h e sincronização 06h30 de Brasília)."
   );
 }
 

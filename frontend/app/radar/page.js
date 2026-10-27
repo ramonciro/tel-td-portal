@@ -7,11 +7,12 @@ import { getStoredUser } from "../../services/api";
 import { colors } from "../../lib/theme";
 import { chip, chipOn } from "./ui";
 import AbaTurmas from "./AbaTurmas";
+import RadarSemana from "./RadarSemana";
 import CargaFutura from "./CargaFutura";
 import DemandaRS from "./DemandaRS";
 
 // Radar preventivo (26/10/2026): o que vai dar errado se ninguém agir, enquanto ainda dá tempo.
-//  Turmas e certificação (Pacote 1) · Carga futura (Pacote 2) · R&S → T&D (Pacote 2)
+//  Semana (Pacote 3) · Turmas e certificação (Pacote 1) · Carga futura e R&S → T&D (Pacote 2)
 
 function Radar() {
   const router = useRouter();
@@ -25,13 +26,15 @@ function Radar() {
 
   const instrutor = perfil === "instrutor";
   const abas = [
+    ...(instrutor ? [] : [{ id: "semana", rotulo: "Semana" }]),
     { id: "turmas", rotulo: "Turmas e certificação" },
     { id: "carga", rotulo: "Carga futura" },
     ...(instrutor ? [] : [{ id: "rs", rotulo: "R&S → T&D" }]),
   ];
+  const padrao = instrutor ? "turmas" : "semana";
   const pedida = params.get("aba");
-  const aba = abas.some((a) => a.id === pedida) ? pedida : "turmas";
-  const ir = (id) => router.replace(id === "turmas" ? "/radar" : `/radar?aba=${id}`);
+  const aba = abas.some((a) => a.id === pedida) ? pedida : padrao;
+  const ir = (id) => router.replace(id === padrao ? "/radar" : `/radar?aba=${id}`);
 
   return (
     <PortalShell>
@@ -53,6 +56,7 @@ function Radar() {
           ))}
         </div>
 
+        {aba === "semana" && !instrutor && <RadarSemana />}
         {aba === "turmas" && <AbaTurmas onSoProprias={setSoProprias} />}
         {aba === "carga" && <CargaFutura />}
         {aba === "rs" && !instrutor && <DemandaRS />}

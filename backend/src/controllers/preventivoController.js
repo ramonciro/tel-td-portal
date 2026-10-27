@@ -8,6 +8,7 @@ const { tenantScopeFor } = require("../lib/tenantScope");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const P = require("../services/preventivoService");
 const C = require("../services/preventivoCargaService");
+const R = require("../services/radarSemanalService");
 
 const chave = (s) => String(s || "").trim().toLowerCase();
 const erro = (res, status, msg) => res.status(status).json({ ok: false, message: msg, error: msg });
@@ -67,4 +68,38 @@ async function demandaRS(req, res) {
   }
 }
 
-module.exports = { prontidao, riscoCertificacao, cargaFutura, demandaRS };
+// Radar semanal (Pacote 3): top 5, decisões sugeridas, comparação, faróis e prevenção.
+async function radarSemanal(req, res) {
+  try {
+    const r = recorte(req);
+    const dados = await R.radarDaSemana({ empresaId: r.empresaId, podeVer: (c) => usuarioTemAcessoAoCliente(req, c) });
+    return res.json({ ok: true, motivos: R.MOTIVOS_PADRAO, ...dados });
+  } catch (e) {
+    console.error("[preventivo.radarSemanal]", e.message || e);
+    return erro(res, 500, "Erro ao carregar o Radar da semana.");
+  }
+}
+
+// Só mexe em item do próprio ambiente (ou compartilhado, empresa_id 0) e do cliente a que o usuário tem acesso.
+async function _acao(req, res, fn, okMsg) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return erro(res, 400, "Item inválido.");
+    const [[it]] = await require("../lib/db").query("SELECT empresa_id, cliente FROM radar_itens WHERE id = ?", [id]);
+    if (!it) return erro(res, 404, "Item do Radar não encontrado.");
+    const escopo = tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] }).empresaId;
+    if (escopo && it.empresa_id !== 0 && Number(it.empresa_id) !== Number(escopo)) return erro(res, 403, "Item de outro ambiente.");
+    if (it.cliente && !usuarioTemAcessoAoCliente(req, it.cliente)) return erro(res, 403, "Sem acesso ao cliente deste item.");
+    const r = await fn(id);
+    if (r.erro) return erro(res, r.erro, r.msg);
+    return res.json({ ok: true, message: okMsg });
+  } catch (e) {
+    console.error("[preventivo.radarAcao]", e.message || e);
+    return erro(res, 500, "Não foi possível atualizar o item do Radar.");
+  }
+}
+const radarResolver = (req, res) => _acao(req, res, (id) => R.resolverItem(req, id, req.body?.observacao), "Marcado como resolvido.");
+const radarIgnorar = (req, res) => _acao(req, res, (id) => R.ignorarItem(req, id, req.body?.motivo, req.body?.dias), "Item ignorado.");
+const radarReabrir = (req, res) => _acao(req, res, (id) => R.reabrirItem(req, id), "Item reaberto.");
+
+module.exports = { prontidao, riscoCertificacao, cargaFutura, demandaRS, radarSemanal, radarResolver, radarIgnorar, radarReabrir };
