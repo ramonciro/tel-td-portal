@@ -235,51 +235,6 @@ async function montarEstado(req, t) {
       };
     });
 
-    // diário de bordo: um texto por dia da turma + contagem de presença
-    const [diario] = await pool.query(
-      "SELECT data_dia, texto, atualizado_por, updated_at FROM rotina_diario WHERE treinamento_id = ?",
-      [t.id]
-    );
-    const dMap = new Map(diario.map((d) => [R.isoDia(d.data_dia), d]));
-    let presMap = new Map();
-    try {
-      const [pres] = await pool.query(
-        // A data vem da AULA atual (turma_aulas), não da cópia gravada na chamada:
-        // se a data da aula for editada, o diário acompanha e bate com o Painel
-        // por dia. Chamada de aula que não existe mais não entra na conta.
-        `SELECT ta.data_aula AS data_aula, pa.status, COUNT(*) AS n
-           FROM presenca_aulas pa
-           JOIN turma_aulas ta ON ta.id = pa.turma_aula_id
-          WHERE ta.treinamento_id = ?
-          GROUP BY ta.data_aula, pa.status`,
-        [t.id]
-      );
-      for (const p of pres) {
-        const k = R.isoDia(p.data_aula);
-        const o = presMap.get(k) || { presentes: 0, ausentes: 0, justificados: 0, pendentes: 0 };
-        const s = chave(p.status);
-        if (s === "presente") o.presentes += Number(p.n);
-        else if (s === "ausente") o.ausentes += Number(p.n);
-        else if (s === "justificado") o.justificados += Number(p.n);
-        else o.pendentes += Number(p.n);
-        presMap.set(k, o);
-      }
-    } catch (_) {
-      presMap = new Map();
-    }
-    const [aulas] = await pool.query("SELECT DISTINCT data_aula FROM turma_aulas WHERE treinamento_id = ?", [t.id]);
-    const diasSet = new Set(aulas.map((a) => R.isoDia(a.data_aula)));
-    if (!diasSet.size) diasEntre(datas.inicio, datas.fim).forEach((d) => diasSet.add(d));
-    for (const k of dMap.keys()) diasSet.add(k);
-    estado.diario = [...diasSet].sort().map((dia) => ({
-      data: dia,
-      texto: dMap.get(dia)?.texto || "",
-      atualizado_por: dMap.get(dia)?.atualizado_por || null,
-      atualizado_em: dMap.get(dia)?.updated_at || null,
-      presenca: presMap.get(dia) || null,
-      futuro: dia > hoje,
-    }));
-
     // célula baby da turma (apenas para o atalho na tela)
     try {
       const [[cb]] = await pool.query("SELECT id, status FROM celulas_baby WHERE treinamento_id = ? LIMIT 1", [t.id]);
@@ -288,6 +243,53 @@ async function montarEstado(req, t) {
       estado.celula_baby = null;
     }
   }
+  // Diário de bordo (27/10/2026): vale para toda turma, não só Avaliação Técnica.
+  // Checklist, responsabilidades e avaliação individual continuam só da Avaliação Técnica.
+  // diário de bordo: um texto por dia da turma + contagem de presença
+  const [diario] = await pool.query(
+    "SELECT data_dia, texto, atualizado_por, updated_at FROM rotina_diario WHERE treinamento_id = ?",
+    [t.id]
+  );
+  const dMap = new Map(diario.map((d) => [R.isoDia(d.data_dia), d]));
+  let presMap = new Map();
+  try {
+    const [pres] = await pool.query(
+      // A data vem da AULA atual (turma_aulas), não da cópia gravada na chamada:
+      // se a data da aula for editada, o diário acompanha e bate com o Painel
+      // por dia. Chamada de aula que não existe mais não entra na conta.
+      `SELECT ta.data_aula AS data_aula, pa.status, COUNT(*) AS n
+         FROM presenca_aulas pa
+         JOIN turma_aulas ta ON ta.id = pa.turma_aula_id
+        WHERE ta.treinamento_id = ?
+        GROUP BY ta.data_aula, pa.status`,
+      [t.id]
+    );
+    for (const p of pres) {
+      const k = R.isoDia(p.data_aula);
+      const o = presMap.get(k) || { presentes: 0, ausentes: 0, justificados: 0, pendentes: 0 };
+      const s = chave(p.status);
+      if (s === "presente") o.presentes += Number(p.n);
+      else if (s === "ausente") o.ausentes += Number(p.n);
+      else if (s === "justificado") o.justificados += Number(p.n);
+      else o.pendentes += Number(p.n);
+      presMap.set(k, o);
+    }
+  } catch (_) {
+    presMap = new Map();
+  }
+  const [aulas] = await pool.query("SELECT DISTINCT data_aula FROM turma_aulas WHERE treinamento_id = ?", [t.id]);
+  const diasSet = new Set(aulas.map((a) => R.isoDia(a.data_aula)));
+  if (!diasSet.size) diasEntre(datas.inicio, datas.fim).forEach((d) => diasSet.add(d));
+  for (const k of dMap.keys()) diasSet.add(k);
+  estado.diario = [...diasSet].sort().map((dia) => ({
+    data: dia,
+    texto: dMap.get(dia)?.texto || "",
+    atualizado_por: dMap.get(dia)?.atualizado_por || null,
+    atualizado_em: dMap.get(dia)?.updated_at || null,
+    presenca: presMap.get(dia) || null,
+    futuro: dia > hoje,
+  }));
+
   return estado;
 }
 

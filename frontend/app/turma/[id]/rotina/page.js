@@ -75,7 +75,8 @@ export default function RotinaTurmaPage() {
   }, [carregar]);
 
   const avTec = estado?.modo === "avaliacao_tecnica";
-  const abaAtual = avTec ? aba : "atividades";
+  // Diário de bordo vale para toda turma; o resto das abas é só da Avaliação Técnica (27/10/2026).
+  const abaAtual = avTec ? aba : (aba === "diario" ? "diario" : "atividades");
 
   async function acao(fn, okMsg) {
     try {
@@ -126,6 +127,9 @@ export default function RotinaTurmaPage() {
                 <Kpi rotulo="Diário de bordo" valor={`${resumo.diasOk}/${resumo.diasPassados}`} detalhe="dias registrados" />
               </>
             )}
+            {!avTec && resumo && (
+              <Kpi rotulo="Diário de bordo" valor={`${resumo.diasOk}/${resumo.diasPassados}`} detalhe="dias registrados" />
+            )}
             {estado.revisao_plano && (
               <Kpi rotulo="Revisão do plano" valor={FAROL_REVISAO[estado.revisao_plano.farol].texto}
                 cor={FAROL_REVISAO[estado.revisao_plano.farol].cor}
@@ -137,21 +141,25 @@ export default function RotinaTurmaPage() {
             <div style={aviso2}>Você está só visualizando a rotina desta turma. Quem edita é o instrutor da turma ou a coordenação.</div>
           )}
 
-          {avTec && (
-            <div style={abas}>
-              {[
-                ["checklist", "Checklist"],
-                ["responsabilidades", "Responsabilidades"],
-                ["diario", "Diário de bordo"],
-                ["atividades", "Atividades"],
-                ["avaliacao", "Avaliação individual"],
-              ].map(([k, l]) => (
-                <button key={k} onClick={() => setAba(k)} style={{ ...aba_, ...(aba === k ? abaOn : null) }}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          )}
+          <div style={abas}>
+            {(avTec
+              ? [
+                  ["checklist", "Checklist"],
+                  ["responsabilidades", "Responsabilidades"],
+                  ["diario", "Diário de bordo"],
+                  ["atividades", "Atividades"],
+                  ["avaliacao", "Avaliação individual"],
+                ]
+              : [
+                  ["atividades", "Atividades"],
+                  ["diario", "Diário de bordo"],
+                ]
+            ).map(([k, l]) => (
+              <button key={k} onClick={() => setAba(k)} style={{ ...aba_, ...(abaAtual === k ? abaOn : null) }}>
+                {l}
+              </button>
+            ))}
+          </div>
 
           {abaAtual === "checklist" && <Checklist estado={estado} acao={acao} id={id} />}
           {abaAtual === "responsabilidades" && <Responsabilidades estado={estado} acao={acao} id={id} />}
