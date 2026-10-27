@@ -79,6 +79,9 @@ export default function GestaoTurmaPage() {
       setBaixandoRelatorio(false);
     }
   }
+  // Aviso leve: turma de Avaliação Técnica sem RP de origem (só para quem pode vincular).
+  const semRpDeOrigem = ["coordenador", "assistente_treinamento"].includes(perfilAtual) && !!treinamento && !treinamento.rp_id &&
+    String(treinamento.subtipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() === "avaliacao tecnica";
   const podeVerRotina = ["coordenador", "assistente_treinamento", "instrutor", "supervisor", "superintendente", "super_admin"].includes(perfilAtual);
 
   async function carregarTudo() {
@@ -233,6 +236,22 @@ export default function GestaoTurmaPage() {
             <span style={infoLabel}>Instrutores</span>
             <span style={{ ...statusBadge, background: "#dbeafe", color: "#1e3a8a" }}>
               {instrutoresTurma.todos.join(" · ")}
+            </span>
+          </div>
+        )}
+        {treinamento?.rp_origem && (
+          <div style={statusCard}>
+            <span style={infoLabel}>RP de origem (R&S)</span>
+            <span style={{ ...statusBadge, background: "#ecfeff", color: "#155e75" }} title={`HC com TO: ${treinamento.rp_origem.hcs_com_to ?? 0} · aprovados: ${treinamento.rp_origem.hcs_aprovados ?? 0}${treinamento.rp_origem.inicio_av ? ` · início da avaliação na RP: ${formatDate(treinamento.rp_origem.inicio_av)}` : ""}`}>
+              {[treinamento.rp_origem.chamado || "sem chamado", treinamento.rp_origem.produto, treinamento.rp_origem.site].filter(Boolean).join(" · ")}
+            </span>
+          </div>
+        )}
+        {!treinamento?.rp_origem && semRpDeOrigem && (
+          <div style={statusCard}>
+            <span style={infoLabel}>RP de origem (R&S)</span>
+            <span style={{ ...statusBadge, background: "#fffbeb", color: "#92400e" }} title="Edite a turma em Gestão de Turmas e escolha a RP, ou use Vincular RPs sugeridas.">
+              Sem RP vinculada
             </span>
           </div>
         )}

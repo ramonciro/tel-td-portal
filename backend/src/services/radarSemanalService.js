@@ -153,6 +153,17 @@ function itensSalas(salas) {
 function itensRS(r) {
   const out = [];
   for (const a of r.avaliacoes || []) {
+    if (a.data_divergente) {
+      const dif = Math.abs(a.dias_diferenca || 0);
+      out.push({
+        empresa_id: a.empresa_id, chave: `rs-av-data:${a.rp_id}`, origem: "rs-av", gravidade: "media",
+        titulo: `A turma de ${a.produto} (${a.site}) começa ${plural(dif, "dia", "dias")} ${a.dias_diferenca > 0 ? "depois" : "antes"} do início da avaliação na RP`,
+        detalhe: `RP prevê ${fmt(a.inicio)}${a.turma ? `; turma "${a.turma.tema}" em ${fmt(a.turma.data_inicio)}` : ""}${a.chamado ? ` · chamado ${a.chamado}` : ""}.`,
+        acao: "Acertar a data com o R&S",
+        decisao: `Combinar com o R&S se a avaliação de ${a.produto} (${a.site}) começa em ${fmt(a.inicio)} (RP) ou na data da turma, e corrigir quem estiver errado.`,
+        dono: "Coordenação", cliente: null, link: "/radar?aba=rs", prazo: a.inicio,
+      });
+    }
     if (a.situacao !== "sem_turma") continue;
     out.push({
       empresa_id: a.empresa_id, chave: `rs-av:${a.rp_id}`, origem: "rs-av", gravidade: a.gravidade || "media",

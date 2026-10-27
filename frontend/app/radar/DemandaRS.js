@@ -28,7 +28,7 @@ export default function DemandaRS() {
   const r = d.resumo;
   const semTurma = d.avaliacoes.filter((a) => a.situacao === "sem_turma");
   const comTurma = d.avaliacoes.filter((a) => a.situacao === "com_turma");
-  const tudoCerto = !semTurma.length && !d.berco.length;
+  const tudoCerto = !semTurma.length && !d.berco.length && !r.avaliacoes_vinculo_provavel && !r.avaliacoes_data_divergente;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -45,20 +45,23 @@ export default function DemandaRS() {
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Kpi rotulo="Avaliações Técnicas sem turma" valor={r.avaliacoes_sem_turma} cor={r.avaliacoes_sem_turma ? colors.dangerText : undefined} nota={`de ${r.avaliacoes_planejadas} planejadas (30 dias)`} />
         <Kpi rotulo="Candidatos esperados sem turma" valor={r.candidatos_sem_turma} />
+        {(r.avaliacoes_vinculo_provavel > 0 || r.avaliacoes_data_divergente > 0) && (
+          <Kpi rotulo="Turmas a conferir" valor={r.avaliacoes_vinculo_provavel + r.avaliacoes_data_divergente} cor={colors.warningText} nota={`${r.avaliacoes_vinculo_provavel} sem vínculo · ${r.avaliacoes_data_divergente} com data diferente`} />
+        )}
         <Kpi rotulo="Pessoas no berço" valor={r.pessoas_no_berco} nota={`${r.berco_parado} RP(s) parado(s)`} cor={r.berco_parado ? colors.warningText : undefined} />
         <Kpi rotulo="Berço com vaga para reaproveitar" valor={r.berco_com_oportunidade} />
       </div>
 
       <SectionCard
         title="Avaliações Técnicas planejadas pelo R&S"
-        subtitle="RPs em andamento, de produtos que são clientes ativos do ambiente, com Avaliação Técnica nos próximos 30 dias (ou já em curso). Procuramos no T&D uma turma de Avaliação Técnica do mesmo cliente com início até 3 dias de diferença; não há vínculo direto entre RP e turma, por isso conferimos pelo nome."
+        subtitle="RPs em andamento, de produtos que são clientes ativos do ambiente, com Avaliação Técnica nos próximos 30 dias (ou já em curso). Quando a turma tem a RP de origem, a conferência é exata. Sem esse vínculo, procuramos uma turma de Avaliação Técnica do mesmo cliente com início até 3 dias de diferença e conferimos pelo nome (associação provável)."
       >
         {!d.avaliacoes.length ? <p style={vazio}>Nenhuma Avaliação Técnica planejada para os próximos 30 dias.</p> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {[...semTurma, ...comTurma].map((a) => {
               const g = a.gravidade ? GRAV[a.gravidade] : null;
               return (
-                <div key={a.rp_id} style={{ ...caixa, borderLeft: `4px solid ${g ? g.cor : colors.success}` }}>
+                <div key={a.rp_id} style={{ ...caixa, borderLeft: `4px solid ${g ? g.cor : (a.vinculo === "provavel" || a.data_divergente) ? colors.warning : colors.success}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div>
                       <strong style={{ fontSize: 15 }}>{a.produto}</strong>{d.varios_ambientes && a.ambiente ? <span style={{ ...badgePeq, marginLeft: 8, color: colors.textSecondary, background: colors.neutralLight }}>{a.ambiente}</span> : null}
@@ -72,15 +75,24 @@ export default function DemandaRS() {
                     {a.situacao === "sem_turma" ? (
                       <span style={{ ...badge, color: g.cor, background: g.bg }}>Sem turma no T&D · {g.texto}</span>
                     ) : (
-                      <span style={{ ...badge, color: colors.successText, background: colors.successLight }}>Turma encontrada</span>
+                      a.vinculo === "provavel"
+                        ? <span style={{ ...badge, color: colors.warningText, background: colors.warningLight }}>Turma provável · vincule a RP</span>
+                        : <span style={{ ...badge, color: colors.successText, background: colors.successLight }}>Turma vinculada</span>
                     )}
                   </div>
+                  {a.data_divergente && (
+                    <p style={{ ...mini, marginTop: 8, color: colors.warningText, fontWeight: 700 }}>
+                      A turma começa {Math.abs(a.dias_diferenca)} dia(s) {a.dias_diferenca > 0 ? "depois" : "antes"} do início da avaliação na RP. Combine a data certa com o R&S.
+                    </p>
+                  )}
                   {a.situacao === "sem_turma" ? (
                     <p style={{ ...mini, marginTop: 8 }}>→ Criar a turma de Avaliação Técnica e avisar o instrutor antes do início.</p>
                   ) : (
                     <p style={{ ...mini, marginTop: 8 }}>
                       <a href={`/turma/${a.turma.id}`} style={{ ...link, fontSize: 13 }}>{a.turma.tema}</a> · {a.turma.cliente} · início {fmtData(a.turma.data_inicio)}
-                      {a.turma.confere_pelo_nome ? "" : " — o nome não parece o do produto do RP; confira se é a turma certa."}
+                      {a.vinculo === "provavel" && !a.turma.confere_pelo_nome ? " — o nome não parece o do produto do RP; confira se é a turma certa." : ""}
+                      {a.vinculo === "provavel" ? " Em Gestão de Turmas, use \"Vincular RPs sugeridas\" para confirmar." : ""}
+                      {a.turmas_vinculadas > 1 ? ` · ${a.turmas_vinculadas} turmas ligadas a esta RP.` : ""}
                     </p>
                   )}
                 </div>

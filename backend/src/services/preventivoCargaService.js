@@ -367,13 +367,39 @@ async function calcularDemandaRS({ empresaId } = {}) {
   let turmasAT = [];
   if (nomes.length) {
     [turmasAT] = await pool.query(
-      `SELECT t.id, t.tema, t.cliente, t.empresa_id, DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS ini
+      `SELECT t.id, t.tema, t.cliente, t.empresa_id, t.rp_id, DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS ini
          FROM treinamentos t
         WHERE t.subtipo IN (${nomes.map(() => "?").join(",")}) AND ${NAO_CANCELADA}${empresaId ? " AND t.empresa_id = ?" : ""}
           AND COALESCE(DATE(t.data_inicio), t.data) BETWEEN ? AND ?`,
       [...nomes, ...(empresaId ? [empresaId] : []), somarDias(hoje, -21), somarDias(hoje, 60)]
-    );
+    ).catch(async (e) => {
+      // Banco ainda sem treinamentos.rp_id (migração não rodou): cai no cálculo antigo, sem vínculo.
+      if (!(e && e.code === "ER_BAD_FIELD_ERROR")) throw e;
+      const [antigas] = await pool.query(
+        `SELECT t.id, t.tema, t.cliente, t.empresa_id, NULL AS rp_id, DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS ini
+           FROM treinamentos t
+          WHERE t.subtipo IN (${nomes.map(() => "?").join(",")}) AND ${NAO_CANCELADA}${empresaId ? " AND t.empresa_id = ?" : ""}
+            AND COALESCE(DATE(t.data_inicio), t.data) BETWEEN ? AND ?`,
+        [...nomes, ...(empresaId ? [empresaId] : []), somarDias(hoje, -21), somarDias(hoje, 60)]
+      );
+      return [antigas];
+    });
   }
+  // Turmas ligadas por vínculo exato (RP de origem), em qualquer data: o vínculo vale mesmo fora da janela acima.
+  let turmasVinculadas = [];
+  if (rps.length) {
+    try {
+      [turmasVinculadas] = await pool.query(
+        `SELECT t.id, t.tema, t.cliente, t.empresa_id, t.rp_id, DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS ini
+           FROM treinamentos t
+          WHERE t.rp_id IN (${rps.map(() => "?").join(",")}) AND ${NAO_CANCELADA}`,
+        rps.map((r) => r.id)
+      );
+    } catch (e) {
+      if (!(e && (e.code === "ER_BAD_FIELD_ERROR" || e.code === "ER_NO_SUCH_TABLE"))) throw e;
+    }
+  }
+  const comRpDeOutra = new Set(turmasAT.filter((t) => t.rp_id).map((t) => t.id));
 
   const avaliacoes = [];
   for (const r of rps) {
@@ -381,11 +407,17 @@ async function calcularDemandaRS({ empresaId } = {}) {
     const dias = diasEntre(hoje, r.inicio_av);
     const emCurso = dias < 0 && r.final_av && r.final_av >= hoje;
     if (!(dias >= 0 && dias <= 30) && !emCurso) continue;
-    const candidatas = turmasAT.filter((t) => t.empresa_id === r.empresa_id && Math.abs(diasEntre(r.inicio_av, t.ini)) <= 3);
+    // 1) vínculo exato (turma com esta RP como origem); 2) fallback antigo por data e nome, só entre
+    //    turmas que ainda não têm RP de origem (turma ligada a outra RP não "empresta" para esta).
+    const exatas = turmasVinculadas.filter((t) => Number(t.rp_id) === Number(r.id)).sort((a, b) => String(a.ini).localeCompare(String(b.ini)));
+    const candidatas = turmasAT.filter((t) => !t.rp_id && !comRpDeOutra.has(t.id) && t.empresa_id === r.empresa_id && Math.abs(diasEntre(r.inicio_av, t.ini)) <= 3);
     const dica = [semAcento(r.produto), semAcento(r.site)].filter((x) => x.length >= 3);
     const parecida = (t) => dica.some((d) => semAcento(t.cliente).includes(d) || semAcento(t.tema).includes(d) || d.includes(semAcento(t.cliente)));
-    const par = candidatas.find(parecida) || candidatas[0] || null;
+    const exata = exatas.length ? (exatas.find((t) => Math.abs(diasEntre(r.inicio_av, t.ini)) <= 3) || exatas[0]) : null;
+    const par = exata || candidatas.find(parecida) || candidatas[0] || null;
+    const vinculo = exata ? "exato" : par ? "provavel" : null;
     const semTurma = !par;
+    const dataDivergente = exata ? Math.abs(diasEntre(r.inicio_av, exata.ini)) > 3 : false;
     let gravidade = null;
     if (semTurma) gravidade = emCurso || dias <= 3 ? "critica" : dias <= 7 ? "alta" : "media";
     avaliacoes.push({
@@ -395,6 +427,10 @@ async function calcularDemandaRS({ empresaId } = {}) {
       candidatos_esperados: Number(r.hcs_com_to) || Number(r.hcs) || 0,
       situacao: semTurma ? "sem_turma" : "com_turma",
       turma: par ? { id: par.id, tema: par.tema, cliente: par.cliente, data_inicio: par.ini, confere_pelo_nome: parecida(par) } : null,
+      vinculo, // "exato" (RP de origem na turma), "provavel" (achada por data e nome) ou null
+      turmas_vinculadas: exatas.length,
+      data_divergente: dataDivergente,
+      dias_diferenca: exata ? diasEntre(r.inicio_av, exata.ini) : null,
       gravidade,
     });
   }
@@ -428,6 +464,8 @@ async function calcularDemandaRS({ empresaId } = {}) {
   const resumo = {
     avaliacoes_planejadas: avaliacoes.length,
     avaliacoes_sem_turma: avaliacoes.filter((a) => a.situacao === "sem_turma").length,
+    avaliacoes_vinculo_provavel: avaliacoes.filter((a) => a.vinculo === "provavel").length,
+    avaliacoes_data_divergente: avaliacoes.filter((a) => a.data_divergente).length,
     candidatos_sem_turma: avaliacoes.filter((a) => a.situacao === "sem_turma").reduce((s, a) => s + a.candidatos_esperados, 0),
     pessoas_no_berco: berco.reduce((s, b) => s + b.saldo_berco, 0),
     berco_parado: berco.filter((b) => b.gravidade).length,

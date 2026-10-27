@@ -2431,6 +2431,17 @@ async function runMigrations() {
       console.log(`  ↳ berço das RPs não concluído (${error.message}) — seguindo`);
     }
 
+    // 73b. RP de origem da turma (27/10/2026): liga a turma de Avaliação Técnica à RP do R&S que a
+    //      originou. Coluna opcional (turmas antigas ficam sem), sem chave estrangeira de propósito:
+    //      cancelar/excluir a RP solta o vínculo pelo código (rpOrigemService.soltarTurmasDaRP).
+    try {
+      await ensureColumn("treinamentos", "rp_id", "INT NULL");
+      await pool.query(`CREATE INDEX idx_treinamentos_rp ON treinamentos (rp_id)`).catch(() => {});
+      console.log("  ↳ RP de origem da turma: ok");
+    } catch (error) {
+      console.log(`  ↳ RP de origem da turma não concluída (${error.message}) — seguindo`);
+    }
+
     // 53b. Chamada com data antiga (22/10/2026): presenca_aulas.data_aula é
     //      gravada quando a chamada é criada e não acompanhava a edição da
     //      data da aula no Cronograma. O Diário de bordo agrupava por essa data

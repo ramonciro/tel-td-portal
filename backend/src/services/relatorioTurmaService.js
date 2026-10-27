@@ -14,6 +14,7 @@
  * respondido pelo treinando e lido pela equipe como voz da turma, não da pessoa).
  */
 const pool = require("../lib/db");
+const { rpDaTurma } = require("./rpOrigemService");
 const { getResumoPresenca, getFrequenciaPorParticipante } = require("./presencaResolver");
 const { adicionaisDaTurma, todosOsInstrutores } = require("../lib/instrutoresTurma");
 const { CRITERIOS: NPS_CRITERIOS, lerRespostas } = require("../lib/npsQuestionario");
@@ -57,6 +58,7 @@ async function seguro(fn, vazio = []) {
 }
 const ETAPA_ROTULO = { vespera: "Véspera", inicio: "Início", final: "Final" };
 const PERFIS_ROTINA = ["coordenador", "assistente_treinamento", "supervisor", "superintendente", "super_admin"];
+const PERFIS_RP_ORIGEM = ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "superintendente", "super_admin"];
 const PERFIS_MURAL = ["coordenador", "supervisor", "instrutor", "analista_conteudo", "super_admin"];
 
 /**
@@ -345,6 +347,10 @@ async function montarRelatorioTurma(treinamentoId, { empresaId, perfil, nomeUsua
 
   const instrutoresTurma = todosOsInstrutores(t.instrutor, adicionais);
   const registros = await montarRegistros(id, t, instrutoresTurma, { perfil, nomeUsuario });
+  // RP de origem (27/10/2026): só para perfis que enxergam o R&S da turma.
+  const rpOrigem = t.rp_id && PERFIS_RP_ORIGEM.includes(String(perfil || "").toLowerCase())
+    ? await rpDaTurma(t.rp_id, t.empresa_id).catch(() => null)
+    : null;
 
   return {
     gerado_em: new Date().toISOString(),
@@ -367,6 +373,7 @@ async function montarRelatorioTurma(treinamentoId, { empresaId, perfil, nomeUsua
       hora_fim: t.hora_fim ? String(t.hora_fim).slice(0, 5) : null,
       carga_horaria: num(t.carga_horaria),
     },
+    rp_origem: rpOrigem,
     execucao,
     cronograma,
     presenca,

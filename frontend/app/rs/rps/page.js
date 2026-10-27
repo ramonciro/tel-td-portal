@@ -86,6 +86,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   const [convErro, setConvErro] = useState("");
   const [convMsg, setConvMsg] = useState("");
   const [estornando, setEstornando] = useState(null); // id da convocação aguardando confirmação
+  const [turmasOrigem, setTurmasOrigem] = useState([]); // turmas do T&D que têm esta RP como origem (27/10/2026)
 
   const carregarBerco = useCallback(async (id) => {
     try {
@@ -131,6 +132,10 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
     setConvAberto(false); setConvErro(""); setConvMsg(""); setEstornando(null);
     setConvQtd("1"); setConvObs("");
     if (rp?.id && rp.setor === "ESTRATÉGICO") carregarBerco(rp.id);
+    setTurmasOrigem([]);
+    if (rp?.id && rp.setor === "OPERACIONAL") {
+      apiFetch(`/rs/rps/${rp.id}`).then((d) => setTurmasOrigem(Array.isArray(d?.turmas_vinculadas) ? d.turmas_vinculadas : [])).catch(() => {});
+    }
   }, [rp, open, carregarBerco]);
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
@@ -448,6 +453,17 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
                 ))}
               </ul>
             )}
+          </div>
+        )}
+
+        {turmasOrigem.length > 0 && (
+          <div style={{ marginTop: 14, border: "1px solid #bae6fd", background: "#f0f9ff", borderRadius: 10, padding: "10px 12px" }}>
+            <label style={labelSt}>Turmas do T&D ligadas a esta RP</label>
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 13, color: "#0f172a", lineHeight: 1.6 }}>
+              {turmasOrigem.map((t) => (
+                <li key={t.id}>{t.tema} · {t.cliente || "sem cliente"} · início {t.data_inicio ? t.data_inicio.split("-").reverse().join("/") : "—"}{t.status ? ` · ${t.status}` : ""}</li>
+              ))}
+            </ul>
           </div>
         )}
 

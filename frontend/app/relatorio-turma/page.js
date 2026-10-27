@@ -55,6 +55,13 @@ function Turma({ r, geradoEm, ultima }) {
         <div><b>Supervisor:</b> {t.supervisor || "—"}</div>
         <div><b>Público:</b> {t.publico || "—"}</div>
         <div><b>Subtipo:</b> {t.subtipo || "—"} · <b>Situação:</b> {t.status_turma || t.status || "—"}</div>
+        {r.rp_origem && (
+          <div style={{ gridColumn: "1 / -1" }}>
+            <b>RP de origem (R&S):</b> chamado {r.rp_origem.chamado || "—"} · {r.rp_origem.produto} · {r.rp_origem.site}{r.rp_origem.cargo ? ` · ${r.rp_origem.cargo}` : ""}
+            {r.rp_origem.inicio_av ? ` · início da avaliação na RP ${dataBR(r.rp_origem.inicio_av)}` : ""}
+            {` · HC previsto com TO ${r.rp_origem.hcs_com_to ?? 0} · aprovados ${r.rp_origem.hcs_aprovados ?? 0}`}
+          </div>
+        )}
       </div>
 
       <div className="kpis">

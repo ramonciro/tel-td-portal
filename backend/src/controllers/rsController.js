@@ -9,6 +9,7 @@ const { comTransacao } = require("../lib/tx");
 const { registrarAuditoria } = require("../services/auditoria");
 const rel     = require("../lib/rsRelatorios");
 const { tituloPadrao, chaveNormal, listarSites, resolverSite } = require("../lib/rsPadrao");
+const { turmasDaRP, soltarTurmasDaRP } = require("../services/rpOrigemService");
 
 const getEmpresaId = (req) => req.user?.empresa_id;
 
@@ -315,6 +316,8 @@ const detalhe = async (req, res) => {
   try {
     const [[rp]] = await db.query("SELECT * FROM rps WHERE id = ? AND empresa_id = ? AND excluido_em IS NULL", [req.params.id, empresa_id]);
     if (!rp) return erro(res, 404, "RP não encontrada");
+    // 27/10/2026: turmas de Avaliação Técnica que têm esta RP como origem.
+    rp.turmas_vinculadas = await turmasDaRP(rp.id, empresa_id).catch(() => []);
     return res.json(rp);
   } catch (err) {
     console.error("[rsController.detalhe]", err);
@@ -355,6 +358,10 @@ const editar = async (req, res) => {
       [...COLUNAS_RP.map((c) => dados[c]), req.user?.id || null, req.params.id, empresa_id]
     );
     await _upsertProduto(empresa_id, dados.produto);
+    // 27/10/2026: RP cancelada deixa de ser origem das turmas (elas voltam a "sem RP").
+    if (dados.status === "CANCELADA" && antes.status !== "CANCELADA") {
+      await soltarTurmasDaRP(Number(req.params.id), empresa_id).catch((e) => console.error("[rsController.editar] soltar turmas:", e.message));
+    }
     registrarAuditoria({
       usuario: req.user, acao: "editar", entidade: "rp", entidadeId: Number(req.params.id),
       resumo: `${req.user?.nome || "Alguém"} editou a RP ${dados.produto} · ${dados.site} · ${dados.mes_referencia.slice(0, 7)}`,
@@ -375,6 +382,7 @@ const excluir = async (req, res) => {
     // Lixeira (20/10/2026): a RP some das telas e dos relatórios, mas pode ser restaurada em até 30 dias.
     // Comentários ficam guardados junto; a purga (gestão de lixeira) apaga de vez depois do prazo.
     await db.query("UPDATE rps SET excluido_em = NOW(), excluido_por = ? WHERE id = ? AND empresa_id = ?", [req.user?.id || null, req.params.id, empresa_id]);
+    await soltarTurmasDaRP(Number(req.params.id), empresa_id).catch((e) => console.error("[rsController.excluir] soltar turmas:", e.message));
     registrarAuditoria({
       usuario: req.user, acao: "excluir", entidade: "rp", entidadeId: Number(req.params.id),
       resumo: `${req.user?.nome || "Alguém"} enviou para a lixeira a RP ${antes.produto} · ${antes.site}`,

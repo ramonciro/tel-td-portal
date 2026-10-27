@@ -34,6 +34,8 @@ const EMPTY_FORM = {
   sala_id: "",
   sala_outro_local: "",
   subtipo: "",
+  // RP de origem (27/10/2026): só para Avaliação Técnica; vem do R&S.
+  rp_id: "",
   // TBT (22/10/2026): instrutores adicionais da turma (o principal fica em `instrutor`)
   instrutores_adicionais: [],
 };
@@ -411,6 +413,79 @@ function TreinamentosConteudo() {
   const canEdit = hasSomeRole(usuario, ["coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"]);
   const canDelete = hasSomeRole(usuario, ["coordenador"]);
   const isInstructor = perfil === "instrutor";
+  // RP de origem (27/10/2026): coordenação e assistente vinculam a turma de Avaliação Técnica à RP do R&S.
+  const podeRpOrigem = hasSomeRole(usuario, ["coordenador", "assistente_treinamento"]);
+  const [rpsLista, setRpsLista] = useState([]);
+  const [rpSugestao, setRpSugestao] = useState(null);
+  const rpTocado = useRef(false);
+  const [vinculoAberto, setVinculoAberto] = useState(false);
+  const [vinculoLista, setVinculoLista] = useState([]);
+  const [vinculoMarcadas, setVinculoMarcadas] = useState(new Set());
+  const [vinculoCarregando, setVinculoCarregando] = useState(false);
+  const [vinculoSalvando, setVinculoSalvando] = useState(false);
+  const ehAvTecForm = useMemo(() => {
+    const sel = (subtipos || []).find((x) => x.nome === form.subtipo);
+    if (sel?.chave_sistema === "avaliacao_tecnica") return true;
+    return String(form.subtipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() === "avaliacao tecnica";
+  }, [subtipos, form.subtipo]);
+
+  // Lista de RPs do seletor: recarrega quando muda a data de início, o cliente ou o tema (com espera curta).
+  useEffect(() => {
+    if (!modalOpen || !podeRpOrigem || !ehAvTecForm) { setRpsLista([]); setRpSugestao(null); return undefined; }
+    let cancelado = false;
+    const espera = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams();
+        if (form.data_inicio) q.set("data_inicio", form.data_inicio);
+        if (form.cliente) q.set("cliente", form.cliente);
+        if (form.tema) q.set("tema", form.tema);
+        if (editingId) q.set("turma_id", String(editingId));
+        const r = await apiFetch(`/treinamentos/rps-elegiveis?${q.toString()}`);
+        if (cancelado) return;
+        setRpsLista(Array.isArray(r?.rps) ? r.rps : []);
+        setRpSugestao(r?.sugestao || null);
+        // Turma nova: pré-seleciona a sugerida (marcada como "sugerida, confirme") se a pessoa ainda não escolheu.
+        if (!editingId && r?.sugestao && !rpTocado.current) {
+          setForm((prev) => (prev.rp_id ? prev : { ...prev, rp_id: String(r.sugestao.rp_id) }));
+        }
+      } catch (_) {
+        if (!cancelado) { setRpsLista([]); setRpSugestao(null); }
+      }
+    }, 350);
+    return () => { cancelado = true; clearTimeout(espera); };
+  }, [modalOpen, podeRpOrigem, ehAvTecForm, form.data_inicio, form.cliente, form.tema, editingId]);
+
+  async function abrirVinculoEmLote() {
+    setVinculoAberto(true); setVinculoCarregando(true); setVinculoLista([]); setVinculoMarcadas(new Set());
+    try {
+      const r = await apiFetch("/treinamentos/vincular-rp-sugestoes");
+      const lista = Array.isArray(r?.sugestoes) ? r.sugestoes : [];
+      setVinculoLista(lista);
+      setVinculoMarcadas(new Set(lista.filter((x) => x.confere_pelo_nome && Math.abs(x.dias) <= 1).map((x) => x.turma.id)));
+    } catch (err) {
+      setError(err.message || "Não foi possível buscar as sugestões.");
+      setVinculoAberto(false);
+    } finally {
+      setVinculoCarregando(false);
+    }
+  }
+
+  async function gravarVinculoEmLote() {
+    const vinculos = vinculoLista.filter((x) => vinculoMarcadas.has(x.turma.id)).map((x) => ({ turma_id: x.turma.id, rp_id: x.rp.id }));
+    if (!vinculos.length) return;
+    try {
+      setVinculoSalvando(true); setError("");
+      const r = await apiFetch("/treinamentos/vincular-rp", { method: "POST", body: JSON.stringify({ vinculos }) });
+      const ign = Array.isArray(r?.ignoradas) ? r.ignoradas.length : 0;
+      setSuccess(`${r?.vinculadas || 0} turma(s) vinculada(s) à RP de origem${ign ? `; ${ign} ignorada(s)` : ""}.`);
+      setVinculoAberto(false);
+      await carregar();
+    } catch (err) {
+      setError(err.message || "Não foi possível gravar os vínculos.");
+    } finally {
+      setVinculoSalvando(false);
+    }
+  }
 
   async function carregar() {
     try {
@@ -535,6 +610,7 @@ function TreinamentosConteudo() {
   }, [turmas, search, statusFilter, clientFilter, periodFilter, onlyMine, nomeLogado, necessidadePorId]);
 
   function openCreate() {
+    rpTocado.current = false;
     setEditingId(null);
     setForm({ ...EMPTY_FORM, cliente: isInstructor && clientesOptions.length === 1 ? clientesOptions[0] : "", instrutor: isInstructor ? nomeLogado : "", supervisor: perfil === "supervisor" ? nomeLogado : "" });
     setFormErrors({}); setError(""); setSuccess(""); setModalOpen(true);
@@ -542,6 +618,7 @@ function TreinamentosConteudo() {
 
   function openEdit(item) {
     if (!canEdit) return;
+    rpTocado.current = true;
     const meta = parseMetadata(item.descricao);
     setEditingId(item.id);
     setForm({
@@ -565,11 +642,13 @@ function TreinamentosConteudo() {
       sala_id: item.sala_id ? String(item.sala_id) : item.sala_outro_local ? "outro" : "",
       sala_outro_local: item.sala_outro_local || "",
       subtipo: item.subtipo || "",
+      rp_id: item.rp_id ? String(item.rp_id) : "",
     });
     setFormErrors({}); setError(""); setSuccess(""); setModalOpen(true);
   }
 
   function abrirCriacaoParaNecessidade(necessidade) {
+    rpTocado.current = false;
     setEditingId(null);
     setForm({
       ...EMPTY_FORM,
@@ -653,6 +732,8 @@ function TreinamentosConteudo() {
         sala_id: form.sala_id && form.sala_id !== "outro" ? Number(form.sala_id) : null,
         sala_outro_local: form.sala_id === "outro" ? form.sala_outro_local.trim() : null,
         subtipo: form.subtipo || null,
+        // RP de origem: só coordenação/assistente enviam; fora da Avaliação Técnica o campo é limpo.
+        ...(podeRpOrigem ? { rp_id: ehAvTecForm && form.rp_id ? Number(form.rp_id) : null } : {}),
       };
       let turmaId = editingId;
       if (editingId) await apiFetch(`/treinamentos/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -799,6 +880,7 @@ function TreinamentosConteudo() {
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" style={mineToggle(onlyMine)} onClick={() => setOnlyMine((v) => !v)}>{onlyMine ? "Somente minhas" : "Mostrar minhas"}</button>
             <button type="button" style={mineToggle(selectMode)} onClick={toggleSelectMode}>{selectMode ? "Cancelar seleção" : "Selecionar turmas"}</button>
+            {podeRpOrigem && <button type="button" style={mineToggle(false)} onClick={abrirVinculoEmLote} title="Revisa e grava a RP de origem das turmas de Avaliação Técnica que ainda não têm vínculo">Vincular RPs sugeridas</button>}
             {canCreate && <button type="button" style={btnNovo} onClick={openCreate}>+ Criar nova turma</button>}
           </div>
         </div>
@@ -861,6 +943,41 @@ function TreinamentosConteudo() {
         ))}
       </section>
 
+      {vinculoAberto && (
+        <Modal title="Vincular RPs sugeridas" subtitle="Turmas de Avaliação Técnica sem RP de origem, com a RP do R&S que começa na mesma data (até 3 dias de diferença). Confira e marque as que estão certas." onClose={() => !vinculoSalvando && setVinculoAberto(false)}>
+          <div style={{ padding: "6px 24px 8px", display: "grid", gap: 8, maxHeight: "55vh", overflowY: "auto" }}>
+            {vinculoCarregando && <p style={sectionSubtitle}>Buscando sugestões...</p>}
+            {!vinculoCarregando && !vinculoLista.length && <p style={sectionSubtitle}>Nenhuma sugestão: as turmas de Avaliação Técnica já têm RP de origem ou não há RP com início próximo.</p>}
+            {vinculoLista.map((x) => (
+              <label key={x.turma.id} style={{ display: "grid", gridTemplateColumns: "22px 1fr", gap: 10, alignItems: "start", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 12px", cursor: "pointer", background: vinculoMarcadas.has(x.turma.id) ? "#eff6ff" : "#fff" }}>
+                <input
+                  type="checkbox"
+                  checked={vinculoMarcadas.has(x.turma.id)}
+                  onChange={() => setVinculoMarcadas((prev) => { const n = new Set(prev); if (n.has(x.turma.id)) n.delete(x.turma.id); else n.add(x.turma.id); return n; })}
+                />
+                <span style={{ fontSize: 13, lineHeight: 1.45, color: "#0f172a" }}>
+                  <strong>{x.turma.tema}</strong> · {x.turma.cliente || "sem cliente"} · início {formatDate(x.turma.data_inicio)}
+                  <br />
+                  <span style={{ color: "#475569" }}>
+                    RP {x.rp.chamado || "sem chamado"} · {x.rp.produto} · {x.rp.site}{x.rp.cargo ? ` · ${x.rp.cargo}` : ""} · início {formatDate(x.rp.inicio_av)}{x.rp.hcs_com_to ? ` · ${x.rp.hcs_com_to} candidato(s)` : ""}
+                  </span>
+                  <br />
+                  <span style={{ fontSize: 12, color: x.confere_pelo_nome && x.dias === 0 ? "#047857" : "#b45309", fontWeight: 700 }}>
+                    {x.dias === 0 ? "Mesma data" : `${Math.abs(x.dias)} dia(s) ${x.dias > 0 ? "depois" : "antes"} da RP`} · {x.confere_pelo_nome ? "nome confere" : "nome não confere, confira com atenção"}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <div style={modalFooter}>
+            <span style={requiredFooter}>{vinculoMarcadas.size} de {vinculoLista.length} marcada(s). Nada é gravado sem a sua confirmação.</span>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" disabled={vinculoSalvando} style={secondaryButton} onClick={() => setVinculoAberto(false)}>Cancelar</button>
+              <button type="button" disabled={vinculoSalvando || !vinculoMarcadas.size} style={{ ...createButton, background: "#1d4ed8", color: "#fff" }} onClick={gravarVinculoEmLote}>{vinculoSalvando ? "Gravando..." : "Vincular marcadas"}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {modalOpen && (
         <Modal title={editingId ? "Editar turma" : "Criar nova turma"} subtitle="Preencha os dados essenciais. A necessidade pode ser vinculada agora ou posteriormente." onClose={() => !saving && setModalOpen(false)}>
           <form onSubmit={save}>
@@ -927,6 +1044,24 @@ function TreinamentosConteudo() {
               <Field label="Subdivisão / subtipo" hint="Usado para comprovação de horas por subdivisão (ex.: MPT). Selecione &quot;Avaliação Técnica&quot; para habilitar a Presença Nominal/Reembolso de Transporte.">
                 <Select value={form.subtipo} onChange={(e) => setField("subtipo", e.target.value)} options={opcoesSubtipo(subtipos, form.subtipo)} placeholder="Sem subdivisão" />
               </Field>
+              {podeRpOrigem && ehAvTecForm && (
+                <Field
+                  label="RP de origem (R&S)"
+                  hint={rpSugestao && String(rpSugestao.rp_id) === String(form.rp_id) && !rpTocado.current
+                    ? "Sugerida pela data de início e pelo nome: confirme se é a RP certa. Opcional."
+                    : "Liga a turma à vaga que a originou. O Radar passa a conferir pelo vínculo, não por data e nome. Opcional."}
+                >
+                  <Select
+                    value={form.rp_id}
+                    onChange={(e) => { rpTocado.current = true; setField("rp_id", e.target.value); }}
+                    options={rpsLista.map((r) => ({
+                      value: String(r.id),
+                      label: `${r.sugerida ? "Sugerida, confirme · " : ""}${r.chamado || "sem chamado"} · ${r.produto} · ${r.site}${r.cargo ? ` · ${r.cargo}` : ""}${r.inicio_av ? ` · início ${formatDate(r.inicio_av)}` : ""}${r.fora_da_lista ? " (RP não está mais em andamento)" : ""}`,
+                    }))}
+                    placeholder={rpsLista.length ? "Sem RP de origem" : "Nenhuma RP operacional em andamento neste ambiente"}
+                  />
+                </Field>
+              )}
               <Field label="Status"><Select value={form.status} onChange={(e) => setField("status", e.target.value)} options={Object.entries(STATUS).map(([value, x]) => ({ value, label: x.label }))} placeholder="Selecione o status" /></Field>
               <Field label="Observações"><textarea value={form.descricao} onChange={(e) => setField("descricao", e.target.value)} placeholder="Informações complementares" style={{ ...inputStyle, minHeight: 92, resize: "vertical" }} /></Field>
             </FormSection>

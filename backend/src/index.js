@@ -212,7 +212,8 @@ const {
   salvarDadosBancarios,
 } = require("./controllers/reembolsoTransporteController");
 const { buscarConflitosSala, turmaEhRetroativa } = require("./services/salaConflitoService");
-const { normalizeSubtipo } = require("./lib/subtipos");
+const { normalizeSubtipo, ehSubtipoAvaliacaoTecnica } = require("./lib/subtipos");
+const { rpsElegiveis, validarRpDaTurma, rpDaTurma, sugestoesEmLote } = require("./services/rpOrigemService");
 const {
   listar: listarSubtipos,
   criar: criarSubtipo,
@@ -956,6 +957,23 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   }
   vazioParaNulo(dados, ["valor_passagem_vt", "presenca_minima_pct", "necessidade_id", "sala_id"]);
 
+  // RP de origem (27/10/2026): só coordenação e assistente mexem; só Avaliação Técnica guarda;
+  // a RP precisa ser do mesmo ambiente da turma.
+  {
+    const perfilRp = String(req?.user?.perfil || "").toLowerCase().trim();
+    const podeMexerRp = ["coordenador", "assistente_treinamento"].includes(perfilRp);
+    if (!podeMexerRp) delete dados.rp_id;
+    const mudouSubtipo = "subtipo" in dados;
+    if ("rp_id" in dados || (mudouSubtipo && ctx?.antes?.rp_id)) {
+      const subtipoFinal = mudouSubtipo ? dados.subtipo : ctx?.antes?.subtipo;
+      if (!(await ehSubtipoAvaliacaoTecnica(subtipoFinal))) {
+        if ("rp_id" in dados || ctx?.antes?.rp_id) dados.rp_id = null;
+      } else if ("rp_id" in dados) {
+        dados.rp_id = await validarRpDaTurma(dados.rp_id, ctx?.antes?.empresa_id || req?.empresaId || null);
+      }
+    }
+  }
+
   const horaInicio = dados.hora_inicio ?? ctx.antes?.hora_inicio ?? null;
   const horaFim = dados.hora_fim ?? ctx.antes?.hora_fim ?? null;
   if ((dados.hora_inicio !== undefined || dados.hora_fim !== undefined) && horaInicio && horaFim) {
@@ -1192,6 +1210,103 @@ app.get("/api/treinamentos/:id/relatorio", authRequired, authorizeRoles(...PERFI
   }
 });
 
+// ───────── RP de origem da turma (27/10/2026) ─────────
+// Registradas ANTES do CRUD de treinamentos (senão /:id do CRUD engole estes caminhos).
+const PERFIS_RP_ORIGEM = ["coordenador", "assistente_treinamento"];
+
+function empresaDoPedidoRp(req) {
+  const { empresaId, crossTenant } = tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] });
+  if (!crossTenant) return empresaId;
+  const q = Number(req.query.empresa_id);
+  return Number.isInteger(q) && q > 0 ? q : null;
+}
+
+// Lista do seletor do formulário. ?data_inicio=&cliente=&tema=&turma_id=
+app.get("/api/treinamentos/rps-elegiveis", authRequired, authorizeRoles(...PERFIS_RP_ORIGEM), async (req, res) => {
+  try {
+    let empresaId = empresaDoPedidoRp(req);
+    let rpAtualId = null;
+    const turmaId = Number(req.query.turma_id);
+    if (Number.isInteger(turmaId) && turmaId > 0) {
+      const { empresaId: escopo } = tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] });
+      const [[t]] = await pool.query(
+        `SELECT id, empresa_id, cliente, rp_id FROM treinamentos WHERE id = ?${escopo ? " AND empresa_id = ?" : ""}`,
+        escopo ? [turmaId, escopo] : [turmaId]
+      );
+      if (!t || !usuarioTemAcessoAoCliente(req, t.cliente)) return res.status(404).json({ ok: false, message: "Turma não encontrada" });
+      empresaId = t.empresa_id;
+      rpAtualId = t.rp_id || null;
+    }
+    if (!empresaId) return res.json({ ok: true, rps: [], sugestao: null });
+    const r = await rpsElegiveis({
+      empresaId,
+      rpAtualId,
+      turma: { cliente: req.query.cliente, tema: req.query.tema, data_inicio: String(req.query.data_inicio || "").slice(0, 10) || null },
+    });
+    return res.json({ ok: true, ...r });
+  } catch (error) {
+    console.error("[treinamentos] rps-elegiveis:", error.message);
+    return res.status(500).json({ ok: false, message: "Erro ao listar as RPs" });
+  }
+});
+
+// Sugestões para as turmas de Avaliação Técnica que ainda não têm RP (revisão antes de gravar).
+app.get("/api/treinamentos/vincular-rp-sugestoes", authRequired, authorizeRoles(...PERFIS_RP_ORIGEM), async (req, res) => {
+  try {
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] });
+    const lista = await sugestoesEmLote({ empresaId });
+    const visiveis = lista.filter((x) => usuarioTemAcessoAoCliente(req, x.turma.cliente));
+    return res.json({ ok: true, sugestoes: visiveis });
+  } catch (error) {
+    console.error("[treinamentos] vincular-rp-sugestoes:", error.message);
+    return res.status(500).json({ ok: false, message: "Erro ao buscar as sugestões" });
+  }
+});
+
+// Grava os vínculos confirmados: { vinculos: [{ turma_id, rp_id }] } (máx. 100). Só preenche turma sem RP.
+app.post("/api/treinamentos/vincular-rp", authRequired, authorizeRoles(...PERFIS_RP_ORIGEM), async (req, res) => {
+  try {
+    const lista = Array.isArray(req.body?.vinculos) ? req.body.vinculos : [];
+    if (!lista.length) return res.status(400).json({ ok: false, message: "Nenhum vínculo informado." });
+    if (lista.length > 100) return res.status(400).json({ ok: false, message: "Envie no máximo 100 vínculos por vez." });
+    const { empresaId: escopo } = tenantScopeFor(req, { crossTenantRoles: ["assistente_treinamento"] });
+    const vinculadas = [];
+    const ignoradas = [];
+    for (const v of lista) {
+      const turmaId = Number(v?.turma_id);
+      const rpId = Number(v?.rp_id);
+      if (!Number.isInteger(turmaId) || !Number.isInteger(rpId) || turmaId <= 0 || rpId <= 0) {
+        ignoradas.push({ turma_id: v?.turma_id ?? null, motivo: "Dados inválidos." });
+        continue;
+      }
+      const [[t]] = await pool.query(
+        `SELECT id, empresa_id, tema, cliente, subtipo, rp_id FROM treinamentos WHERE id = ?${escopo ? " AND empresa_id = ?" : ""}`,
+        escopo ? [turmaId, escopo] : [turmaId]
+      );
+      if (!t || !usuarioTemAcessoAoCliente(req, t.cliente)) { ignoradas.push({ turma_id: turmaId, motivo: "Turma não encontrada." }); continue; }
+      if (t.rp_id) { ignoradas.push({ turma_id: turmaId, motivo: "A turma já tem RP de origem." }); continue; }
+      if (!(await ehSubtipoAvaliacaoTecnica(t.subtipo))) { ignoradas.push({ turma_id: turmaId, motivo: "A turma não é de Avaliação Técnica." }); continue; }
+      try {
+        await validarRpDaTurma(rpId, t.empresa_id);
+      } catch (e) {
+        ignoradas.push({ turma_id: turmaId, motivo: e.message });
+        continue;
+      }
+      await pool.query(`UPDATE treinamentos SET rp_id = ? WHERE id = ? AND empresa_id = ?`, [rpId, turmaId, t.empresa_id]);
+      vinculadas.push({ turma_id: turmaId, rp_id: rpId });
+      registrarAuditoria({
+        usuario: req.user, acao: "editar", entidade: "treinamento", entidadeId: turmaId,
+        resumo: `${req.user?.nome || "Alguém"} vinculou a RP #${rpId} como origem da turma "${t.tema || "?"}" (${t.cliente || "?"})`,
+        ip: req.ip,
+      });
+    }
+    return res.json({ ok: true, vinculadas: vinculadas.length, ignoradas });
+  } catch (error) {
+    console.error("[treinamentos] vincular-rp:", error.message);
+    return res.status(500).json({ ok: false, message: "Erro ao gravar os vínculos" });
+  }
+});
+
 app.use(
   "/api/treinamentos",
   createCrudRouter({
@@ -1256,6 +1371,7 @@ app.use(
       "sala_id",
       "sala_outro_local",
       "subtipo",
+      "rp_id", // RP de origem (27/10/2026) — só Avaliação Técnica; validado em sanitizarEscritaTreinamento
     ],
     orderBy: "id DESC",
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "analista_conteudo")],
@@ -1335,7 +1451,9 @@ app.get(
           hora_fim,
           sala_id,
           sala_outro_local,
-          subtipo
+          subtipo,
+          empresa_id,
+          rp_id
         FROM treinamentos
         WHERE id = ?${tenantCheck}
         LIMIT 1
@@ -1351,7 +1469,12 @@ app.get(
         });
       }
 
-      return res.json(rows[0]);
+      // RP de origem (27/10/2026): dados da RP para o cabeçalho da turma (perfis que enxergam o R&S da turma).
+      const resposta = { ...rows[0] };
+      if (resposta.rp_id && ["coordenador", "supervisor", "instrutor", "assistente_treinamento"].includes(String(req.user?.perfil || "").toLowerCase())) {
+        resposta.rp_origem = await rpDaTurma(resposta.rp_id, resposta.empresa_id);
+      }
+      return res.json(resposta);
     } catch (error) {
       console.error("[index]", error.message || error);
       return res.status(500).json({

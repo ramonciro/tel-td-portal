@@ -187,6 +187,20 @@ function fichaResumo(wb, r) {
   item("Horário", t.hora_inicio ? `${t.hora_inicio}${t.hora_fim ? ` às ${t.hora_fim}` : ""}` : "-");
   linha += 1;
 
+  if (r.rp_origem) {
+    const rp = r.rp_origem;
+    titulo("RP de origem (R&S)");
+    item("Chamado", rp.chamado || "-");
+    item("Site", rp.site || "-");
+    item("Produto", rp.produto || "-");
+    item("Cargo", rp.cargo || "-");
+    item("Início da avaliação técnica (RP)", rp.inicio_av ? dataBR(rp.inicio_av) : "-");
+    item("Candidatos previstos (HC com TO)", rp.hcs_com_to, "inteiro");
+    item("Aprovados até agora", rp.hcs_aprovados, "inteiro");
+    item("HC pedido", rp.hcs, "inteiro");
+    linha += 1;
+  }
+
   titulo("Execução");
   item("Carga horária prevista (h)", e.horas_planejadas, "decimal1");
   item("Horas aplicadas (h)", e.horas_aplicadas, "decimal1");
@@ -301,6 +315,7 @@ function excelDoLote(relatorios) {
     { titulo: "NPS", chave: "nps", largura: 8, formato: "decimal1" },
     { titulo: "Média das provas", chave: "media_prova", largura: 15, formato: "decimal1" },
     { titulo: "Certificados", chave: "certificados", largura: 12, formato: "inteiro" },
+    { titulo: "RP de origem (chamado)", chave: "rp_origem", largura: 24 },
   ];
   adicionarTabela(wb, {
     nomeAba: "Turmas",
@@ -322,6 +337,7 @@ function excelDoLote(relatorios) {
       nps: r.nps.nps_score,
       media_prova: r.avaliacoes.media_prova,
       certificados: r.certificados.emitidos,
+      rp_origem: r.rp_origem ? [r.rp_origem.chamado, r.rp_origem.produto].filter(Boolean).join(" · ") || `RP #${r.rp_origem.id}` : "-",
     })),
   });
 
