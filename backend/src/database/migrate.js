@@ -2431,6 +2431,16 @@ async function runMigrations() {
       console.log(`  ↳ berço das RPs não concluído (${error.message}) — seguindo`);
     }
 
+    // 73a. Peso da Base de Soluções (28/10/2026): a Base de Soluções é usada por toda a operação, então o
+    //      esforço é alto: de 3 (padrão antigo) para 10 pontos. Só mexe se ainda estiver no 3 original,
+    //      para nunca desfazer um ajuste feito pela coordenação no catálogo.
+    try {
+      const [r] = await pool.query(`UPDATE conteudo_tipos SET pontos = 10 WHERE nome = 'Base de Soluções' AND pontos = 3`);
+      console.log(`  ↳ peso da Base de Soluções: ${r.affectedRows || 0} registro(s) ajustado(s)`);
+    } catch (error) {
+      console.log(`  ↳ peso da Base de Soluções não ajustado (${error.message}) — seguindo`);
+    }
+
     // 73b. RP de origem da turma (27/10/2026): liga a turma de Avaliação Técnica à RP do R&S que a
     //      originou. Coluna opcional (turmas antigas ficam sem), sem chave estrangeira de propósito:
     //      cancelar/excluir a RP solta o vínculo pelo código (rpOrigemService.soltarTurmasDaRP).

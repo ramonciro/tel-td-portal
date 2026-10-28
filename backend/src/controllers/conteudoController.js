@@ -39,7 +39,7 @@ const TIPOS_PADRAO = [
   ["Scripts de Atendimento", 9, 7, 0.5, 5],
   ["Material de Reciclagem", 9, 1, 1, 6],
   ["Material para Treinamento", 18, 2, 1, 8],
-  ["Base de Soluções", 0, 0, 0, 3],
+  ["Base de Soluções", 0, 0, 0, 10], // usada por toda a operação: esforço alto (27/10/2026)
 ];
 
 function escopo(req) {
