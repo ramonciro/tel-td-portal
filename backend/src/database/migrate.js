@@ -2452,6 +2452,27 @@ async function runMigrations() {
       console.log(`  ↳ RP de origem da turma não concluída (${error.message}) — seguindo`);
     }
 
+    // 73c. Operação e data de admissão passam a fazer parte do cadastro da pessoa (28/10/2026): antes só
+    //      existiam em cada linha de turma e não acompanhavam a pessoa. Preenche a partir da linha de
+    //      turma mais recente que tenha o dado; só onde a pessoa ainda não tem (idempotente).
+    try {
+      await ensureColumn("pessoas", "operacao", "VARCHAR(150) NULL");
+      await ensureColumn("pessoas", "data_admissao", "DATE NULL");
+      const [r1] = await pool.query(`
+        UPDATE pessoas p SET p.operacao = (
+          SELECT tp.operacao FROM treinamento_participantes tp
+           WHERE tp.pessoa_id = p.id AND TRIM(COALESCE(tp.operacao,'')) <> '' ORDER BY tp.id DESC LIMIT 1)
+         WHERE p.operacao IS NULL`);
+      const [r2] = await pool.query(`
+        UPDATE pessoas p SET p.data_admissao = (
+          SELECT tp.data_admissao FROM treinamento_participantes tp
+           WHERE tp.pessoa_id = p.id AND tp.data_admissao IS NOT NULL ORDER BY tp.id DESC LIMIT 1)
+         WHERE p.data_admissao IS NULL`);
+      console.log(`  ↳ operação/admissão no cadastro da pessoa: ${r1.affectedRows || 0} + ${r2.affectedRows || 0} preenchida(s)`);
+    } catch (error) {
+      console.log(`  ↳ operação/admissão no cadastro da pessoa não concluída (${error.message}) — seguindo`);
+    }
+
     // 53b. Chamada com data antiga (22/10/2026): presenca_aulas.data_aula é
     //      gravada quando a chamada é criada e não acompanhava a edição da
     //      data da aula no Cronograma. O Diário de bordo agrupava por essa data

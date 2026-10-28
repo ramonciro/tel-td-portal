@@ -68,6 +68,8 @@ export default function ParticipantesTurmaPage() {
   const [achadas, setAchadas] = useState({ itens: [], contas_sem_cadastro: [] });
   const [buscandoPessoa, setBuscandoPessoa] = useState(false);
   const [incluindoId, setIncluindoId] = useState(null);
+  // Operação e admissão digitadas para quem ainda não tem esses dados no cadastro: { [pessoaId]: { operacao, data_admissao } }
+  const [extras, setExtras] = useState({});
   // Sugestões enquanto digita na inclusão manual (pessoas/contas que já existem no portal).
   const [sugestoes, setSugestoes] = useState({ itens: [], contas_sem_cadastro: [] });
 
@@ -235,6 +237,8 @@ export default function ParticipantesTurmaPage() {
           cliente: treinamento?.cliente || pessoa.cliente || "",
           turma: treinamento?.tema || "",
           supervisor: treinamento?.supervisor || "",
+          operacao: extras[pessoa.id]?.operacao || "",
+          data_admissao: extras[pessoa.id]?.data_admissao || "",
         }),
       });
       await carregarTudo();
@@ -338,6 +342,27 @@ export default function ParticipantesTurmaPage() {
           </div>
         </div>
         <span style={{ ...conta, background: conta.bg, color: conta.c, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>{conta.t}</span>
+        {!p.na_turma && (!p.operacao || !p.data_admissao) && (
+          <div style={{ display: "flex", gap: 6, flexBasis: "100%", flexWrap: "wrap", order: 5 }}>
+            {!p.operacao && (
+              <input
+                value={extras[p.id]?.operacao || ""}
+                onChange={(e) => setExtras((prev) => ({ ...prev, [p.id]: { ...prev[p.id], operacao: e.target.value } }))}
+                placeholder="Operação (sem registro — preencha para guardar no cadastro)"
+                style={{ ...fieldInput, height: 32, flex: 1, minWidth: 220 }}
+              />
+            )}
+            {!p.data_admissao && (
+              <input
+                type="date"
+                value={extras[p.id]?.data_admissao || ""}
+                onChange={(e) => setExtras((prev) => ({ ...prev, [p.id]: { ...prev[p.id], data_admissao: e.target.value } }))}
+                title="Data de admissão (sem registro — preencha para guardar no cadastro)"
+                style={{ ...fieldInput, height: 32 }}
+              />
+            )}
+          </div>
+        )}
         {p.na_turma ? (
           <span style={{ fontSize: 12, fontWeight: 700, color: colors.successText }}>✓ Já está nesta turma</span>
         ) : (

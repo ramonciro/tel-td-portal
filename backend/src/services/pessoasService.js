@@ -130,6 +130,23 @@ async function acharPorMatriculaNome(conn, empresaId, matricula, nome, cpf) {
 }
 
 
+// 28/10/2026 — operação e data de admissão acompanham a pessoa: o valor mais recente informado vence.
+// Vazio nunca apaga. Tolera banco sem as colunas (migração ainda não rodou).
+async function gravarDadosDaPessoa(conn, pessoaId, { operacao, data_admissao }) {
+  const sets = [];
+  const params = [];
+  const op = String(operacao || "").trim();
+  if (op) { sets.push("operacao = ?"); params.push(op.slice(0, 150)); }
+  if (data_admissao) { sets.push("data_admissao = ?"); params.push(data_admissao); }
+  if (!sets.length || !pessoaId) return;
+  try {
+    await conn.query(`UPDATE pessoas SET ${sets.join(", ")} WHERE id = ?`, [...params, pessoaId]);
+  } catch (e) {
+    if (e && e.code === "ER_BAD_FIELD_ERROR") return;
+    throw e;
+  }
+}
+
 // Nomes "parecidos": iguais, ou um contém todas as palavras do outro (mín. 2 palavras).
 // Ex.: "Maria Souza" × "Maria Aparecida Souza".
 function nomesParecidos(a, b) {
@@ -324,4 +341,4 @@ async function pessoaIdDoUsuario(userId, conn = pool) {
   return rows[0]?.pessoa_id || null;
 }
 
-module.exports = { resolverPessoa, normalizarCpf, normalizarNome, pessoaIdDoUsuario, matriculaParaComparar, nomeParaComparar, nomesParecidos, acharConflitoMatricula };
+module.exports = { resolverPessoa, normalizarCpf, normalizarNome, pessoaIdDoUsuario, matriculaParaComparar, nomeParaComparar, nomesParecidos, acharConflitoMatricula, gravarDadosDaPessoa };

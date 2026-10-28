@@ -3,7 +3,7 @@ const db = require("../lib/db");
 const { comTransacao } = require("../lib/tx");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { tenantScopeFor } = require("../lib/tenantScope");
-const { resolverPessoa, pessoaIdDoUsuario, acharConflitoMatricula } = require("../services/pessoasService");
+const { resolverPessoa, pessoaIdDoUsuario, acharConflitoMatricula, gravarDadosDaPessoa } = require("../services/pessoasService");
 const { garantirUsuarioTreinando } = require("../services/provisionamentoUsuariosService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 
@@ -429,6 +429,10 @@ async function importarParticipantesExcel(req, res) {
         );
 
         totalImportados += 1;
+        await gravarDadosDaPessoa(conn, pessoa.id, {
+          operacao: String(linha.operacao || "").trim() || anteriorLinha.operacao,
+          data_admissao: String(linha.data_admissao || "").trim() ? formatExcelDateToMySQL(linha.data_admissao) : anteriorLinha.data_admissao,
+        });
 
         // Decisão 2 do Ramon (25/09/2026): contas de treinando nascem em
         // lote, aqui na importação — ver provisionamentoUsuariosService.js.
@@ -763,14 +767,28 @@ function recusarParticipante(req, res, status, message, extra = {}) {
 // teve em outra turma, para quem inclui não precisar redigitar.
 async function dadosAnterioresDaPessoa(conn, pessoaId) {
   if (!pessoaId) return { operacao: "", data_admissao: null };
-  const [rows] = await conn.query(
-    `SELECT operacao, DATE_FORMAT(data_admissao, '%Y-%m-%d') AS data_admissao
-       FROM treinamento_participantes WHERE pessoa_id = ? ORDER BY id DESC LIMIT 30`,
-    [pessoaId]
-  );
-  const operacao = (rows.find((r) => String(r.operacao || "").trim()) || {}).operacao || "";
-  const data_admissao = (rows.find((r) => r.data_admissao) || {}).data_admissao || null;
-  return { operacao: String(operacao).trim(), data_admissao };
+  let operacao = "";
+  let data_admissao = null;
+  try {
+    const [pr] = await conn.query(
+      `SELECT operacao, DATE_FORMAT(data_admissao, '%Y-%m-%d') AS data_admissao FROM pessoas WHERE id = ? LIMIT 1`,
+      [pessoaId]
+    );
+    operacao = String(pr[0]?.operacao || "").trim();
+    data_admissao = pr[0]?.data_admissao || null;
+  } catch (e) {
+    if (!(e && e.code === "ER_BAD_FIELD_ERROR")) throw e;
+  }
+  if (!operacao || !data_admissao) {
+    const [rows] = await conn.query(
+      `SELECT operacao, DATE_FORMAT(data_admissao, '%Y-%m-%d') AS data_admissao
+         FROM treinamento_participantes WHERE pessoa_id = ? ORDER BY id DESC LIMIT 30`,
+      [pessoaId]
+    );
+    if (!operacao) operacao = String((rows.find((r) => String(r.operacao || "").trim()) || {}).operacao || "").trim();
+    if (!data_admissao) data_admissao = (rows.find((r) => r.data_admissao) || {}).data_admissao || null;
+  }
+  return { operacao, data_admissao };
 }
 
 const semZeros = (v) => String(v || "").trim().toUpperCase().replace(/^0+(?=\d)/, "");
@@ -947,6 +965,8 @@ async function createParticipanteTreinamento(req, res) {
       ]
     );
 
+    await gravarDadosDaPessoa(db, pessoa.id, { operacao: operacaoGravar, data_admissao: admissaoGravar });
+
     const provisionamento = await garantirUsuarioTreinando({
       pessoa,
       empresaId: empresaIdTurma,
@@ -1026,8 +1046,8 @@ async function buscarPessoasParaTurma(req, res) {
     const [rows] = await db.query(
       `SELECT p.id, p.nome, p.cpf, p.matricula, p.cliente, p.status_identidade,
               (SELECT COUNT(*) FROM treinamento_participantes tp WHERE tp.treinamento_id = ? AND tp.pessoa_id = p.id) AS na_turma,
-              (SELECT tp2.operacao FROM treinamento_participantes tp2 WHERE tp2.pessoa_id = p.id AND TRIM(COALESCE(tp2.operacao,'')) <> '' ORDER BY tp2.id DESC LIMIT 1) AS operacao,
-              (SELECT DATE_FORMAT(tp3.data_admissao, '%Y-%m-%d') FROM treinamento_participantes tp3 WHERE tp3.pessoa_id = p.id AND tp3.data_admissao IS NOT NULL ORDER BY tp3.id DESC LIMIT 1) AS data_admissao,
+              COALESCE(NULLIF(TRIM(p.operacao),''), (SELECT tp2.operacao FROM treinamento_participantes tp2 WHERE tp2.pessoa_id = p.id AND TRIM(COALESCE(tp2.operacao,'')) <> '' ORDER BY tp2.id DESC LIMIT 1)) AS operacao,
+              COALESCE(DATE_FORMAT(p.data_admissao, '%Y-%m-%d'), (SELECT DATE_FORMAT(tp3.data_admissao, '%Y-%m-%d') FROM treinamento_participantes tp3 WHERE tp3.pessoa_id = p.id AND tp3.data_admissao IS NOT NULL ORDER BY tp3.id DESC LIMIT 1)) AS data_admissao,
               (SELECT u.id FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS usuario_id,
               (SELECT u.ativo FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS conta_ativa,
               (SELECT u.troca_senha_obrigatoria FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS primeiro_acesso_pendente
