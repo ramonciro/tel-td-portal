@@ -62,6 +62,12 @@ export default function ParticipantesTurmaPage() {
   // Agora, vindo de ?abrir_import=1, a seção já abre sozinha.
   const [abrirImport, setAbrirImport] = useState(() => searchParams.get("abrir_import") === "1");
   const [abrirManual, setAbrirManual] = useState(false);
+  // 28/10/2026 — "Incluir pessoa já cadastrada": busca no Cadastro Único e inclui sem redigitar.
+  const [abrirCadastrada, setAbrirCadastrada] = useState(false);
+  const [buscaPessoa, setBuscaPessoa] = useState("");
+  const [achadas, setAchadas] = useState({ itens: [], contas_sem_cadastro: [] });
+  const [buscandoPessoa, setBuscandoPessoa] = useState(false);
+  const [incluindoId, setIncluindoId] = useState(null);
 
   useEffect(() => { carregarTudo(); }, [id]);
 
@@ -142,17 +148,58 @@ export default function ParticipantesTurmaPage() {
     }
   }
 
+  useEffect(() => {
+    if (!abrirCadastrada) return undefined;
+    const termo = buscaPessoa.trim();
+    if (termo.length < 2) { setAchadas({ itens: [], contas_sem_cadastro: [] }); return undefined; }
+    const t = setTimeout(async () => {
+      try {
+        setBuscandoPessoa(true);
+        const r = await apiFetch(`/treinamentos/${id}/pessoas-cadastradas?busca=${encodeURIComponent(termo)}`);
+        setAchadas({ itens: r?.itens || [], contas_sem_cadastro: r?.contas_sem_cadastro || [] });
+      } catch (err) {
+        setErro(err.message || "Erro ao buscar pessoas.");
+      } finally {
+        setBuscandoPessoa(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [buscaPessoa, abrirCadastrada, id]);
+
+  async function incluirPessoaCadastrada(pessoa) {
+    try {
+      setIncluindoId(pessoa.id); setErro(""); setSucesso("");
+      const r = await apiFetch(`/treinamentos/${id}/participantes`, {
+        method: "POST",
+        body: JSON.stringify({
+          pessoa_id: pessoa.id,
+          cliente: treinamento?.cliente || pessoa.cliente || "",
+          turma: treinamento?.tema || "",
+          supervisor: treinamento?.supervisor || "",
+        }),
+      });
+      await carregarTudo();
+      setSucesso(r?.message || `${pessoa.nome} incluído(a) na turma.`);
+      const novaConta = r?.vinculo?.conta === "criada" ? "aguardando_primeiro_acesso" : null;
+      setAchadas((prev) => ({ ...prev, itens: prev.itens.map((i) => (i.id === pessoa.id ? { ...i, na_turma: true, conta: novaConta || i.conta } : i)) }));
+    } catch (err) {
+      setErro(err.message || "Não foi possível incluir esta pessoa.");
+    } finally {
+      setIncluindoId(null);
+    }
+  }
+
   async function adicionarParticipanteManual() {
     // Ajuste 15/09/2026 (fim de tarde): matrícula deixou de ser obrigatória
     // — turma de Avaliação Técnica cadastra gente sem matrícula/login no RH
     // de origem, identificada só pelo CPF. Agora exige nome, cliente, turma
     // e pelo menos um dos dois (matrícula OU CPF).
-    if (!form.nome || !form.cliente || !form.turma || (!form.matricula && !form.cpf)) {
-      setErro("Preencha nome, cliente, turma, e pelo menos matrícula ou CPF."); return;
+    if (!form.nome || !form.cliente || !form.turma) {
+      setErro("Preencha nome, cliente e turma. Matrícula ou CPF ajudam o portal a reconhecer quem já tem cadastro."); return;
     }
     try {
       setSalvando(true); setErro(""); setSucesso("");
-      await apiFetch(`/treinamentos/${id}/participantes`, {
+      const resp = await apiFetch(`/treinamentos/${id}/participantes`, {
         method: "POST",
         body: JSON.stringify({
           nome: form.nome, matricula: form.matricula, cpf: form.cpf, cliente: form.cliente,
@@ -160,10 +207,10 @@ export default function ParticipantesTurmaPage() {
           operacao: form.operacao, data_admissao: form.data_admissao || "",
         }),
       });
-      setSucesso("Participante adicionado com sucesso.");
       setForm(emptyForm(treinamento?.cliente || "", treinamento?.tema || "", treinamento?.supervisor || ""));
       setAbrirManual(false);
       await carregarTudo();
+      setSucesso(resp?.message || "Participante adicionado com sucesso.");
     } catch (err) {
       setErro(err.message || "Não foi possível adicionar manualmente.");
     } finally {
@@ -240,10 +287,13 @@ export default function ParticipantesTurmaPage() {
 
         {/* Ações no canto direito dos KPIs */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button style={btnOutline} onClick={() => { setAbrirImport((v) => !v); setAbrirManual(false); }}>
+          <button style={btnOutline} onClick={() => { setAbrirImport((v) => !v); setAbrirManual(false); setAbrirCadastrada(false); }}>
             {abrirImport ? "Fechar import" : "↑ Importar Excel"}
           </button>
-          <button style={btnOutline} onClick={() => { setAbrirManual((v) => !v); setAbrirImport(false); }}>
+          <button style={btnOutline} onClick={() => { setAbrirCadastrada((v) => !v); setAbrirImport(false); setAbrirManual(false); }}>
+            {abrirCadastrada ? "Fechar busca" : "🔎 Incluir pessoa já cadastrada"}
+          </button>
+          <button style={btnOutline} onClick={() => { setAbrirManual((v) => !v); setAbrirImport(false); setAbrirCadastrada(false); }}>
             {abrirManual ? "Fechar form." : "+ Adicionar manual"}
           </button>
           <button style={btnOutline} onClick={exportarPrimeiraAula}>
@@ -291,6 +341,70 @@ export default function ParticipantesTurmaPage() {
         </div>
       )}
 
+      {/* ── Seção: Incluir pessoa já cadastrada (colapsável) ── */}
+      {abrirCadastrada && (
+        <div style={secaoCard}>
+          <div style={secaoTitulo}>Incluir pessoa já cadastrada</div>
+          <div style={secaoSub}>
+            Procure por nome, matrícula ou CPF. Quem já existe no portal entra na turma com o mesmo
+            cadastro e a mesma conta de acesso — sem digitar de novo e sem duplicar.
+          </div>
+          <input
+            autoFocus
+            value={buscaPessoa}
+            onChange={(e) => setBuscaPessoa(e.target.value)}
+            placeholder="Digite pelo menos 2 letras do nome, ou a matrícula / CPF"
+            style={{ ...fieldInput, width: "100%", marginTop: 10 }}
+          />
+          {buscandoPessoa && <p style={{ ...helperText, marginTop: 8 }}>Buscando…</p>}
+          {!buscandoPessoa && buscaPessoa.trim().length >= 2 && achadas.itens.length === 0 && (
+            <p style={{ ...helperText, marginTop: 8 }}>
+              Ninguém encontrado com esse termo. Se a pessoa é nova, use <strong>+ Adicionar manual</strong>.
+            </p>
+          )}
+          {achadas.itens.length > 0 && (
+            <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+              {achadas.itens.map((p) => {
+                const conta = {
+                  ativa: { t: "Conta ativa", bg: colors.successLight, c: colors.successText },
+                  aguardando_primeiro_acesso: { t: "Aguardando 1º acesso", bg: colors.warningLight, c: colors.warningText },
+                  inativa: { t: "Conta inativa", bg: colors.dangerLight, c: colors.dangerText },
+                  sem_conta: { t: "Sem conta de acesso", bg: "#f1f5f9", c: "#64748b" },
+                }[p.conta] || { t: "", bg: "#f1f5f9", c: "#64748b" };
+                return (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #e9eef4", borderRadius: 10, padding: "8px 12px" }}>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#334155" }}>{p.nome}</div>
+                      <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                        {p.matricula ? `Matrícula ${p.matricula}` : "Sem matrícula"}
+                        {p.cpf_final ? ` · CPF final ${p.cpf_final}` : ""}
+                        {p.cliente ? ` · ${p.cliente}` : ""}
+                      </div>
+                    </div>
+                    <span style={{ ...conta, background: conta.bg, color: conta.c, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>{conta.t}</span>
+                    {p.na_turma ? (
+                      <span style={{ fontSize: 12, fontWeight: 700, color: colors.successText }}>✓ Já está nesta turma</span>
+                    ) : (
+                      <button style={btnCoral} disabled={incluindoId === p.id} onClick={() => incluirPessoaCadastrada(p)}>
+                        {incluindoId === p.id ? "Incluindo…" : "Incluir na turma"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {achadas.contas_sem_cadastro.length > 0 && (
+            <p style={{ ...helperText, marginTop: 10 }}>
+              Também há conta(s) criada(s) na Gestão de Usuários com esse nome (
+              {achadas.contas_sem_cadastro.map((u) => u.nome).join(", ")}) que ainda não estão ligadas a uma pessoa.
+              Ao incluir a pessoa pelo <strong>nome completo</strong> em <strong>+ Adicionar manual</strong>,
+              o portal liga a conta ao cadastro automaticamente.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* ── Seção: Formulário manual (colapsável) ── */}
       {abrirManual && (
         <div style={secaoCard}>
@@ -327,9 +441,10 @@ export default function ParticipantesTurmaPage() {
             </div>
           </div>
           <p style={helperText}>
-            Preencha matrícula, CPF, ou os dois — mas pelo menos um dos dois é obrigatório.
-            Em turma de Avaliação Técnica, onde o colaborador não tem login/matrícula no
-            sistema de RH de origem, cadastre só com o CPF.
+            Matrícula e CPF são opcionais, mas é por eles (e pelo nome) que o portal reconhece quem já
+            tem cadastro e vincula à turma sem duplicar. Sem nenhum dos dois a pessoa entra na turma,
+            mas ainda não consegue acessar o portal. Quem já foi cadastrado antes? Use{" "}
+            <strong>Incluir pessoa já cadastrada</strong>.
           </p>
           <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
             <button style={btnCoral} onClick={adicionarParticipanteManual} disabled={salvando}>

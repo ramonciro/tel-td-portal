@@ -129,6 +129,67 @@ async function acharPorMatriculaNome(conn, empresaId, matricula, nome, cpf) {
   );
 }
 
+
+// Nomes "parecidos": iguais, ou um contém todas as palavras do outro (mín. 2 palavras).
+// Ex.: "Maria Souza" × "Maria Aparecida Souza".
+function nomesParecidos(a, b) {
+  const x = nomeParaComparar(a);
+  const y = nomeParaComparar(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const tx = x.split(" ");
+  const ty = y.split(" ");
+  const [menor, maior] = tx.length <= ty.length ? [tx, ty] : [ty, tx];
+  return menor.length >= 2 && menor.every((t) => maior.includes(t));
+}
+
+// CPF só entra na pessoa se nenhuma outra pessoa do ambiente já o usa (UNIQUE empresa+cpf).
+async function cpfLivre(conn, empresaId, cpf) {
+  if (!cpf) return null;
+  const [rows] = await conn.query(`SELECT id FROM pessoas WHERE empresa_id = ? AND cpf = ? LIMIT 1`, [empresaId, cpf]);
+  return rows.length ? null : cpf;
+}
+
+async function acharPorMatriculaNomeParecido(conn, empresaId, matricula, nome, cpf) {
+  const mat = matriculaParaComparar(matricula);
+  if (!mat) return null;
+  const [candidatas] = await conn.query(
+    `SELECT * FROM pessoas
+      WHERE empresa_id = ? AND matricula IS NOT NULL AND TRIM(matricula) <> ''
+        AND ( UPPER(TRIM(matricula)) = ? OR UPPER(TRIM(LEADING '0' FROM TRIM(matricula))) = ? )`,
+    [empresaId, mat, mat]
+  );
+  const boas = candidatas.filter(
+    (c) => matriculaParaComparar(c.matricula) === mat && nomesParecidos(c.nome, nome) && !(cpf && c.cpf && c.cpf !== cpf)
+  );
+  return boas.length === 1 ? boas[0] : null;
+}
+
+// Pessoas do ambiente com o mesmo nome (sem acento/maiúscula/espaço) que ainda podem ser
+// a mesma pessoa: sem CPF diferente e sem matrícula diferente da que chegou.
+async function candidatasPorNome(conn, empresaId, nome, cpf, matricula) {
+  const alvo = nomeParaComparar(nome);
+  if (!alvo) return [];
+  const [rows] = await conn.query(`SELECT * FROM pessoas WHERE empresa_id = ? AND nome = ? LIMIT 50`, [
+    empresaId,
+    String(nome).trim(),
+  ]);
+  // A coluna usa collation sem distinção de acento/caixa na maioria dos ambientes; o filtro
+  // abaixo garante a regra mesmo quando não usa.
+  const [mais] = rows.length ? [[]] : await conn.query(`SELECT * FROM pessoas WHERE empresa_id = ? AND nome LIKE ? LIMIT 50`, [
+    empresaId,
+    `${String(nome).trim().split(" ")[0]}%`,
+  ]);
+  const todas = [...rows, ...mais];
+  const matNorm = matriculaParaComparar(matricula);
+  return todas.filter(
+    (c) =>
+      nomeParaComparar(c.nome) === alvo &&
+      !(cpf && c.cpf && c.cpf !== cpf) &&
+      !(matNorm && c.matricula && matriculaParaComparar(c.matricula) !== matNorm)
+  );
+}
+
 /**
  * @param {{empresaId:number, nome:string, cpf?:string, matricula?:string, cliente?:string}} dados
  * @param {*} conn - pool ou connection de transação (mysql2); padrão: pool.
@@ -139,12 +200,33 @@ async function acharPorMatriculaNome(conn, empresaId, matricula, nome, cpf) {
  * (antes isso criava uma segunda pessoa). Só cria pessoa nova se nenhuma das
  * duas buscas achar.
  */
-async function resolverPessoa({ empresaId, nome, cpf, matricula, cliente }, conn = pool) {
+async function resolverPessoa({ empresaId, nome, cpf, matricula, cliente }, conn = pool, opcoes = {}) {
   if (!empresaId) throw new Error("resolverPessoa: empresaId é obrigatório");
   if (!nome || !String(nome).trim()) throw new Error("resolverPessoa: nome é obrigatório");
 
   const cpfNormalizado = normalizarCpf(cpf);
   const matriculaNormalizada = matricula ? String(matricula).trim() : null;
+
+  // 28/10/2026 — inclusão de pessoa já cadastrada na turma (opcoes.vinculoAmplo):
+  // 0) pessoa escolhida na busca (idPessoa); 1) CPF; 2) matrícula + nome;
+  // 3) matrícula igual e nome parecido; 4) nome igual a UMA única pessoa que ainda
+  // não tem CPF/matrícula conflitante (cadastro criado pelo portal sem documento).
+  // Só a tela de participantes liga esta opção; os demais cadastros seguem como antes.
+  if (opcoes.idPessoa) {
+    const [rows] = await conn.query(`SELECT * FROM pessoas WHERE id = ? AND empresa_id = ? LIMIT 1`, [
+      opcoes.idPessoa,
+      empresaId,
+    ]);
+    if (rows[0]) {
+      const pessoa = await atualizarRetrato(conn, rows[0], {
+        nome: opcoes.manterNome ? null : nome,
+        matricula: matriculaNormalizada,
+        cliente,
+        cpf: cpfNormalizado && !rows[0].cpf ? await cpfLivre(conn, empresaId, cpfNormalizado) : null,
+      });
+      return { pessoa, criada: false, casadaPor: "escolha" };
+    }
+  }
 
   if (cpfNormalizado) {
     const [rows] = await conn.query(`SELECT * FROM pessoas WHERE empresa_id = ? AND cpf = ? LIMIT 1`, [
@@ -162,6 +244,29 @@ async function resolverPessoa({ empresaId, nome, cpf, matricula, cliente }, conn
     if (achada) {
       const pessoa = await atualizarRetrato(conn, achada, { nome, cliente, cpf: cpfNormalizado });
       return { pessoa, criada: false, casadaPor: "matricula_nome" };
+    }
+  }
+
+  if (opcoes.vinculoAmplo) {
+    if (matriculaNormalizada) {
+      const porMatricula = await acharPorMatriculaNomeParecido(conn, empresaId, matriculaNormalizada, nome, cpfNormalizado);
+      if (porMatricula) {
+        const pessoa = await atualizarRetrato(conn, porMatricula, { nome: null, cliente, cpf: cpfNormalizado });
+        return { pessoa, criada: false, casadaPor: "matricula_nome_parecido" };
+      }
+    }
+    const nomes = await candidatasPorNome(conn, empresaId, nome, cpfNormalizado, matriculaNormalizada);
+    if (nomes.length === 1) {
+      const pessoa = await atualizarRetrato(conn, nomes[0], {
+        nome: null,
+        matricula: matriculaNormalizada,
+        cliente,
+        cpf: cpfNormalizado,
+      });
+      return { pessoa, criada: false, casadaPor: "nome_unico" };
+    }
+    if (nomes.length > 1 && !cpfNormalizado && !matriculaNormalizada) {
+      return { pessoa: null, criada: false, casadaPor: null, ambigua: nomes };
     }
   }
 
@@ -191,4 +296,4 @@ async function pessoaIdDoUsuario(userId, conn = pool) {
   return rows[0]?.pessoa_id || null;
 }
 
-module.exports = { resolverPessoa, normalizarCpf, normalizarNome, pessoaIdDoUsuario, matriculaParaComparar, nomeParaComparar };
+module.exports = { resolverPessoa, normalizarCpf, normalizarNome, pessoaIdDoUsuario, matriculaParaComparar, nomeParaComparar, nomesParecidos };

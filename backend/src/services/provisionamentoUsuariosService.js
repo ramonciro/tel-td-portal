@@ -31,6 +31,7 @@
 const bcrypt = require("bcryptjs");
 const pool = require("../lib/db");
 const { gerarCodigo, canonico, expiraEm } = require("../lib/codigoAcesso");
+const { nomeParaComparar } = require("./pessoasService");
 
 const SENHA_PADRAO_TREINANDO = "Portal@2026";
 
@@ -49,6 +50,30 @@ function normalizarListaClientes(valor) {
 async function garantirUsuarioTreinando({ pessoa, empresaId, cliente }, conn = pool) {
   if (!pessoa || !pessoa.id) {
     throw new Error("garantirUsuarioTreinando: pessoa é obrigatória");
+  }
+
+  // 28/10/2026 — conta criada à mão (Gestão de Usuários) sem vínculo com `pessoas`:
+  // se há UMA única conta de treinando do mesmo ambiente, sem pessoa_id, com o mesmo
+  // nome, é a mesma pessoa — liga em vez de criar uma segunda conta.
+  const jaTemConta = await conn.query(`SELECT id FROM usuarios WHERE pessoa_id = ? LIMIT 1`, [pessoa.id]);
+  if (!jaTemConta[0].length) {
+    const [orfas] = await conn.query(
+      `SELECT id, nome, cliente FROM usuarios
+        WHERE empresa_id = ? AND pessoa_id IS NULL AND perfil = 'treinando' AND nome = ? LIMIT 20`,
+      [empresaId, pessoa.nome]
+    );
+    const alvo = nomeParaComparar(pessoa.nome);
+    const iguais = orfas.filter((u) => nomeParaComparar(u.nome) === alvo);
+    if (iguais.length === 1) {
+      const conta = iguais[0];
+      const clienteNovo = String(cliente || "").trim();
+      const atuais = normalizarListaClientes(conta.cliente);
+      const novos = clienteNovo && !atuais.some((c) => c.toLowerCase() === clienteNovo.toLowerCase())
+        ? [...atuais, clienteNovo].join(", ")
+        : conta.cliente;
+      await conn.query(`UPDATE usuarios SET pessoa_id = ?, cliente = ? WHERE id = ?`, [pessoa.id, novos || null, conta.id]);
+      return { criado: false, atualizado: true, usuarioId: conta.id, motivo: "conta_existente_vinculada" };
+    }
   }
 
   // Decisão 1 — login só existe por CPF ou matrícula por enquanto. Sem

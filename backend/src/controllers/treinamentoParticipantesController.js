@@ -723,6 +723,17 @@ async function salvarChamadaParticipantes(req, res) {
   }
 }
 
+// 28/10/2026 — log das recusas (4xx) desta rota: até aqui só o 500 era registrado, então
+// quando uma inclusão era barrada não sobrava rastro nos logs do Railway. Sem CPF no log.
+function recusarParticipante(req, res, status, message, extra = {}) {
+  console.warn(
+    `[participantes] ${status} turma=${req.params?.id || "?"} perfil=${req.user?.perfil || "?"} usuario=${req.user?.id || "?"} motivo="${message}"`
+  );
+  return res.status(status).json({ ok: false, message, ...extra });
+}
+
+const semZeros = (v) => String(v || "").trim().toUpperCase().replace(/^0+(?=\d)/, "");
+
 async function createParticipanteTreinamento(req, res) {
   try {
     const treinamento_id = Number(req.params?.id || req.body?.treinamento_id || 0);
@@ -735,81 +746,113 @@ async function createParticipanteTreinamento(req, res) {
       operacao,
       data_admissao,
       cpf,
+      pessoa_id,
     } = req.body || {};
 
-    const nomeTrim = String(nome || "").trim();
-    const matriculaTrim = String(matricula || "").trim();
-    const cpfNormalizado = normalizarCpf(cpf);
+    let nomeTrim = String(nome || "").trim();
+    let matriculaTrim = String(matricula || "").trim();
+    let cpfNormalizado = normalizarCpf(cpf);
+    const pessoaEscolhidaId = Number(pessoa_id) > 0 ? Number(pessoa_id) : null;
 
-    // Ajuste 15/09/2026 (fim de tarde): matrícula era obrigatória pra
-    // cadastrar qualquer participante, mas em turma de Avaliação Técnica
-    // (a mesma usada no Reembolso de Transporte) os colaboradores muitas
-    // vezes não têm matrícula/login no sistema de RH de origem — só CPF.
-    // Passa a exigir nome + PELO MENOS UM dos dois (matrícula OU CPF), não
-    // mais os dois obrigatoriamente.
-    if (!treinamento_id || !nomeTrim || (!matriculaTrim && !cpfNormalizado)) {
-      return res.status(400).json({
-        ok: false,
-        message: "Informe treinamento, nome, e pelo menos matrícula ou CPF do participante",
-      });
+    if (!treinamento_id) {
+      return recusarParticipante(req, res, 400, "Turma não identificada.");
     }
-
-    if (cpf && !cpfNormalizado) {
-      return res.status(400).json({
-        ok: false,
-        message: "CPF inválido — informe os 11 dígitos, com ou sem pontuação",
-      });
+    if (cpf && !cpfNormalizado && !pessoaEscolhidaId) {
+      return recusarParticipante(req, res, 400, "CPF inválido — informe os 11 dígitos, com ou sem pontuação");
     }
 
     const { empresaId: empresaIdParticipante } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
     if (!(await treinamentoPertenceAoTenant(db, treinamento_id, empresaIdParticipante, req))) {
-      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+      return recusarParticipante(req, res, 404, "Treinamento não encontrado");
+    }
+    const empresaIdTurma = await empresaRealDoTreinamento(db, treinamento_id);
+
+    // Pessoa escolhida na busca ("Incluir pessoa já cadastrada"): nome, matrícula e CPF vêm do
+    // cadastro — quem inclui não precisa redigitar nem conhecer o CPF.
+    let pessoaEscolhida = null;
+    if (pessoaEscolhidaId) {
+      const [pr] = await db.query(`SELECT * FROM pessoas WHERE id = ? AND empresa_id = ? LIMIT 1`, [
+        pessoaEscolhidaId,
+        empresaIdTurma,
+      ]);
+      pessoaEscolhida = pr[0] || null;
+      if (!pessoaEscolhida) {
+        return recusarParticipante(req, res, 404, "Pessoa não encontrada neste ambiente.");
+      }
+      nomeTrim = pessoaEscolhida.nome;
+      matriculaTrim = matriculaTrim || pessoaEscolhida.matricula || "";
+      cpfNormalizado = cpfNormalizado || pessoaEscolhida.cpf || null;
     }
 
-    // Dedup: só compara por matrícula/CPF quando o valor foi informado —
-    // antes, comparar sempre com `matricula = ?` fazia dois participantes
-    // SEM matrícula (string vazia) colidirem entre si e bloquear o
-    // cadastro do segundo, mesmo sendo pessoas diferentes (exatamente o
-    // caso de Avaliação Técnica, que agora cadastra vários participantes
-    // só com CPF, sem matrícula nenhuma).
-    const condicoesDup = ["nome = ?"];
-    const paramsDup = [nomeTrim];
-    if (matriculaTrim) { condicoesDup.push("matricula = ?"); paramsDup.push(matriculaTrim); }
+    // Matrícula/CPF deixaram de ser exigidos de quem já tem cadastro: sem nenhum dos dois, o
+    // portal procura a pessoa pelo nome (se houver uma só, vincula; se houver várias, pede escolha).
+    if (!nomeTrim) {
+      return recusarParticipante(req, res, 400, "Informe o nome do participante.");
+    }
+
+    // Dedup nesta turma. Matrícula (sem zeros à esquerda) e CPF identificam a pessoa; o NOME só
+    // barra quando não há como distinguir (quem chegou ou quem já está na turma não tem matrícula/CPF)
+    // — antes, dois homônimos com matrículas diferentes eram barrados como se fossem a mesma pessoa.
+    const condicoesDup = [];
+    const paramsDup = [];
+    if (pessoaEscolhida) { condicoesDup.push("pessoa_id = ?"); paramsDup.push(pessoaEscolhida.id); }
+    if (matriculaTrim) {
+      condicoesDup.push("(matricula IS NOT NULL AND TRIM(matricula) <> '' AND UPPER(TRIM(LEADING '0' FROM TRIM(matricula))) = ?)");
+      paramsDup.push(semZeros(matriculaTrim));
+    }
     if (cpfNormalizado) { condicoesDup.push("cpf = ?"); paramsDup.push(cpfNormalizado); }
+    if (!matriculaTrim && !cpfNormalizado) {
+      condicoesDup.push("nome = ?");
+      paramsDup.push(nomeTrim);
+    } else {
+      condicoesDup.push("(nome = ? AND COALESCE(TRIM(matricula),'') = '' AND COALESCE(cpf,'') = '')");
+      paramsDup.push(nomeTrim);
+    }
 
     const [existentes] = await db.query(
-      `
-      SELECT id
-      FROM treinamento_participantes
-      WHERE treinamento_id = ? AND (${condicoesDup.join(" OR ")})
-      LIMIT 1
-      `,
+      `SELECT id, nome, matricula FROM treinamento_participantes
+        WHERE treinamento_id = ? AND (${condicoesDup.join(" OR ")}) LIMIT 1`,
       [treinamento_id, ...paramsDup]
     );
-
     if (existentes.length) {
-      return res.status(409).json({
-        ok: false,
-        message: "Já existe participante com este nome, matrícula ou CPF nesta turma",
-      });
+      const e = existentes[0];
+      return recusarParticipante(
+        req, res, 409,
+        `${e.nome}${e.matricula ? ` (matrícula ${e.matricula})` : ""} já está nesta turma.`,
+        { ja_na_turma: true }
+      );
     }
 
     const clienteTrim = String(cliente || "").trim();
 
-    // Inclusão de usuários (treinandos), 25/09/2026: mesmo tratamento de
-    // identidade/conta da importação em lote, agora pro cadastro manual de
-    // um participante só — pra ninguém ficar sem conta só por ter sido
-    // cadastrado à mão em vez de via Excel. Sempre no tenant DONO da turma
-    // (nunca no empresaId de quem está cadastrando — ver
-    // empresaRealDoTreinamento acima).
-    const empresaIdTurma = await empresaRealDoTreinamento(db, treinamento_id);
-    const { pessoa } = await resolverPessoa({
-      empresaId: empresaIdTurma,
-      nome: nomeTrim,
-      cpf: cpfNormalizado,
-      matricula: matriculaTrim,
-      cliente: clienteTrim,
-    });
+    const resolvida = await resolverPessoa(
+      { empresaId: empresaIdTurma, nome: nomeTrim, cpf: cpfNormalizado, matricula: matriculaTrim, cliente: clienteTrim },
+      db,
+      { vinculoAmplo: true, idPessoa: pessoaEscolhida?.id || null, manterNome: !!pessoaEscolhida }
+    );
+    if (resolvida.ambigua) {
+      return recusarParticipante(
+        req, res, 409,
+        `Há ${resolvida.ambigua.length} pessoas cadastradas com o nome "${nomeTrim}" (${resolvida.ambigua.slice(0, 5).map((c) => c.matricula ? `matrícula ${c.matricula}` : c.cliente || "sem matrícula").join("; ")}). Use "Incluir pessoa já cadastrada" para escolher, ou informe matrícula ou CPF.`,
+        {
+          ambiguo: true,
+          candidatas: resolvida.ambigua.map((c) => ({ id: c.id, nome: c.nome, matricula: c.matricula, cliente: c.cliente })),
+        }
+      );
+    }
+    const pessoa = resolvida.pessoa;
+
+    // Pessoa já na turma por outro caminho (ex.: casada pelo nome com quem já está na lista).
+    const [jaPessoa] = await db.query(
+      `SELECT id FROM treinamento_participantes WHERE treinamento_id = ? AND pessoa_id = ? LIMIT 1`,
+      [treinamento_id, pessoa.id]
+    );
+    if (jaPessoa.length) {
+      return recusarParticipante(req, res, 409, `${pessoa.nome} já está nesta turma.`, { ja_na_turma: true });
+    }
+
+    const matriculaGravar = matriculaTrim || pessoa.matricula || "";
+    const cpfGravar = cpfNormalizado || pessoa.cpf || null;
 
     const [result] = await db.query(
       `
@@ -832,14 +875,14 @@ async function createParticipanteTreinamento(req, res) {
       `,
       [
         treinamento_id,
-        nomeTrim,
-        matriculaTrim,
+        pessoa.nome || nomeTrim,
+        matriculaGravar,
         clienteTrim,
         String(turma || "").trim(),
         String(supervisor || "").trim(),
         String(operacao || "").trim(),
         formatExcelDateToMySQL(data_admissao),
-        cpfNormalizado,
+        cpfGravar,
         "pendente",
         null,
         pessoa.id,
@@ -864,17 +907,105 @@ async function createParticipanteTreinamento(req, res) {
       ]);
     } catch {}
 
+    const reaproveitada = !resolvida.criada;
+    const conta = provisionamento.criado
+      ? "criada"
+      : provisionamento.motivo === "sem_cpf_matricula"
+      ? "sem_login"
+      : provisionamento.motivo === "conta_existente_vinculada"
+      ? "vinculada"
+      : "existente";
+
+    let mensagem = "Participante adicionado com sucesso";
+    if (reaproveitada) mensagem = `${pessoa.nome} já tinha cadastro no portal — vinculado(a) à turma sem duplicar.`;
+    if (conta === "sem_login") mensagem += " Atenção: sem matrícula ou CPF a pessoa ainda não consegue entrar no portal.";
+
     return res.status(201).json({
       ok: true,
       id: result.insertId,
-      message: "Participante adicionado com sucesso",
+      message: mensagem,
       conta_criada: !!provisionamento.criado,
+      vinculo: {
+        pessoa_id: pessoa.id,
+        pessoa_nova: !!resolvida.criada,
+        casada_por: resolvida.casadaPor,
+        conta,
+      },
     });
   } catch (error) {
-    console.error("[treinamentoParticipantesController]", error.message || error);
+    console.error("[treinamentoParticipantesController]", error.message || error, error.code || "");
     return res.status(500).json({
       ok: false,
       message: "Erro ao adicionar participante"});
+  }
+}
+
+// GET /api/treinamentos/:id/pessoas-cadastradas?busca= — 28/10/2026.
+// "Incluir pessoa já cadastrada": procura no Cadastro Único do ambiente da turma (nome, matrícula
+// ou CPF) e diz, para cada pessoa, se já está nesta turma e se tem conta de acesso (e se já entrou).
+// Instrutor/supervisor só enxergam pessoas dos seus clientes (ou sem cliente); CPF só vai para
+// quem já pode ver CPF, e mascarado para os demais.
+async function buscarPessoasParaTurma(req, res) {
+  try {
+    const treinamento_id = Number(req.params?.id || 0);
+    const termo = String(req.query?.busca || "").trim();
+    if (termo.length < 2) return res.json({ ok: true, itens: [] });
+
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    if (!treinamento_id || !(await treinamentoPertenceAoTenant(db, treinamento_id, empresaId, req))) {
+      return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
+    }
+    const empresaIdTurma = await empresaRealDoTreinamento(db, treinamento_id);
+
+    const digitos = termo.replace(/\D/g, "");
+    const cond = ["p.nome LIKE ?"];
+    const params = [`%${termo}%`];
+    if (digitos.length >= 4) {
+      cond.push("p.matricula = ?", "p.cpf = ?", "TRIM(LEADING '0' FROM p.matricula) = ?");
+      params.push(digitos, digitos, digitos.replace(/^0+/, ""));
+    }
+
+    const [rows] = await db.query(
+      `SELECT p.id, p.nome, p.cpf, p.matricula, p.cliente, p.status_identidade,
+              (SELECT COUNT(*) FROM treinamento_participantes tp WHERE tp.treinamento_id = ? AND tp.pessoa_id = p.id) AS na_turma,
+              u.id AS usuario_id, u.ativo AS conta_ativa, u.troca_senha_obrigatoria AS primeiro_acesso_pendente
+         FROM pessoas p
+         LEFT JOIN usuarios u ON u.pessoa_id = p.id
+        WHERE p.empresa_id = ? AND (${cond.join(" OR ")})
+        GROUP BY p.id
+        ORDER BY p.nome ASC
+        LIMIT 30`,
+      [treinamento_id, empresaIdTurma, ...params]
+    );
+
+    const podeCpf = usuarioPodeVerCpf(req);
+    const itens = rows
+      .filter((p) => usuarioTemAcessoAoCliente(req, p.cliente))
+      .map((p) => ({
+        id: p.id,
+        nome: p.nome,
+        matricula: p.matricula,
+        cliente: p.cliente,
+        cpf_final: p.cpf ? String(p.cpf).slice(-2) : null,
+        cpf: podeCpf ? p.cpf : undefined,
+        na_turma: Number(p.na_turma) > 0,
+        conta: p.usuario_id ? (Number(p.conta_ativa) === 0 ? "inativa" : Number(p.primeiro_acesso_pendente) === 1 ? "aguardando_primeiro_acesso" : "ativa") : "sem_conta",
+      }));
+
+    // Contas criadas à mão (Gestão de Usuários) sem vínculo com o cadastro de pessoas.
+    const [orfas] = await db.query(
+      `SELECT id, nome, cliente, ativo FROM usuarios
+        WHERE empresa_id = ? AND pessoa_id IS NULL AND perfil = 'treinando' AND nome LIKE ? LIMIT 10`,
+      [empresaIdTurma, `%${termo}%`]
+    );
+    const contasSemCadastro = orfas
+      .filter((u) => usuarioTemAcessoAoCliente(req, u.cliente))
+      .map((u) => ({ usuario_id: u.id, nome: u.nome, cliente: u.cliente, ativo: Number(u.ativo) !== 0 }));
+
+    return res.json({ ok: true, itens, contas_sem_cadastro: contasSemCadastro });
+  } catch (error) {
+    console.error("[participantes] buscarPessoasParaTurma:", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao buscar pessoas" });
   }
 }
 
@@ -1172,6 +1303,7 @@ module.exports = {
   exportarPrimeiraAula,
   salvarChamadaParticipantes,
   createParticipanteTreinamento,
+  buscarPessoasParaTurma,
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
 };
