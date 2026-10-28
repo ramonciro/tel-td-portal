@@ -68,6 +68,8 @@ export default function ParticipantesTurmaPage() {
   const [achadas, setAchadas] = useState({ itens: [], contas_sem_cadastro: [] });
   const [buscandoPessoa, setBuscandoPessoa] = useState(false);
   const [incluindoId, setIncluindoId] = useState(null);
+  // Sugestões enquanto digita na inclusão manual (pessoas/contas que já existem no portal).
+  const [sugestoes, setSugestoes] = useState({ itens: [], contas_sem_cadastro: [] });
 
   useEffect(() => { carregarTudo(); }, [id]);
 
@@ -177,6 +179,52 @@ export default function ParticipantesTurmaPage() {
     return () => clearTimeout(t);
   }, [buscaPessoa, abrirCadastrada, id]);
 
+  useEffect(() => {
+    if (!abrirManual) { setSugestoes({ itens: [], contas_sem_cadastro: [] }); return undefined; }
+    const termos = [];
+    if (form.nome.trim().length >= 3) termos.push(form.nome.trim());
+    const mat = form.matricula.trim();
+    if (mat.replace(/\D/g, "").length >= 4 || mat.length >= 4) termos.push(mat);
+    const cpf = form.cpf.replace(/\D/g, "");
+    if (cpf.length >= 4) termos.push(cpf);
+    if (!termos.length) { setSugestoes({ itens: [], contas_sem_cadastro: [] }); return undefined; }
+    const t = setTimeout(async () => {
+      try {
+        const respostas = await Promise.all(
+          termos.map((x) => apiFetch(`/treinamentos/${id}/pessoas-cadastradas?busca=${encodeURIComponent(x)}`).catch(() => null))
+        );
+        const vistos = new Set(); const itens = []; const contasVistas = new Set(); const contas = [];
+        respostas.forEach((r) => {
+          (r?.itens || []).forEach((i) => { if (!vistos.has(i.id)) { vistos.add(i.id); itens.push(i); } });
+          (r?.contas_sem_cadastro || []).forEach((u) => { if (!contasVistas.has(u.usuario_id)) { contasVistas.add(u.usuario_id); contas.push(u); } });
+        });
+        setSugestoes({ itens, contas_sem_cadastro: contas });
+      } catch { /* sugestão é só ajuda: falhou, segue o formulário normal */ }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [form.nome, form.matricula, form.cpf, abrirManual, id]);
+
+  async function incluirContaSemCadastro(u) {
+    try {
+      setIncluindoId(`u${u.usuario_id}`); setErro(""); setSucesso("");
+      const r = await apiFetch(`/treinamentos/${id}/participantes`, {
+        method: "POST",
+        body: JSON.stringify({
+          nome: u.nome, matricula: form.matricula, cpf: form.cpf,
+          cliente: treinamento?.cliente || u.cliente || "", turma: treinamento?.tema || "", supervisor: treinamento?.supervisor || "",
+        }),
+      });
+      await carregarTudo();
+      setSucesso(r?.message || `${u.nome} incluído(a) na turma.`);
+      setForm(emptyForm(treinamento?.cliente || "", treinamento?.tema || "", treinamento?.supervisor || ""));
+      setAbrirManual(false);
+    } catch (err) {
+      setErro(err.message || "Não foi possível incluir esta pessoa.");
+    } finally {
+      setIncluindoId(null);
+    }
+  }
+
   async function incluirPessoaCadastrada(pessoa) {
     try {
       setIncluindoId(pessoa.id); setErro(""); setSucesso("");
@@ -191,6 +239,7 @@ export default function ParticipantesTurmaPage() {
       });
       await carregarTudo();
       setSucesso(r?.message || `${pessoa.nome} incluído(a) na turma.`);
+      if (abrirManual) { setForm(emptyForm(treinamento?.cliente || "", treinamento?.tema || "", treinamento?.supervisor || "")); setAbrirManual(false); }
       const novaConta = r?.vinculo?.conta === "criada" ? "aguardando_primeiro_acesso" : null;
       setAchadas((prev) => ({ ...prev, itens: prev.itens.map((i) => (i.id === pessoa.id ? { ...i, na_turma: true, conta: novaConta || i.conta } : i)) }));
     } catch (err) {
@@ -268,6 +317,37 @@ export default function ParticipantesTurmaPage() {
         .join(" ").toLowerCase().includes(t)
     );
   }, [participantes, busca]);
+
+  function renderPessoa(p) {
+    const conta = {
+      ativa: { t: "Conta ativa", bg: colors.successLight, c: colors.successText },
+      aguardando_primeiro_acesso: { t: "Aguardando 1º acesso", bg: colors.warningLight, c: colors.warningText },
+      inativa: { t: "Conta inativa", bg: colors.dangerLight, c: colors.dangerText },
+      sem_conta: { t: "Sem conta de acesso", bg: "#f1f5f9", c: "#64748b" },
+    }[p.conta] || { t: "", bg: "#f1f5f9", c: "#64748b" };
+    return (
+      <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #e9eef4", borderRadius: 10, padding: "8px 12px" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "#334155" }}>{p.nome}</div>
+          <div style={{ fontSize: 12, color: "#94a3b8" }}>
+            {p.matricula ? `Matrícula ${p.matricula}` : "Sem matrícula"}
+            {p.cpf_final ? ` · CPF final ${p.cpf_final}` : ""}
+            {p.cliente ? ` · ${p.cliente}` : ""}
+            {p.operacao ? ` · Operação ${p.operacao}` : ""}
+            {p.data_admissao ? ` · Admissão ${formatDate(p.data_admissao)}` : ""}
+          </div>
+        </div>
+        <span style={{ ...conta, background: conta.bg, color: conta.c, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>{conta.t}</span>
+        {p.na_turma ? (
+          <span style={{ fontSize: 12, fontWeight: 700, color: colors.successText }}>✓ Já está nesta turma</span>
+        ) : (
+          <button style={btnCoral} disabled={incluindoId === p.id} onClick={() => incluirPessoaCadastrada(p)}>
+            {incluindoId === p.id ? "Incluindo…" : "Incluir na turma"}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   function campo(key) {
     return (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }));
@@ -375,36 +455,7 @@ export default function ParticipantesTurmaPage() {
           )}
           {achadas.itens.length > 0 && (
             <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-              {achadas.itens.map((p) => {
-                const conta = {
-                  ativa: { t: "Conta ativa", bg: colors.successLight, c: colors.successText },
-                  aguardando_primeiro_acesso: { t: "Aguardando 1º acesso", bg: colors.warningLight, c: colors.warningText },
-                  inativa: { t: "Conta inativa", bg: colors.dangerLight, c: colors.dangerText },
-                  sem_conta: { t: "Sem conta de acesso", bg: "#f1f5f9", c: "#64748b" },
-                }[p.conta] || { t: "", bg: "#f1f5f9", c: "#64748b" };
-                return (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #e9eef4", borderRadius: 10, padding: "8px 12px" }}>
-                    <div style={{ flex: 1, minWidth: 200 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: "#334155" }}>{p.nome}</div>
-                      <div style={{ fontSize: 12, color: "#94a3b8" }}>
-                        {p.matricula ? `Matrícula ${p.matricula}` : "Sem matrícula"}
-                        {p.cpf_final ? ` · CPF final ${p.cpf_final}` : ""}
-                        {p.cliente ? ` · ${p.cliente}` : ""}
-                        {p.operacao ? ` · Operação ${p.operacao}` : ""}
-                        {p.data_admissao ? ` · Admissão ${formatDate(p.data_admissao)}` : ""}
-                      </div>
-                    </div>
-                    <span style={{ ...conta, background: conta.bg, color: conta.c, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>{conta.t}</span>
-                    {p.na_turma ? (
-                      <span style={{ fontSize: 12, fontWeight: 700, color: colors.successText }}>✓ Já está nesta turma</span>
-                    ) : (
-                      <button style={btnCoral} disabled={incluindoId === p.id} onClick={() => incluirPessoaCadastrada(p)}>
-                        {incluindoId === p.id ? "Incluindo…" : "Incluir na turma"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+              {achadas.itens.map((p) => renderPessoa(p))}
             </div>
           )}
           {achadas.contas_sem_cadastro.length > 0 && (
@@ -453,6 +504,28 @@ export default function ParticipantesTurmaPage() {
               />
             </div>
           </div>
+          {(sugestoes.itens.length > 0 || sugestoes.contas_sem_cadastro.length > 0) && (
+            <div style={{ marginTop: 12, border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 12, padding: 12 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#92400e" }}>Esta pessoa já pode estar no portal</div>
+              <div style={{ fontSize: 12, color: "#92400e", marginBottom: 8 }}>
+                Encontramos cadastro com nome, matrícula ou CPF parecidos. Se for a mesma pessoa, inclua por aqui — mantém o mesmo cadastro e a mesma conta.
+              </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                {sugestoes.itens.map((p) => renderPessoa(p))}
+                {sugestoes.contas_sem_cadastro.map((u) => (
+                  <div key={`u${u.usuario_id}`} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #e9eef4", background: "#fff", borderRadius: 10, padding: "8px 12px" }}>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#334155" }}>{u.nome}</div>
+                      <div style={{ fontSize: 12, color: "#94a3b8" }}>Usuário do portal{u.cliente ? ` · ${u.cliente}` : ""}{u.ativo ? "" : " · conta inativa"} — ainda sem cadastro de pessoa</div>
+                    </div>
+                    <button style={btnCoral} disabled={incluindoId === `u${u.usuario_id}`} onClick={() => incluirContaSemCadastro(u)}>
+                      {incluindoId === `u${u.usuario_id}` ? "Incluindo…" : "Incluir na turma"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <p style={helperText}>
             Matrícula e CPF são opcionais, mas é por eles (e pelo nome) que o portal reconhece quem já
             tem cadastro e vincula à turma sem duplicar. Sem nenhum dos dois a pessoa entra na turma,
