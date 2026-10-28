@@ -333,6 +333,9 @@ async function importarParticipantesExcel(req, res) {
     let contasCriadas = 0;
     let contasAtualizadas = 0;
     let semIdentificadorLogin = 0;
+    let vinculadasAuto = 0;
+    let linhasLidas = 0;
+    const ignoradas = [];
     try {
       await conn.beginTransaction();
 
@@ -347,6 +350,7 @@ async function importarParticipantesExcel(req, res) {
       );
 
       for (const linha of linhas) {
+        linhasLidas += 1;
         const nome = String(linha.nome || "").trim();
         if (!nome) continue;
 
@@ -358,10 +362,30 @@ async function importarParticipantesExcel(req, res) {
         // em qualquer outro cadastro daqui pra frente: casa por CPF, senão
         // por matrícula+nome, senão cria pessoa nova (provisória). Nunca
         // bloqueia a importação por falta de CPF/matrícula.
-        const { pessoa } = await resolverPessoa(
+        // 28/10/2026 — mesma inteligência da inclusão manual: reconhece quem já tem cadastro
+        // (CPF; matrícula+nome; matrícula com nome parecido; nome único) e NÃO cria segunda pessoa
+        // quando a matrícula já é de outra pessoa do mesmo cliente — essa linha fica de fora e é
+        // listada no resultado, em vez de derrubar a planilha inteira.
+        const numeroLinha = linhasLidas;
+        const conflito = await acharConflitoMatricula(conn, empresaIdTurma, {
+          matricula: matriculaLinha, nome, cpf: cpfLinha, cliente: clienteLinha,
+        });
+        if (conflito) {
+          ignoradas.push({ linha: numeroLinha, nome, motivo: `matrícula ${matriculaLinha} já é de "${conflito.nome}"${conflito.cliente ? ` (${conflito.cliente})` : ""}` });
+          continue;
+        }
+        const resolvida = await resolverPessoa(
           { empresaId: empresaIdTurma, nome, cpf: cpfLinha, matricula: matriculaLinha, cliente: clienteLinha },
-          conn
+          conn,
+          { vinculoAmplo: true }
         );
+        if (resolvida.ambigua) {
+          ignoradas.push({ linha: numeroLinha, nome, motivo: `há ${resolvida.ambigua.length} pessoas com este nome; informe matrícula ou CPF` });
+          continue;
+        }
+        const pessoa = resolvida.pessoa;
+        if (!resolvida.criada) vinculadasAuto += 1;
+        const anteriorLinha = resolvida.criada ? { operacao: "", data_admissao: null } : await dadosAnterioresDaPessoa(conn, pessoa.id);
 
         await conn.query(
           `
@@ -389,8 +413,8 @@ async function importarParticipantesExcel(req, res) {
             clienteLinha,
             String(linha.turma || "").trim(),
             String(linha.supervisor || "").trim(),
-            String(linha.operacao || "").trim(),
-            formatExcelDateToMySQL(linha.data_admissao),
+            String(linha.operacao || "").trim() || anteriorLinha.operacao,
+            String(linha.data_admissao || "").trim() ? formatExcelDateToMySQL(linha.data_admissao) : anteriorLinha.data_admissao,
             // Coluna opcional na planilha — a maioria dos modelos hoje em
             // uso não a tem, então nunca entra em `colunasObrigatorias`
             // (ver mais acima); quando presente, precisa bater 11 dígitos
@@ -437,6 +461,8 @@ async function importarParticipantesExcel(req, res) {
       contas_criadas: contasCriadas,
       contas_atualizadas: contasAtualizadas,
       sem_identificador_login: semIdentificadorLogin,
+      vinculadas_automaticamente: vinculadasAuto,
+      linhas_ignoradas: ignoradas,
     });
   } catch (error) {
     console.error("[participantes] importarExcel:", error.message);
@@ -732,6 +758,21 @@ function recusarParticipante(req, res, status, message, extra = {}) {
   return res.status(status).json({ ok: false, message, ...extra });
 }
 
+// 28/10/2026 — Operação e data de admissão não ficam no cadastro da pessoa, ficam em cada linha
+// de turma. Ao reaproveitar uma pessoa que já existe, traz os valores mais recentes que ela já
+// teve em outra turma, para quem inclui não precisar redigitar.
+async function dadosAnterioresDaPessoa(conn, pessoaId) {
+  if (!pessoaId) return { operacao: "", data_admissao: null };
+  const [rows] = await conn.query(
+    `SELECT operacao, DATE_FORMAT(data_admissao, '%Y-%m-%d') AS data_admissao
+       FROM treinamento_participantes WHERE pessoa_id = ? ORDER BY id DESC LIMIT 30`,
+    [pessoaId]
+  );
+  const operacao = (rows.find((r) => String(r.operacao || "").trim()) || {}).operacao || "";
+  const data_admissao = (rows.find((r) => r.data_admissao) || {}).data_admissao || null;
+  return { operacao: String(operacao).trim(), data_admissao };
+}
+
 const semZeros = (v) => String(v || "").trim().toUpperCase().replace(/^0+(?=\d)/, "");
 
 async function createParticipanteTreinamento(req, res) {
@@ -865,6 +906,9 @@ async function createParticipanteTreinamento(req, res) {
       return recusarParticipante(req, res, 409, `${pessoa.nome} já está nesta turma.`, { ja_na_turma: true });
     }
 
+    const anterior = await dadosAnterioresDaPessoa(db, pessoa.id);
+    const operacaoGravar = String(operacao || "").trim() || anterior.operacao;
+    const admissaoGravar = data_admissao ? formatExcelDateToMySQL(data_admissao) : anterior.data_admissao;
     const matriculaGravar = matriculaTrim || pessoa.matricula || "";
     const cpfGravar = cpfNormalizado || pessoa.cpf || null;
 
@@ -894,8 +938,8 @@ async function createParticipanteTreinamento(req, res) {
         clienteTrim,
         String(turma || "").trim(),
         String(supervisor || "").trim(),
-        String(operacao || "").trim(),
-        formatExcelDateToMySQL(data_admissao),
+        operacaoGravar,
+        admissaoGravar,
         cpfGravar,
         "pendente",
         null,
@@ -982,6 +1026,8 @@ async function buscarPessoasParaTurma(req, res) {
     const [rows] = await db.query(
       `SELECT p.id, p.nome, p.cpf, p.matricula, p.cliente, p.status_identidade,
               (SELECT COUNT(*) FROM treinamento_participantes tp WHERE tp.treinamento_id = ? AND tp.pessoa_id = p.id) AS na_turma,
+              (SELECT tp2.operacao FROM treinamento_participantes tp2 WHERE tp2.pessoa_id = p.id AND TRIM(COALESCE(tp2.operacao,'')) <> '' ORDER BY tp2.id DESC LIMIT 1) AS operacao,
+              (SELECT DATE_FORMAT(tp3.data_admissao, '%Y-%m-%d') FROM treinamento_participantes tp3 WHERE tp3.pessoa_id = p.id AND tp3.data_admissao IS NOT NULL ORDER BY tp3.id DESC LIMIT 1) AS data_admissao,
               (SELECT u.id FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS usuario_id,
               (SELECT u.ativo FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS conta_ativa,
               (SELECT u.troca_senha_obrigatoria FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS primeiro_acesso_pendente
@@ -1000,6 +1046,8 @@ async function buscarPessoasParaTurma(req, res) {
         nome: p.nome,
         matricula: p.matricula,
         cliente: p.cliente,
+        operacao: p.operacao || null,
+        data_admissao: p.data_admissao || null,
         cpf_final: p.cpf ? String(p.cpf).slice(-2) : null,
         cpf: podeCpf ? p.cpf : undefined,
         na_turma: Number(p.na_turma) > 0,

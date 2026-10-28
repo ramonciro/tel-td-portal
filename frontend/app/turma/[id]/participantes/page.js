@@ -119,9 +119,20 @@ export default function ParticipantesTurmaPage() {
       if (resultado?.sem_identificador_login) {
         partesResumo.push(`${resultado.sem_identificador_login} participante(s) sem CPF/matrícula ficaram sem login.`);
       }
-      setSucesso(partesResumo.join(" "));
+      if (resultado?.vinculadas_automaticamente) {
+        partesResumo.push(`${resultado.vinculadas_automaticamente} pessoa(s) já tinham cadastro e foram vinculadas automaticamente, sem duplicar.`);
+      }
+      const ign = resultado?.linhas_ignoradas || [];
+      const avisoIgn = ign.length
+        ? `${ign.length} linha(s) NÃO foram importadas: ` +
+          ign.slice(0, 8).map((i) => `linha ${i.linha} (${i.nome}) — ${i.motivo}`).join("; ") +
+          (ign.length > 8 ? `; e mais ${ign.length - 8}.` : ".") +
+          " Confira e inclua essas pessoas pelo + Adicionar manual ou Incluir pessoa já cadastrada."
+        : "";
       setArquivo(null); setAbrirImport(false);
       await carregarTudo();
+      setSucesso(partesResumo.join(" "));
+      if (avisoIgn) setErro(avisoIgn);
     } catch (err) {
       setErro(err.message || "Erro ao importar Excel.");
     } finally {
@@ -379,6 +390,8 @@ export default function ParticipantesTurmaPage() {
                         {p.matricula ? `Matrícula ${p.matricula}` : "Sem matrícula"}
                         {p.cpf_final ? ` · CPF final ${p.cpf_final}` : ""}
                         {p.cliente ? ` · ${p.cliente}` : ""}
+                        {p.operacao ? ` · Operação ${p.operacao}` : ""}
+                        {p.data_admissao ? ` · Admissão ${formatDate(p.data_admissao)}` : ""}
                       </div>
                     </div>
                     <span style={{ ...conta, background: conta.bg, color: conta.c, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>{conta.t}</span>
