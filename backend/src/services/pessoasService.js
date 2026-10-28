@@ -190,6 +190,34 @@ async function candidatasPorNome(conn, empresaId, nome, cpf, matricula) {
   );
 }
 
+// 28/10/2026 — matrícula repetida com NOME diferente: a matrícula identifica uma pessoa por cliente.
+// Se já existe, no mesmo cliente (ou sem cliente), outra pessoa com a mesma matrícula e nome que não
+// se parece, não é a mesma pessoa nem pode ganhar uma segunda — quem chama deve recusar.
+async function acharConflitoMatricula(conn, empresaId, { matricula, nome, cpf, cliente }) {
+  const mat = matriculaParaComparar(matricula);
+  if (!mat) return null;
+  const cpfNorm = normalizarCpf(cpf);
+  if (cpfNorm) {
+    const [porCpf] = await conn.query(`SELECT id FROM pessoas WHERE empresa_id = ? AND cpf = ? LIMIT 1`, [empresaId, cpfNorm]);
+    if (porCpf.length) return null; // o CPF decide quem é a pessoa
+  }
+  const [candidatas] = await conn.query(
+    `SELECT * FROM pessoas
+      WHERE empresa_id = ? AND matricula IS NOT NULL AND TRIM(matricula) <> ''
+        AND ( UPPER(TRIM(matricula)) = ? OR UPPER(TRIM(LEADING '0' FROM TRIM(matricula))) = ? )`,
+    [empresaId, mat, mat]
+  );
+  const cli = String(cliente || "").trim().toLowerCase();
+  return (
+    candidatas.find((c) => {
+      if (matriculaParaComparar(c.matricula) !== mat) return false;
+      if (nomesParecidos(c.nome, nome)) return false;
+      const cc = String(c.cliente || "").trim().toLowerCase();
+      return !cli || !cc || cc === cli;
+    }) || null
+  );
+}
+
 /**
  * @param {{empresaId:number, nome:string, cpf?:string, matricula?:string, cliente?:string}} dados
  * @param {*} conn - pool ou connection de transação (mysql2); padrão: pool.
@@ -296,4 +324,4 @@ async function pessoaIdDoUsuario(userId, conn = pool) {
   return rows[0]?.pessoa_id || null;
 }
 
-module.exports = { resolverPessoa, normalizarCpf, normalizarNome, pessoaIdDoUsuario, matriculaParaComparar, nomeParaComparar, nomesParecidos };
+module.exports = { resolverPessoa, normalizarCpf, normalizarNome, pessoaIdDoUsuario, matriculaParaComparar, nomeParaComparar, nomesParecidos, acharConflitoMatricula };

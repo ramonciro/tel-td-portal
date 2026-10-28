@@ -3,7 +3,7 @@ const db = require("../lib/db");
 const { comTransacao } = require("../lib/tx");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { tenantScopeFor } = require("../lib/tenantScope");
-const { resolverPessoa, pessoaIdDoUsuario } = require("../services/pessoasService");
+const { resolverPessoa, pessoaIdDoUsuario, acharConflitoMatricula } = require("../services/pessoasService");
 const { garantirUsuarioTreinando } = require("../services/provisionamentoUsuariosService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 
@@ -825,6 +825,20 @@ async function createParticipanteTreinamento(req, res) {
 
     const clienteTrim = String(cliente || "").trim();
 
+    // Mesma matrícula de OUTRA pessoa (nome diferente) no mesmo cliente: não cria segunda pessoa.
+    if (!pessoaEscolhida && matriculaTrim) {
+      const conflito = await acharConflitoMatricula(db, empresaIdTurma, {
+        matricula: matriculaTrim, nome: nomeTrim, cpf: cpfNormalizado, cliente: clienteTrim,
+      });
+      if (conflito) {
+        return recusarParticipante(
+          req, res, 409,
+          `A matrícula ${matriculaTrim} já está cadastrada para "${conflito.nome}"${conflito.cliente ? ` (${conflito.cliente})` : ""}. Se é a mesma pessoa, use "Incluir pessoa já cadastrada" (ou digite o nome igual ao cadastro); se é outra pessoa, confira a matrícula.`,
+          { conflito_matricula: true, pessoa_existente: { id: conflito.id, nome: conflito.nome, matricula: conflito.matricula, cliente: conflito.cliente } }
+        );
+      }
+    }
+
     const resolvida = await resolverPessoa(
       { empresaId: empresaIdTurma, nome: nomeTrim, cpf: cpfNormalizado, matricula: matriculaTrim, cliente: clienteTrim },
       db,
@@ -968,11 +982,11 @@ async function buscarPessoasParaTurma(req, res) {
     const [rows] = await db.query(
       `SELECT p.id, p.nome, p.cpf, p.matricula, p.cliente, p.status_identidade,
               (SELECT COUNT(*) FROM treinamento_participantes tp WHERE tp.treinamento_id = ? AND tp.pessoa_id = p.id) AS na_turma,
-              u.id AS usuario_id, u.ativo AS conta_ativa, u.troca_senha_obrigatoria AS primeiro_acesso_pendente
+              (SELECT u.id FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS usuario_id,
+              (SELECT u.ativo FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS conta_ativa,
+              (SELECT u.troca_senha_obrigatoria FROM usuarios u WHERE u.pessoa_id = p.id ORDER BY u.id LIMIT 1) AS primeiro_acesso_pendente
          FROM pessoas p
-         LEFT JOIN usuarios u ON u.pessoa_id = p.id
         WHERE p.empresa_id = ? AND (${cond.join(" OR ")})
-        GROUP BY p.id
         ORDER BY p.nome ASC
         LIMIT 30`,
       [treinamento_id, empresaIdTurma, ...params]
@@ -1004,7 +1018,7 @@ async function buscarPessoasParaTurma(req, res) {
 
     return res.json({ ok: true, itens, contas_sem_cadastro: contasSemCadastro });
   } catch (error) {
-    console.error("[participantes] buscarPessoasParaTurma:", error.message || error);
+    console.error("[participantes] buscarPessoasParaTurma:", error.message || error, error.code || "");
     return res.status(500).json({ ok: false, message: "Erro ao buscar pessoas" });
   }
 }
