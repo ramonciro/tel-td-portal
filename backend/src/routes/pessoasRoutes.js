@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/pessoasController");
+const exclusao = require("../controllers/pessoasExclusaoController");
+const { authorizeRoles } = require("../middlewares/auth");
 
 // authRequired já é aplicado no mount (index.js), igual ao padrão de
 // jornadaParticipantesRoutes.js — sem authorizeRoles aqui porque a busca
@@ -15,5 +17,10 @@ router.get("/", controller.buscar);
 // cá; a parte sensível (dados bancários) é filtrada dentro do controller
 // pela régua de CPF, não por authorizeRoles na rota.
 router.get("/:id", controller.perfil);
+
+// Exclusão de cadastro de teste (29/10/2026) — ver pessoasExclusaoController.js.
+// Só coordenação (super_admin passa em authorizeRoles); recusa se houver histórico.
+router.get("/:id/impacto-exclusao", authorizeRoles("coordenador", "superintendente"), exclusao.impacto);
+router.delete("/:id", authorizeRoles("coordenador", "superintendente"), exclusao.excluir);
 
 module.exports = router;

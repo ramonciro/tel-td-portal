@@ -23,10 +23,10 @@
  */
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import PortalShell from "../../../components/PortalShell";
 import PageHero from "../../../components/PageHero";
-import { apiFetch } from "../../../services/api";
+import { apiFetch, getStoredUser, hasSomeRole } from "../../../services/api";
 import { colors, estiloBadgeStatus } from "../../../lib/theme";
 import { formatDateBR } from "../../../lib/date";
 
@@ -205,6 +205,106 @@ function farolCoaching({ status, cadenciaDias, ultimoEncontro }) {
     return { label: `Atrasado (${dias}d desde o último encontro)`, background: colors.dangerLight, color: colors.dangerText };
   }
   return { label: "Em dia", background: colors.successLight, color: colors.successText };
+}
+
+// Exclusão de cadastro de TESTE (29/10/2026): só coordenação. Mostra o impacto
+// antes, recusa quando há histórico real (presença, certificado, avaliação,
+// jornada, coaching etc.) e exige confirmação digitando o nome da pessoa.
+function ExcluirCadastroTeste({ pessoa }) {
+  const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [imp, setImp] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [confirmacao, setConfirmacao] = useState("");
+  const [desativarConta, setDesativarConta] = useState(true);
+  const [msg, setMsg] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+
+  async function abrir() {
+    setAberto(true);
+    setMsg("");
+    setCarregando(true);
+    try {
+      const r = await apiFetch(`/pessoas/${pessoa.id}/impacto-exclusao`);
+      setImp(r);
+    } catch (e) {
+      setMsg(e.message || "Não foi possível calcular o impacto.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function excluir() {
+    setExcluindo(true);
+    setMsg("");
+    try {
+      await apiFetch(`/pessoas/${pessoa.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmar: true, desativar_conta: desativarConta }),
+      });
+      router.push("/treinamentos");
+    } catch (e) {
+      setMsg(e.message || "Não foi possível excluir.");
+      setExcluindo(false);
+    }
+  }
+
+  const nomeConfere = confirmacao.trim().toLowerCase() === String(pessoa.nome || "").trim().toLowerCase();
+
+  return (
+    <section style={{ ...card, marginTop: 16, borderColor: "#fecaca" }}>
+      <h2 style={{ ...sectionTitle, color: "#991b1b" }}>Excluir cadastro de teste</h2>
+      {!aberto ? (
+        <>
+          <p style={emptyHint}>Use apenas para pessoas criadas em testes. A exclusão é recusada se a pessoa tiver histórico real.</p>
+          <button type="button" onClick={abrir} style={btnPerigoSecundario}>Ver impacto e excluir…</button>
+        </>
+      ) : carregando ? (
+        <p style={emptyHint}>Calculando o impacto...</p>
+      ) : (
+        <>
+          {msg ? <div style={alertError}>{msg}</div> : null}
+          {imp && (
+            <div style={{ display: "grid", gap: 10, fontSize: 13, color: "#0f172a" }}>
+              <div>
+                <strong>Turmas de que será removida ({imp.turmas.length}):</strong>{" "}
+                {imp.turmas.length ? imp.turmas.map((t) => t.tema).join("; ") : "nenhuma"}
+              </div>
+              <div>
+                <strong>Contas de acesso ({imp.contas.length}):</strong>{" "}
+                {imp.contas.length ? imp.contas.map((c) => `${c.nome} (${c.perfil}${c.ativo ? "" : ", inativa"})`).join("; ") : "nenhuma"}
+              </div>
+              {imp.contas.length > 0 && (
+                <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5 }}>
+                  <input type="checkbox" checked={desativarConta} onChange={(e) => setDesativarConta(e.target.checked)} />
+                  Desativar também a conta de acesso de treinando (a conta não é apagada)
+                </label>
+              )}
+              {imp.pode_excluir ? (
+                <>
+                  <p style={{ ...emptyHint, margin: 0 }}>Para confirmar, digite o nome da pessoa: <strong>{pessoa.nome}</strong></p>
+                  <input value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} style={inputConfirma} placeholder="Nome da pessoa" />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button type="button" disabled={!nomeConfere || excluindo} onClick={excluir} style={{ ...btnPerigo, opacity: !nomeConfere || excluindo ? 0.5 : 1 }}>
+                      {excluindo ? "Excluindo..." : "Excluir cadastro"}
+                    </button>
+                    <button type="button" onClick={() => setAberto(false)} style={btnPerigoSecundario}>Cancelar</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={alertError}>
+                    Esta pessoa tem histórico e não pode ser excluída: {imp.bloqueios.join("; ")}.
+                  </div>
+                  <div><button type="button" onClick={() => setAberto(false)} style={btnPerigoSecundario}>Fechar</button></div>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 export default function PerfilPessoaPage() {
@@ -550,6 +650,10 @@ export default function PerfilPessoaPage() {
             </div>
           </section>
         )}
+
+        {hasSomeRole(getStoredUser(), ["coordenador", "superintendente", "super_admin"]) && (
+          <ExcluirCadastroTeste pessoa={pessoa} />
+        )}
       </main>
     </PortalShell>
   );
@@ -568,3 +672,6 @@ const th = { textAlign: "left", padding: "8px 10px", borderBottom: "2px solid #e
 const td = { padding: "9px 10px", borderBottom: "1px solid #f1f5f9", color: "#0f172a" };
 const coachingCard = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 12, background: "#f8fafc", border: "1px solid #e5e7eb" };
 const alertError = { margin: "12px 0", padding: "11px 13px", borderRadius: 12, background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", fontSize: 12, fontWeight: 700 };
+const btnPerigo = { padding: "9px 16px", borderRadius: 12, border: "none", background: "#b91c1c", color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer" };
+const btnPerigoSecundario = { padding: "9px 16px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", color: "#334155", fontSize: 12.5, fontWeight: 800, cursor: "pointer" };
+const inputConfirma = { padding: "10px 12px", borderRadius: 12, border: "1px solid #cbd5e1", fontSize: 13, maxWidth: 380 };

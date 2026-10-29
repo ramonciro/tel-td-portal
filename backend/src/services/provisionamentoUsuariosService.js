@@ -59,7 +59,7 @@ async function garantirUsuarioTreinando({ pessoa, empresaId, cliente }, conn = p
   if (!jaTemConta[0].length) {
     const [orfas] = await conn.query(
       `SELECT id, nome, cliente FROM usuarios
-        WHERE empresa_id = ? AND pessoa_id IS NULL AND perfil = 'treinando' AND nome = ? LIMIT 20`,
+        WHERE empresa_id = ? AND pessoa_id IS NULL AND perfil = 'treinando' AND ativo = 1 AND nome = ? LIMIT 20`,
       [empresaId, pessoa.nome]
     );
     const alvo = nomeParaComparar(pessoa.nome);
