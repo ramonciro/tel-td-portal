@@ -13,6 +13,11 @@
  * Sem contagem em dobro: por pessoa + subdivisão + DIA conta uma vez só (a maior carga do dia). É a conta
  * conservadora — nunca superestima a evidência. As linhas não contadas aparecem na evidência com o motivo.
  *
+ * Período (Pacote 2, 04/11/2026): ano-calendário por padrão, ou um intervalo de datas (de/ate). A meta é
+ * ANUAL: só é comparada com as horas quando o período é o ano-calendário inteiro. Em intervalo parcial as
+ * horas aparecem, a meta anual aparece só como referência (`meta_anual`) e a situação fica "sem_meta" — nada de
+ * comparar 3 meses de horas com uma meta de 12.
+ *
  * Meta: tabela mpt_metas (uma por ambiente e subdivisão), horas por pessoa no ano-calendário. É META INTERNA
  * DE GESTÃO, nunca citada como exigência legal. Sem meta cadastrada o sistema não inventa número.
  * Farol: % de pessoas que atingiram a meta (>=90 verde, 80–89 amarelo, <80 vermelho) — régua já usada no
@@ -83,11 +88,10 @@ async function removerMeta({ empresaId, subtipo }) {
 
 // ───────────────────────── cálculo de um ambiente ─────────────────────────
 
-async function calcularEmpresa(empresaId, ano) {
-  const de = `${ano}-01-01`;
-  const ate = `${ano}-12-31`;
-
-  const metas = new Map((await listarMetas(empresaId)).map((m) => [m.subtipo, m.horas_meta]));
+async function calcularEmpresa(empresaId, de, ate, periodoCompleto) {
+  const metasAnuais = new Map((await listarMetas(empresaId)).map((m) => [m.subtipo, m.horas_meta]));
+  // Em período parcial a meta anual não vale como régua (ver cabeçalho): o mapa de metas fica vazio.
+  const metas = periodoCompleto ? metasAnuais : new Map();
 
   // Cadastro único de pessoas do ambiente (para ligar matrícula/CPF ao mesmo indivíduo).
   const [pessoasRows] = await pool.query(`SELECT id, cpf, matricula, nome, cliente FROM pessoas WHERE empresa_id = ?`, [empresaId]);
@@ -326,13 +330,14 @@ async function calcularEmpresa(empresaId, ano) {
       subtipo: u.subtipo,
       horas: arred(total),
       meta,
+      meta_anual: metasAnuais.has(u.subtipo) ? metasAnuais.get(u.subtipo) : null,
       situacao,
       evidencias: final,
     });
   }
   avisos.pessoas_sem_cadastro = new Set(linhas.filter((l) => !l.vinculada).map((l) => l.chave)).size;
 
-  return { empresa_id: empresaId, linhas, avisos, metas };
+  return { empresa_id: empresaId, linhas, avisos, metas: metasAnuais };
 }
 
 // ───────────────────────── agregação ─────────────────────────
@@ -342,7 +347,7 @@ function agregar(linhas) {
   for (const l of linhas) {
     if (!porSub.has(l.subtipo)) porSub.set(l.subtipo, { subtipo: l.subtipo, metas: new Set(), horas_jornada: 0, horas_turma: 0, itens: [] });
     const s = porSub.get(l.subtipo);
-    if (l.meta !== null) s.metas.add(l.meta);
+    if (l.meta_anual !== null && l.meta_anual !== undefined) s.metas.add(l.meta_anual);
     s.itens.push(l);
     for (const ev of l.evidencias) if (ev.contada) (ev.fonte === "turma" ? (s.horas_turma += ev.horas) : (s.horas_jornada += ev.horas));
   }
@@ -363,7 +368,7 @@ function agregar(linhas) {
     }
     out.push({
       subtipo: s.subtipo,
-      meta_horas: s.metas.size === 1 ? [...s.metas][0] : null,
+      meta_horas: s.metas.size === 1 ? [...s.metas][0] : null, // meta anual cadastrada (referência)
       metas_diferentes: s.metas.size > 1,
       ...contar(s.itens),
       horas_jornada: arred(s.horas_jornada),
@@ -375,12 +380,40 @@ function agregar(linhas) {
   return out;
 }
 
+function dataValida(v) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ""))) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 /**
- * @param {{empresaId?: number|null, ano?: number}} opts  empresaId null = todos os ambientes (superintendente)
- * @returns {Promise<{ano, subdivisoes, avisos, metas, linhas}>}  `linhas` traz os nomes — o controller decide se devolve.
+ * Resolve o período pedido. Intervalo (de/ate) tem precedência sobre o ano. Retorna `erro` quando inválido.
+ * `completo` = ano-calendário inteiro (só nele a meta anual vale como régua).
  */
-async function calcularComprovacao({ empresaId = null, ano } = {}) {
-  const anoCalc = Number.isInteger(Number(ano)) && Number(ano) >= 2020 && Number(ano) <= 2100 ? Number(ano) : Number(hojeBahia().slice(0, 4));
+function resolverPeriodo({ ano, de, ate } = {}) {
+  if (de || ate) {
+    if (!dataValida(de) || !dataValida(ate)) return { erro: "Informe a data inicial e a data final no formato AAAA-MM-DD." };
+    if (de > ate) return { erro: "A data final não pode ser anterior à data inicial." };
+    const dias = (new Date(`${ate}T00:00:00Z`) - new Date(`${de}T00:00:00Z`)) / 86400000;
+    if (dias > 1100) return { erro: "O período pode ter no máximo 3 anos." };
+    const completo = de.slice(5) === "01-01" && ate.slice(5) === "12-31" && de.slice(0, 4) === ate.slice(0, 4);
+    return { de, ate, completo, ano: completo ? Number(de.slice(0, 4)) : null };
+  }
+  const a = Number.isInteger(Number(ano)) && Number(ano) >= 2020 && Number(ano) <= 2100 ? Number(ano) : Number(hojeBahia().slice(0, 4));
+  return { de: `${a}-01-01`, ate: `${a}-12-31`, completo: true, ano: a };
+}
+
+/**
+ * @param {{empresaId?: number|null, ano?: number, de?: string, ate?: string}} opts  empresaId null = todos os ambientes (superintendente)
+ * @returns {Promise<{ano, periodo, subdivisoes, avisos, metas, linhas}>}  `linhas` traz os nomes — o controller decide se devolve.
+ */
+async function calcularComprovacao({ empresaId = null, ano, de, ate } = {}) {
+  const periodo = resolverPeriodo({ ano, de, ate });
+  if (periodo.erro) {
+    const e = new Error(periodo.erro);
+    e.codigo = "PERIODO_INVALIDO";
+    throw e;
+  }
   let ids;
   if (empresaId) ids = [empresaId];
   else {
@@ -395,12 +428,19 @@ async function calcularComprovacao({ empresaId = null, ano } = {}) {
   const metas = [];
   const avisos = { encontros_sem_subdivisao: 0, turmas_sem_cronograma: 0, presencas_sem_vinculo: 0, cargas_estimadas: 0, pessoas_sem_cadastro: 0 };
   for (const id of ids) {
-    const r = await calcularEmpresa(id, anoCalc);
+    const r = await calcularEmpresa(id, periodo.de, periodo.ate, periodo.completo);
     for (const l of r.linhas) todas.push({ ...l, empresa_id: id, chave: `${id}:${l.chave}` });
     for (const [subtipo, horas] of r.metas) metas.push({ empresa_id: id, subtipo, horas_meta: horas });
     for (const k of Object.keys(avisos)) avisos[k] += r.avisos[k];
   }
-  return { ano: anoCalc, subdivisoes: agregar(todas), avisos, metas, linhas: todas };
+  return {
+    ano: periodo.ano,
+    periodo: { de: periodo.de, ate: periodo.ate, completo: periodo.completo },
+    subdivisoes: agregar(todas),
+    avisos,
+    metas,
+    linhas: todas,
+  };
 }
 
-module.exports = { calcularComprovacao, listarMetas, salvarMeta, removerMeta, farolDoPct };
+module.exports = { calcularComprovacao, resolverPeriodo, listarMetas, salvarMeta, removerMeta, farolDoPct };

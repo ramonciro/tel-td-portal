@@ -77,6 +77,8 @@ const menuItems = [
   { href: "/indicadores",  label: "Indicadores",             icon: "trending", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/fechamento-mensal", label: "Fechamento mensal",  icon: "chart", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/capacidade",   label: "CH por Instrutor",        icon: "clock", roles: ["coordenador", "supervisor", "superintendente"] },
+  // Comprovação MPT (Pacote 2, 04/11/2026): leitura agregada, sem nomes, para quem acompanha; o detalhe por pessoa fica no Mapa de Desenvolvimento (Metodologia).
+  { href: "/comprovacao-mpt", label: "Comprovação MPT",      icon: "shield", roles: ["coordenador", "supervisor", "superintendente"] },
   { href: "/biblioteca",    label: "Biblioteca",             icon: "book", roles: ["coordenador", "supervisor", "instrutor", "treinando"] },
   { href: "/clientes",      label: "Clientes",               icon: "building", roles: ["coordenador", "supervisor"] },
   // Fase 1 (padronização de gestão de usuários, 22/09/2026): coordenador_rs

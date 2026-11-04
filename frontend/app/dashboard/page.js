@@ -262,6 +262,7 @@ export default function DashboardPage() {
   const [filtrosProntos, setFiltrosProntos] = useState(false);
   const [radar, setRadar] = useState(undefined); // undefined = carregando; null = sem acesso/erro
   const [jornadasProgresso, setJornadasProgresso] = useState(undefined);
+  const [mptResumo, setMptResumo] = useState(undefined); // Comprovação MPT agregada (sem nomes); null = sem acesso/erro
   const [alertasProntos, setAlertasProntos] = useState(false);
 
   useEffect(() => {
@@ -286,6 +287,7 @@ export default function DashboardPage() {
     let vivo = true;
     apiFetch("/preventivo/radar-semanal").then((r) => vivo && setRadar(r || null)).catch(() => vivo && setRadar(null));
     apiFetch("/dashboard/jornadas-progresso").then((r) => vivo && setJornadasProgresso(r || null)).catch(() => vivo && setJornadasProgresso(null));
+    apiFetch("/mpt/resumo").then((r) => vivo && setMptResumo(r || null)).catch(() => vivo && setMptResumo(null));
     return () => { vivo = false; };
   }, []);
 
@@ -499,7 +501,7 @@ export default function DashboardPage() {
           />
 
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`}>
-            <FaroisAcionaveis alertas={alertas} alertasProntos={alertasProntos} radar={radar} jornadas={jornadasProgresso} onAbrirTurma={abrirDrillDown} />
+            <FaroisAcionaveis alertas={alertas} alertasProntos={alertasProntos} radar={radar} jornadas={jornadasProgresso} mpt={mptResumo} onAbrirTurma={abrirDrillDown} />
           </div>
 
           <RadarResumoCard dados={radar} />
@@ -1035,7 +1037,7 @@ const turmaCardFooter = { display: "flex", flexWrap: "wrap", gap: 10, marginTop:
 // um botão que abre a tela certa já filtrada. O Radar e as jornadas entram na
 // MESMA lista — assim a mensagem de "tudo em dia" nunca contradiz um risco aberto,
 // e ela só cita o que foi de fato conferido.
-function FaroisAcionaveis({ alertas, alertasProntos, radar, jornadas, onAbrirTurma }) {
+function FaroisAcionaveis({ alertas, alertasProntos, radar, jornadas, mpt, onAbrirTurma }) {
   const radarAbertos = Number(radar?.abertos || 0);
   const radarCriticos = Number(radar?.por_gravidade?.critica || 0);
   const tj = jornadas?.totais || {};
@@ -1045,6 +1047,12 @@ function FaroisAcionaveis({ alertas, alertasProntos, radar, jornadas, onAbrirTur
     tj.abaixo_do_minimo ? `${fmt(tj.abaixo_do_minimo)} participante(s) abaixo da presença mínima` : "",
     tj.reciclagem_vencida ? `${fmt(tj.reciclagem_vencida)} com reciclagem vencida` : "",
   ].filter(Boolean).join(" · ");
+
+  // Comprovação MPT (Pacote 2): só conta subdivisão COM meta definida e farol amarelo/vermelho no ano corrente.
+  // Agregado, sem nomes. Sem meta cadastrada não acende nada (o sistema não inventa número).
+  const mptSubs = (mpt?.subdivisoes || []).filter((s) => s.meta_horas !== null && s.meta_horas !== undefined && (s.farol === "vermelho" || s.farol === "amarelo"));
+  const mptPessoasAbaixo = mptSubs.reduce((a, s) => a + Number(s.abaixo || 0) + Number(s.sem_hora || 0), 0);
+  const mptCritico = mptSubs.some((s) => s.farol === "vermelho");
 
   const cards = [
     {
@@ -1099,6 +1107,15 @@ function FaroisAcionaveis({ alertas, alertasProntos, radar, jornadas, onAbrirTur
       acao: { label: "Abrir o Radar", href: "/radar" },
     },
     {
+      key: "mpt",
+      numero: mptSubs.length,
+      label: "Subdivisões abaixo da meta MPT",
+      motivo: `${fmt(mptPessoasAbaixo)} pessoa(s) ainda sem atingir a meta anual de horas. Meta interna de gestão, ano ${mpt?.ano ?? ""}.`,
+      cor: mptCritico ? colors.danger : colors.warning,
+      itens: [],
+      acao: { label: "Ver Comprovação MPT", href: "/comprovacao-mpt" },
+    },
+    {
       key: "jornadas",
       numero: jornadasEmAlerta,
       label: "Jornadas em alerta",
@@ -1114,6 +1131,7 @@ function FaroisAcionaveis({ alertas, alertasProntos, radar, jornadas, onAbrirTur
     const conferidos = ["turmas críticas", "chamadas pendentes", "necessidades atrasadas"];
     if (radar) conferidos.push("riscos abertos no Radar");
     if (jornadas) conferidos.push("jornadas em alerta");
+    if (mpt && (mpt.subdivisoes || []).some((s) => s.meta_horas !== null && s.meta_horas !== undefined)) conferidos.push("subdivisões abaixo da meta MPT");
     const texto = conferidos.length > 1 ? `${conferidos.slice(0, -1).join(", ")} nem ${conferidos[conferidos.length - 1]}` : conferidos[0];
     return (
       <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>

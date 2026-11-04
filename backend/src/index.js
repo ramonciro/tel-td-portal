@@ -457,6 +457,12 @@ app.get(
   mptController.pessoas
 );
 app.get(
+  "/api/mpt/dossie",
+  authRequired,
+  authorizeRoles("metodologia"),
+  mptController.dossie
+);
+app.get(
   "/api/mpt/metas",
   authRequired,
   authorizeRoles("coordenador", "supervisor", "superintendente", "metodologia"),
