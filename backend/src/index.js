@@ -343,8 +343,26 @@ app.get("/api/health/backup", (req, res) => {
   });
 });
 
+// Relatório de presença (Gestão de Turmas): a tela manda ao servidor TODAS as
+// linhas já filtradas/calculadas e o servidor só monta o .xlsx. Com o período
+// do ano inteiro (230+ turmas) o corpo passa dos 100 KB que o Express aceita
+// por padrão e dava "PayloadTooLargeError". Limite maior SÓ nesta rota (as
+// demais continuam em 100 KB) e depois do login, para não aceitar corpo
+// grande de quem nem está autenticado.
+app.use("/api/presenca-resumo/exportar-relatorio", authRequired, express.json({ limit: "10mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Corpo grande demais em qualquer rota: responde em JSON com texto claro, em
+// vez do HTML cru com os caminhos internos do servidor que aparecia na tela.
+app.use((err, req, res, next) => {
+  if (err && err.type === "entity.too.large") {
+    return res.status(413).json({
+      ok: false,
+      message: "Os dados enviados são grandes demais para esta operação. Tente com um recorte menor (por exemplo, um período mais curto).",
+    });
+  }
+  return next(err);
+});
 // Arquivos enviados (Biblioteca) são PRIVADOS (16/10/2026). Antes, qualquer
 // pessoa com o endereço abria o arquivo, sem login. Agora o /uploads só
 // responde com um link assinado e de curta duração (5 min), gerado pela rota

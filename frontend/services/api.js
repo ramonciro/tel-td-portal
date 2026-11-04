@@ -60,6 +60,18 @@ function avisarIndisponibilidade(indisponivel, mensagem) {
   } catch {}
 }
 
+// Resposta de erro que não é JSON (ex.: página de erro em HTML do servidor ou
+// do proxy): nunca mostrar o HTML cru na tela — traz caminhos internos e
+// assusta o usuário. Troca por uma frase clara conforme o código HTTP.
+function mensagemErroNaoJson(status, texto) {
+  const t = String(texto || "").trim();
+  const pareceHtml = /^<(!doctype|html|head|body|pre)/i.test(t) || t.includes("</");
+  if (!pareceHtml && t && t.length <= 300) return t;
+  if (status === 413) return "Os dados enviados são grandes demais para esta operação. Tente com um recorte menor (por exemplo, um período mais curto).";
+  if (status === 401 || status === 403) return "Você não tem permissão para esta operação ou a sessão expirou.";
+  return `Não foi possível concluir a operação (erro ${status}). Tente novamente em alguns minutos.`;
+}
+
 const MSG_SEM_CONEXAO =
   "Não consegui falar com o servidor. Verifique sua internet ou tente de novo em alguns minutos.";
 
@@ -110,6 +122,7 @@ export async function apiFetch(path, options = {}) {
       // o DevTools toda vez para descobrir o que de fato falhou.
       message = data.error || data.message || message;
     }
+    if (response.status === 413 && message === "Erro 413") message = mensagemErroNaoJson(413, "");
     throw new Error(message);
   }
 
@@ -141,7 +154,7 @@ export async function apiDownload(path, filenameFallback = "arquivo.xlsx") {
         message = data?.message || data?.error || message;
       } else {
         const text = await response.text();
-        if (text) message = text;
+        message = mensagemErroNaoJson(response.status, text);
       }
     } catch {}
     throw new Error(message);
@@ -196,7 +209,7 @@ export async function apiDownloadPost(path, body, filenameFallback = "arquivo.xl
         message = data?.message || data?.error || message;
       } else {
         const text = await response.text();
-        if (text) message = text;
+        message = mensagemErroNaoJson(response.status, text);
       }
     } catch {}
     throw new Error(message);
