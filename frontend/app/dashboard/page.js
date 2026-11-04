@@ -112,7 +112,7 @@ function buildFarois(kpis = {}, presencaPorCliente = [], ultimasTurmas = [], des
   if (!items.length) {
     items.push({
       title: "Leitura tranquila",
-      text: "O recorte não está apontando nenhum desvio mais sensível agora. Vale usar os filtros para aprofundar a análise.",
+      text: "Presença, chamadas e instrutores não apontam desvio neste recorte. Riscos de planejamento ficam no Radar da semana; use os filtros para aprofundar a análise.",
       tone: "ok",
     });
   }
@@ -927,7 +927,7 @@ function AlertasDashboard({ alertas, onAbrirTurma }) {
     return (
       <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontSize: 18 }}>✅</span>
-        <span style={{ fontSize: 13.5, color: colors.successText, fontWeight: 600 }}>Nada precisando de atenção imediata agora — todos os indicadores estão dentro do esperado.</span>
+        <span style={{ fontSize: 13.5, color: colors.successText, fontWeight: 600 }}>Sem turmas críticas, chamadas pendentes nem necessidades atrasadas agora. Os riscos de planejamento aparecem no Radar da semana, logo abaixo.</span>
       </div>
     );
   }

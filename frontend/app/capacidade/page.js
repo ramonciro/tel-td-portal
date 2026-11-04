@@ -859,7 +859,7 @@ function ScorecardInstrutor({
           </button>
         </div>
         <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 10, marginBottom: 0 }}>
-          Índice geral é 100% frequência — NPS e nota de avaliação aparecem à parte, como informação, sem entrar nessa conta (NPS por decisão do Ramon; avaliação porque não tem uma escala fixa hoje, a "nota máx." de cada prova é livre).
+          O índice geral considera só a frequência. NPS e nota de avaliação aparecem à parte, como informação, sem entrar nessa conta.
         </p>
       </div>
 

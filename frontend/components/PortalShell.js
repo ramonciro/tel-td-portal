@@ -127,7 +127,14 @@ const menuItems = [
 // cadastre-a no menu ou aqui — os perfis devem espelhar o que o backend libera.
 // Marcador de versão (21/10/2026): ajuda a conferir se o deploy já chegou. O código do
 // commit vem do Vercel no build (next.config.js); localmente aparece "local".
-const VERSAO_PORTAL = `${process.env.NEXT_PUBLIC_BUILD_DATA || "local"} · ${process.env.NEXT_PUBLIC_BUILD_COMMIT || "dev"}`;
+// Mostra só a data do build; o código do commit entra quando existe (deploy na Vercel).
+// Sem commit (build local), não exibe "dev".
+const VERSAO_PORTAL = (() => {
+  const data = process.env.NEXT_PUBLIC_BUILD_DATA || "";
+  const commit = process.env.NEXT_PUBLIC_BUILD_COMMIT || "";
+  const commitValido = commit && commit !== "dev" ? commit : "";
+  return [data, commitValido].filter(Boolean).join(" · ");
+})();
 const versaoStyle = { marginTop: 10, fontSize: 10.5, color: "rgba(255,255,255,.45)", textAlign: "center", letterSpacing: ".03em" };
 
 const ROTAS_FORA_DO_MENU = [
