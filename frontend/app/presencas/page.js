@@ -198,6 +198,17 @@ export default function GestaoPresencasPage() {
 
   const [filtroStatus,  setFiltroStatus]  = useState("todos");
   const [filtroCliente, setFiltroCliente] = useState("todos");
+  const [filtroClassificacao, setFiltroClassificacao] = useState("");
+
+  // Vindo de um farol do Dashboard (?status=Chamada pendente), abre já filtrado.
+  useEffect(() => {
+    try {
+      const st = new URLSearchParams(window.location.search).get("status");
+      if (st && STATUS_CONFIGS.some((c) => c.key === st)) setFiltroStatus(st);
+      const cl = new URLSearchParams(window.location.search).get("classificacao");
+      if (cl === "Crítico") setFiltroClassificacao(cl);
+    } catch {}
+  }, []);
   const [busca,         setBusca]         = useState("");
   // Seleção de período (pedido do Ramon, 16/09/2026): antes só dava pra
   // exportar o histórico inteiro de turmas. Os dois campos abaixo filtram
@@ -285,13 +296,14 @@ export default function GestaoPresencasPage() {
     return turmas.filter((item) => {
       const okStatus   = filtroStatus === "todos" || item.statusTurma === filtroStatus;
       const okCliente  = filtroCliente === "todos" || String(item.cliente || "") === filtroCliente;
+      const okClassif  = !filtroClassificacao || (item.classificacao === filtroClassificacao && item.statusTurma !== "Sem treinandos");
       const alvo = [item.tema, item.cliente, item.instrutor, item.supervisor, item.publico]
         .filter(Boolean).join(" ").toLowerCase();
       const okBusca    = !termo || alvo.includes(termo);
       const okPeriodo  = dentroDoPeriodo(item);
-      return okStatus && okCliente && okBusca && okPeriodo;
+      return okStatus && okCliente && okClassif && okBusca && okPeriodo;
     });
-  }, [turmas, filtroStatus, filtroCliente, busca, periodoInicio, periodoFim]);
+  }, [turmas, filtroStatus, filtroCliente, filtroClassificacao, busca, periodoInicio, periodoFim]);
 
   /* ── KPIs agregados (da lista filtrada) ── */
   const kpi = useMemo(() => {
@@ -341,6 +353,7 @@ export default function GestaoPresencasPage() {
   function limparFiltros() {
     setFiltroStatus("todos");
     setFiltroCliente("todos");
+    setFiltroClassificacao("");
     setBusca("");
     setPeriodoInicio("");
     setPeriodoFim("");
@@ -573,7 +586,7 @@ export default function GestaoPresencasPage() {
 
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, marginLeft: "auto" }}>
                 <div style={{ display: "flex", gap: 8 }}>
-                  {(filtroStatus !== "todos" || filtroCliente !== "todos" || busca || periodoInicio || periodoFim) && (
+                  {(filtroStatus !== "todos" || filtroCliente !== "todos" || filtroClassificacao || busca || periodoInicio || periodoFim) && (
                     <button style={btnLimpar} onClick={limparFiltros}>
                       Limpar
                     </button>

@@ -15,6 +15,7 @@ import Link from "next/link";
 import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
+import ProgressoJornadas from "../../components/ProgressoJornadas";
 import StatCard from "../../components/StatCard";
 import { apiFetch, apiDownload } from "../../services/api";
 import { toDateInputLocal } from "../../lib/date";
@@ -90,6 +91,17 @@ export default function MapaDesenvolvimentoPage() {
   // enxergava ações e coaching e mostrava 0 horas / 0% para quem só tinha
   // chamada lançada. Vem de /metodologia-kpis/jornadas.
   const [presencaResumo, setPresencaResumo] = useState([]);
+
+  // Progresso dos participantes por jornada (04/11/2026) — mesma conta que o
+  // Dashboard usa, aqui no detalhe completo. undefined = carregando; null = falhou.
+  const [progressoJornadas, setProgressoJornadas] = useState(undefined);
+  useEffect(() => {
+    let vivo = true;
+    apiFetch("/dashboard/jornadas-progresso")
+      .then((r) => vivo && setProgressoJornadas(r || null))
+      .catch(() => vivo && setProgressoJornadas(null));
+    return () => { vivo = false; };
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1262,6 +1274,15 @@ export default function MapaDesenvolvimentoPage() {
             </div>
           )}
         </SectionCard>
+
+        {activeTab === "geral" && progressoJornadas !== null && (
+          <SectionCard
+            title="Progresso dos participantes"
+            subtitle="Em que etapa cada jornada está, quem está abaixo da presença mínima e quanto da meta de horas já foi cumprida. É a mesma conta do Dashboard e da grade de presença."
+          >
+            <ProgressoJornadas dados={progressoJornadas} />
+          </SectionCard>
+        )}
 
         {activeTab === "geral" && (
           <AbaGeral

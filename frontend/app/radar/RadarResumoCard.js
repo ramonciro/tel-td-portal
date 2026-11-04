@@ -6,15 +6,20 @@ import { colors, radius } from "../../lib/theme";
 import { GRAV, fmtData } from "./ui";
 
 // Cartão do Radar da semana para o Dashboard (Pacote 3, 26/10/2026). Some sozinho se o perfil não tem acesso.
-export default function RadarResumoCard() {
-  const [d, setD] = useState(null);
+// `dados` opcional: o Dashboard já busca o Radar uma vez e passa pronto (evita pedir duas vezes
+// e garante que o cartão e os faróis mostrem o mesmo número).
+export default function RadarResumoCard({ dados } = {}) {
+  const [proprio, setD] = useState(null);
   useEffect(() => {
+    if (dados !== undefined) return undefined;
     let vivo = true;
     apiFetch("/preventivo/radar-semanal").then((r) => { if (vivo) setD(r); }).catch(() => {});
     return () => { vivo = false; };
-  }, []);
-  if (!d) return null;
-  const topo = d.top5.slice(0, 3);
+  }, [dados]);
+  const dd = dados !== undefined ? dados : proprio;
+  if (!dd) return null;
+  const topo = dd.top5.slice(0, 3);
+  const d = dd;
   return (
     <div style={{ border: `1px solid ${colors.border}`, borderRadius: radius.lg || radius.md, background: "#fff", padding: "14px 18px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>

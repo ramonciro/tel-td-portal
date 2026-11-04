@@ -10,6 +10,7 @@ import { formatDateBR } from "../../lib/date";
 import { colors, chart } from "../../lib/theme";
 import { ContadorAnimado, BarraHorizontal } from "../../components/Charts";
 import RadarResumoCard from "../radar/RadarResumoCard";
+import ProgressoJornadas from "../../components/ProgressoJornadas";
 
 function fmt(n) {
   return new Intl.NumberFormat("pt-BR").format(Number(n || 0));
@@ -64,7 +65,78 @@ function corPorPresenca(value) {
   return colors.danger;
 }
 
-function buildFarois(kpis = {}, presencaPorCliente = [], ultimasTurmas = [], desempenhoResumo = null) {
+// ---------------------------------------------------------------------------
+// Filtros do painel (04/11/2026): atalhos de período, subtipo e filtros na URL.
+// ---------------------------------------------------------------------------
+const FILTROS_VAZIOS = {
+  cliente: "",
+  instrutor: "",
+  supervisor: "",
+  status: "",
+  modalidade: "",
+  subtipo: "",
+  data_inicio: "",
+  data_fim: "",
+};
+
+const ATALHOS_PERIODO = [
+  { key: "hoje", label: "Hoje" },
+  { key: "semana", label: "Esta semana" },
+  { key: "mes", label: "Este mês" },
+  { key: "90d", label: "Últimos 90 dias" },
+  { key: "ano", label: "Este ano" },
+];
+
+function isoLocal(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// Datas calculadas no fuso do navegador (não em UTC) para "hoje" ser o dia de quem olha a tela.
+function periodoDoAtalho(key, base = new Date()) {
+  const hoje = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  let ini = hoje;
+  let fim = hoje;
+  if (key === "semana") {
+    ini = new Date(hoje);
+    ini.setDate(hoje.getDate() - ((hoje.getDay() + 6) % 7)); // segunda-feira
+    fim = new Date(ini);
+    fim.setDate(ini.getDate() + 6);
+  } else if (key === "mes") {
+    ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+  } else if (key === "90d") {
+    ini = new Date(hoje);
+    ini.setDate(hoje.getDate() - 89);
+  } else if (key === "ano") {
+    ini = new Date(hoje.getFullYear(), 0, 1);
+    fim = new Date(hoje.getFullYear(), 11, 31);
+  }
+  return { data_inicio: isoLocal(ini), data_fim: isoLocal(fim) };
+}
+
+function atalhoAtivo(filters) {
+  if (!filters.data_inicio || !filters.data_fim) return "";
+  const achado = ATALHOS_PERIODO.find((a) => {
+    const p = periodoDoAtalho(a.key);
+    return p.data_inicio === filters.data_inicio && p.data_fim === filters.data_fim;
+  });
+  return achado ? achado.key : "";
+}
+
+function filtrosDaUrl() {
+  const out = { ...FILTROS_VAZIOS };
+  try {
+    const q = new URLSearchParams(window.location.search);
+    Object.keys(FILTROS_VAZIOS).forEach((k) => {
+      const v = q.get(k);
+      if (v) out[k] = v;
+    });
+  } catch {}
+  return out;
+}
+
+function buildFarois(kpis = {}, presencaPorCliente = [], ultimasTurmas = [], desempenhoResumo = null, acoes = {}) {
   const items = [];
 
   if (Number(kpis.pendentes || 0) > 0) {
@@ -72,6 +144,7 @@ function buildFarois(kpis = {}, presencaPorCliente = [], ultimasTurmas = [], des
       title: "Chamada pedindo fechamento",
       text: `${fmt(kpis.pendentes)} registro(s) ainda precisam ser concluídos para a leitura do dia ficar mais fiel.`,
       tone: Number(kpis.pendentes || 0) > 15 ? "danger" : "attention",
+      acao: { label: "Fechar chamadas", href: "/presencas?status=" + encodeURIComponent("Chamada pendente") },
     });
   }
 
@@ -81,6 +154,7 @@ function buildFarois(kpis = {}, presencaPorCliente = [], ultimasTurmas = [], des
       title: "Cliente que merece olhar primeiro",
       text: `${clienteMaisSensivel.cliente} está com ${fmt(clienteMaisSensivel.taxa_presenca)}% de presença no recorte atual.`,
       tone: Number(clienteMaisSensivel.taxa_presenca || 0) >= 85 ? "ok" : "attention",
+      acao: acoes.filtrarCliente ? { label: "Filtrar por este cliente", onClick: () => acoes.filtrarCliente(clienteMaisSensivel.cliente) } : undefined,
     });
   }
 
@@ -90,6 +164,7 @@ function buildFarois(kpis = {}, presencaPorCliente = [], ultimasTurmas = [], des
       title: "Turma com pendência aberta",
       text: `${turmaPendente.tema || "Turma sem título"} ainda tem ${fmt(turmaPendente.pendentes)} pendência(s) para fechamento.`,
       tone: Number(turmaPendente.pendentes || 0) > 5 ? "danger" : "attention",
+      acao: acoes.abrirTurma ? { label: "Ver presença por pessoa", onClick: () => acoes.abrirTurma(turmaPendente) } : undefined,
     });
   }
 
@@ -100,6 +175,7 @@ function buildFarois(kpis = {}, presencaPorCliente = [], ultimasTurmas = [], des
       title: "Instrutores fora da faixa saudável",
       text: `${fmt(foraFaixa.length)} instrutor(es) com frequência ou NPS fora da faixa saudável este mês (${foraFaixa.slice(0, 2).map((i) => i.instrutor).join(", ")}${foraFaixa.length > 2 ? "..." : ""}).`,
       tone: algumCritico ? "danger" : "attention",
+      acao: { label: "Ver capacidade da equipe", href: "/capacidade" },
     });
   } else if (desempenhoResumo && Number(desempenhoResumo.instrutores_considerados || 0) > 0) {
     items.push({
@@ -133,6 +209,16 @@ function buildNarrativa(kpis = {}, filters = {}) {
   // com a tabela "Turmas recentes" abaixo).
   if (filters.status) recortes.push(`status ${filters.status}`);
   if (filters.modalidade) recortes.push(`modalidade ${filters.modalidade === "online" ? "Online" : "Presencial"}`);
+  if (filters.subtipo) recortes.push(`subtipo ${filters.subtipo}`);
+  if (filters.data_inicio || filters.data_fim) {
+    recortes.push(
+      filters.data_inicio && filters.data_fim
+        ? `período de ${formatDate(filters.data_inicio)} a ${formatDate(filters.data_fim)}`
+        : filters.data_inicio
+          ? `período a partir de ${formatDate(filters.data_inicio)}`
+          : `período até ${formatDate(filters.data_fim)}`
+    );
+  }
 
   if (recortes.length) {
     partes.push(`Você está olhando um recorte por ${recortes.join(", ")}.`);
@@ -170,15 +256,38 @@ export default function DashboardPage() {
   const [desempenhoResumo, setDesempenhoResumo] = useState(null);
   const [desempenhoErro, setDesempenhoErro] = useState("");
   const [resumoExecutivo, setResumoExecutivo] = useState(null);
-  const [filters, setFilters] = useState({
-    cliente: "",
-    instrutor: "",
-    supervisor: "",
-    status: "",
-    modalidade: "",
-    data_inicio: "",
-    data_fim: "",
-  });
+  const [filters, setFilters] = useState(FILTROS_VAZIOS);
+  // Os filtros nascem da URL (?cliente=...&subtipo=...), então a tela só carrega
+  // depois de lê-la — assim um link compartilhado abre exatamente o mesmo recorte.
+  const [filtrosProntos, setFiltrosProntos] = useState(false);
+  const [radar, setRadar] = useState(undefined); // undefined = carregando; null = sem acesso/erro
+  const [jornadasProgresso, setJornadasProgresso] = useState(undefined);
+  const [alertasProntos, setAlertasProntos] = useState(false);
+
+  useEffect(() => {
+    setFilters(filtrosDaUrl());
+    setFiltrosProntos(true);
+  }, []);
+
+  useEffect(() => {
+    if (!filtrosProntos) return;
+    try {
+      const q = new URLSearchParams();
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v) q.set(k, v);
+      });
+      const qs = q.toString();
+      window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+    } catch {}
+  }, [filters, filtrosProntos]);
+
+  // Radar e progresso das jornadas: carregados uma vez, independentes dos filtros.
+  useEffect(() => {
+    let vivo = true;
+    apiFetch("/preventivo/radar-semanal").then((r) => vivo && setRadar(r || null)).catch(() => vivo && setRadar(null));
+    apiFetch("/dashboard/jornadas-progresso").then((r) => vivo && setJornadasProgresso(r || null)).catch(() => vivo && setJornadasProgresso(null));
+    return () => { vivo = false; };
+  }, []);
 
   // alertas: carregados uma vez, independente dos filtros do KPI abaixo —
   // "o que precisa de atenção hoje" não deveria mudar conforme você filtra
@@ -200,6 +309,8 @@ export default function DashboardPage() {
         });
       } catch {
         // alertas são um complemento — se falhar, o resto do dashboard segue normal
+      } finally {
+        setAlertasProntos(true);
       }
     }
     carregarAlertas();
@@ -295,8 +406,8 @@ export default function DashboardPage() {
         setLoading(false);
       }
     }
-    carregar();
-  }, [filters]);
+    if (filtrosProntos) carregar();
+  }, [filters, filtrosProntos]);
 
   const [exportando, setExportando] = useState(false);
 
@@ -340,7 +451,12 @@ export default function DashboardPage() {
   const ultimasTurmas = dados?.ultimas_turmas || [];
 
   const farois = useMemo(
-    () => buildFarois(kpis, presencaPorCliente, ultimasTurmas, desempenhoResumo),
+    () =>
+      buildFarois(kpis, presencaPorCliente, ultimasTurmas, desempenhoResumo, {
+        filtrarCliente: (cliente) => setFilters((prev) => ({ ...prev, cliente })),
+        abrirTurma: abrirDrillDown,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [kpis, presencaPorCliente, ultimasTurmas, desempenhoResumo]
   );
   const narrativa = useMemo(() => buildNarrativa(kpis, filters), [kpis, filters]);
@@ -350,6 +466,7 @@ export default function DashboardPage() {
   const supervisorOptions = Array.isArray(filtrosApi.supervisores) ? filtrosApi.supervisores : [];
   const statusOptions = Array.isArray(filtrosApi.status) ? filtrosApi.status : [];
   const modalidadeOptions = Array.isArray(filtrosApi.modalidades) ? filtrosApi.modalidades : [];
+  const subtipoOptions = Array.isArray(filtrosApi.subtipos) ? filtrosApi.subtipos : [];
   const nps = dados?.nps || {};
 
   return (
@@ -382,10 +499,10 @@ export default function DashboardPage() {
           />
 
           <div className={`dash-cascade ${revelado ? "dash-play" : ""}`}>
-            <AlertasDashboard alertas={alertas} onAbrirTurma={abrirDrillDown} />
+            <FaroisAcionaveis alertas={alertas} alertasProntos={alertasProntos} radar={radar} jornadas={jornadasProgresso} onAbrirTurma={abrirDrillDown} />
           </div>
 
-          <RadarResumoCard />
+          <RadarResumoCard dados={radar} />
 
           <SectionCard
             title="Filtros do painel"
@@ -393,22 +510,31 @@ export default function DashboardPage() {
             action={
               <button
                 style={buttonSecondary}
-                onClick={() =>
-                  setFilters({
-                    cliente: "",
-                    instrutor: "",
-                    supervisor: "",
-                    status: "",
-                    modalidade: "",
-                    data_inicio: "",
-                    data_fim: "",
-                  })
-                }
+                onClick={() => setFilters(FILTROS_VAZIOS)}
+                disabled={!Object.values(filters).some(Boolean)}
               >
                 Limpar filtros
               </button>
             }
           >
+            <div style={atalhosRow} role="group" aria-label="Atalhos de período">
+              <span style={atalhosLabel}>Período</span>
+              {ATALHOS_PERIODO.map((a) => {
+                const ativo = atalhoAtivo(filters) === a.key;
+                return (
+                  <button
+                    key={a.key}
+                    type="button"
+                    aria-pressed={ativo}
+                    style={ativo ? atalhoAtivoStyle : atalhoStyle}
+                    onClick={() => setFilters((prev) => ({ ...prev, ...(ativo ? { data_inicio: "", data_fim: "" } : periodoDoAtalho(a.key)) }))}
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
+            </div>
+
             <div style={filtersGrid}>
               <label style={fieldLabel}>
                 Cliente
@@ -461,6 +587,17 @@ export default function DashboardPage() {
               </label>
 
               <label style={fieldLabel}>
+                Subtipo
+                <select style={inputStyle} value={filters.subtipo} onChange={(e) => setFilters((prev) => ({ ...prev, subtipo: e.target.value }))}>
+                  <option value="">Todos</option>
+                  {subtipoOptions.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                  {filters.subtipo && !subtipoOptions.includes(filters.subtipo) && <option value={filters.subtipo}>{filters.subtipo}</option>}
+                </select>
+              </label>
+
+              <label style={fieldLabel}>
                 De
                 <input type="date" style={inputStyle} value={filters.data_inicio} onChange={(e) => setFilters((prev) => ({ ...prev, data_inicio: e.target.value }))} />
               </label>
@@ -495,6 +632,15 @@ export default function DashboardPage() {
               </>
             )}
           </div>
+
+          {jornadasProgresso && (jornadasProgresso.jornadas || []).length > 0 && (
+            <div id="jornadas" style={{ display: "grid", gap: 18, scrollMarginTop: 16 }}>
+              <GroupHeader title="Jornadas de desenvolvimento" subtitle="Quantos participantes concluíram, quantos seguem em andamento e quem está abaixo da presença mínima. Só números; o detalhe por pessoa fica com a Metodologia." />
+              <SectionCard title="Progresso dos participantes" subtitle="Mesma conta da grade de presença das jornadas. Não muda com os filtros acima.">
+                <ProgressoJornadas dados={jornadasProgresso} compacto />
+              </SectionCard>
+            </div>
+          )}
 
           <GroupHeader title="Equipe" subtitle="Capacidade e desempenho de quem está ministrando as turmas." />
           <SectionCard
@@ -658,12 +804,19 @@ export default function DashboardPage() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Faróis acionáveis" subtitle="O painel resume o que mais vale sua energia agora.">
+            <SectionCard title="Sinais do recorte" subtitle="O que mais vale sua energia dentro dos filtros escolhidos acima.">
               <div style={farolList}>
                 {farois.map((item) => (
                   <div key={item.title} style={farolItem(item.tone)}>
                     <div style={farolTitle}>{item.title}</div>
                     <div style={farolText}>{item.text}</div>
+                    {item.acao && (
+                      item.acao.href ? (
+                        <a href={item.acao.href} style={sinalAcao}>{item.acao.label} →</a>
+                      ) : (
+                        <button type="button" style={{ ...sinalAcao, background: "none", cursor: "pointer", padding: 0, border: "none" }} onClick={item.acao.onClick}>{item.acao.label} →</button>
+                      )
+                    )}
                   </div>
                 ))}
               </div>
@@ -878,76 +1031,116 @@ const turmaCardFooter = { display: "flex", flexWrap: "wrap", gap: 10, marginTop:
 // As 3 fontes já existiam espalhadas no sistema (presenca-resumo e
 // necessidades) — isso só junta num único lugar de leitura rápida.
 // ---------------------------------------------------------------------------
-function AlertasDashboard({ alertas, onAbrirTurma }) {
+// Faróis acionáveis (04/11/2026): cada farol é um cartão com o número, o motivo e
+// um botão que abre a tela certa já filtrada. O Radar e as jornadas entram na
+// MESMA lista — assim a mensagem de "tudo em dia" nunca contradiz um risco aberto,
+// e ela só cita o que foi de fato conferido.
+function FaroisAcionaveis({ alertas, alertasProntos, radar, jornadas, onAbrirTurma }) {
+  const radarAbertos = Number(radar?.abertos || 0);
+  const radarCriticos = Number(radar?.por_gravidade?.critica || 0);
+  const tj = jornadas?.totais || {};
+  const jornadasEmAlerta = Number(tj.jornadas_em_alerta || 0);
+
+  const motivoJornadas = [
+    tj.abaixo_do_minimo ? `${fmt(tj.abaixo_do_minimo)} participante(s) abaixo da presença mínima` : "",
+    tj.reciclagem_vencida ? `${fmt(tj.reciclagem_vencida)} com reciclagem vencida` : "",
+  ].filter(Boolean).join(" · ");
+
   const cards = [
     {
       key: "criticas",
+      numero: alertas.turmasCriticas.length,
       label: "Turmas críticas",
+      motivo: "Presença muito abaixo do esperado em turma que já começou.",
       cor: colors.danger,
-      corFundo: colors.dangerLight,
       itens: alertas.turmasCriticas,
       render: (t) => (
-        <span key={t.id} onClick={() => onAbrirTurma(t)} style={alertaItemLink}>
+        <span key={t.id} onClick={() => onAbrirTurma(t)} style={alertaItemLink} title="Ver presença por pessoa">
           {t.tema} · {t.cliente} — {t.taxa_presenca}%
         </span>
       ),
-      href: null,
+      acao: { label: "Ver turmas críticas", href: "/presencas?classificacao=" + encodeURIComponent("Crítico") },
     },
     {
       key: "pendentes",
+      numero: alertas.chamadasPendentes.length,
       label: "Chamadas pendentes",
+      motivo: "A aula já passou e a chamada ainda não foi fechada.",
       cor: colors.warning,
-      corFundo: colors.warningLight,
       itens: alertas.chamadasPendentes,
       render: (t) => (
-        <a key={t.id} href="/presencas" style={alertaItemLink}>
+        <a key={t.id} href="/presencas?status=Chamada%20pendente" style={alertaItemLink}>
           {t.tema} · {t.cliente}
         </a>
       ),
-      href: "/presencas",
+      acao: { label: "Fechar chamadas", href: "/presencas?status=" + encodeURIComponent("Chamada pendente") },
     },
     {
       key: "necessidades",
+      numero: alertas.necessidadesAtrasadas.length,
       label: "Necessidades atrasadas",
+      motivo: "O prazo venceu e a necessidade ainda não foi atendida.",
       cor: chart.purple,
-      corFundo: "#EDE9FE",
       itens: alertas.necessidadesAtrasadas,
       render: (n) => (
-        <a key={n.id} href="/necessidades" style={alertaItemLink}>
+        <a key={n.id} href="/necessidades?status=atrasada" style={alertaItemLink}>
           {n.tema} · {n.cliente}
         </a>
       ),
-      href: "/necessidades",
+      acao: { label: "Ver atrasadas", href: "/necessidades?status=atrasada" },
     },
-  ];
+    {
+      key: "radar",
+      numero: radarAbertos,
+      label: "Riscos no Radar da semana",
+      motivo: radarCriticos > 0 ? `${fmt(radarCriticos)} crítico(s) entre os riscos abertos.` : "Riscos de planejamento ainda sem tratamento.",
+      cor: radarCriticos > 0 ? colors.danger : colors.warning,
+      itens: [],
+      acao: { label: "Abrir o Radar", href: "/radar" },
+    },
+    {
+      key: "jornadas",
+      numero: jornadasEmAlerta,
+      label: "Jornadas em alerta",
+      motivo: motivoJornadas || "Participantes fora da regra de presença.",
+      cor: colors.danger,
+      itens: [],
+      acao: { label: "Ver jornadas", href: "#jornadas" },
+    },
+  ].filter((c) => c.numero > 0);
 
-  const algumAlerta = cards.some((c) => c.itens.length > 0);
-
-  if (!algumAlerta) {
+  if (!cards.length) {
+    // só cita o que foi conferido de verdade (Radar e jornadas podem não estar disponíveis para o perfil).
+    const conferidos = ["turmas críticas", "chamadas pendentes", "necessidades atrasadas"];
+    if (radar) conferidos.push("riscos abertos no Radar");
+    if (jornadas) conferidos.push("jornadas em alerta");
+    const texto = conferidos.length > 1 ? `${conferidos.slice(0, -1).join(", ")} nem ${conferidos[conferidos.length - 1]}` : conferidos[0];
     return (
       <div style={{ borderRadius: 16, border: `1px solid ${colors.border}`, background: colors.successLight, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 18 }}>✅</span>
-        <span style={{ fontSize: 13.5, color: colors.successText, fontWeight: 600 }}>Sem turmas críticas, chamadas pendentes nem necessidades atrasadas agora. Os riscos de planejamento aparecem no Radar da semana, logo abaixo.</span>
+        <span style={{ fontSize: 18 }} aria-hidden="true">✅</span>
+        <span style={{ fontSize: 13.5, color: colors.successText, fontWeight: 600 }}>
+          {alertasProntos ? `Nada pedindo ação agora: sem ${texto}.` : "Conferindo o que pede ação agora..."}
+        </span>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
-      {cards.filter((c) => c.itens.length > 0).map((c) => (
-        <div key={c.key} style={{ borderRadius: 16, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${c.cor}`, background: "#fff", padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: c.cor }}>{c.itens.length}</span>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: colors.textPrimary }}>{c.label}</span>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12 }}>
+      {cards.map((c) => (
+        <div key={c.key} style={{ borderRadius: 16, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${c.cor}`, background: "#fff", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 26, fontWeight: 800, color: c.cor, lineHeight: 1 }}>{fmt(c.numero)}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: colors.textPrimary }}>{c.label}</span>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {c.itens.slice(0, 3).map(c.render)}
-          </div>
-          {c.itens.length > 3 && c.href && (
-            <a href={c.href} style={{ display: "inline-block", marginTop: 6, fontSize: 11.5, color: c.cor, fontWeight: 700, textDecoration: "none" }}>
-              +{c.itens.length - 3} outra(s) →
-            </a>
+          <div style={{ fontSize: 12.5, color: colors.textSecondary }}>{c.motivo}</div>
+          {c.itens.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {c.itens.slice(0, 2).map(c.render)}
+              {c.itens.length > 2 && <span style={{ fontSize: 11.5, color: colors.textMuted }}>+{c.itens.length - 2} outra(s)</span>}
+            </div>
           )}
+          <a href={c.acao.href} style={{ ...acaoFarolBotao, color: c.cor, borderColor: c.cor, marginTop: "auto" }}>{c.acao.label} →</a>
         </div>
       ))}
     </div>
@@ -963,4 +1156,61 @@ const alertaItemLink = {
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
+};
+
+const acaoFarolBotao = {
+  display: "inline-block",
+  alignSelf: "flex-start",
+  border: "1.5px solid",
+  borderRadius: 999,
+  padding: "5px 14px",
+  fontSize: 12.5,
+  fontWeight: 800,
+  textDecoration: "none",
+  background: "#fff",
+};
+
+const atalhosRow = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+  marginBottom: 14,
+};
+
+const atalhosLabel = {
+  fontSize: 12.5,
+  fontWeight: 800,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  marginRight: 4,
+};
+
+const atalhoStyle = {
+  padding: "6px 14px",
+  borderRadius: 999,
+  border: "1.5px solid #cbd5e1",
+  background: "#fff",
+  color: "#334155",
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const atalhoAtivoStyle = {
+  ...atalhoStyle,
+  background: colors.primary,
+  borderColor: colors.primary,
+  color: "#fff",
+  fontWeight: 800,
+};
+
+const sinalAcao = {
+  display: "inline-block",
+  marginTop: 6,
+  fontSize: 12.5,
+  fontWeight: 800,
+  color: colors.primary,
+  textDecoration: "none",
 };

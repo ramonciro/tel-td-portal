@@ -213,6 +213,14 @@ export default function NecessidadesPage() {
   const [erro,         setErro]         = useState("");
   const [filtroStatus, setFiltroStatus] = useState("");
   const [busca,        setBusca]        = useState("");
+
+  // Vindo de um farol do Dashboard (?status=atrasada), abre já filtrado.
+  useEffect(() => {
+    try {
+      const st = new URLSearchParams(window.location.search).get("status");
+      if (["aberta", "em_atendimento", "atrasada", "atendida"].includes(st)) setFiltroStatus(st);
+    } catch {}
+  }, []);
   const [modal,        setModal]        = useState(null);
 
   useEffect(() => { carregar(); }, [filtroStatus]);
