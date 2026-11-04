@@ -154,14 +154,25 @@ function buildFiltroTreinamentos(req, comAdicionais = false) {
     params.push(query.supervisor);
   }
 
+  // Subtipo (subdivisão) da turma — mesmo campo usado na comprovação de horas
+  // e no Mapa de Desenvolvimento. Vale também para o Excel exportado, que usa
+  // este mesmo construtor de filtro.
+  if (query.subtipo) {
+    conditions.push("t.subtipo = ?");
+    params.push(query.subtipo);
+  }
+
+  // Período = turmas que TOCAM a janela (04/11/2026). Antes só entravam as que
+  // começavam E terminavam dentro dela — com os atalhos "hoje" e "semana", uma
+  // turma de vários dias em andamento ficava de fora. Aqui, "De" exige que a
+  // turma termine em/depois dessa data; "Até" exige que comece em/antes dela.
   if (query.data_inicio) {
-    conditions.push("DATE(COALESCE(t.data_inicio, t.data)) >= ?");
+    conditions.push("DATE(COALESCE(t.data_fim, t.data_inicio, t.data)) >= ?");
     params.push(query.data_inicio);
   }
 
   if (query.data_fim) {
-    // filtra por data_fim (ou data_inicio como fallback quando data_fim não está preenchida)
-    conditions.push("DATE(COALESCE(t.data_fim, t.data_inicio, t.data)) <= ?");
+    conditions.push("DATE(COALESCE(t.data_inicio, t.data)) <= ?");
     params.push(query.data_fim);
   }
 
@@ -170,6 +181,24 @@ function buildFiltroTreinamentos(req, comAdicionais = false) {
     params,
     whereSql: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "",
   };
+}
+
+// Opções do filtro de subtipo: os subtipos que existem de fato nas turmas do
+// tenant (não do recorte já filtrado — senão escolher um subtipo faria os
+// outros sumirem da lista). Falha silenciosa: sem a coluna, o filtro só some.
+async function listarSubtiposDoRecorte(req) {
+  try {
+    const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+    const [rows] = await pool.query(
+      `SELECT DISTINCT t.subtipo AS subtipo FROM treinamentos t
+        WHERE t.subtipo IS NOT NULL AND t.subtipo <> ''${empresaId ? " AND t.empresa_id = ?" : ""}
+        ORDER BY t.subtipo`,
+      empresaId ? [empresaId] : []
+    );
+    return rows.map((r) => r.subtipo).filter(Boolean);
+  } catch (e) {
+    return [];
+  }
 }
 
 // Carrega e enriquece as turmas do recorte atual (filtros + tenant) com a
@@ -560,6 +589,7 @@ async function getDashboardTreinamentos(req, res) {
           .sort((a, b) => String(a).localeCompare(String(b), "pt-BR"))
           .map((item) => ({ value: item, label: item })),
         modalidades: Array.from(modalidadeSet).map((item) => ({ value: item, label: item === "online" ? "Online" : "Presencial" })),
+        subtipos: await listarSubtiposDoRecorte(req),
       },
       presenca_por_cliente: presencaPorCliente,
       ranking_instrutores: rankingInstrutores,

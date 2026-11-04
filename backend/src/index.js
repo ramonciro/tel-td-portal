@@ -415,6 +415,27 @@ app.get(
   exportarTreinamentos
 );
 
+// Progresso das jornadas de desenvolvimento (04/11/2026): só números agregados
+// (nenhum nome de participante). Dashboard (resumo) e Mapa de Desenvolvimento
+// (detalhe) leem a MESMA conta da grade de presença. Coordenação, supervisão e
+// superintendência veem o agregado; o detalhe por pessoa segue só na Metodologia.
+app.get(
+  "/api/dashboard/jornadas-progresso",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente", "metodologia"),
+  async (req, res) => {
+    try {
+      const { empresaId } = tenantScopeFor(req, { crossTenantRoles: ["superintendente"] });
+      const { calcularProgressoJornadas } = require("./services/progressoJornadasService");
+      const dados = await calcularProgressoJornadas({ empresaId });
+      return res.json({ ok: true, ...dados });
+    } catch (e) {
+      console.error("[jornadas-progresso]", e.message || e);
+      return res.status(500).json({ ok: false, message: "Erro ao carregar o progresso das jornadas." });
+    }
+  }
+);
+
 // Fonte única de presença + status de turma (cronograma > legado > snapshot),
 // usada pelas páginas Presenças e Treinamentos.
 app.get(
