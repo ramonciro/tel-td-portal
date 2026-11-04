@@ -20,6 +20,7 @@ import {
 } from "./estilos";
 
 export default function JornadaFormCard({
+  subtiposCatalogo = [],
   jornadaForm,
   setJornadaForm,
   saveJornada,
@@ -80,6 +81,27 @@ export default function JornadaFormCard({
                 }
                 style={compactInputStyle()}
               />
+            </label>
+
+            <label style={{ ...labelStyle(), ...fieldSpan.lg }}>
+              Subdivisão padrão (Comprovação MPT)
+              <select
+                value={jornadaForm.subtipo || ""}
+                onChange={(e) =>
+                  setJornadaForm((prev) => ({ ...prev, subtipo: e.target.value }))
+                }
+                style={compactInputStyle()}
+              >
+                <option value="">Sem subdivisão</option>
+                {(Array.isArray(subtiposCatalogo) ? subtiposCatalogo : []).map((s) => (
+                  <option key={s.id || s.nome} value={s.nome}>
+                    {s.nome}
+                  </option>
+                ))}
+                {jornadaForm.subtipo && !(Array.isArray(subtiposCatalogo) ? subtiposCatalogo : []).some((s) => s.nome === jornadaForm.subtipo) && (
+                  <option value={jornadaForm.subtipo}>{jornadaForm.subtipo} (fora do catálogo)</option>
+                )}
+              </select>
             </label>
 
             <label style={{ ...labelStyle(), ...fieldSpan.md }}>

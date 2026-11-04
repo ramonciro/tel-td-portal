@@ -31,6 +31,7 @@ function farolAccent(farol) {
 
 export default function KpisDesenvolvimentoPage() {
   const [kpis, setKpis] = useState(null);
+  const [mptResumo, setMptResumo] = useState(null);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(true);
 
@@ -40,6 +41,13 @@ export default function KpisDesenvolvimentoPage() {
       try {
         const dados = await apiFetch("/metodologia-kpis");
         if (ativo) setKpis(dados);
+        // Comprovação MPT por subdivisão (04/11/2026): conta única de horas, ano-calendário.
+        try {
+          const r = await apiFetch("/mpt/resumo");
+          if (ativo) setMptResumo(r);
+        } catch (_) {
+          if (ativo) setMptResumo(null);
+        }
       } catch (err) {
         if (ativo) setErro(err.message || "Não foi possível carregar os KPIs.");
       } finally {
@@ -55,13 +63,12 @@ export default function KpisDesenvolvimentoPage() {
   const adesao = kpis?.adesaoCronograma;
   const cobertura = kpis?.coberturaPorCliente;
   const coaching = kpis?.coachingIndividual;
-  const mpt = kpis?.mptPendentes;
   // Encontros e presença das jornadas (16/10/2026) — antes o dashboard só
   // lia etapas com prazo, coaching e ações vencidas.
   const presenca = kpis?.presencaJornadas;
   const encontros = kpis?.adesaoEncontros;
   const jornadas = kpis?.jornadas || [];
-  const mptHoras = kpis?.mptHoras;
+  const mptSub = mptResumo?.subdivisoes || [];
 
   return (
     <PortalShell>
@@ -243,52 +250,49 @@ export default function KpisDesenvolvimentoPage() {
 
             <SectionCard
               title="Comprovação MPT"
-              subtitle="Horas reais de presença contra a meta de cada jornada; abaixo, o indicador provisório por prazo."
+              subtitle={`Horas reais de presença por subdivisão, jornadas e turmas juntas, ano ${mptResumo?.ano ?? new Date().getFullYear()}. Meta interna de gestão.`}
+              action={
+                <a href="/mapa-desenvolvimento?aba=mpt" style={linkAcao}>
+                  Abrir Comprovação MPT →
+                </a>
+              }
             >
-              {!mptHoras?.jornadasComMeta ? (
+              {!mptSub.length ? (
                 <p style={vazio}>
-                  Nenhuma jornada com meta de horas definida — informe a meta em Encontros e presença → Configurar presença.
+                  Nenhuma subdivisão com pessoas ainda. Defina a subdivisão padrão nas jornadas (Mapa de Desenvolvimento) ou o subtipo nas turmas.
                 </p>
               ) : (
-                <>
-                  <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
-                    <MiniStat label="pessoas com meta" value={mptHoras.pessoas} />
-                    <MiniStat label="atingiram a meta" value={mptHoras.atingiram} cor={colors.success} />
-                    <MiniStat label="abaixo da meta" value={mptHoras.abaixo} cor={mptHoras.abaixo > 0 ? colors.danger : colors.neutral} />
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-                    {mptHoras.porJornada.map((j) => (
-                      <div key={j.jornada_id} style={linhaCliente}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {mptSub.map((s) => {
+                    const semMeta = !s.meta_horas;
+                    const rotulo = semMeta
+                      ? "Meta não definida"
+                      : s.farol === "verde"
+                      ? "Saudável"
+                      : s.farol === "amarelo"
+                      ? "Atenção"
+                      : "Crítico";
+                    return (
+                      <div key={s.subtipo} style={linhaCliente}>
                         <span style={{ flexGrow: 1, fontSize: 13.5, color: colors.textPrimary }}>
-                          {j.nome} <span style={{ color: colors.textMuted }}>· meta {j.meta_horas} h</span>
+                          {s.subtipo}
+                          {!semMeta && <span style={{ color: colors.textMuted }}> · meta {s.meta_horas} h</span>}
                         </span>
-                        <span style={{ fontSize: 12.5, color: colors.textSecondary }}>{j.atingiram} de {j.pessoas}</span>
-                        <span style={estiloBadgeClassificacao(j.abaixo > 0 ? "Crítico" : "Saudável")}>
-                          {j.abaixo > 0 ? `${j.abaixo} abaixo` : "completa"}
+                        <span style={{ fontSize: 12.5, color: colors.textSecondary }}>
+                          {semMeta ? `${s.pessoas} pessoas` : `${s.atingiram} de ${s.pessoas}${s.pct != null ? ` · ${s.pct}%` : ""}`}
+                        </span>
+                        <span
+                          style={
+                            semMeta
+                              ? { ...estiloBadgeClassificacao("Atenção"), background: "#eef0f3", color: colors.textSecondary }
+                              : estiloBadgeClassificacao(rotulo === "Saudável" ? "Estável" : rotulo)
+                          }
+                        >
+                          {rotulo}
                         </span>
                       </div>
-                    ))}
-                  </div>
-                  {mptHoras.jornadasSemMeta > 0 && (
-                    <p style={{ ...vazio, marginTop: 10 }}>
-                      {mptHoras.jornadasSemMeta} jornada(s) com participantes ainda sem meta de horas definida.
-                    </p>
-                  )}
-                </>
-              )}
-              <div style={{ ...avisoProvisorio, marginTop: 14 }}>
-                {mpt?.aviso || "Indicador provisório"}
-              </div>
-              {!mpt?.porSubdivisao?.length ? (
-                <p style={vazio}>Nenhuma ação vencida sem conclusão no momento.</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-                  {mpt.porSubdivisao.map((s) => (
-                    <div key={s.subdivisao} style={linhaCliente}>
-                      <span style={{ flexGrow: 1, fontSize: 13.5, color: colors.textPrimary }}>{s.subdivisao}</span>
-                      <span style={{ ...estiloBadgeClassificacao("Crítico") }}>{s.pendentes}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </SectionCard>
@@ -392,10 +396,3 @@ const avisoErro = {
   fontSize: 13.5,
 };
 
-const avisoProvisorio = {
-  fontSize: 12,
-  color: colors.warningText,
-  background: colors.warningLight,
-  borderRadius: 10,
-  padding: "8px 12px",
-};

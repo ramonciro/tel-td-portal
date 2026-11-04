@@ -12,6 +12,7 @@ import ParticipantesJornadaCard from "./ParticipantesJornadaCard";
 import ProgressoJornadasCard from "./ProgressoJornadasCard";
 
 export default function AbaJornadas({
+  subtiposCatalogo,
   // Clientes da metodologia
   clienteMetForm,
   setClienteMetForm,
@@ -74,6 +75,7 @@ export default function AbaJornadas({
       />
 
       <JornadaFormCard
+        subtiposCatalogo={subtiposCatalogo}
         jornadaForm={jornadaForm}
         setJornadaForm={setJornadaForm}
         saveJornada={saveJornada}

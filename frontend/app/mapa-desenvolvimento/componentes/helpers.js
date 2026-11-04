@@ -398,6 +398,7 @@ export const journeyInitial = {
   status: "planejada",
   data_inicio: "",
   data_fim: "",
+  subtipo: "",
 };
 
 export const actionInitial = {

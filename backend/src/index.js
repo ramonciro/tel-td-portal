@@ -440,6 +440,31 @@ app.get(
   }
 );
 
+// Comprovação MPT por subdivisão (04/11/2026): horas por pessoa (jornadas + turmas com subtipo) contra a
+// meta interna do ambiente. O agregado (sem nomes) é lido por coordenação, supervisão, superintendência e
+// Metodologia; pessoas, evidência e metas ficam só com a Metodologia.
+const mptController = require("./controllers/mptController");
+app.get(
+  "/api/mpt/resumo",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente", "metodologia"),
+  mptController.resumo
+);
+app.get(
+  "/api/mpt/pessoas",
+  authRequired,
+  authorizeRoles("metodologia"),
+  mptController.pessoas
+);
+app.get(
+  "/api/mpt/metas",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "superintendente", "metodologia"),
+  mptController.listarMetas
+);
+app.put("/api/mpt/metas", authRequired, authorizeRoles("metodologia"), mptController.salvarMeta);
+app.delete("/api/mpt/metas", authRequired, authorizeRoles("metodologia"), mptController.removerMeta);
+
 // Fonte única de presença + status de turma (cronograma > legado > snapshot),
 // usada pelas páginas Presenças e Treinamentos.
 app.get(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import { btnPrimario, btnSecundario, btnPerigo, entrada, rotulo, gradeForm, painel, dica, acoes } from "./estilos";
@@ -10,7 +10,7 @@ function normalizar(v) {
 }
 
 // Criar / editar / duplicar / excluir um encontro da jornada.
-export default function EncontroForm({ jornadaId, etapas, trilhas, onGerenciarTrilhas, padrao, encontro, presencasDoEncontro, onFechar, onSalvou, setErro, setAviso }) {
+export default function EncontroForm({ jornadaSubtipo, jornadaId, etapas, trilhas, onGerenciarTrilhas, padrao, encontro, presencasDoEncontro, onFechar, onSalvou, setErro, setAviso }) {
   const novo = !encontro;
   const [f, setF] = useState({
     titulo: encontro?.titulo || padrao?.titulo || "",
@@ -22,7 +22,17 @@ export default function EncontroForm({ jornadaId, etapas, trilhas, onGerenciarTr
     trilha_etapa_id: encontro?.trilha_etapa_id ? String(encontro.trilha_etapa_id) : padrao?.trilha_etapa_id ? String(padrao.trilha_etapa_id) : "",
     responsavel: encontro?.responsavel || "",
     observacao: encontro?.observacao || "",
+    subtipo: encontro?.subtipo || "",
   });
+  // Subdivisões do catálogo (Comprovação MPT). Vazio = vale a subdivisão padrão da jornada.
+  const [subtipos, setSubtipos] = useState([]);
+  useEffect(() => {
+    let vivo = true;
+    apiFetch("/subtipos")
+      .then((r) => { if (vivo) setSubtipos(Array.isArray(r) ? r : []); })
+      .catch(() => { if (vivo) setSubtipos([]); });
+    return () => { vivo = false; };
+  }, []);
   const [ocupado, setOcupado] = useState(false);
   const [dataCopia, setDataCopia] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -71,7 +81,7 @@ export default function EncontroForm({ jornadaId, etapas, trilhas, onGerenciarTr
     }
   }
 
-  const corpo = () => ({ ...f, etapa_id: f.etapa_id || null, trilha_id: f.trilha_id || null, trilha_etapa_id: f.trilha_etapa_id || null, carga_horaria: f.carga_horaria.replace(",", ".") });
+  const corpo = () => ({ ...f, subtipo: f.subtipo || null, etapa_id: f.etapa_id || null, trilha_id: f.trilha_id || null, trilha_etapa_id: f.trilha_etapa_id || null, carga_horaria: f.carga_horaria.replace(",", ".") });
 
   const salvar = () =>
     executar(
@@ -153,6 +163,18 @@ export default function EncontroForm({ jornadaId, etapas, trilhas, onGerenciarTr
         <label style={rotulo}>
           Responsável / instrutor
           <input style={entrada} value={f.responsavel} maxLength={150} onChange={set("responsavel")} />
+        </label>
+        <label style={rotulo}>
+          Subdivisão (Comprovação MPT)
+          <select style={entrada} value={f.subtipo} onChange={set("subtipo")}>
+            <option value="">{jornadaSubtipo ? `Usar a da jornada (${jornadaSubtipo})` : "Sem subdivisão (usar a da jornada, se houver)"}</option>
+            {subtipos.map((s) => (
+              <option key={s.id || s.nome} value={s.nome}>
+                {s.nome}
+              </option>
+            ))}
+            {f.subtipo && !subtipos.some((s) => s.nome === f.subtipo) && <option value={f.subtipo}>{f.subtipo}</option>}
+          </select>
         </label>
         <label style={{ ...rotulo, gridColumn: "1 / -1" }}>
           Observação (opcional)

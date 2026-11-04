@@ -1,6 +1,7 @@
 const db = require("../lib/db");
 const { comTransacao, ignorarTabelaAusente: ok } = require("../lib/tx");
 const { usuarioPertenceAoTenant } = require("../services/tenantValidation");
+const { normalizeSubtipo } = require("../lib/subtipos");
 
 // Bugfix: a versão anterior colapsava "planejada" e "em_andamento" no MESMO
 // valor de banco ("ativo") — ao escolher "Em andamento", salvar e recarregar,
@@ -103,6 +104,8 @@ async function criar(req, res) {
     const status = normalizeStatusToDb(req.body.status);
     const data_inicio = req.body.data_inicio || null;
     const data_fim = req.body.data_fim || null;
+    // Subdivisão padrão da jornada (Comprovação MPT, 04/11/2026): vale para os encontros sem subdivisão própria.
+    const subtipo = await normalizeSubtipo(req.body.subtipo);
 
     if (!nome) {
       return res.status(400).json({ error: "Nome da jornada é obrigatório." });
@@ -117,10 +120,10 @@ async function criar(req, res) {
     const [result] = await db.query(
       `
       INSERT INTO jornadas_desenvolvimento
-      (cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, empresa_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, empresa_id, subtipo)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, req.empresaId ?? null]
+      [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, req.empresaId ?? null, subtipo]
     );
 
     const [rows] = await db.query(
@@ -161,7 +164,7 @@ async function atualizar(req, res) {
 
     const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
     const existsParams = req.empresaId ? [id, req.empresaId] : [id];
-    const [exists] = await db.query(`SELECT id FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, existsParams);
+    const [exists] = await db.query(`SELECT id, subtipo FROM jornadas_desenvolvimento WHERE id = ?${tenantCheck}`, existsParams);
     if (!exists.length) {
       return res.status(404).json({ error: "Jornada não encontrada." });
     }
@@ -171,13 +174,17 @@ async function atualizar(req, res) {
       return res.status(400).json({ error: "O responsável informado não pertence à sua empresa." });
     }
 
-    const updateParams = [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, id];
+    // Subdivisão: só muda quando o corpo traz o campo (tela antiga aberta não apaga o valor).
+    const subtipoEnviado = Object.prototype.hasOwnProperty.call(req.body, "subtipo");
+    const subtipo = subtipoEnviado ? await normalizeSubtipo(req.body.subtipo, exists[0].subtipo) : exists[0].subtipo;
+
+    const updateParams = [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, subtipo, id];
     if (req.empresaId) updateParams.push(req.empresaId);
 
     await db.query(
       `
       UPDATE jornadas_desenvolvimento
-      SET cliente = ?, nome = ?, descricao = ?, objetivo = ?, publico_macro = ?, observacoes = ?, status = ?, responsavel_id = ?, data_inicio = ?, data_fim = ?
+      SET cliente = ?, nome = ?, descricao = ?, objetivo = ?, publico_macro = ?, observacoes = ?, status = ?, responsavel_id = ?, data_inicio = ?, data_fim = ?, subtipo = ?
       WHERE id = ?${tenantCheck}
       `,
       updateParams

@@ -57,6 +57,7 @@ import AbaGeral from "./componentes/AbaGeral";
 import AbaJornadas from "./componentes/AbaJornadas";
 import AbaAcoes from "./componentes/AbaAcoes";
 import AbaCoaching from "./componentes/AbaCoaching";
+import AbaMpt from "./componentes/AbaMpt";
 
 export default function MapaDesenvolvimentoPage() {
   const [activeTab, setActiveTab] = useState("geral");
@@ -143,6 +144,14 @@ export default function MapaDesenvolvimentoPage() {
     setErro("");
     setNotice("");
   }, [activeTab]);
+
+  // Link direto para uma aba (ex.: /mapa-desenvolvimento?aba=mpt, usado pelo painel de KPIs).
+  useEffect(() => {
+    try {
+      const aba = new URLSearchParams(window.location.search).get("aba");
+      if (["geral", "jornadas", "acoes", "coaching", "mpt"].includes(aba)) setActiveTab(aba);
+    } catch (_) {}
+  }, []);
 
   // Bugfix: antes cada fetch tinha um .catch(() => []) individual, então uma
   // falha real do backend (ex.: tabela ausente, 500, tenant sem permissão)
@@ -254,6 +263,7 @@ export default function MapaDesenvolvimentoPage() {
         status: jornadaForm.status || "planejada",
         data_inicio: jornadaForm.data_inicio || null,
         data_fim: jornadaForm.data_fim || null,
+        subtipo: jornadaForm.subtipo || null,
       };
 
       if (jornadaForm.id) {
@@ -689,6 +699,7 @@ export default function MapaDesenvolvimentoPage() {
       status: canonicalStatus(item.status) || "planejada",
       data_inicio: toDateInputLocal(item.data_inicio),
       data_fim: toDateInputLocal(item.data_fim),
+      subtipo: item.subtipo || "",
     });
     setParticipanteForm((prev) => ({ ...prev, jornada_id: String(item.id) }));
     setActiveTab("jornadas");
@@ -1151,6 +1162,7 @@ export default function MapaDesenvolvimentoPage() {
             ["jornadas", "Jornadas"],
             ["acoes", "Ações"],
             ["coaching", "Coaching e mentoria"],
+            ["mpt", "Comprovação MPT"],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -1162,6 +1174,9 @@ export default function MapaDesenvolvimentoPage() {
           ))}
         </div>
 
+        {/* Indicadores e filtros valem para as abas de jornadas/ações/coaching; a Comprovação MPT tem os seus próprios. */}
+        {activeTab !== "mpt" && (
+          <>
         <SectionCard
           title="Indicadores gerais"
           subtitle="Leitura macro do desenvolvimento e do volume em curso."
@@ -1274,6 +1289,8 @@ export default function MapaDesenvolvimentoPage() {
             </div>
           )}
         </SectionCard>
+          </>
+        )}
 
         {activeTab === "geral" && progressoJornadas !== null && (
           <SectionCard
@@ -1333,6 +1350,7 @@ export default function MapaDesenvolvimentoPage() {
             saving={saving}
             setErro={setErro}
             setNotice={setNotice}
+            subtiposCatalogo={subtiposCatalogo}
           />
         )}
 
@@ -1355,6 +1373,8 @@ export default function MapaDesenvolvimentoPage() {
             removeRegistro={removeRegistro}
           />
         )}
+
+        {activeTab === "mpt" && <AbaMpt subtiposCatalogo={subtiposCatalogo} />}
 
         {activeTab === "coaching" && (
           <AbaCoaching

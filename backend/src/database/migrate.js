@@ -2593,6 +2593,31 @@ async function runMigrations() {
       console.log(`  ↳ modalidade/bloqueio de sala não concluído (${error.message}) — seguindo`);
     }
 
+    // 56. Comprovação MPT por subdivisão (04/11/2026). A jornada e o encontro ganham a subdivisão
+    //     (a do encontro vale; se vazia, vale a da jornada) e as metas internas de horas por
+    //     pessoa ficam em mpt_metas (uma por ambiente e subdivisão). Meta interna de gestão —
+    //     nunca exigência legal.
+    try {
+      await ensureColumn("jornadas_desenvolvimento", "subtipo", "VARCHAR(100) NULL");
+      await ensureColumn("jornada_encontros", "subtipo", "VARCHAR(100) NULL");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS mpt_metas (
+          id            INT AUTO_INCREMENT PRIMARY KEY,
+          empresa_id    INT NOT NULL,
+          subtipo       VARCHAR(100) NOT NULL,
+          horas_meta    DECIMAL(8,2) NOT NULL,
+          ativo         TINYINT(1) NOT NULL DEFAULT 1,
+          criado_por_id INT NULL,
+          criado_em     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_mpt_metas_empresa_subtipo (empresa_id, subtipo)
+        )
+      `);
+      console.log("  ↳ comprovação MPT (subdivisão na jornada/encontro e metas internas): ok");
+    } catch (error) {
+      console.log(`  ↳ comprovação MPT não concluída (${error.message}) — seguindo`);
+    }
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);

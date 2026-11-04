@@ -133,6 +133,10 @@ async function atualizar(req, res) {
       // mais no catálogo.
       const [rt] = await conn.query(`UPDATE treinamentos SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
       const [ra] = await conn.query(`UPDATE acoes_desenvolvimento SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
+      // Comprovação MPT (04/11/2026): jornada, encontro e meta guardam o nome da subdivisão como texto.
+      await conn.query(`UPDATE jornadas_desenvolvimento SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
+      await conn.query(`UPDATE jornada_encontros SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
+      await conn.query(`UPDATE mpt_metas SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
       atualizadas = { turmas: rt.affectedRows || 0, acoes: ra.affectedRows || 0 };
     }
     await conn.commit();

@@ -333,6 +333,7 @@ export default function PresencaJornadasPage() {
 
             {painelAtivo?.tipo === "encontro" && dados && (
               <EncontroForm
+                jornadaSubtipo={jornadaAtual?.subtipo || ""}
                 key={painelAtivo.encontro?.id || `novo-${painelAtivo.padrao?.trilha_id || 0}-${painelAtivo.padrao?.trilha_etapa_id || 0}`}
                 jornadaId={jornadaId}
                 etapas={dados.etapas}

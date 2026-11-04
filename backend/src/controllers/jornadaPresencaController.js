@@ -26,6 +26,7 @@
  */
 const XLSX = require("xlsx");
 const db = require("../lib/db");
+const { normalizeSubtipo } = require("../lib/subtipos");
 const { novoWorkbook, estilizarCabecalho, paraDate, FORMATO_DATA } = require("../lib/excelExport");
 
 const SITUACOES = ["presente", "justificado", "ausente"];
@@ -122,7 +123,7 @@ async function buscarEncontro(req, id) {
   const params = req.empresaId ? [encontroId, req.empresaId] : [encontroId];
   const [rows] = await db.query(
     `SELECT e.id, e.empresa_id, e.jornada_id, e.etapa_id, e.trilha_id, e.trilha_etapa_id, e.titulo, DATE_FORMAT(e.data, '%Y-%m-%d') AS data,
-            e.hora_inicio, e.carga_horaria, e.responsavel, e.observacao
+            e.hora_inicio, e.carga_horaria, e.responsavel, e.observacao, e.subtipo
      FROM jornada_encontros e WHERE e.id = ?${tenant} LIMIT 1`,
     params
   );
@@ -132,7 +133,7 @@ async function buscarEncontro(req, id) {
 async function carregarEncontros(jornadaId) {
   const [rows] = await db.query(
     `SELECT e.id, e.jornada_id, e.etapa_id, e.trilha_id, e.trilha_etapa_id, e.titulo, DATE_FORMAT(e.data, '%Y-%m-%d') AS data,
-            e.hora_inicio, e.carga_horaria, e.responsavel, e.observacao, je.nome AS etapa_nome, ta.titulo AS trilha_titulo,
+            e.hora_inicio, e.carga_horaria, e.responsavel, e.observacao, e.subtipo, je.nome AS etapa_nome, ta.titulo AS trilha_titulo,
             te.titulo AS trilha_etapa_titulo, te.ordem AS trilha_etapa_ordem
      FROM jornada_encontros e
      LEFT JOIN jornadas_etapas je ON je.id = e.etapa_id
@@ -589,6 +590,8 @@ async function validarEncontro(body, jornada) {
   const etapaId = body?.etapa_id ? Number(body.etapa_id) : null;
   const trilhaId = body?.trilha_id ? Number(body.trilha_id) : null;
   const trilhaEtapaId = body?.trilha_etapa_id ? Number(body.trilha_etapa_id) : null;
+  // Subdivisão do encontro (Comprovação MPT): vazio = vale a subdivisão padrão da jornada.
+  const subtipo = body && Object.prototype.hasOwnProperty.call(body, "subtipo") ? await normalizeSubtipo(body.subtipo) : undefined;
 
   if (!titulo) return { erro: "Informe o título do encontro." };
   if (titulo.length > 200) return { erro: "Título muito longo (máximo 200 caracteres)." };
@@ -616,7 +619,7 @@ async function validarEncontro(body, jornada) {
     if (!rows.length) return { erro: "A etapa escolhida não pertence à trilha do encontro." };
   }
 
-  return { valores: { titulo, data, carga, hora: hora || null, responsavel, observacao, etapaId, trilhaId, trilhaEtapaId } };
+  return { valores: { titulo, data, carga, hora: hora || null, responsavel, observacao, etapaId, trilhaId, trilhaEtapaId, subtipo } };
 }
 
 // POST /jornadas/:jornadaId/encontros
@@ -629,9 +632,9 @@ async function criarEncontro(req, res) {
     const x = v.valores;
 
     const [r] = await db.query(
-      `INSERT INTO jornada_encontros (empresa_id, jornada_id, etapa_id, trilha_id, trilha_etapa_id, titulo, data, hora_inicio, carga_horaria, responsavel, observacao, criado_por_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [jornada.empresa_id ?? null, jornada.id, x.etapaId, x.trilhaId, x.trilhaEtapaId, x.titulo, x.data, x.hora, x.carga, x.responsavel, x.observacao, req.user?.id ?? null]
+      `INSERT INTO jornada_encontros (empresa_id, jornada_id, etapa_id, trilha_id, trilha_etapa_id, titulo, data, hora_inicio, carga_horaria, responsavel, observacao, criado_por_id, subtipo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [jornada.empresa_id ?? null, jornada.id, x.etapaId, x.trilhaId, x.trilhaEtapaId, x.titulo, x.data, x.hora, x.carga, x.responsavel, x.observacao, req.user?.id ?? null, x.subtipo ?? null]
     );
     return res.status(201).json({ ok: true, id: r.insertId, message: "Encontro criado." });
   } catch (e) {
@@ -660,8 +663,8 @@ async function atualizarEncontro(req, res) {
     }
 
     await db.query(
-      `UPDATE jornada_encontros SET etapa_id = ?, trilha_id = ?, trilha_etapa_id = ?, titulo = ?, data = ?, hora_inicio = ?, carga_horaria = ?, responsavel = ?, observacao = ? WHERE id = ?`,
-      [x.etapaId, x.trilhaId, x.trilhaEtapaId, x.titulo, x.data, x.hora, x.carga, x.responsavel, x.observacao, encontro.id]
+      `UPDATE jornada_encontros SET etapa_id = ?, trilha_id = ?, trilha_etapa_id = ?, titulo = ?, data = ?, hora_inicio = ?, carga_horaria = ?, responsavel = ?, observacao = ?, subtipo = ? WHERE id = ?`,
+      [x.etapaId, x.trilhaId, x.trilhaEtapaId, x.titulo, x.data, x.hora, x.carga, x.responsavel, x.observacao, x.subtipo === undefined ? (encontro.subtipo ?? null) : x.subtipo, encontro.id]
     );
     return res.json({ ok: true, message: "Encontro atualizado." });
   } catch (e) {
@@ -690,9 +693,9 @@ async function duplicarEncontro(req, res) {
     const data = String(req.body?.data || "").slice(0, 10);
     if (!dataValida(data)) return erro(res, 400, "Informe a data do novo encontro.");
     const [r] = await db.query(
-      `INSERT INTO jornada_encontros (empresa_id, jornada_id, etapa_id, trilha_id, trilha_etapa_id, titulo, data, hora_inicio, carga_horaria, responsavel, observacao, criado_por_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [encontro.empresa_id, encontro.jornada_id, encontro.etapa_id, encontro.trilha_id, encontro.trilha_etapa_id, encontro.titulo, data, encontro.hora_inicio, encontro.carga_horaria, encontro.responsavel, encontro.observacao, req.user?.id ?? null]
+      `INSERT INTO jornada_encontros (empresa_id, jornada_id, etapa_id, trilha_id, trilha_etapa_id, titulo, data, hora_inicio, carga_horaria, responsavel, observacao, criado_por_id, subtipo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [encontro.empresa_id, encontro.jornada_id, encontro.etapa_id, encontro.trilha_id, encontro.trilha_etapa_id, encontro.titulo, data, encontro.hora_inicio, encontro.carga_horaria, encontro.responsavel, encontro.observacao, req.user?.id ?? null, encontro.subtipo ?? null]
     );
     return res.status(201).json({ ok: true, id: r.insertId, message: "Encontro duplicado (sem presenças)." });
   } catch (e) {
