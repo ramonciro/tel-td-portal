@@ -652,6 +652,30 @@ async function diagnosticarNomeAntigo() {
   }
 }
 
+// 04/11/2026: a CREATE TABLE original de `treinamentos` (mais acima) amarrou
+// necessidade_id à tabela LEGADA `necessidades` (FOREIGN KEY ... REFERENCES
+// necessidades(id)). Hoje a coluna guarda o id de `necessidades_treinamento`
+// (ver services/necessidadesResolver.js), então, em banco criado pelo script
+// antigo, vincular uma turma a uma necessidade nova falha com o erro 1452
+// (violação de chave estrangeira) sempre que o id não existe na tabela
+// legada. Derruba só essa(s) FK(s); nenhum dado é alterado. Idempotente.
+async function ensureSemFkLegadaNecessidade() {
+  try {
+    const [fks] = await pool.query(
+      `SELECT CONSTRAINT_NAME AS nome
+         FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'treinamentos'
+          AND COLUMN_NAME = 'necessidade_id' AND REFERENCED_TABLE_NAME = 'necessidades'`
+    );
+    for (const fk of fks) {
+      await pool.query(`ALTER TABLE treinamentos DROP FOREIGN KEY \`${fk.nome}\``);
+      console.log(`  ↳ FK legada removida: treinamentos.${fk.nome} (necessidade_id → necessidades)`);
+    }
+  } catch (error) {
+    console.warn(`  ⚠ não foi possível checar/remover a FK legada de treinamentos.necessidade_id: ${error.message}`);
+  }
+}
+
 async function runMigrations() {
   try {
     console.log("🔄 Verificando e aplicando migrações no MySQL...");
@@ -959,6 +983,7 @@ async function runMigrations() {
     await ensureColumn("treinamentos", "empresa_id", "INT NULL");
     await ensureColumn("clientes", "empresa_id", "INT NULL");
     await ensureColumn("necessidades_treinamento", "empresa_id", "INT NULL");
+    await ensureSemFkLegadaNecessidade();
     await ensureColumn("turma_aulas", "empresa_id", "INT NULL");
     await ensureColumn("presencas", "empresa_id", "INT NULL");
     await ensureColumn("avaliacoes", "empresa_id", "INT NULL");
