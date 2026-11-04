@@ -131,6 +131,7 @@ const {
 } = require("./controllers/presencaResumoController");
 
 const { registrarAuditoria } = require("./services/auditoria");
+const { normalizarModalidade, modalidadeDaDescricao, sincronizarTagNaDescricao } = require("./lib/modalidade");
 const { listarAuditoriaHandler } = require("./controllers/auditoriaController");
 
 const {
@@ -205,6 +206,9 @@ const {
   atualizarSala,
   desativarSala,
   disponibilidadeSalas,
+  agendaDasSalas,
+  criarBloqueio,
+  cancelarBloqueio,
 } = require("./controllers/salasController");
 const {
   listarTurmasElegiveis: listarTurmasAvaliacaoTecnica,
@@ -997,6 +1001,29 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   }
   vazioParaNulo(dados, ["valor_passagem_vt", "presenca_minima_pct", "necessidade_id", "sala_id"]);
 
+  // Modalidade (04/11/2026): a coluna é a fonte. Vem do campo `modalidade` ou, por compatibilidade com
+  // telas antigas ainda abertas, da marcação [modalidade:x] da descrição. A marcação é mantida alinhada
+  // à coluna. Turma online não ocupa sala física: sala e local saem na hora de gravar.
+  {
+    let mod;
+    if ("modalidade" in dados) mod = normalizarModalidade(dados.modalidade);
+    else if (typeof dados.descricao === "string" && /\[modalidade:/i.test(dados.descricao)) mod = modalidadeDaDescricao(dados.descricao);
+    if (mod !== undefined) {
+      if ("modalidade" in dados && String(dados.modalidade || "").trim() && !mod) {
+        const erro = new Error("Modalidade inválida — escolha Online ou Presencial.");
+        erro.status = 400;
+        throw erro;
+      }
+      dados.modalidade = mod || null;
+      if (typeof dados.descricao === "string") dados.descricao = sincronizarTagNaDescricao(dados.descricao, mod);
+    }
+    const modFinal = "modalidade" in dados ? dados.modalidade : normalizarModalidade(ctx?.antes?.modalidade);
+    if (modFinal === "online") {
+      dados.sala_id = null;
+      dados.sala_outro_local = null;
+    }
+  }
+
   // RP de origem (27/10/2026): só coordenação e assistente mexem; só Avaliação Técnica guarda;
   // a RP precisa ser do mesmo ambiente da turma.
   {
@@ -1047,7 +1074,9 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
       if (conflitos.length) {
         const c = conflitos[0];
         const erro = new Error(
-          `Sala já reservada nesse horário pela turma "${c.tema}" (${c.cliente}), de ${c.hora_inicio} às ${c.hora_fim}.`
+          c.tipo === "bloqueio"
+            ? `Sala bloqueada nesse horário (${c.tema}), de ${String(c.hora_inicio).slice(0, 5)} às ${String(c.hora_fim).slice(0, 5)}.`
+            : `Sala já reservada nesse horário pela turma "${c.tema}" (${c.cliente}), de ${c.hora_inicio} às ${c.hora_fim}.`
         );
         erro.status = 409;
         throw erro;
@@ -1412,6 +1441,7 @@ app.use(
       "sala_outro_local",
       "subtipo",
       "rp_id", // RP de origem (27/10/2026) — só Avaliação Técnica; validado em sanitizarEscritaTreinamento
+      "modalidade", // online | presencial (04/11/2026) — campo de verdade; normalizado em sanitizarEscritaTreinamento
     ],
     orderBy: "id DESC",
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "treinando", "assistente_treinamento", "analista_conteudo")],
@@ -1493,7 +1523,8 @@ app.get(
           sala_outro_local,
           subtipo,
           empresa_id,
-          rp_id
+          rp_id,
+          modalidade
         FROM treinamentos
         WHERE id = ?${tenantCheck}
         LIMIT 1
@@ -1719,6 +1750,27 @@ app.get(
   authRequired,
   authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
   disponibilidadeSalas
+);
+
+// Agenda das salas e bloqueios sem turma (04/11/2026). Leitura para quem já consulta o catálogo
+// (mais superintendente); bloquear/cancelar bloqueio é de quem administra o catálogo.
+app.get(
+  "/api/salas/agenda",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo", "superintendente"),
+  agendaDasSalas
+);
+app.post(
+  "/api/salas/bloqueios",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  criarBloqueio
+);
+app.delete(
+  "/api/salas/bloqueios/:id",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  cancelarBloqueio
 );
 
 // Decisão 13 revista (ajuste pós-entrega, 15/09/2026): originalmente só a

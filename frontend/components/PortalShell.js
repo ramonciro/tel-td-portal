@@ -55,7 +55,7 @@ const menuItems = [
   // direta"). `roles` volta a ser o controle de ACESSO de verdade (o mesmo
   // conjunto liberado no backend); `menuRoles`, quando presente, é só quem
   // vê o item no menu lateral — nunca mexe em currentAllowed.
-  { href: "/salas",         label: "Salas",                  icon: "building", roles: ["coordenador", "assistente_treinamento"], menuRoles: ["assistente_treinamento"] },
+  { href: "/salas",         label: "Salas",                  icon: "building", roles: ["coordenador", "assistente_treinamento"], menuRoles: ["coordenador", "assistente_treinamento"] },
   { href: "/reembolso-transporte", label: "Reembolso de Transporte", icon: "bus", roles: ["coordenador", "assistente_treinamento"], menuRoles: ["assistente_treinamento"] },
   { href: "/minhas-turmas", label: "Minhas Turmas",          icon: "backpack", roles: ["instrutor", "treinando"] },
   { href: "/meu-desempenho", label: "Meu Desempenho",        icon: "trending", roles: ["instrutor"] },

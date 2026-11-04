@@ -2546,6 +2546,53 @@ async function runMigrations() {
     await ensureStatusVarchar("acoes_desenvolvimento", 30, "planejada");
     await ensureStatusVarchar("coaching_planos", 30, "planejado");
 
+    // 55. Modalidade como campo de verdade + bloqueio de sala sem turma (04/11/2026).
+    // - treinamentos.modalidade ('online' | 'presencial'): até aqui só existia a marcação
+    //   [modalidade:x] colada na descrição. A coluna passa a ser a fonte; as turmas antigas são
+    //   convertidas a partir da marcação (só onde a coluna ainda está vazia — idempotente, e
+    //   nunca sobrescreve o que alguém já escolheu).
+    // - sala_bloqueios: reserva de sala sem turma (manutenção, evento, reunião). Entra na mesma
+    //   conferência de conflito das turmas. Catálogo de salas é global, então o bloqueio também é.
+    try {
+      await ensureColumn("treinamentos", "modalidade", "VARCHAR(20) NULL");
+      const [pend] = await pool.query(
+        `SELECT id, descricao FROM treinamentos
+          WHERE (modalidade IS NULL OR modalidade = '') AND descricao LIKE '%[modalidade:%'`
+      );
+      let convertidas = 0;
+      for (const r of pend) {
+        const m = /\[modalidade:([^\]]*)\]/i.exec(String(r.descricao || ""));
+        const v = String((m && m[1]) || "").trim().toLowerCase();
+        if (v === "online" || v === "presencial") {
+          await pool.query("UPDATE treinamentos SET modalidade = ? WHERE id = ?", [v, r.id]);
+          convertidas += 1;
+        }
+      }
+      await pool.query(`CREATE INDEX idx_treinamentos_modalidade ON treinamentos (modalidade)`).catch(() => {});
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS sala_bloqueios (
+          id            INT AUTO_INCREMENT PRIMARY KEY,
+          sala_id       INT NOT NULL,
+          data_inicio   DATE NOT NULL,
+          data_fim      DATE NOT NULL,
+          hora_inicio   VARCHAR(5) NOT NULL,
+          hora_fim      VARCHAR(5) NOT NULL,
+          motivo        VARCHAR(200) NOT NULL,
+          empresa_id    INT NULL,
+          criado_por_id INT NULL,
+          ativo         TINYINT(1) NOT NULL DEFAULT 1,
+          criado_em     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          cancelado_em  TIMESTAMP NULL,
+          INDEX idx_sala_bloqueios_sala (sala_id, data_inicio, data_fim),
+          CONSTRAINT fk_sala_bloqueios_sala FOREIGN KEY (sala_id) REFERENCES salas(id)
+        )
+      `);
+      console.log(`  ↳ modalidade da turma e bloqueio de sala: ok (${convertidas} turma(s) convertida(s) da marcação)`);
+    } catch (error) {
+      console.log(`  ↳ modalidade/bloqueio de sala não concluído (${error.message}) — seguindo`);
+    }
+
     console.log("✅ Migrações executadas com sucesso no MySQL!");
   } catch (error) {
     console.error("❌ Erro ao rodar migrações automáticas no MySQL:", error);

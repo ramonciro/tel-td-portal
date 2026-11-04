@@ -57,7 +57,10 @@ function numeroOuNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-function modalidadeDe(descricao) {
+function modalidadeDe(descricao, coluna) {
+  // coluna treinamentos.modalidade primeiro (04/11/2026); marcação da descrição como reserva
+  const c = chave(coluna);
+  if (c === "presencial" || c === "online") return c;
   const m = String(descricao || "").match(/\[modalidade:([^\]]+)\]/i);
   const v = chave(m && m[1]);
   return v === "presencial" || v === "online" ? v : "";
@@ -87,7 +90,7 @@ function filtrarAcesso(turmas, { instrutor, podeVer }) {
 }
 
 const SQL_TURMA = `t.id, t.empresa_id, t.tema, t.cliente, t.instrutor, t.supervisor, t.turma, t.status, t.descricao,
-       t.carga_horaria, t.presenca_minima_pct, t.sala_id, t.sala_outro_local,
+       t.carga_horaria, t.presenca_minima_pct, t.sala_id, t.sala_outro_local, t.modalidade,
        DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS data_inicio,
        DATE_FORMAT(COALESCE(t.data_fim, t.data_inicio, t.data), '%Y-%m-%d') AS data_fim,
        TIME_FORMAT(t.hora_inicio, '%H:%i') AS hora_inicio, TIME_FORMAT(t.hora_fim, '%H:%i') AS hora_fim`;
@@ -142,7 +145,7 @@ async function calcularProntidao({ empresaId, dias = 7, instrutor, podeVer } = {
   const out = [];
   for (const t of turmas) {
     const diasParaInicio = diasEntre(hoje, t.data_inicio);
-    const modalidade = modalidadeDe(t.descricao);
+    const modalidade = modalidadeDe(t.descricao, t.modalidade);
     const itens = [];
     const add = (codigo, base, titulo, detalhe, acao) =>
       itens.push({ codigo, gravidade: gravidadeItem(base, diasParaInicio), titulo, detalhe, acao });

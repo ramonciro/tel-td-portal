@@ -144,10 +144,13 @@ function usuarioLabel(user) {
   return `${user.nome} • ${clientes.length} operações`;
 }
 
-function parseMetadata(descricao) {
+function parseMetadata(descricao, coluna) {
   const text = String(descricao || "");
+  // A coluna `modalidade` da turma é a fonte; a marcação [modalidade:x] na descrição é só reserva (turma sem coluna preenchida).
+  const daColuna = String(coluna || "").trim().toLowerCase();
+  const daTag = (text.match(/\[modalidade:([^\]]+)\]/i)?.[1]?.trim() || "").toLowerCase();
   return {
-    modalidade: text.match(/\[modalidade:([^\]]+)\]/i)?.[1]?.trim() || "",
+    modalidade: ["online", "presencial"].includes(daColuna) ? daColuna : ["online", "presencial"].includes(daTag) ? daTag : "",
     // O campo "Sala" (texto livre) foi removido do formulário (a reserva de
     // sala real substituiu ele), mas turma antiga pode ainda ter a tag
     // [sala:...] salva em `descricao` — continuamos removendo a tag daqui
@@ -237,7 +240,7 @@ function Select({ value, onChange, options, placeholder, ...props }) {
   return (
     <select {...props} value={value ?? ""} onChange={onChange} style={inputStyle}>
       <option value="">{placeholder || "Selecione..."}</option>
-      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      {options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled || undefined}>{option.label}</option>)}
     </select>
   );
 }
@@ -259,7 +262,7 @@ function TurmaCard({ item, necessidade, resumo, salaNome, sala, canEdit, canDele
     ? normalizeStatus(resumo.status_turma)
     : getStatus(item);
   const status = STATUS[statusCode] || STATUS.planejado;
-  const meta = parseMetadata(item.descricao);
+  const meta = parseMetadata(item.descricao, item.modalidade);
   const inicio = item.data_inicio || item.data;
   const fim = item.data_fim;
   const confirmados = resumo ? Number(resumo.treinandos_confirmados || 0) : 0;
@@ -455,6 +458,47 @@ function TreinamentosConteudo() {
     return () => { cancelado = true; clearTimeout(espera); };
   }, [modalOpen, podeRpOrigem, ehAvTecForm, form.data_inicio, form.cliente, form.tema, editingId]);
 
+  // Disponibilidade das salas para o período/horário do formulário (04/11/2026): só aparecem como
+  // selecionáveis as salas livres; as ocupadas ficam visíveis, desabilitadas, com quem ocupa.
+  const [dispSalas, setDispSalas] = useState(null);
+  useEffect(() => {
+    if (!modalOpen || form.modalidade === "online" || !form.data_inicio || !form.data_fim || !form.hora_inicio || !form.hora_fim || form.hora_fim <= form.hora_inicio || form.data_fim < form.data_inicio) {
+      setDispSalas(null);
+      return undefined;
+    }
+    let cancelado = false;
+    const espera = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({ data_inicio: form.data_inicio, data_fim: form.data_fim, hora_inicio: form.hora_inicio, hora_fim: form.hora_fim });
+        if (editingId) q.set("excluir_treinamento_id", String(editingId));
+        const r = await apiFetch(`/salas/disponibilidade?${q.toString()}`);
+        if (!cancelado) setDispSalas(r && Array.isArray(r.salas) ? { retroativa: !!r.retroativa, salas: r.salas } : null);
+      } catch (_) {
+        if (!cancelado) setDispSalas(null);
+      }
+    }, 300);
+    return () => { cancelado = true; clearTimeout(espera); };
+  }, [modalOpen, form.modalidade, form.data_inicio, form.data_fim, form.hora_inicio, form.hora_fim, editingId]);
+
+  const opcoesSala = useMemo(() => {
+    const dispPorId = new Map((dispSalas?.salas || []).map((x) => [Number(x.id), x]));
+    return salas.map((s) => {
+      const d = dispPorId.get(Number(s.id));
+      if (d && d.disponivel === false) {
+        const c = (d.conflitos || [])[0];
+        const quem = c ? `${c.tipo === "bloqueio" ? "bloqueada" : "ocupada"}: ${c.cliente || ""}${c.tema ? ` · ${c.tema}` : ""}, ${String(c.hora_inicio || "").slice(0, 5)}–${String(c.hora_fim || "").slice(0, 5)}` : "ocupada";
+        return { value: String(s.id), label: `${s.nome} — ${quem}`, disabled: String(form.sala_id) !== String(s.id) };
+      }
+      return { value: String(s.id), label: s.nome };
+    });
+  }, [salas, dispSalas, form.sala_id]);
+
+  const resumoSalas = useMemo(() => {
+    if (!dispSalas) return null;
+    const livres = dispSalas.salas.filter((x) => x.disponivel !== false).length;
+    return { livres, total: dispSalas.salas.length, retroativa: dispSalas.retroativa };
+  }, [dispSalas]);
+
   async function abrirVinculoEmLote() {
     setVinculoAberto(true); setVinculoCarregando(true); setVinculoLista([]); setVinculoMarcadas(new Set());
     try {
@@ -619,7 +663,7 @@ function TreinamentosConteudo() {
   function openEdit(item) {
     if (!canEdit) return;
     rpTocado.current = true;
-    const meta = parseMetadata(item.descricao);
+    const meta = parseMetadata(item.descricao, item.modalidade);
     setEditingId(item.id);
     setForm({
       ...EMPTY_FORM,
@@ -723,7 +767,7 @@ function TreinamentosConteudo() {
         tema: form.tema.trim(), cliente: form.cliente, necessidade_id: form.necessidade_id ? Number(form.necessidade_id) : null, instrutor: isInstructor && !editingId ? nomeLogado : form.instrutor,
         supervisor: perfil === "supervisor" ? nomeLogado : form.supervisor, publico: form.publico, carga_horaria: form.carga_horaria,
         participantes: Number(form.participantes || 0), participantes_previstos: Number(form.participantes || 0), status: form.status || "planejado",
-        data_inicio: form.data_inicio, data_fim: form.data_fim, data: form.data_inicio, descricao: buildDescricao(form),
+        data_inicio: form.data_inicio, data_fim: form.data_fim, data: form.data_inicio, descricao: buildDescricao(form), modalidade: form.modalidade,
         // Decisões 1/17/20: horário real (usado pelo cronograma automático),
         // reserva de sala (catálogo global ou "outro local" em texto livre)
         // e subtipo/subdivisão — todos opcionais.
@@ -1023,13 +1067,19 @@ function TreinamentosConteudo() {
               <Field label="Horário de fim" error={formErrors.hora_fim}><Input type="time" value={form.hora_fim} onChange={(e) => setField("hora_fim", e.target.value)} /></Field>
               <Field
                 label="Reserva de sala"
-                hint={form.modalidade === "online" ? "Não se aplica a turma online." : "Verifica conflito de horário com outras turmas, de qualquer cliente."}
+                hint={
+                  form.modalidade === "online"
+                    ? "Não se aplica a turma online."
+                    : resumoSalas
+                      ? `${resumoSalas.livres} de ${resumoSalas.total} salas livres nesse período e horário${resumoSalas.retroativa ? " (turma já encerrada: conflito só avisa, não bloqueia)" : ""}.`
+                      : "Informe datas e horário para ver só as salas livres. Verifica conflito com turmas de qualquer cliente."
+                }
               >
                 <Select
                   value={form.sala_id}
                   disabled={form.modalidade === "online"}
                   onChange={(e) => setField("sala_id", e.target.value)}
-                  options={[...salas.map((s) => ({ value: String(s.id), label: s.nome })), { value: "outro", label: "Outro local (fora do catálogo)" }]}
+                  options={[...opcoesSala, { value: "outro", label: "Outro local (fora do catálogo)" }]}
                   placeholder="Sem reserva de sala"
                 />
               </Field>

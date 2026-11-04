@@ -1,6 +1,7 @@
 const pool = require("../lib/db");
 const { getResumoPresenca } = require("../services/presencaResolver");
 const { tenantScopeFor } = require("../lib/tenantScope");
+const { modalidadeDaTurma } = require("../lib/modalidade");
 const { mapaAdicionais, adicionaisDisponiveis, todosOsInstrutores } = require("../lib/instrutoresTurma");
 
 // Pacote Superintendente (24/09/2026): o Dashboard é leitura pura (nenhum
@@ -235,7 +236,7 @@ async function carregarTurmasEnriquecidas(req) {
         `SELECT
           t.id, t.tema, t.cliente, t.instrutor,
           COALESCE(t.supervisor, '') AS supervisor,
-          t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
+          t.descricao, t.modalidade, t.status, t.data, t.data_inicio, t.data_fim,
           t.carga_horaria,
           ${participantCountExpr} AS participantes_previstos,
 
@@ -273,7 +274,7 @@ async function carregarTurmasEnriquecidas(req) {
         ) hist ON hist.treinamento_id = t.id
         ${whereSql}
         GROUP BY t.id, t.tema, t.cliente, t.instrutor, t.supervisor,
-          t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
+          t.descricao, t.modalidade, t.status, t.data, t.data_inicio, t.data_fim,
           t.carga_horaria, ${participantCountExpr},
           hist.dias, hist.presentes, hist.ausentes, hist.justificados,
           hist.pendentes, hist.participantes_distintos
@@ -288,7 +289,7 @@ async function carregarTurmasEnriquecidas(req) {
         `SELECT
           t.id, t.tema, t.cliente, t.instrutor,
           '' AS supervisor,
-          t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
+          t.descricao, t.modalidade, t.status, t.data, t.data_inicio, t.data_fim,
           t.carga_horaria,
           ${participantCountExpr} AS participantes_previstos,
           COUNT(DISTINCT tp.id) AS roster_total,
@@ -302,7 +303,7 @@ async function carregarTurmasEnriquecidas(req) {
         LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
         ${whereSql}
         GROUP BY t.id, t.tema, t.cliente, t.instrutor,
-          t.descricao, t.status, t.data, t.data_inicio, t.data_fim,
+          t.descricao, t.modalidade, t.status, t.data, t.data_inicio, t.data_fim,
           t.carga_horaria, ${participantCountExpr}
         ORDER BY ${dateOrderExpr} DESC, t.id DESC`,
         params
@@ -324,11 +325,11 @@ async function carregarTurmasEnriquecidas(req) {
       console.warn("[dashboard] resumo de presença indisponível:", err.message);
     }
 
-    // filtro de modalidade (campo embutido em descricao) e de status (ver
+    // filtro de modalidade (coluna treinamentos.modalidade; marcação da descrição como reserva) e de status (ver
     // statusCanonicoDaTurma acima) feitos em memória — nenhum dos dois é uma
     // coluna diretamente filtrável no SQL acima.
     const filteredRows = baseRows.filter((row) => {
-      if (query.modalidade && parseModalidadeFromDescricao(row.descricao) !== String(query.modalidade).toLowerCase()) {
+      if (query.modalidade && modalidadeDaTurma(row) !== String(query.modalidade).toLowerCase()) {
         return false;
       }
       if (query.status && statusCanonicoDaTurma(row, resumoPresencaPorId) !== query.status) {
@@ -411,7 +412,7 @@ async function getDashboardTreinamentos(req, res) {
       if (row.cliente && row.cliente !== "Sem cliente") clientesSet.add(row.cliente);
       todosOsInstrutores(row.instrutor, adicionaisPorTurma.get(Number(row.id)) || []).forEach((nm) => instrutoresSet.add(nm));
       if (row.supervisor && String(row.supervisor).trim()) supervisoresSet.add(String(row.supervisor).trim());
-      const modalidade = parseModalidadeFromDescricao(row.descricao);
+      const modalidade = modalidadeDaTurma(row);
       // Ver statusCanonicoDaTurma acima — mesma fonte usada pelo filtro, para
       // as opções deste dropdown sempre baterem com o que o filtro de fato
       // aceita (inclui "Chamada pendente" etc., que a coluna crua não tinha).
@@ -550,7 +551,7 @@ async function getDashboardTreinamentos(req, res) {
         taxa_presenca: p.taxaPresenca,
         presentes: p.diasPresente,
         pendentes: p.diasPendente,
-        modalidade: parseModalidadeFromDescricao(item.descricao),
+        modalidade: modalidadeDaTurma(item),
         // status_canonico já vem calculado em `enriched` (statusCanonicoDaTurma)
         // e chega aqui pelo spread de `...item` logo acima.
       };
@@ -618,8 +619,8 @@ async function exportarTreinamentos(req, res) {
       cliente: item.cliente || "-",
       instrutor: todosOsInstrutores(item.instrutor, item.instrutores_adicionais || []).join(", ") || "-",
       modalidade:
-        parseModalidadeFromDescricao(item.descricao) === "online" ? "Online"
-          : parseModalidadeFromDescricao(item.descricao) === "presencial" ? "Presencial" : "-",
+        modalidadeDaTurma(item) === "online" ? "Online"
+          : modalidadeDaTurma(item) === "presencial" ? "Presencial" : "-",
       // Bug real (mesma raiz do filtro/tabela): usava normalizeStatus(item.status)
       // — texto cru do banco, nunca refletia cronograma/chamada pendente.
       // Excel exportado dizia "Planejada" pra turma que já estava rodando.

@@ -14,15 +14,14 @@
  * Não hard-deleta sala (decisão 3 — "sem reserva avulsa" nesta rodada):
  * "excluir" aqui é sempre desativação (ativo=0), que já o backend impõe.
  *
- * Nota: esta página ainda não está no menu do PortalShell — Ramon pediu
- * pra deixar a decisão de onde essas telas ficam (e se ficam) pro final
- * (ver claude/relatorio-... deste pacote). Ela funciona normalmente por
- * URL direta enquanto isso não é decidido.
+ * 04/11/2026: a página ganhou a Agenda das salas (components/AgendaSalas.js: sala × dia,
+ * bloqueio de sala sem turma) e o item "Salas" aparece no menu também para a coordenação.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
+import AgendaSalas from "../../components/AgendaSalas";
 import { apiFetch, getStoredUser, hasSomeRole } from "../../services/api";
 import { colors } from "../../lib/theme";
 
@@ -139,12 +138,14 @@ export default function SalasPage() {
         <PageHero
           eyebrow="Portal T&D · Agendamento"
           title="Salas"
-          subtitle="Catálogo global de salas usado na reserva de horário das turmas — vale para todos os clientes."
+          subtitle="Agenda e catálogo global de salas usados na reserva de horário das turmas — vale para todos os clientes."
           actions={canManage ? <button type="button" style={createButton} onClick={abrirCriar}>+ Nova sala</button> : null}
         />
 
         {error && <div style={alertError}>{error}</div>}
         {success && <div style={alertSuccess}>{success}</div>}
+
+        <AgendaSalas podeBloquear={canManage} />
 
         <section style={card}>
           <h2 style={sectionTitle}>Ativas ({ativas.length})</h2>
@@ -221,7 +222,7 @@ export default function SalasPage() {
   );
 }
 
-const page = { minHeight: "100vh", padding: "28px clamp(18px, 3vw, 42px) 48px", maxWidth: 1100, margin: "0 auto", boxSizing: "border-box" };
+const page = { minHeight: "100vh", padding: "28px clamp(18px, 3vw, 42px) 48px", maxWidth: 1400, margin: "0 auto", boxSizing: "border-box" };
 const createButton = { border: 0, background: colors.accent, color: "#fff", borderRadius: 12, padding: "12px 17px", fontWeight: 850, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" };
 const secondaryButton = { border: "1px solid #e2e8f0", background: "#fff", color: "#475569", borderRadius: 12, padding: "12px 17px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
 const card = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 20, padding: 20, marginTop: 16 };

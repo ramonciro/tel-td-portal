@@ -43,7 +43,7 @@ function turmaEhRetroativa(dataFim) {
  * @returns {Promise<object[]>} treinamentos conflitantes com tema, cliente,
  *   empresa_id, data_inicio, data_fim, hora_inicio, hora_fim.
  */
-async function buscarConflitosSala({ salaId, dataInicio, dataFim, horaInicio, horaFim, excluirTreinamentoId }) {
+async function buscarConflitosSala({ salaId, dataInicio, dataFim, horaInicio, horaFim, excluirTreinamentoId, excluirBloqueioId }) {
   if (!salaId || !dataInicio || !dataFim || !horaInicio || !horaFim) return [];
 
   const params = [
@@ -60,7 +60,9 @@ async function buscarConflitosSala({ salaId, dataInicio, dataFim, horaInicio, ho
     params.push(excluirTreinamentoId);
   }
 
-  const [rows] = await pool.query(
+  // Turma online não ocupa sala física (04/11/2026): se ainda sobrou um sala_id numa turma marcada como
+  // online, ele não gera conflito.
+  const [turmas] = await pool.query(
     `
     SELECT
       t.id,
@@ -74,6 +76,7 @@ async function buscarConflitosSala({ salaId, dataInicio, dataFim, horaInicio, ho
     FROM treinamentos t
     WHERE t.sala_id = ?
       AND (t.status IS NULL OR LOWER(TRIM(t.status)) NOT LIKE '%cancel%')
+      AND (t.modalidade IS NULL OR LOWER(TRIM(t.modalidade)) <> 'online')
       AND COALESCE(t.data_inicio, t.data) <= ?
       AND t.data_fim >= ?
       AND t.hora_inicio IS NOT NULL AND t.hora_fim IS NOT NULL
@@ -85,7 +88,38 @@ async function buscarConflitosSala({ salaId, dataInicio, dataFim, horaInicio, ho
     params
   );
 
-  return rows;
+  // Bloqueios de sala (reserva sem turma). Mesmo formato de linha, com tipo "bloqueio":
+  // `tema` carrega o motivo e `cliente` o rótulo, para as mensagens e o Radar seguirem funcionando.
+  const paramsB = [salaId, String(dataFim).slice(0, 10), String(dataInicio).slice(0, 10), String(horaFim).slice(0, 5), String(horaInicio).slice(0, 5)];
+  let excludeB = "";
+  if (excluirBloqueioId) {
+    excludeB = " AND b.id <> ?";
+    paramsB.push(excluirBloqueioId);
+  }
+  let bloqueios = [];
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT b.id, b.motivo AS tema, 'Bloqueio de sala' AS cliente, b.empresa_id,
+             b.data_inicio, b.data_fim, b.hora_inicio, b.hora_fim
+        FROM sala_bloqueios b
+       WHERE b.sala_id = ? AND b.ativo = 1
+         AND b.data_inicio <= ? AND b.data_fim >= ?
+         AND b.hora_inicio < ? AND b.hora_fim > ?
+         ${excludeB}
+       ORDER BY b.data_inicio ASC
+      `,
+      paramsB
+    );
+    bloqueios = rows;
+  } catch (e) {
+    // tabela ainda não migrada: segue só com as turmas
+  }
+
+  return [
+    ...turmas.map((r) => ({ ...r, tipo: "turma" })),
+    ...bloqueios.map((r) => ({ ...r, tipo: "bloqueio" })),
+  ];
 }
 
 /**
@@ -128,7 +162,93 @@ async function listarSalasComDisponibilidade({ dataInicio, dataFim, horaInicio, 
   return { salas: resultado, retroativa };
 }
 
+
+function somarDiasISO(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Agenda das salas (04/11/2026): o que ocupa cada sala em cada dia da janela, de QUALQUER ambiente
+ * (sala compartilhada — mesma regra de visibilidade da conferência de conflito). Cada turma ocupa a
+ * sala em todos os dias do período dela, no horário informado — exatamente a regra do conflito, para
+ * a agenda nunca mostrar "livre" onde o formulário vai bloquear.
+ *
+ * @returns {{ salas: object[], ocupacoes: object[] }}
+ */
+async function agendaSalas({ dataInicio, dataFim }) {
+  const ini = String(dataInicio).slice(0, 10);
+  const fim = String(dataFim).slice(0, 10);
+
+  const [salas] = await pool.query(
+    `SELECT id, nome, capacidade, grupo FROM salas WHERE ativo = 1 ORDER BY grupo ASC, nome ASC`
+  );
+
+  const [turmas] = await pool.query(
+    `
+    SELECT t.id, t.tema, t.cliente, t.instrutor, t.sala_id, t.status,
+           DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS data_inicio,
+           DATE_FORMAT(COALESCE(t.data_fim, t.data_inicio, t.data), '%Y-%m-%d') AS data_fim,
+           TIME_FORMAT(t.hora_inicio, '%H:%i') AS hora_inicio,
+           TIME_FORMAT(t.hora_fim, '%H:%i') AS hora_fim
+      FROM treinamentos t
+     WHERE t.sala_id IS NOT NULL
+       AND (t.status IS NULL OR LOWER(TRIM(t.status)) NOT LIKE '%cancel%')
+       AND (t.modalidade IS NULL OR LOWER(TRIM(t.modalidade)) <> 'online')
+       AND DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') <= ?
+       AND DATE_FORMAT(COALESCE(t.data_fim, t.data_inicio, t.data), '%Y-%m-%d') >= ?
+    `,
+    [fim, ini]
+  );
+
+  let bloqueios = [];
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT b.id, b.sala_id, b.motivo, b.hora_inicio, b.hora_fim, b.criado_por_id,
+             DATE_FORMAT(b.data_inicio, '%Y-%m-%d') AS data_inicio,
+             DATE_FORMAT(b.data_fim, '%Y-%m-%d') AS data_fim,
+             u.nome AS criado_por
+        FROM sala_bloqueios b
+        LEFT JOIN usuarios u ON u.id = b.criado_por_id
+       WHERE b.ativo = 1 AND b.data_inicio <= ? AND b.data_fim >= ?
+      `,
+      [fim, ini]
+    );
+    bloqueios = rows;
+  } catch (e) {
+    // tabela ainda não migrada
+  }
+
+  const ocupacoes = [];
+  const expandir = (base, extra) => {
+    const de = base.data_inicio > ini ? base.data_inicio : ini;
+    const ate = base.data_fim < fim ? base.data_fim : fim;
+    for (let d = de, guarda = 0; d <= ate && guarda < 400; d = somarDiasISO(d, 1), guarda += 1) {
+      ocupacoes.push({ sala_id: base.sala_id, data: d, hora_inicio: base.hora_inicio, hora_fim: base.hora_fim, ...extra });
+    }
+  };
+  for (const t of turmas) {
+    expandir(t, {
+      tipo: "turma", id: t.id, tema: t.tema, cliente: t.cliente, instrutor: t.instrutor,
+      periodo_inicio: t.data_inicio, periodo_fim: t.data_fim, sem_horario: !(t.hora_inicio && t.hora_fim),
+    });
+  }
+  for (const b of bloqueios) {
+    expandir(b, {
+      tipo: "bloqueio", id: b.id, tema: b.motivo, cliente: "Bloqueio de sala", criado_por: b.criado_por || null,
+      periodo_inicio: b.data_inicio, periodo_fim: b.data_fim, sem_horario: false,
+    });
+  }
+  ocupacoes.sort((a, b) => a.data.localeCompare(b.data) || String(a.hora_inicio || "").localeCompare(String(b.hora_inicio || "")));
+
+  return { salas, ocupacoes };
+}
+
 module.exports = {
+  agendaSalas,
+  somarDiasISO,
   turmaEhRetroativa,
   buscarConflitosSala,
   listarSalasComDisponibilidade,

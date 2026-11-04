@@ -8,7 +8,17 @@
  * consultam e usam", conforme a proposta).
  */
 const pool = require("../lib/db");
-const { listarSalasComDisponibilidade } = require("../services/salaConflitoService");
+const {
+  listarSalasComDisponibilidade,
+  buscarConflitosSala,
+  agendaSalas,
+  somarDiasISO,
+  turmaEhRetroativa,
+} = require("../services/salaConflitoService");
+const { registrarAuditoria } = require("../services/auditoria");
+
+const ISO_DATA = /^\d{4}-\d{2}-\d{2}$/;
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const GRUPOS_VALIDOS = ["geral", "sebrae"];
 
@@ -127,7 +137,117 @@ async function disponibilidadeSalas(req, res) {
   }
 }
 
+
+function hojeISOLocal() {
+  const h = new Date();
+  return [h.getFullYear(), String(h.getMonth() + 1).padStart(2, "0"), String(h.getDate()).padStart(2, "0")].join("-");
+}
+
+// GET /api/salas/agenda?data_inicio=YYYY-MM-DD&data_fim=YYYY-MM-DD (padrão: a semana de hoje, segunda a domingo; máx. 42 dias)
+async function agendaDasSalas(req, res) {
+  try {
+    let { data_inicio: ini, data_fim: fim } = req.query || {};
+    if (!ini || !ISO_DATA.test(String(ini))) {
+      const hoje = hojeISOLocal();
+      const dow = (new Date(`${hoje}T00:00:00Z`).getUTCDay() + 6) % 7; // segunda = 0
+      ini = somarDiasISO(hoje, -dow);
+      fim = somarDiasISO(ini, 6);
+    }
+    if (!fim || !ISO_DATA.test(String(fim))) fim = somarDiasISO(String(ini), 6);
+    if (String(fim) < String(ini)) {
+      return res.status(400).json({ ok: false, message: "A data final precisa ser igual ou depois da inicial." });
+    }
+    const dias = Math.round((new Date(`${fim}T00:00:00Z`) - new Date(`${ini}T00:00:00Z`)) / 86400000) + 1;
+    if (dias > 42) {
+      return res.status(400).json({ ok: false, message: "Escolha um período de até 42 dias." });
+    }
+    const { salas, ocupacoes } = await agendaSalas({ dataInicio: ini, dataFim: fim });
+    return res.json({ ok: true, data_inicio: ini, data_fim: fim, salas, ocupacoes });
+  } catch (error) {
+    console.error("[salasController] agenda:", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao carregar a agenda das salas" });
+  }
+}
+
+// POST /api/salas/bloqueios — reserva de sala sem turma (manutenção, evento, reunião)
+async function criarBloqueio(req, res) {
+  try {
+    const b = req.body || {};
+    const salaId = Number(b.sala_id);
+    const motivo = String(b.motivo || "").trim();
+    const dataInicio = String(b.data_inicio || "").slice(0, 10);
+    const dataFim = String(b.data_fim || b.data_inicio || "").slice(0, 10);
+    const horaInicio = String(b.hora_inicio || "").slice(0, 5);
+    const horaFim = String(b.hora_fim || "").slice(0, 5);
+
+    if (!Number.isInteger(salaId) || salaId <= 0) return res.status(400).json({ ok: false, message: "Escolha a sala." });
+    if (!motivo) return res.status(400).json({ ok: false, message: "Informe o motivo do bloqueio." });
+    if (motivo.length > 200) return res.status(400).json({ ok: false, message: "O motivo pode ter até 200 caracteres." });
+    if (!ISO_DATA.test(dataInicio) || !ISO_DATA.test(dataFim)) {
+      return res.status(400).json({ ok: false, message: "Informe as datas do bloqueio." });
+    }
+    if (dataFim < dataInicio) return res.status(400).json({ ok: false, message: "A data final precisa ser igual ou depois da inicial." });
+    if (!HHMM.test(horaInicio) || !HHMM.test(horaFim)) {
+      return res.status(400).json({ ok: false, message: "Horário inválido — use o formato HH:MM." });
+    }
+    if (horaFim <= horaInicio) return res.status(400).json({ ok: false, message: "O horário de fim precisa ser depois do horário de início." });
+
+    const [sala] = await pool.query(`SELECT id, nome FROM salas WHERE id = ? AND ativo = 1 LIMIT 1`, [salaId]);
+    if (!sala.length) return res.status(404).json({ ok: false, message: "Sala não encontrada ou desativada." });
+
+    // Bloqueio no passado é só registro histórico (mesma lógica da turma retroativa): não confere conflito.
+    if (!turmaEhRetroativa(dataFim)) {
+      const conflitos = await buscarConflitosSala({ salaId, dataInicio, dataFim, horaInicio, horaFim });
+      if (conflitos.length) {
+        const c = conflitos[0];
+        const quem = c.tipo === "bloqueio" ? `bloqueio "${c.tema}"` : `turma "${c.tema}" (${c.cliente})`;
+        return res.status(409).json({
+          ok: false,
+          message: `${sala[0].nome} já está ocupada nesse horário pela ${quem}, de ${String(c.hora_inicio).slice(0, 5)} às ${String(c.hora_fim).slice(0, 5)}.`,
+        });
+      }
+    }
+
+    const [r] = await pool.query(
+      `INSERT INTO sala_bloqueios (sala_id, data_inicio, data_fim, hora_inicio, hora_fim, motivo, empresa_id, criado_por_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [salaId, dataInicio, dataFim, horaInicio, horaFim, motivo, req.empresaId || null, req.user?.id || null]
+    );
+    registrarAuditoria({
+      usuario: req.user, acao: "criar", entidade: "sala_bloqueio", entidadeId: r.insertId,
+      resumo: `${req.user?.nome || "Alguém"} bloqueou ${sala[0].nome} (${dataInicio}${dataFim !== dataInicio ? ` a ${dataFim}` : ""}, ${horaInicio}–${horaFim}): ${motivo}`,
+      ip: req.ip,
+    });
+    return res.status(201).json({ ok: true, id: r.insertId, message: "Sala bloqueada." });
+  } catch (error) {
+    console.error("[salasController] bloqueio:", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao bloquear a sala" });
+  }
+}
+
+// DELETE /api/salas/bloqueios/:id — cancela o bloqueio (fica registrado, só deixa de ocupar a sala)
+async function cancelarBloqueio(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const [rows] = await pool.query(`SELECT id, motivo, sala_id, ativo FROM sala_bloqueios WHERE id = ? LIMIT 1`, [id]);
+    if (!rows.length || !rows[0].ativo) return res.status(404).json({ ok: false, message: "Bloqueio não encontrado." });
+    await pool.query(`UPDATE sala_bloqueios SET ativo = 0, cancelado_em = NOW() WHERE id = ?`, [id]);
+    registrarAuditoria({
+      usuario: req.user, acao: "excluir", entidade: "sala_bloqueio", entidadeId: id,
+      resumo: `${req.user?.nome || "Alguém"} cancelou o bloqueio de sala "${rows[0].motivo}"`,
+      ip: req.ip,
+    });
+    return res.json({ ok: true, message: "Bloqueio cancelado." });
+  } catch (error) {
+    console.error("[salasController] cancelar bloqueio:", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao cancelar o bloqueio" });
+  }
+}
+
 module.exports = {
+  agendaDasSalas,
+  criarBloqueio,
+  cancelarBloqueio,
   listarSalas,
   criarSala,
   atualizarSala,
