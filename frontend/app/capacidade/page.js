@@ -500,7 +500,7 @@ function CapacidadePageInner() {
                   dados={capacityComMeta}
                   labelKey="instrutor" valueKey="ocupacao_pct" sufixo="%" maxValor={140}
                   corPorItem={(r) => corPorOcupacao(r.ocupacao_pct)}
-                  subtitulo={(r) => `${fmt(r.total_90d)}h / ${fmt(r.capacidade_90d)}h`}
+                  subtitulo={(r) => `${fmt(r.total_90d)}h realizadas · ${fmt(r.programado_90d || 0)}h programadas / ${fmt(r.capacidade_90d)}h`}
                   revelado={revelado}
                 />
               ) : (
@@ -533,9 +533,12 @@ function CapacidadePageInner() {
                       {(capacity?.meses || []).map((m) => <th key={m} style={{ ...th, textAlign: "right" }}>{m}</th>)}
                       <th style={{ ...th, textAlign: "right" }}>Sala</th>
                       <th style={{ ...th, textAlign: "right" }}>Atividades</th>
-                      <th style={{ ...th, textAlign: "right" }}>Total {mesesFiltro}m</th>
+                      <th style={{ ...th, textAlign: "right" }}>Realizado {mesesFiltro}m</th>
+                      <th style={{ ...th, textAlign: "right" }}>Programado</th>
+                      <th style={{ ...th, textAlign: "right" }}>A realizar</th>
                       <th style={{ ...th, textAlign: "right" }}>Cap. {mesesFiltro}m</th>
                       <th style={{ ...th, textAlign: "right" }}>% Ocupação</th>
+                      <th style={{ ...th, textAlign: "right" }}>% Programada</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -546,8 +549,11 @@ function CapacidadePageInner() {
                         <td style={{ ...td, textAlign: "right" }}>{fmt(row.sala_90d ?? row.total_90d)}</td>
                         <td style={{ ...td, textAlign: "right" }}>{fmt(row.atividades_90d || 0)}</td>
                         <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmt(row.total_90d)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{fmt(row.programado_90d || 0)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{fmt(row.a_realizar_90d || 0)}</td>
                         <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmt(row.capacidade_90d) : "—"}</td>
                         <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmtPct(row.ocupacao_pct) : "sem meta"}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{row.tem_meta ? fmtPct(row.ocupacao_programada_pct) : "sem meta"}</td>
                       </tr>
                     ))}
                     {(!capacity?.itens || capacity.itens.length === 0) && (

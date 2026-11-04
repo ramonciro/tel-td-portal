@@ -558,6 +558,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
   const [horasRows] = await pool.query(
     `SELECT fonte_horas.instrutor, fonte_horas.ano, fonte_horas.mes,
             SUM(fonte_horas.horas_real) AS horas,
+            SUM(fonte_horas.horas_planejada) AS programadas,
             SUM(CASE WHEN fonte_horas.fonte = 'atividade' THEN fonte_horas.horas_real ELSE 0 END) AS horas_atividades,
             SUM(CASE WHEN fonte_horas.fonte IN ('aula_adic','turma_adic') THEN fonte_horas.horas_real ELSE 0 END) AS horas_adicionais,
             COUNT(DISTINCT CASE WHEN fonte_horas.horas_real > 0 AND fonte_horas.fonte <> 'atividade' THEN fonte_horas.treinamento_id END) AS turmas
@@ -583,6 +584,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
 
   const chaveMes = (a, m) => `${a}-${pad2(m)}`;
   const mapaHoras = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas)]));
+  const mapaProgramadas = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.programadas || 0)]));
   const mapaTurmas = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.turmas)]));
   const mapaAtividades = new Map(horasRows.map((r) => [`${r.instrutor}|${chaveMes(r.ano, r.mes)}`, Number(r.horas_atividades || 0)]));
   // horas que vêm de ser instrutor ADICIONAL de uma ação (TBT): contam cheias para o
@@ -599,6 +601,9 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
       const turmas = Number(mapaTurmas.get(chave) || 0);
       const horasAtividades = Number((mapaAtividades.get(chave) || 0).toFixed(2));
       const horasSala = Number((horasRealizadas - horasAtividades).toFixed(2));
+      // 04/11/2026: horas PROGRAMADAS (planejadas) do instrutor no mês, ao lado das
+      // realizadas — mostra quem está com agenda cheia/folgada e quanto ainda falta cumprir.
+      const horasProgramadas = Number((mapaProgramadas.get(chave) || 0).toFixed(2));
 
       // Instrutor confirmadamente desligado (usuário inativo) e sem nenhuma
       // hora real neste mês específico → não gera linha fantasma (0h,
@@ -634,6 +639,7 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
         ano: anoRef,
         mes: mesRef,
         horas_realizadas: horasRealizadas,
+        horas_programadas: horasProgramadas,
         horas_sala: horasSala,
         horas_atividades: horasAtividades,
         horas_adicionais: Number((mapaAdicionais.get(chave) || 0).toFixed(2)),
@@ -642,6 +648,9 @@ async function getCapacidadeVsRealizado({ ano, mes, instrutor, cliente, dataInic
         capacidade_horas: capacidadeHoras,
         fonte_capacidade: temMeta ? "override" : "sem_meta",
         ocupacao_pct: ocupacaoPct,
+        ocupacao_programada_pct: temMeta && capacidadeHoras > 0
+          ? Number(((horasProgramadas / capacidadeHoras) * 100).toFixed(1))
+          : null,
         status_ocupacao: status,
         status_emoji: emoji,
       });
@@ -755,7 +764,7 @@ async function getPainel({ meses: totalMeses = 3, instrutor, cliente, empresaId 
 async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId } = {}) {
   const meses = ultimosNMeses(Number(totalMeses));
   const instrutores = await listarInstrutoresConhecidos(empresaId);
-  const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, meses: {}, total_90d: 0, sala_90d: 0, atividades_90d: 0, capacidade_90d: 0, tem_meta: false }]));
+  const porInstrutor = new Map(instrutores.map((nome) => [nome, { instrutor: nome, meses: {}, total_90d: 0, programado_90d: 0, sala_90d: 0, atividades_90d: 0, capacidade_90d: 0, tem_meta: false }]));
 
   for (const { ano, mes } of meses) {
     const itens = await getCapacidadeVsRealizado({ ano, mes, cliente, empresaId });
@@ -764,6 +773,7 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId 
       if (!linha) continue;
       linha.meses[`${ano}-${pad2(mes)}`] = item.horas_realizadas;
       linha.total_90d += item.horas_realizadas;
+      linha.programado_90d += item.horas_programadas || 0;
       linha.sala_90d += item.horas_sala !== undefined ? item.horas_sala : item.horas_realizadas;
       linha.atividades_90d += item.horas_atividades || 0;
       if (item.tem_meta) {
@@ -788,6 +798,11 @@ async function getCapacityConsumido({ meses: totalMeses = 3, cliente, empresaId 
     .map((linha) => ({
       ...linha,
       total_90d: Number(linha.total_90d.toFixed(2)),
+      programado_90d: Number(linha.programado_90d.toFixed(2)),
+      a_realizar_90d: Number(Math.max(0, linha.programado_90d - linha.total_90d).toFixed(2)),
+      ocupacao_programada_pct: linha.tem_meta && linha.capacidade_90d > 0
+        ? Number(((linha.programado_90d / linha.capacidade_90d) * 100).toFixed(1))
+        : null,
       sala_90d: Number(linha.sala_90d.toFixed(2)),
       atividades_90d: Number(linha.atividades_90d.toFixed(2)),
       capacidade_90d: linha.tem_meta ? Number(linha.capacidade_90d.toFixed(2)) : null,
