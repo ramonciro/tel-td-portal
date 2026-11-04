@@ -6,7 +6,8 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "import:dashboard": "node src/scripts/importDashboardExcel.js",
-    "migrar:cronograma": "node src/scripts/migrarCronogramaRetroativo.js"
+    "migrar:cronograma": "node src/scripts/migrarCronogramaRetroativo.js",
+    "db:zero": "node src/scripts/bancoDoZero.js --confirmo"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1155.0",

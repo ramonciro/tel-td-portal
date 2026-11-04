@@ -968,6 +968,9 @@ async function runMigrations() {
     // coluna que o código de fato usa, sem mexer em "senha_hash" (mantida
     // por compatibilidade, ainda que hoje não seja lida por ninguém).
     await ensureColumn("usuarios", "senha", "VARCHAR(255) NULL");
+    // 04/11/2026: super_admin só existia nos .sql manuais antigos (sprint4_*.sql);
+    // num banco novo ninguém conseguiria ser super administrador. Idempotente.
+    await ensureColumn("usuarios", "super_admin", "TINYINT(1) NOT NULL DEFAULT 0");
 
     // 15. Isolamento por tenant (empresa_id) nas tabelas centrais — hoje só
     // "usuarios" tem essa coluna. "treinamentos" e "clientes" já são servidos
