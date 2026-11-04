@@ -66,6 +66,30 @@ function ehTrocaDeSenha(req) {
   return req.method === "POST" && caminho === "/api/auth/alterar-senha";
 }
 
+// Log de falha de token sem enxurrada: 1 linha por IP+motivo a cada 30 min,
+// com contagem do que foi suprimido.
+const LOG_AUTH_JANELA_MS = 30 * 60 * 1000;
+const logAuthVisto = new Map();
+function logAuthLimitado(req, motivo) {
+  try {
+    const ip = String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim();
+    const ua = String(req.headers["user-agent"] || "").slice(0, 80);
+    const chave = `${ip}|${motivo}`;
+    const agora = Date.now();
+    const antes = logAuthVisto.get(chave);
+    if (antes && agora - antes.t < LOG_AUTH_JANELA_MS) {
+      antes.n += 1;
+      return;
+    }
+    const extra = antes && antes.n ? ` (+${antes.n} repetidas desde o último aviso)` : "";
+    logAuthVisto.set(chave, { t: agora, n: 0 });
+    if (logAuthVisto.size > 2000) logAuthVisto.clear();
+    console.error(`[auth] ${motivo} · ${req.method} ${String(req.originalUrl || req.url || "").split("?")[0]} · ip ${ip} · ${ua}${extra}`);
+  } catch {
+    console.error("[auth]", motivo);
+  }
+}
+
 // 3. Middleware de proteção das rotas
 async function authRequired(req, res, next) {
   try {
@@ -77,6 +101,7 @@ async function authRequired(req, res, next) {
     if (!token) {
       return res.status(401).json({
         ok: false,
+        codigo: "TOKEN_AUSENTE",
         message: "Token ausente",
       });
     }
@@ -90,6 +115,7 @@ async function authRequired(req, res, next) {
     if (estado.inativa) {
       return res.status(401).json({
         ok: false,
+        codigo: "CONTA_INATIVA",
         message: "Conta inativa. Procure a coordenação.",
       });
     }
@@ -103,9 +129,14 @@ async function authRequired(req, res, next) {
 
     return next();
   } catch (error) {
-    console.error("[auth]", error.message || error);
+    // 04/11/2026: o log agora diz de quem veio (IP + navegador) e não se repete
+    // para o mesmo IP/motivo em 30 min — antes uma aba antiga esquecida aberta
+    // enchia o log a cada 5 min. O front usa "codigo" para encerrar a sessão.
+    const motivo = String(error.message || error);
+    logAuthLimitado(req, motivo);
     return res.status(401).json({
       ok: false,
+      codigo: error && error.name === "TokenExpiredError" ? "TOKEN_EXPIRADO" : "TOKEN_INVALIDO",
       message: "Token inválido ou expirado"});
   }
 }

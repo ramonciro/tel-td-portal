@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "../services/api";
+import { apiFetch, getToken } from "../services/api";
 
 const COR_GRAV = { critico: "#dc2626", atencao: "#d97706", info: "#2563eb" };
 const INTERVALO_MS = 5 * 60 * 1000;
@@ -24,6 +24,8 @@ export default function SinoAvisos() {
   const caixa = useRef(null);
 
   const carregar = useCallback(async (atualizar = false) => {
+    // Sem sessão (token removido ao expirar) não há o que consultar.
+    if (!getToken()) return;
     try {
       setCarregando(true);
       const r = await apiFetch(`/avisos${atualizar ? "?atualizar=1" : ""}`);

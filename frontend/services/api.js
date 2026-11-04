@@ -72,6 +72,19 @@ function mensagemErroNaoJson(status, texto) {
   return `Não foi possível concluir a operação (erro ${status}). Tente novamente em alguns minutos.`;
 }
 
+const SESSAO_ENCERRADA = ["TOKEN_INVALIDO", "TOKEN_EXPIRADO", "CONTA_INATIVA"];
+
+let sessaoEncerrando = false;
+function encerrarSessaoExpirada() {
+  if (typeof window === "undefined" || sessaoEncerrando) return;
+  sessaoEncerrando = true;
+  clearSession();
+  try { window.dispatchEvent(new CustomEvent("portal:sessao-expirada")); } catch {}
+  const jaNoLogin = window.location.pathname.replace(/\/+$/, "") === "/login";
+  if (!jaNoLogin) window.location.assign("/login?sessao=expirada");
+  else sessaoEncerrando = false;
+}
+
 const MSG_SEM_CONEXAO =
   "Não consegui falar com o servidor. Verifique sua internet ou tente de novo em alguns minutos.";
 
@@ -112,6 +125,14 @@ export async function apiFetch(path, options = {}) {
     throw new Error(msg);
   }
   avisarIndisponibilidade(false);
+
+  // 04/11/2026: token vencido/inválido (ex.: aba aberta desde antes de uma
+  // troca de segredo) — encerra a sessão e leva ao login em vez de ficar
+  // falhando em silêncio. Só vale quando ESTA chamada enviou token; o login
+  // (senha errada) não passa por aqui.
+  if (response.status === 401 && token && data && SESSAO_ENCERRADA.includes(data.codigo)) {
+    encerrarSessaoExpirada();
+  }
 
   if (!response.ok) {
     let message = `Erro ${response.status}`;

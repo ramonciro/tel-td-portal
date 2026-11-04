@@ -41,6 +41,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get("sessao") === "expirada") {
+        setErro("Sua sessão expirou. Entre novamente para continuar.");
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     let cancelado = false;
     fetch(`${API_URL}/auth/ambientes`)
       .then((r) => (r.ok ? r.json() : []))
@@ -171,6 +179,8 @@ export default function LoginPage() {
           <div style={loginCard}>
             <h2 style={loginTitle}>Qual é a sua empresa?</h2>
             <p style={loginSubtitle}>Selecione seu ambiente para continuar.</p>
+
+            {erro && <div style={errorBox}>{erro}</div>}
 
             <div style={ambientesGrid}>
               {ambientes.map((emp) => (
