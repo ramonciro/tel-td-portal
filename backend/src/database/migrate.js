@@ -1783,8 +1783,6 @@ async function runMigrations() {
     //  a) `instrutores_desligados`: nomes que não contam mais como instrutor
     //     ativo. O histórico de horas fica intacto; só saem da lista de ativos
     //     e não geram linha "fantasma" de 0h. empresa_id NULL = vale para todos.
-    //  b) Unificação de grafias (pedido do Ramon): idempotente, só mexe em
-    //     linhas que ainda tenham a grafia antiga.
     await pool.query(`
       CREATE TABLE IF NOT EXISTS instrutores_desligados (
         id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -1795,31 +1793,11 @@ async function runMigrations() {
         KEY idx_instrutores_desligados_nome (nome)
       );
     `);
-    const DESLIGADOS_INICIAIS = [
-      ["Leticia Ramos", "Saiu do time de instrutores (informado em 14/10/2026)"],
-      ["Carolaine Silva", "Saiu do time de instrutores (informado em 14/10/2026)"],
-      ["Fabiane Almeida", "Hoje é analista (informado em 14/10/2026)"],
-      ["Hiago Assunção", "Hoje é analista (informado em 14/10/2026)"],
-      ["Diego Souza", "Não atua mais como instrutor (informado em 14/10/2026)"],
-    ];
-    for (const [nomeDeslig, obs] of DESLIGADOS_INICIAIS) {
-      await pool.query(
-        `INSERT INTO instrutores_desligados (empresa_id, nome, observacao)
-         SELECT NULL, ?, ?
-         WHERE NOT EXISTS (SELECT 1 FROM instrutores_desligados WHERE LOWER(TRIM(nome)) = LOWER(TRIM(?)))`,
-        [nomeDeslig, obs, nomeDeslig]
-      );
-    }
-    const GRAFIAS_INSTRUTOR = [
-      ["Etilaine", "Etilaine Souza"],
-      ["Hiago Amor", "Hiago Assunção"],
-    ];
-    for (const [antigo, correto] of GRAFIAS_INSTRUTOR) {
-      await pool.query(`UPDATE treinamentos SET instrutor = ? WHERE TRIM(instrutor) = ?`, [correto, antigo]);
-      await pool.query(`UPDATE turma_aulas SET instrutor_responsavel = ? WHERE TRIM(instrutor_responsavel) = ?`, [correto, antigo]);
-      // UPDATE IGNORE: se a meta do mês já existir no nome correto, mantém a dele.
-      await pool.query(`UPDATE IGNORE capacidade_instrutor_mensal SET instrutor = ? WHERE TRIM(instrutor) = ?`, [correto, antigo]);
-    }
+    // Limpeza (04/11/2026): o seed inicial com nomes reais de instrutores
+    // desligados e a unificação de grafias (feitos uma única vez em 14/10/2026,
+    // já aplicados em produção) saíram do código. Banco novo nasce sem nomes de
+    // pessoas; a classificação de instrutores é feita pela tela de Capacidade →
+    // Instrutores. Os registros que já existem em produção não são tocados.
 
     // 35. Ajuste pós-entrega do Pacote Salas (15/09/2026) — ver o comentário
     // de `ensureVarcharType` acima para o raciocínio completo. Garante que
