@@ -757,13 +757,16 @@ const PERFIL_LABEL_EXPORT = {
   analista_conteudo: "Analista de Conteúdo",
   coordenador_rs: "Coordenador R&S",
   gestor_rs: "Gestor R&S",
+  coordenador_nusp: "Coordenador do Núcleo",
+  analista_nusp: "Analista do Núcleo",
+  gestor_nusp: "Gestor do Núcleo",
   super_admin: "Super Admin",
 };
 
 app.get(
   "/api/usuarios/exportar",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs"),
+  authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs", "coordenador_nusp"),
   async (req, res) => {
     try {
       const { empresaId } = tenantScopeFor(req, {});
@@ -872,10 +875,10 @@ app.use(
       return { sql: `perfil IN (${escopo.map(() => "?").join(",")})`, params: escopo };
     },
     hideFields: ["senha"], // Fase 4 — hash da senha nunca sai na listagem
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia")],
-    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente", "coordenador_rs", "metodologia")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs", "coordenador_nusp")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp")],
     auditoria: {
       entidade: "usuario",
       resumoCriar: (dados) => `Criou o usuário "${dados.nome || "?"}" (${dados.perfil || "sem perfil"})`,
@@ -2770,6 +2773,12 @@ const {
   restaurarRP:       restaurarRSRP,
 } = require("./controllers/rsGestaoController");
 
+// Núcleo de Saúde Psicossocial (NUSPSI) — Pacote 1 (06/11/2026): módulo
+// independente, mesmo padrão do R&S (perfis próprios). Ver controllers/nusp*.js.
+const nusp = require("./controllers/nuspController");
+const nuspPainel = require("./controllers/nuspPainelController");
+const { importarPlanilha: importarPlanilhaNusp } = require("./services/nuspImportService");
+
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
 // Leitura: coordenador_rs + gestor_rs | Escrita: coordenador_rs apenas
 app.get   ("/api/rs/sites",     authRequired, authorizeRoles("coordenador_rs","gestor_rs"), getRSSites);
@@ -2802,6 +2811,59 @@ app.get   ("/api/rs/lixeira",           authRequired, authorizeRoles("coordenado
 app.post  ("/api/rs/lixeira/:id/restaurar", authRequired, authorizeRoles("coordenador_rs"), restaurarRSRP);
 // Importação de planilha histórica (xlsx do Google Sheets)
 app.post  ("/api/rs/importar",  authRequired, authorizeRoles("coordenador_rs"), comUploadTratado(upload.single("arquivo")), importarRSPlanilha);
+
+// ── Núcleo de Saúde Psicossocial (NUSPSI) — rotas ──────────────────────
+// coordenador_nusp: tudo | analista_nusp: lança o que é seu | gestor_nusp: só leitura agregada
+// (diretoria/superintendência). O super_admin passa no authorizeRoles, mas os controllers
+// o barram (lib/nuspBase.contexto): o módulo não tem visão cross-tenant.
+const NUSP_TODOS = ["coordenador_nusp", "analista_nusp", "gestor_nusp"];
+const NUSP_OPERA = ["coordenador_nusp", "analista_nusp"];
+const NUSP_COORD = ["coordenador_nusp"];
+app.get   ("/api/nusp/cadastros",             authRequired, authorizeRoles(...NUSP_TODOS), nusp.obterCadastros);
+app.post  ("/api/nusp/cadastros/:tipo",       authRequired, authorizeRoles(...NUSP_COORD), nusp.criarCadastro);
+app.put   ("/api/nusp/cadastros/:tipo/:id",   authRequired, authorizeRoles(...NUSP_COORD), nusp.editarCadastro);
+app.get   ("/api/nusp/painel",                authRequired, authorizeRoles(...NUSP_TODOS), nuspPainel.painel);
+app.get   ("/api/nusp/exportar",              authRequired, authorizeRoles(...NUSP_TODOS), nuspPainel.exportar);
+app.get   ("/api/nusp/atividades",            authRequired, authorizeRoles(...NUSP_TODOS), nusp.listarAtividades);
+app.get   ("/api/nusp/atividades/:id",        authRequired, authorizeRoles(...NUSP_TODOS), nusp.detalheAtividade);
+app.post  ("/api/nusp/atividades",            authRequired, authorizeRoles(...NUSP_OPERA), nusp.criarAtividade);
+app.put   ("/api/nusp/atividades/:id",        authRequired, authorizeRoles(...NUSP_OPERA), nusp.editarAtividade);
+app.delete("/api/nusp/atividades/:id",        authRequired, authorizeRoles(...NUSP_OPERA), nusp.excluirAtividade);
+app.post  ("/api/nusp/atividades/:id/participantes",           authRequired, authorizeRoles(...NUSP_OPERA), nusp.adicionarParticipantes);
+app.post  ("/api/nusp/atividades/:id/participantes/importar",  authRequired, authorizeRoles(...NUSP_OPERA), comUploadTratado(upload.single("arquivo")), nusp.importarParticipantes);
+app.put   ("/api/nusp/participacoes/:id",     authRequired, authorizeRoles(...NUSP_OPERA), nusp.editarParticipacao);
+app.delete("/api/nusp/participacoes/:id",     authRequired, authorizeRoles(...NUSP_OPERA), nusp.removerParticipacao);
+app.post  ("/api/nusp/evidencias",            authRequired, authorizeRoles(...NUSP_OPERA), nusp.adicionarEvidencia);
+app.delete("/api/nusp/evidencias/:id",        authRequired, authorizeRoles(...NUSP_OPERA), nusp.removerEvidencia);
+app.get   ("/api/nusp/planos",                authRequired, authorizeRoles(...NUSP_TODOS), nusp.listarPlanos);
+app.get   ("/api/nusp/planos/:id",            authRequired, authorizeRoles(...NUSP_TODOS), nusp.detalhePlano);
+app.post  ("/api/nusp/planos",                authRequired, authorizeRoles(...NUSP_OPERA), nusp.criarPlano);
+app.put   ("/api/nusp/planos/:id",            authRequired, authorizeRoles(...NUSP_OPERA), nusp.editarPlano);
+app.delete("/api/nusp/planos/:id",            authRequired, authorizeRoles(...NUSP_COORD), nusp.excluirPlano);
+app.get   ("/api/nusp/materiais",             authRequired, authorizeRoles(...NUSP_TODOS), nusp.listarMateriais);
+app.post  ("/api/nusp/materiais",             authRequired, authorizeRoles(...NUSP_OPERA), nusp.salvarMaterial);
+app.put   ("/api/nusp/materiais/:id",         authRequired, authorizeRoles(...NUSP_OPERA), nusp.salvarMaterial);
+app.delete("/api/nusp/materiais/:id",         authRequired, authorizeRoles(...NUSP_COORD), nusp.excluirMaterial);
+// Importação da planilha antiga (Visão Nacional): só coordenador_nusp. ?simular=1 não grava.
+app.post  ("/api/nusp/importar", authRequired, authorizeRoles(...NUSP_COORD), comUploadTratado(upload.single("arquivo")), async (req, res) => {
+  try {
+    const ctx = require("./lib/nuspBase").contexto(req, res); if (!ctx) return;
+    if (!req.file?.buffer) return res.status(400).json({ ok: false, message: "Envie a planilha (.xlsx) no campo 'arquivo'" });
+    const simular = String(req.query.simular) === "1";
+    const relatorio = await importarPlanilhaNusp({ empresaId: ctx.empresaId, usuario: req.user, buffer: req.file.buffer, simular });
+    if (!simular) {
+      require("./services/auditoria").registrarAuditoria({
+        usuario: req.user, acao: "importar", entidade: "nusp_planilha", entidadeId: null,
+        resumo: `Importou a planilha do Núcleo: ${relatorio.atividades.importadas} atividade(s), ${relatorio.planos.importados} plano(s), ${relatorio.participantes.gravados} participação(ões)`,
+        ip: req.ip,
+      });
+    }
+    return res.json({ ok: true, ...relatorio });
+  } catch (e) {
+    console.error("[nusp.importar]", e);
+    return res.status(e.status || 500).json({ ok: false, message: e.status ? e.message : "Erro ao importar a planilha do Núcleo" });
+  }
+});
 // Usuários do R&S: gerenciados em /api/usuarios (Gestão de Usuários) — os atalhos
 // /api/rs/usuarios foram removidos em 14/10/2026.
 // ─────────────────────────────────────────────────────────────────────────────

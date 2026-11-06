@@ -2410,6 +2410,15 @@ async function runMigrations() {
       console.log(`  ↳ Radar semanal não concluído (${error.message}) — seguindo`);
     }
 
+    // 72d. Núcleo de Saúde Psicossocial (NUSPSI, Pacote 1, 06/11/2026): módulo
+    //      independente (perfis coordenador_nusp / analista_nusp / gestor_nusp).
+    //      Tabelas nusp_*. Ver ensureNusp().
+    try {
+      await ensureNusp();
+    } catch (error) {
+      console.log(`  ↳ Núcleo (NUSPSI) não concluído (${error.message}) — seguindo`);
+    }
+
     // 73. Berço das RPs (21/10/2026): o time pode aprovar mais gente do que o gestor
     //     pediu e deixar o excedente "no berço" (reserva). Quando alguém do berço é
     //     convocado, sai de `hcs_berco`, entra em `hcs_convocados_berco` (quantos vieram
@@ -3355,6 +3364,188 @@ async function ensureConteudo() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
   console.log("  ↳ produção de conteúdo: ok");
+}
+
+// Núcleo de Saúde Psicossocial (NUSPSI) — Pacote 1 (06/11/2026).
+// Módulo independente, no padrão R&S/Metodologia: perfis próprios
+// (coordenador_nusp, analista_nusp, gestor_nusp; usuarios.perfil é VARCHAR,
+// sem mudança de schema) e tabelas nusp_*. Sem FK (mesmo motivo do passo 57:
+// o isolamento é feito por empresa_id em toda consulta). empresa_id NOT NULL e
+// SEM DEFAULT (lição do isolamento multi-tenant de 09/2026).
+//  - nusp_unidades / nusp_programas / nusp_frentes / nusp_dimensoes: cadastros.
+//  - nusp_atividades: uma linha por atividade; pessoas e horas saem das participações.
+//  - nusp_participacoes: pessoa (pessoas.id, matrícula obrigatória) x atividade.
+//  - nusp_planos_acao + nusp_planos_historico: planos com evidência e histórico.
+//  - nusp_evidencias: links (atividade | plano). Upload de arquivo fica para depois
+//    (depende de storage externo).
+//  - nusp_materiais: materiais de comunicação.
+//  - nusp_acessos_log: LEITURAS de dado restrito (usado pelos pacotes 2 e 3).
+async function ensureNusp() {
+  const T = "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_unidades (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(120) NOT NULL,
+      cliente VARCHAR(150) NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_nusp_unidade (empresa_id, nome)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_programas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(150) NOT NULL,
+      tipo VARCHAR(20) NOT NULL DEFAULT 'comite',
+      descricao VARCHAR(1000) NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_nusp_programa (empresa_id, nome)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_frentes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      programa_id INT NOT NULL,
+      nome VARCHAR(150) NOT NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_nusp_frente (programa_id, nome),
+      INDEX idx_nusp_frentes_empresa (empresa_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_dimensoes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(150) NOT NULL,
+      ordem INT NOT NULL DEFAULT 0,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      UNIQUE KEY uk_nusp_dimensao (empresa_id, nome)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_atividades (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      programa_id INT NULL,
+      frente_id INT NULL,
+      tipo VARCHAR(30) NOT NULL,
+      dimensao_id INT NULL,
+      unidade_id INT NULL,
+      analista_id INT NULL,
+      analista_nome VARCHAR(150) NULL,
+      tema VARCHAR(250) NOT NULL,
+      publico VARCHAR(150) NULL,
+      data_inicio DATE NOT NULL,
+      data_fim DATE NULL,
+      horas DECIMAL(6,2) NOT NULL DEFAULT 0,
+      formato VARCHAR(20) NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'planejada',
+      resultado VARCHAR(1000) NULL,
+      proxima_etapa VARCHAR(300) NULL,
+      observacoes VARCHAR(1000) NULL,
+      pessoas_legado INT NULL,
+      origem VARCHAR(20) NOT NULL DEFAULT 'manual',
+      criado_por_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_nusp_ativ_empresa_data (empresa_id, data_inicio),
+      INDEX idx_nusp_ativ_programa (programa_id),
+      INDEX idx_nusp_ativ_unidade (unidade_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_participacoes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      atividade_id INT NOT NULL,
+      pessoa_id INT NOT NULL,
+      nome VARCHAR(255) NOT NULL,
+      matricula VARCHAR(100) NOT NULL,
+      presenca VARCHAR(15) NOT NULL DEFAULT 'presente',
+      concluiu TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_nusp_participacao (atividade_id, pessoa_id),
+      INDEX idx_nusp_part_empresa (empresa_id),
+      INDEX idx_nusp_part_pessoa (pessoa_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_planos_acao (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      programa_id INT NULL,
+      dimensao_id INT NULL,
+      unidade_id INT NULL,
+      titulo VARCHAR(250) NOT NULL,
+      descricao VARCHAR(1500) NULL,
+      responsavel_id INT NULL,
+      responsavel_nome VARCHAR(150) NULL,
+      data_identificacao DATE NOT NULL,
+      prazo DATE NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pendente',
+      pct_conclusao TINYINT NOT NULL DEFAULT 0,
+      proxima_etapa VARCHAR(300) NULL,
+      observacoes VARCHAR(1000) NULL,
+      concluido_em DATE NULL,
+      origem VARCHAR(20) NOT NULL DEFAULT 'manual',
+      criado_por_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_nusp_planos_empresa (empresa_id, status, prazo)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_planos_historico (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      plano_id INT NOT NULL,
+      usuario_id INT NULL,
+      usuario_nome VARCHAR(150) NULL,
+      status VARCHAR(20) NULL,
+      pct_conclusao TINYINT NULL,
+      texto VARCHAR(1000) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_nusp_planos_hist (plano_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_evidencias (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      entidade VARCHAR(20) NOT NULL,
+      entidade_id INT NOT NULL,
+      titulo VARCHAR(200) NULL,
+      url VARCHAR(600) NOT NULL,
+      criado_por_id INT NULL,
+      criado_por_nome VARCHAR(150) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_nusp_evid (empresa_id, entidade, entidade_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_materiais (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      titulo VARCHAR(200) NOT NULL,
+      link VARCHAR(600) NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'em_producao',
+      responsavel_nome VARCHAR(150) NULL,
+      programa_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_nusp_mat_empresa (empresa_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_acessos_log (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      usuario_id INT NULL,
+      usuario_nome VARCHAR(150) NULL,
+      perfil VARCHAR(40) NULL,
+      recurso VARCHAR(40) NOT NULL,
+      registro_id INT NULL,
+      detalhe VARCHAR(300) NULL,
+      ip VARCHAR(60) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_nusp_acessos (empresa_id, recurso, created_at)
+    ) ${T}`);
+  console.log("  ↳ Núcleo (NUSPSI): ok");
 }
 
 module.exports = { runMigrations };

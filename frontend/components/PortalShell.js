@@ -87,13 +87,21 @@ const menuItems = [
   // lib/perfilScope.js em /api/usuarios), não aqui. Antes, coordenador_rs
   // só tinha o atalho isolado em RS → Configurações; metodologia não tinha
   // nenhuma forma de ajustar usuário nenhum.
-  { href: "/usuarios",      label: "Gestão de Usuários",     icon: "users", roles: ["coordenador", "supervisor", "coordenador_rs", "metodologia"] },
+  { href: "/usuarios",      label: "Gestão de Usuários",     icon: "users", roles: ["coordenador", "supervisor", "coordenador_rs", "metodologia", "coordenador_nusp"] },
   { href: "/auditoria",     label: "Auditoria",              icon: "shield", roles: ["coordenador", "superintendente"] },
   // Módulo R&S — Recrutamento & Seleção
   { href: "/rs",           label: "Dashboard R&S",       icon: "chart", roles: ["coordenador_rs", "gestor_rs"] },
   { href: "/rs/rps",       label: "Requisições",          icon: "users", roles: ["coordenador_rs", "gestor_rs"] },
   { href: "/rs/relatorio",      label: "Relatório Mensal",  icon: "trending", roles: ["coordenador_rs", "gestor_rs"] },
   { href: "/rs/configuracoes", label: "Configurações R&S", icon: "settings", roles: ["coordenador_rs"] },
+  // Módulo Núcleo de Saúde Psicossocial (NUSPSI, 06/11/2026) — módulo independente, mesmo padrão
+  // do R&S: perfis próprios (coordenador_nusp, analista_nusp, gestor_nusp), sem acesso ao T&D.
+  // O gestor (diretoria/superintendência) só lê o agregado; participantes nominais nunca chegam a ele (API).
+  { href: "/nusp",            label: "Painel do Núcleo",      icon: "chart",    roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
+  { href: "/nusp/atividades", label: "Atividades",            icon: "clock", roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
+  { href: "/nusp/planos",     label: "Planos de ação",        icon: "target",   roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
+  { href: "/nusp/materiais",  label: "Materiais",             icon: "folder",   roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
+  { href: "/nusp/configuracoes", label: "Cadastros e importação", icon: "settings", roles: ["coordenador_nusp"] },
   // Módulo Metodologia e Desenvolvimento (16/09/2026) — Mapa de
   // Desenvolvimento e Trilhas fundidos num módulo à parte, fora do escopo de
   // Treinamento, com perfil dedicado ("metodologia"), mesmo padrão do R&S
@@ -249,6 +257,14 @@ export default function PortalShell({
     const coordenadorRsEmUsuarios = user.perfil === "coordenador_rs" && pathname.startsWith("/usuarios");
     if (rsPerfiles.includes(user.perfil) && !pathname.startsWith("/rs") && !coordenadorRsEmUsuarios) {
       router.replace("/rs/rps");
+      return;
+    }
+    // Módulo Núcleo (NUSPSI): mesmo padrão — quem tem perfil do Núcleo só transita pelas telas do módulo.
+    // coordenador_nusp também abre "/usuarios" (cria analistas e gestores do Núcleo; o recorte é no backend).
+    const nuspPerfis = ["coordenador_nusp", "analista_nusp", "gestor_nusp"];
+    const coordNuspEmUsuarios = user.perfil === "coordenador_nusp" && pathname.startsWith("/usuarios");
+    if (nuspPerfis.includes(user.perfil) && !pathname.startsWith("/nusp") && !coordNuspEmUsuarios && pathname !== "/alterar-senha" && pathname !== "/primeiro-acesso") {
+      router.replace(user.perfil === "gestor_nusp" ? "/nusp" : "/nusp/atividades");
       return;
     }
     // Módulo Metodologia e Desenvolvimento: mesmo padrão do R&S acima —

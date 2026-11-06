@@ -59,6 +59,10 @@ export default function AlterarSenhaPage() {
           ? "/conteudo"
           : ["coordenador_rs", "gestor_rs"].includes(perfil)
           ? "/rs/rps"
+          : perfil === "gestor_nusp"
+          ? "/nusp"
+          : ["coordenador_nusp", "analista_nusp"].includes(perfil)
+          ? "/nusp/atividades"
           : "/inicio"
           ),
         1200

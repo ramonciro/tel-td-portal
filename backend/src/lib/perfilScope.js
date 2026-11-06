@@ -31,6 +31,9 @@
 const PERFIL_ESCOPOS = {
   coordenador_rs: ["coordenador_rs", "gestor_rs"],
   metodologia: ["metodologia"],
+  // Núcleo de Saúde Psicossocial (06/11/2026): o coordenador do Núcleo cria e gerencia
+  // os perfis do próprio módulo (coordenador, analista e gestor do Núcleo), nada de fora.
+  coordenador_nusp: ["coordenador_nusp", "analista_nusp", "gestor_nusp"],
 };
 
 /**
