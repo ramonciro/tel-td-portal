@@ -41,6 +41,7 @@ function FormAcolhimento({ form, cad, coord, chaveOk, onClose, onSaved }) {
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
   const edit = !!form.id;
+  const matTrava = edit && !!form.matriculaOriginal;
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
 
   const salvar = async (e) => {
@@ -49,7 +50,10 @@ function FormAcolhimento({ form, cad, coord, chaveOk, onClose, onSaved }) {
     setSalvando(true);
     try {
       const corpo = { ...d };
-      if (edit) { delete corpo.matricula; delete corpo.nome; }
+      if (edit) {
+        delete corpo.nome;
+        if (form.matriculaOriginal || !String(corpo.matricula || "").trim()) delete corpo.matricula;
+      }
       // Só manda o resumo se ele mudou (assim, sem a chave, dá para ajustar os dados administrativos).
       if (edit && d.resumo === form.resumoOriginal) delete corpo.resumo;
       if (!coord) delete corpo.analista_id;
@@ -68,8 +72,8 @@ function FormAcolhimento({ form, cad, coord, chaveOk, onClose, onSaved }) {
           </div>
         ) : null}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-          <Campo label="Matrícula *" minWidth={140}>
-            <input style={st.input} value={d.matricula} onChange={(e) => set("matricula", e.target.value)} required disabled={edit} />
+          <Campo label={edit && !matTrava ? "Matrícula (a completar)" : "Matrícula *"} minWidth={140}>
+            <input style={st.input} value={d.matricula} onChange={(e) => set("matricula", e.target.value)} required={!edit} disabled={matTrava} />
           </Campo>
           <Campo label="Nome" flex={2} minWidth={220} dica={edit ? "" : "Necessário só se a matrícula ainda não estiver no cadastro."}>
             <input style={st.input} value={d.nome} onChange={(e) => set("nome", e.target.value)} disabled={edit} />
@@ -136,7 +140,7 @@ function DetalheAcolhimento({ id, coord, onClose, onEditar, onExcluido }) {
       {!it && !erro ? <div style={st.vazio}>Carregando…</div> : null}
       {it && (
         <>
-          <Linha rotulo="Pessoa"><strong>{it.pessoa_nome}</strong> · matrícula {it.pessoa_matricula}</Linha>
+          <Linha rotulo="Pessoa"><strong>{it.pessoa_nome}</strong> · {it.pessoa_matricula ? `matrícula ${it.pessoa_matricula}` : <Badge tom="alerta">matrícula a completar</Badge>}</Linha>
           <Linha rotulo="Data">{fmtData(it.data_acolhimento)}</Linha>
           <Linha rotulo="Canal">{CANAL[it.canal] || it.canal}</Linha>
           <Linha rotulo="Origem">{ORIGEM[it.origem]}</Linha>
@@ -266,7 +270,7 @@ export default function AcolhimentosPage() {
     const resumo = it.resumo || "";
     setDetalheId(null);
     setForm({
-      id: it.id, resumoOriginal: resumo,
+      id: it.id, resumoOriginal: resumo, matriculaOriginal: it.pessoa_matricula || "",
       dados: {
         ...VAZIO, matricula: it.pessoa_matricula, nome: it.pessoa_nome, data_acolhimento: dia(it.data_acolhimento), canal: it.canal, origem: it.origem || "",
         motivo_id: it.motivo_id ? String(it.motivo_id) : "", encaminhamento_id: it.encaminhamento_id ? String(it.encaminhamento_id) : "",
@@ -329,7 +333,7 @@ export default function AcolhimentosPage() {
                   {lista.itens.map((a) => (
                     <tr key={a.id}>
                       <td style={st.td}>{fmtData(a.data_acolhimento)}</td>
-                      <td style={st.td}><strong>{a.pessoa_nome}</strong><div style={{ fontSize: 11.5, color: colors.textSecondary }}>mat. {a.pessoa_matricula}</div></td>
+                      <td style={st.td}><strong>{a.pessoa_nome}</strong><div style={{ fontSize: 11.5, color: colors.textSecondary }}>{a.pessoa_matricula ? `mat. ${a.pessoa_matricula}` : "matrícula a completar"}</div></td>
                       <td style={st.td}>{CANAL[a.canal] || a.canal}</td>
                       <td style={st.td}>{a.motivo || "—"}</td>
                       <td style={st.td}>{a.unidade || "—"}</td>

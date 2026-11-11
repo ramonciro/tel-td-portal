@@ -17,6 +17,7 @@ const { comTransacao } = require("../lib/tx");
 const crypto = require("../lib/nuspCrypto");
 const B = require("../lib/nuspBase");
 const { pessoaPorMatricula, auditar, paginacao } = require("./nuspController");
+const { matriculaParaComparar } = require("../services/pessoasService");
 
 const ehCoord = (c) => c.perfil === B.PERFIL_COORD;
 const n = (v) => Number(v || 0);
@@ -239,6 +240,18 @@ async function editar(req, res) {
     if (resumo !== undefined) {
       cifrado = resumo ? crypto.cifrar(resumo, c.empresaId) : null;
       resumoMudou = true;
+    }
+    // Ficha de pessoa sem matrícula (importada por nome): permite completar a matrícula, se ninguém mais a usa.
+    const novaMat = String(b.matricula || "").trim();
+    if (novaMat) {
+      const [pr] = await pool.query(`SELECT id, matricula FROM pessoas WHERE id = ? AND empresa_id = ? LIMIT 1`, [a.pessoa_id, c.empresaId]);
+      if (pr[0] && !String(pr[0].matricula || "").trim()) {
+        const norm = matriculaParaComparar(novaMat);
+        const [outras] = await pool.query(`SELECT id, matricula FROM pessoas WHERE empresa_id = ? AND id <> ? AND matricula IS NOT NULL AND matricula <> ''`, [c.empresaId, a.pessoa_id]);
+        if (outras.some((o) => matriculaParaComparar(o.matricula) === norm)) return B.erro(res, 400, "Essa matrícula já pertence a outra pessoa do cadastro.");
+        await pool.query(`UPDATE pessoas SET matricula = ? WHERE id = ? AND empresa_id = ?`, [novaMat, a.pessoa_id, c.empresaId]);
+        auditar(req, "editar", "pessoa", a.pessoa_id, "Completou a matrícula de pessoa atendida no Núcleo", null, { matricula_completada: true });
+      }
     }
     await pool.query(
       `UPDATE nusp_acolhimentos SET data_acolhimento = ?, canal = ?, origem = ?, motivo_id = ?, unidade_id = ?, programa_id = ?, encaminhamento_id = ?,

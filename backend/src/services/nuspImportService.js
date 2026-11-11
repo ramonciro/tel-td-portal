@@ -16,6 +16,7 @@ const pool = require("../lib/db");
 const { comTransacao } = require("../lib/tx");
 const B = require("../lib/nuspBase");
 const { gravarParticipantes, pessoaPorMatricula } = require("../controllers/nuspController");
+const { resolverPessoa } = require("./pessoasService");
 
 const DIM_ALIAS = {
   "organizacao do trabalho": "Conteúdo e organização do trabalho",
@@ -117,7 +118,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
     participantes: { lidos: 0, gravados: 0, escuta_individual_adiada: 0, sem_atividade: 0, sem_matricula_sem_par: 0, erros: 0, linhas_com_problema: [] },
     // Escuta individual -> acolhimento (Pacote 2). Só entra com a opção marcada, e só o dado ADMINISTRATIVO
     // (data, unidade, pessoa): a planilha antiga não traz resumo e nada de texto livre é copiado.
-    escutas: { incluidas: !!incluirEscutas, lidas: 0, importadas: 0, ja_existiam: 0, sem_data: 0, sem_matricula_sem_par: 0, erros: 0, linhas_com_problema: [] },
+    escutas: { incluidas: !!incluirEscutas, lidas: 0, importadas: 0, por_nome_sem_matricula: 0, pessoas_novas_sem_matricula: 0, ja_existiam: 0, sem_data: 0, sem_nome_nem_matricula: 0, nome_repetido_no_cadastro: 0, erros: 0, linhas_com_problema: [] },
     unidades_novas: [],
     avisos: [],
   };
@@ -299,7 +300,13 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
     for (const e of escutas) {
       if (!e.data) { rel.escutas.sem_data += 1; if (rel.escutas.linhas_com_problema.length < 100) rel.escutas.linhas_com_problema.push(e.n); }
       else if (e.matricula || (await parNome(e.nome))) rel.escutas.importadas += 1;
-      else { rel.escutas.sem_matricula_sem_par += 1; if (rel.escutas.linhas_com_problema.length < 100) rel.escutas.linhas_com_problema.push(e.n); }
+      else if (!e.nome) { rel.escutas.sem_nome_nem_matricula += 1; if (rel.escutas.linhas_com_problema.length < 100) rel.escutas.linhas_com_problema.push(e.n); }
+      else {
+        // Sem matrícula: vincula por nome (uma pessoa) ou cadastra sem matrícula (nenhuma). Nome repetido não entra.
+        const [c] = await pool.query(`SELECT COUNT(*) n FROM pessoas WHERE empresa_id = ? AND nome = ?`, [empresaId, e.nome]);
+        if (Number(c[0].n) > 1) { rel.escutas.nome_repetido_no_cadastro += 1; if (rel.escutas.linhas_com_problema.length < 100) rel.escutas.linhas_com_problema.push(e.n); }
+        else { rel.escutas.importadas += 1; rel.escutas.por_nome_sem_matricula += 1; if (Number(c[0].n) === 0) rel.escutas.pessoas_novas_sem_matricula += 1; }
+      }
     }
     rel.avisos.push("Simulação: nada foi gravado.");
     return rel;
@@ -378,17 +385,26 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
     for (const e of escutas) {
       if (!e.data) { rel.escutas.sem_data += 1; problema(e); continue; }
       let matricula = e.matricula;
-      if (!matricula) {
+      if (!matricula && e.nome) {
         const [ach] = await pool.query(`SELECT matricula FROM pessoas WHERE empresa_id = ? AND nome = ? AND matricula IS NOT NULL AND matricula <> ''`, [empresaId, e.nome]);
         if (ach.length === 1) matricula = ach[0].matricula;
-        else { rel.escutas.sem_matricula_sem_par += 1; problema(e); continue; }
       }
+      if (!matricula && !e.nome) { rel.escutas.sem_nome_nem_matricula += 1; problema(e); continue; }
       const unidade = e.unidTxt ? mapUn2.get(B.chave(e.unidTxt)) || null : null;
       const usr = e.analistaTxt ? mapUser.get(B.chave(e.analistaTxt)) || null : null;
       try {
         await comTransacao(async (conn) => {
-          const r = await pessoaPorMatricula(conn, empresaId, matricula, e.nome);
-          if (r.erro) { rel.escutas.sem_matricula_sem_par += 1; problema(e); return; }
+          let r;
+          let porNome = false;
+          if (matricula) r = await pessoaPorMatricula(conn, empresaId, matricula, e.nome);
+          else {
+            // Sem matrícula: vincula à única pessoa com esse nome ou cadastra sem matrícula (a ficha fica marcada para completar).
+            const x = await resolverPessoa({ empresaId, nome: e.nome, matricula: null, cliente: null }, conn, { vinculoAmplo: true });
+            if (!x.pessoa) { rel.escutas.nome_repetido_no_cadastro += 1; problema(e); return; }
+            r = { pessoa: x.pessoa, criada: x.criada };
+            porNome = true;
+          }
+          if (r.erro) { rel.escutas.sem_nome_nem_matricula += 1; problema(e); return; }
           const [ex] = await conn.query(
             `SELECT id FROM nusp_acolhimentos WHERE empresa_id = ? AND pessoa_id = ? AND data_acolhimento = ? AND origem_registro = 'importacao' AND (unidade_id <=> ?) LIMIT 1`,
             [empresaId, r.pessoa.id, e.data, unidade]);
@@ -398,6 +414,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
              VALUES (?, ?, ?, 'nao_informado', ?, ?, 'encerrado', ?, ?, 'importacao', ?)`,
             [empresaId, r.pessoa.id, e.data, unidade, progNucleo, usr?.id || null, usr?.nome || e.analistaTxt || null, usuario.id]);
           rel.escutas.importadas += 1;
+          if (porNome) { rel.escutas.por_nome_sem_matricula += 1; if (r.criada) rel.escutas.pessoas_novas_sem_matricula += 1; }
         });
       } catch (err) {
         console.error("[nusp.import.escuta]", err.message);
