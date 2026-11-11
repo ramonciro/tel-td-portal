@@ -64,6 +64,21 @@ const pegar = (aba, linha, prefixo) => {
   return i >= 0 ? String(linha.l[i] ?? "").trim() : "";
 };
 
+/**
+ * Data vinda da planilha. A planilha real traz dia/mês/ano (21/10/2026), não ISO:
+ * aceita ISO, dd/mm/aaaa (ou dd-mm-aa, dd.mm.aaaa), com ou sem hora. Devolve "aaaa-mm-dd" ou null.
+ */
+function dataPlanilha(v) {
+  const t = String(v ?? "").trim();
+  if (!t) return null;
+  const iso = B.dataISO(t);
+  if (iso) return iso;
+  const m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})(?:[T ,].*)?$/);
+  if (!m) return null;
+  const ano = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return B.dataISO(`${ano}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`) || null;
+}
+
 function numero(v) {
   const t = String(v ?? "").trim().replace(",", ".");
   if (!t) return null;
@@ -143,7 +158,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
   if (abaAtv) {
     for (const linha of abaAtv.linhas) {
       const tema = pegar(abaAtv, linha, "acao / tema");
-      const dataBr = B.dataISO(pegar(abaAtv, linha, "data de inicio")) || B.dataISO(pegar(abaAtv, linha, "data"));
+      const dataBr = dataPlanilha(pegar(abaAtv, linha, "data de inicio")) || dataPlanilha(pegar(abaAtv, linha, "data"));
       if (!tema && !dataBr) continue; // linha vazia / fórmula em branco
       rel.atividades.lidas += 1;
       if (!tema || !dataBr) { rel.atividades.sem_data_ou_tema += 1; rel.atividades.linhas_com_problema.push(linha.n); continue; }
@@ -167,7 +182,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
       const horas = numero(pegar(abaAtv, linha, "horas"));
       const pessoas = numero(pegar(abaAtv, linha, "n de pessoas") || pegar(abaAtv, linha, "no de pessoas") || pegar(abaAtv, linha, "nº de pessoas"));
       const obs = [pegar(abaAtv, linha, "observacoes"), evTexto ? `Evidência (texto da planilha): ${evTexto}` : ""].filter(Boolean).join(" | ").slice(0, 1000) || null;
-      const fim = B.dataISO(pegar(abaAtv, linha, "data de termino"));
+      const fim = dataPlanilha(pegar(abaAtv, linha, "data de termino"));
       const chaveDedup = [dataBr, B.chave(tema), String(unid), B.chave(publico)].join("|");
       if (vistos.has(chaveDedup)) { rel.atividades.ja_existiam += 1; continue; }
       vistos.add(chaveDedup);
@@ -191,8 +206,8 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
       const titulo = pegar(abaPlano, linha, "plano de acao");
       if (!titulo) continue;
       rel.planos.lidos += 1;
-      const ident = B.dataISO(pegar(abaPlano, linha, "data de identificacao"));
-      const prazo = B.dataISO(pegar(abaPlano, linha, "prazo"));
+      const ident = dataPlanilha(pegar(abaPlano, linha, "data de identificacao"));
+      const prazo = dataPlanilha(pegar(abaPlano, linha, "prazo"));
       if (!ident || !prazo) { rel.planos.sem_data_ou_prazo += 1; rel.planos.linhas_com_problema.push(linha.n); continue; }
       const dimTxt = pegar(abaPlano, linha, "dimensao");
       const dim = dimensaoId(dimTxt);
@@ -207,7 +222,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
       const k = [B.chave(titulo), String(unid), ident, prazo].join("|");
       if (vistosP.has(k)) { rel.planos.ja_existiam += 1; continue; }
       vistosP.add(k);
-      const ult = B.dataISO(pegar(abaPlano, linha, "ultima atualizacao"));
+      const ult = dataPlanilha(pegar(abaPlano, linha, "ultima atualizacao"));
       planos.push({
         n: linha.n, k, titulo: titulo.slice(0, 250), ident, prazo: prazo < ident ? ident : prazo, status,
         pct: status === "concluida" ? 100 : Math.min(99, pct(pegar(abaPlano, linha, "% de conclusao"))), unid, dim: dim === undefined ? null : dim,
@@ -239,15 +254,20 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
           rel.escutas.lidas += 1;
           escutas.push({
             n: linha.n, nome, matricula: mat,
-            data: B.dataISO(pegar(abaPart, linha, "id da turma")) || B.dataISO(pegar(abaPart, linha, "data")),
-            unidTxt: pegar(abaPart, linha, "site") || pegar(abaPart, linha, "unidade"),
+            data: dataPlanilha(pegar(abaPart, linha, "id da turma")) || dataPlanilha(pegar(abaPart, linha, "data")),
+            // A planilha não tem coluna de unidade nas escutas: usa Site/Unidade se existir, senão o começo do
+            // público-alvo ("ACM - Vespertino" -> "ACM").
+            unidTxt: pegar(abaPart, linha, "site") || pegar(abaPart, linha, "unidade") || pegar(abaPart, linha, "publico").split(/\s+-\s+/)[0],
+            analistaTxt: pegar(abaPart, linha, "analista"),
           });
         }
         continue;
       }
-      const turma = B.dataISO(pegar(abaPart, linha, "id da turma"));
+      const turma = dataPlanilha(pegar(abaPart, linha, "id da turma"));
       const publico = B.chave(pegar(abaPart, linha, "publico"));
-      const cand = turma ? porData.get(turma) || [] : [];
+      // A coluna "Ação realizada" diz o tipo: Capacitação só casa com capacitação do mesmo dia.
+      const tipoAcao = TIPO_MAP[acao] || null;
+      const cand = (turma ? porData.get(turma) || [] : []).filter((a) => !tipoAcao || a.tipo === tipoAcao);
       let alvo = cand.filter((a) => B.chave(a.publico) === publico);
       if (alvo.length !== 1) alvo = cand.length === 1 ? cand : [];
       if (alvo.length !== 1) { rel.participantes.sem_atividade += 1; if (rel.participantes.linhas_com_problema.length < 100) rel.participantes.linhas_com_problema.push(linha.n); continue; }
@@ -266,13 +286,22 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
     rel.atividades.importadas = atividades.length;
     rel.planos.importados = planos.length;
     // Em simulação não consultamos nem criamos pessoas: só contamos o que tem matrícula.
-    for (const p of parts) { if (p.matricula) rel.participantes.gravados += 1; else rel.participantes.sem_matricula_sem_par += 1; }
+    // Sem matrícula: confere (só leitura) se o nome bate com UMA pessoa do cadastro que já tenha matrícula.
+    const parNome = async (nome) => {
+      if (!nome) return false;
+      const [ach] = await pool.query(`SELECT COUNT(*) n FROM pessoas WHERE empresa_id = ? AND nome = ? AND matricula IS NOT NULL AND matricula <> ''`, [empresaId, nome]);
+      return Number(ach[0].n) === 1;
+    };
+    for (const p of parts) {
+      if (p.matricula || (await parNome(p.nome))) rel.participantes.gravados += 1;
+      else { rel.participantes.sem_matricula_sem_par += 1; if (rel.participantes.linhas_com_problema.length < 100) rel.participantes.linhas_com_problema.push(p.n); }
+    }
     for (const e of escutas) {
       if (!e.data) { rel.escutas.sem_data += 1; if (rel.escutas.linhas_com_problema.length < 100) rel.escutas.linhas_com_problema.push(e.n); }
-      else if (e.matricula) rel.escutas.importadas += 1;
-      else rel.escutas.sem_matricula_sem_par += 1;
+      else if (e.matricula || (await parNome(e.nome))) rel.escutas.importadas += 1;
+      else { rel.escutas.sem_matricula_sem_par += 1; if (rel.escutas.linhas_com_problema.length < 100) rel.escutas.linhas_com_problema.push(e.n); }
     }
-    rel.avisos.push("Simulação: nada foi gravado. Participantes sem matrícula só são conferidos contra o cadastro na importação real.");
+    rel.avisos.push("Simulação: nada foi gravado.");
     return rel;
   }
 
@@ -355,6 +384,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
         else { rel.escutas.sem_matricula_sem_par += 1; problema(e); continue; }
       }
       const unidade = e.unidTxt ? mapUn2.get(B.chave(e.unidTxt)) || null : null;
+      const usr = e.analistaTxt ? mapUser.get(B.chave(e.analistaTxt)) || null : null;
       try {
         await comTransacao(async (conn) => {
           const r = await pessoaPorMatricula(conn, empresaId, matricula, e.nome);
@@ -364,9 +394,9 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
             [empresaId, r.pessoa.id, e.data, unidade]);
           if (ex.length) { rel.escutas.ja_existiam += 1; return; }
           await conn.query(
-            `INSERT INTO nusp_acolhimentos (empresa_id, pessoa_id, data_acolhimento, canal, unidade_id, programa_id, status, origem_registro, criado_por_id)
-             VALUES (?, ?, ?, 'nao_informado', ?, ?, 'encerrado', 'importacao', ?)`,
-            [empresaId, r.pessoa.id, e.data, unidade, progNucleo, usuario.id]);
+            `INSERT INTO nusp_acolhimentos (empresa_id, pessoa_id, data_acolhimento, canal, unidade_id, programa_id, status, analista_id, analista_nome, origem_registro, criado_por_id)
+             VALUES (?, ?, ?, 'nao_informado', ?, ?, 'encerrado', ?, ?, 'importacao', ?)`,
+            [empresaId, r.pessoa.id, e.data, unidade, progNucleo, usr?.id || null, usr?.nome || e.analistaTxt || null, usuario.id]);
           rel.escutas.importadas += 1;
         });
       } catch (err) {
@@ -374,7 +404,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
         rel.escutas.erros += 1; problema(e);
       }
     }
-    if (rel.escutas.importadas) aviso("Escutas individuais importadas só com dados administrativos (sem resumo). Ficam visíveis ao coordenador; o analista as vê ao ser definido como responsável.");
+    if (rel.escutas.importadas) aviso("Escutas individuais importadas só com dados administrativos (sem resumo). Ficam visíveis ao coordenador e ao analista da planilha, quando o nome dele bate com um usuário do Núcleo.");
   }
   return rel;
 }

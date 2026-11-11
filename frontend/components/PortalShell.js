@@ -180,6 +180,8 @@ function isRouteActive(pathname, href) {
 // exatamente a mesma marca padrão de sempre — nada muda pra quem não tem
 // branding configurado.
 const LOGO_PADRAO = "/logo-td.png";
+// Módulo do Núcleo de Saúde Psicossocial: marca própria (provisoriamente a do Diver+ Tel, até chegar a do Núcleo).
+const LOGO_NUCLEO = "/logo-nucleo.png";
 
 function hexParaRgba(hex, alpha) {
   const limpo = String(hex || "").replace("#", "");
@@ -299,7 +301,8 @@ export default function PortalShell({
   // de sempre).
   const empresaBranding = user?.empresa || null;
   const corPrimaria = empresaBranding?.cor_primaria || colors.accent;
-  const logoUrl = empresaBranding?.logo_url || LOGO_PADRAO;
+  const ehNusp = ["coordenador_nusp", "analista_nusp", "gestor_nusp"].includes(user?.perfil);
+  const logoUrl = ehNusp ? LOGO_NUCLEO : empresaBranding?.logo_url || LOGO_PADRAO;
 
   const navItemActiveStyle = useMemo(
     () => ({
@@ -408,13 +411,13 @@ export default function PortalShell({
             <div style={mobileBrandWrap}>
               <img
                 src={logoUrl}
-                alt="Portal T&D"
-                style={mobileLogo}
+                alt={ehNusp ? "Núcleo de Saúde Psicossocial" : "Portal T&D"}
+                style={ehNusp ? { ...mobileLogo, width: 44, height: 44, borderRadius: 0 } : mobileLogo}
                 onError={(e) => { e.currentTarget.src = LOGO_PADRAO; }}
               />
               <div style={{ minWidth: 0 }}>
                 <div style={mobileBrandTitle}>Portal T&amp;D</div>
-                <div style={mobileBrandSubtitle}>Treinamento e Desenvolvimento</div>
+                <div style={mobileBrandSubtitle}>{ehNusp ? "Núcleo de Saúde Psicossocial" : "Treinamento e Desenvolvimento"}</div>
               </div>
             </div>
 
@@ -480,14 +483,14 @@ export default function PortalShell({
           <div style={brandBox}>
             <img
               src={logoUrl}
-              alt="Portal T&D"
-              style={logo}
+              alt={ehNusp ? "Núcleo de Saúde Psicossocial" : "Portal T&D"}
+              style={ehNusp ? { ...logo, width: 72, height: 72, borderRadius: 0 } : logo}
               onError={(e) => { e.currentTarget.src = LOGO_PADRAO; }}
             />
 
             <div style={{ minWidth: 0 }}>
               <div style={brandTitle}>Portal T&amp;D</div>
-              <div style={brandSubtitle}>Treinamento e Desenvolvimento</div>
+              <div style={brandSubtitle}>{ehNusp ? "Núcleo de Saúde Psicossocial" : "Treinamento e Desenvolvimento"}</div>
             </div>
           </div>
 
