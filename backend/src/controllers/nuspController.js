@@ -230,13 +230,16 @@ async function validarAtividade(b, c, { atual = null } = {}) {
   d.tipo = B.opcao(b.tipo, B.TIPOS_ATIVIDADE, "Tipo", erros, { obrigatorio: true });
   d.tema = B.texto(b.tema, 250, "Tema", erros, { obrigatorio: true });
   d.publico = B.texto(b.publico, 150, "Público atendido", erros);
-  const ini = B.dataISO(b.data_inicio); if (!ini) erros.push("Data de início é obrigatória e deve ser válida"); d.data_inicio = ini || null;
+  const ini = B.dataISO(b.data_inicio); d.data_inicio = ini || null;
   const fim = B.dataISO(b.data_fim); if (fim === undefined) erros.push("Data de término inválida"); d.data_fim = fim || null;
   if (d.data_inicio && d.data_fim && d.data_fim < d.data_inicio) erros.push("A data de término não pode ser anterior à de início");
   const h = b.horas === "" || b.horas === null || b.horas === undefined ? 0 : Number(String(b.horas).replace(",", "."));
   if (!Number.isFinite(h) || h < 0 || h > 999) erros.push("Horas deve ser um número entre 0 e 999"); d.horas = Number.isFinite(h) ? Math.round(h * 100) / 100 : 0;
   d.formato = B.opcao(b.formato, B.FORMATOS, "Formato", erros);
   d.status = B.opcao(b.status, B.STATUS_ATIVIDADE, "Status", erros, { padrao: atual?.status || "planejada" });
+  // Sem data de início só vale para atividade planejada ("sem data definida"); qualquer outro status exige a data.
+  if (ini === undefined) erros.push("Data de início inválida");
+  else if (!ini && d.status !== "planejada") erros.push("Data de início é obrigatória (só atividades planejadas podem ficar sem data)");
   d.resultado = B.texto(b.resultado, 1000, "Resultado", erros);
   d.proxima_etapa = B.texto(b.proxima_etapa, 300, "Próxima etapa", erros);
   d.observacoes = B.texto(b.observacoes, 1000, "Observações", erros);
@@ -580,7 +583,7 @@ async function listarPlanos(req, res) {
     if (q.q) { w.push("pl.titulo LIKE ?"); p.push(`%${String(q.q).trim().slice(0, 80)}%`); }
     const where = w.join(" AND ");
     const { limite, offset } = paginacao(q);
-    const [itens] = await pool.query(`${SQL_PLANO} WHERE ${where} ORDER BY (pl.status IN ('concluida','cancelada')), pl.prazo, pl.id DESC LIMIT ? OFFSET ?`, [...p, limite, offset]);
+    const [itens] = await pool.query(`${SQL_PLANO} WHERE ${where} ORDER BY (pl.status IN ('concluida','cancelada')), (pl.prazo IS NULL), pl.prazo, pl.id DESC LIMIT ? OFFSET ?`, [...p, limite, offset]);
     const [tot] = await pool.query(`SELECT COUNT(*) n FROM nusp_planos_acao pl WHERE ${where}`, p);
     return res.json({ itens, total: Number(tot[0].n), limite });
   } catch (e) {
@@ -611,8 +614,9 @@ async function validarPlano(b, c, atual) {
   const erros = []; const d = {};
   d.titulo = B.texto(b.titulo, 250, "Título", erros, { obrigatorio: true });
   d.descricao = B.texto(b.descricao, 1500, "Descrição", erros);
-  const ident = B.dataISO(b.data_identificacao); if (!ident) erros.push("Data de identificação é obrigatória e deve ser válida"); d.data_identificacao = ident || null;
-  const prazo = B.dataISO(b.prazo); if (!prazo) erros.push("Prazo é obrigatório e deve ser válido"); d.prazo = prazo || null;
+  // Data de identificação e prazo podem ficar em branco ("sem data definida"); se vierem, precisam ser válidas.
+  const ident = B.dataISO(b.data_identificacao); if (ident === undefined) erros.push("Data de identificação inválida"); d.data_identificacao = ident || null;
+  const prazo = B.dataISO(b.prazo); if (prazo === undefined) erros.push("Prazo inválido"); d.prazo = prazo || null;
   if (d.data_identificacao && d.prazo && d.prazo < d.data_identificacao) erros.push("O prazo não pode ser anterior à data de identificação");
   d.status = B.opcao(b.status, B.STATUS_PLANO, "Status", erros, { padrao: atual?.status || "pendente" });
   const pct = b.pct_conclusao === undefined || b.pct_conclusao === "" || b.pct_conclusao === null ? (atual?.pct_conclusao ?? 0) : Number(b.pct_conclusao);

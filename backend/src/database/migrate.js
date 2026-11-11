@@ -3594,6 +3594,18 @@ async function ensureNusp() {
       INDEX idx_nusp_acolh_analista (empresa_id, analista_id),
       INDEX idx_nusp_acolh_pessoa (empresa_id, pessoa_id)
     ) ${T}`);
+
+  // Pacote 2d: atividades e planos podem existir "sem data definida" (planejados que ainda não têm
+  // data/prazo na planilha). Idempotente: só altera se a coluna ainda for NOT NULL.
+  for (const [tabela, coluna] of [["nusp_atividades", "data_inicio"], ["nusp_planos_acao", "data_identificacao"], ["nusp_planos_acao", "prazo"]]) {
+    const [cols] = await pool.query(
+      `SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+      [tabela, coluna]);
+    if (cols[0] && cols[0].IS_NULLABLE === "NO") await pool.query(`ALTER TABLE ${tabela} MODIFY COLUMN ${coluna} DATE NULL`);
+  }
+  // Correção: planos importados como "Não iniciada" tinham ficado com o status "planejada" (que só existe em atividade)
+  // e por isso não apareciam como abertos no painel. Idempotente.
+  await pool.query(`UPDATE nusp_planos_acao SET status = 'pendente' WHERE status = 'planejada'`);
   console.log("  ↳ Núcleo (NUSPSI): ok");
 }
 

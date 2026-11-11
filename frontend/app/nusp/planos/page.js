@@ -7,7 +7,7 @@ import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import {
   st, Campo, Select, Modal, Badge, Paginacao, opcoesDe, opcoesMapa, STATUS_PLANO_LABEL,
-  fmtData, fmtNum, hojeISO, perfilNusp, ehOperacao, PERFIL_COORD,
+  fmtData, fmtDataOuSem, fmtNum, hojeISO, perfilNusp, ehOperacao, PERFIL_COORD,
 } from "../../../components/NuspUi";
 
 const VAZIO = {
@@ -19,6 +19,7 @@ const VAZIO = {
 function farol(p) {
   if (p.status === "concluida") return { cor: colors.success, txt: "Concluído" };
   if (p.status === "cancelada") return { cor: colors.neutral, txt: "Cancelado" };
+  if (!p.prazo) return { cor: colors.neutral, txt: "Sem prazo definido" };
   const dias = Math.round((new Date(`${p.prazo}T00:00:00`) - new Date(`${hojeISO()}T00:00:00`)) / 86400000);
   if (dias < 0) return { cor: colors.danger, txt: `${Math.abs(dias)} d de atraso` };
   if (dias <= 7) return { cor: "#d97706", txt: dias === 0 ? "Vence hoje" : `Vence em ${dias} d` };
@@ -110,7 +111,7 @@ export default function PlanosPage() {
                     <td style={st.td}>{p.unidade || "—"}</td>
                     <td style={st.td}>{p.dimensao || "—"}</td>
                     <td style={st.td}>{p.responsavel_nome || "—"}</td>
-                    <td style={st.td}>{fmtData(p.prazo)}</td>
+                    <td style={st.td}>{fmtDataOuSem(p.prazo, "Sem prazo")}</td>
                     <td style={st.td}>{fmtNum(p.pct_conclusao)}%</td>
                     <td style={st.td}><Badge tom={p.status}>{STATUS_PLANO_LABEL[p.status]}</Badge></td>
                     <td style={st.td}><button type="button" style={st.btnMini} onClick={() => setDetalheId(p.id)}>Abrir</button></td>
@@ -172,8 +173,8 @@ function FormPlano({ form, cad, coord, onClose, onSaved }) {
         </div>
         <Campo label="Descrição" flex={1}><textarea style={st.textarea} value={d.descricao} maxLength={1500} onChange={(e) => set("descricao", e.target.value)} /></Campo>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "12px 0" }}>
-          <Campo label="Data de identificação *" minWidth={150}><input type="date" style={st.input} value={d.data_identificacao || ""} onChange={(e) => set("data_identificacao", e.target.value)} required /></Campo>
-          <Campo label="Prazo *" minWidth={150}><input type="date" style={st.input} value={d.prazo || ""} onChange={(e) => set("prazo", e.target.value)} required /></Campo>
+          <Campo label="Data de identificação" minWidth={150} dica="Pode ficar em branco"><input type="date" style={st.input} value={d.data_identificacao || ""} onChange={(e) => set("data_identificacao", e.target.value)} /></Campo>
+          <Campo label="Prazo" minWidth={150} dica="Sem prazo, o plano não entra no farol de atrasos"><input type="date" style={st.input} value={d.prazo || ""} onChange={(e) => set("prazo", e.target.value)} /></Campo>
           <Campo label="% de conclusão" minWidth={130} dica="100% só ao marcar como Concluída">
             <input type="number" min="0" max="99" style={st.input} value={d.status === "concluida" ? 100 : d.pct_conclusao} disabled={d.status === "concluida"} onChange={(e) => set("pct_conclusao", e.target.value === "" ? 0 : Number(e.target.value))} />
           </Campo>
@@ -247,7 +248,7 @@ function DetalhePlano({ id, opera, coord, onClose, onEditar, onExcluido }) {
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
             <Badge tom={p.status}>{STATUS_PLANO_LABEL[p.status]}</Badge>
             <span style={{ fontSize: 12.5, color: colors.textSecondary }}>
-              {fmtNum(p.pct_conclusao)}% · identificado em {fmtData(p.data_identificacao)} · prazo {fmtData(p.prazo)}
+              {fmtNum(p.pct_conclusao)}% · identificado em {fmtDataOuSem(p.data_identificacao, "data não definida")} · prazo {fmtDataOuSem(p.prazo, "não definido")}
               {p.concluido_em ? ` · concluído em ${fmtData(p.concluido_em)}` : ""}
             </span>
             {p.atrasado ? <Badge tom="atrasado">Atrasado</Badge> : null}

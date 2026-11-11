@@ -7,7 +7,7 @@ import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import {
   st, Campo, Select, Modal, Badge, Paginacao, opcoesDe, opcoesMapa, TIPO_LABEL, FORMATO_LABEL, STATUS_ATV_LABEL, PRESENCA_LABEL,
-  fmtData, fmtHoras, fmtNum, hojeISO, perfilNusp, ehOperacao, PERFIL_COORD,
+  fmtData, fmtDataOuSem, fmtHoras, fmtNum, hojeISO, perfilNusp, ehOperacao, PERFIL_COORD,
 } from "../../../components/NuspUi";
 
 const VAZIA = {
@@ -119,7 +119,7 @@ export default function AtividadesPage() {
             <tbody>
               {lista.itens.map((a) => (
                 <tr key={a.id}>
-                  <td style={st.td}>{fmtData(a.data_inicio)}</td>
+                  <td style={st.td}>{a.data_inicio ? fmtData(a.data_inicio) : <span style={{ color: colors.textSecondary, fontStyle: "italic" }}>Sem data definida</span>}</td>
                   <td style={st.td}><strong>{a.tema}</strong>{a.publico ? <div style={{ fontSize: 11.5, color: colors.textSecondary }}>{a.publico}</div> : null}</td>
                   <td style={st.td}>{TIPO_LABEL[a.tipo] || a.tipo}</td>
                   <td style={st.td}>{a.programa || "—"}{a.frente ? <div style={{ fontSize: 11.5, color: colors.textSecondary }}>{a.frente}</div> : null}</td>
@@ -220,7 +220,7 @@ function FormAtividade({ form, cad, coord, onClose, onSaved }) {
           <Campo label="Formato"><Select value={d.formato} onChange={(v) => set("formato", v)} opcoes={opcoesMapa(FORMATO_LABEL)} vazio="Selecione" /></Campo>
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-          <Campo label="Data de início *" minWidth={140}><input type="date" style={st.input} value={d.data_inicio || ""} onChange={(e) => set("data_inicio", e.target.value)} required /></Campo>
+          <Campo label={d.status === "planejada" ? "Data de início" : "Data de início *"} minWidth={140} dica={d.status === "planejada" ? "Pode ficar em branco enquanto a atividade estiver Planejada" : undefined}><input type="date" style={st.input} value={d.data_inicio || ""} onChange={(e) => set("data_inicio", e.target.value)} required={d.status !== "planejada"} /></Campo>
           <Campo label="Data de término" minWidth={140}><input type="date" style={st.input} value={d.data_fim || ""} onChange={(e) => set("data_fim", e.target.value)} /></Campo>
           <Campo label="Horas" minWidth={100}><input style={st.input} inputMode="decimal" value={d.horas} onChange={(e) => set("horas", e.target.value)} placeholder="0" /></Campo>
           <Campo label="Status" minWidth={150}><Select value={d.status} onChange={(v) => set("status", v)} opcoes={opcoesMapa(STATUS_ATV_LABEL)} vazio={null} /></Campo>
@@ -335,7 +335,7 @@ function DetalheAtividade({ id, opera, coord, onClose, onEditar, onExcluida }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
             <Badge tom={a.status}>{STATUS_ATV_LABEL[a.status]}</Badge>
             <span style={{ fontSize: 12.5, color: colors.textSecondary }}>
-              {TIPO_LABEL[a.tipo]} · {fmtData(a.data_inicio)}{a.data_fim ? ` a ${fmtData(a.data_fim)}` : ""} · {fmtHoras(a.horas)} h
+              {TIPO_LABEL[a.tipo]} · {fmtDataOuSem(a.data_inicio)}{a.data_fim ? ` a ${fmtData(a.data_fim)}` : ""} · {fmtHoras(a.horas)} h
               {a.formato ? ` · ${FORMATO_LABEL[a.formato]}` : ""}
             </span>
           </div>

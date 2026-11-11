@@ -38,6 +38,8 @@ const TIPO_MAP = {
   "diver+/comunicacao": "comunicacao",
   "outros": "outros",
 };
+// Plano de ação não tem "planejada": "Não iniciada" é "pendente".
+const STATUS_PLANO_MAP = { "concluida": "concluida", "em andamento": "em_andamento", "nao iniciada": "pendente", "pendente": "pendente", "cancelada": "cancelada" };
 const STATUS_ATV_MAP = { "concluida": "concluida", "em andamento": "em_andamento", "nao iniciada": "planejada", "pendente": "planejada", "cancelada": "cancelada" };
 const FORMATO_MAP = (t) => {
   const k = B.chave(t);
@@ -113,8 +115,8 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
 
   const rel = {
     simulacao: !!simular,
-    atividades: { lidas: 0, importadas: 0, ja_existiam: 0, escuta_individual_adiada: 0, sem_data_ou_tema: 0, sem_dimensao: 0, concluidas_sem_evidencia: 0, linhas_com_problema: [] },
-    planos: { lidos: 0, importados: 0, ja_existiam: 0, sem_data_ou_prazo: 0, sem_dimensao: 0, concluidos_sem_evidencia: 0, linhas_com_problema: [] },
+    atividades: { lidas: 0, importadas: 0, ja_existiam: 0, escuta_individual_adiada: 0, sem_data_ou_tema: 0, sem_data_definida: 0, sem_dimensao: 0, concluidas_sem_evidencia: 0, linhas_com_problema: [] },
+    planos: { lidos: 0, importados: 0, ja_existiam: 0, sem_data_definida: 0, sem_dimensao: 0, concluidos_sem_evidencia: 0, linhas_com_problema: [] },
     participantes: { lidos: 0, gravados: 0, escuta_individual_adiada: 0, sem_atividade: 0, sem_matricula_sem_par: 0, erros: 0, linhas_com_problema: [] },
     // Escuta individual -> acolhimento (Pacote 2). Só entra com a opção marcada, e só o dado ADMINISTRATIVO
     // (data, unidade, pessoa): a planilha antiga não traz resumo e nada de texto livre é copiado.
@@ -162,9 +164,12 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
       const dataBr = dataPlanilha(pegar(abaAtv, linha, "data de inicio")) || dataPlanilha(pegar(abaAtv, linha, "data"));
       if (!tema && !dataBr) continue; // linha vazia / fórmula em branco
       rel.atividades.lidas += 1;
-      if (!tema || !dataBr) { rel.atividades.sem_data_ou_tema += 1; rel.atividades.linhas_com_problema.push(linha.n); continue; }
       const tipoTxt = B.chave(pegar(abaAtv, linha, "tipo de atividade"));
-      if (tipoTxt === "escuta individual") { rel.atividades.escuta_individual_adiada += 1; continue; }
+      if (tipoTxt === "escuta individual" && tema && dataBr) { rel.atividades.escuta_individual_adiada += 1; continue; }
+      // Planejada ("Não iniciada") sem data entra como "sem data definida"; sem tema, ou iniciada/concluída sem data, é problema.
+      const statusPre = STATUS_ATV_MAP[B.chave(pegar(abaAtv, linha, "status"))] || "planejada";
+      if (!tema || (!dataBr && statusPre !== "planejada")) { rel.atividades.sem_data_ou_tema += 1; rel.atividades.linhas_com_problema.push(linha.n); continue; }
+      if (!dataBr) rel.atividades.sem_data_definida += 1;
       const tipo = TIPO_MAP[tipoTxt] || "outros";
       if (!TIPO_MAP[tipoTxt]) aviso(`Tipo de atividade desconhecido ("${tipoTxt}") foi importado como "Outros".`);
       const publico = pegar(abaAtv, linha, "setor / publico") || null;
@@ -184,12 +189,12 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
       const pessoas = numero(pegar(abaAtv, linha, "n de pessoas") || pegar(abaAtv, linha, "no de pessoas") || pegar(abaAtv, linha, "nº de pessoas"));
       const obs = [pegar(abaAtv, linha, "observacoes"), evTexto ? `Evidência (texto da planilha): ${evTexto}` : ""].filter(Boolean).join(" | ").slice(0, 1000) || null;
       const fim = dataPlanilha(pegar(abaAtv, linha, "data de termino"));
-      const chaveDedup = [dataBr, B.chave(tema), String(unid), B.chave(publico)].join("|");
+      const chaveDedup = [dataBr || "sem-data", B.chave(tema), String(unid), B.chave(publico), dataBr ? "" : `${B.chave(dimTxt)}#${B.chave(obs || "")}`].join("|");
       if (vistos.has(chaveDedup)) { rel.atividades.ja_existiam += 1; continue; }
       vistos.add(chaveDedup);
       const nomeProg = `${tema} ${publico || ""}`;
       atividades.push({
-        n: linha.n, chaveDedup, tema: tema.slice(0, 250), publico: publico ? publico.slice(0, 150) : null, tipo, data_inicio: dataBr, data_fim: fim && fim >= dataBr ? fim : null,
+        n: linha.n, chaveDedup, tema: tema.slice(0, 250), publico: publico ? publico.slice(0, 150) : null, tipo, data_inicio: dataBr, data_fim: fim && dataBr && fim >= dataBr ? fim : null,
         horas: horas !== null && horas >= 0 && horas <= 999 ? horas : 0, formato: FORMATO_MAP(pegar(abaAtv, linha, "formato")), status,
         resultado: (pegar(abaAtv, linha, "andamento") || "").slice(0, 1000) || null, proxima_etapa: (pegar(abaAtv, linha, "prazo / proxima") || "").slice(0, 300).replace(/^-$/, "") || null,
         observacoes: obs, unid, dim: dim === undefined ? null : dim, usr, analistaTxt: analistaTxt.slice(0, 150) || null,
@@ -209,28 +214,29 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
       rel.planos.lidos += 1;
       const ident = dataPlanilha(pegar(abaPlano, linha, "data de identificacao"));
       const prazo = dataPlanilha(pegar(abaPlano, linha, "prazo"));
-      if (!ident || !prazo) { rel.planos.sem_data_ou_prazo += 1; rel.planos.linhas_com_problema.push(linha.n); continue; }
+      if (!ident || !prazo) rel.planos.sem_data_definida += 1; // entra como "sem data definida"
       const dimTxt = pegar(abaPlano, linha, "dimensao");
       const dim = dimensaoId(dimTxt);
       if (dim === undefined) { rel.planos.sem_dimensao += 1; aviso(`Dimensão sem correspondência: "${dimTxt}" (importada sem dimensão).`); }
-      const status = STATUS_ATV_MAP[B.chave(pegar(abaPlano, linha, "status"))] || "pendente";
+      const status = STATUS_PLANO_MAP[B.chave(pegar(abaPlano, linha, "status"))] || "pendente";
       const evid = pegar(abaPlano, linha, "evidencia");
       const evUrl = B.urlValida(evid) ? evid : null;
       const evTexto = !evUrl && !isPlaceholder(evid) ? evid : null;
       if (status === "concluida" && !evUrl) rel.planos.concluidos_sem_evidencia += 1;
       const analistaTxt = pegar(abaPlano, linha, "analista");
       const unid = unidadeId(pegar(abaPlano, linha, "site"));
-      const k = [B.chave(titulo), String(unid), ident, prazo].join("|");
+      const obsPlano = pegar(abaPlano, linha, "observacoes");
+      const k = [B.chave(titulo), String(unid), ident || "-", prazo || "-", ident && prazo ? "" : `${B.chave(dimTxt)}#${B.chave(obsPlano || "")}`].join("|");
       if (vistosP.has(k)) { rel.planos.ja_existiam += 1; continue; }
       vistosP.add(k);
       const ult = dataPlanilha(pegar(abaPlano, linha, "ultima atualizacao"));
       planos.push({
-        n: linha.n, k, titulo: titulo.slice(0, 250), ident, prazo: prazo < ident ? ident : prazo, status,
+        n: linha.n, k, titulo: titulo.slice(0, 250), ident: ident || null, prazo: prazo && ident && prazo < ident ? ident : (prazo || null), status,
         pct: status === "concluida" ? 100 : Math.min(99, pct(pegar(abaPlano, linha, "% de conclusao"))), unid, dim: dim === undefined ? null : dim,
         usr: mapUser.get(B.chave(analistaTxt)), analistaTxt: analistaTxt.slice(0, 150) || null,
         proxima_etapa: (pegar(abaPlano, linha, "proxima etapa") || "").slice(0, 300).replace(/^-$/, "") || null,
         observacoes: [pegar(abaPlano, linha, "observacoes"), evTexto ? `Evidência (texto da planilha): ${evTexto}` : ""].filter(Boolean).join(" | ").slice(0, 1000) || null,
-        concluido_em: status === "concluida" ? (ult || prazo) : null, evUrl,
+        concluido_em: status === "concluida" ? (ult || prazo || null) : null, evUrl,
         programa_id: B.chave(titulo).includes("diver+") && progDiver ? progDiver : progNucleo,
       });
     }
@@ -325,8 +331,9 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
     for (const a of atividades) {
       const unid = resolveU(a.unid);
       const [existe] = await conn.query(
-        `SELECT id FROM nusp_atividades WHERE empresa_id = ? AND origem = 'importacao' AND data_inicio = ? AND tema = ? AND (unidade_id <=> ?) AND (publico <=> ?) LIMIT 1`,
-        [empresaId, a.data_inicio, a.tema, unid, a.publico]);
+        `SELECT id FROM nusp_atividades WHERE empresa_id = ? AND origem = 'importacao' AND data_inicio <=> ? AND tema = ? AND (unidade_id <=> ?) AND (publico <=> ?)
+            AND (? IS NOT NULL OR ((dimensao_id <=> ?) AND (observacoes <=> ?))) LIMIT 1`,
+        [empresaId, a.data_inicio, a.tema, unid, a.publico, a.data_inicio, a.dim, a.observacoes]);
       if (existe.length) { rel.atividades.ja_existiam += 1; idsAtividade.set(a, existe[0].id); continue; }
       const [r] = await conn.query(
         `INSERT INTO nusp_atividades (empresa_id, programa_id, tipo, dimensao_id, unidade_id, analista_id, analista_nome, tema, publico, data_inicio, data_fim,
@@ -342,8 +349,9 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
     for (const p of planos) {
       const unid = resolveU(p.unid);
       const [existe] = await conn.query(
-        `SELECT id FROM nusp_planos_acao WHERE empresa_id = ? AND origem = 'importacao' AND titulo = ? AND (unidade_id <=> ?) AND data_identificacao = ? AND prazo = ? LIMIT 1`,
-        [empresaId, p.titulo, unid, p.ident, p.prazo]);
+        `SELECT id FROM nusp_planos_acao WHERE empresa_id = ? AND origem = 'importacao' AND titulo = ? AND (unidade_id <=> ?) AND data_identificacao <=> ? AND prazo <=> ?
+            AND (? IS NOT NULL OR ((dimensao_id <=> ?) AND (observacoes <=> ?))) LIMIT 1`,
+        [empresaId, p.titulo, unid, p.ident, p.prazo, p.ident, p.dim, p.observacoes]);
       if (existe.length) { rel.planos.ja_existiam += 1; continue; }
       const [r] = await conn.query(
         `INSERT INTO nusp_planos_acao (empresa_id, programa_id, dimensao_id, unidade_id, titulo, responsavel_id, responsavel_nome, data_identificacao, prazo,

@@ -183,11 +183,11 @@ export default function PainelNucleoPage() {
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14, marginBottom: 16 }}>
-            <StatCard title="Atividades" value={fmtNum(K.atividades)} subtitle={`${fmtNum(K.concluidas)} concluídas · ${fmtNum(K.em_andamento)} em andamento · ${fmtNum(K.planejadas)} planejadas`} accent={colors.primary} />
+            <StatCard title="Atividades" value={fmtNum(K.atividades)} subtitle={`${fmtNum(K.concluidas)} concluídas · ${fmtNum(K.em_andamento)} em andamento · ${fmtNum(K.planejadas)} planejadas${K.atividades_sem_data ? ` · +${fmtNum(K.atividades_sem_data)} planejadas sem data definida` : ""}`} accent={colors.primary} />
             <StatCard title="Horas" value={fmtHoras(K.horas)} subtitle="somadas nas atividades" accent={colors.teal || "#0f766e"} />
             <StatCard title="Pessoas alcançadas" value={fmtNum(K.pessoas_unicas)} subtitle={`${fmtNum(K.participacoes)} participações com lista`} accent={colors.info} helper={K.pessoas_sem_lista ? `+ ${fmtNum(K.pessoas_sem_lista)} do histórico sem lista nominal` : ""} />
             <StatCard title="Com evidência" value={`${fmtNum(K.pct_com_evidencia)}%`} subtitle="das atividades concluídas" accent={K.pct_com_evidencia >= 90 ? colors.success : colors.warning} />
-            <StatCard title="Planos abertos" value={fmtNum(P.abertos)} subtitle={`${fmtNum(P.atrasados)} atrasados · ${fmtNum(P.vencendo_7d)} vencem em 7 dias`} accent={P.atrasados > 0 ? colors.danger : colors.success} />
+            <StatCard title="Planos abertos" value={fmtNum(P.abertos)} subtitle={`${fmtNum(P.atrasados)} atrasados · ${fmtNum(P.vencendo_7d)} vencem em 7 dias${P.abertos_sem_prazo ? ` · ${fmtNum(P.abertos_sem_prazo)} sem prazo definido` : ""}`} accent={P.atrasados > 0 ? colors.danger : colors.success} />
             <StatCard title="Planos concluídos" value={fmtNum(P.concluidos)} subtitle={`${fmtNum(P.concluidos_no_prazo)} no prazo`} accent={colors.success} />
           </div>
 

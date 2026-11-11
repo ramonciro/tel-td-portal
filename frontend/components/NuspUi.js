@@ -35,6 +35,7 @@ export const fmtData = (iso) => {
   const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso);
 };
+export const fmtDataOuSem = (iso, texto = "Sem data definida") => (iso ? fmtData(iso) : texto);
 export const fmtNum = (n) => Number(n || 0).toLocaleString("pt-BR");
 export const fmtHoras = (n) => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
 export const hojeISO = () => {

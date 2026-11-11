@@ -80,11 +80,11 @@ async function painel(req, res) {
 
     const [mesAtv] = await pool.query(
       `SELECT DATE_FORMAT(a.data_inicio, '%Y-%m') mes, COUNT(*) atividades, COALESCE(SUM(a.horas), 0) horas
-         FROM nusp_atividades a WHERE ${baseW} GROUP BY mes ORDER BY mes`, P);
+         FROM nusp_atividades a WHERE ${baseW} AND a.data_inicio IS NOT NULL GROUP BY mes ORDER BY mes`, P);
     const [mesPes] = await pool.query(
       `SELECT DATE_FORMAT(a.data_inicio, '%Y-%m') mes, COUNT(DISTINCT pa.pessoa_id) pessoas
          FROM nusp_participacoes pa JOIN nusp_atividades a ON a.id = pa.atividade_id
-        WHERE ${baseW} AND pa.presenca = 'presente' GROUP BY mes`, P);
+        WHERE ${baseW} AND a.data_inicio IS NOT NULL AND pa.presenca = 'presente' GROUP BY mes`, P);
     const pesMes = new Map(mesPes.map((r) => [r.mes, n(r.pessoas)]));
     const serie = mesAtv.map((r) => ({ mes: r.mes, atividades: n(r.atividades), horas: n(r.horas), pessoas: pesMes.get(r.mes) || 0 }));
 
@@ -100,12 +100,18 @@ async function painel(req, res) {
               SUM(pl.status IN ('pendente','em_andamento') AND pl.prazo < CURDATE()) atrasados,
               SUM(pl.status IN ('pendente','em_andamento') AND pl.prazo >= CURDATE() AND pl.prazo <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)) vencendo_7d,
               SUM(pl.status = 'concluida') concluidos,
+              SUM(pl.status = 'concluida' AND pl.prazo IS NOT NULL) concluidos_com_prazo,
               SUM(pl.status = 'concluida' AND pl.concluido_em <= pl.prazo) concluidos_no_prazo,
+              SUM(pl.status IN ('pendente','em_andamento') AND pl.prazo IS NULL) abertos_sem_prazo,
               SUM(pl.status = 'cancelada') cancelados
          FROM nusp_planos_acao pl WHERE ${whereP}`, pp);
     const [farol] = await pool.query(
-      `${SQL_PLANO} WHERE ${whereP} AND pl.status IN ('pendente','em_andamento')
+      `${SQL_PLANO} WHERE ${whereP} AND pl.status IN ('pendente','em_andamento') AND pl.prazo IS NOT NULL
         ORDER BY pl.prazo ASC, pl.id LIMIT 12`, pp);
+    // Atividades planejadas sem data definida: ficam fora dos números do período e aparecem como pendência.
+    const fSemData = filtroAtividades(c, { ...req.query, de: "", ate: "" });
+    const [[semData]] = await pool.query(
+      `SELECT COUNT(*) n FROM nusp_atividades a WHERE ${fSemData.where} AND a.status <> 'cancelada' AND a.data_inicio IS NULL`, fSemData.params);
     const planosFarol = farol.map((r) => {
       const dias = Math.round((new Date(`${r.prazo}T00:00:00`) - new Date(`${B.hojeISO()}T00:00:00`)) / 86400000);
       return {
@@ -126,13 +132,14 @@ async function painel(req, res) {
         atividades: n(tot.atividades), concluidas: n(tot.concluidas), em_andamento: n(tot.em_andamento), planejadas: n(tot.planejadas),
         horas: Math.round(n(tot.horas) * 100) / 100,
         pessoas_unicas: n(pes.pessoas), participacoes: n(pes.participacoes), pessoas_sem_lista: n(leg.sem_lista),
-        concluidas_com_evidencia: n(ev.com_evidencia),
+        concluidas_com_evidencia: n(ev.com_evidencia), atividades_sem_data: n(semData.n),
         pct_com_evidencia: concl ? Math.round((n(ev.com_evidencia) / concl) * 1000) / 10 : null,
       },
       planos: {
         total: n(pl.total), abertos: n(pl.abertos), atrasados: n(pl.atrasados), vencendo_7d: n(pl.vencendo_7d),
         concluidos: n(pl.concluidos), concluidos_no_prazo: n(pl.concluidos_no_prazo), cancelados: n(pl.cancelados),
-        pct_no_prazo: n(pl.concluidos) ? Math.round((n(pl.concluidos_no_prazo) / n(pl.concluidos)) * 1000) / 10 : null,
+        abertos_sem_prazo: n(pl.abertos_sem_prazo),
+        pct_no_prazo: n(pl.concluidos_com_prazo) ? Math.round((n(pl.concluidos_no_prazo) / n(pl.concluidos_com_prazo)) * 1000) / 10 : null,
         farol: planosFarol, por_dimensao: planoDim.map((r) => ({ nome: r.nome, total: n(r.total), abertos: n(r.abertos), atrasados: n(r.atrasados) })),
       },
       por_mes: serie, por_programa: programa, por_unidade: unidade, por_dimensao: dimensao, por_tipo: tipo, por_analista: analista,
