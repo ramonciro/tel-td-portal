@@ -6,7 +6,7 @@ import PageHero from "../../../components/PageHero";
 import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import {
-  st, Campo, Select, Modal, Badge, Paginacao, opcoesDe, opcoesMapa, STATUS_PLANO_LABEL,
+  st, Campo, Select, Modal, Badge, Paginacao, opcoesDe, opcoesNomes, opcoesMapa, STATUS_PLANO_LABEL,
   fmtData, fmtDataOuSem, fmtNum, hojeISO, perfilNusp, ehOperacao, PERFIL_COORD,
 } from "../../../components/NuspUi";
 
@@ -31,7 +31,7 @@ export default function PlanosPage() {
   const [cad, setCad] = useState(null);
   const [lista, setLista] = useState({ itens: [], total: 0, limite: 50 });
   const [pagina, setPagina] = useState(1);
-  const [f, setF] = useState({ q: "", status: "", programa_id: "", unidade_id: "", dimensao_id: "", atrasados: "" });
+  const [f, setF] = useState({ q: "", status: "", programa_id: "", unidade_id: "", dimensao_id: "", analista: "", atrasados: "" });
   const [erro, setErro] = useState("");
   const [msg, setMsg] = useState("");
   const [carregando, setCarregando] = useState(true);
@@ -88,6 +88,7 @@ export default function PlanosPage() {
           <Campo label="Prazo" minWidth={150}><Select value={f.atrasados} onChange={(v) => mudar("atrasados", v)} opcoes={[{ value: "1", label: "Somente atrasados" }]} /></Campo>
           <Campo label="Programa" minWidth={170}><Select value={f.programa_id} onChange={(v) => mudar("programa_id", v)} opcoes={opcoesDe(cad?.programas)} /></Campo>
           <Campo label="Unidade" minWidth={150}><Select value={f.unidade_id} onChange={(v) => mudar("unidade_id", v)} opcoes={opcoesDe(cad?.unidades)} /></Campo>
+          <Campo label="Analista" minWidth={170}><Select value={f.analista} onChange={(v) => mudar("analista", v)} opcoes={opcoesNomes(cad?.analistas_filtro)} /></Campo>
           <Campo label="Dimensão" minWidth={200}><Select value={f.dimensao_id} onChange={(v) => mudar("dimensao_id", v)} opcoes={opcoesDe(cad?.dimensoes)} /></Campo>
         </div>
       </div>

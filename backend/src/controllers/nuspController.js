@@ -50,8 +50,20 @@ async function obterCadastros(req, res) {
         WHERE empresa_id = ? AND LOWER(perfil) IN (?, ?) AND (ativo IS NULL OR ativo <> 0) ORDER BY nome`,
       [c.empresaId, B.PERFIL_COORD, B.PERFIL_ANALISTA]
     );
+    // Nomes para o filtro "Analista": inclui quem aparece no histórico importado mesmo sem usuário no portal.
+    const [nomes] = await pool.query(
+      `SELECT DISTINCT nome FROM (
+         SELECT analista_nome AS nome FROM nusp_atividades WHERE empresa_id = ?
+         UNION SELECT responsavel_nome FROM nusp_planos_acao WHERE empresa_id = ?
+         UNION SELECT responsavel_nome FROM nusp_materiais WHERE empresa_id = ?
+         UNION SELECT analista_nome FROM nusp_acolhimentos WHERE empresa_id = ?
+         UNION SELECT nome FROM usuarios WHERE empresa_id = ? AND LOWER(perfil) IN (?, ?) AND (ativo IS NULL OR ativo <> 0)
+       ) t WHERE nome IS NOT NULL AND TRIM(nome) <> '' ORDER BY nome`,
+      [c.empresaId, c.empresaId, c.empresaId, c.empresaId, c.empresaId, B.PERFIL_COORD, B.PERFIL_ANALISTA]
+    );
+    const analistas_filtro = nomes.map((r) => r.nome);
     return res.json({
-      unidades, programas, frentes, dimensoes, analistas, motivos, encaminhamentos,
+      unidades, programas, frentes, dimensoes, analistas, analistas_filtro, motivos, encaminhamentos,
       tipos: B.TIPOS_ATIVIDADE, formatos: B.FORMATOS, status_atividade: B.STATUS_ATIVIDADE,
       status_plano: B.STATUS_PLANO, status_material: B.STATUS_MATERIAL, tipos_programa: B.TIPOS_PROGRAMA,
     });
@@ -157,6 +169,7 @@ function filtroAtividades(c, q) {
   for (const k of ["programa_id", "unidade_id", "dimensao_id", "analista_id", "frente_id"]) {
     const n = Number(q[k]); if (Number.isInteger(n) && n > 0) { w.push(`a.${k} = ?`); p.push(n); }
   }
+  if (q.analista) { w.push("a.analista_nome = ?"); p.push(String(q.analista).trim().slice(0, 150)); }
   if (q.tipo && B.valores(B.TIPOS_ATIVIDADE).includes(String(q.tipo))) { w.push("a.tipo = ?"); p.push(String(q.tipo)); }
   if (q.status && B.valores(B.STATUS_ATIVIDADE).includes(String(q.status))) { w.push("a.status = ?"); p.push(String(q.status)); }
   if (q.q) { w.push("(a.tema LIKE ? OR a.publico LIKE ?)"); const t = `%${String(q.q).trim().slice(0, 80)}%`; p.push(t, t); }
@@ -577,6 +590,7 @@ async function listarPlanos(req, res) {
     for (const k of ["programa_id", "unidade_id", "dimensao_id", "responsavel_id"]) {
       const n = Number(q[k]); if (Number.isInteger(n) && n > 0) { w.push(`pl.${k} = ?`); p.push(n); }
     }
+    if (q.analista) { w.push("pl.responsavel_nome = ?"); p.push(String(q.analista).trim().slice(0, 150)); }
     if (q.status && B.valores(B.STATUS_PLANO).includes(String(q.status))) { w.push("pl.status = ?"); p.push(String(q.status)); }
     if (String(q.atrasados) === "1") w.push("pl.status NOT IN ('concluida','cancelada') AND pl.prazo < CURDATE()");
     if (String(q.abertos) === "1") w.push("pl.status IN ('pendente','em_andamento')");

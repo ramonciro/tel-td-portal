@@ -9,7 +9,7 @@ import SectionCard from "../../components/SectionCard";
 import { apiFetch, apiDownload } from "../../services/api";
 import { colors } from "../../lib/theme";
 import {
-  st, Campo, Select, opcoesDe, Barras, Colunas, Badge, fmtNum, fmtHoras, fmtData, hojeISO, perfilNusp, ehOperacao,
+  st, Campo, Select, opcoesDe, opcoesNomes, Barras, Colunas, Badge, fmtNum, fmtHoras, fmtData, hojeISO, perfilNusp, ehOperacao,
 } from "../../components/NuspUi";
 
 const PERIODOS = [
@@ -82,7 +82,7 @@ export default function PainelNucleoPage() {
   const [periodo, setPeriodo] = useState("ano");
   const [deC, setDeC] = useState("");
   const [ateC, setAteC] = useState("");
-  const [f, setF] = useState({ programa_id: "", unidade_id: "", dimensao_id: "" });
+  const [f, setF] = useState({ programa_id: "", unidade_id: "", dimensao_id: "", analista: "" });
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(true);
@@ -161,6 +161,9 @@ export default function PainelNucleoPage() {
           </Campo>
           <Campo label="Dimensão" minWidth={220}>
             <Select value={f.dimensao_id} onChange={(v) => setF({ ...f, dimensao_id: v })} opcoes={opcoesDe(cad?.dimensoes)} />
+          </Campo>
+          <Campo label="Analista" minWidth={190}>
+            <Select value={f.analista} onChange={(v) => setF({ ...f, analista: v })} opcoes={opcoesNomes(cad?.analistas_filtro)} />
           </Campo>
         </div>
       </div>

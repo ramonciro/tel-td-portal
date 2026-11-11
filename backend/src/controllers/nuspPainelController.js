@@ -93,6 +93,7 @@ async function painel(req, res) {
     for (const k of ["programa_id", "unidade_id", "dimensao_id"]) {
       const v = Number(req.query[k]); if (Number.isInteger(v) && v > 0) { wp.push(`pl.${k} = ?`); pp.push(v); }
     }
+    if (req.query.analista) { wp.push("pl.responsavel_nome = ?"); pp.push(String(req.query.analista).trim().slice(0, 150)); }
     const whereP = wp.join(" AND ");
     const [[pl]] = await pool.query(
       `SELECT COUNT(*) total,
@@ -179,7 +180,8 @@ async function exportar(req, res) {
       });
       nome = "nucleo_atividades";
     } else if (tipo === "planos") {
-      const [rows] = await pool.query(`${SQL_PLANO} WHERE pl.empresa_id = ? ORDER BY pl.prazo, pl.id LIMIT 20000`, [c.empresaId]);
+      const [rows] = await pool.query(`${SQL_PLANO} WHERE pl.empresa_id = ?${req.query.analista ? " AND pl.responsavel_nome = ?" : ""} ORDER BY (pl.prazo IS NULL), pl.prazo, pl.id LIMIT 20000`,
+        req.query.analista ? [c.empresaId, String(req.query.analista).trim().slice(0, 150)] : [c.empresaId]);
       const rs = Object.fromEntries(B.STATUS_PLANO.map((t) => [t.value, t.label]));
       xl.adicionarTabela(wb, {
         nomeAba: "Planos de ação",

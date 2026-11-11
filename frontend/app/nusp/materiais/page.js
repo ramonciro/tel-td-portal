@@ -5,7 +5,7 @@ import PortalShell from "../../../components/PortalShell";
 import PageHero from "../../../components/PageHero";
 import { apiFetch } from "../../../services/api";
 import { colors } from "../../../lib/theme";
-import { st, Campo, Select, Modal, Badge, opcoesDe, perfilNusp, ehOperacao, PERFIL_COORD } from "../../../components/NuspUi";
+import { st, Campo, Select, Modal, Badge, opcoesDe, opcoesNomes, perfilNusp, ehOperacao, PERFIL_COORD } from "../../../components/NuspUi";
 
 const STATUS = { em_producao: "Em produção", concluido: "Concluído" };
 const VAZIO = { titulo: "", link: "", status: "em_producao", responsavel_nome: "", programa_id: "" };
@@ -18,6 +18,8 @@ export default function MateriaisPage() {
   const [msg, setMsg] = useState("");
   const [form, setForm] = useState(null);
   const [carregando, setCarregando] = useState(true);
+  const [fAnalista, setFAnalista] = useState("");
+  const [fStatus, setFStatus] = useState("");
 
   useEffect(() => { setPerfil(perfilNusp()); }, []);
   const opera = ehOperacao(perfil);
@@ -55,12 +57,16 @@ export default function MateriaisPage() {
       />
       {erro ? <div style={st.erro}>{erro}</div> : null}
       {msg ? <div style={st.ok}>{msg}</div> : null}
+      <div style={{ ...st.card, display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <Campo label="Analista" minWidth={200}><Select value={fAnalista} onChange={setFAnalista} opcoes={opcoesNomes(cad?.analistas_filtro)} /></Campo>
+        <Campo label="Status" minWidth={160}><Select value={fStatus} onChange={setFStatus} opcoes={Object.entries(STATUS).map(([value, label]) => ({ value, label }))} /></Campo>
+      </div>
       <div style={{ ...st.card, padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
             <thead><tr><th style={st.th}>Material</th><th style={st.th}>Programa</th><th style={st.th}>Responsável</th><th style={st.th}>Status</th><th style={st.th}>Arquivo</th><th style={st.th} /></tr></thead>
             <tbody>
-              {itens.map((m) => (
+              {itens.filter((m) => (!fAnalista || m.responsavel_nome === fAnalista) && (!fStatus || m.status === fStatus)).map((m) => (
                 <tr key={m.id}>
                   <td style={st.td}><strong>{m.titulo}</strong></td>
                   <td style={st.td}>{m.programa || "—"}</td>

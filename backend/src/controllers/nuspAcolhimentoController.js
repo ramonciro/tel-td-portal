@@ -104,6 +104,7 @@ function filtros(c, q, { restrito }) {
     if (ehCoord(c)) {
       const an = parseInt(q.analista_id, 10);
       if (an > 0) { w.push("a.analista_id = ?"); p.push(an); }
+      if (q.analista) { w.push("a.analista_nome = ?"); p.push(String(q.analista).trim().slice(0, 150)); }
     } else {
       w.push("(a.analista_id = ? OR a.criado_por_id = ?)"); p.push(c.user.id, c.user.id);
     }

@@ -110,6 +110,7 @@ export function Select({ value, onChange, opcoes, vazio = "Todos", style }) {
 }
 
 export const opcoesDe = (lista, rotulo = "nome") => (lista || []).filter((i) => i.ativo !== 0).map((i) => ({ value: String(i.id), label: i[rotulo] }));
+export const opcoesNomes = (lista) => (lista || []).map((n) => ({ value: n, label: n }));
 export const opcoesMapa = (mapa) => Object.entries(mapa).map(([value, label]) => ({ value, label }));
 
 export function Modal({ titulo, onClose, children, largura = 760 }) {

@@ -239,7 +239,7 @@ export default function AcolhimentosPage() {
   const [cad, setCad] = useState(null);
   const [lista, setLista] = useState({ itens: [], total: 0, limite: 50, chave_configurada: true });
   const [pagina, setPagina] = useState(1);
-  const [f, setF] = useState({ q: "", de: "", ate: "", motivo_id: "", unidade_id: "", canal: "", status: "", analista_id: "" });
+  const [f, setF] = useState({ q: "", de: "", ate: "", motivo_id: "", unidade_id: "", canal: "", status: "", analista: "" });
   const [erro, setErro] = useState("");
   const [msg, setMsg] = useState("");
   const [carregando, setCarregando] = useState(true);
@@ -316,7 +316,7 @@ export default function AcolhimentosPage() {
               <Campo label="Unidade" minWidth={150}><Select value={f.unidade_id} onChange={(v) => mudar("unidade_id", v)} opcoes={opcoesDe(cad?.unidades)} /></Campo>
               <Campo label="Canal" minWidth={170}><Select value={f.canal} onChange={(v) => mudar("canal", v)} opcoes={opcoesMapa(CANAL)} /></Campo>
               <Campo label="Situação" minWidth={150}><Select value={f.status} onChange={(v) => mudar("status", v)} opcoes={opcoesMapa(STATUS)} /></Campo>
-              {coord ? <Campo label="Responsável" minWidth={170}><Select value={f.analista_id} onChange={(v) => mudar("analista_id", v)} opcoes={(cad?.analistas || []).map((a) => ({ value: String(a.id), label: a.nome }))} /></Campo> : null}
+              {coord ? <Campo label="Analista" minWidth={170}><Select value={f.analista} onChange={(v) => mudar("analista", v)} opcoes={(cad?.analistas_filtro || []).map((n) => ({ value: n, label: n }))} /></Campo> : null}
             </div>
           </div>
 
