@@ -2777,6 +2777,7 @@ const {
 // independente, mesmo padrão do R&S (perfis próprios). Ver controllers/nusp*.js.
 const nusp = require("./controllers/nuspController");
 const nuspPainel = require("./controllers/nuspPainelController");
+const nuspAcolh = require("./controllers/nuspAcolhimentoController");
 const { importarPlanilha: importarPlanilhaNusp } = require("./services/nuspImportService");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
@@ -2844,17 +2845,27 @@ app.get   ("/api/nusp/materiais",             authRequired, authorizeRoles(...NU
 app.post  ("/api/nusp/materiais",             authRequired, authorizeRoles(...NUSP_OPERA), nusp.salvarMaterial);
 app.put   ("/api/nusp/materiais/:id",         authRequired, authorizeRoles(...NUSP_OPERA), nusp.salvarMaterial);
 app.delete("/api/nusp/materiais/:id",         authRequired, authorizeRoles(...NUSP_COORD), nusp.excluirMaterial);
+// Acolhimento individual (Pacote 2). Camada RESTRITA: coordenador e analista (o analista só vê os seus);
+// gestor_nusp/super_admin recebem 403 dentro do controller. Os indicadores são agregados (mínimo de 5) e abertos ao gestor.
+app.get   ("/api/nusp/acolhimentos/indicadores", authRequired, authorizeRoles(...NUSP_TODOS), nuspAcolh.indicadores);
+app.get   ("/api/nusp/acolhimentos",           authRequired, authorizeRoles(...NUSP_OPERA), nuspAcolh.listar);
+app.get   ("/api/nusp/acolhimentos/:id",       authRequired, authorizeRoles(...NUSP_OPERA), nuspAcolh.detalhe);
+app.post  ("/api/nusp/acolhimentos",           authRequired, authorizeRoles(...NUSP_OPERA), nuspAcolh.criar);
+app.put   ("/api/nusp/acolhimentos/:id",       authRequired, authorizeRoles(...NUSP_OPERA), nuspAcolh.editar);
+app.delete("/api/nusp/acolhimentos/:id",       authRequired, authorizeRoles(...NUSP_COORD), nuspAcolh.excluir);
+app.get   ("/api/nusp/acessos",                authRequired, authorizeRoles(...NUSP_COORD), nuspAcolh.acessos);
 // Importação da planilha antiga (Visão Nacional): só coordenador_nusp. ?simular=1 não grava.
 app.post  ("/api/nusp/importar", authRequired, authorizeRoles(...NUSP_COORD), comUploadTratado(upload.single("arquivo")), async (req, res) => {
   try {
     const ctx = require("./lib/nuspBase").contexto(req, res); if (!ctx) return;
     if (!req.file?.buffer) return res.status(400).json({ ok: false, message: "Envie a planilha (.xlsx) no campo 'arquivo'" });
     const simular = String(req.query.simular) === "1";
-    const relatorio = await importarPlanilhaNusp({ empresaId: ctx.empresaId, usuario: req.user, buffer: req.file.buffer, simular });
+    const incluirEscutas = String(req.query.escutas) === "1";
+    const relatorio = await importarPlanilhaNusp({ empresaId: ctx.empresaId, usuario: req.user, buffer: req.file.buffer, simular, incluirEscutas });
     if (!simular) {
       require("./services/auditoria").registrarAuditoria({
         usuario: req.user, acao: "importar", entidade: "nusp_planilha", entidadeId: null,
-        resumo: `Importou a planilha do Núcleo: ${relatorio.atividades.importadas} atividade(s), ${relatorio.planos.importados} plano(s), ${relatorio.participantes.gravados} participação(ões)`,
+        resumo: `Importou a planilha do Núcleo: ${relatorio.atividades.importadas} atividade(s), ${relatorio.planos.importados} plano(s), ${relatorio.participantes.gravados} participação(ões)${incluirEscutas ? ` e ${relatorio.escutas.importadas} acolhimento(s) individual(is) (só dados administrativos)` : ""}`,
         ip: req.ip,
       });
     }

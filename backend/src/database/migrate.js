@@ -3545,6 +3545,55 @@ async function ensureNusp() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_nusp_acessos (empresa_id, recurso, created_at)
     ) ${T}`);
+  // ── Pacote 2 (acolhimento individual) ───────────────────────────────────
+  // Camada RESTRITA: resumo curto cifrado (AES-256-GCM, chave NUSP_CRYPTO_KEY no ambiente);
+  // sem CID e sem relato clínico. A pessoa é referenciada por pessoa_id (nome/matrícula vêm do cadastro).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_motivos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(150) NOT NULL,
+      ordem INT NOT NULL DEFAULT 0,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_nusp_motivo (empresa_id, nome)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_encaminhamentos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(150) NOT NULL,
+      ordem INT NOT NULL DEFAULT 0,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_nusp_encaminhamento (empresa_id, nome)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_acolhimentos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      pessoa_id INT NOT NULL,
+      data_acolhimento DATE NOT NULL,
+      canal VARCHAR(25) NOT NULL,
+      origem VARCHAR(25) NULL,
+      motivo_id INT NULL,
+      unidade_id INT NULL,
+      programa_id INT NULL,
+      encaminhamento_id INT NULL,
+      resumo_cifrado TEXT NULL,
+      resumo_ver TINYINT NOT NULL DEFAULT 1,
+      data_retorno DATE NULL,
+      status VARCHAR(25) NOT NULL DEFAULT 'aberto',
+      analista_id INT NULL,
+      analista_nome VARCHAR(150) NULL,
+      origem_registro VARCHAR(20) NOT NULL DEFAULT 'manual',
+      criado_por_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_nusp_acolh_data (empresa_id, data_acolhimento),
+      INDEX idx_nusp_acolh_analista (empresa_id, analista_id),
+      INDEX idx_nusp_acolh_pessoa (empresa_id, pessoa_id)
+    ) ${T}`);
   console.log("  ↳ Núcleo (NUSPSI): ok");
 }
 

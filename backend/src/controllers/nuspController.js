@@ -43,13 +43,15 @@ async function obterCadastros(req, res) {
     const [programas] = await pool.query(`SELECT id, nome, tipo, descricao, ativo FROM nusp_programas WHERE empresa_id = ? ORDER BY FIELD(tipo,'nucleo','comite','projeto'), nome`, [c.empresaId]);
     const [frentes] = await pool.query(`SELECT id, programa_id, nome, ativo FROM nusp_frentes WHERE empresa_id = ? ORDER BY nome`, [c.empresaId]);
     const [dimensoes] = await pool.query(`SELECT id, nome, ordem, ativo FROM nusp_dimensoes WHERE empresa_id = ? ORDER BY ordem, nome`, [c.empresaId]);
+    const [motivos] = await pool.query(`SELECT id, nome, ordem, ativo FROM nusp_motivos WHERE empresa_id = ? ORDER BY ordem, nome`, [c.empresaId]);
+    const [encaminhamentos] = await pool.query(`SELECT id, nome, ordem, ativo FROM nusp_encaminhamentos WHERE empresa_id = ? ORDER BY ordem, nome`, [c.empresaId]);
     const [analistas] = await pool.query(
       `SELECT id, nome, perfil FROM usuarios
         WHERE empresa_id = ? AND LOWER(perfil) IN (?, ?) AND (ativo IS NULL OR ativo <> 0) ORDER BY nome`,
       [c.empresaId, B.PERFIL_COORD, B.PERFIL_ANALISTA]
     );
     return res.json({
-      unidades, programas, frentes, dimensoes, analistas,
+      unidades, programas, frentes, dimensoes, analistas, motivos, encaminhamentos,
       tipos: B.TIPOS_ATIVIDADE, formatos: B.FORMATOS, status_atividade: B.STATUS_ATIVIDADE,
       status_plano: B.STATUS_PLANO, status_material: B.STATUS_MATERIAL, tipos_programa: B.TIPOS_PROGRAMA,
     });
@@ -64,6 +66,8 @@ const CADASTROS = {
   programas: { tabela: "nusp_programas", rotulo: "programa", campos: ["nome", "tipo", "descricao"], unico: "nome" },
   frentes: { tabela: "nusp_frentes", rotulo: "frente", campos: ["nome", "programa_id"], unico: "nome" },
   dimensoes: { tabela: "nusp_dimensoes", rotulo: "dimensão", campos: ["nome", "ordem"], unico: "nome" },
+  motivos: { tabela: "nusp_motivos", rotulo: "motivo", campos: ["nome", "ordem"], unico: "nome" },
+  encaminhamentos: { tabela: "nusp_encaminhamentos", rotulo: "encaminhamento", campos: ["nome", "ordem"], unico: "nome" },
 };
 
 function validarCadastro(tipo, b, erros) {
@@ -75,7 +79,7 @@ function validarCadastro(tipo, b, erros) {
     d.descricao = B.texto(b.descricao, 1000, "Descrição", erros);
   }
   if (tipo === "frentes") d.programa_id = B.inteiroOuNulo(b.programa_id, "Programa", erros);
-  if (tipo === "dimensoes") {
+  if (tipo === "dimensoes" || tipo === "motivos" || tipo === "encaminhamentos") {
     const o = Number(b.ordem ?? 0);
     d.ordem = Number.isInteger(o) && o >= 0 && o <= 999 ? o : 0;
   }
@@ -792,5 +796,5 @@ module.exports = {
   listarPlanos, detalhePlano, criarPlano, editarPlano, excluirPlano,
   listarMateriais, salvarMaterial, excluirMaterial,
   // usados pelo painel/importador
-  filtroAtividades, SQL_ATIVIDADE, SQL_PLANO, gravarParticipantes,
+  filtroAtividades, SQL_ATIVIDADE, SQL_PLANO, gravarParticipantes, pessoaPorMatricula, auditar, paginacao,
 };

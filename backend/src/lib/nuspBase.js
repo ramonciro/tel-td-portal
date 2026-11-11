@@ -54,6 +54,52 @@ const TIPOS_PROGRAMA = [
   { value: "projeto", label: "Projeto" },
 ];
 
+// ── Acolhimento individual (Pacote 2) ─────────────────────────────────
+const CANAIS_ACOLHIMENTO = [
+  { value: "presencial", label: "Presencial" },
+  { value: "online", label: "Online (videochamada)" },
+  { value: "telefone", label: "Telefone" },
+  { value: "email_fale_comigo", label: "E-mail / Fale Comigo" },
+  { value: "nao_informado", label: "Não informado (histórico)" },
+];
+const ORIGENS_ACOLHIMENTO = [
+  { value: "espontaneo", label: "Procura espontânea" },
+  { value: "encaminhado", label: "Encaminhado" },
+  { value: "busca_ativa", label: "Busca ativa" },
+];
+const STATUS_ACOLHIMENTO = [
+  { value: "aberto", label: "Aberto" },
+  { value: "em_acompanhamento", label: "Em acompanhamento" },
+  { value: "encerrado", label: "Encerrado" },
+];
+const RESUMO_MAX = 500;
+// Supressão de células pequenas: nenhum número derivado de acolhimento chega à
+// diretoria com menos de 5 pessoas/registros por célula.
+const MINIMO_CELULA = 5;
+
+// Listas controladas iniciais (o coordenador edita em Cadastros). Só categorias gerais: sem diagnóstico.
+const MOTIVOS_PADRAO = [
+  "Relacionamento com a liderança",
+  "Relacionamento com colegas",
+  "Carga de trabalho e jornada",
+  "Condições de trabalho",
+  "Reconhecimento e carreira",
+  "Questões pessoais ou familiares",
+  "Bem-estar geral (relato sem detalhe clínico)",
+  "Dúvida ou orientação",
+  "Outros",
+];
+const ENCAMINHAMENTOS_PADRAO = [
+  "Sem encaminhamento",
+  "Retorno com o Núcleo",
+  "Liderança / gestão",
+  "RH / Gente e Cultura",
+  "Serviço de saúde ocupacional (SESMT)",
+  "Rede externa de saúde",
+  "Canal de ética",
+  "Outros",
+];
+
 const valores = (lista) => lista.map((i) => i.value);
 
 // As 11 dimensões da pesquisa de riscos psicossociais (aba "CLASSIFICAÇÃO DAS
@@ -92,6 +138,17 @@ function contexto(req, res) {
     return null;
   }
   return { empresaId, user: req.user, perfil };
+}
+
+/** Camada restrita: só coordenador e analista do Núcleo (o gestor e qualquer outro perfil recebem 403). */
+function contextoRestrito(req, res) {
+  const c = contexto(req, res);
+  if (!c) return null;
+  if (!PERFIS_OPERACAO.includes(c.perfil)) {
+    res.status(403).json({ ok: false, message: "Este conteúdo é restrito à equipe técnica do Núcleo." });
+    return null;
+  }
+  return c;
 }
 
 const erro = (res, status, message, extra = {}) => res.status(status).json({ ok: false, error: message, message, ...extra });
@@ -203,6 +260,18 @@ async function garantirBase(empresaId) {
       }
     }
   }
+  const [m] = await pool.query(`SELECT COUNT(*) n FROM nusp_motivos WHERE empresa_id = ?`, [empresaId]);
+  if (!Number(m[0].n)) {
+    for (let i = 0; i < MOTIVOS_PADRAO.length; i++) {
+      await pool.query(`INSERT IGNORE INTO nusp_motivos (empresa_id, nome, ordem) VALUES (?, ?, ?)`, [empresaId, MOTIVOS_PADRAO[i], i + 1]);
+    }
+  }
+  const [en] = await pool.query(`SELECT COUNT(*) n FROM nusp_encaminhamentos WHERE empresa_id = ?`, [empresaId]);
+  if (!Number(en[0].n)) {
+    for (let i = 0; i < ENCAMINHAMENTOS_PADRAO.length; i++) {
+      await pool.query(`INSERT IGNORE INTO nusp_encaminhamentos (empresa_id, nome, ordem) VALUES (?, ?, ?)`, [empresaId, ENCAMINHAMENTOS_PADRAO[i], i + 1]);
+    }
+  }
   semeadas.add(empresaId);
 }
 
@@ -233,6 +302,7 @@ module.exports = {
   PERFIL_COORD, PERFIL_ANALISTA, PERFIL_GESTOR, PERFIS_NUSP, PERFIS_OPERACAO,
   TIPOS_ATIVIDADE, FORMATOS, STATUS_ATIVIDADE, STATUS_PLANO, STATUS_MATERIAL, PRESENCAS, TIPOS_PROGRAMA,
   DIMENSOES_PADRAO, PROGRAMAS_PADRAO,
-  contexto, erro, dataISO, texto, inteiroOuNulo, opcao, urlValida, hojeISO, valores,
+  CANAIS_ACOLHIMENTO, ORIGENS_ACOLHIMENTO, STATUS_ACOLHIMENTO, RESUMO_MAX, MINIMO_CELULA, MOTIVOS_PADRAO, ENCAMINHAMENTOS_PADRAO,
+  contexto, contextoRestrito, erro, dataISO, texto, inteiroOuNulo, opcao, urlValida, hojeISO, valores,
   existeNaEmpresa, conferirReferencias, garantirBase, chave, registrarLeitura,
 };

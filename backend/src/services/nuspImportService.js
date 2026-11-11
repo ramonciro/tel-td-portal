@@ -15,7 +15,7 @@
 const pool = require("../lib/db");
 const { comTransacao } = require("../lib/tx");
 const B = require("../lib/nuspBase");
-const { gravarParticipantes } = require("../controllers/nuspController");
+const { gravarParticipantes, pessoaPorMatricula } = require("../controllers/nuspController");
 
 const DIM_ALIAS = {
   "organizacao do trabalho": "Conteúdo e organização do trabalho",
@@ -81,7 +81,7 @@ function pct(v) {
   return Math.max(0, Math.min(100, Math.round(val)));
 }
 
-async function importarPlanilha({ empresaId, usuario, buffer, simular }) {
+async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEscutas = false }) {
   const XLSX = require("xlsx");
   const wb = XLSX.read(buffer, { type: "buffer", cellDates: false });
   await B.garantirBase(empresaId);
@@ -100,6 +100,9 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular }) {
     atividades: { lidas: 0, importadas: 0, ja_existiam: 0, escuta_individual_adiada: 0, sem_data_ou_tema: 0, sem_dimensao: 0, concluidas_sem_evidencia: 0, linhas_com_problema: [] },
     planos: { lidos: 0, importados: 0, ja_existiam: 0, sem_data_ou_prazo: 0, sem_dimensao: 0, concluidos_sem_evidencia: 0, linhas_com_problema: [] },
     participantes: { lidos: 0, gravados: 0, escuta_individual_adiada: 0, sem_atividade: 0, sem_matricula_sem_par: 0, erros: 0, linhas_com_problema: [] },
+    // Escuta individual -> acolhimento (Pacote 2). Só entra com a opção marcada, e só o dado ADMINISTRATIVO
+    // (data, unidade, pessoa): a planilha antiga não traz resumo e nada de texto livre é copiado.
+    escutas: { incluidas: !!incluirEscutas, lidas: 0, importadas: 0, ja_existiam: 0, sem_data: 0, sem_matricula_sem_par: 0, erros: 0, linhas_com_problema: [] },
     unidades_novas: [],
     avisos: [],
   };
@@ -219,6 +222,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular }) {
 
   // ── 3) Participantes: casa com as atividades lidas (data + público) ─
   const parts = [];
+  const escutas = [];
   if (abaPart) {
     const idxData = (a) => a.filter((x) => x.tipo === "capacitacao" || x.tipo === "escuta_coletiva" || x.tipo === "acao_intervencao");
     const porData = new Map();
@@ -229,7 +233,18 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular }) {
       if (!nome && !mat) continue;
       rel.participantes.lidos += 1;
       const acao = B.chave(pegar(abaPart, linha, "acao realizada"));
-      if (acao === "escuta individual") { rel.participantes.escuta_individual_adiada += 1; continue; }
+      if (acao === "escuta individual") {
+        rel.participantes.escuta_individual_adiada += 1;
+        if (incluirEscutas) {
+          rel.escutas.lidas += 1;
+          escutas.push({
+            n: linha.n, nome, matricula: mat,
+            data: B.dataISO(pegar(abaPart, linha, "id da turma")) || B.dataISO(pegar(abaPart, linha, "data")),
+            unidTxt: pegar(abaPart, linha, "site") || pegar(abaPart, linha, "unidade"),
+          });
+        }
+        continue;
+      }
       const turma = B.dataISO(pegar(abaPart, linha, "id da turma"));
       const publico = B.chave(pegar(abaPart, linha, "publico"));
       const cand = turma ? porData.get(turma) || [] : [];
@@ -252,6 +267,11 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular }) {
     rel.planos.importados = planos.length;
     // Em simulação não consultamos nem criamos pessoas: só contamos o que tem matrícula.
     for (const p of parts) { if (p.matricula) rel.participantes.gravados += 1; else rel.participantes.sem_matricula_sem_par += 1; }
+    for (const e of escutas) {
+      if (!e.data) { rel.escutas.sem_data += 1; if (rel.escutas.linhas_com_problema.length < 100) rel.escutas.linhas_com_problema.push(e.n); }
+      else if (e.matricula) rel.escutas.importadas += 1;
+      else rel.escutas.sem_matricula_sem_par += 1;
+    }
     rel.avisos.push("Simulação: nada foi gravado. Participantes sem matrícula só são conferidos contra o cadastro na importação real.");
     return rel;
   }
@@ -319,6 +339,42 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular }) {
     rel.participantes.gravados += r.gravados;
     rel.participantes.erros += r.erros.length;
     for (const e of r.erros) if (rel.participantes.linhas_com_problema.length < 100) rel.participantes.linhas_com_problema.push(e.linha);
+  }
+
+  // ── Escutas individuais -> acolhimentos (opcional, só dado administrativo) ──
+  if (incluirEscutas && escutas.length) {
+    const [un2] = await pool.query(`SELECT id, nome FROM nusp_unidades WHERE empresa_id = ?`, [empresaId]);
+    const mapUn2 = new Map(un2.map((u) => [B.chave(u.nome), u.id]));
+    const problema = (e) => { if (rel.escutas.linhas_com_problema.length < 100) rel.escutas.linhas_com_problema.push(e.n); };
+    for (const e of escutas) {
+      if (!e.data) { rel.escutas.sem_data += 1; problema(e); continue; }
+      let matricula = e.matricula;
+      if (!matricula) {
+        const [ach] = await pool.query(`SELECT matricula FROM pessoas WHERE empresa_id = ? AND nome = ? AND matricula IS NOT NULL AND matricula <> ''`, [empresaId, e.nome]);
+        if (ach.length === 1) matricula = ach[0].matricula;
+        else { rel.escutas.sem_matricula_sem_par += 1; problema(e); continue; }
+      }
+      const unidade = e.unidTxt ? mapUn2.get(B.chave(e.unidTxt)) || null : null;
+      try {
+        await comTransacao(async (conn) => {
+          const r = await pessoaPorMatricula(conn, empresaId, matricula, e.nome);
+          if (r.erro) { rel.escutas.sem_matricula_sem_par += 1; problema(e); return; }
+          const [ex] = await conn.query(
+            `SELECT id FROM nusp_acolhimentos WHERE empresa_id = ? AND pessoa_id = ? AND data_acolhimento = ? AND origem_registro = 'importacao' AND (unidade_id <=> ?) LIMIT 1`,
+            [empresaId, r.pessoa.id, e.data, unidade]);
+          if (ex.length) { rel.escutas.ja_existiam += 1; return; }
+          await conn.query(
+            `INSERT INTO nusp_acolhimentos (empresa_id, pessoa_id, data_acolhimento, canal, unidade_id, programa_id, status, origem_registro, criado_por_id)
+             VALUES (?, ?, ?, 'nao_informado', ?, ?, 'encerrado', 'importacao', ?)`,
+            [empresaId, r.pessoa.id, e.data, unidade, progNucleo, usuario.id]);
+          rel.escutas.importadas += 1;
+        });
+      } catch (err) {
+        console.error("[nusp.import.escuta]", err.message);
+        rel.escutas.erros += 1; problema(e);
+      }
+    }
+    if (rel.escutas.importadas) aviso("Escutas individuais importadas só com dados administrativos (sem resumo). Ficam visíveis ao coordenador; o analista as vê ao ser definido como responsável.");
   }
   return rel;
 }

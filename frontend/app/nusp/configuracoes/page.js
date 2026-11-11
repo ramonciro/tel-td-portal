@@ -33,7 +33,7 @@ function CadastroLista({ tipo, titulo, itens, extra, onMudou, rotuloNovo }) {
     setErro("");
     try {
       const corpo = { nome: item.nome, ativo: item.ativo, ...(extra ? { [extra.campo]: item[extra.campo] } : {}), ...mudancas };
-      if (tipo === "dimensoes") corpo.ordem = item.ordem;
+      if (tipo === "dimensoes" || tipo === "motivos" || tipo === "encaminhamentos") corpo.ordem = item.ordem;
       await apiFetch(`/nusp/cadastros/${tipo}/${item.id}`, { method: "PUT", body: JSON.stringify(corpo) });
       setEditando(null);
       onMudou();
@@ -93,6 +93,7 @@ function ImportadorPlanilha() {
   const [rel, setRel] = useState(null);
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [escutas, setEscutas] = useState(false);
 
   const enviar = async (simular) => {
     if (!arquivo) { setErro("Escolha a planilha (.xlsx) primeiro."); return; }
@@ -100,7 +101,7 @@ function ImportadorPlanilha() {
     try {
       const fd = new FormData();
       fd.append("arquivo", arquivo);
-      setRel(await apiFetch(`/nusp/importar${simular ? "?simular=1" : ""}`, { method: "POST", body: fd }));
+      setRel(await apiFetch(`/nusp/importar?${[simular ? "simular=1" : "", escutas ? "escutas=1" : ""].filter(Boolean).join("&")}`, { method: "POST", body: fd }));
     } catch (e) { setErro(e.message); setRel(null); } finally { setOcupado(false); }
   };
 
@@ -120,10 +121,14 @@ function ImportadorPlanilha() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <input type="file" accept=".xlsx" onChange={(e) => { setArquivo(e.target.files?.[0] || null); setRel(null); }} />
         <button type="button" style={st.btnGhost} disabled={ocupado} onClick={() => enviar(true)}>Simular (não grava)</button>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: colors.textSecondary }}>
+          <input type="checkbox" checked={escutas} onChange={(e) => { setEscutas(e.target.checked); setRel(null); }} />
+          Incluir escutas individuais (acolhimentos)
+        </label>
         <button type="button" style={st.btn} disabled={ocupado || !rel?.simulacao} onClick={() => enviar(false)} title={rel?.simulacao ? "" : "Rode a simulação antes"}>Importar de verdade</button>
       </div>
       <p style={{ fontSize: 12, color: colors.textMuted, margin: "0 0 12px" }}>
-        Faça sempre a simulação primeiro. Participantes sem matrícula na planilha só são aceitos se o nome bater com uma única pessoa já cadastrada. “Escuta individual” fica de fora (entra no pacote de acolhimento).
+        Faça sempre a simulação primeiro. Participantes sem matrícula na planilha só são aceitos se o nome bater com uma única pessoa já cadastrada. As “Escuta individual” só entram se a opção acima estiver marcada, e entram apenas com os dados administrativos (data, unidade e pessoa): a planilha antiga não tem resumo e nenhum texto é copiado. Ficam visíveis só para a coordenação do Núcleo.
         O relatório mostra só números e linhas, nunca nomes.
       </p>
       {rel && (
@@ -135,6 +140,7 @@ function ImportadorPlanilha() {
             {bloco("Atividades", rel.atividades, [["lidas", "Lidas"], ["importadas", "Importadas"], ["ja_existiam", "Já existiam"], ["escuta_individual_adiada", "Escuta individual (adiadas)"], ["sem_data_ou_tema", "Sem data ou tema"], ["sem_dimensao", "Sem dimensão reconhecida"], ["concluidas_sem_evidencia", "Concluídas sem link de evidência"]])}
             {bloco("Planos de ação", rel.planos, [["lidos", "Lidos"], ["importados", "Importados"], ["ja_existiam", "Já existiam"], ["sem_data_ou_prazo", "Sem data ou prazo"], ["sem_dimensao", "Sem dimensão reconhecida"], ["concluidos_sem_evidencia", "Concluídos sem link de evidência"]])}
             {bloco("Participantes", rel.participantes, [["lidos", "Lidos"], ["gravados", "Gravados"], ["escuta_individual_adiada", "Escuta individual (adiados)"], ["sem_atividade", "Sem atividade correspondente"], ["sem_matricula_sem_par", "Sem matrícula e sem par"], ["erros", "Com erro"]])}
+            {rel.escutas?.incluidas ? bloco("Escutas individuais (acolhimentos)", rel.escutas, [["lidas", "Lidas"], ["importadas", "Importadas"], ["ja_existiam", "Já existiam"], ["sem_data", "Sem data"], ["sem_matricula_sem_par", "Sem matrícula e sem par no cadastro"], ["erros", "Com erro"]]) : null}
           </div>
           {rel.unidades_novas?.length ? <p style={{ fontSize: 12.5, marginTop: 10 }}><strong>Unidades novas que serão/foram criadas:</strong> {rel.unidades_novas.join(", ")}</p> : null}
           {rel.avisos?.length ? (
@@ -173,6 +179,8 @@ export default function ConfiguracoesNuspPage() {
             extra={{ campo: "programa_id", rotulo: "Programa", padrao: progs[0] ? String(progs[0].id) : "", opcoes: progs.map((p) => ({ value: String(p.id), label: p.nome })), mostrar: (i) => nomeProg(i.programa_id) }} />
           <CadastroLista tipo="unidades" titulo="Unidades / sites" rotuloNovo="Nova unidade" itens={cad?.unidades || []} onMudou={carregar} />
           <CadastroLista tipo="dimensoes" titulo="Dimensões da pesquisa de riscos" rotuloNovo="Nova dimensão" itens={cad?.dimensoes || []} onMudou={carregar} />
+          <CadastroLista tipo="motivos" titulo="Motivos do acolhimento" rotuloNovo="Novo motivo (categoria geral, sem diagnóstico)" itens={cad?.motivos || []} onMudou={carregar} />
+          <CadastroLista tipo="encaminhamentos" titulo="Encaminhamentos do acolhimento" rotuloNovo="Novo encaminhamento" itens={cad?.encaminhamentos || []} onMudou={carregar} />
         </div>
       </div>
     </PortalShell>

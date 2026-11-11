@@ -34,6 +34,49 @@ function calcularPeriodo(tipo, deCustom, ateCustom) {
 const FAROL_COR = { vermelho: colors.danger, amarelo: "#d97706", verde: colors.success };
 const FAROL_TXT = { vermelho: "Atrasado", amarelo: "Vence em até 7 dias", verde: "No prazo" };
 
+// Linhas de uma distribuição já suprimida pelo servidor (+ a linha "Demais", quando houver).
+const dist = (o) => (o ? [...o.linhas.map((l) => ({ nome: l.nome, n: l.n })), ...(o.demais ? [{ nome: o.demais.nome, n: o.demais.n }] : [])] : []);
+
+function SecaoAcolhimento({ a }) {
+  return (
+    <div style={{ marginTop: 22 }}>
+      <h2 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 4px", color: colors.textPrimary }}>Acolhimento individual</h2>
+      <p style={{ fontSize: 12, color: colors.textMuted, margin: "0 0 12px" }}>
+        Só totais, sem nomes. Para proteger as pessoas, grupos com menos de {a.minimo} registros não são mostrados: aparecem reunidos em “Demais”.
+      </p>
+      {a.insuficiente ? (
+        <div style={{ ...st.card, color: colors.textSecondary, fontSize: 13 }}>
+          Há menos de {a.minimo} acolhimentos neste período e filtro, então os números ficam ocultos. Amplie o período ou retire um filtro.
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 16 }}>
+            <StatCard title="Acolhimentos" value={fmtNum(a.total)} subtitle="atendimentos individuais no período" accent={colors.primary} />
+            <StatCard title="Pessoas acolhidas" value={a.pessoas === null ? `< ${a.minimo}` : fmtNum(a.pessoas)} subtitle="pessoas diferentes" accent={colors.info} />
+            <StatCard title="Voltaram mais de uma vez" value={a.recorrentes === null ? `< ${a.minimo}` : fmtNum(a.recorrentes)} subtitle="pessoas com 2 ou mais acolhimentos" accent={colors.warning} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+            <SectionCard title="Acolhimentos por mês">
+              <Colunas dados={a.por_mes.linhas.map((l) => ({ mes: l.nome, n: l.n }))} valueKey="n" />
+              {a.por_mes.demais ? (
+                <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 6 }}>
+                  {a.por_mes.linhas.length
+                    ? `Meses com menos de ${a.minimo} registros ficam de fora do gráfico e somam ${fmtNum(a.por_mes.demais.n)}.`
+                    : `Nenhum mês tem registros suficientes para aparecer separado (mínimo de ${a.minimo}). Amplie o período.`}
+                </div>
+              ) : null}
+            </SectionCard>
+            <SectionCard title="Por unidade"><Barras dados={dist(a.por_unidade)} valueKey="n" vazio="Sem grupos com 5 ou mais." /></SectionCard>
+            <SectionCard title="Por motivo"><Barras dados={dist(a.por_motivo)} valueKey="n" vazio="Sem grupos com 5 ou mais." /></SectionCard>
+            <SectionCard title="Por canal"><Barras dados={dist(a.por_canal)} valueKey="n" vazio="Sem grupos com 5 ou mais." /></SectionCard>
+            <SectionCard title="Por encaminhamento"><Barras dados={dist(a.por_encaminhamento)} valueKey="n" vazio="Sem grupos com 5 ou mais." /></SectionCard>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function PainelNucleoPage() {
   const [cad, setCad] = useState(null);
   const [periodo, setPeriodo] = useState("ano");
@@ -44,6 +87,7 @@ export default function PainelNucleoPage() {
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [perfil, setPerfil] = useState("");
+  const [acol, setAcol] = useState(null);
 
   useEffect(() => { setPerfil(perfilNusp()); }, []);
 
@@ -70,6 +114,13 @@ export default function PainelNucleoPage() {
     }
   }, [qs]);
   useEffect(() => { carregar(); }, [carregar]);
+
+  // Acolhimento: só agregado, com supressão de células abaixo de 5 (feita no servidor).
+  useEffect(() => {
+    const p = new URLSearchParams({ de: per.de, ate: per.ate });
+    ["programa_id", "unidade_id"].forEach((k) => { if (f[k]) p.set(k, f[k]); });
+    apiFetch(`/nusp/acolhimentos/indicadores?${p.toString()}`).then(setAcol).catch(() => setAcol(null));
+  }, [per, f.programa_id, f.unidade_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const K = dados?.kpis || {};
   const P = dados?.planos || {};
@@ -187,6 +238,8 @@ export default function PainelNucleoPage() {
               </div>
             )}
           </SectionCard>
+
+          {acol ? <SecaoAcolhimento a={acol} /> : null}
 
           <p style={{ fontSize: 12, color: colors.textMuted, marginTop: 14 }}>
             Este painel mostra apenas totais. Nomes e matrículas de participantes ficam restritos à coordenação e aos analistas do Núcleo.
