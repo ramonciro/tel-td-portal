@@ -134,7 +134,7 @@ function contexto(req, res) {
   const perfil = String(req.user?.perfil || "").toLowerCase().trim();
   const empresaId = Number(req.empresaId);
   if (perfil === "super_admin" || !PERFIS_NUSP.includes(perfil) || !Number.isInteger(empresaId) || empresaId <= 0) {
-    res.status(403).json({ ok: false, message: "Acesso não autorizado ao módulo do Núcleo." });
+    res.status(403).json({ ok: false, message: "Você não tem acesso ao módulo do Núcleo." });
     return null;
   }
   return { empresaId, user: req.user, perfil };
@@ -145,7 +145,7 @@ function contextoRestrito(req, res) {
   const c = contexto(req, res);
   if (!c) return null;
   if (!PERFIS_OPERACAO.includes(c.perfil)) {
-    res.status(403).json({ ok: false, message: "Este conteúdo é restrito à equipe técnica do Núcleo." });
+    res.status(403).json({ ok: false, message: "Este conteúdo é só da equipe técnica do Núcleo." });
     return null;
   }
   return c;

@@ -29,7 +29,7 @@ const podeAcessar = (c, a) =>
   ehCoord(c) || Number(a.analista_id) === Number(c.user.id) || Number(a.criado_por_id) === Number(c.user.id);
 
 const SEM_CHAVE_MSG =
-  "A chave de criptografia do Núcleo não está configurada neste ambiente. Registre o acolhimento sem resumo ou avise o responsável técnico.";
+  "Falta configurar a chave de criptografia neste ambiente. Registre o acolhimento sem resumo ou avise o responsável técnico.";
 
 async function nomeDoUsuario(id, empresaId) {
   const [r] = await pool.query(`SELECT nome FROM usuarios WHERE id = ? AND empresa_id = ? LIMIT 1`, [id, empresaId]);
@@ -128,7 +128,7 @@ async function listar(req, res) {
       `SELECT ${SQL_LINHA} ${SQL_JOINS} WHERE ${f.where} ORDER BY a.data_acolhimento DESC, a.id DESC LIMIT ? OFFSET ?`,
       [...f.params, limite, offset]
     );
-    await B.registrarLeitura(req, c.empresaId, "acolhimento_lista", null, `${rows.length} de ${n(t.total)} registro(s)`);
+    await B.registrarLeitura(req, c.empresaId, "acolhimento_lista", null, `${rows.length} de ${n(t.total)} registros`);
     return res.json({
       ok: true, total: n(t.total), pagina, limite, chave_configurada: crypto.chaveConfigurada(),
       itens: rows.map((r) => ({ ...r, tem_resumo: !!r.tem_resumo })),

@@ -108,7 +108,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
   const abaPlano = lerAba(XLSX, wb, ["Plano de Ação", "Plano de Acao"]);
   const abaPart = lerAba(XLSX, wb, ["Participantes"]);
   if (!abaAtv && !abaPlano && !abaPart) {
-    const e = new Error("Não encontrei as abas 'Base de Atividades', 'Plano de Ação' ou 'Participantes'. Use a planilha NUSPSI — Visão Nacional.");
+    const e = new Error("Não encontrei as abas 'Base de Atividades', 'Plano de Ação' ou 'Participantes'. Use a planilha “NUSPSI Visão Nacional”.");
     e.status = 400;
     throw e;
   }
@@ -171,12 +171,12 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
       if (!tema || (!dataBr && statusPre !== "planejada")) { rel.atividades.sem_data_ou_tema += 1; rel.atividades.linhas_com_problema.push(linha.n); continue; }
       if (!dataBr) rel.atividades.sem_data_definida += 1;
       const tipo = TIPO_MAP[tipoTxt] || "outros";
-      if (!TIPO_MAP[tipoTxt]) aviso(`Tipo de atividade desconhecido ("${tipoTxt}") foi importado como "Outros".`);
+      if (!TIPO_MAP[tipoTxt]) aviso(`Tipo de atividade desconhecido ("${tipoTxt}") entrou como "Outros".`);
       const publico = pegar(abaAtv, linha, "setor / publico") || null;
       const unid = unidadeId(pegar(abaAtv, linha, "site"));
       const dimTxt = pegar(abaAtv, linha, "dimensao");
       const dim = dimensaoId(dimTxt);
-      if (dim === undefined) { rel.atividades.sem_dimensao += 1; aviso(`Dimensão sem correspondência: "${dimTxt}" (importada sem dimensão).`); }
+      if (dim === undefined) { rel.atividades.sem_dimensao += 1; aviso(`Dimensão sem correspondência: "${dimTxt}" (entrou sem dimensão).`); }
       const statusTxt = B.chave(pegar(abaAtv, linha, "status"));
       const status = STATUS_ATV_MAP[statusTxt] || "planejada";
       const evid = pegar(abaAtv, linha, "evidencia");
@@ -217,7 +217,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
       if (!ident || !prazo) rel.planos.sem_data_definida += 1; // entra como "sem data definida"
       const dimTxt = pegar(abaPlano, linha, "dimensao");
       const dim = dimensaoId(dimTxt);
-      if (dim === undefined) { rel.planos.sem_dimensao += 1; aviso(`Dimensão sem correspondência: "${dimTxt}" (importada sem dimensão).`); }
+      if (dim === undefined) { rel.planos.sem_dimensao += 1; aviso(`Dimensão sem correspondência: "${dimTxt}" (entrou sem dimensão).`); }
       const status = STATUS_PLANO_MAP[B.chave(pegar(abaPlano, linha, "status"))] || "pendente";
       const evid = pegar(abaPlano, linha, "evidencia");
       const evUrl = B.urlValida(evid) ? evid : null;
@@ -429,7 +429,7 @@ async function importarPlanilha({ empresaId, usuario, buffer, simular, incluirEs
         rel.escutas.erros += 1; problema(e);
       }
     }
-    if (rel.escutas.importadas) aviso("Escutas individuais importadas só com dados administrativos (sem resumo). Ficam visíveis ao coordenador e ao analista da planilha, quando o nome dele bate com um usuário do Núcleo.");
+    if (rel.escutas.importadas) aviso("As escutas individuais entraram só com os dados administrativos, sem resumo. Quem vê é o coordenador e o analista da planilha, quando o nome dele bate com um usuário do Núcleo.");
   }
   return rel;
 }

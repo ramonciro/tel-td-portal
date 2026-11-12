@@ -30,8 +30,8 @@ const hora = (v) => {
 function AvisoRestrito() {
   return (
     <div style={{ background: colors.warningLight, color: colors.warningText, border: "1px solid #fde68a", borderRadius: 12, padding: "10px 14px", fontSize: 12.5, marginBottom: 14 }}>
-      <strong>Conteúdo restrito à equipe técnica do Núcleo.</strong> Cada vez que uma ficha é aberta, o acesso fica registrado (quem, quando). O resumo é guardado criptografado e deve trazer só a orientação geral:
-      não registre diagnóstico, CID, medicação nem relato clínico.
+      <strong>Conteúdo só da equipe técnica do Núcleo.</strong> Toda vez que uma ficha é aberta, o acesso fica registrado (quem abriu e quando). O resumo é guardado criptografado e deve ter só a orientação geral:
+      não escreva diagnóstico, CID, medicação nem relato clínico.
     </div>
   );
 }
@@ -68,7 +68,7 @@ function FormAcolhimento({ form, cad, coord, chaveOk, onClose, onSaved }) {
         {erro ? <div style={st.erro}>{erro}</div> : null}
         {!chaveOk ? (
           <div style={{ ...st.erro, background: colors.warningLight, color: colors.warningText, borderColor: "#fde68a" }}>
-            A chave de criptografia do Núcleo não está configurada neste ambiente: dá para registrar o acolhimento, mas não o resumo.
+            Falta configurar a chave de criptografia do Núcleo neste ambiente. Dá para registrar o acolhimento, mas não o resumo.
           </div>
         ) : null}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
@@ -154,7 +154,7 @@ function DetalheAcolhimento({ id, coord, onClose, onEditar, onExcluido }) {
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: colors.textSecondary, marginBottom: 4 }}>Resumo</div>
             {it.resumo_indisponivel === "SEM_CHAVE" ? (
-              <div style={st.erro}>O resumo existe, mas a chave de criptografia não está configurada neste ambiente. Avise o responsável técnico.</div>
+              <div style={st.erro}>O resumo existe, mas falta configurar a chave de criptografia neste ambiente. Avise o responsável técnico.</div>
             ) : it.resumo_indisponivel ? (
               <div style={st.erro}>O resumo não pôde ser aberto (chave diferente da usada na gravação). Avise o responsável técnico.</div>
             ) : it.resumo ? (
@@ -227,7 +227,7 @@ function RegistroAcessos() {
         </div>
         {!lista.itens.length && <div style={st.vazio}>Nenhum acesso registrado neste filtro.</div>}
       </div>
-      <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 8 }}>{fmtNum(lista.total)} acesso(s).</div>
+      <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 8 }}>{fmtNum(lista.total)} {lista.total === 1 ? "acesso" : "acessos"}.</div>
       <Paginacao total={lista.total} limite={lista.limite} pagina={pagina} onPagina={setPagina} />
     </>
   );
@@ -283,7 +283,7 @@ export default function AcolhimentosPage() {
   if (perfil && !opera) {
     return (
       <PortalShell title="Núcleo de Saúde Psicossocial" subtitle="Acolhimentos">
-        <div style={st.erro}>Acesso restrito à equipe técnica do Núcleo.</div>
+        <div style={st.erro}>Este conteúdo é só da equipe técnica do Núcleo.</div>
       </PortalShell>
     );
   }
@@ -348,7 +348,7 @@ export default function AcolhimentosPage() {
             </div>
             {!lista.itens.length && <div style={st.vazio}>{carregando ? "Carregando…" : "Nenhum acolhimento encontrado."}</div>}
           </div>
-          <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 8 }}>{fmtNum(lista.total)} acolhimento(s). A lista não mostra o resumo; ele só abre dentro da ficha.</div>
+          <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 8 }}>{fmtNum(lista.total)} {lista.total === 1 ? "acolhimento" : "acolhimentos"}. A lista não mostra o resumo, ele só abre dentro da ficha.</div>
           <Paginacao total={lista.total} limite={lista.limite} pagina={pagina} onPagina={setPagina} />
         </>
       )}

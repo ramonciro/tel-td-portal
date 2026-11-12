@@ -22,9 +22,9 @@ const CLASSE = {
 };
 const SITUACAO = {
   em_tratamento: { rotulo: "Em tratamento", tom: "em_andamento" },
-  sem_plano: { rotulo: "Alta exposição sem plano", tom: "atrasado" },
+  sem_plano: { rotulo: "Alta e sem plano", tom: "atrasado" },
   monitorar: { rotulo: "Monitorar", tom: "alerta" },
-  ok: { rotulo: "Sem ação necessária", tom: "concluida" },
+  ok: { rotulo: "Tudo certo", tom: "concluida" },
   sem_dado: { rotulo: "Sem dado", tom: "pendente" },
 };
 const RECURSO = { pesquisa_individual: "Abriu uma resposta", pesquisa_individual_lista: "Consultou a lista" };
@@ -92,7 +92,7 @@ function Resultado({ pesquisa, coord, onMudou }) {
     const r = g.res[d.id];
     if (g.suprimido || !r || r.pct === null) return <td key={d.id} style={{ ...st.td, textAlign: "center", color: colors.textMuted, fontSize: 12 }} title={`Menos de ${dados.minimo_celula} respondentes: dado protegido`}>—</td>;
     const c = CLASSE[r.classificacao];
-    return <td key={d.id} style={{ ...st.td, textAlign: "center", background: c?.bg, color: c?.cor, fontWeight: 800, fontSize: 12.5 }} title={`${d.nome}: ${pct1(r.pct)} — exposição ${c?.rotulo?.toLowerCase()}`}>{pct1(r.pct)}</td>;
+    return <td key={d.id} style={{ ...st.td, textAlign: "center", background: c?.bg, color: c?.cor, fontWeight: 800, fontSize: 12.5 }} title={`${d.nome}: ${pct1(r.pct)}, exposição ${c?.rotulo?.toLowerCase()}`}>{pct1(r.pct)}</td>;
   };
 
   return (
@@ -103,17 +103,17 @@ function Resultado({ pesquisa, coord, onMudou }) {
         <StatCard title="Respondentes" value={fmtNum(dados.nacional?.n)} subtitle={`Ciclo ${pesquisa.ciclo} · ${fmtData(pesquisa.data_referencia)}`} accent={colors.primary} />
         <StatCard title="Dimensões em alta exposição" value={dados.resumo.altas} subtitle="Acima de 50% de respostas desfavoráveis" accent={colors.dangerText} />
         <StatCard title="Em exposição moderada" value={dados.resumo.moderadas} subtitle="De 26% a 50%" accent={colors.warningText} />
-        <StatCard title="Altas sem plano de ação" value={dados.resumo.altas_sem_plano} subtitle={dados.resumo.altas_sem_plano ? "Precisa de plano em aberto" : "Todas com plano em aberto"} accent={dados.resumo.altas_sem_plano ? colors.dangerText : colors.successText} />
+        <StatCard title="Altas sem plano de ação" value={dados.resumo.altas_sem_plano} subtitle={dados.resumo.altas_sem_plano ? "Falta abrir plano" : "Todas já têm plano aberto"} accent={dados.resumo.altas_sem_plano ? colors.dangerText : colors.successText} />
       </div>
 
       <div style={{ ...st.card, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <h3 style={st.cardTitle}>Farol por dimensão — {rotuloSel}</h3>
+          <h3 style={st.cardTitle}>Farol por dimensão: {rotuloSel}</h3>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" style={st.btnGhost} onClick={() => apiDownload(`/nusp/pesquisas/${pesquisa.id}/exportar`, `nucleo-pesquisa-${pesquisa.ciclo}.xlsx`).catch((e) => setErro(e.message))}>Exportar Excel</button>
             {coord ? <button type="button" style={st.btnGhost} onClick={() => acao(`/nusp/pesquisas/${pesquisa.id}/recalcular`, "POST", "Resultados recalculados")}>Recalcular</button> : null}
-            {coord ? <button type="button" style={st.btnGhost} onClick={() => acao(`/nusp/pesquisas/${pesquisa.id}/planos-sugeridos`, "POST", "Rascunhos conferidos")}>Criar rascunhos de plano</button> : null}
-            {coord ? <button type="button" style={st.btnMiniDanger} onClick={() => acao(`/nusp/pesquisas/${pesquisa.id}`, "DELETE", "Pesquisa excluída", `Excluir a pesquisa ${pesquisa.ciclo} e TODAS as respostas dela? Isso não pode ser desfeito.`)}>Excluir pesquisa</button> : null}
+            {coord ? <button type="button" style={st.btnGhost} onClick={() => acao(`/nusp/pesquisas/${pesquisa.id}/planos-sugeridos`, "POST", "Planos sugeridos conferidos")}>Criar planos sugeridos</button> : null}
+            {coord ? <button type="button" style={st.btnMiniDanger} onClick={() => acao(`/nusp/pesquisas/${pesquisa.id}`, "DELETE", "Pesquisa excluída", `Excluir a pesquisa ${pesquisa.ciclo} e todas as respostas dela? Não dá para desfazer.`)}>Excluir pesquisa</button> : null}
           </div>
         </div>
         <div style={st.filtros}>
@@ -153,7 +153,7 @@ function Resultado({ pesquisa, coord, onMudou }) {
                       ) : null}
                       <td style={st.td}>
                         {f.planos.abertos ? <Link href={`/nusp/planos?dimensao_id=${f.dimensao_id}`} style={{ color: colors.primary, fontWeight: 700 }}>{f.planos.abertos} em aberto</Link> : <span style={{ color: colors.textMuted }}>nenhum</span>}
-                        {f.planos.atrasados ? <div style={{ fontSize: 11, color: colors.dangerText, fontWeight: 700 }}>{f.planos.atrasados} atrasado(s)</div> : null}
+                        {f.planos.atrasados ? <div style={{ fontSize: 11, color: colors.dangerText, fontWeight: 700 }}>{f.planos.atrasados} {f.planos.atrasados === 1 ? "atrasado" : "atrasados"}</div> : null}
                       </td>
                       <td style={st.td}><Badge tom={s.tom}>{s.rotulo}</Badge></td>
                     </tr>
@@ -202,7 +202,7 @@ function Resultado({ pesquisa, coord, onMudou }) {
           </table>
         </div>
         <div style={{ padding: "10px 18px 14px", fontSize: 11.5, color: colors.textMuted }}>
-          “—” = dado protegido (menos de {dados.minimo_celula} respondentes, ou recorte complementar de um protegido, para que o valor não possa ser descoberto por subtração). Cor: verde baixa · âmbar moderada · vermelho alta.
+          “—” é dado protegido: tem menos de {dados.minimo_celula} respondentes, ou é o recorte que sobra de um grupo protegido (senão dava para descobrir o valor por subtração). Verde é baixa, âmbar é moderada e vermelho é alta.
         </div>
       </div>
     </>
@@ -308,10 +308,10 @@ function Individuais({ pesquisa }) {
             </tbody>
           </table>
         </div>
-        {!lista.itens.length && <div style={st.vazio}>Nenhuma resposta encontrada.</div>}
+        {!lista.itens.length && <div style={st.vazio}>Nenhuma resposta com esses filtros.</div>}
       </div>
       <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 8 }}>
-        {fmtNum(lista.total)} resposta(s). A lista não mostra as respostas; elas só abrem dentro da ficha.{" "}
+        {fmtNum(lista.total)} {lista.total === 1 ? "resposta" : "respostas"}. A lista não mostra o que cada pessoa respondeu, isso só abre dentro da ficha.{" "}
         <button type="button" style={{ ...st.btnMini, marginLeft: 6 }} onClick={() => setAcessos((x) => !x)}>{acessos ? "Ocultar registro de acessos" : "Ver registro de acessos"}</button>
       </div>
       <Paginacao total={lista.total} limite={lista.limite} pagina={pagina} onPagina={setPagina} />
@@ -381,10 +381,10 @@ function Importar({ chaveOk, onImportada }) {
   return (
     <div style={st.card}>
       <h3 style={st.cardTitle}>Importar respostas da pesquisa</h3>
-      {!chaveOk ? <div style={{ ...st.erro, background: colors.warningLight, color: colors.warningText, borderColor: "#fde68a" }}>A chave de criptografia do Núcleo não está configurada neste ambiente: dá para simular, mas não gravar a pesquisa.</div> : null}
+      {!chaveOk ? <div style={{ ...st.erro, background: colors.warningLight, color: colors.warningText, borderColor: "#fde68a" }}>Falta configurar a chave de criptografia do Núcleo neste ambiente. Dá para simular, mas não para gravar a pesquisa.</div> : null}
       {erro ? <div style={st.erro}>{erro}</div> : null}
       <p style={{ fontSize: 12.5, color: colors.textSecondary, margin: "0 0 12px" }}>
-        Use a planilha com a aba <strong>BASE DE DADOS</strong> (uma linha por pessoa, com Matrícula, Site, Serviço e as 24 perguntas). Rodar de novo o <em>mesmo ciclo</em> substitui as respostas dele; um ciclo novo cria uma nova rodada para comparação.
+        Use a planilha com a aba <strong>BASE DE DADOS</strong> (uma linha por pessoa, com Matrícula, Site, Serviço e as 24 perguntas). Importar o <em>mesmo ciclo</em> de novo troca as respostas dele. Um ciclo novo vira uma nova rodada, para comparar com a anterior.
       </p>
       <div style={st.filtros}>
         <Campo label="Ciclo *" minWidth={130} dica="Ex.: 2026-1"><input style={st.input} value={ciclo} maxLength={40} onChange={(e) => { setCiclo(e.target.value); setRel(null); }} /></Campo>
@@ -394,15 +394,15 @@ function Importar({ chaveOk, onImportada }) {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <input type="file" accept=".xlsx" onChange={(e) => { setArquivo(e.target.files?.[0] || null); setRel(null); }} />
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: colors.textSecondary }}>
-          <input type="checkbox" checked={criarPlanos} onChange={(e) => setCriarPlanos(e.target.checked)} /> Criar rascunhos de plano de ação (5 dimensões da planilha)
+          <input type="checkbox" checked={criarPlanos} onChange={(e) => setCriarPlanos(e.target.checked)} /> Criar os planos de ação sugeridos (para as 5 dimensões da planilha)
         </label>
         <button type="button" style={st.btnGhost} disabled={ocupado} onClick={() => enviar(true)}>Simular (não grava)</button>
-        <button type="button" style={st.btn} disabled={ocupado || !rel?.simulacao || !chaveOk} onClick={() => enviar(false)} title={rel?.simulacao ? "" : "Rode a simulação antes"}>{ocupado ? "Aguarde…" : "Importar de verdade"}</button>
+        <button type="button" style={st.btn} disabled={ocupado || !rel?.simulacao || !chaveOk} onClick={() => enviar(false)} title={rel?.simulacao ? "" : "Faça a simulação antes"}>{ocupado ? "Aguarde…" : "Importar de verdade"}</button>
       </div>
       {rel ? (
         <>
           <div style={rel.simulacao ? st.ok : { ...st.ok, background: colors.infoLight, color: "#075985", borderColor: "#bae6fd" }}>
-            {rel.simulacao ? "Simulação concluída — nada foi gravado. Confira o resultado nacional abaixo antes de importar." : "Importação concluída."}
+            {rel.simulacao ? "Simulação feita, nada foi gravado. Confira o resultado nacional abaixo antes de importar." : "Pesquisa importada."}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12 }}>
             <div style={caixa}>
@@ -417,12 +417,12 @@ function Importar({ chaveOk, onImportada }) {
               {linha("Já cadastradas", rel.pessoas.ja_cadastradas)}{linha("Novas (cadastro provisório)", rel.pessoas.novas)}
               {linha("Serviços", rel.servicos.total)}{linha(`Serviços com menos de ${rel.minimo_celula} resp. (protegidos)`, rel.servicos.abaixo_do_minimo)}
               {rel.pesquisa.ja_existia ? linha("Respostas substituídas", rel.pesquisa.respostas_anteriores_substituidas) : null}
-              {rel.planos.solicitado ? linha("Rascunhos de plano criados", rel.planos.criados) : null}
+              {rel.planos.solicitado ? linha("Planos sugeridos criados", rel.planos.criados) : null}
             </div>
             <div style={caixa}>
               <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>Sites</div>
               {rel.sites.map((s) => <div key={s.site}>{linha(s.site, s.respondentes)}</div>)}
-              {rel.unidades_novas.length ? <div style={{ fontSize: 11.5, color: colors.warningText, marginTop: 6 }}>Serão criadas como unidade: {rel.unidades_novas.join(", ")}</div> : null}
+              {rel.unidades_novas.length ? <div style={{ fontSize: 11.5, color: colors.warningText, marginTop: 6 }}>Vão virar unidade: {rel.unidades_novas.join(", ")}</div> : null}
             </div>
           </div>
           <div style={{ ...caixa, marginTop: 12 }}>
@@ -468,7 +468,7 @@ export default function PesquisaNuspPage() {
       <PageHero
         eyebrow="Núcleo de Saúde Psicossocial"
         title="Pesquisa de riscos psicossociais"
-        subtitle="Exposição por dimensão, farol e plano de ação ligado a cada dimensão em alta exposição."
+        subtitle="Como está cada dimensão, o que está em alerta e qual plano está tratando."
         actions={pesquisas?.length ? (
           <select value={sel} onChange={(e) => { setSel(e.target.value); setAba("resultado"); }} style={{ ...st.input, width: "auto", minWidth: 220 }} aria-label="Pesquisa">
             {pesquisas.map((p) => <option key={p.id} value={p.id}>{p.nome} ({p.ciclo})</option>)}
@@ -488,7 +488,7 @@ export default function PesquisaNuspPage() {
         <div style={st.vazio}>Carregando…</div>
       ) : !pesquisa ? (
         <div style={st.card}>
-          <div style={st.vazio}>Nenhuma pesquisa importada ainda.{coord ? " Use a aba “Importar” para trazer as respostas." : " A coordenação do Núcleo ainda não importou os resultados."}</div>
+          <div style={st.vazio}>Ainda não tem pesquisa importada.{coord ? " Vá na aba “Importar” para trazer as respostas." : " A coordenação do Núcleo ainda não importou os resultados."}</div>
         </div>
       ) : aba === "individual" && coord ? (
         <Individuais key={pesquisa.id} pesquisa={pesquisa} />

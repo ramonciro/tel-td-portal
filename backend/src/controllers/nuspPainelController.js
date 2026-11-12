@@ -198,7 +198,7 @@ async function exportar(req, res) {
       });
       nome = "nucleo_planos_de_acao";
     } else if (tipo === "participantes") {
-      if (!B.PERFIS_OPERACAO.includes(c.perfil)) return B.erro(res, 403, "A exportação nominal de participantes não está disponível para este perfil.");
+      if (!B.PERFIS_OPERACAO.includes(c.perfil)) return B.erro(res, 403, "Seu perfil não pode exportar a lista nominal de participantes.");
       const f = filtroAtividades(c, req.query);
       const [rows] = await pool.query(
         `SELECT DATE_FORMAT(a.data_inicio, '%Y-%m-%d') AS data, a.tema, u.nome AS unidade, pa.matricula, pa.nome, pa.presenca, pa.concluiu

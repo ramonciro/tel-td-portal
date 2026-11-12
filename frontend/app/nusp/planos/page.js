@@ -129,7 +129,7 @@ export default function PlanosPage() {
         </div>
         {!lista.itens.length && <div style={st.vazio}>{carregando ? "Carregando…" : "Nenhum plano encontrado."}</div>}
       </div>
-      <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 8 }}>{fmtNum(lista.total)} plano(s).</div>
+      <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 8 }}>{fmtNum(lista.total)} {lista.total === 1 ? "plano" : "planos"}.</div>
       <Paginacao total={lista.total} limite={lista.limite} pagina={pagina} onPagina={setPagina} />
 
       {form && (
@@ -306,7 +306,7 @@ function DetalhePlano({ id, opera, coord, onClose, onEditar, onExcluido }) {
             {coord && !confirma ? <button type="button" style={st.btnMiniDanger} onClick={() => setConfirma(true)}>Excluir</button> : null}
             {coord && confirma ? (
               <>
-                <span style={{ alignSelf: "center", fontSize: 12.5, color: colors.dangerText }}>Excluir apaga também o histórico e as evidências. Confirma?</span>
+                <span style={{ alignSelf: "center", fontSize: 12.5, color: colors.dangerText }}>Isso também apaga o histórico e as evidências. Excluir mesmo?</span>
                 <button type="button" style={st.btnMiniDanger} disabled={ocupado} onClick={excluir}>Sim, excluir</button>
                 <button type="button" style={st.btnGhost} onClick={() => setConfirma(false)}>Não</button>
               </>

@@ -116,7 +116,7 @@ function ImportadorPlanilha() {
   );
 
   return (
-    <SectionCard title="Importar a planilha “NUSPSI — Visão Nacional”" subtitle="Traz o histórico das abas Base de Atividades, Plano de Ação e Participantes. Rodar de novo não duplica.">
+    <SectionCard title="Importar a planilha “NUSPSI — Visão Nacional”" subtitle="Traz o histórico das abas Base de Atividades, Plano de Ação e Participantes. Se importar de novo, nada é duplicado.">
       {erro ? <div style={st.erro}>{erro}</div> : null}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <input type="file" accept=".xlsx" onChange={(e) => { setArquivo(e.target.files?.[0] || null); setRel(null); }} />
@@ -134,7 +134,7 @@ function ImportadorPlanilha() {
       {rel && (
         <>
           <div style={rel.simulacao ? st.ok : { ...st.ok, background: colors.infoLight, color: "#075985", borderColor: "#bae6fd" }}>
-            {rel.simulacao ? "Simulação concluída — nada foi gravado." : "Importação concluída."}
+            {rel.simulacao ? "Simulação feita, nada foi gravado." : "Planilha importada."}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
             {bloco("Atividades", rel.atividades, [["lidas", "Lidas"], ["importadas", "Importadas"], ["ja_existiam", "Já existiam"], ["escuta_individual_adiada", "Escuta individual (adiadas)"], ["sem_data_definida", "Planejadas importadas sem data definida"], ["sem_data_ou_tema", "Sem tema, ou iniciada/concluída sem data (não importadas)"], ["sem_dimensao", "Sem dimensão reconhecida"], ["concluidas_sem_evidencia", "Concluídas sem link de evidência"]])}
@@ -142,7 +142,7 @@ function ImportadorPlanilha() {
             {bloco("Participantes", rel.participantes, [["lidos", "Lidos"], ["gravados", "Gravados"], ["escuta_individual_adiada", "Escuta individual (adiados)"], ["sem_atividade", "Sem atividade correspondente"], ["sem_matricula_sem_par", "Sem matrícula e sem par"], ["erros", "Com erro"]])}
             {rel.escutas?.incluidas ? bloco("Escutas individuais (acolhimentos)", rel.escutas, [["lidas", "Lidas"], ["importadas", "Importadas"], ["por_nome_sem_matricula", "  das quais por nome, sem matrícula"], ["pessoas_novas_sem_matricula", "  pessoas novas cadastradas sem matrícula"], ["ja_existiam", "Já existiam"], ["sem_data", "Sem data"], ["nome_repetido_no_cadastro", "Nome repetido no cadastro (não importadas)"], ["sem_nome_nem_matricula", "Sem nome nem matrícula"], ["erros", "Com erro"]]) : null}
           </div>
-          {rel.unidades_novas?.length ? <p style={{ fontSize: 12.5, marginTop: 10 }}><strong>Unidades novas que serão/foram criadas:</strong> {rel.unidades_novas.join(", ")}</p> : null}
+          {rel.unidades_novas?.length ? <p style={{ fontSize: 12.5, marginTop: 10 }}><strong>{rel.simulacao ? "Unidades novas que serão criadas:" : "Unidades novas criadas:"}</strong> {rel.unidades_novas.join(", ")}</p> : null}
           {rel.avisos?.length ? (
             <ul style={{ fontSize: 12.5, color: colors.warningText, paddingLeft: 18 }}>{rel.avisos.slice(0, 30).map((a, i) => <li key={i}>{a}</li>)}</ul>
           ) : null}

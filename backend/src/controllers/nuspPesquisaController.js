@@ -21,7 +21,7 @@ const n = (v) => Number(v || 0);
 const ehCoord = (c) => c.perfil === B.PERFIL_COORD;
 const soCoord = (req, res) => {
   const c = B.contexto(req, res); if (!c) return null;
-  if (!ehCoord(c)) { B.erro(res, 403, "Só o coordenador do Núcleo faz esta operação."); return null; }
+  if (!ehCoord(c)) { B.erro(res, 403, "Só o coordenador do Núcleo pode fazer isso."); return null; }
   return c;
 };
 
@@ -142,7 +142,7 @@ async function individuais(req, res) {
       `SELECT r.id, r.pessoa_id, pe.nome, pe.matricula, u.nome AS unidade, r.servico, r.funcao, DATE_FORMAT(r.respondida_em, '%Y-%m-%d') AS respondida_em
          FROM nusp_pesquisa_respostas r JOIN pessoas pe ON pe.id = r.pessoa_id LEFT JOIN nusp_unidades u ON u.id = r.unidade_id
         WHERE ${w.join(" AND ")} ORDER BY pe.nome LIMIT ? OFFSET ?`, [...p, limite, offset]);
-    await B.registrarLeitura(req, c.empresaId, "pesquisa_individual_lista", id, `${rows.length} de ${n(t.total)} resposta(s)`);
+    await B.registrarLeitura(req, c.empresaId, "pesquisa_individual_lista", id, `${rows.length} de ${n(t.total)} respostas`);
     return res.json({ ok: true, total: n(t.total), pagina, limite, itens: rows });
   } catch (e) {
     console.error("[nusp.pesquisa.individuais]", e);
@@ -162,8 +162,8 @@ async function individual(req, res) {
     const r = rows[0];
     if (!r) return B.erro(res, 404, "Resposta não encontrada");
     const d = S.decifrarDados(r.dados_cifrados, c.empresaId);
-    if (d.erro === "SEM_CHAVE") return B.erro(res, 503, "A chave de cifra (NUSP_CRYPTO_KEY) não está configurada neste ambiente.", { codigo: "SEM_CHAVE" });
-    if (d.erro) return B.erro(res, 500, "Não foi possível abrir esta resposta (conteúdo ilegível).", { codigo: "ILEGIVEL" });
+    if (d.erro === "SEM_CHAVE") return B.erro(res, 503, "Falta configurar a chave de criptografia (NUSP_CRYPTO_KEY) neste ambiente.", { codigo: "SEM_CHAVE" });
+    if (d.erro) return B.erro(res, 500, "Não consegui abrir esta resposta, o conteúdo está ilegível.", { codigo: "ILEGIVEL" });
     const resp = d.dados.r || {}; const esc = d.dados.e || {};
     const perguntas = S.PERGUNTAS.map((p) => {
       const cl = S.classificarResposta(p.regra, resp[String(p.n)]);
@@ -200,7 +200,7 @@ async function importar(req, res) {
     });
     if (!simular) {
       auditar(req, "importar", "nusp_pesquisa", rel.pesquisa.id || null,
-        `Importou a pesquisa de riscos psicossociais "${rel.pesquisa.ciclo}": ${rel.linhas.importadas} resposta(s)`, null,
+        `Importou a pesquisa de riscos psicossociais "${rel.pesquisa.ciclo}": ${rel.linhas.importadas} ${rel.linhas.importadas === 1 ? "resposta" : "respostas"}`, null,
         { ciclo: rel.pesquisa.ciclo, respostas: rel.linhas.importadas, planos_criados: rel.planos.criados });
     }
     return res.json({ ok: true, ...rel });
@@ -220,7 +220,7 @@ async function recalcular(req, res) {
     auditar(req, "editar", "nusp_pesquisa", id, `Recalculou os resultados da pesquisa "${pesq.ciclo}"`, null, r);
     return res.json({ ok: true, message: "Resultados recalculados", ...r });
   } catch (e) {
-    if (e.codigo === "SEM_CHAVE") return B.erro(res, 503, "A chave de cifra (NUSP_CRYPTO_KEY) não está configurada neste ambiente.", { codigo: "SEM_CHAVE" });
+    if (e.codigo === "SEM_CHAVE") return B.erro(res, 503, "Falta configurar a chave de criptografia (NUSP_CRYPTO_KEY) neste ambiente.", { codigo: "SEM_CHAVE" });
     console.error("[nusp.pesquisa.recalcular]", e);
     return B.erro(res, 500, "Erro ao recalcular os resultados");
   }
@@ -233,11 +233,11 @@ async function planosSugeridos(req, res) {
     const pesq = await carregarPesquisa(id, c.empresaId);
     if (!pesq) return B.erro(res, 404, "Pesquisa não encontrada");
     const r = await comTransacao((conn) => S.criarPlanosSugeridos(c.empresaId, req.user, pesq.ciclo, conn));
-    auditar(req, "criar", "nusp_plano", null, `Criou ${r.criados} rascunho(s) de plano de ação a partir da pesquisa "${pesq.ciclo}"`, null, r);
-    return res.json({ ok: true, message: r.criados ? `${r.criados} rascunho(s) criado(s)` : "Todos os rascunhos já existem", ...r });
+    auditar(req, "criar", "nusp_plano", null, `Criou ${r.criados} ${r.criados === 1 ? "plano sugerido" : "planos sugeridos"} a partir da pesquisa "${pesq.ciclo}"`, null, r);
+    return res.json({ ok: true, message: r.criados ? `${r.criados} ${r.criados === 1 ? "plano sugerido criado" : "planos sugeridos criados"}` : "Os planos sugeridos já existem", ...r });
   } catch (e) {
     console.error("[nusp.pesquisa.planosSugeridos]", e);
-    return B.erro(res, 500, "Erro ao criar os rascunhos de plano");
+    return B.erro(res, 500, "Erro ao criar os planos sugeridos");
   }
 }
 

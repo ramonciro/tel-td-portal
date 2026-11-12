@@ -420,7 +420,7 @@ async function adicionarParticipantes(req, res) {
     if (!itens.length) return B.erro(res, 400, "Informe ao menos um participante");
     if (itens.length > 500) return B.erro(res, 400, "Envie no máximo 500 participantes por vez");
     const resumo = await gravarParticipantes(c.empresaId, a.id, itens);
-    auditar(req, "criar", "nusp_participacao", a.id, `Lançou ${resumo.gravados} participante(s) na atividade "${a.tema}" do Núcleo`, null, { gravados: resumo.gravados, erros: resumo.erros.length });
+    auditar(req, "criar", "nusp_participacao", a.id, `Lançou ${resumo.gravados} ${resumo.gravados === 1 ? "participante" : "participantes"} na atividade "${a.tema}" do Núcleo`, null, { gravados: resumo.gravados, erros: resumo.erros.length });
     return res.json({ message: "Participantes processados", ...resumo });
   } catch (e) {
     console.error("[nusp.adicionarParticipantes]", e);
@@ -460,7 +460,7 @@ async function importarParticipantes(req, res) {
     if (!itens.length) return B.erro(res, 400, "A planilha não tem participantes abaixo do cabeçalho");
     if (itens.length > 2000) return B.erro(res, 400, "A planilha tem mais de 2000 linhas; divida em partes");
     const resumo = await gravarParticipantes(c.empresaId, a.id, itens);
-    auditar(req, "criar", "nusp_participacao", a.id, `Importou ${resumo.gravados} participante(s) por planilha na atividade "${a.tema}" do Núcleo`, null, { gravados: resumo.gravados, erros: resumo.erros.length });
+    auditar(req, "criar", "nusp_participacao", a.id, `Importou ${resumo.gravados} ${resumo.gravados === 1 ? "participante" : "participantes"} por planilha na atividade "${a.tema}" do Núcleo`, null, { gravados: resumo.gravados, erros: resumo.erros.length });
     return res.json({ message: "Planilha processada", total_linhas: itens.length, ...resumo });
   } catch (e) {
     console.error("[nusp.importarParticipantes]", e);

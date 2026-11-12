@@ -332,12 +332,12 @@ async function importarPesquisa({ empresaId, usuario, buffer, simular, ciclo, no
   const XLSX = require("xlsx");
   await B.garantirBase(empresaId);
   const cicloTxt = txt(ciclo, 40);
-  if (!cicloTxt) { const e = new Error("Informe o ciclo da pesquisa (ex.: 2026-1)."); e.status = 400; throw e; }
+  if (!cicloTxt) { const e = new Error("Informe o ciclo da pesquisa, por exemplo 2026-1."); e.status = 400; throw e; }
   if (!simular && !crypto.chaveConfigurada()) {
-    const e = new Error("A chave de cifra (NUSP_CRYPTO_KEY) não está configurada neste ambiente: a pesquisa não pode ser gravada."); e.status = 503; throw e;
+    const e = new Error("Falta configurar a chave de criptografia (NUSP_CRYPTO_KEY) neste ambiente. Sem ela não dá para gravar a pesquisa."); e.status = 503; throw e;
   }
   const base = lerBase(XLSX, buffer);
-  if (!base) { const e = new Error("Não encontrei a aba de respostas (precisa ter a coluna Matrícula). Use a aba 'BASE DE DADOS' da planilha da pesquisa."); e.status = 400; throw e; }
+  if (!base) { const e = new Error("Não encontrei a aba de respostas (ela precisa da coluna Matrícula). Use a aba 'BASE DE DADOS' da planilha da pesquisa."); e.status = 400; throw e; }
 
   const cab = base.cab;
   const iMat = cabecalhoIdx(cab, "matricula");
@@ -357,7 +357,7 @@ async function importarPesquisa({ empresaId, usuario, buffer, simular, ciclo, no
   }
   const pontuaveisFaltando = faltando.filter((n) => PERGUNTAS.find((p) => p.n === n).dim);
   if (pontuaveisFaltando.length) {
-    const e = new Error(`A planilha não traz ${pontuaveisFaltando.length} pergunta(s) do instrumento (nº ${pontuaveisFaltando.join(", ")}). Confira o cabeçalho da aba.`);
+    const e = new Error(`A planilha não traz ${pontuaveisFaltando.length} ${pontuaveisFaltando.length === 1 ? "pergunta" : "perguntas"} do instrumento (nº ${pontuaveisFaltando.join(", ")}). Confira o cabeçalho da aba.`);
     e.status = 400; throw e;
   }
 
@@ -374,7 +374,7 @@ async function importarPesquisa({ empresaId, usuario, buffer, simular, ciclo, no
     planos: { solicitado: !!criarPlanos, criados: 0, ja_existiam: 0 },
     avisos: [],
   };
-  if (faltando.length) rel.avisos.push(`Pergunta(s) ${faltando.join(", ")} sem coluna na planilha (não pontuam).`);
+  if (faltando.length) rel.avisos.push(`${faltando.length === 1 ? "A pergunta" : "As perguntas"} ${faltando.join(", ")} ${faltando.length === 1 ? "não tem" : "não têm"} coluna na planilha e não entram na pontuação.`);
   const aviso = (t) => { if (!rel.avisos.includes(t)) rel.avisos.push(t); };
   const problema = (n) => { if (rel.linhas.linhas_com_problema.length < 100) rel.linhas.linhas_com_problema.push(n); };
 
@@ -410,9 +410,9 @@ async function importarPesquisa({ empresaId, usuario, buffer, simular, ciclo, no
   }
   const itens = [...porMat.values()];
   rel.linhas.importadas = itens.length;
-  if (!itens.length) { const e = new Error("Nenhuma resposta válida encontrada na planilha."); e.status = 400; throw e; }
-  if (rel.linhas.duplicadas_no_arquivo) aviso("Há matrículas repetidas na planilha: vale a resposta mais recente de cada pessoa.");
-  if (rel.linhas.resposta_nao_reconhecida) aviso("Algumas respostas não seguem as opções do instrumento e não foram contadas na pontuação.");
+  if (!itens.length) { const e = new Error("Não achei nenhuma resposta válida na planilha."); e.status = 400; throw e; }
+  if (rel.linhas.duplicadas_no_arquivo) aviso("Tem matrícula repetida na planilha. Vale a resposta mais recente de cada pessoa.");
+  if (rel.linhas.resposta_nao_reconhecida) aviso("Algumas respostas não seguem as opções do instrumento e ficaram fora da pontuação.");
 
   // 2) Unidades (Site) — as que não existem são criadas ao gravar; o relatório as lista.
   const [unidades] = await pool.query(`SELECT id, nome FROM nusp_unidades WHERE empresa_id = ?`, [empresaId]);
@@ -429,8 +429,8 @@ async function importarPesquisa({ empresaId, usuario, buffer, simular, ciclo, no
   }
   rel.unidades_novas = [...novasUn.keys()];
   rel.sites = [...contaSite.entries()].map(([site, n]) => ({ site, respondentes: n })).sort((a, b) => b.respondentes - a.respondentes);
-  if (rel.unidades_novas.length) aviso("Alguns sites ainda não existem em Cadastros > Unidades e serão criados. Se for o mesmo local com outro nome, renomeie a unidade em Cadastros depois — os dados acompanham.");
-  if (itens.some((i) => !i.site)) aviso("Há respostas sem Site: entram só no resultado nacional e por serviço.");
+  if (rel.unidades_novas.length) aviso("Alguns sites ainda não existem em Cadastros > Unidades e vão ser criados. Se for o mesmo local com outro nome, renomeie a unidade em Cadastros depois, os dados acompanham.");
+  if (itens.some((i) => !i.site)) aviso("Tem resposta sem Site. Ela entra só no resultado nacional e no de serviço.");
 
   // 3) Pessoas: por matrícula. Quem já está no cadastro entra direto; os demais passam pela regra de identidade.
   const [pessoas] = await pool.query(`SELECT id, matricula FROM pessoas WHERE empresa_id = ? AND matricula IS NOT NULL AND matricula <> ''`, [empresaId]);
@@ -467,7 +467,7 @@ async function importarPesquisa({ empresaId, usuario, buffer, simular, ciclo, no
     rel.pesquisa.ja_existia = true;
     const [[c]] = await pool.query(`SELECT COUNT(*) n FROM nusp_pesquisa_respostas WHERE empresa_id = ? AND pesquisa_id = ?`, [empresaId, ex.id]);
     rel.pesquisa.respostas_anteriores_substituidas = Number(c.n);
-    aviso("Já existe uma pesquisa com este ciclo: as respostas dela serão SUBSTITUÍDAS pelas desta planilha.");
+    aviso("Já existe uma pesquisa com esse ciclo. As respostas dela vão ser substituídas pelas desta planilha.");
   }
   if (simular) return rel;
 
@@ -509,7 +509,7 @@ async function importarPesquisa({ empresaId, usuario, buffer, simular, ciclo, no
   if (semPessoa.length) {
     rel.linhas.importadas -= semPessoa.length;
     semPessoa.forEach((i) => problema(i.n));
-    aviso(`${semPessoa.length} resposta(s) não puderam ser vinculadas a uma pessoa e ficaram de fora.`);
+    aviso(`${semPessoa.length} ${semPessoa.length === 1 ? "resposta não pôde" : "respostas não puderam"} ser ligada${semPessoa.length === 1 ? "" : "s"} a uma pessoa e ficou${semPessoa.length === 1 ? "" : "ram"} de fora.`);
   }
   const gravar = itens.filter((i) => i.pessoaId);
   for (let i = 0; i < gravar.length; i += 200) {

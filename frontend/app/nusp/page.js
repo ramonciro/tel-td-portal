@@ -133,7 +133,7 @@ export default function PainelNucleoPage() {
       <PageHero
         eyebrow="Núcleo de Saúde Psicossocial"
         title="Painel do Núcleo"
-        subtitle={`Período: ${fmtData(per.de)} a ${fmtData(per.ate)} · dados agregados, sem identificação de pessoas`}
+        subtitle={`Período: ${fmtData(per.de)} a ${fmtData(per.ate)} · só números agregados, sem identificar ninguém`}
         actions={
           <>
             <button type="button" style={{ ...st.btnGhost, background: "rgba(255,255,255,.12)", color: "#fff", border: "1px solid rgba(255,255,255,.35)" }} onClick={() => baixar("atividades")}>Exportar atividades</button>
@@ -205,7 +205,7 @@ export default function PainelNucleoPage() {
 
           <SectionCard
             title="Farol dos planos de ação"
-            subtitle="Planos em aberto ordenados pelo prazo: vermelho = atrasado, amarelo = vence em até 7 dias, verde = no prazo"
+            subtitle="Planos em aberto, do prazo mais próximo ao mais distante. Vermelho: atrasado. Amarelo: vence em até 7 dias. Verde: no prazo."
             action={<Link href="/nusp/planos" style={{ color: colors.primary, fontWeight: 700, fontSize: 12.5 }}>Ver todos</Link>}
           >
             {!P.farol?.length ? (

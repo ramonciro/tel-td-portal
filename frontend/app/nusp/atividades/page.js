@@ -78,7 +78,7 @@ export default function AtividadesPage() {
       <PageHero
         eyebrow="Núcleo de Saúde Psicossocial"
         title="Atividades"
-        subtitle="Escutas, capacitações, ações e reuniões — cada atividade concluída precisa de ao menos uma evidência (link)."
+        subtitle="Escutas, capacitações, ações e reuniões. Para concluir uma atividade, anexe pelo menos uma evidência (link)."
         actions={
           <>
             <button type="button" style={{ ...st.btnGhost, background: "rgba(255,255,255,.12)", color: "#fff", border: "1px solid rgba(255,255,255,.35)" }} onClick={baixar}>Exportar Excel</button>
@@ -141,7 +141,7 @@ export default function AtividadesPage() {
         {!lista.itens.length && <div style={st.vazio}>{carregando ? "Carregando…" : "Nenhuma atividade encontrada com esses filtros."}</div>}
       </div>
       <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 8 }}>
-        {fmtNum(lista.total)} atividade(s). * Número informado no histórico, sem lista nominal.
+        {fmtNum(lista.total)} {lista.total === 1 ? "atividade" : "atividades"}. * Número informado no histórico, sem lista nominal.
       </div>
       <Paginacao total={lista.total} limite={lista.limite} pagina={pagina} onPagina={setPagina} />
 
@@ -378,7 +378,7 @@ function DetalheAtividade({ id, opera, coord, onClose, onEditar, onExcluida }) {
             <>
               <h3 style={{ ...st.cardTitle, marginTop: 22 }}>Participantes ({a.participantes?.length || 0})</h3>
               {a.pessoas_legado != null && !a.participantes?.length ? (
-                <div style={{ fontSize: 12.5, color: colors.textSecondary, marginBottom: 8 }}>Histórico informa {fmtNum(a.pessoas_legado)} pessoa(s), sem lista nominal.</div>
+                <div style={{ fontSize: 12.5, color: colors.textSecondary, marginBottom: 8 }}>O histórico informa {fmtNum(a.pessoas_legado)} {a.pessoas_legado === 1 ? "pessoa" : "pessoas"}, sem lista nominal.</div>
               ) : null}
               {a.participantes?.length ? (
                 <div style={{ overflowX: "auto", marginBottom: 10 }}>
@@ -407,7 +407,7 @@ function DetalheAtividade({ id, opera, coord, onClose, onEditar, onExcluida }) {
               {pode && (
                 <div style={{ background: colors.surfaceMuted, border: `1px solid ${colors.border}`, borderRadius: 12, padding: 14 }}>
                   <form onSubmit={lancar}>
-                    <label style={st.label}>Colar lista (uma pessoa por linha: matrícula;nome;presença) — a matrícula é obrigatória</label>
+                    <label style={st.label}>Cole a lista, uma pessoa por linha (matrícula;nome;presença). A matrícula é obrigatória.</label>
                     <textarea style={{ ...st.textarea, minHeight: 90 }} value={linhas} onChange={(e) => setLinhas(e.target.value)} placeholder={"12345;Maria da Silva;presente\n67890;João Souza;ausente"} />
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
                       <button type="submit" style={st.btn} disabled={ocupado}>Lançar participantes</button>
@@ -420,7 +420,7 @@ function DetalheAtividade({ id, opera, coord, onClose, onEditar, onExcluida }) {
                   </form>
                   {resultado && (
                     <div style={{ marginTop: 10, fontSize: 12.5 }}>
-                      <strong>{fmtNum(resultado.gravados)}</strong> gravado(s); {fmtNum(resultado.novos)} novo(s) nesta atividade.
+                      <strong>{fmtNum(resultado.gravados)}</strong> {resultado.gravados === 1 ? "gravado" : "gravados"}, {fmtNum(resultado.novos)} {resultado.novos === 1 ? "novo" : "novos"} nesta atividade.
                       {resultado.erros?.length ? (
                         <ul style={{ color: colors.dangerText, margin: "6px 0 0", paddingLeft: 18 }}>
                           {resultado.erros.slice(0, 20).map((er, i) => <li key={i}>Linha {er.linha}: {er.motivo}</li>)}
@@ -442,7 +442,7 @@ function DetalheAtividade({ id, opera, coord, onClose, onEditar, onExcluida }) {
             {pode && !confirmaExcluir ? <button type="button" style={st.btnMiniDanger} onClick={() => setConfirmaExcluir(true)}>Excluir</button> : null}
             {pode && confirmaExcluir ? (
               <>
-                <span style={{ alignSelf: "center", fontSize: 12.5, color: colors.dangerText }}>Excluir também apaga participantes e evidências. Confirma?</span>
+                <span style={{ alignSelf: "center", fontSize: 12.5, color: colors.dangerText }}>Isso também apaga os participantes e as evidências. Excluir mesmo?</span>
                 <button type="button" style={st.btnMiniDanger} disabled={ocupado} onClick={excluir}>Sim, excluir</button>
                 <button type="button" style={st.btnGhost} onClick={() => setConfirmaExcluir(false)}>Não</button>
               </>
