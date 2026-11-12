@@ -26,20 +26,22 @@ function chave() {
 
 const chaveConfigurada = () => chave() !== null;
 
-const aad = (empresaId) => Buffer.from(`nusp:acolhimento:${Number(empresaId)}`);
+// O contexto separa os usos da mesma chave: um texto cifrado como "acolhimento" não abre como "pesquisa".
+// O padrão ("acolhimento") mantém intacto tudo o que já foi gravado antes do Pacote 3.
+const aad = (empresaId, contexto = "acolhimento") => Buffer.from(`nusp:${contexto}:${Number(empresaId)}`);
 
-function cifrar(texto, empresaId) {
+function cifrar(texto, empresaId, contexto = "acolhimento") {
   const k = chave();
   if (!k) { const e = new Error("NUSP_CRYPTO_KEY não configurada"); e.codigo = "SEM_CHAVE"; throw e; }
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv("aes-256-gcm", k, iv);
-  c.setAAD(aad(empresaId));
+  c.setAAD(aad(empresaId, contexto));
   const ct = Buffer.concat([c.update(String(texto), "utf8"), c.final()]);
   return `v${VERSAO}:` + Buffer.concat([iv, c.getAuthTag(), ct]).toString("base64");
 }
 
 /** Devolve { texto } ou { erro: "SEM_CHAVE" | "ILEGIVEL" }. Nunca lança nem registra o conteúdo. */
-function decifrar(valor, empresaId) {
+function decifrar(valor, empresaId, contexto = "acolhimento") {
   if (!valor) return { texto: null };
   const k = chave();
   if (!k) return { erro: "SEM_CHAVE" };
@@ -49,7 +51,7 @@ function decifrar(valor, empresaId) {
     const raw = Buffer.from(m[2], "base64");
     if (raw.length < 29) return { erro: "ILEGIVEL" };
     const d = crypto.createDecipheriv("aes-256-gcm", k, raw.subarray(0, 12));
-    d.setAAD(aad(empresaId));
+    d.setAAD(aad(empresaId, contexto));
     d.setAuthTag(raw.subarray(12, 28));
     return { texto: Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString("utf8") };
   } catch (_) {

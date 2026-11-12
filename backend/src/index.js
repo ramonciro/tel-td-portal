@@ -2795,6 +2795,7 @@ const {
 const nusp = require("./controllers/nuspController");
 const nuspPainel = require("./controllers/nuspPainelController");
 const nuspAcolh = require("./controllers/nuspAcolhimentoController");
+const nuspPesq = require("./controllers/nuspPesquisaController");
 const { importarPlanilha: importarPlanilhaNusp } = require("./services/nuspImportService");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
@@ -2871,6 +2872,17 @@ app.post  ("/api/nusp/acolhimentos",           authRequired, authorizeRoles(...N
 app.put   ("/api/nusp/acolhimentos/:id",       authRequired, authorizeRoles(...NUSP_OPERA), nuspAcolh.editar);
 app.delete("/api/nusp/acolhimentos/:id",       authRequired, authorizeRoles(...NUSP_COORD), nuspAcolh.excluir);
 app.get   ("/api/nusp/acessos",                authRequired, authorizeRoles(...NUSP_COORD), nuspAcolh.acessos);
+// Pesquisa de riscos psicossociais (Pacote 3). Resultados AGREGADOS (supressão de células < 5) abertos aos três perfis;
+// respostas individuais (camada restrita, leitura registrada em nusp_acessos_log) só para o coordenador.
+app.get   ("/api/nusp/pesquisas",                          authRequired, authorizeRoles(...NUSP_TODOS), nuspPesq.listar);
+app.post  ("/api/nusp/pesquisas/importar",                 authRequired, authorizeRoles(...NUSP_COORD), comUploadTratado(upload.single("arquivo")), nuspPesq.importar);
+app.get   ("/api/nusp/pesquisas/:id/resultados",           authRequired, authorizeRoles(...NUSP_TODOS), nuspPesq.resultados);
+app.get   ("/api/nusp/pesquisas/:id/exportar",             authRequired, authorizeRoles(...NUSP_TODOS), nuspPesq.exportar);
+app.get   ("/api/nusp/pesquisas/:id/individuais",          authRequired, authorizeRoles(...NUSP_COORD), nuspPesq.individuais);
+app.get   ("/api/nusp/pesquisas/:id/individuais/:rid",     authRequired, authorizeRoles(...NUSP_COORD), nuspPesq.individual);
+app.post  ("/api/nusp/pesquisas/:id/recalcular",           authRequired, authorizeRoles(...NUSP_COORD), nuspPesq.recalcular);
+app.post  ("/api/nusp/pesquisas/:id/planos-sugeridos",     authRequired, authorizeRoles(...NUSP_COORD), nuspPesq.planosSugeridos);
+app.delete("/api/nusp/pesquisas/:id",                      authRequired, authorizeRoles(...NUSP_COORD), nuspPesq.excluir);
 // Importação da planilha antiga (Visão Nacional): só coordenador_nusp. ?simular=1 não grava.
 app.post  ("/api/nusp/importar", authRequired, authorizeRoles(...NUSP_COORD), comUploadTratado(upload.single("arquivo")), async (req, res) => {
   try {

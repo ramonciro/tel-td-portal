@@ -3606,6 +3606,69 @@ async function ensureNusp() {
       INDEX idx_nusp_acolh_pessoa (empresa_id, pessoa_id)
     ) ${T}`);
 
+  // ── Pacote 3 (pesquisa de riscos psicossociais) ─────────────────────────
+  // Camada RESTRITA: cada resposta individual fica IDENTIFICADA (pessoa_id), mas as respostas
+  // pergunta a pergunta e os escores por dimensão vão juntos num único texto CIFRADO
+  // (dados_cifrados, AES-256-GCM, contexto "pesquisa"). Em claro ficam só dados de enquadramento
+  // (unidade, serviço, função). Quem lê o individual: coordenador_nusp, com registro em nusp_acessos_log.
+  // nusp_pesquisa_resultados é o agregado materializado (já com supressão de células < 5): é a única
+  // tabela que a diretoria e as analistas leem.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_pesquisas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(150) NOT NULL,
+      ciclo VARCHAR(40) NOT NULL,
+      data_referencia DATE NULL,
+      instrumento VARCHAR(60) NOT NULL,
+      status VARCHAR(15) NOT NULL DEFAULT 'ativa',
+      total_respostas INT NOT NULL DEFAULT 0,
+      calculado_em DATETIME NULL,
+      criado_por_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_nusp_pesquisa_ciclo (empresa_id, ciclo)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_pesquisa_respostas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      pesquisa_id INT NOT NULL,
+      pessoa_id INT NOT NULL,
+      unidade_id INT NULL,
+      site VARCHAR(120) NULL,
+      servico VARCHAR(150) NULL,
+      funcao VARCHAR(150) NULL,
+      supervisor VARCHAR(150) NULL,
+      coordenador VARCHAR(150) NULL,
+      tipo_pesquisa VARCHAR(60) NULL,
+      respondida_em DATETIME NULL,
+      dados_cifrados MEDIUMTEXT NULL,
+      dados_ver TINYINT NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_nusp_pesq_resp (pesquisa_id, pessoa_id),
+      INDEX idx_nusp_pesq_resp_empresa (empresa_id, pesquisa_id),
+      INDEX idx_nusp_pesq_resp_pessoa (empresa_id, pessoa_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_pesquisa_resultados (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      pesquisa_id INT NOT NULL,
+      dimensao_id INT NOT NULL,
+      recorte VARCHAR(10) NOT NULL,
+      unidade_id INT NULL,
+      servico VARCHAR(150) NULL,
+      rotulo VARCHAR(150) NOT NULL,
+      n_respondentes INT NOT NULL DEFAULT 0,
+      pct_exposicao DECIMAL(5,1) NULL,
+      classificacao VARCHAR(10) NULL,
+      suprimido TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_nusp_pesq_res (empresa_id, pesquisa_id, recorte, dimensao_id)
+    ) ${T}`);
+
   // Pacote 2d: atividades e planos podem existir "sem data definida" (planejados que ainda não têm
   // data/prazo na planilha). Idempotente: só altera se a coluna ainda for NOT NULL.
   for (const [tabela, coluna] of [["nusp_atividades", "data_inicio"], ["nusp_planos_acao", "data_identificacao"], ["nusp_planos_acao", "prazo"]]) {

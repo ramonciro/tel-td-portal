@@ -15,7 +15,7 @@ const ORIGEM = { espontaneo: "Procura espontânea", encaminhado: "Encaminhado", 
 const STATUS = { aberto: "Aberto", em_acompanhamento: "Em acompanhamento", encerrado: "Encerrado" };
 const TOM_STATUS = { aberto: "alerta", em_acompanhamento: "em_andamento", encerrado: "concluida" };
 const RESUMO_MAX = 500;
-const RECURSO = { acolhimento: "Abriu uma ficha", acolhimento_lista: "Consultou a lista" };
+const RECURSO = { acolhimento: "Abriu uma ficha", acolhimento_lista: "Consultou a lista", pesquisa_individual: "Abriu uma resposta da pesquisa", pesquisa_individual_lista: "Consultou a lista da pesquisa" };
 
 const VAZIO = {
   matricula: "", nome: "", data_acolhimento: "", canal: "presencial", origem: "", motivo_id: "", encaminhamento_id: "",

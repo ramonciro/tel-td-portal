@@ -39,6 +39,11 @@ export default function PlanosPage() {
   const [detalheId, setDetalheId] = useState(null);
 
   useEffect(() => { setPerfil(perfilNusp()); }, []);
+  // Link vindo da pesquisa de riscos: /nusp/planos?dimensao_id=N já abre filtrado pela dimensão.
+  useEffect(() => {
+    const d = new URLSearchParams(window.location.search).get("dimensao_id");
+    if (d && /^\d+$/.test(d)) setF((x) => ({ ...x, dimensao_id: d }));
+  }, []);
   const opera = ehOperacao(perfil);
   const coord = perfil === PERFIL_COORD;
 
@@ -108,7 +113,7 @@ export default function PlanosPage() {
                 return (
                   <tr key={p.id}>
                     <td style={st.td}><span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}><span style={{ width: 11, height: 11, borderRadius: "50%", background: fa.cor }} />{fa.txt}</span></td>
-                    <td style={st.td}><strong>{p.titulo}</strong>{p.programa ? <div style={{ fontSize: 11.5, color: colors.textSecondary }}>{p.programa}</div> : null}</td>
+                    <td style={st.td}><strong>{p.titulo}</strong>{p.programa ? <div style={{ fontSize: 11.5, color: colors.textSecondary }}>{p.programa}</div> : null}{p.origem === "pesquisa" ? <div style={{ fontSize: 11, color: colors.primary, fontWeight: 700 }}>Sugerido pela pesquisa de riscos</div> : null}</td>
                     <td style={st.td}>{p.unidade || "—"}</td>
                     <td style={st.td}>{p.dimensao || "—"}</td>
                     <td style={st.td}>{p.responsavel_nome || "—"}</td>
