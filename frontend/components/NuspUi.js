@@ -3,9 +3,9 @@
 // Peças compartilhadas das telas do Núcleo de Saúde Psicossocial (NUSPSI, 06/11/2026).
 // Mantidas em um arquivo só para as 5 telas do módulo terem a mesma cara e as mesmas regras de formulário.
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { colors, radius } from "../lib/theme";
-import { getStoredUser } from "../services/api";
+import { getStoredUser, apiFetch, apiDownload } from "../services/api";
 
 export const PERFIL_COORD = "coordenador_nusp";
 export const PERFIL_ANALISTA = "analista_nusp";
@@ -184,5 +184,68 @@ export function Paginacao({ total, limite, pagina, onPagina }) {
       <span>Página {pagina} de {paginas}</span>
       <button type="button" style={st.btnGhost} disabled={pagina >= paginas} onClick={() => onPagina(pagina + 1)}>Próxima</button>
     </div>
+  );
+}
+
+// ── Evidências: link ou arquivo (Pacote 4) ────────────────────────────
+const fmtTamanho = (b) => {
+  const n = Number(b || 0);
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
+  return `${Math.max(1, Math.round(n / 1024)).toLocaleString("pt-BR")} KB`;
+};
+export const ACEITA_ARQUIVO = ".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt";
+
+/** Uma evidência na lista: link (abre em nova aba) ou arquivo (baixa pela rota autenticada; só a equipe técnica). */
+export function EvidenciaItem({ x, podeRemover, ocupado, onRemover, onErro }) {
+  const baixar = async () => {
+    try { await apiDownload(`/nusp/evidencias/${x.id}/arquivo`, x.arquivo_nome || "evidencia"); } catch (e) { onErro?.(e.message); }
+  };
+  return (
+    <li style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${colors.border}`, fontSize: 13, flexWrap: "wrap" }}>
+      {x.ehArquivo ? (
+        <span style={{ flex: 1, minWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}>
+          <span aria-hidden="true">📎 </span>
+          <strong style={{ color: colors.textPrimary }}>{x.titulo || x.arquivo_nome}</strong>
+          {x.titulo && x.pode_baixar ? <span style={{ color: colors.textMuted }}> · {x.arquivo_nome}</span> : null}
+          {x.arquivo_tamanho ? <span style={{ color: colors.textMuted }}> · {fmtTamanho(x.arquivo_tamanho)}</span> : null}
+        </span>
+      ) : (
+        <a href={x.url} target="_blank" rel="noopener noreferrer" style={{ color: colors.primary, fontWeight: 700, flex: 1, minWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}>{x.titulo || x.url}</a>
+      )}
+      <span style={{ fontSize: 11.5, color: colors.textMuted }}>{x.criado_por_nome} · {x.criado_em}</span>
+      {x.ehArquivo && x.pode_baixar ? <button type="button" style={st.btnMini} onClick={baixar}>Baixar</button> : null}
+      {podeRemover ? <button type="button" style={st.btnMiniDanger} disabled={ocupado} onClick={() => onRemover(x)}>Remover</button> : null}
+    </li>
+  );
+}
+
+/** Anexar um arquivo como evidência. `acao` é o executor da tela (liga o "ocupado", mostra a mensagem e recarrega). */
+export function AnexarArquivo({ entidade, entidadeId, ocupado, acao }) {
+  const ref = useRef(null);
+  const [titulo, setTitulo] = useState("");
+  const [nome, setNome] = useState("");
+  const enviar = (e) => {
+    e.preventDefault();
+    const arq = ref.current?.files?.[0];
+    if (!arq) return;
+    acao(async () => {
+      const fd = new FormData();
+      fd.append("entidade", entidade);
+      fd.append("entidade_id", String(entidadeId));
+      if (titulo.trim()) fd.append("titulo", titulo.trim());
+      fd.append("arquivo", arq);
+      await apiFetch("/nusp/evidencias/arquivo", { method: "POST", body: fd });
+      setTitulo(""); setNome("");
+      if (ref.current) ref.current.value = "";
+    }, "Arquivo anexado.");
+  };
+  return (
+    <form onSubmit={enviar} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 10 }}>
+      <Campo label="Ou anexe um arquivo" flex={2} minWidth={240} dica="PDF, imagem, Word, Excel, PowerPoint, CSV ou TXT, até 15 MB. Só a equipe do Núcleo consegue abrir.">
+        <input ref={ref} type="file" accept={ACEITA_ARQUIVO} style={{ ...st.input, height: "auto", padding: "7px 10px" }} onChange={(e) => setNome(e.target.files?.[0]?.name || "")} />
+      </Campo>
+      <Campo label="Título (opcional)" minWidth={170}><input style={st.input} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Lista de presença assinada" /></Campo>
+      <button type="submit" style={st.btn} disabled={ocupado || !nome}>Enviar arquivo</button>
+    </form>
   );
 }

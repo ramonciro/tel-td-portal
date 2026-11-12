@@ -2796,6 +2796,8 @@ const nusp = require("./controllers/nuspController");
 const nuspPainel = require("./controllers/nuspPainelController");
 const nuspAcolh = require("./controllers/nuspAcolhimentoController");
 const nuspPesq = require("./controllers/nuspPesquisaController");
+const nuspDem = require("./controllers/nuspDemandasController");
+const nuspRel = require("./controllers/nuspRelatorioController");
 const { importarPlanilha: importarPlanilhaNusp } = require("./services/nuspImportService");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
@@ -2854,6 +2856,20 @@ app.put   ("/api/nusp/participacoes/:id",     authRequired, authorizeRoles(...NU
 app.delete("/api/nusp/participacoes/:id",     authRequired, authorizeRoles(...NUSP_OPERA), nusp.removerParticipacao);
 app.post  ("/api/nusp/evidencias",            authRequired, authorizeRoles(...NUSP_OPERA), nusp.adicionarEvidencia);
 app.delete("/api/nusp/evidencias/:id",        authRequired, authorizeRoles(...NUSP_OPERA), nusp.removerEvidencia);
+// Arquivo como evidência (Pacote 4): guardado no volume; só a equipe técnica baixa (gestor recebe 403).
+app.post  ("/api/nusp/evidencias/arquivo",     authRequired, authorizeRoles(...NUSP_OPERA), comUploadTratado(upload.single("arquivo")), nusp.anexarArquivo);
+app.get   ("/api/nusp/evidencias/:id/arquivo", authRequired, authorizeRoles(...NUSP_OPERA), nusp.baixarArquivo);
+// Fale Comigo (Pacote 4): texto só para coordenador/analista; os indicadores são só números e abertos ao gestor.
+app.get   ("/api/nusp/demandas/indicadores",   authRequired, authorizeRoles(...NUSP_TODOS), nuspDem.indicadores);
+app.get   ("/api/nusp/demandas",               authRequired, authorizeRoles(...NUSP_OPERA), nuspDem.listar);
+app.get   ("/api/nusp/demandas/:id",           authRequired, authorizeRoles(...NUSP_OPERA), nuspDem.detalhe);
+app.post  ("/api/nusp/demandas",               authRequired, authorizeRoles(...NUSP_OPERA), nuspDem.criar);
+app.put   ("/api/nusp/demandas/:id",           authRequired, authorizeRoles(...NUSP_OPERA), nuspDem.editar);
+app.post  ("/api/nusp/demandas/:id/status",    authRequired, authorizeRoles(...NUSP_OPERA), nuspDem.mudarStatus);
+app.delete("/api/nusp/demandas/:id",           authRequired, authorizeRoles(...NUSP_COORD), nuspDem.excluir);
+// Relatório mensal (Pacote 4): agregado, sem nome de ninguém; os três perfis do Núcleo leem.
+app.get   ("/api/nusp/relatorio-mensal",         authRequired, authorizeRoles(...NUSP_TODOS), nuspRel.relatorio);
+app.get   ("/api/nusp/relatorio-mensal/exportar", authRequired, authorizeRoles(...NUSP_TODOS), nuspRel.exportar);
 app.get   ("/api/nusp/planos",                authRequired, authorizeRoles(...NUSP_TODOS), nusp.listarPlanos);
 app.get   ("/api/nusp/planos/:id",            authRequired, authorizeRoles(...NUSP_TODOS), nusp.detalhePlano);
 app.post  ("/api/nusp/planos",                authRequired, authorizeRoles(...NUSP_OPERA), nusp.criarPlano);

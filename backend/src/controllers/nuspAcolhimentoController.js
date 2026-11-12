@@ -335,19 +335,19 @@ function suprimir(rows, min, rotuloDemais) {
   return { linhas, demais: { nome: rotuloDemais, n: soma, categorias: dobrados.size }, oculto: false };
 }
 
-async function indicadores(req, res) {
-  const c = B.contexto(req, res); if (!c) return;
-  try {
+// Cálculo puro (sem req/res): usado pela tela de indicadores e pelo relatório mensal, com a MESMA supressão de células pequenas.
+async function calcularIndicadores(c, query) {
+  {
     await B.garantirBase(c.empresaId);
     const hoje = B.hojeISO();
-    const q = { ...req.query, de: B.dataISO(req.query.de) || `${hoje.slice(0, 4)}-01-01`, ate: B.dataISO(req.query.ate) || hoje };
+    const q = { ...query, de: B.dataISO(query.de) || `${hoje.slice(0, 4)}-01-01`, ate: B.dataISO(query.ate) || hoje };
     const f = filtros(c, q, { restrito: false });
     const MIN = B.MINIMO_CELULA;
     const [[tot]] = await pool.query(
       `SELECT COUNT(*) registros, COUNT(DISTINCT a.pessoa_id) pessoas FROM nusp_acolhimentos a WHERE ${f.where}`, f.params);
     const base = { ok: true, minimo: MIN, periodo: { de: q.de, ate: q.ate } };
     if (n(tot.registros) < MIN) {
-      return res.json({ ...base, insuficiente: true, total: null, pessoas: null, recorrentes: null, por_mes: null, por_unidade: null, por_programa: null, por_motivo: null, por_canal: null, por_encaminhamento: null });
+      return ({ ...base, insuficiente: true, total: null, pessoas: null, recorrentes: null, por_mes: null, por_unidade: null, por_programa: null, por_motivo: null, por_canal: null, por_encaminhamento: null });
     }
     const [[rec]] = await pool.query(
       `SELECT COUNT(*) pessoas FROM (SELECT a.pessoa_id FROM nusp_acolhimentos a WHERE ${f.where} GROUP BY a.pessoa_id HAVING COUNT(*) >= 2) x`, f.params);
@@ -366,17 +366,24 @@ async function indicadores(req, res) {
       agrupar("COALESCE(e.nome, 'Não informado')", "LEFT JOIN nusp_encaminhamentos e ON e.id = a.encaminhamento_id", "a.encaminhamento_id, e.nome", "Demais encaminhamentos (cada um com menos de 5)"),
     ]);
     canal.linhas = canal.linhas.map((r) => ({ ...r, nome: rotCanal[r.nome] || r.nome }));
-    return res.json({
+    return ({
       ...base, insuficiente: false,
       total: n(tot.registros),
       pessoas: n(tot.pessoas) >= MIN ? n(tot.pessoas) : null,
       recorrentes: n(rec.pessoas) >= MIN ? n(rec.pessoas) : null,
       por_mes: mes, por_unidade: unidade, por_programa: programa, por_motivo: motivo, por_canal: canal, por_encaminhamento: enc,
     });
+  }
+}
+
+async function indicadores(req, res) {
+  const c = B.contexto(req, res); if (!c) return;
+  try {
+    return res.json(await calcularIndicadores(c, req.query));
   } catch (e) {
     console.error("[nusp.acolhimento.indicadores]", e);
     return B.erro(res, 500, "Erro ao calcular os indicadores de acolhimento");
   }
 }
 
-module.exports = { listar, detalhe, criar, editar, excluir, acessos, indicadores, suprimir };
+module.exports = { listar, detalhe, criar, editar, excluir, acessos, indicadores, calcularIndicadores, suprimir };

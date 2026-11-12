@@ -16,6 +16,7 @@ const { comTransacao } = require("../lib/tx");
 const { registrarAuditoria } = require("../services/auditoria");
 const { resolverPessoa, matriculaParaComparar } = require("../services/pessoasService");
 const B = require("../lib/nuspBase");
+const Arq = require("../lib/nuspArquivos");
 
 const LIMITE_PADRAO = 50;
 const LIMITE_MAX = 200;
@@ -196,13 +197,21 @@ async function carregarAtividade(id, empresaId) {
   return rows[0] || null;
 }
 
-async function evidenciasDe(entidade, id, empresaId) {
+async function evidenciasDe(entidade, id, empresaId, c = null) {
   const [rows] = await pool.query(
-    `SELECT id, titulo, url, criado_por_nome, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') AS criado_em
+    `SELECT id, titulo, url, arquivo_nome, arquivo_tamanho, criado_por_nome, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') AS criado_em
        FROM nusp_evidencias WHERE empresa_id = ? AND entidade = ? AND entidade_id = ? ORDER BY id`,
     [empresaId, entidade, id]
   );
-  return rows;
+  // Arquivo anexado: só a equipe técnica abre e vê o nome (a diretoria fica só com o fato de que existe).
+  const operacao = !c || ehOperacao(c);
+  return rows.map((r) => ({
+    id: r.id, titulo: r.titulo, url: r.url, criado_por_nome: r.criado_por_nome, criado_em: r.criado_em,
+    ehArquivo: !!r.arquivo_nome,
+    arquivo_nome: r.arquivo_nome ? (operacao ? r.arquivo_nome : "Arquivo anexado (aberto só pela equipe do Núcleo)") : null,
+    arquivo_tamanho: r.arquivo_nome && operacao ? r.arquivo_tamanho : null,
+    pode_baixar: !!r.arquivo_nome && operacao,
+  }));
 }
 
 async function detalheAtividade(req, res) {
@@ -210,7 +219,7 @@ async function detalheAtividade(req, res) {
   try {
     const a = await carregarAtividade(Number(req.params.id), c.empresaId);
     if (!a) return B.erro(res, 404, "Atividade não encontrada");
-    a.lista_evidencias = await evidenciasDe("atividade", a.id, c.empresaId);
+    a.lista_evidencias = await evidenciasDe("atividade", a.id, c.empresaId, c);
     // Gestor (diretoria) nunca recebe nome nem matrícula de participante.
     if (ehOperacao(c)) {
       const [pa] = await pool.query(
@@ -342,11 +351,13 @@ async function excluirAtividade(req, res) {
     const atual = await carregarAtividade(id, c.empresaId);
     if (!atual) return B.erro(res, 404, "Atividade não encontrada");
     if (!podeEditarAtividade(c, atual)) return B.erro(res, 403, "Você só pode excluir as atividades que você registrou.");
+    const arquivos = await caminhosDosArquivos("atividade", id, c.empresaId);
     await comTransacao(async (conn) => {
       await conn.query(`DELETE FROM nusp_participacoes WHERE atividade_id = ? AND empresa_id = ?`, [id, c.empresaId]);
       await conn.query(`DELETE FROM nusp_evidencias WHERE entidade = 'atividade' AND entidade_id = ? AND empresa_id = ?`, [id, c.empresaId]);
       await conn.query(`DELETE FROM nusp_atividades WHERE id = ? AND empresa_id = ?`, [id, c.empresaId]);
     });
+    await Arq.remover(c.empresaId, arquivos);
     auditar(req, "excluir", "nusp_atividade", id, `Excluiu a atividade "${atual.tema}" do Núcleo`, atual, null);
     return res.json({ message: "Atividade excluída" });
   } catch (e) {
@@ -547,11 +558,75 @@ async function removerEvidencia(req, res) {
       if (Number(n[0].n) <= 1) return B.erro(res, 400, "Este registro está concluído e precisa de ao menos uma evidência. Reabra-o antes de remover.");
     }
     await pool.query(`DELETE FROM nusp_evidencias WHERE id = ? AND empresa_id = ?`, [ev.id, c.empresaId]);
+    if (ev.arquivo_caminho) await Arq.remover(c.empresaId, ev.arquivo_caminho);
     auditar(req, "excluir", "nusp_evidencia", ev.id, `Removeu evidência de ${ev.entidade} #${ev.entidade_id} do Núcleo`, ev, null);
     return res.json({ message: "Evidência removida" });
   } catch (e) {
     console.error("[nusp.removerEvidencia]", e);
     return B.erro(res, 500, "Erro ao remover a evidência");
+  }
+}
+
+async function caminhosDosArquivos(entidade, id, empresaId) {
+  const [rows] = await pool.query(
+    `SELECT arquivo_caminho FROM nusp_evidencias WHERE empresa_id = ? AND entidade = ? AND entidade_id = ? AND arquivo_caminho IS NOT NULL`,
+    [empresaId, entidade, id]);
+  return rows.map((r) => r.arquivo_caminho);
+}
+
+// Anexa um ARQUIVO como evidência (multipart: campos entidade, entidade_id, titulo e o arquivo).
+async function anexarArquivo(req, res) {
+  const c = B.contexto(req, res); if (!c) return;
+  const entidade = String(req.body?.entidade || ""); const id = Number(req.body?.entidade_id);
+  if (!["atividade", "plano"].includes(entidade) || !Number.isInteger(id)) return B.erro(res, 400, "Evidência inválida");
+  const v = Arq.validar(req.file);
+  if (!v.ok) return B.erro(res, 400, v.message);
+  let rel = null;
+  try {
+    const dono = await donoDaEntidade(c, entidade, id);
+    if (!dono) return B.erro(res, 404, "Registro não encontrado");
+    if (!dono.ok) return B.erro(res, 403, "Você não pode anexar evidência a este registro.");
+    const [[n]] = await pool.query(
+      `SELECT COUNT(*) n FROM nusp_evidencias WHERE empresa_id = ? AND entidade = ? AND entidade_id = ? AND arquivo_caminho IS NOT NULL`, [c.empresaId, entidade, id]);
+    if (Number(n.n) >= Arq.MAX_ARQUIVOS_POR_REGISTRO) return B.erro(res, 400, `Cada registro aceita até ${Arq.MAX_ARQUIVOS_POR_REGISTRO} arquivos. Remova um antes de anexar outro.`);
+    rel = await Arq.salvar(c.empresaId, req.file.buffer, v.ext);
+    const titulo = req.body?.titulo ? String(req.body.titulo).trim().slice(0, 200) : null;
+    const [r] = await pool.query(
+      `INSERT INTO nusp_evidencias (empresa_id, entidade, entidade_id, titulo, url, arquivo_nome, arquivo_caminho, arquivo_tipo, arquivo_tamanho, criado_por_id, criado_por_nome)
+       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+      [c.empresaId, entidade, id, titulo, v.nome, rel, v.mime.split(";")[0], req.file.buffer.length, c.user.id, c.user.nome || null]);
+    auditar(req, "criar", "nusp_evidencia", r.insertId, `Anexou o arquivo "${v.nome}" como evidência de ${entidade} #${id} do Núcleo`, null, { entidade, id, arquivo: v.nome, bytes: req.file.buffer.length });
+    return res.status(201).json({ id: r.insertId, message: "Arquivo anexado" });
+  } catch (e) {
+    if (rel) await Arq.remover(c.empresaId, rel);
+    console.error("[nusp.anexarArquivo]", e);
+    return B.erro(res, 500, "Não consegui guardar o arquivo. Tente de novo em instantes.");
+  }
+}
+
+// Baixa o arquivo de uma evidência. Só equipe técnica (a rota já barra o gestor; aqui confere de novo) e só da própria empresa.
+async function baixarArquivo(req, res) {
+  const c = B.contextoRestrito(req, res); if (!c) return;
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, entidade, entidade_id, arquivo_nome, arquivo_caminho FROM nusp_evidencias WHERE id = ? AND empresa_id = ? AND arquivo_caminho IS NOT NULL`,
+      [Number(req.params.id), c.empresaId]);
+    if (!rows.length) return B.erro(res, 404, "Arquivo não encontrado");
+    const ev = rows[0];
+    const abs = Arq.abrir(c.empresaId, ev.arquivo_caminho);
+    if (!abs) return B.erro(res, 404, "O arquivo não está mais no servidor. Anexe-o de novo.");
+    await B.registrarLeitura(req, c.empresaId, "evidencia_arquivo", ev.id, `${ev.entidade} #${ev.entidade_id}`);
+    const ext = Arq.extensaoDe(ev.arquivo_nome);
+    res.setHeader("Content-Type", Arq.mimeDe(ext));
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(ev.arquivo_nome).replace(/['()*]/g, (ch) => "%" + ch.charCodeAt(0).toString(16).toUpperCase())}`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.sendFile(abs, { dotfiles: "allow" }, (err) => {
+      if (err && !res.headersSent) B.erro(res, 404, "Não consegui abrir o arquivo.");
+    });
+  } catch (e) {
+    console.error("[nusp.baixarArquivo]", e);
+    return B.erro(res, 500, "Erro ao baixar o arquivo");
   }
 }
 
@@ -611,7 +686,7 @@ async function detalhePlano(req, res) {
   try {
     const pl = await carregarPlano(Number(req.params.id), c.empresaId);
     if (!pl) return B.erro(res, 404, "Plano não encontrado");
-    pl.lista_evidencias = await evidenciasDe("plano", pl.id, c.empresaId);
+    pl.lista_evidencias = await evidenciasDe("plano", pl.id, c.empresaId, c);
     const [hist] = await pool.query(
       `SELECT usuario_nome, status, pct_conclusao, texto, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') AS quando
          FROM nusp_planos_historico WHERE plano_id = ? AND empresa_id = ? ORDER BY id DESC LIMIT 100`, [pl.id, c.empresaId]);
@@ -729,11 +804,13 @@ async function excluirPlano(req, res) {
   try {
     const atual = await carregarPlano(id, c.empresaId);
     if (!atual) return B.erro(res, 404, "Plano não encontrado");
+    const arquivos = await caminhosDosArquivos("plano", id, c.empresaId);
     await comTransacao(async (conn) => {
       await conn.query(`DELETE FROM nusp_planos_historico WHERE plano_id = ? AND empresa_id = ?`, [id, c.empresaId]);
       await conn.query(`DELETE FROM nusp_evidencias WHERE entidade = 'plano' AND entidade_id = ? AND empresa_id = ?`, [id, c.empresaId]);
       await conn.query(`DELETE FROM nusp_planos_acao WHERE id = ? AND empresa_id = ?`, [id, c.empresaId]);
     });
+    await Arq.remover(c.empresaId, arquivos);
     auditar(req, "excluir", "nusp_plano", id, `Excluiu o plano de ação "${atual.titulo}" do Núcleo`, atual, null);
     return res.json({ message: "Plano de ação excluído" });
   } catch (e) {
@@ -810,7 +887,7 @@ module.exports = {
   obterCadastros, criarCadastro, editarCadastro,
   listarAtividades, detalheAtividade, criarAtividade, editarAtividade, excluirAtividade,
   adicionarParticipantes, importarParticipantes, editarParticipacao, removerParticipacao,
-  adicionarEvidencia, removerEvidencia,
+  adicionarEvidencia, removerEvidencia, anexarArquivo, baixarArquivo,
   listarPlanos, detalhePlano, criarPlano, editarPlano, excluirPlano,
   listarMateriais, salvarMaterial, excluirMaterial,
   // usados pelo painel/importador

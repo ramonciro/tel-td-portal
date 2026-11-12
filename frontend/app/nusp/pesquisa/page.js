@@ -164,7 +164,7 @@ function Resultado({ pesquisa, coord, onMudou }) {
           </div>
         )}
         <p style={{ fontSize: 11.5, color: colors.textMuted, margin: "10px 0 0" }}>
-          % de exposição = respostas desfavoráveis ÷ (favoráveis + desfavoráveis) nas perguntas da dimensão. Até 25% baixa · 26% a 50% moderada · acima de 50% alta.
+          O % de exposição é a parte das respostas desfavoráveis entre todas as respostas válidas das perguntas da dimensão. Até 25% é exposição baixa, de 26% a 50% moderada e acima de 50% alta.
           O farol de plano usa os planos de ação ligados à dimensão (qualquer unidade).
         </p>
       </div>
@@ -281,7 +281,7 @@ function Individuais({ pesquisa }) {
   return (
     <>
       <div style={{ background: colors.warningLight, color: colors.warningText, border: "1px solid #fde68a", borderRadius: 12, padding: "10px 14px", fontSize: 12.5, marginBottom: 14 }}>
-        <strong>Conteúdo restrito ao coordenador do Núcleo.</strong> As respostas são guardadas criptografadas, e cada vez que a lista ou uma resposta é aberta o acesso fica registrado (quem e quando).
+        <strong>Só o coordenador do Núcleo vê esta lista.</strong> As respostas ficam guardadas com criptografia, e toda vez que a lista ou uma resposta é aberta, o sistema registra quem abriu e quando.
         Use só para acolhimento e acompanhamento das pessoas; não compartilhe nomes com a diretoria nem com as áreas.
       </div>
       {erro ? <div style={st.erro}>{erro}</div> : null}

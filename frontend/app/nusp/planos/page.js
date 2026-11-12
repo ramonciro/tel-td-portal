@@ -6,6 +6,7 @@ import PageHero from "../../../components/PageHero";
 import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import {
+  EvidenciaItem, AnexarArquivo,
   st, Campo, Select, Modal, Badge, Paginacao, opcoesDe, opcoesNomes, opcoesMapa, STATUS_PLANO_LABEL,
   fmtData, fmtDataOuSem, fmtNum, hojeISO, perfilNusp, ehOperacao, PERFIL_COORD,
 } from "../../../components/NuspUi";
@@ -201,7 +202,7 @@ function FormPlano({ form, cad, coord, onClose, onSaved }) {
         </div>
         <Campo label="Observações" flex={1}><textarea style={st.textarea} value={d.observacoes} maxLength={1000} onChange={(e) => set("observacoes", e.target.value)} /></Campo>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "12px 0" }}>
-          <Campo label="Evidência (link)" flex={2} minWidth={260} dica="Obrigatória para concluir. Outros links podem ser anexados depois.">
+          <Campo label="Evidência (link)" flex={2} minWidth={260} dica="Obrigatória para concluir. Outros links e arquivos podem ser anexados depois, no detalhe do plano.">
             <input style={st.input} value={d.evidencia_url} onChange={(e) => set("evidencia_url", e.target.value)} placeholder="https://…" />
           </Campo>
           <Campo label="Título do link" minWidth={180}><input style={st.input} value={d.evidencia_titulo} onChange={(e) => set("evidencia_titulo", e.target.value)} /></Campo>
@@ -273,11 +274,8 @@ function DetalhePlano({ id, opera, coord, onClose, onEditar, onExcluido }) {
           {!p.lista_evidencias?.length ? <div style={{ fontSize: 12.5, color: colors.textMuted, marginBottom: 8 }}>Nenhuma evidência anexada.</div> : (
             <ul style={{ margin: "0 0 10px", padding: 0, listStyle: "none" }}>
               {p.lista_evidencias.map((x) => (
-                <li key={x.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${colors.border}`, fontSize: 13 }}>
-                  <a href={x.url} target="_blank" rel="noopener noreferrer" style={{ color: colors.primary, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{x.titulo || x.url}</a>
-                  <span style={{ fontSize: 11.5, color: colors.textMuted }}>{x.criado_por_nome} · {x.criado_em}</span>
-                  {pode ? <button type="button" style={st.btnMiniDanger} disabled={ocupado} onClick={() => acao(() => apiFetch(`/nusp/evidencias/${x.id}`, { method: "DELETE" }), "Evidência removida.")}>Remover</button> : null}
-                </li>
+                <EvidenciaItem key={x.id} x={x} podeRemover={pode} ocupado={ocupado} onErro={setErro}
+                  onRemover={(e) => acao(() => apiFetch(`/nusp/evidencias/${e.id}`, { method: "DELETE" }), "Evidência removida.")} />
               ))}
             </ul>
           )}
@@ -285,9 +283,10 @@ function DetalhePlano({ id, opera, coord, onClose, onEditar, onExcluido }) {
             <form onSubmit={addEv} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
               <Campo label="Link da evidência" flex={2} minWidth={240}><input style={st.input} value={ev.url} onChange={(e) => setEv({ ...ev, url: e.target.value })} placeholder="https://…" required /></Campo>
               <Campo label="Título (opcional)" minWidth={170}><input style={st.input} value={ev.titulo} onChange={(e) => setEv({ ...ev, titulo: e.target.value })} /></Campo>
-              <button type="submit" style={st.btn} disabled={ocupado}>Anexar</button>
+              <button type="submit" style={st.btn} disabled={ocupado}>Anexar link</button>
             </form>
           )}
+          {pode && <AnexarArquivo entidade="plano" entidadeId={id} ocupado={ocupado} acao={acao} />}
 
           <h3 style={{ ...st.cardTitle, marginTop: 20 }}>Histórico</h3>
           {!p.historico?.length ? <div style={{ fontSize: 12.5, color: colors.textMuted }}>Sem registros.</div> : (

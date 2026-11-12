@@ -13,6 +13,20 @@
 // (stroke, tamanho, cor) automaticamente.
 
 const ICONS = {
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3.5 7 8.5 6 8.5-6" />
+    </>
+  ),
+  file: (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6" />
+      <path d="M9 17h6" />
+    </>
+  ),
   settings: (
     <>
       <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />

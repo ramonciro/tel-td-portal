@@ -72,6 +72,29 @@ const STATUS_ACOLHIMENTO = [
   { value: "em_acompanhamento", label: "Em acompanhamento" },
   { value: "encerrado", label: "Encerrado" },
 ];
+// ── Fale Comigo (Pacote 4) ────────────────────────────────────────────
+const CANAIS_DEMANDA = [
+  { value: "fale_comigo", label: "Caixa Fale Comigo" },
+  { value: "email", label: "E-mail" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "presencial", label: "Pessoalmente" },
+  { value: "telefone", label: "Telefone" },
+  { value: "outro", label: "Outro" },
+];
+const TIPOS_DEMANDA = [
+  { value: "duvida", label: "Dúvida" },
+  { value: "solicitacao", label: "Pedido" },
+  { value: "sugestao", label: "Sugestão" },
+  { value: "reclamacao", label: "Reclamação" },
+  { value: "outro", label: "Outro" },
+];
+const STATUS_DEMANDA = [
+  { value: "aberta", label: "Aberta" },
+  { value: "em_andamento", label: "Em andamento" },
+  { value: "respondida", label: "Respondida" },
+  { value: "cancelada", label: "Cancelada" },
+];
+const PRAZO_DEMANDA_PADRAO = 5; // dias úteis
 const RESUMO_MAX = 500;
 // Supressão de células pequenas: nenhum número derivado de acolhimento chega à
 // diretoria com menos de 5 pessoas/registros por célula.
@@ -302,7 +325,7 @@ module.exports = {
   PERFIL_COORD, PERFIL_ANALISTA, PERFIL_GESTOR, PERFIS_NUSP, PERFIS_OPERACAO,
   TIPOS_ATIVIDADE, FORMATOS, STATUS_ATIVIDADE, STATUS_PLANO, STATUS_MATERIAL, PRESENCAS, TIPOS_PROGRAMA,
   DIMENSOES_PADRAO, PROGRAMAS_PADRAO,
-  CANAIS_ACOLHIMENTO, ORIGENS_ACOLHIMENTO, STATUS_ACOLHIMENTO, RESUMO_MAX, MINIMO_CELULA, MOTIVOS_PADRAO, ENCAMINHAMENTOS_PADRAO,
+  CANAIS_ACOLHIMENTO, ORIGENS_ACOLHIMENTO, STATUS_ACOLHIMENTO, CANAIS_DEMANDA, TIPOS_DEMANDA, STATUS_DEMANDA, PRAZO_DEMANDA_PADRAO, RESUMO_MAX, MINIMO_CELULA, MOTIVOS_PADRAO, ENCAMINHAMENTOS_PADRAO,
   contexto, contextoRestrito, erro, dataISO, texto, inteiroOuNulo, opcao, urlValida, hojeISO, valores,
   existeNaEmpresa, conferirReferencias, garantirBase, chave, registrarLeitura,
 };

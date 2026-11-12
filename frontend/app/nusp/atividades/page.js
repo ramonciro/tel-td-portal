@@ -6,6 +6,7 @@ import PageHero from "../../../components/PageHero";
 import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import {
+  EvidenciaItem, AnexarArquivo,
   st, Campo, Select, Modal, Badge, Paginacao, opcoesDe, opcoesNomes, opcoesMapa, TIPO_LABEL, FORMATO_LABEL, STATUS_ATV_LABEL, PRESENCA_LABEL,
   fmtData, fmtDataOuSem, fmtHoras, fmtNum, hojeISO, perfilNusp, ehOperacao, PERFIL_COORD,
 } from "../../../components/NuspUi";
@@ -238,7 +239,7 @@ function FormAtividade({ form, cad, coord, onClose, onSaved }) {
         <Campo label="Observações" flex={1}><textarea style={st.textarea} value={d.observacoes} maxLength={1000} onChange={(e) => set("observacoes", e.target.value)} /></Campo>
         {!form.id && (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "12px 0" }}>
-            <Campo label="Evidência (link, opcional agora)" flex={2} minWidth={260} dica="Pasta ou arquivo no Drive/SharePoint. Para concluir a atividade é preciso ao menos um link.">
+            <Campo label="Evidência (link, opcional agora)" flex={2} minWidth={260} dica="Pasta ou arquivo no Drive/SharePoint. Para anexar um arquivo direto, salve a atividade e abra o detalhe dela. Para concluir é preciso ao menos uma evidência (link ou arquivo).">
               <input style={st.input} value={d.evidencia_url} onChange={(e) => set("evidencia_url", e.target.value)} placeholder="https://…" />
             </Campo>
             <Campo label="Título do link" minWidth={180}><input style={st.input} value={d.evidencia_titulo} onChange={(e) => set("evidencia_titulo", e.target.value)} placeholder="Ex.: Lista de presença" /></Campo>
@@ -357,11 +358,7 @@ function DetalheAtividade({ id, opera, coord, onClose, onEditar, onExcluida }) {
           {!a.lista_evidencias?.length ? <div style={{ fontSize: 12.5, color: colors.textMuted, marginBottom: 8 }}>Nenhuma evidência anexada.</div> : (
             <ul style={{ margin: "0 0 10px", padding: 0, listStyle: "none" }}>
               {a.lista_evidencias.map((x) => (
-                <li key={x.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${colors.border}`, fontSize: 13 }}>
-                  <a href={x.url} target="_blank" rel="noopener noreferrer" style={{ color: colors.primary, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{x.titulo || x.url}</a>
-                  <span style={{ fontSize: 11.5, color: colors.textMuted }}>{x.criado_por_nome} · {x.criado_em}</span>
-                  {pode ? <button type="button" style={st.btnMiniDanger} disabled={ocupado} onClick={() => removerEv(x)}>Remover</button> : null}
-                </li>
+                <EvidenciaItem key={x.id} x={x} podeRemover={pode} ocupado={ocupado} onRemover={removerEv} onErro={setErro} />
               ))}
             </ul>
           )}
@@ -369,9 +366,10 @@ function DetalheAtividade({ id, opera, coord, onClose, onEditar, onExcluida }) {
             <form onSubmit={addEvidencia} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
               <Campo label="Link da evidência" flex={2} minWidth={240}><input style={st.input} value={ev.url} onChange={(e) => setEv({ ...ev, url: e.target.value })} placeholder="https://…" required /></Campo>
               <Campo label="Título (opcional)" minWidth={170}><input style={st.input} value={ev.titulo} onChange={(e) => setEv({ ...ev, titulo: e.target.value })} /></Campo>
-              <button type="submit" style={st.btn} disabled={ocupado}>Anexar</button>
+              <button type="submit" style={st.btn} disabled={ocupado}>Anexar link</button>
             </form>
           )}
+          {pode && <AnexarArquivo entidade="atividade" entidadeId={id} ocupado={ocupado} acao={acao} />}
 
           {/* Participantes (nunca chegam ao gestor: a API não envia) */}
           {opera && (

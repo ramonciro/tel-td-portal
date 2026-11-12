@@ -3680,6 +3680,56 @@ async function ensureNusp() {
   // Correção: planos importados como "Não iniciada" tinham ficado com o status "planejada" (que só existe em atividade)
   // e por isso não apareciam como abertos no painel. Idempotente.
   await pool.query(`UPDATE nusp_planos_acao SET status = 'pendente' WHERE status = 'planejada'`);
+
+  // ── Pacote 4 ────────────────────────────────────────────────────────────
+  // (a) Evidência pode ser um arquivo guardado no volume (em vez de um link): o link passa a ser opcional.
+  const [urlCol] = await pool.query(
+    `SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nusp_evidencias' AND COLUMN_NAME = 'url' LIMIT 1`);
+  if (urlCol[0] && urlCol[0].IS_NULLABLE === "NO") await pool.query(`ALTER TABLE nusp_evidencias MODIFY COLUMN url VARCHAR(600) NULL`);
+  await ensureColumn("nusp_evidencias", "arquivo_nome", "VARCHAR(255) NULL");
+  await ensureColumn("nusp_evidencias", "arquivo_caminho", "VARCHAR(300) NULL");
+  await ensureColumn("nusp_evidencias", "arquivo_tipo", "VARCHAR(100) NULL");
+  await ensureColumn("nusp_evidencias", "arquivo_tamanho", "INT NULL");
+  // (b) Fale Comigo: demandas recebidas, com prazo em dias úteis. O texto é só da equipe técnica;
+  // a diretoria (gestor_nusp) lê apenas os números agregados.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_demandas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      data_recebimento DATE NOT NULL,
+      canal VARCHAR(20) NOT NULL DEFAULT 'outro',
+      tipo VARCHAR(20) NOT NULL DEFAULT 'duvida',
+      assunto VARCHAR(200) NOT NULL,
+      descricao VARCHAR(1500) NULL,
+      solicitante VARCHAR(150) NULL,
+      unidade_id INT NULL,
+      prazo_dias_uteis TINYINT NOT NULL DEFAULT 5,
+      prazo_em DATE NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'aberta',
+      resposta VARCHAR(2000) NULL,
+      respondida_em DATE NULL,
+      responsavel_id INT NULL,
+      responsavel_nome VARCHAR(150) NULL,
+      criado_por_id INT NULL,
+      criado_por_nome VARCHAR(150) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_nusp_dem_empresa (empresa_id, status, prazo_em),
+      INDEX idx_nusp_dem_data (empresa_id, data_recebimento)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nusp_demandas_historico (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      demanda_id INT NOT NULL,
+      usuario_id INT NULL,
+      usuario_nome VARCHAR(150) NULL,
+      acao VARCHAR(20) NOT NULL,
+      status VARCHAR(20) NULL,
+      texto VARCHAR(500) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_nusp_dem_hist (demanda_id)
+    ) ${T}`);
   console.log("  ↳ Núcleo (NUSPSI): ok");
 }
 

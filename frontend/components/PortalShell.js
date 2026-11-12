@@ -101,8 +101,10 @@ const menuItems = [
   { href: "/nusp/atividades", label: "Atividades",            icon: "clock", roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
   { href: "/nusp/acolhimentos", label: "Acolhimentos",       icon: "users",    roles: ["coordenador_nusp", "analista_nusp"] },
   { href: "/nusp/pesquisa",     label: "Pesquisa de riscos",    icon: "trending", roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
+  { href: "/nusp/fale-comigo",   label: "Fale Comigo",           icon: "mail",     roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
   { href: "/nusp/planos",     label: "Planos de ação",        icon: "target",   roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
   { href: "/nusp/materiais",  label: "Materiais",             icon: "folder",   roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
+  { href: "/nusp/relatorio-mensal", label: "Relatório mensal",  icon: "file",     roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
   { href: "/nusp/configuracoes", label: "Cadastros e importação", icon: "settings", roles: ["coordenador_nusp"] },
   // Módulo Metodologia e Desenvolvimento (16/09/2026) — Mapa de
   // Desenvolvimento e Trilhas fundidos num módulo à parte, fora do escopo de
