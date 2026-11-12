@@ -144,7 +144,10 @@ export async function apiFetch(path, options = {}) {
       message = data.error || data.message || message;
     }
     if (response.status === 413 && message === "Erro 413") message = mensagemErroNaoJson(413, "");
-    throw new Error(message);
+    const falha = new Error(message);
+    falha.status = response.status;
+    falha.dados = data && typeof data === "object" ? data : {};
+    throw falha;
   }
 
   return data;

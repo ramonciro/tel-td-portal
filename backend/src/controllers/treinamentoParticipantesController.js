@@ -3,7 +3,7 @@ const db = require("../lib/db");
 const { comTransacao } = require("../lib/tx");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { tenantScopeFor } = require("../lib/tenantScope");
-const { resolverPessoa, pessoaIdDoUsuario, acharConflitoMatricula, gravarDadosDaPessoa } = require("../services/pessoasService");
+const { resolverPessoa, pessoaIdDoUsuario, acharConflitoMatricula, gravarDadosDaPessoa, nomesParecidos, matriculaParaComparar: matriculaParaChave } = require("../services/pessoasService");
 const { garantirUsuarioTreinando } = require("../services/provisionamentoUsuariosService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
@@ -338,6 +338,75 @@ async function importarParticipantesExcel(req, res) {
       });
     }
 
+    // 12/11/2026 — "Conferir antes": lê a planilha SEM gravar nada e devolve as linhas cuja matrícula
+    // já é de outra pessoa (nome divergente), para o usuário escolher, linha a linha, entre vincular
+    // à pessoa do cadastro ou pular. Só leitura: não apaga a lista da turma nem cria pessoas/contas.
+    if (String(req.body?.simular || "") === "1") {
+      const empresaIdPrev = await empresaRealDoTreinamento(db, treinamento_id);
+      const conflitos = [];
+      const vistas = new Map(); // matrícula (normalizada) -> primeira linha da planilha
+      let n = 0;
+      let comNome = 0;
+      for (const linha of linhas) {
+        n += 1;
+        const nome = String(linha.nome || "").trim();
+        if (!nome) continue;
+        comNome += 1;
+        const matriculaLinha = String(linha.matricula || "").trim();
+        const clienteLinha = String(linha.cliente || "").trim();
+        const cpfLinha = normalizarCpf(linha.cpf);
+        const conflito = await acharConflitoMatricula(db, empresaIdPrev, {
+          matricula: matriculaLinha, nome, cpf: cpfLinha, cliente: clienteLinha,
+        });
+        if (conflito) {
+          conflitos.push({
+            linha: n,
+            linha_excel: n + 1,
+            nome,
+            matricula: matriculaLinha,
+            cliente: clienteLinha,
+            tipo: "cadastro",
+            pessoa: {
+              id: conflito.id,
+              nome: conflito.nome,
+              matricula: conflito.matricula,
+              cliente: conflito.cliente || null,
+              cpf_final: conflito.cpf ? String(conflito.cpf).slice(-2) : null,
+            },
+            pode_vincular: usuarioTemAcessoAoCliente(req, conflito.cliente),
+          });
+          continue;
+        }
+        // Mesma matrícula repetida na própria planilha com nomes que não se parecem (e sem CPF
+        // para decidir): a segunda linha não entra — o importador não cria duas pessoas assim.
+        const mat = matriculaParaChave(matriculaLinha);
+        if (mat && !cpfLinha) {
+          const antes = vistas.get(mat);
+          if (antes && !nomesParecidos(antes.nome, nome)) {
+            conflitos.push({
+              linha: n, linha_excel: n + 1, nome, matricula: matriculaLinha, cliente: clienteLinha,
+              tipo: "planilha",
+              pessoa: { id: null, nome: antes.nome, matricula: matriculaLinha, cliente: antes.cliente || null, cpf_final: null },
+              linha_anterior_excel: antes.linha + 1,
+              pode_vincular: false,
+            });
+            continue;
+          }
+          if (!antes) vistas.set(mat, { nome, linha: n, cliente: clienteLinha });
+        }
+      }
+      return res.json({ ok: true, simulacao: true, linhas_com_nome: comNome, conflitos });
+    }
+
+    // Decisões do usuário para as linhas em conflito (resultado do "Conferir antes"):
+    // { "<linha>": { acao: "vincular", pessoa_id: 123 } }. Linha sem decisão é pulada, como sempre foi.
+    let decisoes = {};
+    try {
+      const bruto = req.body?.decisoes;
+      if (bruto) decisoes = typeof bruto === "string" ? JSON.parse(bruto) : bruto;
+      if (!decisoes || typeof decisoes !== "object") decisoes = {};
+    } catch (_) { decisoes = {}; }
+
     // Pacote 2 (débito técnico, 2026-09): apagar os participantes/presenças
     // antigos e inserir os novos linha a linha rodava como queries soltas no
     // pool — se a conexão caísse no meio de uma planilha grande, a turma
@@ -355,6 +424,8 @@ async function importarParticipantesExcel(req, res) {
     let contasAtualizadas = 0;
     let semIdentificadorLogin = 0;
     let vinculadasAuto = 0;
+    let vinculadasPorEscolha = 0;
+    const pessoasVinculadasPorEscolha = new Set();
     let linhasLidas = 0;
     const ignoradas = [];
     try {
@@ -391,20 +462,41 @@ async function importarParticipantesExcel(req, res) {
         const conflito = await acharConflitoMatricula(conn, empresaIdTurma, {
           matricula: matriculaLinha, nome, cpf: cpfLinha, cliente: clienteLinha,
         });
+        let escolhida = null; // pessoa do cadastro escolhida no "Conferir antes"
         if (conflito) {
-          ignoradas.push({ linha: numeroLinha, nome, motivo: `matrícula ${matriculaLinha} já é de "${conflito.nome}"${conflito.cliente ? ` (${conflito.cliente})` : ""}` });
-          continue;
+          const dec = decisoes[String(numeroLinha)];
+          const querVincular = dec && dec.acao === "vincular" && Number(dec.pessoa_id) === Number(conflito.id);
+          if (!querVincular) {
+            ignoradas.push({ linha: numeroLinha, linha_excel: numeroLinha + 1, nome, motivo: `matrícula ${matriculaLinha} já é de "${conflito.nome}"${conflito.cliente ? ` (${conflito.cliente})` : ""}` });
+            continue;
+          }
+          if (!usuarioTemAcessoAoCliente(req, conflito.cliente)) {
+            ignoradas.push({ linha: numeroLinha, linha_excel: numeroLinha + 1, nome, motivo: `a pessoa do cadastro (${conflito.nome}) é de outro cliente; peça à coordenação para vincular` });
+            continue;
+          }
+          escolhida = conflito;
         }
         const resolvida = await resolverPessoa(
-          { empresaId: empresaIdTurma, nome, cpf: cpfLinha, matricula: matriculaLinha, cliente: clienteLinha },
+          { empresaId: empresaIdTurma, nome: escolhida ? escolhida.nome : nome, cpf: cpfLinha || (escolhida ? escolhida.cpf : null), matricula: escolhida ? (escolhida.matricula || matriculaLinha) : matriculaLinha, cliente: clienteLinha },
           conn,
-          { vinculoAmplo: true }
+          escolhida
+            ? { vinculoAmplo: true, idPessoa: escolhida.id, manterNome: true }
+            : { vinculoAmplo: true }
         );
         if (resolvida.ambigua) {
           ignoradas.push({ linha: numeroLinha, nome, motivo: `há ${resolvida.ambigua.length} pessoas com este nome; informe matrícula ou CPF` });
           continue;
         }
         const pessoa = resolvida.pessoa;
+        if (escolhida) {
+          // A mesma pessoa do cadastro em duas linhas da planilha entraria duas vezes na turma.
+          if (pessoasVinculadasPorEscolha.has(pessoa.id)) {
+            ignoradas.push({ linha: numeroLinha, linha_excel: numeroLinha + 1, nome, motivo: `${pessoa.nome} já entrou nesta importação por outra linha` });
+            continue;
+          }
+          pessoasVinculadasPorEscolha.add(pessoa.id);
+          vinculadasPorEscolha += 1;
+        }
         if (!resolvida.criada) vinculadasAuto += 1;
         const anteriorLinha = resolvida.criada ? { operacao: "", data_admissao: null } : await dadosAnterioresDaPessoa(conn, pessoa.id);
 
@@ -429,8 +521,8 @@ async function importarParticipantesExcel(req, res) {
           `,
           [
             treinamento_id,
-            nome,
-            matriculaLinha,
+            escolhida ? pessoa.nome : nome,
+            escolhida ? (pessoa.matricula || matriculaLinha) : matriculaLinha,
             clienteLinha,
             String(linha.turma || "").trim(),
             String(linha.supervisor || "").trim(),
@@ -442,7 +534,7 @@ async function importarParticipantesExcel(req, res) {
             // ou é descartada silenciosamente (mesmo padrão defensivo do
             // resto do importador, que também não rejeita a planilha
             // inteira por uma célula individual mal formatada).
-            cpfLinha,
+            cpfLinha || (escolhida ? pessoa.cpf || null : null),
             "pendente",
             null,
             pessoa.id,
@@ -487,6 +579,7 @@ async function importarParticipantesExcel(req, res) {
       contas_atualizadas: contasAtualizadas,
       sem_identificador_login: semIdentificadorLogin,
       vinculadas_automaticamente: vinculadasAuto,
+      vinculadas_por_escolha: vinculadasPorEscolha,
       linhas_ignoradas: ignoradas,
     });
   } catch (error) {
@@ -868,6 +961,10 @@ async function createParticipanteTreinamento(req, res) {
       if (!pessoaEscolhida) {
         return recusarParticipante(req, res, 404, "Pessoa não encontrada neste ambiente.");
       }
+      // Instrutor/supervisor só incluem pessoas dos seus clientes (a busca já filtra; isto barra chamada forjada).
+      if (!usuarioTemAcessoAoCliente(req, pessoaEscolhida.cliente)) {
+        return recusarParticipante(req, res, 403, "Esta pessoa é de outro cliente. Peça à coordenação para incluí-la.");
+      }
       nomeTrim = pessoaEscolhida.nome;
       matriculaTrim = matriculaTrim || pessoaEscolhida.matricula || "";
       cpfNormalizado = cpfNormalizado || pessoaEscolhida.cpf || null;
@@ -923,7 +1020,7 @@ async function createParticipanteTreinamento(req, res) {
         return recusarParticipante(
           req, res, 409,
           `A matrícula ${matriculaTrim} já está cadastrada para "${conflito.nome}"${conflito.cliente ? ` (${conflito.cliente})` : ""}. Se é a mesma pessoa, use "Incluir pessoa já cadastrada" (ou digite o nome igual ao cadastro); se é outra pessoa, confira a matrícula.`,
-          { conflito_matricula: true, pessoa_existente: { id: conflito.id, nome: conflito.nome, matricula: conflito.matricula, cliente: conflito.cliente } }
+          { conflito_matricula: true, pode_incluir_existente: usuarioTemAcessoAoCliente(req, conflito.cliente), pessoa_existente: { id: conflito.id, nome: conflito.nome, matricula: conflito.matricula, cliente: conflito.cliente } }
         );
       }
     }

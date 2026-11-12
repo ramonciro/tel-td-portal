@@ -1,5 +1,15 @@
-Pacote Radar 1 (26/10/2026) - Prontidao da turma + Risco de certificacao
-Suba os 6 arquivos mantendo as pastas, em um unico commit.
-Sem migracao de banco: o Radar so le dados que ja existem.
-Novos: backend/src/services/preventivoService.js, backend/src/controllers/preventivoController.js, frontend/app/radar/page.js
-Alterados: backend/src/index.js (2 rotas /api/preventivo), backend/src/services/avisosService.js (2 avisos no sino), frontend/components/PortalShell.js (item de menu Radar)
+Importação em lote com matrícula de outra pessoa (12/11/2026)
+
+Copie as pastas backend e frontend por cima do repositório (3 arquivos). Não há migração de banco nem variável nova.
+
+O que muda
+1. Importar Excel agora confere a planilha antes de gravar. Se alguma linha tem matrícula que já é de outra pessoa com nome diferente, aparece um quadro com o nome da planilha e o nome do cadastro, e você escolhe por linha: Vincular (usa a pessoa do cadastro, com o nome do cadastro) ou Pular. Sem conflito, importa direto, como antes.
+2. Inclusão manual barrada por matrícula: abaixo do aviso aparecem os botões "Abrir cadastro" e "Incluir esta pessoa".
+3. Matrícula repetida dentro da própria planilha, com nomes diferentes e sem CPF, é apontada no quadro (a segunda linha é pulada).
+4. Os avisos de linhas não importadas passam a citar a linha do Excel (a do cabeçalho conta como 1).
+5. Instrutor/supervisor só vincula pessoas dos seus clientes (no lote e na inclusão por pessoa).
+
+Arquivos
+backend/src/controllers/treinamentoParticipantesController.js
+frontend/app/turma/[id]/participantes/page.js
+frontend/services/api.js (o erro passa a carregar os dados da resposta em err.dados; nada muda para as outras telas)

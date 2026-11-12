@@ -45,6 +45,11 @@ export default function ParticipantesTurmaPage() {
   const [participantes, setParticipantes] = useState([]);
   const [frequencias,   setFrequencias]   = useState([]);
   const [arquivo,       setArquivo]       = useState(null);
+  // 12/11/2026 — "Conferir antes": linhas da planilha cuja matrícula já é de outra pessoa (nome divergente).
+  // Inclusão manual barrada por matrícula de outra pessoa: guarda a pessoa do cadastro para oferecer os botões.
+  const [conflitoManual, setConflitoManual] = useState(null);
+  const [conflitosLote, setConflitosLote] = useState(null); // null = sem conferência pendente
+  const [decisoesLote,  setDecisoesLote]  = useState({});    // { [linha]: "vincular" | "pular" }
   const [form,          setForm]          = useState(emptyForm());
   const [loading,       setLoading]       = useState(true);
   const [importando,    setImportando]    = useState(false);
@@ -106,13 +111,40 @@ export default function ParticipantesTurmaPage() {
     }
   }
 
+  // Etapa 1: confere a planilha sem gravar nada. Se não houver conflito de matrícula, já importa.
+  // Se houver, mostra o quadro de escolhas (vincular à pessoa do cadastro ou pular) e espera.
   async function importarExcel() {
     if (!arquivo) { setErro("Selecione um arquivo Excel."); return; }
+    try {
+      setImportando(true); setErro(""); setSucesso("");
+      const fd0 = new FormData();
+      fd0.append("arquivo", arquivo);
+      fd0.append("treinamento_id", String(id));
+      fd0.append("simular", "1");
+      const previa = await apiFetch("/treinamentos/importar-participantes", { method: "POST", body: fd0 });
+      const conflitos = previa?.conflitos || [];
+      if (conflitos.length) {
+        setConflitosLote(conflitos);
+        setDecisoesLote(Object.fromEntries(conflitos.map((c) => [c.linha, "pular"])));
+        setImportando(false);
+        return;
+      }
+    } catch (err) {
+      setErro(err.message || "Erro ao conferir a planilha.");
+      setImportando(false);
+      return;
+    }
+    await gravarImportacao({});
+  }
+
+  // Etapa 2: grava. `decisoes` = { [linha]: { acao: "vincular", pessoa_id } } só das linhas em conflito.
+  async function gravarImportacao(decisoes) {
     try {
       setImportando(true); setErro(""); setSucesso("");
       const fd = new FormData();
       fd.append("arquivo", arquivo);
       fd.append("treinamento_id", String(id));
+      if (decisoes && Object.keys(decisoes).length) fd.append("decisoes", JSON.stringify(decisoes));
       const resultado = await apiFetch("/treinamentos/importar-participantes", { method: "POST", body: fd });
 
       // Inclusão de usuários (treinandos), 25/09/2026: a importação agora
@@ -129,17 +161,21 @@ export default function ParticipantesTurmaPage() {
       if (resultado?.sem_identificador_login) {
         partesResumo.push(`${resultado.sem_identificador_login} participante(s) sem CPF/matrícula ficaram sem login.`);
       }
-      if (resultado?.vinculadas_automaticamente) {
-        partesResumo.push(`${resultado.vinculadas_automaticamente} pessoa(s) já tinham cadastro e foram vinculadas automaticamente, sem duplicar.`);
+      const vincAuto = Number(resultado?.vinculadas_automaticamente || 0) - Number(resultado?.vinculadas_por_escolha || 0);
+      if (vincAuto > 0) {
+        partesResumo.push(`${vincAuto} pessoa(s) já tinham cadastro e foram vinculadas automaticamente, sem duplicar.`);
+      }
+      if (resultado?.vinculadas_por_escolha) {
+        partesResumo.push(`${resultado.vinculadas_por_escolha} linha(s) vinculada(s) à pessoa do cadastro, como você escolheu.`);
       }
       const ign = resultado?.linhas_ignoradas || [];
       const avisoIgn = ign.length
         ? `${ign.length} linha(s) NÃO foram importadas: ` +
-          ign.slice(0, 8).map((i) => `linha ${i.linha} (${i.nome}) — ${i.motivo}`).join("; ") +
+          ign.slice(0, 8).map((i) => `linha ${i.linha_excel || i.linha} do Excel (${i.nome}) — ${i.motivo}`).join("; ") +
           (ign.length > 8 ? `; e mais ${ign.length - 8}.` : ".") +
           " Confira e inclua essas pessoas pelo + Adicionar manual ou Incluir pessoa já cadastrada."
         : "";
-      setArquivo(null); setAbrirImport(false);
+      setArquivo(null); setAbrirImport(false); setConflitosLote(null); setDecisoesLote({});
       await carregarTudo();
       setSucesso(partesResumo.join(" "));
       if (avisoIgn) setErro(avisoIgn);
@@ -248,6 +284,7 @@ export default function ParticipantesTurmaPage() {
         }),
       });
       await carregarTudo();
+      setConflitoManual(null);
       setSucesso(r?.message || `${pessoa.nome} incluído(a) na turma.`);
       if (abrirManual) { setForm(emptyForm(treinamento?.cliente || "", treinamento?.tema || "", treinamento?.supervisor || "")); setAbrirManual(false); }
       const novaConta = r?.vinculo?.conta === "criada" ? "aguardando_primeiro_acesso" : null;
@@ -268,7 +305,7 @@ export default function ParticipantesTurmaPage() {
       setErro("Preencha nome, cliente e turma. Matrícula ou CPF ajudam o portal a reconhecer quem já tem cadastro."); return;
     }
     try {
-      setSalvando(true); setErro(""); setSucesso("");
+      setSalvando(true); setErro(""); setSucesso(""); setConflitoManual(null);
       const resp = await apiFetch(`/treinamentos/${id}/participantes`, {
         method: "POST",
         body: JSON.stringify({
@@ -283,6 +320,9 @@ export default function ParticipantesTurmaPage() {
       setSucesso(resp?.message || "Participante adicionado com sucesso.");
     } catch (err) {
       setErro(err.message || "Não foi possível adicionar manualmente.");
+      if (err?.dados?.conflito_matricula && err.dados.pessoa_existente?.id) {
+        setConflitoManual({ ...err.dados.pessoa_existente, pode_incluir: err.dados.pode_incluir_existente !== false });
+      }
     } finally {
       setSalvando(false);
     }
@@ -433,6 +473,25 @@ export default function ParticipantesTurmaPage() {
 
       {/* Feedback */}
       {erro    && <div style={errorBox}>{erro}</div>}
+      {conflitoManual && (
+        <div style={{ ...errorBox, background: colors.warningLight, color: colors.warningText, border: `1px solid ${colors.warning}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ flex: "1 1 260px" }}>
+            Pessoa que já tem esta matrícula: <strong>{conflitoManual.nome}</strong>
+            {conflitoManual.cliente ? ` (${conflitoManual.cliente})` : ""}. Se é a mesma pessoa, inclua pelo cadastro. Se não é, confira a matrícula.
+          </span>
+          <a href={`/pessoas/${conflitoManual.id}`} target="_blank" rel="noreferrer" style={{ ...btnOutline, textDecoration: "none", display: "inline-block" }}>
+            Abrir cadastro
+          </a>
+          {conflitoManual.pode_incluir ? (
+            <button style={btnCoral} disabled={incluindoId === conflitoManual.id}
+              onClick={() => incluirPessoaCadastrada({ id: conflitoManual.id, nome: conflitoManual.nome, cliente: conflitoManual.cliente })}>
+              {incluindoId === conflitoManual.id ? "Incluindo…" : "Incluir esta pessoa"}
+            </button>
+          ) : (
+            <span style={{ fontSize: 12 }}>Pessoa de outro cliente: peça à coordenação.</span>
+          )}
+        </div>
+      )}
       {sucesso && <div style={successBox}>{sucesso}</div>}
 
       {!loading && !ehAvaliacaoTecnica && participantes.length > 0 && (
@@ -494,13 +553,109 @@ export default function ParticipantesTurmaPage() {
           <div style={importRow}>
             <input
               type="file" accept=".xlsx,.xls"
-              onChange={(e) => setArquivo(e.target.files?.[0] || null)}
+              onChange={(e) => { setArquivo(e.target.files?.[0] || null); setConflitosLote(null); setDecisoesLote({}); }}
               style={{ fontSize: 13 }}
             />
             <button style={btnCoral} onClick={importarExcel} disabled={importando}>
-              {importando ? "Importando…" : "Importar"}
+              {importando ? "Conferindo…" : "Importar"}
             </button>
           </div>
+          {conflitosLote && (
+            <div style={{ marginTop: 14, border: `1px solid ${colors.warning}`, background: colors.warningLight, borderRadius: 12, padding: 14 }}>
+              <div style={{ fontWeight: 700, color: colors.warningText, fontSize: 14 }}>
+                {conflitosLote.length} linha(s) com matrícula que já é de outra pessoa
+              </div>
+              <p style={{ ...helperText, marginTop: 4 }}>
+                Nada foi gravado ainda. Em cada linha, escolha <strong>Vincular</strong> (usa a pessoa que já está no cadastro,
+                com o nome do cadastro) ou <strong>Pular</strong> (a linha fica de fora). Só vincule se for a mesma pessoa:
+                se a matrícula foi reaproveitada por outra pessoa, pule e corrija o cadastro antes.
+              </p>
+              <div style={{ overflowX: "auto", marginTop: 8 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 8 }}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Linha</th>
+                      <th style={th}>Na planilha</th>
+                      <th style={th}>No cadastro</th>
+                      <th style={th}>O que fazer</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {conflitosLote.map((c) => {
+                      const dec = decisoesLote[c.linha] || "pular";
+                      const podeVincular = c.pode_vincular && c.tipo === "cadastro";
+                      return (
+                        <tr key={c.linha}>
+                          <td style={td}>{c.linha_excel}</td>
+                          <td style={td}>
+                            <strong>{c.nome}</strong><br />
+                            <span style={{ color: "#94a3b8", fontSize: 12 }}>matrícula {c.matricula || "—"}{c.cliente ? ` · ${c.cliente}` : ""}</span>
+                          </td>
+                          <td style={td}>
+                            {c.tipo === "planilha" ? (
+                              <>
+                                <strong>{c.pessoa.nome}</strong><br />
+                                <span style={{ color: "#94a3b8", fontSize: 12 }}>mesma matrícula na linha {c.linha_anterior_excel} da planilha</span>
+                              </>
+                            ) : (
+                              <>
+                                <strong>{c.pessoa.nome}</strong><br />
+                                <span style={{ color: "#94a3b8", fontSize: 12 }}>
+                                  matrícula {c.pessoa.matricula}{c.pessoa.cliente ? ` · ${c.pessoa.cliente}` : " · sem cliente"}
+                                  {c.pessoa.id ? (<> · <a href={`/pessoas/${c.pessoa.id}`} target="_blank" rel="noreferrer" style={{ color: colors.primary || "#1d4ed8" }}>abrir cadastro</a></>) : null}
+                                </span>
+                              </>
+                            )}
+                          </td>
+                          <td style={td}>
+                            {podeVincular ? (
+                              <div style={{ display: "flex", gap: 12 }}>
+                                <label style={{ cursor: "pointer", fontSize: 13 }}>
+                                  <input type="radio" name={`dec-${c.linha}`} checked={dec === "vincular"}
+                                    onChange={() => setDecisoesLote((d) => ({ ...d, [c.linha]: "vincular" }))} /> Vincular
+                                </label>
+                                <label style={{ cursor: "pointer", fontSize: 13 }}>
+                                  <input type="radio" name={`dec-${c.linha}`} checked={dec === "pular"}
+                                    onChange={() => setDecisoesLote((d) => ({ ...d, [c.linha]: "pular" }))} /> Pular
+                                </label>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: 12, color: "#64748b" }}>
+                                {c.tipo === "planilha"
+                                  ? "Será pulada. Corrija a matrícula na planilha."
+                                  : "Será pulada. A pessoa é de outro cliente: peça à coordenação."}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+                <button style={btnCoral} disabled={importando} onClick={() => {
+                  const dec = {};
+                  for (const c of conflitosLote) {
+                    if (c.pode_vincular && c.tipo === "cadastro" && decisoesLote[c.linha] === "vincular") {
+                      dec[c.linha] = { acao: "vincular", pessoa_id: c.pessoa.id };
+                    }
+                  }
+                  gravarImportacao(dec);
+                }}>
+                  {importando ? "Importando…" : "Importar com estas escolhas"}
+                </button>
+                <button style={btnOutline} disabled={importando} onClick={() => {
+                  const todas = {};
+                  for (const c of conflitosLote) if (c.pode_vincular && c.tipo === "cadastro") todas[c.linha] = "vincular";
+                  setDecisoesLote((d) => ({ ...d, ...todas }));
+                }}>Vincular todas as possíveis</button>
+                <button style={btnOutline} disabled={importando} onClick={() => { setConflitosLote(null); setDecisoesLote({}); }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
           <p style={helperText}>
             Colunas obrigatórias: <strong>nome</strong>, <strong>cliente</strong>,{" "}
             <strong>turma</strong>, <strong>supervisor</strong>,{" "}
