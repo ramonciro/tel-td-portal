@@ -135,6 +135,8 @@ export default function LoginPage() {
         // Dashboard e Gestão de Turmas).
         const destino = rsPerfiles.includes(perfil)
           ? "/rs/rps"
+          : ["coordenador_rh", "analista_rh", "gestor_rh"].includes(perfil)
+          ? "/rh"
           : perfil === "gestor_nusp"
           ? "/nusp"
           : ["coordenador_nusp", "analista_nusp"].includes(perfil)

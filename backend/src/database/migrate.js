@@ -2430,6 +2430,14 @@ async function runMigrations() {
       console.log(`  ↳ Núcleo (NUSPSI) não concluído (${error.message}) — seguindo`);
     }
 
+    // 72e. Módulo RH (Pacote 1, 12/11/2026): perfis coordenador_rh / analista_rh /
+    //      gestor_rh (usuarios.perfil é VARCHAR) e tabelas rh_*. Ver ensureRh().
+    try {
+      await ensureRh();
+    } catch (error) {
+      console.log(`  ↳ Módulo RH não concluído (${error.message}) — seguindo`);
+    }
+
     // 73. Berço das RPs (21/10/2026): o time pode aprovar mais gente do que o gestor
     //     pediu e deixar o excedente "no berço" (reserva). Quando alguém do berço é
     //     convocado, sai de `hcs_berco`, entra em `hcs_convocados_berco` (quantos vieram
@@ -3731,6 +3739,89 @@ async function ensureNusp() {
       INDEX idx_nusp_dem_hist (demanda_id)
     ) ${T}`);
   console.log("  ↳ Núcleo (NUSPSI): ok");
+}
+
+// Módulo RH — Pacote 1 (12/11/2026). Módulo independente, no padrão do Núcleo e do R&S:
+// perfis próprios (coordenador_rh, analista_rh, gestor_rh) e tabelas rh_*. Sem FK (o isolamento
+// é por empresa_id em toda consulta; empresa_id NOT NULL e SEM DEFAULT).
+//  - rh_clima_temas / rh_clima_perguntas / rh_config: cadastro dos temas, ligação afirmação->tema e limites do farol.
+//  - rh_clima_ciclos: um por pesquisa importada (Prime RH).
+//  - rh_clima_resultados: AGREGADO por recorte (geral, serviço, tempo de casa...). A pesquisa é anônima:
+//    nome, login, matrícula, supervisor e respostas individuais NUNCA são gravados; só contagens por afirmação.
+//  - rh_acessos_log: reservado para leituras de dado individual (Canguru, pacotes seguintes).
+async function ensureRh() {
+  const T = "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_config (
+      empresa_id INT NOT NULL PRIMARY KEY,
+      farol_verde_min DECIMAL(5,2) NOT NULL DEFAULT 60,
+      farol_amarelo_min DECIMAL(5,2) NOT NULL DEFAULT 40,
+      min_recorte INT NOT NULL DEFAULT 10,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_clima_temas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(150) NOT NULL,
+      ordem INT NOT NULL DEFAULT 0,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_rh_tema (empresa_id, nome)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_clima_perguntas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      numero INT NOT NULL,
+      texto VARCHAR(255) NOT NULL,
+      tema_id INT NULL,
+      UNIQUE KEY uk_rh_pergunta (empresa_id, numero)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_clima_ciclos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(150) NOT NULL,
+      cliente VARCHAR(150) NULL,
+      periodo VARCHAR(120) NULL,
+      data_ini DATE NULL,
+      data_fim DATE NULL,
+      n_respondentes INT NOT NULL DEFAULT 0,
+      status VARCHAR(20) NOT NULL DEFAULT 'ativo',
+      importado_por INT NULL,
+      importado_por_nome VARCHAR(150) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_rh_ciclo (empresa_id, nome),
+      INDEX idx_rh_ciclo_emp (empresa_id, data_fim)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_clima_resultados (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      ciclo_id INT NOT NULL,
+      tipo VARCHAR(30) NOT NULL,
+      rotulo VARCHAR(200) NOT NULL,
+      ordem INT NOT NULL DEFAULT 0,
+      n INT NOT NULL DEFAULT 0,
+      dados LONGTEXT NOT NULL,
+      INDEX idx_rh_res (empresa_id, ciclo_id, tipo)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_acessos_log (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      usuario_id INT NULL,
+      usuario_nome VARCHAR(150) NULL,
+      perfil VARCHAR(40) NULL,
+      recurso VARCHAR(60) NOT NULL,
+      registro_id INT NULL,
+      detalhe VARCHAR(255) NULL,
+      ip VARCHAR(60) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_rh_acessos (empresa_id, created_at)
+    ) ${T}`);
+  console.log("  ↳ Módulo RH: ok");
 }
 
 module.exports = { runMigrations };

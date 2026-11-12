@@ -87,7 +87,7 @@ const menuItems = [
   // lib/perfilScope.js em /api/usuarios), não aqui. Antes, coordenador_rs
   // só tinha o atalho isolado em RS → Configurações; metodologia não tinha
   // nenhuma forma de ajustar usuário nenhum.
-  { href: "/usuarios",      label: "Gestão de Usuários",     icon: "users", roles: ["coordenador", "supervisor", "coordenador_rs", "metodologia", "coordenador_nusp"] },
+  { href: "/usuarios",      label: "Gestão de Usuários",     icon: "users", roles: ["coordenador", "supervisor", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh"] },
   { href: "/auditoria",     label: "Auditoria",              icon: "shield", roles: ["coordenador", "superintendente"] },
   // Módulo R&S — Recrutamento & Seleção
   { href: "/rs",           label: "Dashboard R&S",       icon: "chart", roles: ["coordenador_rs", "gestor_rs"] },
@@ -106,6 +106,14 @@ const menuItems = [
   { href: "/nusp/materiais",  label: "Materiais",             icon: "folder",   roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
   { href: "/nusp/relatorio-mensal", label: "Relatório mensal",  icon: "file",     roles: ["coordenador_nusp", "analista_nusp", "gestor_nusp"] },
   { href: "/nusp/configuracoes", label: "Cadastros e importação", icon: "settings", roles: ["coordenador_nusp"] },
+  // Módulo RH (12/11/2026) — módulo independente, mesmo padrão do Núcleo: perfis próprios (coordenador_rh,
+  // analista_rh, gestor_rh), sem acesso ao T&D, ao R&S nem ao Núcleo. O gestor só lê (sem recorte por coordenação).
+  { href: "/rh",                label: "Painel do RH",          icon: "chart",    roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/clima",          label: "Pesquisas de clima",    icon: "trending", roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/clima/resultado", label: "Resultado do ciclo",   icon: "target",   roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/clima/recortes", label: "Recortes",              icon: "compass",  roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/relatorios",     label: "Relatórios",            icon: "file",     roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/configuracoes",  label: "Cadastros",             icon: "settings", roles: ["coordenador_rh"] },
   // Módulo Metodologia e Desenvolvimento (16/09/2026) — Mapa de
   // Desenvolvimento e Trilhas fundidos num módulo à parte, fora do escopo de
   // Treinamento, com perfil dedicado ("metodologia"), mesmo padrão do R&S
@@ -185,6 +193,8 @@ function isRouteActive(pathname, href) {
 const LOGO_PADRAO = "/logo-td.png";
 // Módulo do Núcleo de Saúde Psicossocial: marca própria (provisoriamente a do Diver+ Tel, até chegar a do Núcleo).
 const LOGO_NUCLEO = "/logo-nucleo.png";
+const LOGO_RH = "/logo-rh.png";
+const PERFIS_RH = ["coordenador_rh", "analista_rh", "gestor_rh"];
 
 function hexParaRgba(hex, alpha) {
   const limpo = String(hex || "").replace("#", "");
@@ -273,6 +283,13 @@ export default function PortalShell({
       router.replace(user.perfil === "gestor_nusp" ? "/nusp" : "/nusp/atividades");
       return;
     }
+    // Módulo RH: mesmo padrão — quem tem perfil do RH só transita pelas telas do módulo.
+    // coordenador_rh também abre "/usuarios" (cria analistas e gestores do RH; o recorte é no backend).
+    const coordRhEmUsuarios = user.perfil === "coordenador_rh" && pathname.startsWith("/usuarios");
+    if (PERFIS_RH.includes(user.perfil) && !pathname.startsWith("/rh") && !coordRhEmUsuarios && pathname !== "/alterar-senha" && pathname !== "/primeiro-acesso") {
+      router.replace("/rh");
+      return;
+    }
     // Módulo Metodologia e Desenvolvimento: mesmo padrão do R&S acima —
     // quem tem o perfil dedicado só transita entre as próprias telas.
     // "/usuarios" (Fase 1, 22/09/2026) entrou na lista pelo mesmo motivo do
@@ -305,7 +322,9 @@ export default function PortalShell({
   const empresaBranding = user?.empresa || null;
   const corPrimaria = empresaBranding?.cor_primaria || colors.accent;
   const ehNusp = ["coordenador_nusp", "analista_nusp", "gestor_nusp"].includes(user?.perfil);
-  const logoUrl = ehNusp ? LOGO_NUCLEO : empresaBranding?.logo_url || LOGO_PADRAO;
+  const ehRh = PERFIS_RH.includes(user?.perfil);
+  const logoUrl = ehNusp ? LOGO_NUCLEO : ehRh ? LOGO_RH : empresaBranding?.logo_url || LOGO_PADRAO;
+  const nomeModulo = ehNusp ? "Núcleo de Saúde Psicossocial" : ehRh ? "Relações Humanas" : "Treinamento e Desenvolvimento";
 
   const navItemActiveStyle = useMemo(
     () => ({
@@ -414,13 +433,13 @@ export default function PortalShell({
             <div style={mobileBrandWrap}>
               <img
                 src={logoUrl}
-                alt={ehNusp ? "Núcleo de Saúde Psicossocial" : "Portal T&D"}
-                style={ehNusp ? { ...mobileLogo, width: 44, height: 44, borderRadius: 0 } : mobileLogo}
+                alt={ehNusp ? "Núcleo de Saúde Psicossocial" : ehRh ? "Relações Humanas" : "Portal T&D"}
+                style={ehNusp ? { ...mobileLogo, width: 44, height: 44, borderRadius: 0 } : ehRh ? { ...mobileLogo, width: 70, height: 44, borderRadius: 0, objectFit: "contain" } : mobileLogo}
                 onError={(e) => { e.currentTarget.src = LOGO_PADRAO; }}
               />
               <div style={{ minWidth: 0 }}>
                 <div style={mobileBrandTitle}>Portal T&amp;D</div>
-                <div style={mobileBrandSubtitle}>{ehNusp ? "Núcleo de Saúde Psicossocial" : "Treinamento e Desenvolvimento"}</div>
+                <div style={mobileBrandSubtitle}>{nomeModulo}</div>
               </div>
             </div>
 
@@ -437,7 +456,7 @@ export default function PortalShell({
             <div style={mobileDrawer}>
               <nav style={mobileNav}>
                 {allowedMenuItems.map((item) => {
-                  const active = isRouteActive(pathname, item.href);
+                  const active = ehRh ? pathname === item.href : isRouteActive(pathname, item.href);
 
                   return (
                     <Link
@@ -486,20 +505,20 @@ export default function PortalShell({
           <div style={brandBox}>
             <img
               src={logoUrl}
-              alt={ehNusp ? "Núcleo de Saúde Psicossocial" : "Portal T&D"}
-              style={ehNusp ? { ...logo, width: 72, height: 72, borderRadius: 0 } : logo}
+              alt={ehNusp ? "Núcleo de Saúde Psicossocial" : ehRh ? "Relações Humanas" : "Portal T&D"}
+              style={ehNusp ? { ...logo, width: 72, height: 72, borderRadius: 0 } : ehRh ? { ...logo, width: 96, height: 60, borderRadius: 0, objectFit: "contain", background: "#fff", padding: 4 } : logo}
               onError={(e) => { e.currentTarget.src = LOGO_PADRAO; }}
             />
 
             <div style={{ minWidth: 0 }}>
               <div style={brandTitle}>Portal T&amp;D</div>
-              <div style={brandSubtitle}>{ehNusp ? "Núcleo de Saúde Psicossocial" : "Treinamento e Desenvolvimento"}</div>
+              <div style={brandSubtitle}>{nomeModulo}</div>
             </div>
           </div>
 
           <nav style={nav}>
             {allowedMenuItems.map((item) => {
-              const active = isRouteActive(pathname, item.href);
+              const active = ehRh ? pathname === item.href : isRouteActive(pathname, item.href);
 
               return (
                 <Link

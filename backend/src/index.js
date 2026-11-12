@@ -762,6 +762,9 @@ const PERFIL_LABEL_EXPORT = {
   coordenador_nusp: "Coordenador do Núcleo",
   analista_nusp: "Analista do Núcleo",
   gestor_nusp: "Gestor do Núcleo",
+  coordenador_rh: "Coordenador do RH",
+  analista_rh: "Analista do RH",
+  gestor_rh: "Gestor do RH",
   super_admin: "Super Admin",
 };
 
@@ -878,9 +881,9 @@ app.use(
     },
     hideFields: ["senha"], // Fase 4 — hash da senha nunca sai na listagem
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs", "coordenador_nusp")],
-    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp")],
-    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp")],
-    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp")],
+    createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh")],
+    updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh")],
+    deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh")],
     auditoria: {
       entidade: "usuario",
       resumoCriar: (dados) => `Criou o usuário "${dados.nome || "?"}" (${dados.perfil || "sem perfil"})`,
@@ -2799,6 +2802,8 @@ const nuspPesq = require("./controllers/nuspPesquisaController");
 const nuspDem = require("./controllers/nuspDemandasController");
 const nuspRel = require("./controllers/nuspRelatorioController");
 const { importarPlanilha: importarPlanilhaNusp } = require("./services/nuspImportService");
+// Módulo RH (Pacote 1, 12/11/2026): perfis próprios (coordenador_rh, analista_rh, gestor_rh). Ver controllers/rh*.js.
+const rhClima = require("./controllers/rhClimaController");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
 // Leitura: coordenador_rs + gestor_rs | Escrita: coordenador_rs apenas
@@ -2899,6 +2904,26 @@ app.get   ("/api/nusp/pesquisas/:id/individuais/:rid",     authRequired, authori
 app.post  ("/api/nusp/pesquisas/:id/recalcular",           authRequired, authorizeRoles(...NUSP_COORD), nuspPesq.recalcular);
 app.post  ("/api/nusp/pesquisas/:id/planos-sugeridos",     authRequired, authorizeRoles(...NUSP_COORD), nuspPesq.planosSugeridos);
 app.delete("/api/nusp/pesquisas/:id",                      authRequired, authorizeRoles(...NUSP_COORD), nuspPesq.excluir);
+
+// ── Módulo RH (Pacote 1 e 2, 12/11/2026) ─────────────────────────────
+// coordenador_rh: tudo | analista_rh: importa e lê | gestor_rh: só leitura (sem recorte por coordenação nem relatório "RH interno").
+// O super_admin passa no authorizeRoles mas é barrado dentro dos controllers (lib/rhBase.contexto): o módulo não tem visão cross-tenant.
+const RH_TODOS = ["coordenador_rh", "analista_rh", "gestor_rh"];
+const RH_OPERA = ["coordenador_rh", "analista_rh"];
+const RH_COORD = ["coordenador_rh"];
+app.get   ("/api/rh/painel",                        authRequired, authorizeRoles(...RH_TODOS), rhClima.painel);
+app.get   ("/api/rh/clima/ciclos",                  authRequired, authorizeRoles(...RH_TODOS), rhClima.listar);
+app.post  ("/api/rh/clima/importar",                authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.single("arquivo")), rhClima.importar);
+app.get   ("/api/rh/clima/ciclos/:id",              authRequired, authorizeRoles(...RH_TODOS), rhClima.resultado);
+app.get   ("/api/rh/clima/ciclos/:id/recortes",     authRequired, authorizeRoles(...RH_TODOS), rhClima.recortes);
+app.get   ("/api/rh/clima/ciclos/:id/relatorio",    authRequired, authorizeRoles(...RH_TODOS), rhClima.relatorio);
+app.get   ("/api/rh/clima/ciclos/:id/exportar",     authRequired, authorizeRoles(...RH_TODOS), rhClima.exportar);
+app.delete("/api/rh/clima/ciclos/:id",              authRequired, authorizeRoles(...RH_COORD), rhClima.excluir);
+app.get   ("/api/rh/config",                        authRequired, authorizeRoles(...RH_TODOS), rhClima.obterConfig);
+app.put   ("/api/rh/config/limites",                authRequired, authorizeRoles(...RH_COORD), rhClima.salvarLimites);
+app.post  ("/api/rh/config/temas",                  authRequired, authorizeRoles(...RH_COORD), rhClima.criarTema);
+app.put   ("/api/rh/config/temas/:id",              authRequired, authorizeRoles(...RH_COORD), rhClima.editarTema);
+app.put   ("/api/rh/config/afirmacoes/:numero",     authRequired, authorizeRoles(...RH_COORD), rhClima.ligarAfirmacao);
 // Importação da planilha antiga (Visão Nacional): só coordenador_nusp. ?simular=1 não grava.
 app.post  ("/api/nusp/importar", authRequired, authorizeRoles(...NUSP_COORD), comUploadTratado(upload.single("arquivo")), async (req, res) => {
   try {

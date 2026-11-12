@@ -61,6 +61,9 @@ const PERFIL_TOM = {
   coordenador_nusp: "#0f766e",
   analista_nusp: "#0891b2",
   gestor_nusp: "#7c3aed",
+  coordenador_rh: "#be185d",
+  analista_rh: "#db2777",
+  gestor_rh: "#9333ea",
 };
 function tomPerfil(perfil) {
   return PERFIL_TOM[String(perfil || "").toLowerCase()] || colors.neutral;
@@ -94,6 +97,9 @@ const PERFIL_LABEL = {
   coordenador_nusp: "Coordenador do Núcleo",
   analista_nusp: "Analista do Núcleo",
   gestor_nusp: "Gestor do Núcleo",
+  coordenador_rh: "Coordenador do RH",
+  analista_rh: "Analista do RH",
+  gestor_rh: "Gestor do RH",
 };
 
 /* ── Opções fixas ── */
@@ -114,6 +120,9 @@ const PERFIL_OPTIONS = [
   { value: "coordenador_nusp", label: "Coordenador do Núcleo" },
   { value: "analista_nusp",    label: "Analista do Núcleo"    },
   { value: "gestor_nusp",      label: "Gestor do Núcleo"      },
+  { value: "coordenador_rh",   label: "Coordenador do RH"     },
+  { value: "analista_rh",      label: "Analista do RH"        },
+  { value: "gestor_rh",        label: "Gestor do RH"          },
 ];
 
 // Fase 1 (padronização de gestão de usuários, 22/09/2026): espelho, só
@@ -127,12 +136,13 @@ const PERFIL_ESCOPOS_UI = {
   coordenador_rs: ["coordenador_rs", "gestor_rs"],
   metodologia: ["metodologia"],
   coordenador_nusp: ["coordenador_nusp", "analista_nusp", "gestor_nusp"],
+  coordenador_rh: ["coordenador_rh", "analista_rh", "gestor_rh"],
 };
 // Espelha deleteMiddlewares de /api/usuarios no backend: Supervisor edita mas
 // não exclui — antes o botão aparecia e o servidor respondia 403.
 function perfilPodeExcluirUsuario() {
   const perfil = String(getStoredUser()?.perfil || "").toLowerCase();
-  return ["coordenador", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "super_admin"].includes(perfil);
+  return ["coordenador", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh", "super_admin"].includes(perfil);
 }
 function escopoPerfilDoUsuarioLogado() {
   const usuario = getStoredUser();
@@ -593,7 +603,7 @@ export default function UsuariosPage() {
   // Espelha o gate do backend (index.js, mount de /api/usuarios) — o botão só
   // aparece para quem a ação realmente vai funcionar.
   const usuarioLogado = useMemo(() => getStoredUser(), []);
-  const canCreate = hasSomeRole(usuarioLogado, ["coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp"]);
+  const canCreate = hasSomeRole(usuarioLogado, ["coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh"]);
   const canEdit   = canCreate;
   const canDelete = perfilPodeExcluirUsuario();
 
