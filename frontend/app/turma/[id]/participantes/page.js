@@ -359,6 +359,7 @@ export default function ParticipantesTurmaPage() {
   }, [participantes]);
 
   const ehAvaliacaoTecnica =
+    participantes.some((p) => p.avaliacao_tecnica === true) ||
     String(treinamento?.subtipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() === "avaliacao tecnica";
 
   /* Lista filtrada */
@@ -433,6 +434,14 @@ export default function ParticipantesTurmaPage() {
       {/* Feedback */}
       {erro    && <div style={errorBox}>{erro}</div>}
       {sucesso && <div style={successBox}>{sucesso}</div>}
+
+      {!loading && !ehAvaliacaoTecnica && participantes.length > 0 && (
+        <div style={{ fontSize: 12, color: "#64748b", background: "#f8fafc", border: "1px solid #e9eef4", borderRadius: 10, padding: "8px 12px", marginBottom: 12 }}>
+          O botão <strong>Desistência</strong> só aparece em turma do subtipo Avaliação Técnica.{" "}
+          {treinamento?.subtipo ? <>Esta turma está como “{treinamento.subtipo}”.</> : <>Esta turma está sem subtipo.</>}{" "}
+          Se ela é uma avaliação técnica, ajuste o subtipo em <a href="/treinamentos" style={{ color: colors.accent, fontWeight: 700 }}>Treinamentos</a>.
+        </div>
+      )}
 
       {/* ── KPIs rápidos ── */}
       <div style={kpiRow}>

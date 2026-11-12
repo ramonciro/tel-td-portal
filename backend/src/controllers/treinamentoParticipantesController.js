@@ -238,7 +238,14 @@ async function getParticipantesByTreinamento(req, res) {
 
     // 11/11/2026: quem desistiu continua na lista (histórico), marcado como desistente.
     // O treinando não vê o motivo nem quem registrou; a equipe vê tudo.
-    rows = rows.map((r) => ({ ...r, desistente: !!r.desistencia_em }));
+    // 12/11/2026: o backend diz se a turma é de Avaliação Técnica (aceita o nome renomeado no
+    // catálogo), para a tela mostrar o botão Desistência sem depender do texto exato do subtipo.
+    let turmaAvaliacaoTecnica = false;
+    try {
+      const [tt] = await db.query("SELECT subtipo FROM treinamentos WHERE id = ? LIMIT 1", [id]);
+      turmaAvaliacaoTecnica = await ehSubtipoAvaliacaoTecnica(tt[0]?.subtipo);
+    } catch (_) { /* sem a flag, a tela cai na checagem pelo nome */ }
+    rows = rows.map((r) => ({ ...r, desistente: !!r.desistencia_em, avaliacao_tecnica: turmaAvaliacaoTecnica }));
 
     // 19/10/2026 (decisão do Ramon): o treinando vê só os nomes dos colegas da própria turma —
     // matrícula, supervisor, operação, admissão e CPF ficam restritos à equipe. A linha dele mesmo vem completa.
