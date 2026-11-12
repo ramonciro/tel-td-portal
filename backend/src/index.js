@@ -157,6 +157,8 @@ const {
   createParticipanteTreinamento,   // FIX: estava exportada no controller mas nunca importada
   buscarPessoasParaTurma,
   deleteParticipanteTreinamento,
+  registrarDesistencia,
+  desfazerDesistencia,
   deleteParticipantesTreinamentoBulk,
 } = require("./controllers/treinamentoParticipantesController");
 
@@ -1672,6 +1674,21 @@ app.delete(
   deleteParticipanteTreinamento
 );
 
+// 11/11/2026 — Desistência do candidato (turma de Avaliação Técnica): sai da conta, fica no histórico.
+app.post(
+  "/api/treinamentos/participantes/:id/desistencia",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
+  registrarDesistencia
+);
+
+app.delete(
+  "/api/treinamentos/participantes/:id/desistencia",
+  authRequired,
+  authorizeRoles("coordenador", "supervisor", "instrutor", "assistente_treinamento", "analista_conteudo"),
+  desfazerDesistencia
+);
+
 app.post(
   "/api/treinamentos/participantes/excluir-lote",
   authRequired,
@@ -2376,7 +2393,7 @@ app.get(
         [rows] = await pool.query(
           `SELECT t.*, COUNT(tp.id) AS total_participantes
            FROM treinamentos t
-           LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+           LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND tp.desistencia_em IS NULL
            ${tenantWhere}
            GROUP BY t.id
            ORDER BY t.id DESC`,
@@ -2389,7 +2406,7 @@ app.get(
           [rows] = await pool.query(
             `SELECT t.*, COUNT(tp.id) AS total_participantes
              FROM treinamentos t
-             LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+             LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND tp.desistencia_em IS NULL
              WHERE ${condicaoInstrutor("t")}
                ${empresaId ? "AND t.empresa_id = ?" : ""}
              GROUP BY t.id

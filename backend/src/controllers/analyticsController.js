@@ -195,7 +195,7 @@ async function contarPessoasUnicas(turmas, maxMatriculas = null) {
   const ids = turmas.map((t) => Number(t.id)).filter(Boolean);
   if (!ids.length) return 0;
   const [[row]] = await pool.query(
-    'SELECT COUNT(DISTINCT tp.nome) AS total FROM treinamento_participantes tp WHERE tp.treinamento_id IN (?)',
+    'SELECT COUNT(DISTINCT tp.nome) AS total FROM treinamento_participantes tp WHERE tp.treinamento_id IN (?) AND tp.desistencia_em IS NULL',
     [ids]
   );
   const total = asInt(row.total);

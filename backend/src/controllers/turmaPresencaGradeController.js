@@ -26,6 +26,7 @@
 const db = require("../lib/db");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { novoWorkbook, estilizarCabecalho, paraDate, FORMATO_DATA } = require("../lib/excelExport");
+const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
 
 const CROSS_TENANT_ROLES = ["assistente_treinamento"];
 const PRESENCA_MINIMA_PADRAO = 75;
@@ -84,7 +85,7 @@ async function buscarTurma(req, id) {
   const tenant = empresaId ? " AND empresa_id = ?" : "";
   const params = empresaId ? [turmaId, empresaId] : [turmaId];
   const [rows] = await db.query(
-    `SELECT id, empresa_id, tema, cliente, instrutor, supervisor, turma, status, carga_horaria, presenca_minima_pct,
+    `SELECT id, empresa_id, tema, cliente, instrutor, supervisor, turma, status, carga_horaria, presenca_minima_pct, subtipo,
             DATE_FORMAT(COALESCE(data_inicio, data), '%Y-%m-%d') AS data_inicio, DATE_FORMAT(data_fim, '%Y-%m-%d') AS data_fim
      FROM treinamentos WHERE id = ?${tenant} LIMIT 1`,
     params
@@ -150,18 +151,22 @@ async function carregarAulas(turma) {
 async function carregarParticipantes(turma) {
   const [rows] = await db.query(
     `SELECT id, nome, matricula, turma, supervisor, operacao, pessoa_id
-     FROM treinamento_participantes WHERE treinamento_id = ? ORDER BY nome ASC, id ASC`,
+     FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL ORDER BY nome ASC, id ASC`,
     [turma.id]
   );
+  // 11/11/2026: quem desistiu da turma sai da grade, do total e do %.
   return rows;
 }
 
-function calcularTotais(aulas, obterSituacao, hoje, presencaMinima) {
+// justificadoComoFalta (turma de Avaliação Técnica, 11/11/2026): a falta justificada
+// continua registrada ("justificados" = quantas), mas entra em "ausentes" e no
+// cálculo do %, e nunca soma horas nem conta como presente.
+function calcularTotais(aulas, obterSituacao, hoje, presencaMinima, justificadoComoFalta = false) {
   let horas = 0, presentes = 0, justificados = 0, ausentes = 0, pendentes = 0;
   for (const a of aulas) {
     const sit = obterSituacao(a);
     if (sit === "presente") { presentes += 1; horas += a.carga_horaria; }
-    else if (sit === "justificado") justificados += 1;
+    else if (sit === "justificado") { justificados += 1; if (justificadoComoFalta) ausentes += 1; }
     else if (sit === "ausente") ausentes += 1;
     else if (a.data <= hoje) pendentes += 1;
   }
@@ -176,6 +181,7 @@ async function montarGrade(turma) {
   const presencaMinima = presencaMinimaDa(turma);
   const { aulas, horasEstimadas } = await carregarAulas(turma);
   const participantes = await carregarParticipantes(turma);
+  const justificadoComoFalta = await ehSubtipoAvaliacaoTecnica(turma.subtipo);
 
   const [regs] = await db.query(
     `SELECT turma_aula_id, treinando_nome, status, justificativa
@@ -203,7 +209,7 @@ async function montarGrade(turma) {
 
   const linhas = participantes.map((p) => ({
     ...p,
-    totais: calcularTotais(aulas, (a) => presencas[`${a.id}:${p.id}`] || null, hoje, presencaMinima),
+    totais: calcularTotais(aulas, (a) => presencas[`${a.id}:${p.id}`] || null, hoje, presencaMinima, justificadoComoFalta),
   }));
 
   const porAula = aulas.map((a) => {
@@ -211,10 +217,10 @@ async function montarGrade(turma) {
     for (const p of participantes) {
       const s = presencas[`${a.id}:${p.id}`];
       if (s === "presente") presentes += 1;
-      else if (s === "justificado") justificados += 1;
+      else if (s === "justificado") { justificados += 1; if (justificadoComoFalta) ausentes += 1; }
       else if (s === "ausente") ausentes += 1;
     }
-    const lancados = presentes + justificados + ausentes;
+    const lancados = justificadoComoFalta ? presentes + ausentes : presentes + justificados + ausentes;
     return {
       aula_id: a.id,
       presentes,
@@ -249,6 +255,7 @@ async function montarGrade(turma) {
       data_fim: turma.data_fim,
       presenca_minima_pct: presencaMinima,
       presenca_minima_definida: numeroOuNull(turma.presenca_minima_pct) !== null,
+      justificado_conta_falta: justificadoComoFalta,
     },
     hoje,
     horas_estimadas: horasEstimadas,
@@ -258,6 +265,7 @@ async function montarGrade(turma) {
     justificativas,
     por_aula: porAula,
     resumo,
+    justificado_conta_falta: justificadoComoFalta,
   };
 }
 
@@ -312,8 +320,9 @@ async function registrarPresenca(req, res) {
     if (!aula) return undefined;
     const participanteId = Number(req.body?.participante_id);
     if (!participanteId) return erro(res, 400, "Participante inválido.");
-    const [ps] = await db.query(`SELECT id, nome FROM treinamento_participantes WHERE id = ? AND treinamento_id = ? LIMIT 1`, [participanteId, aula.treinamento_id]);
+    const [ps] = await db.query(`SELECT id, nome, desistencia_em FROM treinamento_participantes WHERE id = ? AND treinamento_id = ? LIMIT 1`, [participanteId, aula.treinamento_id]);
     if (!ps.length) return erro(res, 404, "Participante não encontrado nesta turma.");
+    if (ps[0].desistencia_em) return erro(res, 400, `${ps[0].nome} desistiu da turma — a chamada não é mais lançada para essa pessoa.`);
 
     const bruta = req.body?.situacao;
     const situacao = bruta === null || bruta === undefined || bruta === "" ? null : String(bruta).toLowerCase().trim();
@@ -336,7 +345,7 @@ async function presencaEmLote(req, res) {
     const situacao = String(req.body?.situacao || "presente").toLowerCase().trim();
     if (situacao !== "presente") return erro(res, 400, "O lançamento em lote aceita apenas \"presente\".");
 
-    const [ps] = await db.query(`SELECT id, nome FROM treinamento_participantes WHERE treinamento_id = ?`, [aula.treinamento_id]);
+    const [ps] = await db.query(`SELECT id, nome FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL`, [aula.treinamento_id]);
     const [regs] = await db.query(`SELECT treinando_nome, status FROM presenca_aulas WHERE turma_aula_id = ?`, [aula.id]);
     const jaLancados = new Set(
       regs.filter((r) => SITUACOES.includes(String(r.status || "").toLowerCase().trim())).map((r) => normalizarNome(r.treinando_nome))
@@ -414,7 +423,7 @@ async function exportar(req, res) {
     const cabecalho = [
       ...fixas,
       ...g.aulas.map((a) => `${formatarDataBR(a.data)} — ${a.titulo}`),
-      "Horas realizadas", "Presentes", "Justificadas", "Ausências", "Sem lançamento", "% Presença", "Situação da presença",
+      "Horas realizadas", "Presentes", g.justificado_conta_falta ? "Faltas justificadas (já contadas em Ausências)" : "Justificadas", g.justificado_conta_falta ? "Ausências (inclui justificadas)" : "Ausências", "Sem lançamento", "% Presença", "Situação da presença",
     ];
     cabecalho.forEach((c, i) => { ws.getCell(1, i + 1).value = c; });
     estilizarCabecalho(ws, 1, cabecalho.length);
@@ -443,7 +452,7 @@ async function exportar(req, res) {
 
     // Aba 2 — aulas.
     const wa = wb.addWorksheet("Aulas");
-    const colsA = ["Data", "Aula", "Carga horária (h)", "Situação da aula", "Instrutor", "Presentes", "Justificados", "Ausentes", "Não lançados"];
+    const colsA = ["Data", "Aula", "Carga horária (h)", "Situação da aula", "Instrutor", "Presentes", g.justificado_conta_falta ? "Justificados (já contados em Ausentes)" : "Justificados", g.justificado_conta_falta ? "Ausentes (inclui justificados)" : "Ausentes", "Não lançados"];
     colsA.forEach((c, i) => { wa.getCell(1, i + 1).value = c; });
     estilizarCabecalho(wa, 1, colsA.length);
     g.aulas.forEach((a, r) => {
@@ -501,7 +510,10 @@ async function exportar(req, res) {
       [],
       ["Como os números são calculados"],
       ["Horas realizadas = soma da carga horária das aulas em que a pessoa esteve presente."],
-      ["% de presença = presentes ÷ (presentes + ausentes) nas aulas já lançadas. Falta justificada não soma horas e fica fora do cálculo."],
+      g.justificado_conta_falta
+        ? ["% de presença = presentes ÷ (presentes + ausentes) nas aulas já lançadas. Nesta turma (Avaliação Técnica) a falta justificada CONTA COMO FALTA: não soma horas, não é presença e entra em Ausências; a justificativa fica registrada."]
+        : ["% de presença = presentes ÷ (presentes + ausentes) nas aulas já lançadas. Falta justificada não soma horas e fica fora do cálculo."],
+      ["Quem desistiu da turma não aparece na grade nem entra nos totais."],
       ["Aula já realizada sem lançamento não é contada como falta."],
       ["Legenda da grade: P = presente · J = justificado · F = ausente · vazio = não lançado."],
     ];

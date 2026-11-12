@@ -24,6 +24,7 @@
 const pool = require("../lib/db");
 const { buscarConflitosSala } = require("./salaConflitoService");
 const { mapaAdicionais } = require("../lib/instrutoresTurma");
+const { criarMatcherAvaliacaoTecnica } = require("./turmaRegras");
 
 const PRESENCA_MINIMA_PADRAO = 75;
 const chave = (s) => String(s || "").trim().toLowerCase();
@@ -90,7 +91,7 @@ function filtrarAcesso(turmas, { instrutor, podeVer }) {
 }
 
 const SQL_TURMA = `t.id, t.empresa_id, t.tema, t.cliente, t.instrutor, t.supervisor, t.turma, t.status, t.descricao,
-       t.carga_horaria, t.presenca_minima_pct, t.sala_id, t.sala_outro_local, t.modalidade,
+       t.carga_horaria, t.presenca_minima_pct, t.subtipo, t.sala_id, t.sala_outro_local, t.modalidade,
        DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS data_inicio,
        DATE_FORMAT(COALESCE(t.data_fim, t.data_inicio, t.data), '%Y-%m-%d') AS data_fim,
        TIME_FORMAT(t.hora_inicio, '%H:%i') AS hora_inicio, TIME_FORMAT(t.hora_fim, '%H:%i') AS hora_fim`;
@@ -131,7 +132,7 @@ async function calcularProntidao({ empresaId, dias = 7, instrutor, podeVer } = {
                WHERE treinamento_id IN (${inIds(ids)}) AND LOWER(TRIM(COALESCE(status_execucao,''))) <> 'cancelada'
                GROUP BY treinamento_id`, ids),
     consulta(`SELECT treinamento_id, COUNT(*) AS n FROM treinamento_participantes
-               WHERE treinamento_id IN (${inIds(ids)}) GROUP BY treinamento_id`, ids),
+               WHERE treinamento_id IN (${inIds(ids)}) AND desistencia_em IS NULL GROUP BY treinamento_id`, ids),
     consulta(`SELECT id, nome, capacidade FROM salas`, []),
     consulta(`SELECT treinamento_id, COUNT(*) AS n FROM conteudo_pedidos
                WHERE treinamento_id IN (${inIds(ids)}) AND status NOT IN ('concluido','cancelado')
@@ -274,7 +275,7 @@ async function calcularRiscoCertificacao({ empresaId, instrutor, podeVer } = {})
                WHERE treinamento_id IN (${inIds(ids)}) AND LOWER(TRIM(COALESCE(status_execucao,''))) <> 'cancelada'
                ORDER BY data_aula, dia_numero, ordem, id`, ids),
     consulta(`SELECT id, treinamento_id, nome FROM treinamento_participantes
-               WHERE treinamento_id IN (${inIds(ids)}) ORDER BY nome, id`, ids),
+               WHERE treinamento_id IN (${inIds(ids)}) AND desistencia_em IS NULL ORDER BY nome, id`, ids),
     consulta(`SELECT turma_aula_id, treinamento_id, treinando_nome, status FROM presenca_aulas
                WHERE treinamento_id IN (${inIds(ids)})`, ids),
   ]);
@@ -290,11 +291,15 @@ async function calcularRiscoCertificacao({ empresaId, instrutor, podeVer } = {})
   const partsPor = porTurma(partsRows);
   const presPor = porTurma(presRows);
 
+  // Avaliação Técnica: falta justificada conta como falta (11/11/2026).
+  const ehAvaliacaoTecnica = await criarMatcherAvaliacaoTecnica();
+
   const out = [];
   for (const t of turmas) {
     const aulas = aulasPor.get(t.id) || [];
     const partes = partsPor.get(t.id) || [];
     if (!aulas.length || !partes.length) continue;
+    const justificadoFalta = ehAvaliacaoTecnica(t.subtipo);
     const minimo = numeroOuNull(t.presenca_minima_pct) ?? PRESENCA_MINIMA_PADRAO;
     const aulaData = new Map(aulas.map((a) => [a.id, a.data]));
     // situação por (nome normalizado, aula)
@@ -318,9 +323,9 @@ async function calcularRiscoCertificacao({ empresaId, instrutor, podeVer } = {})
       for (const a of passadas) {
         const s = sit.get(`${nome}|${a.id}`);
         if (s === "presente") P += 1;
-        else if (s === "ausente") A += 1;
+        else if (s === "ausente" || (s === "justificado" && justificadoFalta)) A += 1;
         else if (!s) pend += 1;
-        sequencia.push(s || "pendente");
+        sequencia.push(s === "justificado" && justificadoFalta ? "ausente" : (s || "pendente"));
       }
       if (P + A > 0) { somaPct += (P / (P + A)) * 100; nPct += 1; }
       const proj = projetarParticipante({ P, A, R: futuras + pend, minimo });

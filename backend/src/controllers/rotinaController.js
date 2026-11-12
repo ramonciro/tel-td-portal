@@ -21,6 +21,7 @@ const { tenantScopeFor } = require("../lib/tenantScope");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
 const { registrarAuditoria } = require("../services/auditoria");
+const { sqlSemDesistente } = require("../services/turmaRegras");
 const R = require("../lib/rotina");
 const { adicionaisDaTurma } = require("../lib/instrutoresTurma");
 const AV = require("../lib/rotinaAvaliacao");
@@ -186,7 +187,7 @@ async function montarEstado(req, t) {
 
   // participantes (para atividades que pedem pessoa)
   const [parts] = await pool.query(
-    "SELECT id, nome FROM treinamento_participantes WHERE treinamento_id = ? ORDER BY nome",
+    "SELECT id, nome FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL ORDER BY nome",
     [t.id]
   );
   estado.participantes = parts;
@@ -260,7 +261,7 @@ async function montarEstado(req, t) {
       `SELECT ta.data_aula AS data_aula, pa.status, COUNT(*) AS n
          FROM presenca_aulas pa
          JOIN turma_aulas ta ON ta.id = pa.turma_aula_id
-        WHERE ta.treinamento_id = ?
+        WHERE ta.treinamento_id = ? AND ${sqlSemDesistente("pa")}
         GROUP BY ta.data_aula, pa.status`,
       [t.id]
     );
@@ -270,7 +271,11 @@ async function montarEstado(req, t) {
       const s = chave(p.status);
       if (s === "presente") o.presentes += Number(p.n);
       else if (s === "ausente") o.ausentes += Number(p.n);
-      else if (s === "justificado") o.justificados += Number(p.n);
+      else if (s === "justificado") {
+        // Avaliação Técnica: falta justificada conta como falta (11/11/2026).
+        if (avTec) o.ausentes += Number(p.n);
+        else o.justificados += Number(p.n);
+      }
       else o.pendentes += Number(p.n);
       presMap.set(k, o);
     }

@@ -6,6 +6,8 @@ const { tenantScopeFor } = require("../lib/tenantScope");
 const { resolverPessoa, pessoaIdDoUsuario, acharConflitoMatricula, gravarDadosDaPessoa } = require("../services/pessoasService");
 const { garantirUsuarioTreinando } = require("../services/provisionamentoUsuariosService");
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
+const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
+const { registrarAuditoria } = require("../services/auditoria");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga participantes/chamada de qualquer
@@ -185,6 +187,10 @@ async function getParticipantesByTreinamento(req, res) {
           tp.operacao,
           tp.data_admissao,
           tp.pessoa_id,
+          tp.desistencia_em,
+          tp.desistencia_data,
+          tp.desistencia_motivo,
+          tp.desistencia_por,
           COALESCE(p.status, 'pendente') AS status_presenca,
           COALESCE(p.justificativa, '') AS justificativa,
           tp.created_at
@@ -214,6 +220,10 @@ async function getParticipantesByTreinamento(req, res) {
           operacao,
           data_admissao,
           pessoa_id,
+          desistencia_em,
+          desistencia_data,
+          desistencia_motivo,
+          desistencia_por,
           status_presenca,
           justificativa,
           created_at
@@ -226,6 +236,10 @@ async function getParticipantesByTreinamento(req, res) {
       rows = result;
     }
 
+    // 11/11/2026: quem desistiu continua na lista (histórico), marcado como desistente.
+    // O treinando não vê o motivo nem quem registrou; a equipe vê tudo.
+    rows = rows.map((r) => ({ ...r, desistente: !!r.desistencia_em }));
+
     // 19/10/2026 (decisão do Ramon): o treinando vê só os nomes dos colegas da própria turma —
     // matrícula, supervisor, operação, admissão e CPF ficam restritos à equipe. A linha dele mesmo vem completa.
     if (perfil === "treinando") {
@@ -234,7 +248,7 @@ async function getParticipantesByTreinamento(req, res) {
         removerCpfSeNecessario(req, rows).map((r) =>
           String(r.nome || "").trim().toLowerCase() === proprio
             ? r
-            : { id: r.id, treinamento_id: r.treinamento_id, nome: r.nome, cliente: r.cliente, turma: r.turma }
+            : { id: r.id, treinamento_id: r.treinamento_id, nome: r.nome, cliente: r.cliente, turma: r.turma, desistente: r.desistente }
         )
       );
     }
@@ -669,7 +683,16 @@ async function salvarChamadaParticipantes(req, res) {
 
     // A chamada inteira entra numa transação (21/10/2026): ou salva todos os treinandos, ou nenhum.
     await comTransacao(async (conn) => {
+      // 11/11/2026: desistente não entra na chamada (nem se o front mandar).
+      const [desistentesChamada] = await conn.query(
+        `SELECT id, nome FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NOT NULL`,
+        [treinamento_id]
+      );
+      const idsDesistentes = new Set(desistentesChamada.map((d) => Number(d.id)));
+      const nomesDesistentes = new Set(desistentesChamada.map((d) => String(d.nome || "").trim().toLowerCase()));
+
       for (const item of participantes) {
+        if ((item.id && idsDesistentes.has(Number(item.id))) || (!item.id && nomesDesistentes.has(String(item.nome || "").trim().toLowerCase()))) continue;
         const status = item.status_presenca || "pendente";
         const presente = status === "presente" ? 1 : 0;
 
@@ -974,7 +997,7 @@ async function createParticipanteTreinamento(req, res) {
     });
 
     const [[countRow]] = await db.query(
-      `SELECT COUNT(*) AS total FROM treinamento_participantes WHERE treinamento_id = ?`,
+      `SELECT COUNT(*) AS total FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL`,
       [treinamento_id]
     );
 
@@ -1236,6 +1259,137 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
   }
 }
 
+// ───────────────────────── Desistência do candidato (11/11/2026) ─────────────────────────
+// Só para turma de Avaliação Técnica. O candidato que desiste continua na lista (histórico),
+// marcado como "Desistente", mas sai da conta da turma: total, chamada, % de presença, VT e
+// relatórios. Reversível. Mesmos perfis que gerenciam participantes/chamada da turma.
+
+function dataIsoValida(v) {
+  const m = String(v || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (d.getUTCFullYear() !== Number(m[1]) || d.getUTCMonth() !== Number(m[2]) - 1 || d.getUTCDate() !== Number(m[3])) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+function hojeIsoBahia() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Bahia" });
+}
+
+async function carregarParticipanteDaTurma(req, id) {
+  const { empresaId } = tenantScopeFor(req, { crossTenantRoles: CROSS_TENANT_ROLES });
+  const tenantJoin = empresaId ? " AND t.empresa_id = ?" : "";
+  const params = empresaId ? [id, empresaId] : [id];
+  const [rows] = await db.query(
+    `SELECT tp.id, tp.treinamento_id, tp.nome, tp.desistencia_em, tp.desistencia_data, tp.desistencia_motivo,
+            t.tema, t.cliente AS treinamento_cliente, t.subtipo
+     FROM treinamento_participantes tp
+     JOIN treinamentos t ON t.id = tp.treinamento_id
+     WHERE tp.id = ?${tenantJoin}
+     LIMIT 1`,
+    params
+  );
+  if (!rows.length || !usuarioTemAcessoAoCliente(req, rows[0].treinamento_cliente)) return null;
+  return rows[0];
+}
+
+async function recontarParticipantesAtivos(conn, treinamentoId) {
+  const [[c]] = await conn.query(
+    `SELECT COUNT(*) AS total FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL`,
+    [treinamentoId]
+  );
+  await conn.query(`UPDATE treinamentos SET participantes = ? WHERE id = ?`, [Number(c?.total || 0), treinamentoId]);
+  return Number(c?.total || 0);
+}
+
+// POST /api/treinamentos/participantes/:id/desistencia  { motivo, data? }
+async function registrarDesistencia(req, res) {
+  try {
+    const { id } = req.params;
+    const p = await carregarParticipanteDaTurma(req, id);
+    if (!p) return res.status(404).json({ ok: false, message: "Participante não encontrado" });
+
+    if (!(await ehSubtipoAvaliacaoTecnica(p.subtipo))) {
+      return res.status(400).json({ ok: false, message: "A desistência do candidato vale só para turmas de Avaliação Técnica." });
+    }
+    if (p.desistencia_em) {
+      return res.status(409).json({ ok: false, message: `${p.nome} já está registrado(a) como desistente.` });
+    }
+
+    const motivo = String(req.body?.motivo || "").trim();
+    if (motivo.length < 3) return res.status(400).json({ ok: false, message: "Informe o motivo da desistência." });
+    if (motivo.length > 255) return res.status(400).json({ ok: false, message: "O motivo pode ter no máximo 255 caracteres." });
+
+    const hoje = hojeIsoBahia();
+    const dataBruta = req.body?.data;
+    const data = dataBruta ? dataIsoValida(dataBruta) : hoje;
+    if (!data) return res.status(400).json({ ok: false, message: "Data da desistência inválida." });
+    if (data > hoje) return res.status(400).json({ ok: false, message: "A data da desistência não pode ser futura." });
+
+    let ativos = 0;
+    await comTransacao(async (conn) => {
+      await conn.query(
+        `UPDATE treinamento_participantes
+         SET desistencia_em = NOW(), desistencia_data = ?, desistencia_motivo = ?, desistencia_por = ?
+         WHERE id = ? AND desistencia_em IS NULL`,
+        [data, motivo, String(req.user?.nome || "").slice(0, 150) || null, p.id]
+      );
+      ativos = await recontarParticipantesAtivos(conn, p.treinamento_id);
+    });
+
+    registrarAuditoria({
+      usuario: req.user,
+      acao: "desistencia",
+      entidade: "treinamento_participante",
+      entidadeId: p.id,
+      resumo: `${req.user?.nome || "Alguém"} registrou a desistência de ${p.nome} na turma "${p.tema}" (${p.treinamento_cliente}) em ${data} — motivo: ${motivo}`,
+      ip: req.ip,
+    });
+
+    return res.json({ ok: true, message: `Desistência de ${p.nome} registrada. Ele(a) sai da conta da turma.`, participantes_ativos: ativos });
+  } catch (error) {
+    console.error("[treinamentoParticipantesController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao registrar a desistência" });
+  }
+}
+
+// DELETE /api/treinamentos/participantes/:id/desistencia
+async function desfazerDesistencia(req, res) {
+  try {
+    const { id } = req.params;
+    const p = await carregarParticipanteDaTurma(req, id);
+    if (!p) return res.status(404).json({ ok: false, message: "Participante não encontrado" });
+    if (!p.desistencia_em) {
+      return res.status(409).json({ ok: false, message: `${p.nome} não está registrado(a) como desistente.` });
+    }
+
+    let ativos = 0;
+    await comTransacao(async (conn) => {
+      await conn.query(
+        `UPDATE treinamento_participantes
+         SET desistencia_em = NULL, desistencia_data = NULL, desistencia_motivo = NULL, desistencia_por = NULL
+         WHERE id = ?`,
+        [p.id]
+      );
+      ativos = await recontarParticipantesAtivos(conn, p.treinamento_id);
+    });
+
+    registrarAuditoria({
+      usuario: req.user,
+      acao: "desfazer_desistencia",
+      entidade: "treinamento_participante",
+      entidadeId: p.id,
+      resumo: `${req.user?.nome || "Alguém"} desfez a desistência de ${p.nome} na turma "${p.tema}" (${p.treinamento_cliente}) — voltou para a conta da turma`,
+      ip: req.ip,
+    });
+
+    return res.json({ ok: true, message: `${p.nome} voltou para a conta da turma.`, participantes_ativos: ativos });
+  } catch (error) {
+    console.error("[treinamentoParticipantesController]", error.message || error);
+    return res.status(500).json({ ok: false, message: "Erro ao desfazer a desistência" });
+  }
+}
+
 function formatExcelDateToMySQL(value) {
   if (!value) return null;
 
@@ -1388,4 +1542,6 @@ module.exports = {
   buscarPessoasParaTurma,
   deleteParticipanteTreinamento,
   deleteParticipantesTreinamentoBulk,
+  registrarDesistencia,
+  desfazerDesistencia,
 };

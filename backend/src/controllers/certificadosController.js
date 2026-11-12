@@ -16,6 +16,7 @@
 
 const pool = require('../lib/db');
 const { usuarioTemAcessoAoCliente } = require('../lib/acessoCliente');
+const { ehSubtipoAvaliacaoTecnica } = require('../lib/subtipos');
 
 /* ─── LIST ─────────────────────────────────────────────────────────────────── */
 async function listCertificados(req, res) {
@@ -73,7 +74,7 @@ async function calcularElegibilidade(treinamento_id, nome, empresaId) {
   const tenantCheckTr = empresaId ? ' AND empresa_id = ?' : '';
   const trParams = empresaId ? [treinamento_id, empresaId] : [treinamento_id];
   const [trRows] = await pool.query(
-    `SELECT tema, cliente, carga_horaria, presenca_minima_pct FROM treinamentos WHERE id = ?${tenantCheckTr} LIMIT 1`,
+    `SELECT tema, cliente, carga_horaria, presenca_minima_pct, subtipo FROM treinamentos WHERE id = ?${tenantCheckTr} LIMIT 1`,
     trParams
   );
   if (!trRows.length) return null;
@@ -84,7 +85,10 @@ async function calcularElegibilidade(treinamento_id, nome, empresaId) {
   // ficam FORA da conta — falta justificada não penaliza e aula sem chamada
   // nunca vira falta. Sem nenhum presente/ausente lançado => null (sem dado;
   // não barra, como já era).
-  const calcular = (presentes, ausentes) => {
+  // 11/11/2026: em turma de Avaliação Técnica a falta justificada conta como falta.
+  const justificadoFalta = await ehSubtipoAvaliacaoTecnica(tr.subtipo);
+  const calcular = (presentes, ausentes, justificados = 0) => {
+    if (justificadoFalta) ausentes = Number(ausentes || 0) + Number(justificados || 0);
     const computaveis = Number(presentes || 0) + Number(ausentes || 0);
     return computaveis > 0 ? Number(((Number(presentes || 0) / computaveis) * 100).toFixed(1)) : null;
   };
@@ -93,12 +97,13 @@ async function calcularElegibilidade(treinamento_id, nome, empresaId) {
   const [presRows] = await pool.query(
     `SELECT
        SUM(CASE WHEN LOWER(TRIM(status)) = 'presente' THEN 1 ELSE 0 END) AS presentes,
-       SUM(CASE WHEN LOWER(TRIM(status)) = 'ausente'  THEN 1 ELSE 0 END) AS ausentes
+       SUM(CASE WHEN LOWER(TRIM(status)) = 'ausente'  THEN 1 ELSE 0 END) AS ausentes,
+       SUM(CASE WHEN LOWER(TRIM(status)) = 'justificado' THEN 1 ELSE 0 END) AS justificados
      FROM presencas
      WHERE treinamento_id = ? AND treinando_nome = ?`,
     [treinamento_id, nome]
   );
-  const freq = calcular(presRows[0]?.presentes, presRows[0]?.ausentes);
+  const freq = calcular(presRows[0]?.presentes, presRows[0]?.ausentes, presRows[0]?.justificados);
 
   // Também tenta via presenca_aulas (sistema de chamada por aula). Aula
   // cancelada não entra (igual à grade).
@@ -107,14 +112,15 @@ async function calcularElegibilidade(treinamento_id, nome, empresaId) {
     const [paRows] = await pool.query(
       `SELECT
          SUM(CASE WHEN LOWER(TRIM(pa.status)) = 'presente' THEN 1 ELSE 0 END) AS presentes,
-         SUM(CASE WHEN LOWER(TRIM(pa.status)) = 'ausente'  THEN 1 ELSE 0 END) AS ausentes
+         SUM(CASE WHEN LOWER(TRIM(pa.status)) = 'ausente'  THEN 1 ELSE 0 END) AS ausentes,
+         SUM(CASE WHEN LOWER(TRIM(pa.status)) = 'justificado' THEN 1 ELSE 0 END) AS justificados
        FROM presenca_aulas pa
        JOIN turma_aulas ta ON ta.id = pa.turma_aula_id
        WHERE ta.treinamento_id = ? AND pa.treinando_nome = ?
          AND COALESCE(ta.status_execucao, '') <> 'cancelada'`,
       [treinamento_id, nome]
     );
-    freqFinal = calcular(paRows[0]?.presentes, paRows[0]?.ausentes);
+    freqFinal = calcular(paRows[0]?.presentes, paRows[0]?.ausentes, paRows[0]?.justificados);
   }
 
   // Busca nota final (prova > qualidade)

@@ -93,7 +93,7 @@ async function buscarDadosBancarios(cpfs, empresaId) {
 
 async function montarListaNominal(treinamentoId, empresaId, { inicio, fim } = {}) {
   const [participantes] = await pool.query(
-    `SELECT nome, cpf, matricula FROM treinamento_participantes WHERE treinamento_id = ? ORDER BY nome ASC`,
+    `SELECT nome, cpf, matricula FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL ORDER BY nome ASC`,
     [treinamentoId]
   );
 

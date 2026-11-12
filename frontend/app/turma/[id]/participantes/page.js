@@ -53,6 +53,12 @@ export default function ParticipantesTurmaPage() {
   const [erro,          setErro]          = useState("");
   const [sucesso,       setSucesso]       = useState("");
   const [busca,         setBusca]         = useState("");
+  // Desistência do candidato (turma de Avaliação Técnica)
+  const [desistindo,    setDesistindo]    = useState(null); // participante que está desistindo
+  const [desMotivo,     setDesMotivo]     = useState("");
+  const [desData,       setDesData]       = useState("");
+  const [desSalvando,   setDesSalvando]   = useState(false);
+  const [desErro,       setDesErro]       = useState("");
 
   /* Seções colapsáveis */
   // Bugfix: o botão "Importar treinandos" da página Gestão de Turmas
@@ -290,6 +296,45 @@ export default function ParticipantesTurmaPage() {
     } catch (err) { setErro(err.message || "Erro ao exportar."); }
   }
 
+  function hojeISO() {
+    return new Date().toLocaleDateString("en-CA", { timeZone: "America/Bahia" });
+  }
+
+  function abrirDesistencia(item) {
+    setDesistindo(item); setDesMotivo(""); setDesData(hojeISO()); setDesErro("");
+  }
+
+  async function confirmarDesistencia() {
+    if (!desistindo) return;
+    const motivo = desMotivo.trim();
+    if (motivo.length < 3) { setDesErro("Informe o motivo da desistência."); return; }
+    try {
+      setDesSalvando(true); setDesErro(""); setErro(""); setSucesso("");
+      await apiFetch(`/treinamentos/participantes/${desistindo.id}/desistencia`, {
+        method: "POST",
+        body: JSON.stringify({ motivo, data: desData || undefined }),
+      });
+      const nome = desistindo.nome;
+      setDesistindo(null);
+      setSucesso(`Desistência de ${nome} registrada. Ele(a) sai da conta da turma e continua na lista como desistente.`);
+      await carregarTudo();
+    } catch (err) {
+      setDesErro(err.message || "Erro ao registrar a desistência.");
+    } finally {
+      setDesSalvando(false);
+    }
+  }
+
+  async function desfazerDesistencia(item) {
+    if (!window.confirm(`Desfazer a desistência de ${item.nome}? Ele(a) volta para a conta da turma.`)) return;
+    try {
+      setErro(""); setSucesso("");
+      await apiFetch(`/treinamentos/participantes/${item.id}/desistencia`, { method: "DELETE" });
+      setSucesso(`${item.nome} voltou para a conta da turma.`);
+      await carregarTudo();
+    } catch (err) { setErro(err.message || "Erro ao desfazer a desistência."); }
+  }
+
   async function removerParticipante(item) {
     if (!window.confirm(`Remover ${item.nome} da turma?`)) return;
     try {
@@ -308,9 +353,13 @@ export default function ParticipantesTurmaPage() {
     const removidos = participantes.filter(
       (p) => String(p.status_presenca || "").toLowerCase() === "removido"
     ).length;
-    const ativos   = total - removidos;
-    return { total, ativos, inativos: removidos };
+    const desistentes = participantes.filter((p) => p.desistente).length;
+    const ativos   = total - removidos - desistentes;
+    return { total, ativos, inativos: removidos, desistentes };
   }, [participantes]);
+
+  const ehAvaliacaoTecnica =
+    String(treinamento?.subtipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() === "avaliacao tecnica";
 
   /* Lista filtrada */
   const listaFiltrada = useMemo(() => {
@@ -391,6 +440,9 @@ export default function ParticipantesTurmaPage() {
           { label: "Total",   value: resumo.total,   cor: "#334155"         },
           { label: "Ativos",  value: resumo.ativos,  cor: colors.success    },
           { label: "Inativos",value: resumo.inativos,cor: resumo.inativos > 0 ? colors.danger : "#94a3b8" },
+          ...(ehAvaliacaoTecnica || resumo.desistentes > 0
+            ? [{ label: "Desistentes", value: resumo.desistentes, cor: resumo.desistentes > 0 ? "#b45309" : "#94a3b8" }]
+            : []),
           { label: "Com freq.",
             value: frequencias.length,
             cor: frequencias.length > 0 ? colors.primary : "#94a3b8" },
@@ -616,8 +668,18 @@ export default function ParticipantesTurmaPage() {
                   );
                   const statusStr = item.status_presenca || "pendente";
                   return (
-                    <tr key={item.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
-                      <td style={{ ...td, fontWeight: 600 }}>{item.nome}</td>
+                    <tr key={item.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fafafa", opacity: item.desistente ? 0.62 : 1 }}>
+                      <td style={{ ...td, fontWeight: 600 }}>
+                        <span style={item.desistente ? { textDecoration: "line-through", textDecorationColor: "#cbd5e1" } : undefined}>{item.nome}</span>
+                        {item.desistente && (
+                          <div style={{ marginTop: 3, fontWeight: 500, fontSize: 11, color: "#92400e" }}>
+                            <span style={{ ...pill, background: colors.warningLight, color: colors.warningText, marginRight: 6 }}>Desistente</span>
+                            {item.desistencia_data ? `em ${formatDate(item.desistencia_data)}` : ""}
+                            {item.desistencia_motivo ? ` · ${item.desistencia_motivo}` : ""}
+                            {item.desistencia_por ? ` · registrado por ${item.desistencia_por}` : ""}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ ...td, color: "#64748b" }}>{item.matricula || "—"}</td>
                       <td style={{ ...td, color: "#64748b" }}>{formatCpf(item.cpf)}</td>
                       <td style={td}>{item.cliente}</td>
@@ -625,12 +687,18 @@ export default function ParticipantesTurmaPage() {
                       <td style={td}>{item.operacao   || "—"}</td>
                       <td style={{ ...td, color: "#64748b" }}>{formatDate(item.data_admissao)}</td>
                       <td style={td}>
-                        <span style={{ ...pill, ...estiloStatus(statusStr) }}>
-                          {statusStr}
-                        </span>
+                        {item.desistente ? (
+                          <span style={{ fontSize: 11, color: "#94a3b8" }}>fora da conta</span>
+                        ) : (
+                          <span style={{ ...pill, ...estiloStatus(statusStr) }}>
+                            {statusStr}
+                          </span>
+                        )}
                       </td>
                       <td style={td}>
-                        {freq ? (
+                        {item.desistente ? (
+                          <span style={{ fontSize: 11, color: "#94a3b8" }}>—</span>
+                        ) : freq ? (
                           <span style={{ ...pill, ...estiloFreq(freq.frequencia_percentual) }}>
                             {freq.frequencia_percentual}%
                           </span>
@@ -645,6 +713,16 @@ export default function ParticipantesTurmaPage() {
                               Perfil
                             </a>
                           )}
+                          {ehAvaliacaoTecnica && !item.desistente && (
+                            <button style={btnDesistencia} onClick={() => abrirDesistencia(item)} title="Registrar a desistência do candidato: ele sai da conta da turma">
+                              Desistência
+                            </button>
+                          )}
+                          {item.desistente && (
+                            <button style={btnDesfazer} onClick={() => desfazerDesistencia(item)} title="Desfazer a desistência: volta para a conta da turma">
+                              Desfazer
+                            </button>
+                          )}
                           <button style={btnRemover} onClick={() => removerParticipante(item)}>
                             Remover
                           </button>
@@ -658,6 +736,32 @@ export default function ParticipantesTurmaPage() {
           </table>
         </div>
       </div>
+
+      {desistindo && (
+        <div style={overlay} onClick={() => !desSalvando && setDesistindo(null)}>
+          <div style={modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Registrar desistência">
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>Registrar desistência</div>
+            <p style={{ margin: "6px 0 14px", fontSize: 13, color: "#64748b", lineHeight: 1.45 }}>
+              <strong>{desistindo.nome}</strong> deixa de contar na turma (total, chamada, % de presença e relatórios) e continua na lista como <em>Desistente</em>. Dá para desfazer depois.
+            </p>
+            <label style={fieldWrap}>
+              <span style={fieldLabel}>Motivo *</span>
+              <input style={fieldInput} value={desMotivo} maxLength={255} autoFocus onChange={(e) => setDesMotivo(e.target.value)} placeholder="Ex.: aceitou outra vaga, não compareceu mais…" />
+            </label>
+            <label style={{ ...fieldWrap, marginTop: 10 }}>
+              <span style={fieldLabel}>Data da desistência</span>
+              <input style={fieldInput} type="date" value={desData} max={hojeISO()} onChange={(e) => setDesData(e.target.value)} />
+            </label>
+            {desErro && <div style={{ ...errorBox, marginTop: 12, marginBottom: 0 }}>{desErro}</div>}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button style={btnOutline} disabled={desSalvando} onClick={() => setDesistindo(null)}>Cancelar</button>
+              <button style={{ ...btnCoral, opacity: desSalvando ? 0.6 : 1 }} disabled={desSalvando} onClick={confirmarDesistencia}>
+                {desSalvando ? "Salvando…" : "Confirmar desistência"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </TurmaPageShell>
   );
 }
@@ -697,6 +801,11 @@ const table     = { width: "100%", borderCollapse: "collapse" };
 const th        = { textAlign: "left", padding: "9px 12px", borderBottom: "1px solid #f1f5f9", fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".04em", whiteSpace: "nowrap" };
 const td        = { padding: "10px 12px", borderBottom: "1px solid #f8fafc", fontSize: 13, color: "#334155", verticalAlign: "middle" };
 const tdVazio   = { padding: "24px 12px", textAlign: "center", color: "#94a3b8", fontSize: 13 };
+
+const btnDesistencia = { background: colors.warningLight, color: colors.warningText, border: "1px solid #fde68a", borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 };
+const btnDesfazer    = { background: "#fff", color: "#334155", border: "1px solid #e2e8f0", borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 };
+const overlay = { position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 1000 };
+const modal   = { background: "#fff", borderRadius: 14, padding: 20, width: "100%", maxWidth: 440, boxShadow: "0 20px 50px rgba(15,23,42,.25)" };
 
 const pill     = { display: "inline-block", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 700 };
 const btnRemover = { background: colors.dangerLight, color: colors.dangerText, border: "1px solid #fecaca", borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" };

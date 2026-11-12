@@ -157,7 +157,7 @@ function ListaGrade({ dados, vazia, titulo, geradoEm }) {
         <div className="legenda">Marque P = presente · J = justificado · F = ausente, ou colha a assinatura de cada participante na aula correspondente.</div>
       ) : (
         <div className="legenda">
-          P = presente · J = justificado · F = ausente · vazio = não lançado. Horas = soma da carga das aulas em que esteve presente. % presença = presentes ÷ (presentes + ausentes); falta justificada não soma horas e fica fora do cálculo. Presença mínima: {fmt(dados.turma.presenca_minima_pct, 0)}%.
+          P = presente · J = justificado · F = ausente · vazio = não lançado. Horas = soma da carga das aulas em que esteve presente. % presença = presentes ÷ (presentes + ausentes); {dados.turma.justificado_conta_falta ? "nesta turma (Avaliação Técnica) a falta justificada CONTA COMO FALTA e não soma horas; o motivo fica registrado." : "falta justificada não soma horas e fica fora do cálculo."} Presença mínima: {fmt(dados.turma.presenca_minima_pct, 0)}%.
           {dados.horas_estimadas ? " Carga horária por aula estimada (carga da turma dividida entre as aulas)." : ""}
         </div>
       )}
@@ -239,7 +239,7 @@ function Relatorio({ dados, titulo, geradoEm }) {
             <th>Horas</th>
             <th>P</th>
             <th>J</th>
-            <th>F</th>
+            <th>{dados.turma.justificado_conta_falta ? "F (inclui J)" : "F"}</th>
             <th>Sem lanç.</th>
             <th>% presença</th>
             <th>Situação</th>
@@ -273,7 +273,7 @@ function Relatorio({ dados, titulo, geradoEm }) {
         </div>
       )}
       <div className="legenda">
-        Horas = soma da carga das aulas em que a pessoa esteve presente. % presença = presentes ÷ (presentes + ausentes); falta justificada não soma horas e fica fora do cálculo; aula sem lançamento não conta como falta.
+        Horas = soma da carga das aulas em que a pessoa esteve presente. % presença = presentes ÷ (presentes + ausentes); {dados.turma.justificado_conta_falta ? "nesta turma (Avaliação Técnica) a falta justificada CONTA COMO FALTA e não soma horas; o motivo fica registrado; " : "falta justificada não soma horas e fica fora do cálculo; "}aula sem lançamento não conta como falta.
         {dados.horas_estimadas ? " Carga horária por aula estimada (carga da turma dividida entre as aulas)." : ""}
       </div>
       <Assinaturas />
@@ -335,7 +335,7 @@ function Extrato({ extrato, titulo, geradoEm }) {
           </tr>
           <tr>
             <td colSpan={5} className="nome">
-              <b>Presença</b> — {t.presentes} presente(s), {t.justificados} justificada(s), {t.ausentes} ausência(s)
+              <b>Presença</b> — {t.presentes} presente(s), {extrato.turma?.justificado_conta_falta ? `${t.ausentes} ausência(s), ${t.justificados} delas com justificativa` : `${t.justificados} justificada(s), ${t.ausentes} ausência(s)`}
               {t.pendentes ? `, ${t.pendentes} aula(s) sem lançamento` : ""} (mínimo {fmt(turma.presenca_minima_pct, 0)}%)
             </td>
             <td className="c">
@@ -345,7 +345,7 @@ function Extrato({ extrato, titulo, geradoEm }) {
         </tfoot>
       </table>
       <div className="legenda">
-        Falta justificada não soma horas e fica fora do cálculo do percentual. Aula sem lançamento não é contada como falta.
+        {extrato.turma?.justificado_conta_falta ? "Nesta turma (Avaliação Técnica) a falta justificada CONTA COMO FALTA: não soma horas e entra no cálculo do percentual; o motivo fica registrado." : "Falta justificada não soma horas e fica fora do cálculo do percentual."} Aula sem lançamento não é contada como falta.
         {extrato.horas_estimadas ? " Carga horária por aula estimada (carga da turma dividida entre as aulas)." : ""}
       </div>
       <Assinaturas nome={extrato.participante.nome} />

@@ -244,7 +244,7 @@ async function calcularEmpresa(empresaId, de, ate, periodoCompleto) {
       const [partsT] = await pool.query(
         `SELECT tp.id, tp.treinamento_id, tp.nome, tp.matricula, tp.cliente, tp.cpf, tp.pessoa_id
            FROM treinamento_participantes tp JOIN treinamentos t ON t.id = tp.treinamento_id
-          WHERE t.empresa_id = ?`,
+          WHERE t.empresa_id = ? AND tp.desistencia_em IS NULL`,
         [empresaId]
       );
       const chavePorTurmaNome = new Map(); // `${turma}|${nome normalizado}` → chave

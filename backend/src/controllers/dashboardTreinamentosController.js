@@ -259,7 +259,7 @@ async function carregarTurmasEnriquecidas(req) {
           COALESCE(hist.pendentes, 0) AS hist_pendentes,
           COALESCE(hist.participantes_distintos, 0) AS hist_participantes_distintos
         FROM treinamentos t
-        LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+        LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND tp.desistencia_em IS NULL
         LEFT JOIN (
           SELECT
             treinamento_id,
@@ -300,7 +300,7 @@ async function carregarTurmasEnriquecidas(req) {
           0 AS hist_dias, 0 AS hist_presentes, 0 AS hist_ausentes,
           0 AS hist_justificados, 0 AS hist_pendentes, 0 AS hist_participantes_distintos
         FROM treinamentos t
-        LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id
+        LEFT JOIN treinamento_participantes tp ON tp.treinamento_id = t.id AND tp.desistencia_em IS NULL
         ${whereSql}
         GROUP BY t.id, t.tema, t.cliente, t.instrutor,
           t.descricao, t.modalidade, t.status, t.data, t.data_inicio, t.data_fim,

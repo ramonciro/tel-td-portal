@@ -25,6 +25,7 @@
 
 const pool = require("../lib/db");
 const { getHorasAplicadasPorTreinamento } = require("./capacidadeResolver");
+const { criarMatcherAvaliacaoTecnica, sqlSemDesistente, aplicarRegraJustificado } = require("./turmaRegras");
 
 function n(value) {
   const x = Number(value);
@@ -49,7 +50,12 @@ function classificarParticipante({ presente, ausente, justificado }) {
 // Agrega uma tabela de presença (presencas OU presenca_aulas) em dois níveis:
 // por participante (pra classificação de cabeça-de-pessoa) e por registro
 // (pra taxa de execução/frequência real).
-async function agregarFontePresenca(tabela) {
+//
+// 11/11/2026: (a) quem desistiu da turma fica de fora (ver turmaRegras.js);
+// (b) em turma de Avaliação Técnica (idsAvaliacaoTecnica), justificado conta
+// como falta — vira "ausente" na conta, e o total de justificativas
+// registradas fica em registrosFaltasJustificadas.
+async function agregarFontePresenca(tabela, idsAvaliacaoTecnica = new Set()) {
   const [linhasPorParticipante] = await pool.query(`
     SELECT
       treinamento_id,
@@ -58,7 +64,8 @@ async function agregarFontePresenca(tabela) {
       SUM(CASE WHEN status = 'ausente' THEN 1 ELSE 0 END) AS ausente,
       SUM(CASE WHEN status = 'justificado' THEN 1 ELSE 0 END) AS justificado,
       SUM(CASE WHEN status IS NULL OR status = '' OR status = 'pendente' THEN 1 ELSE 0 END) AS pendente
-    FROM ${tabela}
+    FROM ${tabela} x
+    WHERE ${sqlSemDesistente("x")}
     GROUP BY treinamento_id, treinando_nome
   `);
 
@@ -77,14 +84,21 @@ async function agregarFontePresenca(tabela) {
         registrosAusentes: 0,
         registrosJustificados: 0,
         registrosPendentes: 0,
+        registrosFaltasJustificadas: 0,
       });
     }
 
     const acc = porTreinamento.get(treinamentoId);
-    const presente = n(linha.presente);
-    const ausente = n(linha.ausente);
-    const justificado = n(linha.justificado);
+    const regra = aplicarRegraJustificado(idsAvaliacaoTecnica.has(treinamentoId), {
+      presente: n(linha.presente),
+      ausente: n(linha.ausente),
+      justificado: n(linha.justificado),
+    });
+    const presente = regra.presente;
+    const ausente = regra.ausente;
+    const justificado = regra.justificado;
     const pendente = n(linha.pendente);
+    acc.registrosFaltasJustificadas += regra.faltasJustificadas;
 
     acc.participantes += 1;
     acc.registrosPresentes += presente;
@@ -187,9 +201,15 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
 
   const [treinamentos] = await pool.query(
     "SELECT id, tema, cliente, instrutor, supervisor, status, descricao, publico, " +
-    "data, data_inicio, data_fim, carga_horaria, participantes " +
+    "data, data_inicio, data_fim, carga_horaria, participantes, subtipo " +
     "FROM treinamentos " + whereClause,
     params
+  );
+
+  // Turmas de Avaliação Técnica: justificado conta como falta (turmaRegras.js).
+  const ehAvaliacaoTecnica = await criarMatcherAvaliacaoTecnica();
+  const idsAvaliacaoTecnica = new Set(
+    treinamentos.filter((t) => ehAvaliacaoTecnica(t.subtipo)).map((t) => Number(t.id))
   );
 
   const [diasPorTreinamento] = await pool.query(`
@@ -200,8 +220,8 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
   const mapaDias = new Map(diasPorTreinamento.map((r) => [Number(r.treinamento_id), n(r.dias_planejados)]));
 
   const [cronMap, histMap, snapRows, horasMap] = await Promise.all([
-    agregarFontePresenca("presenca_aulas"),
-    agregarFontePresenca("presencas"),
+    agregarFontePresenca("presenca_aulas", idsAvaliacaoTecnica),
+    agregarFontePresenca("presencas", idsAvaliacaoTecnica),
     // FIX: a query original somava uma coluna `status_presenca` em
     // treinamento_participantes que nunca existiu (a tabela só tem `status`,
     // que é status de INSCRIÇÃO — "Inscrito" — não de presença) — isso
@@ -216,6 +236,7 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
     pool.query(`
       SELECT treinamento_id, COUNT(*) AS treinados
       FROM treinamento_participantes
+      WHERE desistencia_em IS NULL
       GROUP BY treinamento_id
     `).then(([rows]) => new Map(rows.map((r) => [
       Number(r.treinamento_id),
@@ -335,6 +356,11 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
       origemFrequencia = "sem_dados";
     }
 
+    // Quantas justificativas foram viradas em falta (só Avaliação Técnica).
+    let faltasJustificadas = 0;
+    if (origemFrequencia === "cronograma" && cron) faltasJustificadas = cron.registrosFaltasJustificadas || 0;
+    else if (origemFrequencia !== "snapshot" && usarLegado && hist) faltasJustificadas = hist.registrosFaltasJustificadas || 0;
+
     const presencasLancadas = registrosPresentes + registrosAusentes + registrosJustificados + registrosPendentes;
     const totalRealizado = registrosPresentes + registrosAusentes + registrosJustificados;
 
@@ -394,6 +420,11 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
       ausentes: registrosAusentes,
       justificados: registrosJustificados,
       pendentes: registrosPendentes,
+      // Avaliação Técnica: justificado conta como falta (já somado em
+      // "ausentes"; "justificados" fica 0). Aqui, quantas dessas faltas
+      // tinham justificativa registrada.
+      justificado_conta_falta: idsAvaliacaoTecnica.has(treinamentoIdNum),
+      faltas_justificadas: faltasJustificadas,
       base_esperada: baseEsperada,
       total_realizado: totalRealizado,
       taxa_execucao: taxaExecucao,
@@ -423,6 +454,7 @@ async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fi
   // TODOS os tenants, sem filtro nenhum (achado da auditoria de 08/09/2026).
   const resumo = await getResumoPresenca({ treinamentoId, empresaId });
   const origemPorId = new Map(resumo.map((r) => [r.id, r.origem_frequencia]));
+  const avaliacaoTecnicaPorId = new Map(resumo.map((r) => [r.id, !!r.justificado_conta_falta]));
 
   const whereBase = [];
   const paramsBase = [];
@@ -434,7 +466,7 @@ async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fi
   // 'legado' ou 'presencas' (turmas sem cronograma, ou cronograma vazio)
   // Sprint 2 FIX: data_chamada IS NULL excluía registros do legado silenciosamente.
   // NULL é tratado como válido; só exclui domingos com data definida.
-  const whereLegado = [...whereBase, "(p.data_chamada IS NULL OR DAYOFWEEK(p.data_chamada) <> 1)"];
+  const whereLegado = [...whereBase, "(p.data_chamada IS NULL OR DAYOFWEEK(p.data_chamada) <> 1)", sqlSemDesistente("p")];
   const paramsLegado = [...paramsBase];
   if (inicio) { whereLegado.push("DATE(p.data_chamada) >= ?"); paramsLegado.push(inicio); }
   if (fim) { whereLegado.push("DATE(p.data_chamada) <= ?"); paramsLegado.push(fim); }
@@ -460,7 +492,7 @@ async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fi
 
   // fonte 2: cronograma (presenca_aulas) — usada quando origem_frequencia é
   // 'cronograma'
-  const whereCron = [...whereBase, "DAYOFWEEK(pa.data_aula) <> 1"];
+  const whereCron = [...whereBase, "DAYOFWEEK(pa.data_aula) <> 1", sqlSemDesistente("pa")];
   const paramsCron = [...paramsBase];
   if (inicio) { whereCron.push("DATE(pa.data_aula) >= ?"); paramsCron.push(inicio); }
   if (fim) { whereCron.push("DATE(pa.data_aula) <= ?"); paramsCron.push(fim); }
@@ -491,8 +523,14 @@ async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fi
 
   return combinadas
     .map((item) => {
-      const presentes = n(item.presentes);
-      const ausentes = n(item.ausentes);
+      // Avaliação Técnica: justificado conta como falta (turmaRegras.js).
+      const regra = aplicarRegraJustificado(avaliacaoTecnicaPorId.get(Number(item.treinamento_id)) === true, {
+        presente: n(item.presentes),
+        ausente: n(item.ausentes),
+        justificado: n(item.justificados),
+      });
+      const presentes = regra.presente;
+      const ausentes = regra.ausente;
       const computaveis = presentes + ausentes;
       return {
         treinando_nome: item.treinando_nome,
@@ -503,7 +541,8 @@ async function getFrequenciaPorParticipante({ cliente, treinamentoId, inicio, fi
         dias_registrados: n(item.dias_registrados),
         presentes,
         ausentes,
-        justificados: n(item.justificados),
+        justificados: regra.justificado,
+        faltas_justificadas: regra.faltasJustificadas,
         pendentes: n(item.pendentes),
         frequencia_percentual: computaveis > 0 ? Math.round((presentes / computaveis) * 1000) / 10 : 0,
         primeira_chamada: item.primeira_chamada,

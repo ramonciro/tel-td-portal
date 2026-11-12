@@ -1727,6 +1727,17 @@ async function runMigrations() {
     // devolve.
     await ensureColumn("treinamento_participantes", "cpf", "VARCHAR(11) NULL");
 
+    // 33b. Desistência do candidato (11/11/2026, pedido do Ramon): o candidato
+    // que desiste da turma (hoje usado nas de Avaliação Técnica) fica listado
+    // como "Desistente" para histórico, mas sai da conta da turma — total,
+    // chamada, % de presença, VT e relatórios. desistencia_em NULL = ativo.
+    // Reversível: desfazer limpa as quatro colunas.
+    await ensureColumn("treinamento_participantes", "desistencia_em", "DATETIME NULL");
+    await ensureColumn("treinamento_participantes", "desistencia_data", "DATE NULL");
+    await ensureColumn("treinamento_participantes", "desistencia_motivo", "VARCHAR(255) NULL");
+    await ensureColumn("treinamento_participantes", "desistencia_por", "VARCHAR(150) NULL");
+    await pool.query(`CREATE INDEX idx_tp_desistencia ON treinamento_participantes (treinamento_id, desistencia_em)`).catch(() => {});
+
     // 34. Ajuste pós-entrega do Pacote Salas (15/09/2026) — Ramon revisou a
     // primeira entrega e pediu para a lista de subtipo/subdivisão deixar de
     // ser fixa no código e virar algo que ele mesmo edita. Antes disso,

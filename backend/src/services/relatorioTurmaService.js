@@ -179,7 +179,7 @@ async function montarRelatorioTurma(treinamentoId, { empresaId, perfil, nomeUsua
     ).then(([r]) => r),
     pool.query(
       `SELECT nome, matricula, operacao, supervisor, status_presenca, justificativa
-         FROM treinamento_participantes WHERE treinamento_id = ? ORDER BY nome ASC`,
+         FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL ORDER BY nome ASC`,
       [id]
     ).then(([r]) => r),
     pool.query(
@@ -245,6 +245,9 @@ async function montarRelatorioTurma(treinamentoId, { empresaId, perfil, nomeUsua
     taxa_presenca_pessoas: num(resumo.taxa_presenca_pessoas),
     taxa_presenca_registros: num(resumo.taxa_presenca),
     taxa_execucao_chamada: num(resumo.taxa_execucao),
+    // Avaliação Técnica: falta justificada conta como falta (já somada em "ausentes").
+    justificado_conta_falta: !!resumo.justificado_conta_falta,
+    faltas_justificadas: Number(resumo.faltas_justificadas || 0),
     origem: resumo.origem_frequencia || "sem_dados",
     minimo_pct: minimo,
   };
@@ -283,6 +286,7 @@ async function montarRelatorioTurma(treinamentoId, { empresaId, perfil, nomeUsua
       dias_presentes: f ? f.presentes : 0,
       dias_ausentes: f ? f.ausentes : 0,
       dias_justificados: f ? f.justificados : 0,
+      dias_faltas_justificadas: f ? (f.faltas_justificadas || 0) : 0,
       dias_pendentes: f ? f.pendentes : 0,
       frequencia_pct: f && computaveis > 0 ? f.frequencia_percentual : null,
       abaixo_do_minimo: f && computaveis > 0 ? f.frequencia_percentual < minimo : false,

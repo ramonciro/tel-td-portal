@@ -311,7 +311,7 @@ export default function PresencaTurmaPage() {
                 />
               )}
               <div style={dica}>
-                Clique na célula para alternar: vazio → P (presente) → J (justificado, pede o motivo) → F (ausente) → vazio. Justificado não soma horas e fica fora do cálculo do %. Aula realizada sem lançamento nunca vira falta sozinha. Presença só pode ser lançada a partir da data da aula. A chamada por aula continua disponível no Cronograma e usa os mesmos dados.
+                Clique na célula para alternar: vazio → P (presente) → J (justificado, pede o motivo) → F (ausente) → vazio. {dados?.justificado_conta_falta ? "Nesta turma (Avaliação Técnica) a falta justificada CONTA COMO FALTA: não soma horas nem é presença — o motivo fica registrado." : "Justificado não soma horas e fica fora do cálculo do %."} Aula realizada sem lançamento nunca vira falta sozinha. Presença só pode ser lançada a partir da data da aula. A chamada por aula continua disponível no Cronograma e usa os mesmos dados.
               </div>
             </div>
           )}

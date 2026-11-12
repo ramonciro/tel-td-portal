@@ -64,7 +64,7 @@ async function buscarParticipantesDaTurma(treinamentoId) {
   const [rows] = await pool.query(
     `SELECT DISTINCT nome
      FROM treinamento_participantes
-     WHERE treinamento_id = ? AND nome IS NOT NULL AND nome <> ''`,
+     WHERE treinamento_id = ? AND desistencia_em IS NULL AND nome IS NOT NULL AND nome <> ''`,
     [treinamentoId]
   );
   return rows.map((r) => r.nome);

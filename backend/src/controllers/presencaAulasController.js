@@ -1,5 +1,6 @@
 const pool = require("../lib/db");
 const { tenantScopeFor } = require("../lib/tenantScope");
+const { sqlSemDesistente, criarMatcherAvaliacaoTecnica } = require("../services/turmaRegras");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga presença de qualquer tenant nesta tela
@@ -60,8 +61,8 @@ async function listarPresencaAula(req, res) {
         justificativa,
         criado_em,
         atualizado_em
-      FROM presenca_aulas
-      WHERE turma_aula_id = ?
+      FROM presenca_aulas x
+      WHERE turma_aula_id = ? AND ${sqlSemDesistente("x")}
       ORDER BY treinando_nome ASC
       `,
       [turma_aula_id]
@@ -114,7 +115,7 @@ async function inicializarPresencaAula(req, res) {
       `
       SELECT nome
       FROM treinamento_participantes
-      WHERE treinamento_id = ?
+      WHERE treinamento_id = ? AND desistencia_em IS NULL
       ORDER BY nome ASC
       `,
       [aula.treinamento_id]
@@ -157,8 +158,8 @@ async function inicializarPresencaAula(req, res) {
         treinando_nome,
         status,
         justificativa
-      FROM presenca_aulas
-      WHERE turma_aula_id = ?
+      FROM presenca_aulas x
+      WHERE turma_aula_id = ? AND ${sqlSemDesistente("x")}
       ORDER BY treinando_nome ASC
       `,
       [turma_aula_id]
@@ -230,9 +231,17 @@ async function salvarPresencaAula(req, res) {
 
     const aula = aulas[0];
 
+    // 11/11/2026: quem desistiu da turma não recebe mais chamada.
+    const [desistentes] = await pool.query(
+      `SELECT nome FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NOT NULL`,
+      [aula.treinamento_id]
+    );
+    const nomesDesistentes = new Set(desistentes.map((d) => String(d.nome || "").trim().toLowerCase()));
+
     for (const item of registros) {
       const nome = String(item?.treinando_nome || "").trim();
       if (!nome) continue;
+      if (nomesDesistentes.has(nome.toLowerCase())) continue;
 
       await pool.query(
         `
@@ -272,8 +281,8 @@ async function salvarPresencaAula(req, res) {
         treinando_nome,
         status,
         justificativa
-      FROM presenca_aulas
-      WHERE turma_aula_id = ?
+      FROM presenca_aulas x
+      WHERE turma_aula_id = ? AND ${sqlSemDesistente("x")}
       ORDER BY treinando_nome ASC
       `,
       [turma_aula_id]
@@ -302,9 +311,10 @@ async function resumoPresencaAula(req, res) {
 
     const [[aula]] = await pool.query(
       `
-      SELECT id, treinamento_id
-      FROM turma_aulas
-      WHERE id = ?
+      SELECT ta.id, ta.treinamento_id, t.subtipo
+      FROM turma_aulas ta
+      LEFT JOIN treinamentos t ON t.id = ta.treinamento_id
+      WHERE ta.id = ?
       LIMIT 1
       `,
       [turma_aula_id]
@@ -325,8 +335,8 @@ async function resumoPresencaAula(req, res) {
         SUM(CASE WHEN status = 'ausente' THEN 1 ELSE 0 END) AS ausentes,
         SUM(CASE WHEN status = 'justificado' THEN 1 ELSE 0 END) AS justificados,
         SUM(CASE WHEN status = 'pendente' OR status IS NULL OR status = '' THEN 1 ELSE 0 END) AS pendentes
-      FROM presenca_aulas
-      WHERE turma_aula_id = ?
+      FROM presenca_aulas x
+      WHERE turma_aula_id = ? AND ${sqlSemDesistente("x")}
       `,
       [turma_aula_id]
     );
@@ -335,7 +345,7 @@ async function resumoPresencaAula(req, res) {
       `
       SELECT COUNT(*) AS total
       FROM treinamento_participantes
-      WHERE treinamento_id = ?
+      WHERE treinamento_id = ? AND desistencia_em IS NULL
       `,
       [aula.treinamento_id]
     );
@@ -348,6 +358,14 @@ async function resumoPresencaAula(req, res) {
     let ausentes = Number(base.ausentes || 0);
     let justificados = Number(base.justificados || 0);
     let pendentes = Number(base.pendentes || 0);
+
+    // Avaliação Técnica: falta justificada conta como falta (11/11/2026) —
+    // soma em "ausentes"; a justificativa continua registrada na chamada.
+    const justificadoFalta = (await criarMatcherAvaliacaoTecnica())(aula.subtipo);
+    if (justificadoFalta) {
+      ausentes += justificados;
+      justificados = 0;
+    }
 
     if (total === 0 && totalParticipantes > 0) {
       total = totalParticipantes;
