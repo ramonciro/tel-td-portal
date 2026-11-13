@@ -12,7 +12,7 @@ import { colors } from "../../../../lib/theme";
 import { st, Campo, perfilRh, ehOperacaoRh, fmtDia, COR_RH } from "../../../../components/RhUi";
 import { SituacaoPill, BarraDias, ChipsEtapas, Marca, Pilula, fmtDataHora } from "../../../../components/CangaruUi";
 import { AbrirPontoForm, PontoCard } from "../../../../components/CangaruPonto";
-import { useVisaoCanguru, SeletorVisao, ehSupervisor } from "../../../../components/CangaruVisao";
+import { useVisaoCanguru, SeletorVisao, ehSupervisor, FaixaVisao } from "../../../../components/CangaruVisao";
 
 const enviar = (url, metodo, corpo) => apiFetch(url, { method: metodo, headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
 
@@ -104,6 +104,7 @@ export default function FichaNovatoPage() {
   return (
     <PortalShell>
       <PageHero eyebrow="Relações Humanas · Projeto Canguru" title={n ? n.nome : "Ficha do novato"} subtitle={n ? `Matrícula ${n.matricula || "—"} · ${n.site_rotulo || "—"} · ${n.servico || "—"}` : "Avaliações e ponto de atenção"} />
+      <FaixaVisao visao={visao} />
       <div style={{ marginTop: 12, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}><SeletorVisao visao={visao} onChange={setVisao} /></div>
       <p style={{ marginTop: 12 }}><Link href={`/rh/canguru?visao=${visao}`} style={{ color: "#9d174d", fontWeight: 800, fontSize: 13 }}>← Voltar ao acompanhamento</Link></p>
       {erro ? <div style={st.erro}>{erro}</div> : null}

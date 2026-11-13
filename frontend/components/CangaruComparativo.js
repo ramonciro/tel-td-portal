@@ -12,7 +12,7 @@ import { apiFetch, apiDownload } from "../services/api";
 import { colors } from "../lib/theme";
 import { st, Campo, Select, pct1, dec1, fmtN, fmtDia, COR_RH } from "./RhUi";
 import { RiscoPill } from "./CangaruUi";
-import { useVisaoCanguru, SeletorVisao, ehSupervisor } from "./CangaruVisao";
+import { useVisaoCanguru, SeletorVisao, ehSupervisor, FaixaVisao } from "./CangaruVisao";
 
 const sinal = (v, casas = 1) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}`);
 const TEND = {
@@ -153,6 +153,7 @@ export default function CangaruComparativo({ cliente = false }) {
     <PortalShell>
       <PageHero eyebrow={cliente ? "Relações Humanas · Projeto Canguru" : "Relações Humanas · Projeto Canguru"} title="Comparar períodos do Canguru" subtitle={sup ? "O que mudou nas notas que os supervisores deram aos novatos entre dois períodos." : "O que mudou nas avaliações dos novatos entre dois períodos."}
         actions={!cliente ? <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start", maxWidth: "calc(100vw - 72px)" }}><SeletorVisao visao={visao} onChange={(v) => { setF((o) => ({ ...o, site: "", servico: "" })); setVisao(v); }} escuro />{d ? <button type="button" style={{ ...st.btnGhost, background: "rgba(255,255,255,.12)", color: "#fff", border: "1px solid rgba(255,255,255,.35)" }} onClick={() => apiDownload(`${base}/exportar?${qs({ ...f, ...(sup ? { visao } : {}) })}`, "comparativo_canguru.xlsx").catch((e) => setErro(e.message))}>Exportar Excel</button> : null}</div> : null} />
+      {!cliente ? <FaixaVisao visao={visao} /> : null}
       {cliente ? <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}><Link href="/rh/cliente/canguru" style={{ ...st.btnGhost, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Voltar ao Canguru</Link></div> : null}
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
 

@@ -11,7 +11,7 @@ import { colors } from "../../../../lib/theme";
 import { st, Campo, Select, perfilRh, ehOperacaoRh, COR_RH } from "../../../../components/RhUi";
 import { CangaruRelatorio } from "../../../../components/CangaruUi";
 import CangaruLiberacoes from "../../../../components/CangaruLiberacoes";
-import { CangaruRelatorioSupervisor, SeletorVisao, useVisaoCanguru, ehSupervisor } from "../../../../components/CangaruVisao";
+import { CangaruRelatorioSupervisor, SeletorVisao, useVisaoCanguru, ehSupervisor, FaixaVisao } from "../../../../components/CangaruVisao";
 
 export default function CangaruResultadoPage() {
   const operacao = ehOperacaoRh(perfilRh());
@@ -54,6 +54,7 @@ export default function CangaruResultadoPage() {
       <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Resultado do Canguru"
         subtitle={sup ? "O que os supervisores avaliaram dos novatos aos 30, 60 e 85 dias, por requisito, etapa, site e serviço." : "O que os novatos responderam nas avaliações de 30, 60 e 90 dias, por etapa, site e serviço."}
         actions={<SeletorVisao visao={visao} onChange={setVisao} escuro />} />
+      <FaixaVisao visao={visao} />
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
 
       <div style={{ ...st.card, marginTop: 16 }}>

@@ -9,8 +9,8 @@ import { RiscoPill } from "./CangaruUi";
 
 const CHAVE = "canguru_visao";
 export const VISOES = [
-  { value: "operador", rotulo: "Operador", ajuda: "Respostas do próprio novato (expectativas, acolhimento, liderança, atividades, apoio e clima)." },
-  { value: "supervisor", rotulo: "Supervisor", ajuda: "Avaliação do supervisor sobre o novato, de 0 a 5 em cada requisito (30, 60 e 85 dias)." },
+  { value: "operador", rotulo: "Operador (novato)", titulo: "Visão do operador", cor: "#9d174d", fundo: "#fdf2f8", borda: "#f9a8d4", ajuda: "Quem responde é o próprio novato (operador).", detalhe: "O novato responde sobre a empresa: expectativas, acolhimento, liderança, atividades, áreas de apoio e clima com os colegas." },
+  { value: "supervisor", rotulo: "Supervisor", titulo: "Visão do supervisor", cor: "#3730a3", fundo: "#eef2ff", borda: "#a5b4fc", ajuda: "Quem responde é o supervisor, avaliando o novato.", detalhe: "O supervisor dá notas de 0 a 5 ao novato em sete requisitos (negociação, relacionamento, resolução, empatia, conduta, responsabilidade e ética), aos 30, 60 e 85 dias." },
 ];
 export const ehSupervisor = (v) => v === "supervisor";
 export const REQ_ROTULO = { neg: "Negociação", rel: "Relacionamento interpessoal", res: "Resolução", emp: "Empatia", cond: "Conduta", resp: "Responsabilidade", etica: "Ética" };
@@ -46,18 +46,31 @@ export function SeletorVisao({ visao, onChange, escuro = false }) {
   const atual = VISOES.find((v) => v.value === visao) || VISOES[0];
   return (
     <div style={{ display: "inline-flex", flexDirection: "column", gap: 4, maxWidth: "calc(100vw - 72px)" }}>
+      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: escuro ? "rgba(255,255,255,.9)" : colors.textSecondary }}>Ver respostas de</span>
       <div role="group" aria-label="Visão do Canguru" style={{ display: "inline-flex", padding: 3, borderRadius: 999, background: escuro ? "rgba(255,255,255,.18)" : "#f1f5f9", border: escuro ? "1px solid rgba(255,255,255,.35)" : `1px solid ${colors.border}` }}>
         {VISOES.map((v) => {
           const ativo = v.value === visao;
           return (
             <button key={v.value} type="button" aria-pressed={ativo} title={v.ajuda} onClick={() => onChange(v.value)}
-              style={{ border: 0, cursor: "pointer", padding: "6px 16px", borderRadius: 999, fontSize: 13, fontWeight: 800, background: ativo ? "#fff" : "transparent", color: ativo ? "#9d174d" : escuro ? "#fff" : colors.textSecondary, boxShadow: ativo ? "0 1px 3px rgba(0,0,0,.18)" : "none" }}>
+              style={{ border: 0, cursor: "pointer", padding: "6px 16px", borderRadius: 999, fontSize: 13, fontWeight: 800, background: ativo ? "#fff" : "transparent", color: ativo ? v.cor : escuro ? "#fff" : colors.textSecondary, boxShadow: ativo ? "0 1px 3px rgba(0,0,0,.18)" : "none" }}>
               {v.rotulo}
             </button>
           );
         })}
       </div>
-      <span style={{ fontSize: 11.5, color: escuro ? "rgba(255,255,255,.85)" : colors.textMuted, maxWidth: "min(360px, 100%)" }}>{atual.ajuda}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: escuro ? "#fff" : colors.textMuted, maxWidth: "min(360px, 100%)" }}>{atual.ajuda}</span>
+    </div>
+  );
+}
+
+/** Faixa que diz, sem dúvida, qual visão está na tela e quem responde nela. */
+export function FaixaVisao({ visao }) {
+  const v = VISOES.find((x) => x.value === visao) || VISOES[0];
+  const outra = VISOES.find((x) => x.value !== v.value);
+  return (
+    <div role="status" style={{ marginTop: 14, padding: "10px 14px", borderRadius: 10, background: v.fundo, border: `1px solid ${v.borda}`, borderLeft: `5px solid ${v.cor}`, color: "#0f172a", fontSize: 13, lineHeight: 1.5 }}>
+      <strong style={{ color: v.cor }}>Você está na {v.titulo.toLowerCase()}.</strong> {v.ajuda} {v.detalhe}
+      <div style={{ marginTop: 3, fontSize: 12, color: colors.textSecondary }}>Para ver a {outra.titulo.toLowerCase()}, troque no seletor “Ver respostas de”, no topo da página.</div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { apiFetch } from "../../../../services/api";
 import { colors } from "../../../../lib/theme";
 import { st, Campo, Select, Modal, Abas, Paginacao, perfilRh, ehOperacaoRh, fmtN, fmtDia, COR_RH } from "../../../../components/RhUi";
 import { Marca, SituacaoPill, STATUS_PONTO } from "../../../../components/CangaruUi";
-import { SeletorVisao, useVisaoCanguru, ehSupervisor } from "../../../../components/CangaruVisao";
+import { SeletorVisao, useVisaoCanguru, ehSupervisor, FaixaVisao } from "../../../../components/CangaruVisao";
 import { AbrirPontoForm } from "../../../../components/CangaruPonto";
 
 const LIMITE = 40;
@@ -66,6 +66,7 @@ export default function CangaruAtencaoPage() {
       <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Pontos de atenção"
         subtitle={sup ? "Quem o supervisor avaliou com nota baixa e o que o RH está fazendo a respeito, em cinco passos." : "Quem sinalizou problema nas avaliações e o que o RH está fazendo a respeito, em cinco passos."}
         actions={operacao && aba === "fila" ? <SeletorVisao visao={visao} onChange={(v) => { setVisao(v); setPagina(1); }} escuro /> : null} />
+      {operacao && aba === "fila" ? <FaixaVisao visao={visao} /> : null}
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
       {msg ? <div style={{ ...st.ok, marginTop: 14 }}>{msg}</div> : null}
 

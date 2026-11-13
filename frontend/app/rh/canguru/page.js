@@ -12,7 +12,7 @@ import { apiFetch } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import { st, Campo, Select, Paginacao, perfilRh, ehOperacaoRh, fmtN, fmtDia, pct1, COR_RH } from "../../../components/RhUi";
 import { SituacaoPill, BarraDias, ChipsEtapas, Marca, OPCOES_SITUACAO } from "../../../components/CangaruUi";
-import { SeletorVisao, useVisaoCanguru, ehSupervisor } from "../../../components/CangaruVisao";
+import { SeletorVisao, useVisaoCanguru, ehSupervisor, FaixaVisao } from "../../../components/CangaruVisao";
 
 const LIMITE = 50;
 
@@ -59,6 +59,7 @@ export default function CangaruAcompanhamentoPage() {
       <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Acompanhamento dos novatos"
         subtitle={sup ? "Os 90 primeiros dias: avaliações dos supervisores (30, 60 e 85 dias), quem ainda não foi avaliado e quem pede ação." : "Os 90 primeiros dias: avaliações do 25º, 40º e 85º dia, o que está vencendo e quem pede ação."}
         actions={operacao ? <SeletorVisao visao={visao} onChange={(v) => { setVisao(v); setPagina(1); }} escuro /> : null} />
+      {operacao ? <FaixaVisao visao={visao} /> : null}
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
       {!d && !erro ? <p style={{ marginTop: 16, color: colors.textMuted }}>Carregando…</p> : null}
 

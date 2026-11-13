@@ -56,7 +56,7 @@ export default function ImpressaoCangaruPage() {
         {!r && !erro ? <p>Montando o relatório…</p> : null}
         {r ? (
           <>
-            <h1 className="titulo">Projeto Canguru · Acompanhamento dos novatos{r.visao === "supervisor" ? " · Visão do supervisor" : ""}</h1>
+            <h1 className="titulo">Projeto Canguru · Acompanhamento dos novatos{r.visao === "supervisor" ? " · Visão do supervisor (avaliação do supervisor sobre o novato)" : " · Visão do operador (respostas do próprio novato)"}</h1>
             <p className="sub">{r.visao === "supervisor" ? "Avaliações dos supervisores aos 30, 60 e 85 dias" : "Avaliações de 30, 60 e 90 dias"} · Relatório para {r.publico_rotulo}{filtros ? ` · ${filtros}` : ""}</p>
             {r.visao === "supervisor" ? <CangaruRelatorioSupervisor r={r} /> : <CangaruRelatorio r={r} />}
           </>

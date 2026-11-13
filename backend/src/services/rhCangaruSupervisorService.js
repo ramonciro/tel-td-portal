@@ -135,6 +135,17 @@ async function carregarNovatos(empresaId) {
 }
 
 // ── Importação ────────────────────────────────────────────────────────
+// O arquivo do supervisor traz só o serviço (ex.: "INSS - GERAL"), e o serviço pertence a um site (ex.: ACM).
+// Para quem entra por "incluir novos", o site vem do que já está cadastrado no Canguru para o mesmo serviço (o mais frequente).
+const normServ = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+async function mapaSiteDosServicos(conn, empresaId) {
+  const [rows] = await conn.query(`SELECT servico, site, COUNT(*) n FROM rh_canguru_novatos WHERE empresa_id = ? AND servico IS NOT NULL AND site IS NOT NULL GROUP BY servico, site`, [empresaId]);
+  const melhor = new Map();
+  for (const r of rows) { const k = normServ(r.servico); const at = melhor.get(k); if (!at || Number(r.n) > at.n) melhor.set(k, { site: r.site, n: Number(r.n) }); }
+  return new Map([...melhor].map(([k, v]) => [k, v.site]));
+}
+const siteDoServico = (mapa, servico) => (mapa && servico ? mapa.get(normServ(servico)) || null : null);
+
 async function importarSupervisor({ empresaId, usuario, arquivos, simular, incluirNovos }) {
   if (!arquivos?.length) throw erroHttp(400, "Envie pelo menos uma planilha (.xlsx) de avaliação do supervisor (30, 60 ou 85 dias).");
   const cfg = await C.carregarConfig(empresaId);
@@ -199,10 +210,15 @@ async function importarSupervisor({ empresaId, usuario, arquivos, simular, inclu
   if (simular) return rel;
 
   await comTransacao(async (conn) => {
+    const mapaSite = await mapaSiteDosServicos(conn, empresaId);
     for (const x of aProcessar) {
       let novatoId;
       const ref = x.ents[0];
-      if (x.novato) novatoId = x.novato.id;
+      if (x.novato) {
+        novatoId = x.novato.id;
+        const st = siteDoServico(mapaSite, ref.servico_arquivo);
+        if (st) await conn.query(`UPDATE rh_canguru_novatos SET site = ? WHERE id = ? AND empresa_id = ? AND site IS NULL`, [st, novatoId, empresaId]);
+      }
       else {
         const r = await resolverPessoa({ empresaId, nome: ref.nome, matricula: ref.matricula || null, cliente: ref.servico_arquivo || null }, conn);
         const pessoa = r && r.pessoa;
@@ -214,7 +230,7 @@ async function importarSupervisor({ empresaId, usuario, arquivos, simular, inclu
           const adm = pAdm?.data_admissao ? C.dataIso(pAdm.data_admissao) : null;
           const [ins] = await conn.query(
             `INSERT INTO rh_canguru_novatos (empresa_id, pessoa_id, matricula, site, servico, funcao, supervisor, coordenador, data_admissao, admissao_origem) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-            [empresaId, pessoa.id, ref.matricula || null, null, ref.servico_arquivo, null, ref.supervisor_nome, null, adm, adm ? "cadastro" : null]);
+            [empresaId, pessoa.id, ref.matricula || null, siteDoServico(mapaSite, ref.servico_arquivo), ref.servico_arquivo, null, ref.supervisor_nome, null, adm, adm ? "cadastro" : null]);
           novatoId = ins.insertId;
         }
         rel.novatos.incluidos += 1;
