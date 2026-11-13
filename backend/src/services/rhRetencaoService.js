@@ -65,7 +65,7 @@ function paraCompetencia(v) {
 function lerPlanilha(buffer, nomeArquivo, achar, exigidas, mensagem) {
   const XLSX = require("xlsx");
   let wb;
-  try { wb = XLSX.read(buffer, { type: "buffer", cellDates: false }); } catch (_) { throw erroHttp(400, `Não consegui abrir “${nomeArquivo}”. Envie uma planilha .xlsx (ou .csv).`); }
+  try { wb = XLSX.read(buffer, { type: "buffer", cellDates: false, raw: true }); } catch (_) { throw erroHttp(400, `Não consegui abrir “${nomeArquivo}”. Envie uma planilha .xlsx (ou .csv).`); }
   for (const nome of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[nome], { defval: null, raw: true });
     if (!rows.length) continue;
@@ -82,8 +82,12 @@ const simNao = (v) => { const t = chave(v); if (!t) return null; if (/^(s|sim|ye
 function tipoDe(v) {
   const t = chave(v);
   if (!t) return "nao_informado";
-  if (/invol|sem justa|com justa|justa causa|dispens|iniciativa da empresa|demitid|empresa/.test(t)) return "involuntario";
-  if (/volunt|pedido|iniciativa do|a pedido/.test(t)) return "voluntario";
+  // Código do folha: "Inic.Empregado ..." = a pessoa pediu para sair; "Inic.Empregador ..." = a empresa decidiu (testar antes do resto, porque ambos trazem "justa causa")
+  if (/inic\.? ?empregador|iniciativa (da )?empresa|iniciativa (do )?empregador/.test(t)) return "involuntario";
+  if (/inic\.? ?empregado|iniciativa (do )?(empregado|colaborador|funcionario)/.test(t)) return "voluntario";
+  if (/termino de contrato|comum acordo|transferencia|falecimento|outros casos/.test(t)) return "outro";
+  if (/invol|sem justa|com justa|justa causa|dispens|demitid|empresa/.test(t)) return "involuntario";
+  if (/volunt|pedido|a pedido/.test(t)) return "voluntario";
   return "outro";
 }
 
@@ -119,7 +123,7 @@ async function importarDesligamentos({ empresaId, usuario, arquivo, simular }) {
   const [ex] = await pool.query(`SELECT id, matricula_chave, data_desligamento, nome, cargo, servico, site, coordenador, supervisor, data_admissao, tipo, motivo, recontratavel FROM rh_desligamentos WHERE empresa_id = ?`, [empresaId]);
   const existentes = new Map(ex.map((e) => [`${e.matricula_chave}|${dataIso(e.data_desligamento)}`, e]));
   const rel = { simulacao: !!simular, arquivo: arquivo.nome, linhas: { lidas: rows.length, vazias: 0, duplicadas: 0 }, resultado: { novas: 0, atualizadas: 0, iguais: 0, gravadas: 0 }, problemas: [], avisos: [], resumo: { voluntarios: 0, involuntarios: 0, outros: 0, nao_informado: 0, saida_precoce: 0, ligados_ao_canguru: 0 } };
-  const vistos = new Set(); const aplicar = [];
+  const vistos = new Set(); const aplicar = []; let admPosterior = 0;
   rows.forEach((r, i) => {
     const linha = i + 2;
     const matBruta = r[cols.mat]; const k = matriculaParaComparar(matBruta);
@@ -136,7 +140,7 @@ async function importarDesligamentos({ empresaId, usuario, arquivo, simular }) {
     if (vistos.has(id)) { rel.linhas.duplicadas += 1; return; }
     vistos.add(id);
     let adm = cols.adm ? paraDataIso(r[cols.adm]) : null;
-    if (adm && adm > dd) { rel.avisos.push(`Linha ${linha}: a admissão é depois do desligamento; a data de admissão foi ignorada.`); adm = null; }
+    if (adm && adm > dd) { admPosterior += 1; adm = null; }
     const tipo = cols.tipo ? tipoDe(r[cols.tipo]) : "nao_informado";
     const reg = { k, matricula: String(matBruta).trim().slice(0, 40), nome, cargo: cols.cargo ? txt(r[cols.cargo], 120) : null, servico: cols.servico ? txt(r[cols.servico]) : null, site: cols.site ? txt(r[cols.site]) : null,
       coord: cols.coord ? txt(r[cols.coord]) : null, sup: cols.sup ? txt(r[cols.sup]) : null, adm, dd, tipo, motivo: cols.motivo ? txt(r[cols.motivo]) : null, recont: cols.recontrata ? simNao(r[cols.recontrata]) : null, novato: novatos.get(k) || null };
@@ -151,19 +155,21 @@ async function importarDesligamentos({ empresaId, usuario, arquivo, simular }) {
     if (reg.novato) rel.resumo.ligados_ao_canguru += 1;
   });
   if (rel.problemas.length) rel.avisos.unshift(`${rel.problemas.length} linha(s) com problema não foram gravadas. Corrija na planilha e envie de novo (as demais já estão certas).`);
+  if (admPosterior) rel.avisos.push(`${admPosterior} linha(s) têm a admissão depois do desligamento (comum em recontratação com a mesma matrícula): a data de admissão dessas foi ignorada.`);
   if (!cols.tipo) rel.avisos.push("A planilha não tem coluna de tipo de desligamento (pedido de demissão x iniciativa da empresa): o turnover voluntário e o involuntário ficarão como “não informado”.");
   if (!cols.adm) rel.avisos.push("Sem a coluna de data de admissão não dá para calcular a saída precoce (até 90 dias de casa).");
   if (!cols.servico) rel.avisos.push("Sem a coluna de serviço o turnover não sai por serviço.");
   if (simular) return rel;
   await comTransacao(async (conn) => {
-    for (const g of aplicar) {
+    for (let i = 0; i < aplicar.length; i += 400) {
+      const lote = aplicar.slice(i, i + 400);
       await conn.query(
         `INSERT INTO rh_desligamentos (empresa_id, matricula, matricula_chave, nome, cargo, servico, site, coordenador, supervisor, data_admissao, data_desligamento, tipo, motivo, recontratavel, novato_id, importado_por)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         VALUES ?
          ON DUPLICATE KEY UPDATE matricula = VALUES(matricula), nome = VALUES(nome), cargo = VALUES(cargo), servico = VALUES(servico), site = VALUES(site), coordenador = VALUES(coordenador), supervisor = VALUES(supervisor),
            data_admissao = VALUES(data_admissao), tipo = VALUES(tipo), motivo = VALUES(motivo), recontratavel = VALUES(recontratavel), novato_id = VALUES(novato_id), importado_por = VALUES(importado_por)`,
-        [empresaId, g.matricula, g.k, g.nome, g.cargo, g.servico, g.site, g.coord, g.sup, g.adm, g.dd, g.tipo, g.motivo, g.recont, g.novato, usuario?.id ?? null]);
-      rel.resultado.gravadas += 1;
+        [lote.map((g) => [empresaId, g.matricula, g.k, g.nome, g.cargo, g.servico, g.site, g.coord, g.sup, g.adm, g.dd, g.tipo, g.motivo, g.recont, g.novato, usuario?.id ?? null])]);
+      rel.resultado.gravadas += lote.length;
     }
   });
   return rel;
@@ -208,9 +214,10 @@ async function importarQuadro({ empresaId, usuario, arquivo, simular }) {
   if (!cols.servico) rel.avisos.push("Sem a coluna de serviço, o quadro vale só para o turnover geral; o turnover por serviço fica sem percentual (aparece só a quantidade de saídas).");
   if (simular) return rel;
   await comTransacao(async (conn) => {
-    for (const g of aplicar) {
-      await conn.query(`INSERT INTO rh_quadro (empresa_id, competencia, servico, site, headcount, importado_por) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE headcount = VALUES(headcount), importado_por = VALUES(importado_por)`, [empresaId, g.comp, g.servico, g.site, g.hc, usuario?.id ?? null]);
-      rel.resultado.gravadas += 1;
+    for (let i = 0; i < aplicar.length; i += 500) {
+      const lote = aplicar.slice(i, i + 500);
+      await conn.query(`INSERT INTO rh_quadro (empresa_id, competencia, servico, site, headcount, importado_por) VALUES ? ON DUPLICATE KEY UPDATE headcount = VALUES(headcount), importado_por = VALUES(importado_por)`, [lote.map((g) => [empresaId, g.comp, g.servico, g.site, g.hc, usuario?.id ?? null])]);
+      rel.resultado.gravadas += lote.length;
     }
   });
   return rel;

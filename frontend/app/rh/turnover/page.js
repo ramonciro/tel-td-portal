@@ -8,6 +8,7 @@ import PortalShell from "../../../components/PortalShell";
 import PageHero from "../../../components/PageHero";
 import StatCard from "../../../components/StatCard";
 import RhImportador from "../../../components/RhImportador";
+import RhCadastralImportador from "../../../components/RhCadastralImportador";
 import { SerieMensal, Barra, Grade, Aviso, TabelaGrupo } from "../../../components/RhRetencaoUi";
 import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
@@ -154,6 +155,8 @@ export default function TurnoverPage() {
 
       {aba === "importar" && operacao ? (
         <>
+          <RhCadastralImportador onGravado={() => { carregar(); carregarOpcoes(); }} />
+          <p style={{ margin: "18px 0 0", fontSize: 12.5, color: colors.textMuted }}>Ou envie planilhas separadas (menores que 15 MB):</p>
           <RhImportador titulo="1. Desligamentos" modelo="desligamentos" modeloNome="modelo_desligamentos.xlsx" endpoint="/rh/turnover/desligamentos/importar" onGravado={() => { carregar(); carregarOpcoes(); }}
             ajuda="Uma linha por pessoa que saiu. Obrigatórias: Matrícula e Data do desligamento. Opcionais: nome, cargo, serviço, site, coordenador, supervisor, data de admissão, tipo (pedido de demissão ou iniciativa da empresa), motivo e se é recontratável. Importar de novo a mesma matrícula e data atualiza, não duplica."
             campos={(r) => [["Pedidos de demissão", r.resumo.voluntarios], ["Iniciativa da empresa", r.resumo.involuntarios], ["Saída precoce", r.resumo.saida_precoce], ["Ligados ao Canguru", r.resumo.ligados_ao_canguru]]} />

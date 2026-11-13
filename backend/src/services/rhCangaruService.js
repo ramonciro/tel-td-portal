@@ -407,7 +407,7 @@ async function importarAvaliacoes({ empresaId, usuario, arquivos, simular, decis
 function lerLinhasAdmissao(buffer, nomeArquivo) {
   const XLSX = require("xlsx");
   let wb;
-  try { wb = XLSX.read(buffer, { type: "buffer", cellDates: false }); } catch (_) { throw erroHttp(400, `Não consegui abrir “${nomeArquivo}”. Envie uma planilha .xlsx (ou .csv).`); }
+  try { wb = XLSX.read(buffer, { type: "buffer", cellDates: false, raw: true }); } catch (_) { throw erroHttp(400, `Não consegui abrir “${nomeArquivo}”. Envie uma planilha .xlsx (ou .csv).`); }
   for (const nome of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[nome], { defval: null, raw: true });
     if (!rows.length) continue;
