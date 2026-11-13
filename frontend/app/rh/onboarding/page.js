@@ -1,6 +1,6 @@
 "use client";
 
-// Onboarding dos novatos (13/11/2026): etapas combinadas (acessos, documentação, apresentação, treinamento, feedback...) com prazo contado da admissão.
+// Onboarding dos novatos (13/11/2026): o RH acompanha a conversa de boas-vindas (padrão); o coordenador pode incluir etapas próprias, com prazo contado da admissão.
 // A equipe do RH marca o que foi feito, em lote ou novato a novato; o coordenador ajusta as etapas. O gestor do RH vê só números de grupos com o mínimo de novatos.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -92,7 +92,7 @@ export default function OnboardingPage() {
 
   return (
     <PortalShell>
-      <PageHero eyebrow="Relações Humanas" title="Onboarding" subtitle={d?.periodo ? `Admissões de ${fmtDia(d.periodo.de)} a ${fmtDia(d.periodo.ate)}` : "Acompanhamento das primeiras etapas dos novatos"}
+      <PageHero eyebrow="Relações Humanas" title="Onboarding" subtitle={d?.periodo ? `Admissões de ${fmtDia(d.periodo.de)} a ${fmtDia(d.periodo.ate)}` : "Conversa de boas-vindas dos novatos"}
         actions={perfil === PERFIL_COORD ? <button type="button" style={st.btnGhost} onClick={() => setConfig(true)}>Etapas</button> : null} />
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
       {msg ? <div style={{ ...st.ok, marginTop: 14 }}>{msg}</div> : null}

@@ -2,7 +2,7 @@
  * rhOnboardingService.js — Acompanhamento do onboarding dos novatos (Pacote 8, 13/11/2026)
  *
  * A população é a do Canguru (rh_canguru_novatos, com data de admissão). O coordenador define as etapas (nome + prazo em dias a
- * partir da admissão); a equipe do RH marca cada etapa como feita (com a data), "não se aplica" ou deixa pendente.
+ * partir da admissão; o padrão é só a conversa de boas-vindas); a equipe do RH marca cada etapa como feita (com a data), "não se aplica" ou deixa pendente.
  * Etapa pendente cujo prazo já passou aparece como atrasada. gestor_rh vê só totais e percentuais de grupos com o mínimo de novatos.
  * CommonJS — nunca usar import/export.
  */
@@ -16,13 +16,15 @@ const arred1 = (v) => Math.round(v * 10) / 10;
 const pct = (a, b) => (b ? arred1((a / b) * 100) : null);
 const MAX_ETAPAS_ATIVAS = 20;
 const STATUS = ["feito", "na", "pendente"];
+// O RH só acompanha a conversa de boas-vindas. Acessos, documentação, apresentação à equipe, treinamento e feedback do supervisor
+// são de outras áreas e não entram no padrão (o coordenador ainda pode criar etapas próprias, se quiser).
 const ETAPAS_PADRAO = [
-  { nome: "Acessos e equipamentos entregues", prazo_dias: 1 },
-  { nome: "Documentação admissional completa", prazo_dias: 2 },
-  { nome: "Apresentação à equipe", prazo_dias: 2 },
   { nome: "Conversa de boas-vindas (1ª semana)", prazo_dias: 7 },
-  { nome: "Treinamento inicial concluído", prazo_dias: 15 },
-  { nome: "Feedback do supervisor", prazo_dias: 30 },
+];
+// Conjunto que o Pacote 8 semeava. Quem ainda está exatamente nele (ninguém mexeu) é enxugado para o padrão novo, uma única vez.
+const ETAPAS_ANTIGAS = [
+  ["Acessos e equipamentos entregues", 1], ["Documentação admissional completa", 2], ["Apresentação à equipe", 2],
+  ["Conversa de boas-vindas (1ª semana)", 7], ["Treinamento inicial concluído", 15], ["Feedback do supervisor", 30],
 ];
 
 const dataIso = (v) => (!v ? null : v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
@@ -31,9 +33,23 @@ const diasEntre = (a, b) => Math.round((Date.UTC(+b.slice(0, 4), +b.slice(5, 7) 
 const dataValida = (v) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ""))) return false; const d = new Date(`${v}T00:00:00Z`); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; };
 
 // ── Etapas ────────────────────────────────────────────────────────────
+// Empresa que recebeu as 6 etapas do Pacote 8 e não mexeu em nada (mesmos nomes e prazos, todas ativas): fica só a boas-vindas.
+// Etapa que já tem marcação não é apagada, só desativada (o histórico continua). Depois disso o conjunto deixa de ser o antigo e isto não roda mais.
+async function enxugarPadraoAntigo(empresaId) {
+  const [rows] = await pool.query(`SELECT id, nome, prazo_dias, ativa FROM rh_onboarding_etapas WHERE empresa_id = ?`, [empresaId]);
+  if (rows.length !== ETAPAS_ANTIGAS.length) return;
+  const casa = ETAPAS_ANTIGAS.every(([nome, prazo]) => rows.some((r) => r.nome === nome && Number(r.prazo_dias) === prazo && Number(r.ativa) === 1));
+  if (!casa) return;
+  for (const r of rows) {
+    if (r.nome === ETAPAS_PADRAO[0].nome) continue;
+    const [[{ m }]] = await pool.query(`SELECT COUNT(*) AS m FROM rh_onboarding_status WHERE empresa_id = ? AND etapa_id = ?`, [empresaId, r.id]);
+    if (Number(m) > 0) await pool.query(`UPDATE rh_onboarding_etapas SET ativa = 0 WHERE id = ? AND empresa_id = ?`, [r.id, empresaId]);
+    else await pool.query(`DELETE FROM rh_onboarding_etapas WHERE id = ? AND empresa_id = ?`, [r.id, empresaId]);
+  }
+}
 async function garantirEtapas(empresaId) {
   const [[{ n }]] = await pool.query(`SELECT COUNT(*) AS n FROM rh_onboarding_etapas WHERE empresa_id = ?`, [empresaId]);
-  if (Number(n) > 0) return;
+  if (Number(n) > 0) { await enxugarPadraoAntigo(empresaId); return; }
   let i = 1;
   for (const e of ETAPAS_PADRAO) await pool.query(`INSERT INTO rh_onboarding_etapas (empresa_id, nome, prazo_dias, ordem, ativa) VALUES (?,?,?,?,1)`, [empresaId, e.nome, e.prazo_dias, i++]);
 }

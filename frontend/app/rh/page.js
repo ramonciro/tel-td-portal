@@ -153,7 +153,7 @@ export default function PainelRhPage() {
       <div style={{ ...st.card, marginTop: 16 }}>
         <h3 style={st.cardTitle}>Retenção: turnover, pesquisa de desligamento e onboarding</h3>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
-          {[["/rh/turnover", "Turnover", "Saídas por mês, tempo de casa, motivos, serviço e site."], ["/rh/desligamento", "Pesquisa de desligamento", "Por que as pessoas saem: motivo, notas e comentários."], ["/rh/onboarding", "Onboarding", "Etapas dos primeiros dias dos novatos, com prazo e atraso."]].map(([href, nome, txt]) => (
+          {[["/rh/turnover", "Turnover", "Saídas por mês, tempo de casa, motivos, serviço e site."], ["/rh/desligamento", "Pesquisa de desligamento", "Por que as pessoas saem: motivo, notas e comentários."], ["/rh/onboarding", "Onboarding", "Conversa de boas-vindas dos novatos, com prazo e atraso."]].map(([href, nome, txt]) => (
             <div key={href} style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 14 }}>
               <strong>{nome}</strong>
               <p style={{ margin: "4px 0 8px", fontSize: 12.5, color: colors.textSecondary }}>{txt}</p>
