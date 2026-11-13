@@ -8,6 +8,7 @@ import PortalShell from "../../../components/PortalShell";
 import PageHero from "../../../components/PageHero";
 import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
+import RhLiberacoes from "../../../components/RhLiberacoes";
 import { st, Select, SeletorCiclo, useCiclos, RhRelatorio, perfilRh, ehOperacaoRh, COR_RH, fmtN } from "../../../components/RhUi";
 
 const SECOES = [
@@ -99,6 +100,8 @@ export default function RelatoriosRhPage() {
           </div>
         </div>
       ) : null}
+
+      {operacao && ciclos?.length && cicloId ? <RhLiberacoes cicloId={cicloId} cicloCliente={ciclo?.cliente} /> : null}
 
       {rel ? (
         <div style={{ ...st.card, marginTop: 16 }}>

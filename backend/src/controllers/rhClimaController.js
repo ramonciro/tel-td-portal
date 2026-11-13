@@ -11,6 +11,7 @@ const R = require("../lib/rhBase");
 const xl = require("../lib/excelExport");
 const S = require("../services/rhClimaService");
 const Canguru = require("../services/rhCangaruService");
+const Planos = require("../services/rhPlanosService");
 const { registrarAuditoria } = require("../services/auditoria");
 
 const auditar = (req, acao, entidade, id, resumo, antes, depois) =>
@@ -105,6 +106,65 @@ async function recortes(req, res) {
   }
 }
 
+// ── Comparativo entre dois ciclos ─────────────────────────────────────
+async function carregarPar(c, req, res) {
+  const lista = await S.listarCiclos(c.empresaId);
+  if (lista.length < 2) { R.erro(res, 400, "Para comparar, importe pelo menos duas pesquisas de clima."); return null; }
+  const num = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
+  const idB = num(req.query.b) || lista[0].id;
+  const idA = num(req.query.a) || (lista.find((x) => x.id !== idB) || {}).id;
+  if (idA === idB) { R.erro(res, 400, "Escolha duas pesquisas diferentes."); return null; }
+  const [a, b] = [await S.carregarCiclo(c.empresaId, idA), await S.carregarCiclo(c.empresaId, idB)];
+  if (!a || !b) { R.erro(res, 404, "Ciclo não encontrado"); return null; }
+  return { a, b, lista };
+}
+
+async function comparativo(req, res) {
+  const c = R.contexto(req, res); if (!c) return;
+  try {
+    const par = await carregarPar(c, req, res); if (!par) return;
+    const r = await S.comparar(c.empresaId, par.a, par.b, req.query.recorte ? String(req.query.recorte) : null, ehOperacao(c));
+    return res.json({ ok: true, ...r, ciclos: par.lista, recortes_disponiveis: S.tiposRecorte().filter((t) => !t.restrito || ehOperacao(c)) });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ ok: false, message: e.message, error: e.message });
+    console.error("[rh.clima.comparativo]", e);
+    return R.erro(res, 500, "Erro ao comparar as pesquisas");
+  }
+}
+
+async function exportarComparativo(req, res) {
+  const c = R.contexto(req, res); if (!c) return;
+  try {
+    const par = await carregarPar(c, req, res); if (!par) return;
+    const r = await S.comparar(c.empresaId, par.a, par.b, req.query.recorte ? String(req.query.recorte) : null, ehOperacao(c));
+    const T = { melhorou: "Melhorou", piorou: "Piorou", estavel: "Estável" };
+    const wb = xl.novoWorkbook();
+    xl.adicionarTabela(wb, { nomeAba: "Resumo", colunas: [{ titulo: "Item", chave: "k", largura: 34 }, { titulo: "Valor", chave: "v", largura: 100 }], linhas: [
+      { k: "Pesquisa anterior", v: `${r.a.nome}${r.a.cliente ? ` · ${r.a.cliente}` : ""}` }, { k: "Pesquisa atual", v: `${r.b.nome}${r.b.cliente ? ` · ${r.b.cliente}` : ""}` },
+      { k: "Respondentes (anterior → atual)", v: `${r.geral.a.n} → ${r.geral.b.n}` }, { k: "% positivo (anterior → atual)", v: `${r.geral.a.pos_pct} → ${r.geral.b.pos_pct} (${r.geral.delta_pos > 0 ? "+" : ""}${r.geral.delta_pos ?? "—"} p.p.)` },
+      { k: "% negativo (anterior → atual)", v: `${r.geral.a.neg_pct} → ${r.geral.b.neg_pct}` }, { k: "Nota média das áreas (anterior → atual)", v: `${r.geral.a.nota_media ?? "—"} → ${r.geral.b.nota_media ?? "—"}` },
+      { k: "Leitura", v: r.resumo }, { k: "Como ler", v: r.avisos.join(" ") }] });
+    const col = (a, b) => [{ titulo: a, chave: "n", largura: 46 }, ...b];
+    xl.adicionarTabela(wb, { nomeAba: "Por tema", colunas: col("Tema", [{ titulo: "% positivo anterior", chave: "a", formato: "decimal1", largura: 18 }, { titulo: "% positivo atual", chave: "b", formato: "decimal1", largura: 16 }, { titulo: "Variação (p.p.)", chave: "d", formato: "decimal1", largura: 15 }, { titulo: "Leitura", chave: "t", largura: 12 }, { titulo: "Farol anterior", chave: "fa", largura: 14 }, { titulo: "Farol atual", chave: "fb", largura: 12 }]),
+      linhas: r.temas.map((t) => ({ n: t.nome, a: num(t.a_pos), b: num(t.b_pos), d: num(t.delta), t: T[t.tendencia] || "", fa: t.a_farol || "", fb: t.b_farol || "" })) });
+    xl.adicionarTabela(wb, { nomeAba: "Por afirmação", colunas: [{ titulo: "Nº", chave: "i", largura: 6 }, ...col("Afirmação", [{ titulo: "% positivo anterior", chave: "a", formato: "decimal1", largura: 18 }, { titulo: "% positivo atual", chave: "b", formato: "decimal1", largura: 16 }, { titulo: "Variação (p.p.)", chave: "d", formato: "decimal1", largura: 15 }, { titulo: "Leitura", chave: "t", largura: 12 }])],
+      linhas: r.afirmacoes.map((q) => ({ i: q.numero, n: q.texto, a: num(q.a_pos), b: num(q.b_pos), d: num(q.delta), t: T[q.tendencia] || "" })) });
+    xl.adicionarTabela(wb, { nomeAba: "Notas das áreas", colunas: col("Área", [{ titulo: "Nota anterior", chave: "a", formato: "decimal1", largura: 14 }, { titulo: "Nota atual", chave: "b", formato: "decimal1", largura: 12 }, { titulo: "Variação", chave: "d", formato: "decimal1", largura: 12 }]),
+      linhas: r.notas.map((x) => ({ n: x.area, a: num(x.a_media), b: num(x.b_media), d: num(x.delta) })) });
+    if (r.recorte) xl.adicionarTabela(wb, { nomeAba: `Recorte`, colunas: col(r.recorte.nome, [{ titulo: "Pessoas (anterior)", chave: "na", largura: 18 }, { titulo: "Pessoas (atual)", chave: "nb", largura: 16 }, { titulo: "% positivo anterior", chave: "a", formato: "decimal1", largura: 18 }, { titulo: "% positivo atual", chave: "b", formato: "decimal1", largura: 16 }, { titulo: "Variação (p.p.)", chave: "d", formato: "decimal1", largura: 15 }, { titulo: "Leitura", chave: "t", largura: 12 }]),
+      linhas: r.recorte.grupos.map((g) => ({ n: g.rotulo, na: g.a_n ?? "", nb: g.b_n, a: num(g.a_pos), b: num(g.b_pos), d: num(g.delta), t: T[g.tendencia] || "" })) });
+    const buf = await wb.xlsx.writeBuffer();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="comparativo_clima_${R.hojeISO()}.xlsx"`);
+    auditar(req, "exportar", "rh_clima_comparativo", null, `Exportou o comparativo de clima (${r.a.nome} → ${r.b.nome})`, null, { a: r.a.id, b: r.b.id, recorte: req.query.recorte || null });
+    return res.send(Buffer.from(buf));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ ok: false, message: e.message, error: e.message });
+    console.error("[rh.clima.comparativo.exportar]", e);
+    return R.erro(res, 500, "Erro ao exportar o comparativo");
+  }
+}
+
 // ── Painel ────────────────────────────────────────────────────────────
 async function painel(req, res) {
   const c = R.contexto(req, res); if (!c) return;
@@ -125,7 +185,9 @@ async function painel(req, res) {
     }
     let canguru = { vazio: true };
     try { canguru = await Canguru.resumoPainel(c.empresaId, ehOperacao(c)); } catch (e2) { console.error("[rh.painel.canguru]", e2.message); }
-    return res.json({ ok: true, atual, historico: ciclos, canguru });
+    let planos = null;
+    try { planos = await Planos.resumoPainel(c.empresaId); } catch (e3) { console.error("[rh.painel.planos]", e3.message); }
+    return res.json({ ok: true, atual, historico: ciclos, canguru, planos });
   } catch (e) {
     console.error("[rh.painel]", e);
     return R.erro(res, 500, "Erro ao carregar o painel");
@@ -247,7 +309,11 @@ async function montarRelatorio(c, x, publico, secoes, recortesPedidos) {
     rel.afirmacoes = { melhores: v.slice(0, 5), piores: v.slice(-5).reverse(), todas: base.perguntas };
   }
   if (secoes.includes("notas")) rel.notas = base.notas;
-  if (secoes.includes("perfil")) rel.perfil = base.perfil;
+  if (secoes.includes("perfil")) {
+    rel.perfil = { ...base.perfil };
+    // Para o cliente não aparece cargo (mesma regra dos recortes: sem cargo nem coordenação).
+    if (publico === "cliente") { delete rel.perfil.cargo; delete rel.perfil.coordenacao; }
+  }
   if (secoes.includes("recortes")) {
     const tipos = (recortesPedidos.length ? recortesPedidos : def.recortes).filter((t) => def.recortes.includes(t));
     rel.recortes = [];
@@ -279,12 +345,8 @@ async function relatorio(req, res) {
   }
 }
 
-async function exportar(req, res) {
-  const c = R.contexto(req, res); if (!c) return;
-  try {
-    const x = await ciclo(c, req, res); if (!x) return;
-    const p = parametrosRelatorio(c, req, res); if (!p) return;
-    const rel = await montarRelatorio(c, x, p.publico, p.secoes, p.recortesPedidos);
+// Monta o Excel do relatório (usado pela tela do RH e pelo portal do cliente).
+async function excelDoRelatorio(x, rel) {
     const wb = xl.novoWorkbook();
     const FAROL = { verde: "Verde", amarelo: "Amarelo", vermelho: "Vermelho" };
     xl.adicionarTabela(wb, {
@@ -339,6 +401,16 @@ async function exportar(req, res) {
     }
     const buf = await wb.xlsx.writeBuffer();
     const slug = String(x.nome).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 60);
+    return { buf, slug };
+}
+
+async function exportar(req, res) {
+  const c = R.contexto(req, res); if (!c) return;
+  try {
+    const x = await ciclo(c, req, res); if (!x) return;
+    const p = parametrosRelatorio(c, req, res); if (!p) return;
+    const rel = await montarRelatorio(c, x, p.publico, p.secoes, p.recortesPedidos);
+    const { buf, slug } = await excelDoRelatorio(x, rel);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="clima_${slug}_${p.publico}_${R.hojeISO()}.xlsx"`);
     auditar(req, "exportar", "rh_clima_ciclo", x.id, `Exportou o relatório de clima "${x.nome}" para ${rel.publico_rotulo}`, null, { publico: p.publico, secoes: p.secoes });
@@ -349,4 +421,4 @@ async function exportar(req, res) {
   }
 }
 
-module.exports = { listar, importar, excluir, resultado, recortes, painel, obterConfig, salvarLimites, criarTema, editarTema, ligarAfirmacao, relatorio, exportar };
+module.exports = { montarRelatorio, excelDoRelatorio, PUBLICOS, SECOES, listar, importar, excluir, resultado, recortes, comparativo, exportarComparativo, painel, obterConfig, salvarLimites, criarTema, editarTema, ligarAfirmacao, relatorio, exportar };

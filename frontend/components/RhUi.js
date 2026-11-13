@@ -150,6 +150,7 @@ export function RhRelatorio({ r }) {
         <section className="rel-secao">
           <h2 style={tituloSecao}>Resultado por tema</h2>
           <LegendaPNN />
+          <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><th style={st.th}>Tema</th><th style={st.th}>Distribuição</th><th style={{ ...st.th, textAlign: "right" }}>Positivas</th><th style={st.th}>Farol</th></tr></thead>
             <tbody>
@@ -163,6 +164,7 @@ export function RhRelatorio({ r }) {
               ))}
             </tbody>
           </table>
+          </div>
           <p style={{ fontSize: 11.5, color: "#64748b", margin: "6px 0 0" }}>
             Farol: verde a partir de {r.limites.farol_verde_min}% de respostas positivas, amarelo a partir de {r.limites.farol_amarelo_min}%, vermelho abaixo.
           </p>
@@ -174,7 +176,7 @@ export function RhRelatorio({ r }) {
           {[["Mais bem avaliadas", r.afirmacoes.melhores], ["Menos bem avaliadas", r.afirmacoes.piores]].map(([titulo, itens]) => (
             <div key={titulo} className="rel-cartao" style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: "#475569", marginBottom: 4 }}>{titulo}</div>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <tbody>
                   {itens.map((p) => (
                     <tr key={p.numero}>
@@ -184,7 +186,7 @@ export function RhRelatorio({ r }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           ))}
         </section>
@@ -192,6 +194,7 @@ export function RhRelatorio({ r }) {
       {r.notas ? (
         <section className="rel-secao">
           <h2 style={tituloSecao}>Nota das áreas de apoio (0 a 10)</h2>
+          <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><th style={st.th}>Área</th><th style={{ ...st.th, textAlign: "right" }}>Nota média</th><th style={{ ...st.th, textAlign: "right" }}>Notas 9 e 10</th><th style={{ ...st.th, textAlign: "right" }}>Notas até 6</th></tr></thead>
             <tbody>
@@ -200,6 +203,7 @@ export function RhRelatorio({ r }) {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       ) : null}
       {r.perfil ? (

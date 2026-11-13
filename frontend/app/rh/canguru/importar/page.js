@@ -12,6 +12,7 @@ import { apiFetch } from "../../../../services/api";
 import { colors } from "../../../../lib/theme";
 import { st, perfilRh, ehOperacaoRh, fmtN, COR_RH } from "../../../../components/RhUi";
 import { Marca } from "../../../../components/CangaruUi";
+import CangaruAdmissoes from "../../../../components/CangaruAdmissoes";
 
 const TIPO_CONFLITO = {
   nome_diferente: "A matrícula existe, mas com outro nome",
@@ -29,6 +30,7 @@ export default function CangaruImportarPage() {
   const [msg, setMsg] = useState({ tipo: "", texto: "" });
   const [ocupado, setOcupado] = useState(false);
   const inputRef = useRef(null);
+  const [aba, setAba] = useState("avaliacoes");
 
   useEffect(() => { if (perfilRh() && !operacao) router.replace("/rh/canguru/resultado"); }, [operacao, router]);
 
@@ -73,6 +75,13 @@ export default function CangaruImportarPage() {
   return (
     <PortalShell>
       <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Importar avaliações" subtitle="Planilhas das avaliações de 30, 60 e 90 dias. O tipo de cada linha vem da coluna “Tipo de Pesquisa”." />
+      <div role="tablist" style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        {[["avaliacoes", "Avaliações 30, 60 e 90 dias"], ["admissoes", "Datas de admissão em lote"]].map(([k, rot]) => (
+          <button key={k} type="button" role="tab" aria-selected={aba === k} onClick={() => setAba(k)} style={{ ...st.btnGhost, ...(aba === k ? { background: COR_RH, color: "#fff", borderColor: COR_RH } : {}) }}>{rot}</button>
+        ))}
+      </div>
+      {aba === "admissoes" ? <CangaruAdmissoes onVoltar={() => setAba("avaliacoes")} /> : (
+      <>
       {msg.texto ? <div style={{ ...(msg.tipo === "ok" ? st.ok : st.erro), marginTop: 14 }}>{msg.texto}</div> : null}
 
       <div style={{ ...st.card, marginTop: 16 }}>
@@ -189,6 +198,8 @@ export default function CangaruImportarPage() {
           ) : null}
         </div>
       ) : null}
+      </>
+      )}
     </PortalShell>
   );
 }

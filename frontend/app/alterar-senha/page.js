@@ -59,6 +59,8 @@ export default function AlterarSenhaPage() {
           ? "/conteudo"
           : ["coordenador_rs", "gestor_rs"].includes(perfil)
           ? "/rs/rps"
+          : perfil === "cliente_rh"
+          ? "/rh/cliente"
           : ["coordenador_rh", "analista_rh", "gestor_rh"].includes(perfil)
           ? "/rh"
           : perfil === "gestor_nusp"

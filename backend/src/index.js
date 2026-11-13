@@ -684,6 +684,27 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
 
   validarEscopoPerfil(dados, req, ctx);
 
+  // Acesso do cliente ao RH (13/11/2026): o perfil cliente_rh enxerga resultados de pesquisa de uma empresa-cliente, por isso
+  // só o coordenador do RH (ou o super_admin) cria, edita ou exclui esse acesso, e ele sempre precisa de um cliente definido.
+  {
+    const perfilAlvoAntes = ctx.antes ? String(ctx.antes.perfil || "").toLowerCase() : "";
+    const perfilFinal = "perfil" in dados ? String(dados.perfil || "").toLowerCase() : perfilAlvoAntes;
+    const mexeEmClienteRh = perfilFinal === "cliente_rh" || perfilAlvoAntes === "cliente_rh";
+    if (mexeEmClienteRh) {
+      if (!atorEhSuperAdmin && perfilAtor !== "coordenador_rh") {
+        const erro = new Error("Só o coordenador do RH pode criar ou alterar o acesso de cliente.");
+        erro.status = 403;
+        throw erro;
+      }
+      const clienteFinal = "cliente" in dados ? dados.cliente : ctx.antes?.cliente;
+      if (perfilFinal === "cliente_rh" && !String(clienteFinal ?? "").trim()) {
+        const erro = new Error("Informe o cliente deste acesso. Sem cliente, o usuário não enxerga nenhuma pesquisa.");
+        erro.status = 400;
+        throw erro;
+      }
+    }
+  }
+
   if (ctx.operation === "update" && "empresa_id" in dados && !atorEhSuperAdmin) {
     // Só o super_admin pode mover um usuário entre empresas por esta rota.
     delete dados.empresa_id;
@@ -731,6 +752,12 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
  * passa por beforeWrite). Ver validarEscopoPerfil acima.
  */
 function bloquearExclusaoForaDoEscopo(antes, req) {
+  const perfilAtor = String(req.user?.perfil || "").toLowerCase();
+  if (String(antes?.perfil || "").toLowerCase() === "cliente_rh" && perfilAtor !== "coordenador_rh" && perfilAtor !== "super_admin") {
+    const erro = new Error("Só o coordenador do RH pode excluir o acesso de cliente.");
+    erro.status = 403;
+    throw erro;
+  }
   const escopo = escopoPerfilFor(req);
   if (!escopo) return;
   const perfilAlvo = String(antes?.perfil || "").toLowerCase();
@@ -765,6 +792,7 @@ const PERFIL_LABEL_EXPORT = {
   coordenador_rh: "Coordenador do RH",
   analista_rh: "Analista do RH",
   gestor_rh: "Gestor do RH",
+  cliente_rh: "Cliente (RH)",
   super_admin: "Super Admin",
 };
 
@@ -880,7 +908,7 @@ app.use(
       return { sql: `perfil IN (${escopo.map(() => "?").join(",")})`, params: escopo };
     },
     hideFields: ["senha"], // Fase 4 — hash da senha nunca sai na listagem
-    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs", "coordenador_nusp")],
+    listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs", "coordenador_nusp", "coordenador_rh")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh")],
     deleteMiddlewares: [authRequired, authorizeRoles("coordenador", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh")],
@@ -2805,6 +2833,8 @@ const { importarPlanilha: importarPlanilhaNusp } = require("./services/nuspImpor
 // Módulo RH (Pacote 1, 12/11/2026): perfis próprios (coordenador_rh, analista_rh, gestor_rh). Ver controllers/rh*.js.
 const rhClima = require("./controllers/rhClimaController");
 const rhCanguru = require("./controllers/rhCangaruController");
+const rhPlanos = require("./controllers/rhPlanosController");
+const rhCliente = require("./controllers/rhClienteController");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
 // Leitura: coordenador_rs + gestor_rs | Escrita: coordenador_rs apenas
@@ -2915,6 +2945,18 @@ const RH_COORD = ["coordenador_rh"];
 app.get   ("/api/rh/painel",                        authRequired, authorizeRoles(...RH_TODOS), rhClima.painel);
 app.get   ("/api/rh/clima/ciclos",                  authRequired, authorizeRoles(...RH_TODOS), rhClima.listar);
 app.post  ("/api/rh/clima/importar",                authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.single("arquivo")), rhClima.importar);
+app.get   ("/api/rh/clima/liberacoes",               authRequired, authorizeRoles(...RH_OPERA), rhCliente.listarLiberacoes);
+app.post  ("/api/rh/clima/liberacoes",               authRequired, authorizeRoles(...RH_COORD), rhCliente.liberar);
+app.delete("/api/rh/clima/liberacoes/:id",           authRequired, authorizeRoles(...RH_COORD), rhCliente.revogar);
+app.get   ("/api/rh/clientes",                       authRequired, authorizeRoles(...RH_OPERA), rhCliente.clientesConhecidos);
+// Portal do cliente (perfil cliente_rh): só leitura. A trava de "negar por padrão" para esse perfil está em middlewares/auth.js.
+app.get   ("/api/rh/cliente/eu",                     authRequired, authorizeRoles("cliente_rh"), rhCliente.eu);
+app.get   ("/api/rh/cliente/ciclos",                 authRequired, authorizeRoles("cliente_rh"), rhCliente.meusCiclos);
+app.get   ("/api/rh/cliente/ciclos/:id/relatorio",   authRequired, authorizeRoles("cliente_rh"), rhCliente.relatorio);
+app.get   ("/api/rh/cliente/ciclos/:id/exportar",    authRequired, authorizeRoles("cliente_rh"), rhCliente.exportar);
+app.get   ("/api/rh/cliente/ciclos/:id/planos",      authRequired, authorizeRoles("cliente_rh"), rhCliente.planos);
+app.get   ("/api/rh/clima/comparativo",              authRequired, authorizeRoles(...RH_TODOS), rhClima.comparativo);
+app.get   ("/api/rh/clima/comparativo/exportar",     authRequired, authorizeRoles(...RH_TODOS), rhClima.exportarComparativo);
 app.get   ("/api/rh/clima/ciclos/:id",              authRequired, authorizeRoles(...RH_TODOS), rhClima.resultado);
 app.get   ("/api/rh/clima/ciclos/:id/recortes",     authRequired, authorizeRoles(...RH_TODOS), rhClima.recortes);
 app.get   ("/api/rh/clima/ciclos/:id/relatorio",    authRequired, authorizeRoles(...RH_TODOS), rhClima.relatorio);
@@ -2928,6 +2970,15 @@ app.put   ("/api/rh/config/afirmacoes/:numero",     authRequired, authorizeRoles
 // ── Projeto Canguru (Pacotes 3 e 4, 12/11/2026) ──
 // Dado individual (acompanhamento, ficha, fila, pontos) só para coordenador_rh e analista_rh; gestor_rh vê o resultado agregado.
 app.post  ("/api/rh/canguru/importar",              authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 6)), rhCanguru.importar);
+app.post  ("/api/rh/canguru/admissoes",              authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 1)), rhCanguru.importarAdmissoes);
+app.get   ("/api/rh/canguru/admissoes/modelo",       authRequired, authorizeRoles(...RH_OPERA), rhCanguru.modeloAdmissoes);
+app.get   ("/api/rh/planos",                         authRequired, authorizeRoles(...RH_TODOS), rhPlanos.listar);
+app.get   ("/api/rh/planos/sugestoes",               authRequired, authorizeRoles(...RH_OPERA), rhPlanos.sugestoes);
+app.get   ("/api/rh/planos/exportar",                authRequired, authorizeRoles(...RH_TODOS), rhPlanos.exportar);
+app.get   ("/api/rh/planos/:id",                     authRequired, authorizeRoles(...RH_TODOS), rhPlanos.obter);
+app.post  ("/api/rh/planos",                         authRequired, authorizeRoles(...RH_OPERA), rhPlanos.criar);
+app.put   ("/api/rh/planos/:id",                     authRequired, authorizeRoles(...RH_OPERA), rhPlanos.atualizar);
+app.post  ("/api/rh/planos/:id/notas",               authRequired, authorizeRoles(...RH_OPERA), rhPlanos.anotar);
 app.get   ("/api/rh/canguru/acompanhamento",        authRequired, authorizeRoles(...RH_OPERA), rhCanguru.acompanhamento);
 app.get   ("/api/rh/canguru/novatos/:id",           authRequired, authorizeRoles(...RH_OPERA), rhCanguru.ficha);
 app.put   ("/api/rh/canguru/novatos/:id/admissao",  authRequired, authorizeRoles(...RH_OPERA), rhCanguru.admissao);

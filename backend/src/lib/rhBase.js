@@ -14,6 +14,7 @@ const N = require("./nuspBase");
 const PERFIL_COORD = "coordenador_rh";
 const PERFIL_ANALISTA = "analista_rh";
 const PERFIL_GESTOR = "gestor_rh";
+const PERFIL_CLIENTE = "cliente_rh"; // pessoa de fora (cliente): NÃO entra em PERFIS_RH, então nenhuma tela do RH interno a aceita
 const PERFIS_RH = [PERFIL_COORD, PERFIL_ANALISTA, PERFIL_GESTOR];
 const PERFIS_OPERACAO = [PERFIL_COORD, PERFIL_ANALISTA]; // importam, veem recorte por coordenação e dado nominal
 
@@ -90,6 +91,28 @@ function contextoCoord(req, res) {
   return c;
 }
 
+
+/** Contexto do cliente: só perfil cliente_rh, com empresa válida e pelo menos um cliente vinculado no cadastro (lido do banco, não do token). */
+async function contextoCliente(req, res) {
+  const perfil = String(req.user?.perfil || "").toLowerCase().trim();
+  const empresaId = Number(req.empresaId);
+  if (perfil !== PERFIL_CLIENTE || !Number.isInteger(empresaId) || empresaId <= 0) {
+    res.status(403).json({ ok: false, message: "Você não tem acesso ao portal do cliente." });
+    return null;
+  }
+  const [[u]] = await pool.query(`SELECT id, nome, perfil, cliente, ativo FROM usuarios WHERE id = ? AND empresa_id = ?`, [req.user?.id, empresaId]);
+  if (!u || String(u.perfil || "").toLowerCase() !== PERFIL_CLIENTE || (u.ativo !== null && Number(u.ativo) === 0)) {
+    res.status(403).json({ ok: false, message: "Você não tem acesso ao portal do cliente." });
+    return null;
+  }
+  const clientes = String(u.cliente || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!clientes.length) {
+    res.status(403).json({ ok: false, message: "Seu acesso ainda não está ligado a um cliente. Fale com o RH." });
+    return null;
+  }
+  return { empresaId, user: req.user, perfil, usuario: { id: u.id, nome: u.nome }, clientes, chaves: clientes.map((c) => N.chave(c)) };
+}
+
 const erro = (res, status, message, extra = {}) => res.status(status).json({ ok: false, error: message, message, ...extra });
 
 // ── Dados iniciais por empresa (preguiçoso e idempotente) ─────────────
@@ -149,6 +172,6 @@ async function registrarLeitura(req, empresaId, recurso, registroId = null, deta
 module.exports = {
   PERFIL_COORD, PERFIL_ANALISTA, PERFIL_GESTOR, PERFIS_RH, PERFIS_OPERACAO,
   CATEGORIAS, IDX_POS, IDX_NEU, IDX_NEG, LIMITES_PADRAO, MIN_RECORTE_MINIMO, TEMAS_PADRAO, PERGUNTAS_CURTAS, AREAS,
-  contexto, contextoOperacao, contextoCoord, erro, garantirBase, carregarConfig, registrarLeitura,
+  PERFIL_CLIENTE, contexto, contextoOperacao, contextoCoord, contextoCliente, erro, garantirBase, carregarConfig, registrarLeitura,
   chave: N.chave, dataISO: N.dataISO, texto: N.texto, hojeISO: N.hojeISO,
 };

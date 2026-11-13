@@ -5,7 +5,7 @@ import PortalShell from "../../components/PortalShell";
 import PageHero from "../../components/PageHero";
 import SectionCard from "../../components/SectionCard";
 import StatCard from "../../components/StatCard";
-import { apiFetch, apiDownload } from "../../services/api";
+import { apiFetch, apiDownload, getStoredUser } from "../../services/api";
 import { formatDateBR } from "../../lib/date";
 import { colors, chart } from "../../lib/theme";
 import { ContadorAnimado, BarraHorizontal } from "../../components/Charts";
@@ -272,6 +272,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!filtrosProntos) return;
+    // Perfis de outros módulos (RH, R&S, Núcleo, Metodologia) são mandados para a própria área pelo PortalShell.
+    // Reescrever a URL aqui desfazia esse redirect e deixava a tela em "Acesso restrito" (corrigido em 13/11/2026).
+    const u = getStoredUser();
+    if (u && /_(rh|rs|nusp)$|^metodologia$/.test(String(u.perfil || ""))) return;
     try {
       const q = new URLSearchParams();
       Object.entries(filters).forEach(([k, v]) => {

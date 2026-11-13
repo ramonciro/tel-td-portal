@@ -100,6 +100,25 @@ export default function PainelRhPage() {
         </>
       ) : null}
 
+      {d?.planos && d.planos.total ? (
+        <div style={{ ...st.card, marginTop: 16 }}>
+          <h3 style={st.cardTitle}>Planos de ação</h3>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", fontSize: 13.5 }}>
+            <span><strong style={{ fontSize: 20 }}>{fmtN(d.planos.abertos)}</strong> em aberto</span>
+            <span style={{ color: d.planos.atrasados ? colors.dangerText : colors.textSecondary, fontWeight: d.planos.atrasados ? 800 : 500 }}><strong style={{ fontSize: 20 }}>{fmtN(d.planos.atrasados)}</strong> {d.planos.atrasados === 1 ? "atrasado" : "atrasados"}</span>
+            <span><strong style={{ fontSize: 20 }}>{fmtN(d.planos.vencendo)}</strong> vencem em 7 dias</span>
+            <span><strong style={{ fontSize: 20 }}>{fmtN(d.planos.concluidos)}</strong> concluídos</span>
+            <Link href={d.planos.atrasados ? "/rh/planos?situacao=atrasado" : "/rh/planos"} style={{ color: "#9d174d", fontWeight: 800, fontSize: 12.5 }}>Abrir os planos →</Link>
+          </div>
+        </div>
+      ) : d && operacao ? (
+        <div style={{ ...st.card, marginTop: 16 }}>
+          <h3 style={st.cardTitle}>Planos de ação</h3>
+          <p style={{ margin: "0 0 8px", fontSize: 13, color: colors.textSecondary }}>Transforme os temas em vermelho e os sites em risco em ação com responsável e prazo.</p>
+          <Link href="/rh/planos" style={{ color: "#9d174d", fontWeight: 800, fontSize: 12.5 }}>Criar o primeiro plano →</Link>
+        </div>
+      ) : null}
+
       {d ? (
         <div style={{ ...st.card, marginTop: 16 }}>
           <h3 style={st.cardTitle}>Frentes do setor</h3>

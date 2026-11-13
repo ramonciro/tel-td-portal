@@ -369,6 +369,79 @@ async function recorte(empresaId, ciclo, tipo) {
     }),
   };
 }
+
+// ── Comparativo entre dois ciclos (13/11/2026) ────────────────────────
+// Os dois ciclos são calculados com os temas e afirmações ATUAIS do cadastro (a resposta de cada afirmação fica gravada por ciclo),
+// então a comparação é justa mesmo se o coordenador reorganizar os temas depois. Só agregado: nenhum dado individual.
+const LIMIAR_VARIACAO = 2; // pontos percentuais: abaixo disso a variação é tratada como "estável"
+const arred = (v) => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
+const delta = (a, b) => (a === null || a === undefined || b === null || b === undefined ? null : arred(b - a));
+const tendencia = (d) => (d === null ? null : d >= LIMIAR_VARIACAO ? "melhorou" : d <= -LIMIAR_VARIACAO ? "piorou" : "estavel");
+
+async function comparar(empresaId, cicloA, cicloB, tipoRecorte, incluirRestrito) {
+  const [A, B] = [await resultadoGeral(empresaId, cicloA), await resultadoGeral(empresaId, cicloB)];
+  if (!A || !B) throw erroHttp(404, "Um dos ciclos não tem resultado calculado.");
+  const temas = B.temas.map((tb) => {
+    const ta = A.temas.find((t) => t.id === tb.id) || null;
+    const d = delta(ta?.pos_pct, tb.pos_pct);
+    return { id: tb.id, nome: tb.nome, a_pos: arred(ta?.pos_pct), b_pos: arred(tb.pos_pct), delta: d, tendencia: tendencia(d), a_farol: ta?.farol || null, b_farol: tb.farol, a_neg: arred(ta?.neg_pct), b_neg: arred(tb.neg_pct), delta_neg: delta(ta?.neg_pct, tb.neg_pct) };
+  });
+  const afirmacoes = B.perguntas.map((pb) => {
+    const pa = A.perguntas.find((p) => p.numero === pb.numero);
+    const d = delta(pa?.pos_pct, pb.pos_pct);
+    return { numero: pb.numero, texto: pb.texto, tema_id: pb.tema_id, a_pos: arred(pa?.pos_pct), b_pos: arred(pb.pos_pct), delta: d, tendencia: tendencia(d) };
+  });
+  const notas = B.notas.map((nb, i) => ({ area: nb.area, a_media: arred(A.notas[i]?.media), b_media: arred(nb.media), delta: delta(A.notas[i]?.media, nb.media), a_n: A.notas[i]?.n || 0, b_n: nb.n }));
+  const geral = {
+    a: { n: A.n, pos_pct: arred(A.geral.pos_pct), neg_pct: arred(A.geral.neg_pct), neu_pct: arred(A.geral.neu_pct), nota_media: arred(A.nota_media), farol: A.geral.farol },
+    b: { n: B.n, pos_pct: arred(B.geral.pos_pct), neg_pct: arred(B.geral.neg_pct), neu_pct: arred(B.geral.neu_pct), nota_media: arred(B.nota_media), farol: B.geral.farol },
+    delta_pos: delta(A.geral.pos_pct, B.geral.pos_pct), delta_neg: delta(A.geral.neg_pct, B.geral.neg_pct), delta_nota: delta(A.nota_media, B.nota_media), delta_n: B.n - A.n,
+  };
+  geral.tendencia = tendencia(geral.delta_pos);
+  const comDelta = temas.filter((t) => t.delta !== null);
+  const destaques = {
+    melhoras: [...comDelta].filter((t) => t.delta >= LIMIAR_VARIACAO).sort((x, y) => y.delta - x.delta).slice(0, 3),
+    quedas: [...comDelta].filter((t) => t.delta <= -LIMIAR_VARIACAO).sort((x, y) => x.delta - y.delta).slice(0, 3),
+    saiu_do_vermelho: temas.filter((t) => t.a_farol === "vermelho" && t.b_farol !== "vermelho").map((t) => t.nome),
+    entrou_no_vermelho: temas.filter((t) => t.a_farol !== "vermelho" && t.a_farol !== null && t.b_farol === "vermelho").map((t) => t.nome),
+    afirmacoes_melhoras: [...afirmacoes].filter((x) => x.delta !== null && x.delta >= LIMIAR_VARIACAO).sort((x, y) => y.delta - x.delta).slice(0, 3),
+    afirmacoes_quedas: [...afirmacoes].filter((x) => x.delta !== null && x.delta <= -LIMIAR_VARIACAO).sort((x, y) => x.delta - y.delta).slice(0, 3),
+  };
+  const avisos = [];
+  if (cicloA.cliente !== cicloB.cliente) avisos.push("Os dois ciclos são de clientes diferentes. A comparação mostra a diferença, mas não é evolução do mesmo grupo.");
+  if (A.n && Math.abs(B.n - A.n) / A.n > 0.3) avisos.push(`O número de respondentes mudou bastante (${A.n.toLocaleString("pt-BR")} → ${B.n.toLocaleString("pt-BR")}). Leia a variação com cuidado: o grupo que respondeu não é o mesmo.`);
+  avisos.push(`Variações de menos de ${LIMIAR_VARIACAO} pontos percentuais são tratadas como estáveis.`);
+
+  let recorte = null;
+  if (tipoRecorte) {
+    const def = RECORTES.find((d) => d.tipo === tipoRecorte);
+    if (!def) throw erroHttp(400, "Recorte inválido.");
+    if (def.restrito && !incluirRestrito) throw erroHttp(403, "O recorte por coordenação é só da equipe do RH.");
+    const [ra, rb] = [await recorteDe(empresaId, cicloA, tipoRecorte), await recorteDe(empresaId, cicloB, tipoRecorte)];
+    const grupos = rb.grupos.filter((g) => !g.rotulo.startsWith("Demais")).map((gb) => {
+      const ga = ra.grupos.find((g) => g.rotulo === gb.rotulo) || null;
+      const d = delta(ga?.pos_pct, gb.pos_pct);
+      return { rotulo: gb.rotulo, a_n: ga?.n ?? null, b_n: gb.n, a_pos: arred(ga?.pos_pct), b_pos: arred(gb.pos_pct), delta: d, tendencia: tendencia(d), b_farol: gb.farol, a_farol: ga?.farol || null };
+    });
+    recorte = { tipo: tipoRecorte, nome: def.nome, grupos, so_em_um: { so_no_anterior: ra.grupos.filter((g) => !g.rotulo.startsWith("Demais") && !rb.grupos.some((x) => x.rotulo === g.rotulo)).map((g) => g.rotulo) }, minimo: B.limites.min_recorte };
+  }
+  return { limiar: LIMIAR_VARIACAO, a: cicloA, b: cicloB, geral, temas, afirmacoes, notas, destaques, avisos, recorte, limites: B.limites, resumo: resumoComparativo(geral, destaques, cicloA, cicloB) };
+}
+async function recorteDe(empresaId, ciclo, tipo) {
+  const r = await recorte(empresaId, ciclo, tipo);
+  return r;
+}
+function resumoComparativo(g, d, a, b) {
+  const p1 = (v) => `${String(Math.abs(v)).replace(".", ",")}`;
+  let s = `De “${a.nome}” para “${b.nome}”, a parcela de respostas positivas `;
+  s += g.delta_pos === null ? "não pôde ser comparada." : g.tendencia === "estavel" ? `ficou estável (${g.a.pos_pct}% → ${g.b.pos_pct}%).` : `${g.delta_pos > 0 ? "subiu" : "caiu"} ${p1(g.delta_pos)} ponto(s) percentual(is) (${g.a.pos_pct}% → ${g.b.pos_pct}%).`;
+  if (d.melhoras.length) s += ` Maiores avanços: ${d.melhoras.map((t) => `${t.nome} (+${p1(t.delta)})`).join(", ")}.`;
+  if (d.quedas.length) s += ` Maiores quedas: ${d.quedas.map((t) => `${t.nome} (−${p1(t.delta)})`).join(", ")}.`;
+  if (d.saiu_do_vermelho.length) s += ` Saíram do vermelho: ${d.saiu_do_vermelho.join(", ")}.`;
+  if (d.entrou_no_vermelho.length) s += ` Entraram no vermelho: ${d.entrou_no_vermelho.join(", ")}.`;
+  return s;
+}
+
 function tiposRecorte() { return RECORTES.map((d) => ({ tipo: d.tipo, nome: d.nome, restrito: !!d.restrito })); }
 
-module.exports = { importarClima, listarCiclos, carregarCiclo, resultadoGeral, recorte, tiposRecorte, calcular, resumoExecutivo, carregarBloco, faixaFarol, RECORTES, COLUNAS_PERFIL, PERFIL_TIPOS, arred1, n0 };
+module.exports = { importarClima, listarCiclos, carregarCiclo, resultadoGeral, recorte, comparar, LIMIAR_VARIACAO, tiposRecorte, calcular, resumoExecutivo, carregarBloco, faixaFarol, RECORTES, COLUNAS_PERFIL, PERFIL_TIPOS, arred1, n0 };

@@ -37,6 +37,32 @@ async function importar(req, res) {
   } catch (e) { return falha(res, e, "importar", "Erro ao importar as avaliações"); }
 }
 
+async function importarAdmissoes(req, res) {
+  const c = R.contextoOperacao(req, res); if (!c) return;
+  try {
+    const f = (req.files || [])[0];
+    const arquivo = f ? { buffer: f.buffer, nome: Buffer.from(f.originalname || "planilha.xlsx", "latin1").toString("utf8") } : null;
+    const simular = String(req.body?.simular ?? "1") !== "0";
+    const rel = await S.importarAdmissoes({ empresaId: c.empresaId, usuario: req.user, arquivo, simular });
+    if (!simular) auditar(req, "importar", "rh_canguru_admissoes", null, `Atualizou a data de admissão de ${rel.resultado.gravadas} novato(s) do Canguru por planilha`, null, { arquivo: rel.arquivo, resultado: rel.resultado, problemas: rel.problemas.length });
+    return res.json({ ok: true, ...rel });
+  } catch (e) { return falha(res, e, "admissoes", "Erro ao importar as admissões"); }
+}
+
+// Modelo de planilha já com os novatos que ainda estão sem data de admissão
+async function modeloAdmissoes(req, res) {
+  const c = R.contextoOperacao(req, res); if (!c) return;
+  try {
+    const lista = await S.modeloAdmissoes(c.empresaId);
+    const wb = xl.novoWorkbook();
+    xl.adicionarTabela(wb, { nomeAba: "Admissões", colunas: [{ titulo: "Matrícula", chave: "m", largura: 14 }, { titulo: "Nome", chave: "n", largura: 40 }, { titulo: "Data de admissão", chave: "d", largura: 18 }], linhas: lista.length ? lista.map((l) => ({ m: l.matricula || "", n: l.nome || "", d: "" })) : [{ m: "12345", n: "Exemplo (apague esta linha)", d: "" }] });
+    const buf = await wb.xlsx.writeBuffer();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="modelo_admissoes_canguru.xlsx"`);
+    return res.send(Buffer.from(buf));
+  } catch (e) { return falha(res, e, "modelo_admissoes", "Erro ao gerar o modelo"); }
+}
+
 // ── Acompanhamento, ficha e admissão (equipe do RH) ───────────────────
 async function acompanhamento(req, res) {
   const c = R.contextoOperacao(req, res); if (!c) return;
@@ -209,4 +235,4 @@ async function exportar(req, res) {
   } catch (e) { return falha(res, e, "exportar", "Erro ao exportar o relatório"); }
 }
 
-module.exports = { importar, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };
+module.exports = { importar, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };

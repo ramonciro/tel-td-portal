@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const { ehClienteRh, rotaPermitidaParaClienteRh } = require("../lib/clienteRh");
 
 // 1. Função auxiliar para buscar o Segredo de forma rigorosa
 const getSecret = () => {
@@ -110,6 +111,16 @@ async function authRequired(req, res, next) {
     // jwt.verify já verifica assinatura e expiração automaticamente
     const decoded = jwt.verify(token, secret);
     req.user = decoded;
+
+    // Acesso do cliente ao RH (13/11/2026): negar por padrão. O perfil "cliente_rh" só passa nas rotas do próprio portal
+    // (ver lib/clienteRh.js); em qualquer outra, mesmo as que só exigem "estar logado", a resposta é 403.
+    if (ehClienteRh(decoded?.perfil) && !rotaPermitidaParaClienteRh(req)) {
+      return res.status(403).json({
+        ok: false,
+        codigo: "ACESSO_CLIENTE_RESTRITO",
+        message: "Seu acesso é só às pesquisas liberadas para o seu cliente.",
+      });
+    }
 
     const estado = await estadoDaConta(decoded?.id);
     if (estado.inativa) {

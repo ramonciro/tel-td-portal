@@ -401,6 +401,104 @@ async function importarAvaliacoes({ empresaId, usuario, arquivos, simular, decis
   return rel;
 }
 
+// ── Admissões em lote (13/11/2026) ────────────────────────────────────
+// Planilha com Matrícula + Data de admissão (Nome é opcional, só ajuda a conferir). Atualiza só novatos que já estão no Canguru.
+// Data lançada aqui vale como “informada pelo RH” (admissao_origem = manual), então não é trocada pelo cadastro depois.
+function lerLinhasAdmissao(buffer, nomeArquivo) {
+  const XLSX = require("xlsx");
+  let wb;
+  try { wb = XLSX.read(buffer, { type: "buffer", cellDates: false }); } catch (_) { throw erroHttp(400, `Não consegui abrir “${nomeArquivo}”. Envie uma planilha .xlsx (ou .csv).`); }
+  for (const nome of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[nome], { defval: null, raw: true });
+    if (!rows.length) continue;
+    const cab = Object.keys(rows[0]);
+    const mat = cab.find((h) => chave(h) === "matricula");
+    const adm = cab.find((h) => /^(data )?(de )?admissao$|^dt admissao$|^data admissao$/.test(chave(h)) || chave(h).startsWith("data de admissao") || chave(h) === "admissao");
+    const nm = cab.find((h) => chave(h) === "nome");
+    if (mat && adm) return { rows, mat, adm, nm };
+  }
+  throw erroHttp(400, `“${nomeArquivo}” precisa ter as colunas “Matrícula” e “Data de admissão”. Baixe o modelo na própria tela.`);
+}
+
+function dataEstrita(v) {
+  // paraData aceita 31/31/2026 (o JavaScript "rola" o mês); para admissão, dia e mês precisam existir de verdade.
+  const d = paraData(v);
+  if (!d) return null;
+  if (typeof v === "string") {
+    const m = v.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/) || v.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      const [a, b, c] = v.trim().includes("/") ? [+m[3], +m[2], +m[1]] : [+m[1], +m[2], +m[3]];
+      if (d.getUTCFullYear() !== a || d.getUTCMonth() + 1 !== b || d.getUTCDate() !== c) return null;
+    }
+  }
+  return d;
+}
+
+async function importarAdmissoes({ empresaId, usuario, arquivo, simular }) {
+  if (!arquivo) throw erroHttp(400, "Envie a planilha (.xlsx) com matrícula e data de admissão.");
+  const { rows, mat, adm, nm } = lerLinhasAdmissao(arquivo.buffer, arquivo.nome);
+  const hoje = R.hojeISO();
+  const [novatos] = await pool.query(
+    `SELECT n.id, n.pessoa_id, n.matricula, n.data_admissao, n.admissao_origem, p.nome, p.matricula AS mat_pessoa
+       FROM rh_canguru_novatos n LEFT JOIN pessoas p ON p.id = n.pessoa_id AND p.empresa_id = n.empresa_id WHERE n.empresa_id = ?`, [empresaId]);
+  const porMat = new Map();
+  for (const n of novatos) for (const m of [n.matricula, n.mat_pessoa]) { const k = matriculaParaComparar(m); if (k && !porMat.has(k)) porMat.set(k, n); }
+
+  const rel = {
+    simulacao: !!simular, arquivo: arquivo.nome,
+    linhas: { lidas: rows.length, vazias: 0, duplicadas: 0 },
+    resultado: { novas: 0, alteradas: 0, iguais: 0, gravadas: 0 },
+    problemas: [], alteracoes: [], avisos: [],
+  };
+  const vistos = new Map(); const aplicar = [];
+  rows.forEach((r, i) => {
+    const linha = i + 2; // linha na planilha (cabeçalho = 1)
+    const matBruta = r[mat]; const k = matriculaParaComparar(matBruta);
+    const nomePlan = nm ? String(r[nm] ?? "").trim() : "";
+    if (!k && (r[adm] === null || String(r[adm]).trim() === "")) { rel.linhas.vazias += 1; return; }
+    const prob = (motivo) => rel.problemas.push({ linha, matricula: matBruta ? String(matBruta) : null, nome: nomePlan || null, motivo });
+    if (!k) return prob("Sem matrícula");
+    const n = porMat.get(k);
+    if (!n) return prob("Matrícula não encontrada entre os novatos do Canguru");
+    const d = dataEstrita(r[adm]);
+    if (!d) return prob("Data de admissão inválida (use dia/mês/ano)");
+    const iso = d.toISOString().slice(0, 10);
+    if (iso > hoje) return prob("Data de admissão no futuro");
+    if (iso < "2000-01-01") return prob("Data de admissão muito antiga (confira o ano)");
+    if (vistos.has(n.id)) {
+      rel.linhas.duplicadas += 1;
+      if (vistos.get(n.id) !== iso) prob(`Matrícula repetida na planilha com data diferente (valeu a primeira: ${vistos.get(n.id).split("-").reverse().join("/")})`);
+      return;
+    }
+    vistos.set(n.id, iso);
+    const antes = dataIso(n.data_admissao);
+    if (nomePlan && n.nome && !nomesParecidos(n.nome, nomePlan)) rel.avisos.push(`Linha ${linha}: o nome da planilha (${nomePlan}) é diferente do cadastro (${n.nome}). Vale a matrícula; confira se é a pessoa certa.`);
+    if (antes === iso && n.admissao_origem === "manual") { rel.resultado.iguais += 1; return; }
+    if (antes === iso) { rel.resultado.iguais += 1; aplicar.push({ id: n.id, iso, soOrigem: true }); return; }
+    if (antes) { rel.resultado.alteradas += 1; rel.alteracoes.push({ linha, nome: n.nome, matricula: String(matBruta), antes, depois: iso }); }
+    else rel.resultado.novas += 1;
+    aplicar.push({ id: n.id, iso });
+  });
+  if (rel.problemas.length) rel.avisos.unshift(`${rel.problemas.length} linha(s) com problema não foram gravadas. Corrija na planilha e envie de novo (as demais já estão certas).`);
+  if (rel.resultado.alteradas) rel.avisos.push(`${rel.resultado.alteradas} novato(s) já tinham outra data de admissão; a da planilha vai substituir.`);
+  if (simular) return rel;
+
+  await comTransacao(async (conn) => {
+    for (const a of aplicar) {
+      await conn.query(`UPDATE rh_canguru_novatos SET data_admissao = ?, admissao_origem = 'manual' WHERE id = ? AND empresa_id = ?`, [a.iso, a.id, empresaId]);
+      if (!a.soOrigem) rel.resultado.gravadas += 1;
+    }
+  });
+  return rel;
+}
+
+async function modeloAdmissoes(empresaId) {
+  const [rows] = await pool.query(
+    `SELECT n.matricula, p.nome FROM rh_canguru_novatos n LEFT JOIN pessoas p ON p.id = n.pessoa_id AND p.empresa_id = n.empresa_id
+      WHERE n.empresa_id = ? AND n.data_admissao IS NULL ORDER BY p.nome LIMIT 2000`, [empresaId]);
+  return rows;
+}
+
 // ── Cálculo de etapas e situação ──────────────────────────────────────
 const diasEntre = (a, b) => Math.round((Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10)) - Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10))) / 86400000);
 const somaDias = (iso, n) => new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n)).toISOString().slice(0, 10);
@@ -741,6 +839,6 @@ async function listaNominal(empresaId) {
 }
 
 module.exports = {
-  TIPOS, PASSOS, SINAIS_ROTULO, MIN_GRUPO_MINIMO, rotuloSite, carregarConfig, salvarConfig, importarAvaliacoes, acompanhamento, ficha, salvarAdmissao,
+  TIPOS, PASSOS, SINAIS_ROTULO, MIN_GRUPO_MINIMO, rotuloSite, carregarConfig, salvarConfig, importarAvaliacoes, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, salvarAdmissao,
   filaAtencao, listarPontos, equipe, abrirPonto, atualizarPonto, resultado, resumoPainel, listaNominal, etapasDe,
 };

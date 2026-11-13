@@ -64,6 +64,7 @@ const PERFIL_TOM = {
   coordenador_rh: "#be185d",
   analista_rh: "#db2777",
   gestor_rh: "#9333ea",
+  cliente_rh: "#0e7490",
 };
 function tomPerfil(perfil) {
   return PERFIL_TOM[String(perfil || "").toLowerCase()] || colors.neutral;
@@ -100,6 +101,7 @@ const PERFIL_LABEL = {
   coordenador_rh: "Coordenador do RH",
   analista_rh: "Analista do RH",
   gestor_rh: "Gestor do RH",
+  cliente_rh: "Cliente (RH)",
 };
 
 /* ── Opções fixas ── */
@@ -123,6 +125,7 @@ const PERFIL_OPTIONS = [
   { value: "coordenador_rh",   label: "Coordenador do RH"     },
   { value: "analista_rh",      label: "Analista do RH"        },
   { value: "gestor_rh",        label: "Gestor do RH"          },
+  { value: "cliente_rh",       label: "Cliente (RH): vê só as pesquisas liberadas" },
 ];
 
 // Fase 1 (padronização de gestão de usuários, 22/09/2026): espelho, só
@@ -136,7 +139,7 @@ const PERFIL_ESCOPOS_UI = {
   coordenador_rs: ["coordenador_rs", "gestor_rs"],
   metodologia: ["metodologia"],
   coordenador_nusp: ["coordenador_nusp", "analista_nusp", "gestor_nusp"],
-  coordenador_rh: ["coordenador_rh", "analista_rh", "gestor_rh"],
+  coordenador_rh: ["coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh"],
 };
 // Espelha deleteMiddlewares de /api/usuarios no backend: Supervisor edita mas
 // não exclui — antes o botão aparecia e o servidor respondia 403.
@@ -343,6 +346,8 @@ function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onF
         throw new Error(modo === "criar" ? "Nome, e-mail e perfil são obrigatórios." : "Nome e perfil são obrigatórios.");
       if (modo === "criar" && !form.senha)
         throw new Error("Senha é obrigatória para novos usuários.");
+      if (form.perfil === "cliente_rh" && normalizarClientes(form.cliente).length === 0)
+        throw new Error("Escolha o cliente deste acesso. Sem cliente, ele não vê nenhuma pesquisa.");
 
       const payload = {
         nome:    form.nome,
@@ -413,7 +418,7 @@ function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onF
             />
           </MField>
 
-          <MField label="Operações vinculadas" full>
+          <MField label={form.perfil === "cliente_rh" ? "Cliente que este acesso pode ver *" : "Operações vinculadas"} full>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
               {normalizarClientes(form.cliente).map((c) => (
                 <span key={c} style={chipRemovivel}>
@@ -618,7 +623,8 @@ export default function UsuariosPage() {
       setLoading(true); setErro("");
       const [usuariosData, clientesData, treinamentosData] = await Promise.all([
         apiFetch("/usuarios").catch(() => []),
-        apiFetch("/clientes").catch(() => []),
+        // O coordenador do RH não lê /clientes (é do módulo de treinamento): cai para a lista de clientes do RH.
+        apiFetch("/clientes").catch(() => apiFetch("/rh/clientes").then((r) => r?.clientes || []).catch(() => [])),
         apiFetch("/treinamentos").catch(() => []),
       ]);
 

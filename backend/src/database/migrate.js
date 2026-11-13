@@ -3925,6 +3925,63 @@ async function ensureRh() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_rh_cg_hist (ponto_id)
     ) ${T}`);
+  // ── Planos de ação do RH (Pacote 5, 13/11/2026) ─────────────────────
+  // Ação ligada a um tema do clima, a um site/serviço do Canguru ou livre. Nunca guarda dado individual (só tema, site, serviço, cliente).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_planos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      origem VARCHAR(12) NOT NULL DEFAULT 'livre',
+      ciclo_id INT NULL,
+      tema VARCHAR(150) NULL,
+      cliente VARCHAR(100) NULL,
+      titulo VARCHAR(160) NOT NULL,
+      acao TEXT NOT NULL,
+      responsavel_id INT NULL,
+      responsavel_nome VARCHAR(120) NULL,
+      prazo DATE NOT NULL,
+      prioridade VARCHAR(8) NOT NULL DEFAULT 'media',
+      status VARCHAR(12) NOT NULL DEFAULT 'aberto',
+      resultado TEXT NULL,
+      visivel_cliente TINYINT(1) NOT NULL DEFAULT 0,
+      criado_por INT NULL,
+      concluido_em DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_rh_planos (empresa_id, status, prazo),
+      INDEX idx_rh_planos_ciclo (empresa_id, ciclo_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_planos_hist (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      plano_id INT NOT NULL,
+      usuario_id INT NULL,
+      usuario_nome VARCHAR(150) NULL,
+      evento VARCHAR(20) NOT NULL,
+      de_valor VARCHAR(200) NULL,
+      para_valor VARCHAR(200) NULL,
+      nota TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_rh_planos_hist (plano_id)
+    ) ${T}`);
+  // ── Liberação de pesquisa de clima para o cliente (Pacote 5, 13/11/2026) ──
+  // O cliente (perfil cliente_rh) só vê o ciclo se houver liberação ativa para o cliente dele. Revogar não apaga: guarda quem e quando.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_clima_liberacoes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      ciclo_id INT NOT NULL,
+      cliente VARCHAR(100) NOT NULL,
+      cliente_chave VARCHAR(100) NOT NULL,
+      liberado_por INT NULL,
+      liberado_por_nome VARCHAR(150) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      revogado_em DATETIME NULL,
+      revogado_por_nome VARCHAR(150) NULL,
+      INDEX idx_rh_lib (empresa_id, ciclo_id, revogado_em),
+      INDEX idx_rh_lib_cli (empresa_id, cliente_chave, revogado_em)
+    ) ${T}`);
   console.log("  ↳ Módulo RH: ok");
 }
 

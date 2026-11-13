@@ -35,7 +35,7 @@ const PERFIL_ESCOPOS = {
   // os perfis do próprio módulo (coordenador, analista e gestor do Núcleo), nada de fora.
   coordenador_nusp: ["coordenador_nusp", "analista_nusp", "gestor_nusp"],
   // Módulo RH (12/11/2026): o coordenador do RH cria e gerencia os perfis do próprio módulo, nada de fora.
-  coordenador_rh: ["coordenador_rh", "analista_rh", "gestor_rh"],
+  coordenador_rh: ["coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh"],
 };
 
 /**

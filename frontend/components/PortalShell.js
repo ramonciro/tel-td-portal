@@ -112,13 +112,18 @@ const menuItems = [
   { href: "/rh/clima",          label: "Pesquisas de clima",    icon: "trending", roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/clima/resultado", label: "Resultado do ciclo",   icon: "target",   roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/clima/recortes", label: "Recortes",              icon: "compass",  roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/clima/comparativo", label: "Comparar pesquisas", icon: "trending", roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/relatorios",     label: "Relatórios",            icon: "file",     roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/planos",         label: "Planos de ação",        icon: "target",   roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/apresentacao",   label: "Apresentação",          icon: "file",     roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   // Projeto Canguru (12/11/2026): acompanhamento dos novatos até os 90 dias. O gestor só abre o resultado agregado.
   { href: "/rh/canguru",          label: "Canguru · Acompanhamento", icon: "users",    roles: ["coordenador_rh", "analista_rh"] },
   { href: "/rh/canguru/atencao",  label: "Canguru · Pontos de atenção", icon: "shield", roles: ["coordenador_rh", "analista_rh"] },
   { href: "/rh/canguru/resultado", label: "Canguru · Resultado",    icon: "award",    roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/canguru/importar", label: "Canguru · Importar avaliações", icon: "folder", roles: ["coordenador_rh", "analista_rh"] },
   { href: "/rh/configuracoes",  label: "Cadastros",             icon: "settings", roles: ["coordenador_rh"] },
+  // Acesso do cliente (13/11/2026): perfil cliente_rh, só leitura das pesquisas que o coordenador liberou para o cliente dele.
+  { href: "/rh/cliente",        label: "Minhas pesquisas",      icon: "chart",    roles: ["cliente_rh"] },
   // Módulo Metodologia e Desenvolvimento (16/09/2026) — Mapa de
   // Desenvolvimento e Trilhas fundidos num módulo à parte, fora do escopo de
   // Treinamento, com perfil dedicado ("metodologia"), mesmo padrão do R&S
@@ -199,7 +204,7 @@ const LOGO_PADRAO = "/logo-td.png";
 // Módulo do Núcleo de Saúde Psicossocial: marca própria (provisoriamente a do Diver+ Tel, até chegar a do Núcleo).
 const LOGO_NUCLEO = "/logo-nucleo.png";
 const LOGO_RH = "/logo-rh.png";
-const PERFIS_RH = ["coordenador_rh", "analista_rh", "gestor_rh"];
+const PERFIS_RH = ["coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh"];
 
 function hexParaRgba(hex, alpha) {
   const limpo = String(hex || "").replace("#", "");
@@ -291,7 +296,13 @@ export default function PortalShell({
     // Módulo RH: mesmo padrão — quem tem perfil do RH só transita pelas telas do módulo.
     // coordenador_rh também abre "/usuarios" (cria analistas e gestores do RH; o recorte é no backend).
     const coordRhEmUsuarios = user.perfil === "coordenador_rh" && pathname.startsWith("/usuarios");
-    if (PERFIS_RH.includes(user.perfil) && !pathname.startsWith("/rh") && !coordRhEmUsuarios && pathname !== "/alterar-senha" && pathname !== "/primeiro-acesso") {
+    // Cliente do RH: só a área "/rh/cliente" (o backend também barra qualquer outra rota para esse perfil).
+    if (user.perfil === "cliente_rh") {
+      if (!pathname.startsWith("/rh/cliente") && pathname !== "/alterar-senha" && pathname !== "/primeiro-acesso") {
+        router.replace("/rh/cliente");
+        return;
+      }
+    } else if (PERFIS_RH.includes(user.perfil) && !pathname.startsWith("/rh") && !coordRhEmUsuarios && pathname !== "/alterar-senha" && pathname !== "/primeiro-acesso") {
       router.replace("/rh");
       return;
     }
