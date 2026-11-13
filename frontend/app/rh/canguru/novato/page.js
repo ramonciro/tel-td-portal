@@ -12,6 +12,7 @@ import { colors } from "../../../../lib/theme";
 import { st, Campo, perfilRh, ehOperacaoRh, fmtDia, COR_RH } from "../../../../components/RhUi";
 import { SituacaoPill, BarraDias, ChipsEtapas, Marca, Pilula, fmtDataHora } from "../../../../components/CangaruUi";
 import { AbrirPontoForm, PontoCard } from "../../../../components/CangaruPonto";
+import { useVisaoCanguru, SeletorVisao, ehSupervisor } from "../../../../components/CangaruVisao";
 
 const enviar = (url, metodo, corpo) => apiFetch(url, { method: metodo, headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
 
@@ -30,9 +31,45 @@ function Linha({ rotulo, children }) {
 }
 const Texto = ({ children }) => (children ? <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: 4, padding: "6px 8px", background: "#f8fafc", borderRadius: 8 }}>{children}</div> : null);
 
+function CartaoSupervisor({ a, rotulos }) {
+  const det = a.detalhes || [];
+  return (
+    <div style={{ ...st.card, borderColor: a.zerada || a.sinais > 0 ? "#fca5a5" : colors.border }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 15 }}>{a.tipo === 90 ? 85 : a.tipo} dias</strong>
+        <span style={{ fontSize: 12, color: colors.textMuted }}>Respondida em {fmtDataHora(a.respondida_em)}</span>
+      </div>
+      <div style={{ fontSize: 12.5, color: colors.textSecondary, marginBottom: 6 }}>Avaliador(a): {a.supervisor_nome || "—"}</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+        {a.zerada ? <Marca tom="perigo">Notas zeradas (fora da média)</Marca>
+          : a.sinais > 0 ? <Marca tom="perigo">{a.sinais} {a.sinais === 1 ? "requisito com nota baixa" : "requisitos com nota baixa"}: {(a.sinais_lista || []).map((x) => rotulos[x] || x).join(", ")}</Marca>
+          : <Marca tom="neutro">Sem nota baixa</Marca>}
+        {a.media !== null && a.media !== undefined ? <Marca tom="neutro">Média {Number(a.media).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Marca> : null}
+        {a.prioritario ? <Marca tom="perigo" titulo={a.prioritario_termos ? `Termos: ${a.prioritario_termos}` : undefined}>Risco de abandono</Marca> : null}
+      </div>
+      {Object.keys(rotulos).map((k) => {
+        const d = det.filter((x) => x.r === k);
+        return (
+          <Linha key={k} rotulo={rotulos[k]}>
+            <Nota valor={a.notas?.[k]} max={2} />
+            {d.map((x, i) => (
+              <div key={i}>
+                {x.c || x.o ? <div style={{ fontSize: 12.5, marginTop: 4 }}>{[x.c, x.o].filter(Boolean).join(" · ")}</div> : null}
+                <Texto>{x.t}</Texto>
+              </div>
+            ))}
+          </Linha>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function FichaNovatoPage() {
   const router = useRouter();
   const operacao = ehOperacaoRh(perfilRh());
+  const [visao, setVisao] = useVisaoCanguru();
+  const sup = ehSupervisor(visao);
   const [id, setId] = useState(null);
   const [d, setD] = useState(null);
   const [erro, setErro] = useState("");
@@ -59,7 +96,7 @@ export default function FichaNovatoPage() {
     catch (e) { setErro(e.message || "Não foi possível salvar a data."); }
   };
 
-  const n = d?.novato;
+  const n = sup ? (d?.novato_supervisor || d?.novato) : d?.novato;
   const rot = d?.rotulos_sinais || {};
   const aberto = (d?.pontos || []).find((p) => ["aberto", "em_andamento"].includes(p.status));
   const max = 90;
@@ -67,7 +104,8 @@ export default function FichaNovatoPage() {
   return (
     <PortalShell>
       <PageHero eyebrow="Relações Humanas · Projeto Canguru" title={n ? n.nome : "Ficha do novato"} subtitle={n ? `Matrícula ${n.matricula || "—"} · ${n.site_rotulo || "—"} · ${n.servico || "—"}` : "Avaliações e ponto de atenção"} />
-      <p style={{ marginTop: 12 }}><Link href="/rh/canguru" style={{ color: "#9d174d", fontWeight: 800, fontSize: 13 }}>← Voltar ao acompanhamento</Link></p>
+      <div style={{ marginTop: 12, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}><SeletorVisao visao={visao} onChange={setVisao} /></div>
+      <p style={{ marginTop: 12 }}><Link href={`/rh/canguru?visao=${visao}`} style={{ color: "#9d174d", fontWeight: 800, fontSize: 13 }}>← Voltar ao acompanhamento</Link></p>
       {erro ? <div style={st.erro}>{erro}</div> : null}
       {msg ? <div style={st.ok}>{msg}</div> : null}
       {!d && !erro ? <p style={{ color: colors.textMuted }}>Carregando…</p> : null}
@@ -77,7 +115,7 @@ export default function FichaNovatoPage() {
           <div style={{ ...st.card, marginTop: 8 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
               <SituacaoPill situacao={n.situacao} />
-              {n.prioritario ? <Marca tom="perigo">Prioritário</Marca> : null}
+              {n.prioritario ? <Marca tom="perigo">{sup ? "Risco de abandono" : "Prioritário"}</Marca> : null}
               {n.recorrente ? <Marca tom="aviso">Recorrente</Marca> : null}
               <span style={{ fontSize: 12.5, color: colors.textSecondary }}>{n.funcao || "—"} · supervisor(a) {n.supervisor || "—"} · coordenação {n.coordenador || "—"}</span>
             </div>
@@ -99,7 +137,17 @@ export default function FichaNovatoPage() {
             </div>
           </div>
 
-          <h3 style={{ margin: "20px 0 8px", fontSize: 15 }}>Avaliações</h3>
+          <h3 style={{ margin: "20px 0 8px", fontSize: 15 }}>{sup ? "Avaliações do supervisor" : "Avaliações"}</h3>
+          {sup ? (
+            <>
+              <p style={{ margin: "0 0 10px", fontSize: 12.5, color: colors.textSecondary }}>Notas de 0 a 5 que o supervisor deu a cada requisito. Os comentários são do avaliador; use só para acompanhar e conversar. Esta abertura ficou registrada no histórico de acessos do RH.</p>
+              {!d.avaliacoes_supervisor?.length ? <div style={{ ...st.card, ...{ color: colors.textMuted } }}>Nenhuma avaliação do supervisor importada ainda.</div> : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
+                  {d.avaliacoes_supervisor.map((a) => <CartaoSupervisor key={a.tipo} a={a} rotulos={d.requisitos || {}} />)}
+                </div>
+              )}
+            </>
+          ) : (<>
           <p style={{ margin: "0 0 10px", fontSize: 12.5, color: colors.textSecondary }}>Os textos abaixo são do próprio novato. Use só para acompanhar e conversar; esta abertura ficou registrada no histórico de acessos do RH.</p>
           {!d.avaliacoes.length ? <div style={{ ...st.card, ...{ color: colors.textMuted } }}>Nenhuma avaliação respondida ainda.</div> : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
@@ -123,6 +171,7 @@ export default function FichaNovatoPage() {
               ))}
             </div>
           )}
+          </>)}
 
           <h3 style={{ margin: "20px 0 8px", fontSize: 15 }}>Ponto de atenção</h3>
           <div style={{ display: "grid", gap: 12 }}>

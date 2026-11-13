@@ -12,6 +12,7 @@ import { apiFetch } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import { st, Campo, Select, Paginacao, perfilRh, ehOperacaoRh, fmtN, fmtDia, pct1, COR_RH } from "../../../components/RhUi";
 import { SituacaoPill, BarraDias, ChipsEtapas, Marca, OPCOES_SITUACAO } from "../../../components/CangaruUi";
+import { SeletorVisao, useVisaoCanguru, ehSupervisor } from "../../../components/CangaruVisao";
 
 const LIMITE = 50;
 
@@ -19,6 +20,8 @@ export default function CangaruAcompanhamentoPage() {
   const router = useRouter();
   const perfil = perfilRh();
   const operacao = ehOperacaoRh(perfil);
+  const [visao, setVisao, visaoPronta] = useVisaoCanguru();
+  const sup = ehSupervisor(visao);
   const [f, setF] = useState({ site: "", servico: "", situacao: "", busca: "" });
   const [buscaDigitada, setBuscaDigitada] = useState("");
   const [pagina, setPagina] = useState(1);
@@ -31,12 +34,12 @@ export default function CangaruAcompanhamentoPage() {
   useEffect(() => { if (perfil && !operacao) router.replace("/rh/canguru/resultado"); }, [perfil, operacao, router]);
 
   const carregar = useCallback(() => {
-    if (!operacao) return;
+    if (!operacao || !visaoPronta) return;
     setCarregando(true); setErro("");
-    const q = new URLSearchParams({ limite: String(LIMITE), deslocamento: String((pagina - 1) * LIMITE) });
+    const q = new URLSearchParams({ limite: String(LIMITE), deslocamento: String((pagina - 1) * LIMITE), visao });
     Object.entries(f).forEach(([k, v]) => { if (v) q.set(k, v); });
     apiFetch(`/rh/canguru/acompanhamento?${q.toString()}`).then(setD).catch((e) => setErro(e.message || "Não foi possível carregar o acompanhamento.")).finally(() => setCarregando(false));
-  }, [f, pagina, operacao]);
+  }, [f, pagina, operacao, visao, visaoPronta]);
   useEffect(() => { carregar(); }, [carregar]);
 
   // A busca por nome espera a pessoa parar de digitar.
@@ -53,14 +56,16 @@ export default function CangaruAcompanhamentoPage() {
 
   return (
     <PortalShell>
-      <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Acompanhamento dos novatos" subtitle="Os 90 primeiros dias: avaliações do 25º, 40º e 85º dia, o que está vencendo e quem pede ação." />
+      <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Acompanhamento dos novatos"
+        subtitle={sup ? "Os 90 primeiros dias: avaliações dos supervisores (30, 60 e 85 dias), quem ainda não foi avaliado e quem pede ação." : "Os 90 primeiros dias: avaliações do 25º, 40º e 85º dia, o que está vencendo e quem pede ação."}
+        actions={operacao ? <SeletorVisao visao={visao} onChange={(v) => { setVisao(v); setPagina(1); }} escuro /> : null} />
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
       {!d && !erro ? <p style={{ marginTop: 16, color: colors.textMuted }}>Carregando…</p> : null}
 
       {semDados ? (
         <div style={{ ...st.card, marginTop: 16, textAlign: "center", padding: 32 }}>
-          <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>Nenhuma avaliação do Canguru importada ainda</h3>
-          <p style={{ margin: "0 0 14px", color: colors.textSecondary, fontSize: 13.5 }}>Importe as planilhas das avaliações de 30, 60 e 90 dias para começar o acompanhamento.</p>
+          <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>{sup ? "Nenhuma avaliação de supervisor importada ainda" : "Nenhuma avaliação do Canguru importada ainda"}</h3>
+          <p style={{ margin: "0 0 14px", color: colors.textSecondary, fontSize: 13.5 }}>{sup ? "Importe as planilhas de avaliação do supervisor (30, 60 e 85 dias). Os novatos vêm das respostas do operador." : "Importe as planilhas das avaliações de 30, 60 e 90 dias para começar o acompanhamento."}</p>
           <Link href="/rh/canguru/importar" style={{ ...st.btn, display: "inline-flex", alignItems: "center", textDecoration: "none", background: COR_RH }}>Importar avaliações</Link>
         </div>
       ) : null}
@@ -69,10 +74,10 @@ export default function CangaruAcompanhamentoPage() {
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginTop: 16 }}>
             <StatCard title="Novatos acompanhados" value={fmtN(k.novatos)} subtitle={temFiltro ? "No filtro escolhido" : "Cargos da operação"} accent="#2563eb" />
-            <StatCard title="Avaliações vencendo" value={fmtN(k.etapas_vencendo)} subtitle="Perto do prazo e ainda sem resposta" accent="#f59e0b" />
-            <StatCard title="Sem resposta no prazo" value={fmtN(k.etapas_sem_resposta)} subtitle="Prazo passou e a avaliação não chegou" accent="#dc2626" />
+            <StatCard title="Avaliações vencendo" value={fmtN(k.etapas_vencendo)} subtitle={sup ? "Perto do prazo e sem avaliação do supervisor" : "Perto do prazo e ainda sem resposta"} accent="#f59e0b" />
+            <StatCard title={sup ? "Sem avaliação no prazo" : "Sem resposta no prazo"} value={fmtN(k.etapas_sem_resposta)} subtitle={sup ? "Prazo passou e o supervisor não avaliou" : "Prazo passou e a avaliação não chegou"} accent="#dc2626" />
             <StatCard title="Pontos de atenção" value={fmtN(k.pontos_de_atencao)} subtitle={`${fmtN(k.pontos_abertos)} já em tratamento`} accent="#be185d" />
-            <StatCard title="Respostas no prazo" value={pct1(k.respostas_no_prazo_pct)} subtitle="Das avaliações respondidas" accent="#16a34a" />
+            <StatCard title={sup ? "Avaliadas no prazo" : "Respostas no prazo"} value={pct1(k.respostas_no_prazo_pct)} subtitle={sup ? "Das avaliações do supervisor já feitas" : "Das avaliações respondidas"} accent="#16a34a" />
           </div>
 
           <div style={{ ...st.card, marginTop: 16 }}>
@@ -84,9 +89,9 @@ export default function CangaruAcompanhamentoPage() {
               {temFiltro ? <div style={{ alignSelf: "flex-end" }}><button type="button" style={st.btnGhost} onClick={() => { setF({ site: "", servico: "", situacao: "", busca: "" }); setBuscaDigitada(""); setPagina(1); }}>Limpar filtros</button></div> : null}
             </div>
             <p style={{ fontSize: 12, color: colors.textMuted, margin: "0 0 10px" }}>
-              Cada bolinha na barra é uma avaliação (dia {d.etapas.map((e) => e.dia).join(", ")}): verde respondida, amarela vencendo, vermelha sem resposta, cinza ainda por vir.
+              Cada bolinha na barra é uma avaliação {sup ? "do supervisor" : ""} (dia {d.etapas.map((e) => e.dia).join(", ")}): verde {sup ? "avaliada" : "respondida"}, amarela vencendo, vermelha sem {sup ? "avaliação" : "resposta"}, cinza ainda por vir.
               {d.cobranca_a_partir_de ? ` Só se cobra a resposta de quem foi admitido ou avaliado a partir de ${fmtDia(d.cobranca_a_partir_de)}.` : ""}
-              {" "}O novato entra aqui quando a primeira avaliação dele chega pela planilha.
+              {" "}{sup ? "A lista é a mesma do operador; quem ainda não tem avaliação do supervisor aparece como sem avaliação." : "O novato entra aqui quando a primeira avaliação dele chega pela planilha."}
             </p>
 
             <div style={{ overflowX: "auto", opacity: carregando ? 0.6 : 1 }}>
@@ -101,7 +106,7 @@ export default function CangaruAcompanhamentoPage() {
                         <Link href={`/rh/canguru/novato?id=${n.id}`} style={{ color: "#9d174d", fontWeight: 800, textDecoration: "none" }}>{n.nome}</Link>
                         <div style={{ fontSize: 11.5, color: colors.textMuted }}>Matrícula {n.matricula || "—"}</div>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 3 }}>
-                          {n.prioritario ? <Marca tom="perigo" titulo="Relato com termo de saúde ou segurança">Prioritário</Marca> : null}
+                          {n.prioritario ? <Marca tom="perigo" titulo={sup ? "Avaliação zerada ou com sinal de abandono" : "Relato com termo de saúde ou segurança"}>{sup ? "Risco de abandono" : "Prioritário"}</Marca> : null}
                           {n.recorrente ? <Marca tom="aviso" titulo="Sinal de atenção em duas ou mais avaliações">Recorrente</Marca> : null}
                           {n.ponto_aberto ? <Marca titulo="Já existe um ponto de atenção aberto">Em tratamento</Marca> : null}
                         </div>

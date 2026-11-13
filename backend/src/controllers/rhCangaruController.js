@@ -9,6 +9,7 @@
 const R = require("../lib/rhBase");
 const xl = require("../lib/excelExport");
 const S = require("../services/rhCangaruService");
+const SUP = require("../services/rhCangaruSupervisorService");
 const { registrarAuditoria } = require("../services/auditoria");
 
 const auditar = (req, acao, entidade, id, resumo, antes, depois) =>
@@ -35,6 +36,18 @@ async function importar(req, res) {
     }
     return res.json({ ok: true, ...rel });
   } catch (e) { return falha(res, e, "importar", "Erro ao importar as avaliações"); }
+}
+
+// Respostas do supervisor (Pacote 9): mesmo fluxo de simular e gravar, outro formato de planilha
+async function importarSupervisor(req, res) {
+  const c = R.contextoOperacao(req, res); if (!c) return;
+  try {
+    const arquivos = (req.files || []).map((f) => ({ buffer: f.buffer, nome: Buffer.from(f.originalname || "planilha.xlsx", "latin1").toString("utf8") }));
+    const simular = String(req.body?.simular ?? "1") !== "0";
+    const rel = await SUP.importarSupervisor({ empresaId: c.empresaId, usuario: req.user, arquivos, simular, incluirNovos: String(req.body?.incluir_novos) === "1" });
+    if (!simular) auditar(req, "importar", "rh_canguru_supervisor", null, `Importou ${rel.avaliacoes.importadas + rel.avaliacoes.atualizadas} avaliações de supervisor do Canguru (${rel.novatos.distintos} novatos)`, null, { arquivos: rel.arquivos, avaliacoes: rel.avaliacoes, novatos: rel.novatos });
+    return res.json({ ok: true, ...rel });
+  } catch (e) { return falha(res, e, "importar_supervisor", "Erro ao importar as avaliações do supervisor"); }
 }
 
 async function importarAdmissoes(req, res) {
@@ -96,7 +109,7 @@ async function atencao(req, res) {
   const c = R.contextoOperacao(req, res); if (!c) return;
   try {
     const q = req.query;
-    const r = await S.filaAtencao(c.empresaId, { site: q.site, servico: q.servico, busca: q.busca, ponto: q.ponto, so_prioritarios: q.so_prioritarios === "1", so_recorrentes: q.so_recorrentes === "1", limite: q.limite, deslocamento: q.deslocamento });
+    const r = await S.filaAtencao(c.empresaId, { site: q.site, servico: q.servico, busca: q.busca, ponto: q.ponto, so_prioritarios: q.so_prioritarios === "1", so_recorrentes: q.so_recorrentes === "1", visao: q.visao, limite: q.limite, deslocamento: q.deslocamento });
     await R.registrarLeitura(req, c.empresaId, "canguru_fila_atencao", null, "Abriu a fila de pontos de atenção");
     return res.json({ ok: true, ...r });
   } catch (e) { return falha(res, e, "atencao", "Erro ao carregar os pontos de atenção"); }
@@ -152,7 +165,7 @@ function filtros(q) { return { site: q.site || null, servico: q.servico || null,
 
 async function resultado(req, res) {
   const c = R.contexto(req, res); if (!c) return;
-  try { return res.json({ ok: true, ...(await S.resultado(c.empresaId, filtros(req.query), ehOperacao(c))) }); }
+  try { return res.json({ ok: true, ...(req.query.visao === "supervisor" ? await SUP.resultadoSupervisor(c.empresaId, filtros(req.query), ehOperacao(c)) : await S.resultado(c.empresaId, filtros(req.query), ehOperacao(c))) }); }
   catch (e) { return falha(res, e, "resultado", "Erro ao carregar o resultado"); }
 }
 
@@ -167,7 +180,7 @@ async function relatorio(req, res) {
   const c = R.contexto(req, res); if (!c) return;
   try {
     const publico = publicoDe(c, req, res); if (!publico) return;
-    const r = await S.resultado(c.empresaId, filtros(req.query), publico === "rh");
+    const r = req.query.visao === "supervisor" ? await SUP.resultadoSupervisor(c.empresaId, filtros(req.query), publico === "rh") : await S.resultado(c.empresaId, filtros(req.query), publico === "rh");
     return res.json({ ok: true, publico, publico_rotulo: PUBLICOS[publico], publicos: Object.entries(PUBLICOS).filter(([k]) => k !== "rh" || ehOperacao(c)).map(([valor, rotulo]) => ({ valor, rotulo })), ...r });
   } catch (e) { return falha(res, e, "relatorio", "Erro ao montar o relatório"); }
 }
@@ -229,10 +242,11 @@ async function exportar(req, res) {
   const c = R.contexto(req, res); if (!c) return;
   try {
     const publico = publicoDe(c, req, res); if (!publico) return;
-    const r = await S.resultado(c.empresaId, filtros(req.query), publico === "rh");
-    const lista = publico === "rh" ? await S.listaNominal(c.empresaId) : null;
-    if (publico === "rh") await R.registrarLeitura(req, c.empresaId, "canguru_exportacao_nominal", null, "Exportou a lista nominal de novatos");
-    const buf = await excelDoCanguru(r, publico, lista);
+    const sup = req.query.visao === "supervisor";
+    const r = sup ? await SUP.resultadoSupervisor(c.empresaId, filtros(req.query), publico === "rh") : await S.resultado(c.empresaId, filtros(req.query), publico === "rh");
+    const lista = publico === "rh" ? await S.listaNominal(c.empresaId, sup ? "supervisor" : "operador") : null;
+    if (publico === "rh") await R.registrarLeitura(req, c.empresaId, "canguru_exportacao_nominal", null, sup ? "Exportou a lista nominal de novatos (visão do supervisor)" : "Exportou a lista nominal de novatos");
+    const buf = sup ? await excelDoSupervisor(r, publico, lista) : await excelDoCanguru(r, publico, lista);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="canguru_${publico}_${R.hojeISO()}.xlsx"`);
     auditar(req, "exportar", "rh_canguru", null, `Exportou o relatório do Canguru para ${PUBLICOS[publico]}`, null, { publico, filtros: r.filtros_aplicados });
@@ -260,9 +274,11 @@ async function comparativo(req, res) {
   const c = R.contexto(req, res); if (!c) return;
   try {
     const p = periodos(req.query);
-    const r = await S.compararPeriodos(c.empresaId, { site: req.query.site || null, servico: req.query.servico || null }, p.a, p.b);
-    const op = await S.opcoesEscopo(c.empresaId);
-    return res.json({ ok: true, ...r, filtros: { sites: op.sites, servicos: op.servicos.map((x) => x.valor) } });
+    const sup = req.query.visao === "supervisor";
+    const base = { site: req.query.site || null, servico: req.query.servico || null };
+    const r = sup ? await SUP.compararSupervisor(c.empresaId, base, p.a, p.b) : await S.compararPeriodos(c.empresaId, base, p.a, p.b);
+    const op = sup ? await SUP.opcoesEscopoSupervisor(c.empresaId) : await S.opcoesEscopo(c.empresaId);
+    return res.json({ ok: true, ...r, filtros: { sites: op.sites, servicos: op.servicos.map((x) => (typeof x === "string" ? x : x.valor)) } });
   } catch (e) { return falha(res, e, "comparativo", "Erro ao comparar os períodos"); }
 }
 
@@ -287,8 +303,9 @@ async function exportarComparativo(req, res) {
   const c = R.contexto(req, res); if (!c) return;
   try {
     const p = periodos(req.query);
-    const r = await S.compararPeriodos(c.empresaId, { site: req.query.site || null, servico: req.query.servico || null }, p.a, p.b);
-    const buf = await excelDoComparativoCanguru(r);
+    const base = { site: req.query.site || null, servico: req.query.servico || null };
+    const r = req.query.visao === "supervisor" ? await SUP.compararSupervisor(c.empresaId, base, p.a, p.b) : await S.compararPeriodos(c.empresaId, base, p.a, p.b);
+    const buf = r.visao === "supervisor" ? await excelDoComparativoSupervisor(r) : await excelDoComparativoCanguru(r);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="canguru_comparativo_${R.hojeISO()}.xlsx"`);
     auditar(req, "exportar", "rh_canguru_comparativo", null, `Exportou o comparativo do Canguru (${r.periodo_a.de} a ${r.periodo_a.ate} → ${r.periodo_b.de} a ${r.periodo_b.ate})`, null, { a: r.periodo_a, b: r.periodo_b });
@@ -296,4 +313,60 @@ async function exportarComparativo(req, res) {
   } catch (e) { return falha(res, e, "comparativo.exportar", "Erro ao exportar o comparativo"); }
 }
 
-module.exports = { comparativo, exportarComparativo, periodos, somaDias, excelDoComparativoCanguru, excelDoCanguru, PUBLICOS, importar, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };
+// ── Excel da visão do supervisor (Pacote 9) ───────────────────────────
+async function excelDoSupervisor(r, publico, lista) {
+  const wb = xl.novoWorkbook();
+  const fa = r.filtros_aplicados; const REQ = SUP.REQ_ROTULO;
+  xl.adicionarTabela(wb, {
+    nomeAba: "Resumo", colunas: [{ titulo: "Item", chave: "item", largura: 36 }, { titulo: "Valor", chave: "valor", largura: 80 }],
+    linhas: [
+      { item: "Projeto", valor: "Canguru: avaliação do supervisor (30, 60 e 85 dias)" }, { item: "Relatório para", valor: PUBLICOS[publico] },
+      { item: "Filtros", valor: [fa.site ? `Site: ${S.rotuloSite(fa.site)}` : null, fa.servico ? `Serviço: ${fa.servico}` : null, fa.de ? `De: ${fa.de}` : null, fa.ate ? `Até: ${fa.ate}` : null].filter(Boolean).join(" · ") || "Todos" },
+      { item: "Novatos avaliados", valor: r.geral.novatos }, { item: "Avaliações", valor: r.geral.avaliacoes }, { item: "Nota média (0 a 5)", valor: r.geral.media ?? "—" },
+      { item: "Novatos com sinal de atenção", valor: `${r.geral.novatos_com_sinal} (${r.geral.novatos_com_sinal_pct ?? 0}%)` }, { item: "Com sinal em duas ou mais avaliações", valor: r.geral.recorrentes },
+      { item: "Com avaliação zerada (abandono ou falta)", valor: r.geral.zeradas },
+      ...(publico === "rh" ? [{ item: "Com relato prioritário", valor: r.geral.prioritarios }] : []),
+      { item: "Leitura", valor: r.leitura },
+      { item: "Como ler", valor: `Sinal de atenção = nota ${r.config.nota_sinal_max} ou menos em algum requisito. Avaliações com todas as notas zeradas ficam fora das médias. Grupos com menos de ${r.config.min_grupo} novatos não aparecem fora do RH.` },
+    ],
+  });
+  xl.adicionarTabela(wb, {
+    nomeAba: "Por avaliação",
+    colunas: [{ titulo: "Avaliação", chave: "e", largura: 22 }, { titulo: "Respostas", chave: "n", largura: 12 }, { titulo: "Nota média", chave: "m", formato: "decimal1", largura: 12 }, ...Object.keys(REQ).map((k) => ({ titulo: REQ[k], chave: k, formato: "decimal1", largura: 16 })), { titulo: "% com sinal", chave: "s", formato: "decimal1", largura: 12 }, { titulo: "Zeradas", chave: "z", largura: 10 }],
+    linhas: r.etapas.map((e) => ({ e: `Avaliação ${e.tipo === 90 ? 85 : e.tipo} dias`, n: e.respostas, m: num(e.media), ...Object.fromEntries(Object.keys(REQ).map((k) => [k, num(e.por_requisito[k])])), s: num(e.com_sinal_pct), z: e.zeradas })),
+  });
+  xl.adicionarTabela(wb, { nomeAba: "Por requisito", colunas: [{ titulo: "Requisito", chave: "r", largura: 30 }, { titulo: "Avaliações", chave: "n", largura: 12 }, { titulo: "Nota média", chave: "m", formato: "decimal1", largura: 12 }, { titulo: "% com nota baixa", chave: "b", formato: "decimal1", largura: 16 }], linhas: r.requisitos.map((x) => ({ r: x.rotulo, n: x.respostas, m: num(x.media), b: num(x.baixa_pct) })) });
+  xl.adicionarTabela(wb, { nomeAba: "Motivos", colunas: [{ titulo: "Motivo citado nas notas baixas", chave: "m", largura: 70 }, { titulo: "Avaliações", chave: "n", largura: 12 }, { titulo: "% das avaliações com motivo", chave: "p", formato: "decimal1", largura: 26 }], linhas: r.motivos.map((x) => ({ m: x.motivo, n: x.n, p: num(x.pct) })) });
+  const grupoCols = (titulo) => [{ titulo, chave: "g", largura: 36 }, { titulo: "Novatos", chave: "novatos", largura: 10 }, { titulo: "Avaliações", chave: "respostas", largura: 12 }, { titulo: "Nota média", chave: "media", formato: "decimal1", largura: 12 }, { titulo: "Com sinal", chave: "sinal", largura: 10 }, { titulo: "% com sinal", chave: "pct", formato: "decimal1", largura: 12 }, { titulo: "Risco", chave: "risco", largura: 12 }, { titulo: "Observação", chave: "obs", largura: 28 }];
+  const grupoLinhas = (g) => [...g.linhas, ...(g.demais ? [g.demais] : [])].map((x) => ({ g: x.rotulo, novatos: x.novatos, respostas: x.respostas, media: num(x.media), sinal: x.com_sinal, pct: num(x.com_sinal_pct), risco: RISCO[x.risco] || "—", obs: x.poucos ? `Menos de ${r.config.min_grupo} novatos` : "" }));
+  xl.adicionarTabela(wb, { nomeAba: "Por site", colunas: grupoCols("Site"), linhas: grupoLinhas(r.por_site) });
+  xl.adicionarTabela(wb, { nomeAba: "Por serviço", colunas: grupoCols("Serviço"), linhas: grupoLinhas(r.por_servico) });
+  if (publico === "rh" && r.por_supervisor) xl.adicionarTabela(wb, { nomeAba: "Por supervisor (só RH)", colunas: grupoCols("Supervisor"), linhas: grupoLinhas(r.por_supervisor) });
+  if (publico === "rh" && lista) {
+    xl.adicionarTabela(wb, {
+      nomeAba: "Novatos (só RH)",
+      colunas: [{ titulo: "Nome", chave: "nome", largura: 38 }, { titulo: "Matrícula", chave: "mat", largura: 12 }, { titulo: "Site", chave: "site", largura: 20 }, { titulo: "Serviço", chave: "servico", largura: 26 }, { titulo: "Admissão", chave: "adm", largura: 12 }, { titulo: "Dia", chave: "dia", largura: 8 }, { titulo: "Situação", chave: "sit", largura: 14 }, { titulo: "Avaliação 30 dias", chave: "e30", largura: 22 }, { titulo: "Avaliação 60 dias", chave: "e60", largura: 22 }, { titulo: "Avaliação 85 dias", chave: "e90", largura: 22 }, { titulo: "Sinais", chave: "sinais", largura: 8 }, { titulo: "Prioritário", chave: "prio", largura: 12 }],
+      linhas: lista.map((n) => { const e = (t) => { const x = n.etapas.find((y) => y.tipo === t); return x ? `${ETAPA_ST[x.status]}${x.sinais ? ` · ${x.sinais} sinal(is)` : ""}` : ""; }; return { nome: n.nome, mat: n.matricula, site: n.site_rotulo, servico: n.servico, adm: n.data_admissao, dia: n.dia, sit: SIT[n.situacao], e30: e(30), e60: e(60), e90: e(90), sinais: n.sinais_total, prio: n.prioritario ? "Sim" : "" }; }),
+    });
+  }
+  return wb.xlsx.writeBuffer();
+}
+
+async function excelDoComparativoSupervisor(r) {
+  const wb = xl.novoWorkbook();
+  const pa = `${r.periodo_a.de} a ${r.periodo_a.ate}`, pb = `${r.periodo_b.de} a ${r.periodo_b.ate}`;
+  xl.adicionarTabela(wb, { nomeAba: "Resumo", colunas: [{ titulo: "Item", chave: "k", largura: 34 }, { titulo: "Valor", chave: "v", largura: 100 }], linhas: [
+    { k: "Visão", v: "Supervisor" }, { k: "Período anterior", v: pa }, { k: "Período atual", v: pb },
+    { k: "Novatos (anterior → atual)", v: `${r.geral.a.novatos} → ${r.geral.b.novatos}` }, { k: "Nota média (anterior → atual)", v: `${r.geral.a.media ?? "—"} → ${r.geral.b.media ?? "—"}` },
+    { k: "Com sinal de atenção % (anterior → atual)", v: `${r.geral.a.com_sinal_pct ?? "—"} → ${r.geral.b.com_sinal_pct ?? "—"}` }, { k: "Leitura", v: r.resumo }, { k: "Como ler", v: r.avisos.join(" ") }] });
+  xl.adicionarTabela(wb, { nomeAba: "Por requisito", colunas: [{ titulo: "Requisito", chave: "r", largura: 30 }, { titulo: "Anterior", chave: "a", formato: "decimal1", largura: 12 }, { titulo: "Atual", chave: "b", formato: "decimal1", largura: 12 }, { titulo: "Variação", chave: "d", formato: "decimal1", largura: 12 }, { titulo: "Tendência", chave: "t", largura: 14 }], linhas: r.requisitos.map((x) => ({ r: x.rotulo, a: num(x.a), b: num(x.b), d: num(x.delta), t: TEND[x.tendencia] || "" })) });
+  xl.adicionarTabela(wb, { nomeAba: "Por avaliação", colunas: [{ titulo: "Avaliação", chave: "e", largura: 18 }, { titulo: "Respostas (ant.)", chave: "ra", largura: 16 }, { titulo: "Respostas (atual)", chave: "rb", largura: 16 }, { titulo: "Indicador", chave: "i", largura: 24 }, { titulo: "Anterior", chave: "a", formato: "decimal1", largura: 12 }, { titulo: "Atual", chave: "b", formato: "decimal1", largura: 12 }, { titulo: "Variação", chave: "d", formato: "decimal1", largura: 12 }, { titulo: "Tendência", chave: "t", largura: 14 }],
+    linhas: r.etapas.flatMap((e) => [["Nota média", e.media], ["% com sinal", e.com_sinal]].map(([i, x]) => ({ e: `${e.tipo === 90 ? 85 : e.tipo} dias`, ra: e.a_respostas, rb: e.b_respostas, i, a: num(x.a), b: num(x.b), d: num(x.delta), t: e.poucos ? "Poucos novatos" : TEND[x.tendencia] || "" }))) });
+  for (const [nomeAba, grupos, titulo] of [["Por site", r.por_site, "Site"], ["Por serviço", r.por_servico, "Serviço"]]) {
+    xl.adicionarTabela(wb, { nomeAba, colunas: [{ titulo, chave: "g", largura: 36 }, { titulo: "Novatos (ant.)", chave: "na", largura: 14 }, { titulo: "Novatos (atual)", chave: "nb", largura: 14 }, { titulo: "Média ant.", chave: "ma", formato: "decimal1", largura: 12 }, { titulo: "Média atual", chave: "mb", formato: "decimal1", largura: 12 }, { titulo: "Variação da média", chave: "dm", formato: "decimal1", largura: 16 }, { titulo: "Com sinal ant. (%)", chave: "sa", formato: "decimal1", largura: 16 }, { titulo: "Com sinal atual (%)", chave: "sb", formato: "decimal1", largura: 16 }, { titulo: "Variação do sinal (p.p.)", chave: "ds", formato: "decimal1", largura: 20 }],
+      linhas: grupos.map((g) => ({ g: g.rotulo, na: g.a_novatos, nb: g.b_novatos, ma: num(g.a_media), mb: num(g.b_media), dm: num(g.delta_media), sa: num(g.a_sinal_pct), sb: num(g.b_sinal_pct), ds: num(g.delta_sinal) })) });
+  }
+  return wb.xlsx.writeBuffer();
+}
+
+module.exports = { importarSupervisor, excelDoSupervisor, excelDoComparativoSupervisor, comparativo, exportarComparativo, periodos, somaDias, excelDoComparativoCanguru, excelDoCanguru, PUBLICOS, importar, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };

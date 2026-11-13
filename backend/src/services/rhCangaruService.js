@@ -24,6 +24,11 @@ const RE_CID = /\bCID\b|\b[A-TV-Z]\d{2}(?:\.\d{1,2})?\b/;
 const MAX_TEXTO = 1500;
 const PASSOS = ["Identificar", "Compartilhar com a supervisão", "Analisar", "Alinhar com o novato", "Acompanhar"];
 const SINAIS_ROTULO = { esp: "Expectativas", acol: "Acolhimento", lider: "Liderança", ativ: "Atividades", apoio: "Áreas de apoio", clima: "Clima com colegas" };
+// Visão do supervisor (Pacote 9): requisitos avaliados de 0 a 5. A chave é a mesma da coluna nota_<chave> e dos sinais.
+const REQUISITOS = ["neg", "rel", "res", "emp", "cond", "resp", "etica"];
+const REQ_ROTULO = { neg: "Negociação", rel: "Relacionamento interpessoal", res: "Resolução", emp: "Empatia", cond: "Conduta", resp: "Responsabilidade", etica: "Ética" };
+const REQ_ROTULO_SINAIS = REQ_ROTULO;
+const visaoDe = (v) => (String(v || "").toLowerCase() === "supervisor" ? "supervisor" : "operador");
 
 const erroHttp = (status, message, extra) => { const e = new Error(message); e.status = status; if (extra) Object.assign(e, extra); return e; };
 const chave = R.chave;
@@ -141,6 +146,9 @@ function mapearColunas(cabecalhos, nomeArquivo) {
   }
   if (cabecalhos.some((h) => chave(h).startsWith("selecione o tempo na empresa"))) {
     throw erroHttp(400, `“${nomeArquivo}” é a planilha da pesquisa de clima. Importe-a em Pesquisas de clima; aqui entram só as avaliações 30, 60 e 90 dias.`);
+  }
+  if (cabecalhos.some((h) => chave(h) === "nome do formulario")) {
+    throw erroHttp(400, `“${nomeArquivo}” é a planilha de respostas do SUPERVISOR. Troque a visão para “Supervisor” para importá-la.`);
   }
   const falta = ["matricula", "nome", "tipo"].filter((c) => !mapa[c]);
   if (falta.length) throw erroHttp(400, `“${nomeArquivo}” não parece ser uma planilha de avaliação do Canguru (faltou: ${falta.join(", ")}).`);
@@ -539,10 +547,11 @@ function montarNovato(n, avs, pontoAberto, cfg, hoje, cobrarDesde) {
   return { id: n.id, pessoa_id: n.pessoa_id, nome: n.nome, matricula: n.matricula, site: n.site, site_rotulo: rotuloSite(n.site), servico: n.servico, funcao: n.funcao, supervisor: n.supervisor, coordenador: n.coordenador, data_admissao: adm, admissao_origem: n.admissao_origem, dia, etapas, situacao, sinais_total: sinaisTotal, recorrente: comSinal >= 2, prioritario, ponto_aberto: pontoAberto ? { id: pontoAberto.id, passo: pontoAberto.passo, status: pontoAberto.status } : null };
 }
 
-async function carregarBase(empresaId, cfg) {
+async function carregarBase(empresaId, cfg, visao = "operador") {
   const [novatos] = await pool.query(
     `SELECT n.*, p.nome FROM rh_canguru_novatos n JOIN pessoas p ON p.id = n.pessoa_id AND p.empresa_id = n.empresa_id WHERE n.empresa_id = ?`, [empresaId]);
-  const [avs] = await pool.query(`SELECT * FROM rh_canguru_avaliacoes WHERE empresa_id = ?`, [empresaId]);
+  // Mesma estrutura nas duas visões (tipo, respondida_em, sinais, sinais_lista, prioritario): o resto do acompanhamento não muda.
+  const [avs] = await pool.query(`SELECT * FROM ${visao === "supervisor" ? "rh_canguru_aval_sup" : "rh_canguru_avaliacoes"} WHERE empresa_id = ?`, [empresaId]);
   const [pontos] = await pool.query(`SELECT * FROM rh_canguru_pontos WHERE empresa_id = ? AND status IN ('aberto','em_andamento')`, [empresaId]);
   const porNovato = new Map(); for (const a of avs) { if (!porNovato.has(a.novato_id)) porNovato.set(a.novato_id, []); porNovato.get(a.novato_id).push(a); }
   const pontoPor = new Map(pontos.map((p) => [p.novato_id, p]));
@@ -558,7 +567,8 @@ const ORDEM_SITUACAO = { pede_acao: 0, sem_admissao: 1, atencao: 2, em_dia: 3, c
 
 async function acompanhamento(empresaId, f = {}) {
   const cfg = await carregarConfig(empresaId);
-  const { lista, hoje, cobrarDesde } = await carregarBase(empresaId, cfg);
+  const visao = visaoDe(f.visao);
+  const { lista, hoje, cobrarDesde } = await carregarBase(empresaId, cfg, visao);
   const sites = [...new Set(lista.map((n) => n.site).filter(Boolean))].sort().map((s) => ({ valor: s, rotulo: rotuloSite(s) }));
   const servicos = [...new Set(lista.map((n) => n.servico).filter(Boolean))].sort();
   const busca = chave(f.busca || "");
@@ -581,7 +591,7 @@ async function acompanhamento(empresaId, f = {}) {
   x = [...x].sort((a, b) => ORDEM_SITUACAO[a.situacao] - ORDEM_SITUACAO[b.situacao] || (b.dia ?? -1) - (a.dia ?? -1) || a.nome.localeCompare(b.nome));
   const limite = Math.min(Math.max(Number(f.limite) || 50, 1), 200);
   const deslocamento = Math.max(Number(f.deslocamento) || 0, 0);
-  return { hoje, cobranca_a_partir_de: cobrarDesde, etapas: etapasDe(cfg), kpis, total: x.length, novatos: x.slice(deslocamento, deslocamento + limite), filtros: { sites, servicos }, config: { dia_aval_3: cfg.dia_aval_3 } };
+  return { visao, hoje, cobranca_a_partir_de: cobrarDesde, etapas: etapasDe(cfg), kpis, total: x.length, novatos: x.slice(deslocamento, deslocamento + limite), filtros: { sites, servicos }, config: { dia_aval_3: cfg.dia_aval_3 } };
 }
 
 // ── Ficha do novato (RH) ──────────────────────────────────────────────
@@ -597,13 +607,24 @@ async function ficha(empresaId, id) {
   let cobrarDesde = cfg.cobranca_a_partir_de;
   if (!cobrarDesde) { const [[m]] = await pool.query(`SELECT MIN(respondida_em) d FROM rh_canguru_avaliacoes WHERE empresa_id = ?`, [empresaId]); cobrarDesde = m?.d ? new Date(m.d).toISOString().slice(0, 10) : null; }
   const v = montarNovato(n, avs, aberto, cfg, R.hojeISO(), cobrarDesde);
+  // Respostas do supervisor (Pacote 9): mesma ficha, com o alternador de visão na tela.
+  const [avsSup] = await pool.query(`SELECT * FROM rh_canguru_aval_sup WHERE novato_id = ? AND empresa_id = ? ORDER BY tipo`, [id, empresaId]);
+  const vSup = montarNovato(n, avsSup, aberto, cfg, R.hojeISO(), cobrarDesde);
+  const avaliacoesSupervisor = avsSup.map((a) => {
+    let detalhes = []; try { detalhes = JSON.parse(a.detalhes || "[]"); } catch (_) { detalhes = []; }
+    return {
+      tipo: a.tipo, respondida_em: a.respondida_em ? new Date(a.respondida_em).toISOString() : null, supervisor_nome: a.supervisor_nome, media: a.media === null ? null : Number(a.media), zerada: !!a.zerada,
+      notas: Object.fromEntries(REQUISITOS.map((k) => [k, a[`nota_${k}`]])), detalhes,
+      sinais: a.sinais, sinais_lista: a.sinais_lista ? a.sinais_lista.split(",") : [], prioritario: !!a.prioritario, prioritario_termos: a.prioritario_termos,
+    };
+  });
   const avaliacoes = avs.map((a) => ({
     tipo: a.tipo, respondida_em: a.respondida_em ? new Date(a.respondida_em).toISOString() : null, site: a.site ? rotuloSite(a.site) : null, servico: a.servico,
     esp: a.esp, esp_motivo: a.esp_motivo, acolhido: a.acolhido, acolhido_area: a.acolhido_area, acolhido_texto: a.acolhido_texto, lider: a.lider, lider_motivo: a.lider_motivo, lider_texto: a.lider_texto,
     nota_ativ: a.nota_ativ, ativ_motivo: a.ativ_motivo, ativ_area: a.ativ_area, ativ_texto: a.ativ_texto, nota_apoio: a.nota_apoio, apoio_texto: a.apoio_texto, nota_clima: a.nota_clima, clima_texto: a.clima_texto,
     sinais: a.sinais, sinais_lista: a.sinais_lista ? a.sinais_lista.split(",") : [], prioritario: !!a.prioritario, prioritario_termos: a.prioritario_termos,
   }));
-  return { novato: v, avaliacoes, pontos: pontos.map((p) => ({ ...p, prazo: dataIso(p.prazo), historico: hist.filter((h) => h.ponto_id === p.id) })), passos: PASSOS, rotulos_sinais: SINAIS_ROTULO };
+  return { novato: v, novato_supervisor: vSup, avaliacoes_supervisor: avaliacoesSupervisor, requisitos: REQ_ROTULO, avaliacoes, pontos: pontos.map((p) => ({ ...p, prazo: dataIso(p.prazo), historico: hist.filter((h) => h.ponto_id === p.id) })), passos: PASSOS, rotulos_sinais: SINAIS_ROTULO };
 }
 
 async function salvarAdmissao(empresaId, id, data) {
@@ -618,7 +639,8 @@ async function salvarAdmissao(empresaId, id, data) {
 // ── Pontos de atenção ─────────────────────────────────────────────────
 async function filaAtencao(empresaId, f = {}) {
   const cfg = await carregarConfig(empresaId);
-  const { lista } = await carregarBase(empresaId, cfg);
+  const visao = visaoDe(f.visao);
+  const { lista } = await carregarBase(empresaId, cfg, visao);
   let x = lista.filter((n) => n.sinais_total > 0 || n.prioritario || n.ponto_aberto);
   const sites = [...new Set(x.map((n) => n.site).filter(Boolean))].sort().map((s) => ({ valor: s, rotulo: rotuloSite(s) }));
   if (f.site) x = x.filter((n) => n.site === f.site);
@@ -632,7 +654,7 @@ async function filaAtencao(empresaId, f = {}) {
   x = [...x].sort((a, b) => Number(b.prioritario) - Number(a.prioritario) || Number(b.recorrente) - Number(a.recorrente) || b.sinais_total - a.sinais_total || ult(b).localeCompare(ult(a)));
   const resumo = { total: x.length, prioritarios: x.filter((n) => n.prioritario).length, recorrentes: x.filter((n) => n.recorrente).length, com_ponto_aberto: x.filter((n) => n.ponto_aberto).length, sem_ponto: x.filter((n) => !n.ponto_aberto).length };
   const limite = Math.min(Math.max(Number(f.limite) || 50, 1), 200); const deslocamento = Math.max(Number(f.deslocamento) || 0, 0);
-  return { resumo, total: x.length, itens: x.slice(deslocamento, deslocamento + limite).map((n) => ({ ...n, ultima_resposta: ult(n) || null })), filtros: { sites, servicos: [...new Set(x.map((n) => n.servico).filter(Boolean))].sort() }, rotulos_sinais: SINAIS_ROTULO };
+  return { visao, resumo, total: x.length, itens: x.slice(deslocamento, deslocamento + limite).map((n) => ({ ...n, ultima_resposta: ult(n) || null })), filtros: { sites, servicos: [...new Set(x.map((n) => n.servico).filter(Boolean))].sort() }, rotulos_sinais: visao === "supervisor" ? REQ_ROTULO_SINAIS : SINAIS_ROTULO };
 }
 
 async function listarPontos(empresaId, status) {
@@ -888,13 +910,15 @@ async function resumoPainel(empresaId, nominal) {
 }
 
 // Lista nominal (só Excel do RH interno)
-async function listaNominal(empresaId) {
+async function listaNominal(empresaId, visao = "operador") {
   const cfg = await carregarConfig(empresaId);
-  const { lista } = await carregarBase(empresaId, cfg);
+  const { lista } = await carregarBase(empresaId, cfg, visaoDe(visao));
   return lista;
 }
 
 module.exports = {
   TIPOS, PASSOS, SINAIS_ROTULO, MIN_GRUPO_MINIMO, rotuloSite, carregarConfig, salvarConfig, importarAvaliacoes, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, salvarAdmissao,
   filaAtencao, listarPontos, equipe, abrirPonto, atualizarPonto, resultado, opcoesEscopo, compararPeriodos, resumoPainel, listaNominal, etapasDe,
+  // Usados pela visão do supervisor (rhCangaruSupervisorService.js)
+  REQUISITOS, REQ_ROTULO, visaoDe, risco, paraData, sqlDataHora, textoOuNulo, limparTexto, carregarPessoas, dataIso, diasEntre, arred2, pct,
 };

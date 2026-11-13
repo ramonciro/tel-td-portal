@@ -2981,6 +2981,7 @@ app.put   ("/api/rh/config/afirmacoes/:numero",     authRequired, authorizeRoles
 // ── Projeto Canguru (Pacotes 3 e 4, 12/11/2026) ──
 // Dado individual (acompanhamento, ficha, fila, pontos) só para coordenador_rh e analista_rh; gestor_rh vê o resultado agregado.
 app.post  ("/api/rh/canguru/importar",              authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 6)), rhCanguru.importar);
+app.post  ("/api/rh/canguru/importar-supervisor",    authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 6)), rhCanguru.importarSupervisor);
 app.post  ("/api/rh/canguru/admissoes",              authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 1)), rhCanguru.importarAdmissoes);
 app.get   ("/api/rh/canguru/admissoes/modelo",       authRequired, authorizeRoles(...RH_OPERA), rhCanguru.modeloAdmissoes);
 app.get   ("/api/rh/planos",                         authRequired, authorizeRoles(...RH_TODOS), rhPlanos.listar);

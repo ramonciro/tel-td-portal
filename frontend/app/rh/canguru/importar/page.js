@@ -13,6 +13,7 @@ import { colors } from "../../../../lib/theme";
 import { st, perfilRh, ehOperacaoRh, fmtN, COR_RH } from "../../../../components/RhUi";
 import { Marca } from "../../../../components/CangaruUi";
 import CangaruAdmissoes from "../../../../components/CangaruAdmissoes";
+import { useVisaoCanguru, SeletorVisao, ehSupervisor } from "../../../../components/CangaruVisao";
 
 const TIPO_CONFLITO = {
   nome_diferente: "A matrícula existe, mas com outro nome",
@@ -23,6 +24,9 @@ const TIPO_CONFLITO = {
 export default function CangaruImportarPage() {
   const router = useRouter();
   const operacao = ehOperacaoRh(perfilRh());
+  const [visao, setVisao] = useVisaoCanguru();
+  const sup = ehSupervisor(visao);
+  const [incluirNovos, setIncluirNovos] = useState(false);
   const [arquivos, setArquivos] = useState([]);
   const [incluirFora, setIncluirFora] = useState(false);
   const [rel, setRel] = useState(null);
@@ -35,17 +39,25 @@ export default function CangaruImportarPage() {
   useEffect(() => { if (perfilRh() && !operacao) router.replace("/rh/canguru/resultado"); }, [operacao, router]);
 
   const enviar = async (simular, decisoesUsadas) => {
-    if (!arquivos.length) { setMsg({ tipo: "erro", texto: "Escolha pelo menos uma planilha (.xlsx) de avaliação de 30, 60 ou 90 dias." }); return; }
+    if (!arquivos.length) { setMsg({ tipo: "erro", texto: sup ? "Escolha pelo menos uma planilha (.xlsx) de avaliação do supervisor (30, 60 ou 85 dias)." : "Escolha pelo menos uma planilha (.xlsx) de avaliação de 30, 60 ou 90 dias." }); return; }
     setOcupado(true); setMsg({ tipo: "", texto: "" });
     try {
       const fd = new FormData();
       arquivos.forEach((a) => fd.append("arquivos", a));
       fd.append("simular", simular ? "1" : "0");
-      fd.append("incluir_fora", incluirFora ? "1" : "0");
-      fd.append("decisoes", JSON.stringify(decisoesUsadas || {}));
-      const r = await apiFetch("/rh/canguru/importar", { method: "POST", body: fd });
+      if (sup) fd.append("incluir_novos", incluirNovos ? "1" : "0");
+      else {
+        fd.append("incluir_fora", incluirFora ? "1" : "0");
+        fd.append("decisoes", JSON.stringify(decisoesUsadas || {}));
+      }
+      const r = await apiFetch(sup ? "/rh/canguru/importar-supervisor" : "/rh/canguru/importar", { method: "POST", body: fd });
       setRel(r);
-      if (simular) {
+      if (sup) {
+        if (!simular) {
+          setMsg({ tipo: "ok", texto: `Importação concluída: ${fmtN(r.avaliacoes.importadas)} avaliações novas e ${fmtN(r.avaliacoes.atualizadas)} atualizadas.` });
+          setArquivos([]); if (inputRef.current) inputRef.current.value = "";
+        }
+      } else if (simular) {
         // Começa com o que o servidor sugeriu (pular), mantendo o que a pessoa já escolheu.
         const novas = {};
         (r.conflitos || []).forEach((c) => { novas[c.chave] = (decisoesUsadas || {})[c.chave] || { acao: c.decisao === "cadastrar" ? "cadastrar" : "pular" }; });
@@ -69,14 +81,15 @@ export default function CangaruImportarPage() {
     setDecisoes(novas);
   };
   const resumoDecisoes = Object.values(decisoes).reduce((a, d) => { a[d.acao] = (a[d.acao] || 0) + 1; return a; }, {});
+  const relSup = !!rel && rel.visao === "supervisor";
   const simulado = rel && rel.simulacao;
-  const alterouDecisoes = simulado && (rel.conflitos || []).some((c) => (decisoes[c.chave]?.acao || "pular") !== c.decisao);
+  const alterouDecisoes = simulado && !relSup && (rel.conflitos || []).some((c) => (decisoes[c.chave]?.acao || "pular") !== c.decisao);
 
   return (
     <PortalShell>
-      <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Importar avaliações" subtitle="Planilhas das avaliações de 30, 60 e 90 dias. O tipo de cada linha vem da coluna “Tipo de Pesquisa”." />
+      <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Importar avaliações" subtitle={sup ? "Planilhas da avaliação do supervisor (30, 60 e 85 dias). O formulário de 85 dias entra como a etapa final (90 dias)." : "Planilhas das avaliações de 30, 60 e 90 dias. O tipo de cada linha vem da coluna “Tipo de Pesquisa”."} actions={<SeletorVisao visao={visao} onChange={(v) => { setVisao(v); setArquivos([]); setRel(null); setDecisoes({}); setMsg({ tipo: "", texto: "" }); if (inputRef.current) inputRef.current.value = ""; }} escuro />} />
       <div role="tablist" style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-        {[["avaliacoes", "Avaliações 30, 60 e 90 dias"], ["admissoes", "Datas de admissão em lote"]].map(([k, rot]) => (
+        {[["avaliacoes", sup ? "Avaliações do supervisor" : "Avaliações 30, 60 e 90 dias"], ["admissoes", "Datas de admissão em lote"]].map(([k, rot]) => (
           <button key={k} type="button" role="tab" aria-selected={aba === k} onClick={() => setAba(k)} style={{ ...st.btnGhost, ...(aba === k ? { background: COR_RH, color: "#fff", borderColor: COR_RH } : {}) }}>{rot}</button>
         ))}
       </div>
@@ -85,17 +98,23 @@ export default function CangaruImportarPage() {
       {msg.texto ? <div style={{ ...(msg.tipo === "ok" ? st.ok : st.erro), marginTop: 14 }}>{msg.texto}</div> : null}
 
       <div style={{ ...st.card, marginTop: 16 }}>
-        <h3 style={st.cardTitle}>1. Escolha as planilhas</h3>
+        <h3 style={st.cardTitle}>1. Escolha as planilhas{sup ? " do supervisor" : ""}</h3>
         <div style={st.filtros}>
           <div style={{ flex: 2, minWidth: 260 }}>
             <label style={st.label}>Planilhas (.xlsx), até 6 de uma vez</label>
             <input ref={inputRef} style={{ ...st.input, paddingTop: 7, height: "auto", minHeight: 38 }} type="file" accept=".xlsx" multiple onChange={(e) => { setArquivos(Array.from(e.target.files || []).slice(0, 6)); setRel(null); setDecisoes({}); }} />
           </div>
         </div>
-        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
+        {sup ? (
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
+            <input type="checkbox" checked={incluirNovos} onChange={(e) => { setIncluirNovos(e.target.checked); setRel(null); }} />
+            Incluir quem ainda não está no Canguru (por padrão ficam de fora; entram só os novatos já acompanhados)
+          </label>
+        ) : null}
+        {!sup ? <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
           <input type="checkbox" checked={incluirFora} onChange={(e) => { setIncluirFora(e.target.checked); setRel(null); }} />
           Incluir cargos fora da operação (por padrão ficam de fora: só entram operador e telemarketing)
-        </label>
+        </label> : null}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button type="button" style={{ ...st.btn, background: COR_RH, opacity: ocupado ? 0.6 : 1 }} disabled={ocupado} onClick={() => enviar(true, decisoes)}>{ocupado ? "Conferindo…" : simulado ? "Conferir de novo (não grava)" : "Simular (não grava)"}</button>
           <button type="button" style={{ ...st.btn, opacity: simulado && !ocupado && !alterouDecisoes ? 1 : 0.45 }} disabled={!simulado || ocupado || alterouDecisoes} onClick={() => enviar(false, decisoes)}>Importar de verdade</button>
@@ -104,7 +123,78 @@ export default function CangaruImportarPage() {
         <p style={{ fontSize: 12, color: colors.textMuted, margin: "10px 0 0" }}>O login da planilha <strong>não é gravado</strong>. O nome do novato vem do cadastro de pessoas. Textos livres ficam visíveis só para a equipe do RH, e códigos de doença (CID) são apagados dos textos.</p>
       </div>
 
-      {rel ? (
+      {relSup ? (
+        <div style={{ ...st.card, marginTop: 16 }}>
+          <h3 style={st.cardTitle}>{rel.simulacao ? "2. O que o portal encontrou (nada foi gravado)" : "Importado"}</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
+            {[
+              ["Linhas lidas", fmtN(rel.linhas.lidas)],
+              ["Avaliações válidas", fmtN(rel.linhas.avaliacoes)],
+              ["Novatos diferentes", fmtN(rel.novatos.distintos)],
+              ["Já no Canguru", fmtN(rel.novatos.vinculados)],
+              [rel.simulacao ? "A incluir no Canguru" : "Incluídos no Canguru", fmtN(rel.simulacao ? rel.novatos.a_incluir : rel.novatos.incluidos)],
+              ["Fora do Canguru (pulados)", fmtN(rel.novatos.fora_do_canguru)],
+              ["Nome diferente (pulados)", fmtN(rel.novatos.nome_diferente)],
+              ["Linhas zeradas", fmtN(rel.qualidade.linhas_zeradas)],
+            ].map(([k, v]) => (
+              <div key={k} style={{ border: `1px solid ${colors.border}`, borderRadius: 10, padding: "8px 12px" }}>
+                <div style={{ fontSize: 11, color: colors.textSecondary, fontWeight: 700 }}>{k}</div><div style={{ fontSize: 17, fontWeight: 800 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: 13 }}>
+            <strong>Arquivos:</strong>
+            <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+              {rel.arquivos.map((a) => <li key={a.nome}>{a.nome}: {fmtN(a.linhas)} linhas, avaliação de {a.tipos.length ? a.tipos.map((t) => `${t === 90 ? 85 : t} dias`).join(" e ") : "tipo não reconhecido"}</li>)}
+            </ul>
+            <div style={{ marginTop: 6 }}>Avaliações a gravar: {Object.entries(rel.avaliacoes.por_tipo).map(([t, n]) => `${Number(t) === 90 ? 85 : t} dias: ${fmtN(n)}`).join(" · ")}</div>
+            {rel.linhas.duplicadas_removidas ? <div>Respostas repetidas descartadas (vale a mais recente): {fmtN(rel.linhas.duplicadas_removidas)}</div> : null}
+            {!rel.simulacao ? <div style={{ marginTop: 4 }}>Gravadas: {fmtN(rel.avaliacoes.importadas)} novas, {fmtN(rel.avaliacoes.atualizadas)} atualizadas, {fmtN(rel.avaliacoes.puladas)} puladas.</div> : null}
+          </div>
+
+          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Marca tom="aviso">{fmtN(rel.sinais.novatos_com_sinal)} com nota baixa</Marca>
+            <Marca tom="aviso">{fmtN(rel.sinais.recorrentes)} em 2 ou mais avaliações</Marca>
+            <Marca tom="neutro">{fmtN(rel.sinais.nas_tres)} nas 3 avaliações</Marca>
+            <Marca tom="perigo">{fmtN(rel.sinais.prioritarios)} com risco de abandono</Marca>
+          </div>
+
+          {rel.avisos?.length ? <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 13, color: colors.warningText }}>{rel.avisos.map((a) => <li key={a}>{a}</li>)}</ul> : null}
+
+          {rel.pulados?.length ? (
+            <div style={{ marginTop: 16, borderTop: `1px solid ${colors.border}`, paddingTop: 14 }}>
+              <h4 style={{ margin: "0 0 4px", fontSize: 14 }}>Pulados: {fmtN(rel.novatos.fora_do_canguru + rel.novatos.nome_diferente)} {rel.novatos.fora_do_canguru + rel.novatos.nome_diferente === 1 ? "pessoa" : "pessoas"}</h4>
+              <p style={{ margin: "0 0 10px", fontSize: 12.5, color: colors.textSecondary }}>
+                “Fora do Canguru” são pessoas que ainda não estão no acompanhamento (marque a opção acima para incluí-las). “Nome diferente” é matrícula que já existe no portal com outro nome; confira a planilha ou o cadastro.
+              </p>
+              <div style={{ overflowX: "auto", maxHeight: 380, overflowY: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+                  <thead><tr><th style={st.th}>Na planilha</th><th style={st.th}>Motivo</th><th style={st.th}>No cadastro do portal</th></tr></thead>
+                  <tbody>
+                    {rel.pulados.map((x, i) => (
+                      <tr key={`${x.matricula}-${i}`}>
+                        <td style={st.td}><strong>{x.nome}</strong><div style={{ fontSize: 11.5, color: colors.textMuted }}>Matrícula {x.matricula || "—"} · {x.servico || "—"} · avaliações {x.avaliacoes.map((t) => (t === 90 ? 85 : t)).join(", ")}</div></td>
+                        <td style={st.td}>{x.motivo === "nome_diferente" ? "A matrícula existe, mas com outro nome" : "Ainda não está no Canguru"}</td>
+                        <td style={st.td}>{x.cadastro || <span style={{ color: colors.textMuted }}>—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          {!rel.simulacao ? (
+            <p style={{ marginTop: 14 }}>
+              <Link href="/rh/canguru?visao=supervisor" style={{ color: "#9d174d", fontWeight: 800 }}>Abrir o acompanhamento →</Link>{" "}·{" "}
+              <Link href="/rh/canguru/atencao?visao=supervisor" style={{ color: "#9d174d", fontWeight: 800 }}>Ver pontos de atenção →</Link>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {rel && !relSup ? (
         <div style={{ ...st.card, marginTop: 16 }}>
           <h3 style={st.cardTitle}>{rel.simulacao ? "2. O que o portal encontrou (nada foi gravado)" : "Importado"}</h3>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>

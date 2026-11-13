@@ -12,6 +12,7 @@ import { apiFetch } from "../../../../services/api";
 import { colors } from "../../../../lib/theme";
 import { st, Campo, Select, Modal, Abas, Paginacao, perfilRh, ehOperacaoRh, fmtN, fmtDia, COR_RH } from "../../../../components/RhUi";
 import { Marca, SituacaoPill, STATUS_PONTO } from "../../../../components/CangaruUi";
+import { SeletorVisao, useVisaoCanguru, ehSupervisor } from "../../../../components/CangaruVisao";
 import { AbrirPontoForm } from "../../../../components/CangaruPonto";
 
 const LIMITE = 40;
@@ -19,6 +20,8 @@ const LIMITE = 40;
 export default function CangaruAtencaoPage() {
   const router = useRouter();
   const operacao = ehOperacaoRh(perfilRh());
+  const [visao, setVisao, visaoPronta] = useVisaoCanguru();
+  const sup = ehSupervisor(visao);
   const [aba, setAba] = useState("fila");
   const [f, setF] = useState({ site: "", servico: "", ponto: "", so_prioritarios: false, so_recorrentes: false, busca: "" });
   const [buscaDigitada, setBuscaDigitada] = useState("");
@@ -34,13 +37,13 @@ export default function CangaruAtencaoPage() {
   useEffect(() => { if (perfilRh() && !operacao) router.replace("/rh/canguru/resultado"); }, [operacao, router]);
 
   const carregarFila = useCallback(() => {
-    if (!operacao) return;
-    const q = new URLSearchParams({ limite: String(LIMITE), deslocamento: String((pagina - 1) * LIMITE) });
+    if (!operacao || !visaoPronta) return;
+    const q = new URLSearchParams({ limite: String(LIMITE), deslocamento: String((pagina - 1) * LIMITE), visao });
     ["site", "servico", "ponto", "busca"].forEach((k) => { if (f[k]) q.set(k, f[k]); });
     if (f.so_prioritarios) q.set("so_prioritarios", "1");
     if (f.so_recorrentes) q.set("so_recorrentes", "1");
     apiFetch(`/rh/canguru/atencao?${q.toString()}`).then(setFila).catch((e) => setErro(e.message || "Não foi possível carregar a fila."));
-  }, [f, pagina, operacao]);
+  }, [f, pagina, operacao, visao, visaoPronta]);
   const carregarPontos = useCallback(() => {
     if (!operacao) return;
     apiFetch(`/rh/canguru/pontos${aba === "encerrados" ? "?status=resolvidos" : ""}`).then((r) => { setPontos(r.pontos); setEquipe(r.equipe); }).catch((e) => setErro(e.message || "Não foi possível carregar os pontos."));
@@ -60,7 +63,9 @@ export default function CangaruAtencaoPage() {
 
   return (
     <PortalShell>
-      <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Pontos de atenção" subtitle="Quem sinalizou problema nas avaliações e o que o RH está fazendo a respeito, em cinco passos." />
+      <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Pontos de atenção"
+        subtitle={sup ? "Quem o supervisor avaliou com nota baixa e o que o RH está fazendo a respeito, em cinco passos." : "Quem sinalizou problema nas avaliações e o que o RH está fazendo a respeito, em cinco passos."}
+        actions={operacao && aba === "fila" ? <SeletorVisao visao={visao} onChange={(v) => { setVisao(v); setPagina(1); }} escuro /> : null} />
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
       {msg ? <div style={{ ...st.ok, marginTop: 14 }}>{msg}</div> : null}
 
@@ -72,7 +77,7 @@ export default function CangaruAtencaoPage() {
         <div style={st.card}>
           {r ? (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-              <Marca tom="neutro">{fmtN(r.total)} na fila</Marca><Marca tom="perigo">{fmtN(r.prioritarios)} prioritários</Marca><Marca tom="aviso">{fmtN(r.recorrentes)} recorrentes</Marca><Marca tom="neutro">{fmtN(r.com_ponto_aberto)} em tratamento</Marca><Marca tom="neutro">{fmtN(r.sem_ponto)} sem ponto aberto</Marca>
+              <Marca tom="neutro">{fmtN(r.total)} na fila</Marca><Marca tom="perigo">{fmtN(r.prioritarios)} {sup ? "com risco de abandono" : "prioritários"}</Marca><Marca tom="aviso">{fmtN(r.recorrentes)} recorrentes</Marca><Marca tom="neutro">{fmtN(r.com_ponto_aberto)} em tratamento</Marca><Marca tom="neutro">{fmtN(r.sem_ponto)} sem ponto aberto</Marca>
             </div>
           ) : null}
           <div style={st.filtros}>
@@ -82,13 +87,13 @@ export default function CangaruAtencaoPage() {
             <Campo label="Ponto de atenção" minWidth={160}><Select value={f.ponto} onChange={mudar("ponto")} vazio="Todos" opcoes={[{ value: "sem", label: "Sem ponto aberto" }, { value: "com", label: "Com ponto aberto" }]} /></Campo>
           </div>
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 12 }}>
-            <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13, fontWeight: 700 }}><input type="checkbox" checked={f.so_prioritarios} onChange={(e) => mudar("so_prioritarios")(e.target.checked)} />Só relatos prioritários</label>
+            <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13, fontWeight: 700 }}><input type="checkbox" checked={f.so_prioritarios} onChange={(e) => mudar("so_prioritarios")(e.target.checked)} />{sup ? "Só risco de abandono" : "Só relatos prioritários"}</label>
             <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13, fontWeight: 700 }}><input type="checkbox" checked={f.so_recorrentes} onChange={(e) => mudar("so_recorrentes")(e.target.checked)} />Só quem tem sinal em 2 ou mais avaliações</label>
           </div>
           {!fila ? <p style={st.vazio}>Carregando…</p> : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
-                <thead><tr><th style={st.th}>Novato</th><th style={st.th}>Site · serviço</th><th style={st.th}>O que sinalizou</th><th style={st.th}>Última resposta</th><th style={st.th}>Situação</th><th style={st.th}></th></tr></thead>
+                <thead><tr><th style={st.th}>Novato</th><th style={st.th}>Site · serviço</th><th style={st.th}>{sup ? "Requisitos com nota baixa" : "O que sinalizou"}</th><th style={st.th}>Última resposta</th><th style={st.th}>Situação</th><th style={st.th}></th></tr></thead>
                 <tbody>
                   {fila.itens.map((n) => (
                     <tr key={n.id}>
@@ -96,7 +101,7 @@ export default function CangaruAtencaoPage() {
                         <Link href={`/rh/canguru/novato?id=${n.id}`} style={{ color: "#9d174d", fontWeight: 800, textDecoration: "none" }}>{n.nome}</Link>
                         <div style={{ fontSize: 11.5, color: colors.textMuted }}>Matrícula {n.matricula || "—"} · dia {n.dia ?? "—"}</div>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 3 }}>
-                          {n.prioritario ? <Marca tom="perigo" titulo="Relato com termo de saúde ou segurança">Prioritário</Marca> : null}
+                          {n.prioritario ? <Marca tom="perigo" titulo={sup ? "Avaliação zerada ou com sinal de abandono" : "Relato com termo de saúde ou segurança"}>{sup ? "Risco de abandono" : "Prioritário"}</Marca> : null}
                           {n.recorrente ? <Marca tom="aviso" titulo="Sinal em duas ou mais avaliações">Recorrente</Marca> : null}
                         </div>
                       </td>
@@ -121,7 +126,7 @@ export default function CangaruAtencaoPage() {
             </div>
           )}
           {fila ? <Paginacao total={fila.total} limite={LIMITE} pagina={pagina} onPagina={setPagina} /> : null}
-          <p style={{ fontSize: 12, color: colors.textMuted, margin: "10px 0 0" }}>Ordem: relatos prioritários, depois sinal em mais avaliações, depois a resposta mais recente. Os relatos em texto só aparecem na ficha do novato, e cada abertura de ficha fica registrada.</p>
+          <p style={{ fontSize: 12, color: colors.textMuted, margin: "10px 0 0" }}>Ordem: {sup ? "risco de abandono" : "relatos prioritários"}, depois sinal em mais avaliações, depois a resposta mais recente. Os textos só aparecem na ficha do novato, e cada abertura de ficha fica registrada.</p>
         </div>
       ) : (
         <div style={st.card}>

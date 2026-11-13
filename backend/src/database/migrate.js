@@ -3895,6 +3895,40 @@ async function ensureRh() {
       INDEX idx_rh_cg_aval_emp (empresa_id, tipo),
       INDEX idx_rh_cg_aval_data (empresa_id, respondida_em)
     ) ${T}`);
+  // Respostas do SUPERVISOR (Pacote 9, 13/11/2026): avaliação de competências do novato aos 30, 60 e 85 dias (tipo 90 = formulário de 85 dias).
+  // Uma linha por novato e etapa. Notas de 0 a 5 por requisito; motivo e observação ficam em `detalhes` (JSON). Mesma regra de privacidade do operador.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_aval_sup (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      novato_id INT NOT NULL,
+      tipo SMALLINT NOT NULL,
+      formulario_dias SMALLINT NULL,
+      respondida_em DATETIME NULL,
+      supervisor_nome VARCHAR(150) NULL,
+      supervisor_matricula VARCHAR(60) NULL,
+      servico_arquivo VARCHAR(150) NULL,
+      nota_neg TINYINT NULL,
+      nota_rel TINYINT NULL,
+      nota_res TINYINT NULL,
+      nota_emp TINYINT NULL,
+      nota_cond TINYINT NULL,
+      nota_resp TINYINT NULL,
+      nota_etica TINYINT NULL,
+      media DECIMAL(4,2) NULL,
+      zerada TINYINT(1) NOT NULL DEFAULT 0,
+      sinais TINYINT NOT NULL DEFAULT 0,
+      sinais_lista VARCHAR(80) NULL,
+      prioritario TINYINT(1) NOT NULL DEFAULT 0,
+      prioritario_termos VARCHAR(255) NULL,
+      detalhes MEDIUMTEXT NULL,
+      origem_arquivo VARCHAR(200) NULL,
+      importado_por INT NULL,
+      importado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_rh_cg_avsup (novato_id, tipo),
+      INDEX idx_rh_cg_avsup_emp (empresa_id, tipo),
+      INDEX idx_rh_cg_avsup_data (empresa_id, respondida_em)
+    ) ${T}`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS rh_canguru_pontos (
       id INT AUTO_INCREMENT PRIMARY KEY,

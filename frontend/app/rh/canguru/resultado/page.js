@@ -11,9 +11,12 @@ import { colors } from "../../../../lib/theme";
 import { st, Campo, Select, perfilRh, ehOperacaoRh, COR_RH } from "../../../../components/RhUi";
 import { CangaruRelatorio } from "../../../../components/CangaruUi";
 import CangaruLiberacoes from "../../../../components/CangaruLiberacoes";
+import { CangaruRelatorioSupervisor, SeletorVisao, useVisaoCanguru, ehSupervisor } from "../../../../components/CangaruVisao";
 
 export default function CangaruResultadoPage() {
   const operacao = ehOperacaoRh(perfilRh());
+  const [visao, setVisao, visaoPronta] = useVisaoCanguru();
+  const sup = ehSupervisor(visao);
   const [publico, setPublico] = useState("");
   const [f, setF] = useState({ site: "", servico: "", de: "", ate: "" });
   const [r, setR] = useState(null);
@@ -24,20 +27,20 @@ export default function CangaruResultadoPage() {
   useEffect(() => { setPublico(operacao ? "rh" : "diretoria"); }, [operacao]);
 
   const qs = useMemo(() => {
-    const q = new URLSearchParams({ publico });
+    const q = new URLSearchParams({ publico, visao });
     Object.entries(f).forEach(([k, v]) => { if (v) q.set(k, v); });
     return q.toString();
-  }, [publico, f]);
+  }, [publico, f, visao]);
 
   useEffect(() => {
-    if (!publico) return;
+    if (!publico || !visaoPronta) return;
     setCarregando(true); setErro("");
     apiFetch(`/rh/canguru/relatorio?${qs}`).then(setR).catch((e) => setErro(e.message || "Não foi possível carregar o resultado.")).finally(() => setCarregando(false));
-  }, [qs, publico]);
+  }, [qs, publico, visaoPronta]);
 
   const baixar = async () => {
     setErro("");
-    try { await apiDownload(`/rh/canguru/exportar?${qs}`, `canguru_${publico}_${new Date().toISOString().slice(0, 10)}.xlsx`); }
+    try { await apiDownload(`/rh/canguru/exportar?${qs}`, `canguru_${sup ? "supervisor_" : ""}${publico}_${new Date().toISOString().slice(0, 10)}.xlsx`); }
     catch (e) { setErro(e.message || "Não foi possível baixar o Excel."); }
   };
   const imprimir = () => window.open(`/rh/canguru/impressao?${qs}`, "_blank", "noopener");
@@ -48,7 +51,9 @@ export default function CangaruResultadoPage() {
 
   return (
     <PortalShell>
-      <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Resultado do Canguru" subtitle="O que os novatos responderam nas avaliações de 30, 60 e 90 dias, por etapa, site e serviço." />
+      <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Resultado do Canguru"
+        subtitle={sup ? "O que os supervisores avaliaram dos novatos aos 30, 60 e 85 dias, por requisito, etapa, site e serviço." : "O que os novatos responderam nas avaliações de 30, 60 e 90 dias, por etapa, site e serviço."}
+        actions={<SeletorVisao visao={visao} onChange={setVisao} escuro />} />
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
 
       <div style={{ ...st.card, marginTop: 16 }}>
@@ -65,14 +70,14 @@ export default function CangaruResultadoPage() {
           <button type="button" style={{ ...st.btnGhost, opacity: r && !vazio ? 1 : 0.5 }} disabled={!r || vazio} onClick={imprimir}>Imprimir / PDF</button>
         </div>
         <p style={{ fontSize: 12, color: colors.textMuted, margin: "10px 0 0" }}>
-          {publico === "rh" ? "RH interno: inclui relatos prioritários e, no Excel, a lista nominal de novatos. Não envie para fora do RH." : "Sem nomes e sem relatos individuais. Grupos pequenos não aparecem."}
+          {publico === "rh" ? (sup ? "RH interno: inclui o ranking por supervisor, relatos de risco de abandono e, no Excel, a lista nominal de novatos. Não envie para fora do RH." : "RH interno: inclui relatos prioritários e, no Excel, a lista nominal de novatos. Não envie para fora do RH.") : "Sem nomes e sem relatos individuais. Grupos pequenos não aparecem."}
         </p>
       </div>
 
       <div style={{ ...st.card, marginTop: 16, opacity: carregando ? 0.6 : 1 }}>
         {!r && !erro ? <p style={st.vazio}>Carregando…</p> : null}
-        {vazio ? <p style={st.vazio}>{filtrando ? "Nenhuma avaliação com esses filtros." : "Nenhuma avaliação importada ainda."}</p> : null}
-        {r && !vazio ? <CangaruRelatorio r={r} /> : null}
+        {vazio ? <p style={st.vazio}>{filtrando ? "Nenhuma avaliação com esses filtros." : sup ? "Nenhuma avaliação de supervisor importada ainda." : "Nenhuma avaliação importada ainda."}</p> : null}
+        {r && !vazio ? (sup ? <CangaruRelatorioSupervisor r={r} /> : <CangaruRelatorio r={r} />) : null}
       </div>
       {operacao ? <CangaruLiberacoes /> : null}
     </PortalShell>

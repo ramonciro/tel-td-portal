@@ -12,6 +12,7 @@ import { apiFetch, apiDownload } from "../services/api";
 import { colors } from "../lib/theme";
 import { st, Campo, Select, pct1, dec1, fmtN, fmtDia, COR_RH } from "./RhUi";
 import { RiscoPill } from "./CangaruUi";
+import { useVisaoCanguru, SeletorVisao, ehSupervisor } from "./CangaruVisao";
 
 const sinal = (v, casas = 1) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}`);
 const TEND = {
@@ -30,8 +31,98 @@ function Par({ m, fmt, un, casas }) {
   return <div><div style={{ fontSize: 13 }}>{fmt(m.a)} → <strong>{fmt(m.b)}</strong></div><div style={{ marginTop: 3 }}><Variacao d={m.delta} t={m.tendencia} un={un} casas={casas} /></div></div>;
 }
 
+const fmt2 = (v) => (v === null || v === undefined ? "—" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+
+// Visão do supervisor: nota média (0 a 5) e % de novatos com nota baixa, por etapa, por requisito, por site e por serviço.
+function ComparativoSupervisor({ d }) {
+  const g = d.geral;
+  const grupos = [["Por site", d.por_site], ["Por serviço", d.por_servico]].filter(([, l]) => l?.length);
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14, marginTop: 16 }}>
+        <StatCard title="Novatos avaliados" value={`${fmtN(g.a.novatos)} → ${fmtN(g.b.novatos)}`} subtitle="anterior → atual" accent="#2563eb" />
+        <StatCard title="Avaliações dos supervisores" value={`${fmtN(g.a.avaliacoes)} → ${fmtN(g.b.avaliacoes)}`} subtitle="anterior → atual" accent="#7c3aed" />
+        <StatCard title="Nota média (0 a 5)" value={g.poucos ? "—" : `${fmt2(g.a.media)} → ${fmt2(g.b.media)}`} subtitle={g.poucos ? "Poucos dados" : `${sinal(g.delta_media, 2)} pt · ${(TEND[g.tendencia_media] || TEND.estavel).txt}`} accent="#16a34a" />
+        <StatCard title="Com nota baixa" value={g.poucos ? "—" : `${pct1(g.a.com_sinal_pct)} → ${pct1(g.b.com_sinal_pct)}`} subtitle={g.poucos ? "Poucos dados" : `${sinal(g.delta_sinal)} p.p. · ${(TEND[g.tendencia_sinal] || TEND.estavel).txt}`} accent="#f59e0b" />
+        <StatCard title="Nota baixa recorrente" value={`${fmtN(g.a.recorrentes)} → ${fmtN(g.b.recorrentes)}`} subtitle="novatos com nota baixa em 2+ avaliações" accent="#dc2626" />
+      </div>
+
+      <div style={{ ...st.card, marginTop: 16 }}>
+        <h3 style={st.cardTitle}>Por avaliação (30, 60 e 85 dias)</h3>
+        <p style={{ margin: "-6px 0 10px", fontSize: 12.5, color: colors.textSecondary }}>Em “Com nota baixa”, número menor é melhor. Etapas com poucas avaliações não são comparadas.</p>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+            <thead><tr><th style={st.th}>Avaliação</th><th style={st.th}>Avaliações</th><th style={st.th}>Nota média</th><th style={st.th}>Com nota baixa</th></tr></thead>
+            <tbody>
+              {d.etapas.map((e) => (
+                <tr key={e.tipo}>
+                  <td style={st.td}><strong>{e.tipo === 90 ? 85 : e.tipo} dias</strong></td>
+                  <td style={st.td}>{fmtN(e.a_respostas)} → <strong>{fmtN(e.b_respostas)}</strong></td>
+                  {e.poucos ? <td style={{ ...st.td, color: colors.textMuted }} colSpan={2}>Poucos dados em um dos períodos para comparar.</td> : (
+                    <>
+                      <td style={st.td}><Par m={e.media} fmt={fmt2} un="pt" casas={2} /></td>
+                      <td style={st.td}><Par m={e.com_sinal} fmt={pct1} un="p.p." casas={1} /></td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {d.requisitos?.length ? (
+        <div style={{ ...st.card, marginTop: 16 }}>
+          <h3 style={st.cardTitle}>Por requisito (nota média)</h3>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
+              <thead><tr><th style={st.th}>Requisito</th><th style={st.th}>Anterior</th><th style={st.th}>Atual</th><th style={st.th}>Variação</th></tr></thead>
+              <tbody>
+                {d.requisitos.map((r) => (
+                  <tr key={r.chave}>
+                    <td style={st.td}><strong>{r.rotulo}</strong></td>
+                    <td style={st.td}>{fmt2(r.a)}</td>
+                    <td style={st.td}><strong>{fmt2(r.b)}</strong></td>
+                    <td style={st.td}><Variacao d={r.delta} t={r.tendencia} un="pt" casas={2} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {grupos.map(([titulo, linhas]) => (
+        <div key={titulo} style={{ ...st.card, marginTop: 16 }}>
+          <h3 style={st.cardTitle}>{titulo} (nota média e % com nota baixa)</h3>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+              <thead><tr><th style={st.th}>{titulo === "Por site" ? "Site" : "Serviço"}</th><th style={{ ...st.th, textAlign: "right" }}>Novatos (ant. → atual)</th><th style={st.th}>Nota média</th><th style={st.th}>Variação</th><th style={st.th}>Com nota baixa</th><th style={st.th}>Variação</th></tr></thead>
+              <tbody>
+                {linhas.map((l) => (
+                  <tr key={l.rotulo}>
+                    <td style={st.td}><strong>{l.rotulo}</strong></td>
+                    <td style={{ ...st.td, textAlign: "right" }}>{fmtN(l.a_novatos)} → {fmtN(l.b_novatos)}</td>
+                    <td style={st.td}>{fmt2(l.a_media)} → <strong>{fmt2(l.b_media)}</strong></td>
+                    <td style={st.td}><Variacao d={l.delta_media} t={l.tendencia_media} un="pt" casas={2} /></td>
+                    <td style={st.td}>{pct1(l.a_sinal_pct)} → <strong>{pct1(l.b_sinal_pct)}</strong></td>
+                    <td style={st.td}><Variacao d={l.delta_sinal} t={l.tendencia_sinal} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function CangaruComparativo({ cliente = false }) {
   const base = cliente ? "/rh/cliente/canguru/comparativo" : "/rh/canguru/comparativo";
+  const [visaoEscolhida, setVisao, pronto] = useVisaoCanguru();
+  const visao = cliente ? "operador" : visaoEscolhida; // o cliente não vê a avaliação do supervisor
+  const sup = ehSupervisor(visao);
   const [d, setD] = useState(null);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(true);
@@ -42,14 +133,14 @@ export default function CangaruComparativo({ cliente = false }) {
   const carregar = useCallback(async (x) => {
     setCarregando(true); setErro("");
     try {
-      const r = await apiFetch(`${base}?${qs(x)}`);
+      const r = await apiFetch(`${base}?${qs({ ...x, ...(visao === "supervisor" ? { visao } : {}) })}`);
       setD(r);
       setF((o) => ({ ...o, a_de: r.periodo_a.de, a_ate: r.periodo_a.ate, b_de: r.periodo_b.de, b_ate: r.periodo_b.ate }));
       if (r.filtros) setOpcoes(r.filtros);
     } catch (e) { setErro(e.message || "Não foi possível comparar os períodos."); }
     finally { setCarregando(false); }
-  }, [base]);
-  useEffect(() => { carregar({}); }, [carregar]);
+  }, [base, visao]);
+  useEffect(() => { if (pronto) { setD(null); carregar({ site: f.site, servico: f.servico }); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [carregar, pronto]);
 
   const mudar = (k, v) => setF((o) => ({ ...o, [k]: v }));
   const comparar = () => carregar(f);
@@ -60,8 +151,8 @@ export default function CangaruComparativo({ cliente = false }) {
 
   return (
     <PortalShell>
-      <PageHero eyebrow={cliente ? "Relações Humanas · Projeto Canguru" : "Relações Humanas · Projeto Canguru"} title="Comparar períodos do Canguru" subtitle="O que mudou nas avaliações dos novatos entre dois períodos."
-        actions={d && !cliente ? <button type="button" style={{ ...st.btnGhost, background: "rgba(255,255,255,.12)", color: "#fff", border: "1px solid rgba(255,255,255,.35)" }} onClick={() => apiDownload(`${base}/exportar?${qs(f)}`, "comparativo_canguru.xlsx").catch((e) => setErro(e.message))}>Exportar Excel</button> : null} />
+      <PageHero eyebrow={cliente ? "Relações Humanas · Projeto Canguru" : "Relações Humanas · Projeto Canguru"} title="Comparar períodos do Canguru" subtitle={sup ? "O que mudou nas notas que os supervisores deram aos novatos entre dois períodos." : "O que mudou nas avaliações dos novatos entre dois períodos."}
+        actions={!cliente ? <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start", maxWidth: "calc(100vw - 72px)" }}><SeletorVisao visao={visao} onChange={(v) => { setF((o) => ({ ...o, site: "", servico: "" })); setVisao(v); }} escuro />{d ? <button type="button" style={{ ...st.btnGhost, background: "rgba(255,255,255,.12)", color: "#fff", border: "1px solid rgba(255,255,255,.35)" }} onClick={() => apiDownload(`${base}/exportar?${qs({ ...f, ...(sup ? { visao } : {}) })}`, "comparativo_canguru.xlsx").catch((e) => setErro(e.message))}>Exportar Excel</button> : null}</div> : null} />
       {cliente ? <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}><Link href="/rh/cliente/canguru" style={{ ...st.btnGhost, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Voltar ao Canguru</Link></div> : null}
       {erro ? <div style={{ ...st.erro, marginTop: 14 }}>{erro}</div> : null}
 
@@ -91,6 +182,7 @@ export default function CangaruComparativo({ cliente = false }) {
             <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 12.5, color: colors.textSecondary }}>{(d.avisos || []).map((a) => <li key={a}>{a}</li>)}</ul>
           </div>
 
+          {d.visao === "supervisor" ? <ComparativoSupervisor d={d} /> : (<>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14, marginTop: 16 }}>
             <StatCard title="Novatos avaliados" value={`${fmtN(g.a.novatos)} → ${fmtN(g.b.novatos)}`} subtitle="anterior → atual" accent="#2563eb" />
             <StatCard title="Avaliações respondidas" value={`${fmtN(g.a.avaliacoes)} → ${fmtN(g.b.avaliacoes)}`} subtitle="anterior → atual" accent="#7c3aed" />
@@ -140,6 +232,7 @@ export default function CangaruComparativo({ cliente = false }) {
               </div>
             </div>
           ))}
+          </>)}
         </>
       ) : null}
     </PortalShell>

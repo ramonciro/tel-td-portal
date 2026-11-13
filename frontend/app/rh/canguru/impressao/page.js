@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../../../services/api";
 import { CangaruRelatorio } from "../../../../components/CangaruUi";
+import { CangaruRelatorioSupervisor } from "../../../../components/CangaruVisao";
 import { fmtDia } from "../../../../components/RhUi";
 
 // Impressão do resultado do Canguru — fora do PortalShell, para imprimir / "Salvar como PDF" no navegador.
@@ -55,9 +56,9 @@ export default function ImpressaoCangaruPage() {
         {!r && !erro ? <p>Montando o relatório…</p> : null}
         {r ? (
           <>
-            <h1 className="titulo">Projeto Canguru · Acompanhamento dos novatos</h1>
-            <p className="sub">Avaliações de 30, 60 e 90 dias · Relatório para {r.publico_rotulo}{filtros ? ` · ${filtros}` : ""}</p>
-            <CangaruRelatorio r={r} />
+            <h1 className="titulo">Projeto Canguru · Acompanhamento dos novatos{r.visao === "supervisor" ? " · Visão do supervisor" : ""}</h1>
+            <p className="sub">{r.visao === "supervisor" ? "Avaliações dos supervisores aos 30, 60 e 85 dias" : "Avaliações de 30, 60 e 90 dias"} · Relatório para {r.publico_rotulo}{filtros ? ` · ${filtros}` : ""}</p>
+            {r.visao === "supervisor" ? <CangaruRelatorioSupervisor r={r} /> : <CangaruRelatorio r={r} />}
           </>
         ) : null}
       </div>
