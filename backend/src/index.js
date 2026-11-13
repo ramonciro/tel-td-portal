@@ -2835,6 +2835,8 @@ const rhClima = require("./controllers/rhClimaController");
 const rhCanguru = require("./controllers/rhCangaruController");
 const rhPlanos = require("./controllers/rhPlanosController");
 const rhCliente = require("./controllers/rhClienteController");
+const rhRetencao = require("./controllers/rhRetencaoController");
+const rhOnboarding = require("./controllers/rhOnboardingController");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
 // Leitura: coordenador_rs + gestor_rs | Escrita: coordenador_rs apenas
@@ -3002,6 +3004,26 @@ app.get   ("/api/rh/canguru/comparativo",           authRequired, authorizeRoles
 app.get   ("/api/rh/canguru/comparativo/exportar",  authRequired, authorizeRoles(...RH_TODOS), rhCanguru.exportarComparativo);
 app.get   ("/api/rh/canguru/relatorio",             authRequired, authorizeRoles(...RH_TODOS), rhCanguru.relatorio);
 app.get   ("/api/rh/canguru/exportar",              authRequired, authorizeRoles(...RH_TODOS), rhCanguru.exportar);
+// ── Turnover, pesquisa de desligamento e onboarding (Pacote 8, 13/11/2026) ──
+// Importação, lista nominal e marcação só para coordenador_rh e analista_rh; gestor_rh vê o agregado; cliente_rh não entra (guard de lib/clienteRh.js).
+app.get   ("/api/rh/turnover",                       authRequired, authorizeRoles(...RH_TODOS), rhRetencao.turnover);
+app.get   ("/api/rh/turnover/opcoes",                authRequired, authorizeRoles(...RH_TODOS), rhRetencao.opcoesTurnover);
+app.get   ("/api/rh/turnover/exportar",              authRequired, authorizeRoles(...RH_TODOS), rhRetencao.exportarTurnover);
+app.get   ("/api/rh/turnover/lista",                 authRequired, authorizeRoles(...RH_OPERA), rhRetencao.lista);
+app.get   ("/api/rh/turnover/modelo",                authRequired, authorizeRoles(...RH_OPERA), rhRetencao.modelo);
+app.post  ("/api/rh/turnover/desligamentos/importar", authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 1)), rhRetencao.importarDesligamentos);
+app.post  ("/api/rh/turnover/quadro/importar",       authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 1)), rhRetencao.importarQuadro);
+app.delete("/api/rh/turnover/desligamentos/:id",     authRequired, authorizeRoles(...RH_COORD), rhRetencao.remover);
+app.get   ("/api/rh/desligamento",                   authRequired, authorizeRoles(...RH_TODOS), rhRetencao.pesquisa);
+app.get   ("/api/rh/desligamento/exportar",          authRequired, authorizeRoles(...RH_TODOS), rhRetencao.exportarPesquisa);
+app.post  ("/api/rh/desligamento/importar",          authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 1)), rhRetencao.importarPesquisa);
+app.get   ("/api/rh/onboarding",                     authRequired, authorizeRoles(...RH_TODOS), rhOnboarding.painel);
+app.get   ("/api/rh/onboarding/opcoes",              authRequired, authorizeRoles(...RH_TODOS), rhOnboarding.opcoes);
+app.get   ("/api/rh/onboarding/exportar",            authRequired, authorizeRoles(...RH_TODOS), rhOnboarding.exportar);
+app.get   ("/api/rh/onboarding/etapas",              authRequired, authorizeRoles(...RH_TODOS), rhOnboarding.etapas);
+app.post  ("/api/rh/onboarding/etapas",              authRequired, authorizeRoles(...RH_COORD), rhOnboarding.criarEtapa);
+app.put   ("/api/rh/onboarding/etapas/:id",          authRequired, authorizeRoles(...RH_COORD), rhOnboarding.atualizarEtapa);
+app.post  ("/api/rh/onboarding/marcar",              authRequired, authorizeRoles(...RH_OPERA), rhOnboarding.marcar);
 // Importação da planilha antiga (Visão Nacional): só coordenador_nusp. ?simular=1 não grava.
 app.post  ("/api/nusp/importar", authRequired, authorizeRoles(...NUSP_COORD), comUploadTratado(upload.single("arquivo")), async (req, res) => {
   try {

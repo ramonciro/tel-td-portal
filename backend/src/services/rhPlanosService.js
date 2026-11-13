@@ -15,7 +15,7 @@ const Clima = require("./rhClimaService");
 const Canguru = require("./rhCangaruService");
 
 const erroHttp = (status, message) => { const e = new Error(message); e.status = status; return e; };
-const ORIGENS = ["clima", "canguru", "livre"];
+const ORIGENS = ["clima", "canguru", "turnover", "desligamento", "onboarding", "livre"];
 const STATUS = ["aberto", "andamento", "concluido", "cancelado"];
 const PRIORIDADES = ["alta", "media", "baixa"];
 const ABERTOS = ["aberto", "andamento"];

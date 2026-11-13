@@ -149,6 +149,19 @@ export default function PainelRhPage() {
           </div>
         </div>
       ) : null}
+
+      <div style={{ ...st.card, marginTop: 16 }}>
+        <h3 style={st.cardTitle}>Retenção: turnover, pesquisa de desligamento e onboarding</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+          {[["/rh/turnover", "Turnover", "Saídas por mês, tempo de casa, motivos, serviço e site."], ["/rh/desligamento", "Pesquisa de desligamento", "Por que as pessoas saem: motivo, notas e comentários."], ["/rh/onboarding", "Onboarding", "Etapas dos primeiros dias dos novatos, com prazo e atraso."]].map(([href, nome, txt]) => (
+            <div key={href} style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 14 }}>
+              <strong>{nome}</strong>
+              <p style={{ margin: "4px 0 8px", fontSize: 12.5, color: colors.textSecondary }}>{txt}</p>
+              <Link href={href} style={{ color: "#9d174d", fontWeight: 800, fontSize: 12.5 }}>Abrir →</Link>
+            </div>
+          ))}
+        </div>
+      </div>
     </PortalShell>
   );
 }

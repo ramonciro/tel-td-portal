@@ -10,7 +10,7 @@ import { apiFetch, apiDownload } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import { st, Campo, Select, Modal, Badge, perfilRh, ehOperacaoRh, PERFIL_COORD, fmtN, fmtDia, COR_RH, FAROL } from "../../../components/RhUi";
 
-const ORIGEM = { clima: "Clima", canguru: "Canguru", livre: "Livre" };
+const ORIGEM = { clima: "Clima", canguru: "Canguru", turnover: "Turnover", desligamento: "Pesquisa de desligamento", onboarding: "Onboarding", livre: "Livre" };
 const PRIO = { alta: "Alta", media: "Média", baixa: "Baixa" };
 const STATUS = { aberto: "Aberto", andamento: "Em andamento", concluido: "Concluído", cancelado: "Cancelado" };
 const SIT = {
@@ -40,6 +40,14 @@ export default function PlanosRhPage() {
     if (s === "atrasado" || s === "vence_em_breve") setF((x) => ({ ...x, situacao: s, status: "abertos" }));
   }, []);
   const opera = ehOperacaoRh(perfil);
+  // Atalho vindo de Turnover, Pesquisa de desligamento e Onboarding: /rh/planos?novo=turnover&tema=Remuneração (abre o plano já com a origem)
+  useEffect(() => {
+    if (!opera) return;
+    const q = new URLSearchParams(window.location.search); const o = q.get("novo");
+    if (!["turnover", "desligamento", "onboarding"].includes(o || "")) return;
+    setNovo({ origem: o, ciclo_id: "", tema: (q.get("tema") || "").slice(0, 150), cliente: "", titulo: (q.get("titulo") || "").slice(0, 200), acao: "", prioridade: "media", prazo: amanha(), responsavel_id: "", responsavel_nome: "", visivel_cliente: false });
+    window.history.replaceState(null, "", "/rh/planos");
+  }, [opera]);
 
   const qs = useMemo(() => { const p = new URLSearchParams(); Object.entries(f).forEach(([k, v]) => { if (v) p.set(k, v); }); return p.toString(); }, [f]);
   const carregar = useCallback(async () => {

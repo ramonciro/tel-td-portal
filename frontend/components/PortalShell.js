@@ -122,6 +122,9 @@ const menuItems = [
   { href: "/rh/canguru/resultado", label: "Canguru · Resultado",    icon: "award",    roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/canguru/comparativo", label: "Canguru · Comparar períodos", icon: "trending", roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/canguru/importar", label: "Canguru · Importar avaliações", icon: "folder", roles: ["coordenador_rh", "analista_rh"] },
+  { href: "/rh/turnover",       label: "Turnover",              icon: "trending", roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/desligamento",   label: "Pesquisa de desligamento", icon: "file",  roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/onboarding",     label: "Onboarding",            icon: "users",    roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/configuracoes",  label: "Cadastros",             icon: "settings", roles: ["coordenador_rh"] },
   // Acesso do cliente (13/11/2026): perfil cliente_rh, só leitura das pesquisas que o coordenador liberou para o cliente dele.
   { href: "/rh/cliente",        label: "Minhas pesquisas",      icon: "chart",    roles: ["cliente_rh"] },

@@ -3999,6 +3999,94 @@ async function ensureRh() {
       revogado_por_nome VARCHAR(150) NULL,
       INDEX idx_rh_cglib (empresa_id, cliente_chave, revogado_em)
     ) ${T}`);
+  // ── Pacote 8 (13/11/2026): turnover, pesquisa de desligamento e onboarding ───────────────────────
+  // Desligamentos (um por matrícula e data), quadro mensal (denominador do turnover), pesquisa de desligamento e checklist de onboarding.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_desligamentos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      matricula VARCHAR(40) NOT NULL,
+      matricula_chave VARCHAR(40) NOT NULL,
+      nome VARCHAR(150) NULL,
+      cargo VARCHAR(120) NULL,
+      servico VARCHAR(150) NULL,
+      site VARCHAR(150) NULL,
+      coordenador VARCHAR(150) NULL,
+      supervisor VARCHAR(150) NULL,
+      data_admissao DATE NULL,
+      data_desligamento DATE NOT NULL,
+      tipo VARCHAR(20) NOT NULL DEFAULT 'nao_informado',
+      motivo VARCHAR(150) NULL,
+      recontratavel TINYINT NULL,
+      novato_id INT NULL,
+      importado_por INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_rh_deslig (empresa_id, matricula_chave, data_desligamento),
+      INDEX idx_rh_deslig_data (empresa_id, data_desligamento)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_quadro (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      competencia CHAR(7) NOT NULL,
+      servico VARCHAR(150) NOT NULL DEFAULT '',
+      site VARCHAR(150) NOT NULL DEFAULT '',
+      headcount INT NOT NULL,
+      importado_por INT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_rh_quadro (empresa_id, competencia, servico, site)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_desl_pesquisa (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      matricula_chave VARCHAR(40) NOT NULL,
+      desligamento_id INT NULL,
+      data_resposta DATE NOT NULL,
+      servico VARCHAR(150) NULL,
+      site VARCHAR(150) NULL,
+      motivo_principal VARCHAR(150) NULL,
+      nota_lideranca TINYINT NULL,
+      nota_remuneracao TINYINT NULL,
+      nota_ambiente TINYINT NULL,
+      nota_carreira TINYINT NULL,
+      nota_atividades TINYINT NULL,
+      nota_condicoes TINYINT NULL,
+      recomendaria TINYINT NULL,
+      voltaria TINYINT NULL,
+      comentario TEXT NULL,
+      prioritario TINYINT NOT NULL DEFAULT 0,
+      importado_por INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_rh_deslpesq (empresa_id, matricula_chave, data_resposta),
+      INDEX idx_rh_deslpesq_data (empresa_id, data_resposta)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_onboarding_etapas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      nome VARCHAR(120) NOT NULL,
+      prazo_dias INT NOT NULL DEFAULT 0,
+      ordem INT NOT NULL DEFAULT 0,
+      ativa TINYINT NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_rh_onbetapa (empresa_id, ativa, ordem)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_onboarding_status (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      novato_id INT NOT NULL,
+      etapa_id INT NOT NULL,
+      status VARCHAR(10) NOT NULL,
+      feito_em DATE NULL,
+      marcado_por INT NULL,
+      marcado_por_nome VARCHAR(150) NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_rh_onbstatus (empresa_id, novato_id, etapa_id)
+    ) ${T}`);
   console.log("  ↳ Módulo RH: ok");
 }
 
