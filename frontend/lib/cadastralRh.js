@@ -88,3 +88,58 @@ export async function lerRelatorioCadastral(file, { desde, hojeIso }) {
     arquivos: { desligamentos: new File([csvDesl], "desligamentos_do_cadastral.csv", { type: "text/csv" }), quadro: new File([csvQuadro], "quadro_do_cadastral.csv", { type: "text/csv" }) },
   };
 }
+
+// ── Admissões do Canguru (13/11/2026) ─────────────────────────────────
+// Lê o mesmo relatório cadastral, mas guarda só matrícula, nome, status, serviço e as duas datas, e devolve um mapa por matrícula (sem zeros à esquerda).
+// Nenhum dado pessoal (CPF, RG, endereço, telefone) é guardado nem enviado.
+export async function lerAdmissoesDoCadastral(file) {
+  const texto = await file.text();
+  const linhasHtml = texto.split(/<\/tr>/i);
+  const celulas = (l) => { const out = []; let m; RE_CELULA.lastIndex = 0; while ((m = RE_CELULA.exec(l))) out.push(m[1]); return out; };
+  let cab = null; let i = 0;
+  for (; i < linhasHtml.length && !cab; i += 1) { const c = celulas(linhasHtml[i]); if (c.length > 5) cab = c.map(norm); }
+  if (!cab) throw new Error("Não encontrei a tabela no arquivo. Envie o Relatório de dados cadastrais exportado do sistema.");
+  const idx = { mat: cab.indexOf("MATRICULA"), nome: cab.indexOf("NOME"), adm: cab.indexOf("DATAADMISSAO"), dem: cab.indexOf("DATADEMISSAO"), servico: cab.indexOf("SERVICO"), status: cab.indexOf("STATUS") };
+  const faltam = ["mat", "adm"].filter((k) => idx[k] < 0);
+  if (faltam.length) throw new Error("O arquivo não tem as colunas MATRICULA e DATAADMISSAO. Confira se é o Relatório de dados cadastrais.");
+  const pega = (c, k) => (idx[k] >= 0 && c[idx[k]] !== undefined ? limpar(c[idx[k]]) : "");
+  const mapa = new Map(); let lidas = 0;
+  for (; i < linhasHtml.length; i += 1) {
+    const c = celulas(linhasHtml[i]); if (c.length < cab.length - 2) continue;
+    lidas += 1;
+    const adm = dataIsoDe(pega(c, "adm")); const mat = pega(c, "mat").replace(/^0+/, "");
+    if (!adm || !mat) continue;
+    const reg = { nome: pega(c, "nome"), adm, desligado: !!pega(c, "dem"), servico: pega(c, "servico") };
+    if (!mapa.has(mat)) mapa.set(mat, []);
+    mapa.get(mat).push(reg);
+  }
+  return { mapa, lidas, matriculas: mapa.size };
+}
+
+const tokensNome = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z ]/g, " ").split(/\s+/).filter((t) => t.length > 1);
+const nomesParecidosTela = (a, b) => { const A = tokensNome(a), B = new Set(tokensNome(b)); if (!A.length || !B.size) return true; return A.filter((t) => B.has(t)).length >= Math.min(2, A.length, B.size); };
+const diasEntreIso = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+
+/** Cruza os novatos do portal com o cadastral. Devolve { prontas, conferir, sem, jaTem } (cada item: matricula, nome, adm, motivo?). */
+export function cruzarAdmissoes(novatos, mapa, { hoje, incluirComData = false }) {
+  const prontas = []; const conferir = []; const sem = []; let jaTem = 0;
+  for (const n of novatos) {
+    if (n.data_admissao && !incluirComData) { jaTem += 1; continue; }
+    const k = String(n.matricula || "").replace(/^0+/, "");
+    const regs = k ? mapa.get(k) : null;
+    if (!regs || !regs.length) { sem.push({ matricula: n.matricula, nome: n.nome }); continue; }
+    // Prefere o registro ativo; entre os demais, a admissão mais recente (recontratação).
+    const pool = regs.filter((r) => !r.desligado); const r = (pool.length ? pool : regs).reduce((a, b) => (b.adm > a.adm ? b : a));
+    let motivo = "";
+    if (r.adm > hoje) motivo = "Admissão no futuro";
+    else if (n.primeira && r.adm > n.primeira) motivo = "Admissão depois da primeira avaliação";
+    else if (n.primeira && diasEntreIso(r.adm, n.primeira) > 200) motivo = "Admissão muito antes da primeira avaliação (recontratação ou transferência?)";
+    else if (!nomesParecidosTela(n.nome, r.nome)) motivo = `Nome diferente no cadastral (${r.nome})`;
+    const item = { matricula: n.matricula, nome: n.nome, adm: r.adm, atual: n.data_admissao || null, motivo, servico: r.servico };
+    (motivo ? conferir : prontas).push(item);
+  }
+  return { prontas, conferir, sem, jaTem };
+}
+
+/** Monta o CSV (Matrícula, Nome, Data de admissão em aaaa-mm-dd) que a importação de admissões já entende. */
+export function csvAdmissoes(itens) { return csv(["Matrícula", "Nome", "Data de admissão"], itens.map((x) => [x.matricula, x.nome, x.adm])); }

@@ -500,6 +500,21 @@ async function importarAdmissoes({ empresaId, usuario, arquivo, simular }) {
   return rel;
 }
 
+// Lista dos novatos para a tela cruzar com o relatório cadastral (o cruzamento acontece no navegador: o arquivo tem mais de 40 MB e dados pessoais).
+// Devolve só o necessário: matrícula, nome, data atual e a data da primeira avaliação respondida (serve para desconfiar de datas muito antigas).
+async function novatosParaAdmissao(empresaId) {
+  const [rows] = await pool.query(
+    `SELECT n.id, COALESCE(NULLIF(n.matricula, ''), p.matricula) AS matricula, p.nome, n.data_admissao, n.admissao_origem,
+            LEAST(COALESCE((SELECT MIN(a.respondida_em) FROM rh_canguru_avaliacoes a WHERE a.novato_id = n.id AND a.empresa_id = n.empresa_id), '9999-12-31'),
+                  COALESCE((SELECT MIN(s.respondida_em) FROM rh_canguru_aval_sup s WHERE s.novato_id = n.id AND s.empresa_id = n.empresa_id), '9999-12-31')) AS primeira
+       FROM rh_canguru_novatos n LEFT JOIN pessoas p ON p.id = n.pessoa_id AND p.empresa_id = n.empresa_id
+      WHERE n.empresa_id = ? ORDER BY p.nome LIMIT 5000`, [empresaId]);
+  return rows.map((r) => ({
+    matricula: r.matricula || null, nome: r.nome || "", data_admissao: dataIso(r.data_admissao), origem: r.admissao_origem || null,
+    primeira: r.primeira && !String(r.primeira).startsWith("9999") ? new Date(r.primeira).toISOString().slice(0, 10) : null,
+  }));
+}
+
 async function modeloAdmissoes(empresaId) {
   const [rows] = await pool.query(
     `SELECT n.matricula, p.nome FROM rh_canguru_novatos n LEFT JOIN pessoas p ON p.id = n.pessoa_id AND p.empresa_id = n.empresa_id
@@ -917,7 +932,7 @@ async function listaNominal(empresaId, visao = "operador") {
 }
 
 module.exports = {
-  TIPOS, PASSOS, SINAIS_ROTULO, MIN_GRUPO_MINIMO, rotuloSite, carregarConfig, salvarConfig, importarAvaliacoes, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, salvarAdmissao,
+  TIPOS, PASSOS, SINAIS_ROTULO, MIN_GRUPO_MINIMO, rotuloSite, carregarConfig, salvarConfig, importarAvaliacoes, importarAdmissoes, modeloAdmissoes, novatosParaAdmissao, acompanhamento, ficha, salvarAdmissao,
   filaAtencao, listarPontos, equipe, abrirPonto, atualizarPonto, resultado, opcoesEscopo, compararPeriodos, resumoPainel, listaNominal, etapasDe,
   // Usados pela visão do supervisor (rhCangaruSupervisorService.js)
   REQUISITOS, REQ_ROTULO, visaoDe, risco, paraData, sqlDataHora, textoOuNulo, limparTexto, carregarPessoas, dataIso, diasEntre, arred2, pct,

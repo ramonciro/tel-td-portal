@@ -62,6 +62,12 @@ async function importarAdmissoes(req, res) {
   } catch (e) { return falha(res, e, "admissoes", "Erro ao importar as admissões"); }
 }
 
+async function novatosAdmissao(req, res) {
+  const c = R.contextoOperacao(req, res); if (!c) return;
+  try { return res.json({ ok: true, novatos: await S.novatosParaAdmissao(c.empresaId), hoje: R.hojeISO() }); }
+  catch (e) { return falha(res, e, "novatos_admissao", "Erro ao listar os novatos"); }
+}
+
 // Modelo de planilha já com os novatos que ainda estão sem data de admissão
 async function modeloAdmissoes(req, res) {
   const c = R.contextoOperacao(req, res); if (!c) return;
@@ -369,4 +375,4 @@ async function excelDoComparativoSupervisor(r) {
   return wb.xlsx.writeBuffer();
 }
 
-module.exports = { importarSupervisor, excelDoSupervisor, excelDoComparativoSupervisor, comparativo, exportarComparativo, periodos, somaDias, excelDoComparativoCanguru, excelDoCanguru, PUBLICOS, importar, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };
+module.exports = { importarSupervisor, excelDoSupervisor, excelDoComparativoSupervisor, comparativo, exportarComparativo, periodos, somaDias, excelDoComparativoCanguru, excelDoCanguru, PUBLICOS, importar, importarAdmissoes, modeloAdmissoes, novatosAdmissao, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };
