@@ -8,7 +8,7 @@ import { colors, radius } from "../lib/theme";
 import { getStoredUser, apiFetch } from "../services/api";
 import { st, Select } from "./NuspUi";
 
-export { st, Campo, Select, Modal, Badge } from "./NuspUi";
+export { st, Campo, Select, Modal, Badge, Paginacao } from "./NuspUi";
 
 export const PERFIL_COORD = "coordenador_rh";
 export const PERFIL_ANALISTA = "analista_rh";

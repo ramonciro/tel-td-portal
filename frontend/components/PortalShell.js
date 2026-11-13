@@ -113,6 +113,11 @@ const menuItems = [
   { href: "/rh/clima/resultado", label: "Resultado do ciclo",   icon: "target",   roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/clima/recortes", label: "Recortes",              icon: "compass",  roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/relatorios",     label: "Relatórios",            icon: "file",     roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  // Projeto Canguru (12/11/2026): acompanhamento dos novatos até os 90 dias. O gestor só abre o resultado agregado.
+  { href: "/rh/canguru",          label: "Canguru · Acompanhamento", icon: "users",    roles: ["coordenador_rh", "analista_rh"] },
+  { href: "/rh/canguru/atencao",  label: "Canguru · Pontos de atenção", icon: "shield", roles: ["coordenador_rh", "analista_rh"] },
+  { href: "/rh/canguru/resultado", label: "Canguru · Resultado",    icon: "award",    roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/canguru/importar", label: "Canguru · Importar avaliações", icon: "folder", roles: ["coordenador_rh", "analista_rh"] },
   { href: "/rh/configuracoes",  label: "Cadastros",             icon: "settings", roles: ["coordenador_rh"] },
   // Módulo Metodologia e Desenvolvimento (16/09/2026) — Mapa de
   // Desenvolvimento e Trilhas fundidos num módulo à parte, fora do escopo de

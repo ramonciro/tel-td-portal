@@ -3821,6 +3821,110 @@ async function ensureRh() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_rh_acessos (empresa_id, created_at)
     ) ${T}`);
+  // ── Projeto Canguru (Pacotes 3 e 4, 12/11/2026) ─────────────────────
+  // Sem FKs (padrão do módulo). Dado individual: só o RH abre. O login da planilha nunca é gravado; o nome fica no cadastro de pessoas.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_config (
+      empresa_id INT NOT NULL PRIMARY KEY,
+      dia_aval_1 INT NOT NULL DEFAULT 25,
+      dia_aval_2 INT NOT NULL DEFAULT 40,
+      dia_aval_3 INT NOT NULL DEFAULT 85,
+      alerta_dias INT NOT NULL DEFAULT 3,
+      tolerancia_dias INT NOT NULL DEFAULT 0,
+      nota_sinal_max TINYINT NOT NULL DEFAULT 2,
+      risco_moderado_min DECIMAL(5,2) NOT NULL DEFAULT 10,
+      risco_alto_min DECIMAL(5,2) NOT NULL DEFAULT 20,
+      min_grupo INT NOT NULL DEFAULT 5,
+      cobranca_a_partir_de DATE NULL,
+      termos_operacao VARCHAR(255) NOT NULL DEFAULT 'OPERADOR,TMK,TELEMARKETING',
+      termos_prioritarios TEXT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_novatos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      pessoa_id INT NOT NULL,
+      matricula VARCHAR(100) NULL,
+      site VARCHAR(150) NULL,
+      servico VARCHAR(150) NULL,
+      funcao VARCHAR(150) NULL,
+      supervisor VARCHAR(150) NULL,
+      coordenador VARCHAR(150) NULL,
+      data_admissao DATE NULL,
+      admissao_origem VARCHAR(20) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_rh_cg_novato (empresa_id, pessoa_id),
+      INDEX idx_rh_cg_site (empresa_id, site),
+      INDEX idx_rh_cg_servico (empresa_id, servico)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_avaliacoes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      novato_id INT NOT NULL,
+      tipo SMALLINT NOT NULL,
+      respondida_em DATETIME NULL,
+      site VARCHAR(150) NULL,
+      servico VARCHAR(150) NULL,
+      esp TINYINT NULL,
+      esp_motivo TEXT NULL,
+      acolhido TINYINT NULL,
+      acolhido_area VARCHAR(150) NULL,
+      acolhido_texto TEXT NULL,
+      lider TINYINT NULL,
+      lider_motivo VARCHAR(255) NULL,
+      lider_texto TEXT NULL,
+      nota_ativ TINYINT NULL,
+      ativ_motivo VARCHAR(255) NULL,
+      ativ_area VARCHAR(255) NULL,
+      ativ_texto TEXT NULL,
+      nota_apoio TINYINT NULL,
+      apoio_texto TEXT NULL,
+      nota_clima TINYINT NULL,
+      clima_texto TEXT NULL,
+      sinais TINYINT NOT NULL DEFAULT 0,
+      sinais_lista VARCHAR(80) NULL,
+      prioritario TINYINT(1) NOT NULL DEFAULT 0,
+      prioritario_termos VARCHAR(255) NULL,
+      origem_arquivo VARCHAR(200) NULL,
+      importado_por INT NULL,
+      importado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_rh_cg_aval (novato_id, tipo),
+      INDEX idx_rh_cg_aval_emp (empresa_id, tipo),
+      INDEX idx_rh_cg_aval_data (empresa_id, respondida_em)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_pontos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      novato_id INT NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'aberto',
+      passo TINYINT NOT NULL DEFAULT 1,
+      responsavel_id INT NULL,
+      prazo DATE NULL,
+      combinado TEXT NULL,
+      aberto_por INT NULL,
+      aberto_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      resolvido_em DATETIME NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_rh_cg_ponto (empresa_id, status),
+      INDEX idx_rh_cg_ponto_novato (novato_id)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_pontos_hist (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      ponto_id INT NOT NULL,
+      usuario_id INT NULL,
+      usuario_nome VARCHAR(150) NULL,
+      acao VARCHAR(30) NOT NULL,
+      passo TINYINT NULL,
+      texto TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_rh_cg_hist (ponto_id)
+    ) ${T}`);
   console.log("  ↳ Módulo RH: ok");
 }
 

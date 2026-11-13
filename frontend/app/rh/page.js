@@ -108,9 +108,24 @@ export default function PainelRhPage() {
               <strong>Clima organizacional</strong>
               <p style={{ margin: "4px 0 0", fontSize: 12.5, color: colors.textSecondary }}>Em uso: importação do Prime RH, resultado por tema, recortes e relatórios.</p>
             </div>
-            <div style={{ border: `1px dashed ${colors.border}`, borderRadius: 12, padding: 14, color: colors.textMuted }}>
+            <div style={{ border: `1px solid ${d.canguru && !d.canguru.vazio ? FAROL.verde.barra : colors.border}`, borderRadius: 12, padding: 14 }}>
               <strong>Projeto Canguru</strong>
-              <p style={{ margin: "4px 0 0", fontSize: 12.5 }}>Acompanhamento dos novatos até os 90 dias. Chega nos próximos pacotes.</p>
+              {d.canguru && !d.canguru.vazio ? (
+                <>
+                  <p style={{ margin: "4px 0 8px", fontSize: 12.5, color: colors.textSecondary }}>{d.canguru.leitura}</p>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, fontSize: 12.5 }}>
+                    <span><strong>{fmtN(d.canguru.novatos)}</strong> novatos</span>
+                    {d.canguru.risco?.altos ? <span style={{ color: colors.dangerText, fontWeight: 800 }}>· {d.canguru.risco.altos} {d.canguru.risco.altos === 1 ? "site" : "sites"} em risco alto</span> : null}
+                    {operacao ? <span>· {fmtN(d.canguru.etapas_vencendo)} vencendo · {fmtN(d.canguru.etapas_sem_resposta)} sem resposta · {fmtN(d.canguru.pontos_abertos)} pontos abertos{d.canguru.prioritarios ? ` · ${fmtN(d.canguru.prioritarios)} prioritários` : ""}</span> : null}
+                  </div>
+                  <Link href={operacao ? "/rh/canguru" : "/rh/canguru/resultado"} style={{ color: "#9d174d", fontWeight: 800, fontSize: 12.5 }}>{operacao ? "Abrir o acompanhamento →" : "Ver o resultado →"}</Link>
+                </>
+              ) : (
+                <>
+                  <p style={{ margin: "4px 0 8px", fontSize: 12.5, color: colors.textSecondary }}>Acompanhamento dos novatos até os 90 dias. Importe as planilhas de avaliação para começar.</p>
+                  {operacao ? <Link href="/rh/canguru/importar" style={{ color: "#9d174d", fontWeight: 800, fontSize: 12.5 }}>Importar avaliações →</Link> : null}
+                </>
+              )}
             </div>
           </div>
         </div>

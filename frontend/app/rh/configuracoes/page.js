@@ -8,6 +8,7 @@ import PageHero from "../../../components/PageHero";
 import { apiFetch } from "../../../services/api";
 import { colors } from "../../../lib/theme";
 import { st, Campo, Select, Badge, perfilRh, PERFIL_COORD, COR_RH } from "../../../components/RhUi";
+import CangaruRegras from "../../../components/CangaruRegras";
 
 export default function CadastrosRhPage() {
   const perfil = perfilRh();
@@ -45,7 +46,7 @@ export default function CadastrosRhPage() {
 
   return (
     <PortalShell>
-      <PageHero eyebrow="Relações Humanas" title="Cadastros" subtitle="Limites do farol, temas da pesquisa de clima e a que tema cada afirmação pertence." />
+      <PageHero eyebrow="Relações Humanas" title="Cadastros" subtitle="Limites do farol, temas da pesquisa de clima, e as regras do Projeto Canguru." />
       {msg.texto ? <div style={{ ...(msg.tipo === "ok" ? st.ok : st.erro), marginTop: 14 }}>{msg.texto}</div> : null}
       {!coord ? <div style={{ ...st.card, marginTop: 16, color: colors.textSecondary, fontSize: 13.5 }}>Só o coordenador do RH altera os cadastros.</div> : null}
       {!cfg ? <p style={{ color: colors.textMuted, marginTop: 16 }}>Carregando…</p> : (
@@ -127,6 +128,7 @@ export default function CadastrosRhPage() {
           </div>
         </>
       )}
+      <CangaruRegras />
     </PortalShell>
   );
 }

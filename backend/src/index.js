@@ -2804,6 +2804,7 @@ const nuspRel = require("./controllers/nuspRelatorioController");
 const { importarPlanilha: importarPlanilhaNusp } = require("./services/nuspImportService");
 // Módulo RH (Pacote 1, 12/11/2026): perfis próprios (coordenador_rh, analista_rh, gestor_rh). Ver controllers/rh*.js.
 const rhClima = require("./controllers/rhClimaController");
+const rhCanguru = require("./controllers/rhCangaruController");
 
 // ── R&S — rotas ─────────────────────────────────────────────────────────────
 // Leitura: coordenador_rs + gestor_rs | Escrita: coordenador_rs apenas
@@ -2924,6 +2925,21 @@ app.put   ("/api/rh/config/limites",                authRequired, authorizeRoles
 app.post  ("/api/rh/config/temas",                  authRequired, authorizeRoles(...RH_COORD), rhClima.criarTema);
 app.put   ("/api/rh/config/temas/:id",              authRequired, authorizeRoles(...RH_COORD), rhClima.editarTema);
 app.put   ("/api/rh/config/afirmacoes/:numero",     authRequired, authorizeRoles(...RH_COORD), rhClima.ligarAfirmacao);
+// ── Projeto Canguru (Pacotes 3 e 4, 12/11/2026) ──
+// Dado individual (acompanhamento, ficha, fila, pontos) só para coordenador_rh e analista_rh; gestor_rh vê o resultado agregado.
+app.post  ("/api/rh/canguru/importar",              authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 6)), rhCanguru.importar);
+app.get   ("/api/rh/canguru/acompanhamento",        authRequired, authorizeRoles(...RH_OPERA), rhCanguru.acompanhamento);
+app.get   ("/api/rh/canguru/novatos/:id",           authRequired, authorizeRoles(...RH_OPERA), rhCanguru.ficha);
+app.put   ("/api/rh/canguru/novatos/:id/admissao",  authRequired, authorizeRoles(...RH_OPERA), rhCanguru.admissao);
+app.get   ("/api/rh/canguru/atencao",               authRequired, authorizeRoles(...RH_OPERA), rhCanguru.atencao);
+app.get   ("/api/rh/canguru/pontos",                authRequired, authorizeRoles(...RH_OPERA), rhCanguru.pontos);
+app.post  ("/api/rh/canguru/pontos",                authRequired, authorizeRoles(...RH_OPERA), rhCanguru.abrirPonto);
+app.put   ("/api/rh/canguru/pontos/:id",            authRequired, authorizeRoles(...RH_OPERA), rhCanguru.atualizarPonto);
+app.get   ("/api/rh/canguru/config",                authRequired, authorizeRoles(...RH_TODOS), rhCanguru.obterConfig);
+app.put   ("/api/rh/canguru/config",                authRequired, authorizeRoles(...RH_COORD), rhCanguru.salvarConfig);
+app.get   ("/api/rh/canguru/resultado",             authRequired, authorizeRoles(...RH_TODOS), rhCanguru.resultado);
+app.get   ("/api/rh/canguru/relatorio",             authRequired, authorizeRoles(...RH_TODOS), rhCanguru.relatorio);
+app.get   ("/api/rh/canguru/exportar",              authRequired, authorizeRoles(...RH_TODOS), rhCanguru.exportar);
 // Importação da planilha antiga (Visão Nacional): só coordenador_nusp. ?simular=1 não grava.
 app.post  ("/api/nusp/importar", authRequired, authorizeRoles(...NUSP_COORD), comUploadTratado(upload.single("arquivo")), async (req, res) => {
   try {

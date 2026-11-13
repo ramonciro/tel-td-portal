@@ -10,6 +10,7 @@ const pool = require("../lib/db");
 const R = require("../lib/rhBase");
 const xl = require("../lib/excelExport");
 const S = require("../services/rhClimaService");
+const Canguru = require("../services/rhCangaruService");
 const { registrarAuditoria } = require("../services/auditoria");
 
 const auditar = (req, acao, entidade, id, resumo, antes, depois) =>
@@ -122,7 +123,9 @@ async function painel(req, res) {
         };
       }
     }
-    return res.json({ ok: true, atual, historico: ciclos });
+    let canguru = { vazio: true };
+    try { canguru = await Canguru.resumoPainel(c.empresaId, ehOperacao(c)); } catch (e2) { console.error("[rh.painel.canguru]", e2.message); }
+    return res.json({ ok: true, atual, historico: ciclos, canguru });
   } catch (e) {
     console.error("[rh.painel]", e);
     return R.erro(res, 500, "Erro ao carregar o painel");
