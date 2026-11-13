@@ -14,6 +14,7 @@
  */
 const pool = require("../lib/db");
 const { comTransacao } = require("../lib/tx");
+const L = require("./rhCangaruLotes");
 const R = require("../lib/rhBase");
 const { resolverPessoa, matriculaParaComparar, nomeParaComparar, nomesParecidos } = require("./pessoasService");
 
@@ -368,6 +369,7 @@ async function importarAvaliacoes({ empresaId, usuario, arquivos, simular, decis
   if (simular) return rel;
 
   await comTransacao(async (conn) => {
+    const loteId = await L.criarLote(conn, { empresaId, usuario, origem: "operador", arquivos: arquivos.map((a) => a.nome).join(", ") });
     for (const x of aProcessar) {
       let pessoa = x.pessoa;
       const ref = x.g.ultima;
@@ -389,6 +391,7 @@ async function importarAvaliacoes({ empresaId, usuario, arquivos, simular, decis
           [empresaId, pessoa.id, ref.matricula || null, ref.site, ref.servico, ref.funcao, ref.supervisor, ref.coordenador, adm, adm ? "cadastro" : null]
         );
         novatoId = ins.insertId;
+        await L.registrarNovato(conn, loteId, empresaId, novatoId, null, null);
       } else {
         novatoId = atual.id;
         const adm = atual.admissao_origem === "manual" ? null : (pAdm?.data_admissao ? dataIso(pAdm.data_admissao) : null);
@@ -396,15 +399,18 @@ async function importarAvaliacoes({ empresaId, usuario, arquivos, simular, decis
           `UPDATE rh_canguru_novatos SET matricula = COALESCE(?, matricula)${maisRecente ? ", site = ?, servico = ?, funcao = ?, supervisor = ?, coordenador = ?" : ""}${adm ? ", data_admissao = ?, admissao_origem = 'cadastro'" : ""} WHERE id = ?`,
           [ref.matricula || null, ...(maisRecente ? [ref.site, ref.servico, ref.funcao, ref.supervisor, ref.coordenador] : []), ...(adm ? [adm] : []), novatoId]
         );
+        const [[depoisN]] = await conn.query(`SELECT * FROM rh_canguru_novatos WHERE id = ?`, [novatoId]);
+        await L.registrarNovato(conn, loteId, empresaId, novatoId, atual, depoisN);
       }
       for (const e of x.g.entradas) {
-        const [[ja]] = await conn.query(`SELECT id FROM rh_canguru_avaliacoes WHERE novato_id = ? AND tipo = ?`, [novatoId, e.tipo]);
-        const valores = [e.respondida_em ? sqlDataHora(e.respondida_em) : null, e.site, e.servico, e.esp, e.esp_motivo, e.acolhido, e.acolhido_area, e.acolhido_texto, e.lider, e.lider_motivo, e.lider_texto, e.nota_ativ, e.ativ_motivo, e.ativ_area, e.ativ_texto, e.nota_apoio, e.apoio_texto, e.nota_clima, e.clima_texto, e.sinais, e.sinais_lista || null, e.prioritario, e.prioritario_termos, String(e.arquivo || "").slice(0, 200), usuario?.id ?? null];
-        const cols = "respondida_em=?, site=?, servico=?, esp=?, esp_motivo=?, acolhido=?, acolhido_area=?, acolhido_texto=?, lider=?, lider_motivo=?, lider_texto=?, nota_ativ=?, ativ_motivo=?, ativ_area=?, ativ_texto=?, nota_apoio=?, apoio_texto=?, nota_clima=?, clima_texto=?, sinais=?, sinais_lista=?, prioritario=?, prioritario_termos=?, origem_arquivo=?, importado_por=?";
-        if (ja) { await conn.query(`UPDATE rh_canguru_avaliacoes SET ${cols}, importado_em = CURRENT_TIMESTAMP WHERE id = ?`, [...valores, ja.id]); rel.avaliacoes.atualizadas += 1; }
-        else { await conn.query(`INSERT INTO rh_canguru_avaliacoes SET empresa_id = ?, novato_id = ?, tipo = ?, ${cols}`, [empresaId, novatoId, e.tipo, ...valores]); rel.avaliacoes.importadas += 1; }
+        const [[ja]] = await conn.query(`SELECT * FROM rh_canguru_avaliacoes WHERE novato_id = ? AND tipo = ?`, [novatoId, e.tipo]);
+        const valores = [e.respondida_em ? sqlDataHora(e.respondida_em) : null, e.site, e.servico, e.esp, e.esp_motivo, e.acolhido, e.acolhido_area, e.acolhido_texto, e.lider, e.lider_motivo, e.lider_texto, e.nota_ativ, e.ativ_motivo, e.ativ_area, e.ativ_texto, e.nota_apoio, e.apoio_texto, e.nota_clima, e.clima_texto, e.sinais, e.sinais_lista || null, e.prioritario, e.prioritario_termos, String(e.arquivo || "").slice(0, 200), usuario?.id ?? null, loteId];
+        const cols = "respondida_em=?, site=?, servico=?, esp=?, esp_motivo=?, acolhido=?, acolhido_area=?, acolhido_texto=?, lider=?, lider_motivo=?, lider_texto=?, nota_ativ=?, ativ_motivo=?, ativ_area=?, ativ_texto=?, nota_apoio=?, apoio_texto=?, nota_clima=?, clima_texto=?, sinais=?, sinais_lista=?, prioritario=?, prioritario_termos=?, origem_arquivo=?, importado_por=?, lote_id=?";
+        if (ja) { await conn.query(`UPDATE rh_canguru_avaliacoes SET ${cols}, importado_em = CURRENT_TIMESTAMP WHERE id = ?`, [...valores, ja.id]); await L.registrarAvaliacao(conn, loteId, empresaId, "rh_canguru_avaliacoes", ja.id, ja); rel.avaliacoes.atualizadas += 1; }
+        else { const [insA] = await conn.query(`INSERT INTO rh_canguru_avaliacoes SET empresa_id = ?, novato_id = ?, tipo = ?, ${cols}`, [empresaId, novatoId, e.tipo, ...valores]); await L.registrarAvaliacao(conn, loteId, empresaId, "rh_canguru_avaliacoes", insA.insertId, null); rel.avaliacoes.importadas += 1; }
       }
     }
+    rel.lote_id = await L.fecharLote(conn, loteId, { avaliacoes: rel.avaliacoes, novatos: rel.novatos });
   });
   return rel;
 }
@@ -447,7 +453,7 @@ async function importarAdmissoes({ empresaId, usuario, arquivo, simular }) {
   const { rows, mat, adm, nm } = lerLinhasAdmissao(arquivo.buffer, arquivo.nome);
   const hoje = R.hojeISO();
   const [novatos] = await pool.query(
-    `SELECT n.id, n.pessoa_id, n.matricula, n.data_admissao, n.admissao_origem, p.nome, p.matricula AS mat_pessoa
+    `SELECT n.id, n.pessoa_id, n.matricula, n.data_admissao, n.admissao_origem, n.site, n.servico, n.funcao, n.supervisor, n.coordenador, p.nome, p.matricula AS mat_pessoa
        FROM rh_canguru_novatos n LEFT JOIN pessoas p ON p.id = n.pessoa_id AND p.empresa_id = n.empresa_id WHERE n.empresa_id = ?`, [empresaId]);
   const porMat = new Map();
   for (const n of novatos) for (const m of [n.matricula, n.mat_pessoa]) { const k = matriculaParaComparar(m); if (k && !porMat.has(k)) porMat.set(k, n); }
@@ -482,20 +488,24 @@ async function importarAdmissoes({ empresaId, usuario, arquivo, simular }) {
     const antes = dataIso(n.data_admissao);
     if (nomePlan && n.nome && !nomesParecidos(n.nome, nomePlan)) rel.avisos.push(`Linha ${linha}: o nome da planilha (${nomePlan}) é diferente do cadastro (${n.nome}). Vale a matrícula; confira se é a pessoa certa.`);
     if (antes === iso && n.admissao_origem === "manual") { rel.resultado.iguais += 1; return; }
-    if (antes === iso) { rel.resultado.iguais += 1; aplicar.push({ id: n.id, iso, soOrigem: true }); return; }
+    if (antes === iso) { rel.resultado.iguais += 1; aplicar.push({ id: n.id, iso, soOrigem: true, antes: n }); return; }
     if (antes) { rel.resultado.alteradas += 1; rel.alteracoes.push({ linha, nome: n.nome, matricula: String(matBruta), antes, depois: iso }); }
     else rel.resultado.novas += 1;
-    aplicar.push({ id: n.id, iso });
+    aplicar.push({ id: n.id, iso, antes: n });
   });
   if (rel.problemas.length) rel.avisos.unshift(`${rel.problemas.length} linha(s) com problema não foram gravadas. Corrija na planilha e envie de novo (as demais já estão certas).`);
   if (rel.resultado.alteradas) rel.avisos.push(`${rel.resultado.alteradas} novato(s) já tinham outra data de admissão; a da planilha vai substituir.`);
   if (simular) return rel;
 
   await comTransacao(async (conn) => {
+    const loteId = await L.criarLote(conn, { empresaId, usuario, origem: "admissoes", arquivos: arquivo.nome });
     for (const a of aplicar) {
       await conn.query(`UPDATE rh_canguru_novatos SET data_admissao = ?, admissao_origem = 'manual' WHERE id = ? AND empresa_id = ?`, [a.iso, a.id, empresaId]);
+      const [[depoisN]] = await conn.query(`SELECT * FROM rh_canguru_novatos WHERE id = ?`, [a.id]);
+      await L.registrarNovato(conn, loteId, empresaId, a.id, a.antes, depoisN);
       if (!a.soOrigem) rel.resultado.gravadas += 1;
     }
+    rel.lote_id = await L.fecharLote(conn, loteId, { resultado: rel.resultado });
   });
   return rel;
 }

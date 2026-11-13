@@ -13,6 +13,7 @@ import { colors } from "../../../../lib/theme";
 import { st, perfilRh, ehOperacaoRh, fmtN, COR_RH } from "../../../../components/RhUi";
 import { Marca } from "../../../../components/CangaruUi";
 import CangaruAdmissoes from "../../../../components/CangaruAdmissoes";
+import CangaruImportacoes from "../../../../components/CangaruImportacoes";
 import { useVisaoCanguru, SeletorVisao, ehSupervisor, FaixaVisao } from "../../../../components/CangaruVisao";
 
 const TIPO_CONFLITO = {
@@ -54,7 +55,7 @@ export default function CangaruImportarPage() {
       setRel(r);
       if (sup) {
         if (!simular) {
-          setMsg({ tipo: "ok", texto: `Importação concluída: ${fmtN(r.avaliacoes.importadas)} avaliações novas e ${fmtN(r.avaliacoes.atualizadas)} atualizadas.` });
+          setMsg({ tipo: "ok", texto: `Importação concluída: ${fmtN(r.avaliacoes.importadas)} avaliações novas e ${fmtN(r.avaliacoes.atualizadas)} atualizadas.${r.lote_id ? ` Importação nº ${r.lote_id}: se precisar voltar atrás, use a aba “Histórico e desfazer”.` : ""}` });
           setArquivos([]); if (inputRef.current) inputRef.current.value = "";
         }
       } else if (simular) {
@@ -63,7 +64,7 @@ export default function CangaruImportarPage() {
         (r.conflitos || []).forEach((c) => { novas[c.chave] = (decisoesUsadas || {})[c.chave] || { acao: c.decisao === "cadastrar" ? "cadastrar" : "pular" }; });
         setDecisoes(novas);
       } else {
-        setMsg({ tipo: "ok", texto: `Importação concluída: ${fmtN(r.avaliacoes.importadas)} avaliações novas e ${fmtN(r.avaliacoes.atualizadas)} atualizadas.` });
+        setMsg({ tipo: "ok", texto: `Importação concluída: ${fmtN(r.avaliacoes.importadas)} avaliações novas e ${fmtN(r.avaliacoes.atualizadas)} atualizadas.${r.lote_id ? ` Importação nº ${r.lote_id}: se precisar voltar atrás, use a aba “Histórico e desfazer”.` : ""}` });
         setArquivos([]); if (inputRef.current) inputRef.current.value = "";
       }
     } catch (e) { setMsg({ tipo: "erro", texto: e.message || "Erro ao importar as planilhas." }); }
@@ -90,11 +91,11 @@ export default function CangaruImportarPage() {
       <PageHero eyebrow="Relações Humanas · Projeto Canguru" title="Importar avaliações" subtitle={sup ? "Planilhas da avaliação do supervisor (30, 60 e 85 dias). O formulário de 85 dias entra como a etapa final (90 dias)." : "Planilhas das avaliações de 30, 60 e 90 dias. O tipo de cada linha vem da coluna “Tipo de Pesquisa”."} actions={<SeletorVisao visao={visao} onChange={(v) => { setVisao(v); setArquivos([]); setRel(null); setDecisoes({}); setMsg({ tipo: "", texto: "" }); if (inputRef.current) inputRef.current.value = ""; }} escuro />} />
       {aba === "avaliacoes" ? <FaixaVisao visao={visao} /> : null}
       <div role="tablist" style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-        {[["avaliacoes", sup ? "Avaliações do supervisor" : "Avaliações 30, 60 e 90 dias"], ["admissoes", "Datas de admissão em lote"]].map(([k, rot]) => (
+        {[["avaliacoes", sup ? "Avaliações do supervisor" : "Avaliações 30, 60 e 90 dias"], ["admissoes", "Datas de admissão em lote"], ["historico", "Histórico e desfazer"]].map(([k, rot]) => (
           <button key={k} type="button" role="tab" aria-selected={aba === k} onClick={() => setAba(k)} style={{ ...st.btnGhost, ...(aba === k ? { background: COR_RH, color: "#fff", borderColor: COR_RH } : {}) }}>{rot}</button>
         ))}
       </div>
-      {aba === "admissoes" ? <CangaruAdmissoes onVoltar={() => setAba("avaliacoes")} /> : (
+      {aba === "historico" ? <CangaruImportacoes /> : aba === "admissoes" ? <CangaruAdmissoes onVoltar={() => setAba("avaliacoes")} /> : (
       <>
       {msg.texto ? <div style={{ ...(msg.tipo === "ok" ? st.ok : st.erro), marginTop: 14 }}>{msg.texto}</div> : null}
 

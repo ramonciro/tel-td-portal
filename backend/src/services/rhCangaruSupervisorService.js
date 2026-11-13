@@ -16,6 +16,7 @@
  */
 const pool = require("../lib/db");
 const { comTransacao } = require("../lib/tx");
+const L = require("./rhCangaruLotes");
 const R = require("../lib/rhBase");
 const C = require("./rhCangaruService");
 const { resolverPessoa, matriculaParaComparar, nomesParecidos } = require("./pessoasService");
@@ -210,6 +211,7 @@ async function importarSupervisor({ empresaId, usuario, arquivos, simular, inclu
   if (simular) return rel;
 
   await comTransacao(async (conn) => {
+    const loteId = await L.criarLote(conn, { empresaId, usuario, origem: "supervisor", arquivos: arquivos.map((a) => a.nome).join(", ") });
     const mapaSite = await mapaSiteDosServicos(conn, empresaId);
     for (const x of aProcessar) {
       let novatoId;
@@ -217,7 +219,12 @@ async function importarSupervisor({ empresaId, usuario, arquivos, simular, inclu
       if (x.novato) {
         novatoId = x.novato.id;
         const st = siteDoServico(mapaSite, ref.servico_arquivo);
-        if (st) await conn.query(`UPDATE rh_canguru_novatos SET site = ? WHERE id = ? AND empresa_id = ? AND site IS NULL`, [st, novatoId, empresaId]);
+        if (st) {
+          const [[antesN]] = await conn.query(`SELECT * FROM rh_canguru_novatos WHERE id = ?`, [novatoId]);
+          await conn.query(`UPDATE rh_canguru_novatos SET site = ? WHERE id = ? AND empresa_id = ? AND site IS NULL`, [st, novatoId, empresaId]);
+          const [[depoisN]] = await conn.query(`SELECT * FROM rh_canguru_novatos WHERE id = ?`, [novatoId]);
+          await L.registrarNovato(conn, loteId, empresaId, novatoId, antesN, depoisN);
+        }
       }
       else {
         const r = await resolverPessoa({ empresaId, nome: ref.nome, matricula: ref.matricula || null, cliente: ref.servico_arquivo || null }, conn);
@@ -232,17 +239,19 @@ async function importarSupervisor({ empresaId, usuario, arquivos, simular, inclu
             `INSERT INTO rh_canguru_novatos (empresa_id, pessoa_id, matricula, site, servico, funcao, supervisor, coordenador, data_admissao, admissao_origem) VALUES (?,?,?,?,?,?,?,?,?,?)`,
             [empresaId, pessoa.id, ref.matricula || null, siteDoServico(mapaSite, ref.servico_arquivo), ref.servico_arquivo, null, ref.supervisor_nome, null, adm, adm ? "cadastro" : null]);
           novatoId = ins.insertId;
+          await L.registrarNovato(conn, loteId, empresaId, novatoId, null, null);
         }
         rel.novatos.incluidos += 1;
       }
       for (const e of x.ents) {
-        const [[ja]] = await conn.query(`SELECT id FROM rh_canguru_aval_sup WHERE novato_id = ? AND tipo = ?`, [novatoId, e.tipo]);
-        const cols = `formulario_dias=?, respondida_em=?, supervisor_nome=?, supervisor_matricula=?, servico_arquivo=?, ${REQUISITOS.map((k) => `nota_${k}=?`).join(", ")}, media=?, zerada=?, sinais=?, sinais_lista=?, prioritario=?, prioritario_termos=?, detalhes=?, origem_arquivo=?, importado_por=?`;
-        const vals = [e.formulario_dias, e.respondida_em ? C.sqlDataHora(e.respondida_em) : null, e.supervisor_nome, e.supervisor_matricula, e.servico_arquivo, ...REQUISITOS.map((k) => e.notas[k]), e.media, e.zerada ? 1 : 0, e.sinais, e.sinais_lista || null, e.prioritario, e.prioritario_termos, JSON.stringify(e.detalhes), String(e.arquivo || "").slice(0, 200), usuario?.id || null];
-        if (ja) { await conn.query(`UPDATE rh_canguru_aval_sup SET ${cols}, importado_em = CURRENT_TIMESTAMP WHERE id = ?`, [...vals, ja.id]); rel.avaliacoes.atualizadas += 1; }
-        else { await conn.query(`INSERT INTO rh_canguru_aval_sup SET empresa_id = ?, novato_id = ?, tipo = ?, ${cols}`, [empresaId, novatoId, e.tipo, ...vals]); rel.avaliacoes.importadas += 1; }
+        const [[ja]] = await conn.query(`SELECT * FROM rh_canguru_aval_sup WHERE novato_id = ? AND tipo = ?`, [novatoId, e.tipo]);
+        const cols = `formulario_dias=?, respondida_em=?, supervisor_nome=?, supervisor_matricula=?, servico_arquivo=?, ${REQUISITOS.map((k) => `nota_${k}=?`).join(", ")}, media=?, zerada=?, sinais=?, sinais_lista=?, prioritario=?, prioritario_termos=?, detalhes=?, origem_arquivo=?, importado_por=?, lote_id=?`;
+        const vals = [e.formulario_dias, e.respondida_em ? C.sqlDataHora(e.respondida_em) : null, e.supervisor_nome, e.supervisor_matricula, e.servico_arquivo, ...REQUISITOS.map((k) => e.notas[k]), e.media, e.zerada ? 1 : 0, e.sinais, e.sinais_lista || null, e.prioritario, e.prioritario_termos, JSON.stringify(e.detalhes), String(e.arquivo || "").slice(0, 200), usuario?.id || null, loteId];
+        if (ja) { await conn.query(`UPDATE rh_canguru_aval_sup SET ${cols}, importado_em = CURRENT_TIMESTAMP WHERE id = ?`, [...vals, ja.id]); await L.registrarAvaliacao(conn, loteId, empresaId, "rh_canguru_aval_sup", ja.id, ja); rel.avaliacoes.atualizadas += 1; }
+        else { const [insA] = await conn.query(`INSERT INTO rh_canguru_aval_sup SET empresa_id = ?, novato_id = ?, tipo = ?, ${cols}`, [empresaId, novatoId, e.tipo, ...vals]); await L.registrarAvaliacao(conn, loteId, empresaId, "rh_canguru_aval_sup", insA.insertId, null); rel.avaliacoes.importadas += 1; }
       }
     }
+    rel.lote_id = await L.fecharLote(conn, loteId, { avaliacoes: rel.avaliacoes, novatos: rel.novatos });
   });
   return rel;
 }

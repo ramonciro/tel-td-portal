@@ -2984,6 +2984,9 @@ app.post  ("/api/rh/canguru/importar",              authRequired, authorizeRoles
 app.post  ("/api/rh/canguru/importar-supervisor",    authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 6)), rhCanguru.importarSupervisor);
 app.post  ("/api/rh/canguru/admissoes",              authRequired, authorizeRoles(...RH_OPERA), comUploadTratado(upload.array("arquivos", 1)), rhCanguru.importarAdmissoes);
 app.get   ("/api/rh/canguru/admissoes/modelo",       authRequired, authorizeRoles(...RH_OPERA), rhCanguru.modeloAdmissoes);
+app.get   ("/api/rh/canguru/importacoes",              authRequired, authorizeRoles(...RH_OPERA), rhCanguru.importacoes);
+app.post  ("/api/rh/canguru/importacoes/anteriores/excluir", authRequired, authorizeRoles(...RH_COORD), rhCanguru.excluirImportacaoAnterior);
+app.post  ("/api/rh/canguru/importacoes/:id/desfazer", authRequired, authorizeRoles(...RH_COORD), rhCanguru.desfazerImportacao);
 app.get   ("/api/rh/canguru/admissoes/novatos",      authRequired, authorizeRoles(...RH_OPERA), rhCanguru.novatosAdmissao);
 app.get   ("/api/rh/planos",                         authRequired, authorizeRoles(...RH_TODOS), rhPlanos.listar);
 app.get   ("/api/rh/planos/sugestoes",               authRequired, authorizeRoles(...RH_OPERA), rhPlanos.sugestoes);

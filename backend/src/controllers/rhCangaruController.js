@@ -7,6 +7,7 @@
  * CommonJS — nunca usar import/export.
  */
 const R = require("../lib/rhBase");
+const LOTES = require("../services/rhCangaruLotes");
 const xl = require("../lib/excelExport");
 const S = require("../services/rhCangaruService");
 const SUP = require("../services/rhCangaruSupervisorService");
@@ -60,6 +61,33 @@ async function importarAdmissoes(req, res) {
     if (!simular) auditar(req, "importar", "rh_canguru_admissoes", null, `Atualizou a data de admissão de ${rel.resultado.gravadas} novato(s) do Canguru por planilha`, null, { arquivo: rel.arquivo, resultado: rel.resultado, problemas: rel.problemas.length });
     return res.json({ ok: true, ...rel });
   } catch (e) { return falha(res, e, "admissoes", "Erro ao importar as admissões"); }
+}
+
+// ── Histórico de importações e desfazer (Pacote 9c) ───────────────────
+async function importacoes(req, res) {
+  const c = R.contextoOperacao(req, res); if (!c) return;
+  try { return res.json({ ok: true, ...(await LOTES.listar(c.empresaId)), pode_desfazer: c.perfil === R.PERFIL_COORD }); }
+  catch (e) { return falha(res, e, "importacoes", "Erro ao listar as importações"); }
+}
+async function desfazerImportacao(req, res) {
+  const c = R.contextoCoord(req, res); if (!c) return;
+  const id = idParam(req); if (!id) return R.erro(res, 400, "Importação inválida.");
+  if (req.body?.confirmar !== true) return R.erro(res, 400, "Confirme para desfazer a importação.");
+  try {
+    const r = await LOTES.desfazer({ empresaId: c.empresaId, loteId: id, usuario: req.user });
+    auditar(req, "desfazer", "rh_canguru_importacao", id, `Desfez a importação ${id} do Canguru (${r.lote.origem})`, null, r);
+    return res.json({ ok: true, ...r });
+  } catch (e) { return falha(res, e, "desfazer_importacao", "Erro ao desfazer a importação"); }
+}
+async function excluirImportacaoAnterior(req, res) {
+  const c = R.contextoCoord(req, res); if (!c) return;
+  const b = req.body || {};
+  if (b.confirmar !== true) return R.erro(res, 400, "Confirme para excluir.");
+  try {
+    const r = await LOTES.excluirAnterior({ empresaId: c.empresaId, origem: String(b.origem || ""), arquivo: String(b.arquivo ?? ""), dia: String(b.dia || ""), removerNovatos: b.remover_novatos === true });
+    auditar(req, "excluir", "rh_canguru_importacao_anterior", null, `Excluiu ${r.avaliacoes_apagadas} avaliações (${b.origem}) importadas antes do histórico por lote`, { origem: b.origem, arquivo: b.arquivo, dia: b.dia }, r);
+    return res.json({ ok: true, ...r });
+  } catch (e) { return falha(res, e, "excluir_importacao", "Erro ao excluir a importação"); }
 }
 
 async function novatosAdmissao(req, res) {
@@ -375,4 +403,4 @@ async function excelDoComparativoSupervisor(r) {
   return wb.xlsx.writeBuffer();
 }
 
-module.exports = { importarSupervisor, excelDoSupervisor, excelDoComparativoSupervisor, comparativo, exportarComparativo, periodos, somaDias, excelDoComparativoCanguru, excelDoCanguru, PUBLICOS, importar, importarAdmissoes, modeloAdmissoes, novatosAdmissao, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };
+module.exports = { importacoes, desfazerImportacao, excluirImportacaoAnterior, importarSupervisor, excelDoSupervisor, excelDoComparativoSupervisor, comparativo, exportarComparativo, periodos, somaDias, excelDoComparativoCanguru, excelDoCanguru, PUBLICOS, importar, importarAdmissoes, modeloAdmissoes, novatosAdmissao, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };

@@ -50,7 +50,7 @@ export default function CangaruAdmissoes({ onVoltar }) {
       fd.append("arquivos", arquivo_); fd.append("simular", simular ? "1" : "0");
       const r = await apiFetch("/rh/canguru/admissoes", { method: "POST", body: fd });
       setRel(r);
-      if (!simular) { setMsg({ tipo: "ok", texto: `Admissões salvas: ${fmtN(r.resultado.gravadas)} novato(s) atualizados.` }); setArquivo(null); if (inputRef.current) inputRef.current.value = ""; }
+      if (!simular) { setMsg({ tipo: "ok", texto: `Admissões salvas: ${fmtN(r.resultado.gravadas)} novato(s) atualizados.${r.lote_id ? ` Importação nº ${r.lote_id}: dá para desfazer na aba “Histórico e desfazer” da página Importar.` : ""}` }); setArquivo(null); if (inputRef.current) inputRef.current.value = ""; }
     } catch (e) { setMsg({ tipo: "erro", texto: e.message || "Erro ao enviar a planilha." }); }
     finally { setOcupado(false); }
   };

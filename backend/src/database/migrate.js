@@ -3929,6 +3929,37 @@ async function ensureRh() {
       INDEX idx_rh_cg_avsup_emp (empresa_id, tipo),
       INDEX idx_rh_cg_avsup_data (empresa_id, respondida_em)
     ) ${T}`);
+  // Lotes de importação (Pacote 9c, 13/11/2026): cada importação gravada vira um lote que pode ser desfeito.
+  // Os itens guardam o que o lote criou ou alterou (com o “antes”), para o desfazer devolver o estado anterior.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_lotes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      origem VARCHAR(20) NOT NULL,
+      arquivos VARCHAR(500) NULL,
+      usuario_id INT NULL,
+      usuario_nome VARCHAR(150) NULL,
+      resumo TEXT NULL,
+      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      desfeito_em DATETIME NULL,
+      desfeito_por INT NULL,
+      desfeito_resumo TEXT NULL,
+      INDEX idx_rh_cg_lote (empresa_id, criado_em)
+    ) ${T}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_lote_itens (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      lote_id INT NOT NULL,
+      empresa_id INT NOT NULL,
+      tabela VARCHAR(30) NOT NULL,
+      registro_id INT NOT NULL,
+      acao VARCHAR(10) NOT NULL,
+      antes MEDIUMTEXT NULL,
+      depois MEDIUMTEXT NULL,
+      INDEX idx_rh_cg_lote_item (lote_id)
+    ) ${T}`);
+  await ensureColumn("rh_canguru_avaliacoes", "lote_id", "INT NULL");
+  await ensureColumn("rh_canguru_aval_sup", "lote_id", "INT NULL");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS rh_canguru_pontos (
       id INT AUTO_INCREMENT PRIMARY KEY,
