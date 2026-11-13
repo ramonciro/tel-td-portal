@@ -132,11 +132,7 @@ async function comparativo(req, res) {
   }
 }
 
-async function exportarComparativo(req, res) {
-  const c = R.contexto(req, res); if (!c) return;
-  try {
-    const par = await carregarPar(c, req, res); if (!par) return;
-    const r = await S.comparar(c.empresaId, par.a, par.b, req.query.recorte ? String(req.query.recorte) : null, ehOperacao(c));
+async function excelDoComparativo(r) {
     const T = { melhorou: "Melhorou", piorou: "Piorou", estavel: "Estável" };
     const wb = xl.novoWorkbook();
     xl.adicionarTabela(wb, { nomeAba: "Resumo", colunas: [{ titulo: "Item", chave: "k", largura: 34 }, { titulo: "Valor", chave: "v", largura: 100 }], linhas: [
@@ -153,7 +149,15 @@ async function exportarComparativo(req, res) {
       linhas: r.notas.map((x) => ({ n: x.area, a: num(x.a_media), b: num(x.b_media), d: num(x.delta) })) });
     if (r.recorte) xl.adicionarTabela(wb, { nomeAba: `Recorte`, colunas: col(r.recorte.nome, [{ titulo: "Pessoas (anterior)", chave: "na", largura: 18 }, { titulo: "Pessoas (atual)", chave: "nb", largura: 16 }, { titulo: "% positivo anterior", chave: "a", formato: "decimal1", largura: 18 }, { titulo: "% positivo atual", chave: "b", formato: "decimal1", largura: 16 }, { titulo: "Variação (p.p.)", chave: "d", formato: "decimal1", largura: 15 }, { titulo: "Leitura", chave: "t", largura: 12 }]),
       linhas: r.recorte.grupos.map((g) => ({ n: g.rotulo, na: g.a_n ?? "", nb: g.b_n, a: num(g.a_pos), b: num(g.b_pos), d: num(g.delta), t: T[g.tendencia] || "" })) });
-    const buf = await wb.xlsx.writeBuffer();
+    return wb.xlsx.writeBuffer();
+}
+
+async function exportarComparativo(req, res) {
+  const c = R.contexto(req, res); if (!c) return;
+  try {
+    const par = await carregarPar(c, req, res); if (!par) return;
+    const r = await S.comparar(c.empresaId, par.a, par.b, req.query.recorte ? String(req.query.recorte) : null, ehOperacao(c));
+    const buf = await excelDoComparativo(r);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="comparativo_clima_${R.hojeISO()}.xlsx"`);
     auditar(req, "exportar", "rh_clima_comparativo", null, `Exportou o comparativo de clima (${r.a.nome} → ${r.b.nome})`, null, { a: r.a.id, b: r.b.id, recorte: req.query.recorte || null });
@@ -421,4 +425,4 @@ async function exportar(req, res) {
   }
 }
 
-module.exports = { montarRelatorio, excelDoRelatorio, PUBLICOS, SECOES, listar, importar, excluir, resultado, recortes, comparativo, exportarComparativo, painel, obterConfig, salvarLimites, criarTema, editarTema, ligarAfirmacao, relatorio, exportar };
+module.exports = { excelDoComparativo, montarRelatorio, excelDoRelatorio, PUBLICOS, SECOES, listar, importar, excluir, resultado, recortes, comparativo, exportarComparativo, painel, obterConfig, salvarLimites, criarTema, editarTema, ligarAfirmacao, relatorio, exportar };

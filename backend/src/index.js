@@ -2949,12 +2949,21 @@ app.get   ("/api/rh/clima/liberacoes",               authRequired, authorizeRole
 app.post  ("/api/rh/clima/liberacoes",               authRequired, authorizeRoles(...RH_COORD), rhCliente.liberar);
 app.delete("/api/rh/clima/liberacoes/:id",           authRequired, authorizeRoles(...RH_COORD), rhCliente.revogar);
 app.get   ("/api/rh/clientes",                       authRequired, authorizeRoles(...RH_OPERA), rhCliente.clientesConhecidos);
+app.get   ("/api/rh/canguru/liberacoes",              authRequired, authorizeRoles(...RH_OPERA), rhCliente.canguruListarLiberacoes);
+app.post  ("/api/rh/canguru/liberacoes",              authRequired, authorizeRoles(...RH_COORD), rhCliente.canguruLiberar);
+app.delete("/api/rh/canguru/liberacoes/:id",          authRequired, authorizeRoles(...RH_COORD), rhCliente.canguruRevogar);
 // Portal do cliente (perfil cliente_rh): só leitura. A trava de "negar por padrão" para esse perfil está em middlewares/auth.js.
 app.get   ("/api/rh/cliente/eu",                     authRequired, authorizeRoles("cliente_rh"), rhCliente.eu);
 app.get   ("/api/rh/cliente/ciclos",                 authRequired, authorizeRoles("cliente_rh"), rhCliente.meusCiclos);
 app.get   ("/api/rh/cliente/ciclos/:id/relatorio",   authRequired, authorizeRoles("cliente_rh"), rhCliente.relatorio);
 app.get   ("/api/rh/cliente/ciclos/:id/exportar",    authRequired, authorizeRoles("cliente_rh"), rhCliente.exportar);
 app.get   ("/api/rh/cliente/ciclos/:id/planos",      authRequired, authorizeRoles("cliente_rh"), rhCliente.planos);
+app.get   ("/api/rh/cliente/comparativo",            authRequired, authorizeRoles("cliente_rh"), rhCliente.comparativoClima);
+app.get   ("/api/rh/cliente/comparativo/exportar",   authRequired, authorizeRoles("cliente_rh"), rhCliente.comparativoClimaExportar);
+app.get   ("/api/rh/cliente/canguru",                authRequired, authorizeRoles("cliente_rh"), rhCliente.canguruInfo);
+app.get   ("/api/rh/cliente/canguru/relatorio",      authRequired, authorizeRoles("cliente_rh"), rhCliente.canguruRelatorio);
+app.get   ("/api/rh/cliente/canguru/exportar",       authRequired, authorizeRoles("cliente_rh"), rhCliente.canguruExportar);
+app.get   ("/api/rh/cliente/canguru/comparativo",    authRequired, authorizeRoles("cliente_rh"), rhCliente.canguruComparativo);
 app.get   ("/api/rh/clima/comparativo",              authRequired, authorizeRoles(...RH_TODOS), rhClima.comparativo);
 app.get   ("/api/rh/clima/comparativo/exportar",     authRequired, authorizeRoles(...RH_TODOS), rhClima.exportarComparativo);
 app.get   ("/api/rh/clima/ciclos/:id",              authRequired, authorizeRoles(...RH_TODOS), rhClima.resultado);
@@ -2989,6 +2998,8 @@ app.put   ("/api/rh/canguru/pontos/:id",            authRequired, authorizeRoles
 app.get   ("/api/rh/canguru/config",                authRequired, authorizeRoles(...RH_TODOS), rhCanguru.obterConfig);
 app.put   ("/api/rh/canguru/config",                authRequired, authorizeRoles(...RH_COORD), rhCanguru.salvarConfig);
 app.get   ("/api/rh/canguru/resultado",             authRequired, authorizeRoles(...RH_TODOS), rhCanguru.resultado);
+app.get   ("/api/rh/canguru/comparativo",           authRequired, authorizeRoles(...RH_TODOS), rhCanguru.comparativo);
+app.get   ("/api/rh/canguru/comparativo/exportar",  authRequired, authorizeRoles(...RH_TODOS), rhCanguru.exportarComparativo);
 app.get   ("/api/rh/canguru/relatorio",             authRequired, authorizeRoles(...RH_TODOS), rhCanguru.relatorio);
 app.get   ("/api/rh/canguru/exportar",              authRequired, authorizeRoles(...RH_TODOS), rhCanguru.exportar);
 // Importação da planilha antiga (Visão Nacional): só coordenador_nusp. ?simular=1 não grava.

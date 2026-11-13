@@ -15,6 +15,8 @@ const R = require("../lib/rhBase");
 const S = require("../services/rhClimaService");
 const Planos = require("../services/rhPlanosService");
 const Clima = require("./rhClimaController");
+const CanguruS = require("../services/rhCangaruService");
+const CanguruC = require("./rhCangaruController");
 const { registrarAuditoria } = require("../services/auditoria");
 
 const auditar = (req, acao, entidade, id, resumo, antes, depois) =>
@@ -183,4 +185,164 @@ async function planos(req, res) {
   } catch (e) { return falha(res, e, "planos", "Erro ao carregar os planos"); }
 }
 
-module.exports = { listarLiberacoes, clientesConhecidos, liberar, revogar, eu, meusCiclos, relatorio, exportar, planos };
+// ═══ 3) Canguru para o cliente (Pacote 7) ════════════════════════════
+// O cliente vê só o resultado agregado (público "cliente") dos serviços que o coordenador definiu, nunca nomes, relatos nem grupos pequenos.
+// Se o escopo tiver menos novatos que o mínimo do projeto, o relatório inteiro fica oculto, para ninguém ser reconhecido.
+const lista = (txt) => { try { const v = JSON.parse(txt || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } };
+const limpaLista = (v, max = 60) => [...new Set((Array.isArray(v) ? v : []).map((x) => String(x ?? "").replace(/\s+/g, " ").trim()).filter(Boolean))].slice(0, max);
+const publicoCg = (l) => ({ id: l.id, cliente: l.cliente, servicos: lista(l.servicos), sites: lista(l.sites), liberado_por: l.liberado_por_nome, liberado_em: iso(l.created_at), ativa: !l.revogado_em, revogado_em: iso(l.revogado_em) });
+
+async function canguruListarLiberacoes(req, res) {
+  const c = R.contextoOperacao(req, res); if (!c) return;
+  try {
+    const [rows] = await pool.query(`SELECT * FROM rh_canguru_liberacoes WHERE empresa_id = ? ORDER BY (revogado_em IS NULL) DESC, id DESC LIMIT 200`, [c.empresaId]);
+    const op = await CanguruS.opcoesEscopo(c.empresaId);
+    return res.json({ ok: true, pode_editar: c.perfil === R.PERFIL_COORD, liberacoes: rows.map(publicoCg), opcoes: op });
+  } catch (e) { return falha(res, e, "canguru.liberacoes", "Erro ao carregar as liberações do Canguru"); }
+}
+
+async function canguruLiberar(req, res) {
+  const c = R.contextoCoord(req, res); if (!c) return;
+  try {
+    const cliente = String(req.body?.cliente ?? "").replace(/\s+/g, " ").trim();
+    if (!cliente || cliente.length > 100 || cliente.includes(",")) return R.erro(res, 400, "Informe um cliente (até 100 letras, sem vírgula).");
+    const servicos = limpaLista(req.body?.servicos), sites = limpaLista(req.body?.sites);
+    if (!servicos.length) return R.erro(res, 400, "Escolha ao menos um serviço. É ele que define o que o cliente enxerga.");
+    const op = await CanguruS.opcoesEscopo(c.empresaId);
+    const validosS = new Set(op.servicos.map((x) => x.valor)), validosT = new Set(op.sites.map((x) => x.valor));
+    if (servicos.some((x) => !validosS.has(x))) return R.erro(res, 400, "Há serviço que não existe nas avaliações importadas.");
+    if (sites.some((x) => !validosT.has(x))) return R.erro(res, 400, "Há site que não existe nas avaliações importadas.");
+    const chave = R.chave(cliente);
+    const [[ja]] = await pool.query(`SELECT id FROM rh_canguru_liberacoes WHERE empresa_id = ? AND cliente_chave = ? AND revogado_em IS NULL`, [c.empresaId, chave]);
+    if (ja) return res.status(409).json({ ok: false, message: "Esse cliente já tem o Canguru liberado. Retire a liberação atual para definir outro escopo." });
+    const [ins] = await pool.query(`INSERT INTO rh_canguru_liberacoes (empresa_id, cliente, cliente_chave, servicos, sites, liberado_por, liberado_por_nome) VALUES (?,?,?,?,?,?,?)`,
+      [c.empresaId, cliente, chave, JSON.stringify(servicos), sites.length ? JSON.stringify(sites) : null, req.user.id ?? null, req.user.nome ?? null]);
+    auditar(req, "liberar", "rh_canguru_liberacao", ins.insertId, `Liberou o Canguru para o cliente “${cliente}” (${servicos.length} serviço(s))`, null, { cliente, servicos, sites });
+    return res.status(201).json({ ok: true, id: ins.insertId, message: "Canguru liberado para o cliente" });
+  } catch (e) { return falha(res, e, "canguru.liberar", "Erro ao liberar o Canguru"); }
+}
+
+async function canguruRevogar(req, res) {
+  const c = R.contextoCoord(req, res); if (!c) return;
+  try {
+    const id = idParam(req); if (!id) return R.erro(res, 404, "Liberação não encontrada");
+    const [[l]] = await pool.query(`SELECT * FROM rh_canguru_liberacoes WHERE id = ? AND empresa_id = ?`, [id, c.empresaId]);
+    if (!l) return R.erro(res, 404, "Liberação não encontrada");
+    if (l.revogado_em) return res.status(409).json({ ok: false, message: "Esta liberação já foi retirada." });
+    await pool.query(`UPDATE rh_canguru_liberacoes SET revogado_em = NOW(), revogado_por_nome = ? WHERE id = ? AND empresa_id = ?`, [req.user.nome ?? null, id, c.empresaId]);
+    auditar(req, "revogar", "rh_canguru_liberacao", id, `Retirou a liberação do Canguru para o cliente “${l.cliente}”`, { cliente: l.cliente }, null);
+    return res.json({ ok: true, message: "Liberação retirada. O cliente não vê mais o Canguru." });
+  } catch (e) { return falha(res, e, "canguru.revogar", "Erro ao retirar a liberação"); }
+}
+
+/** Escopo (serviços/sites) do usuário: união das liberações ativas dos clientes dele. Sem liberação, null. */
+async function escopoCanguru(c) {
+  const [rows] = await pool.query(`SELECT * FROM rh_canguru_liberacoes WHERE empresa_id = ? AND revogado_em IS NULL ORDER BY id DESC`, [c.empresaId]);
+  const minhas = rows.filter((l) => c.chaves.includes(l.cliente_chave));
+  if (!minhas.length) return null;
+  const servicos = [...new Set(minhas.flatMap((l) => lista(l.servicos)))];
+  // Se qualquer liberação não restringe sites, vale todos os sites dos serviços dela; senão, a união dos sites.
+  const sites = minhas.some((l) => !lista(l.sites).length) ? [] : [...new Set(minhas.flatMap((l) => lista(l.sites)))];
+  return { servicos, sites, clientes: minhas.map((l) => l.cliente) };
+}
+
+function filtrosCliente(esc, q) {
+  const dia = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
+  return { servicos: esc.servicos, sites: esc.sites, de: dia(q.de), ate: dia(q.ate) };
+}
+
+/** Relatório do Canguru já sem nada que identifique alguém ou liste o que está fora do escopo. */
+async function relatorioCanguruCliente(c, q) {
+  const esc = await escopoCanguru(c); if (!esc) return null;
+  const r = await CanguruS.resultado(c.empresaId, filtrosCliente(esc, q), false);
+  const cfg = r.config;
+  const base = { ok: true, publico: "cliente", publico_rotulo: "Cliente", clientes: esc.clientes };
+  if (r.geral.novatos < cfg.min_grupo) return { ...base, poucos: true, mensagem: `Ainda há poucos novatos avaliados (menos de ${cfg.min_grupo}) para mostrar o resultado sem identificar ninguém.`, min_grupo: cfg.min_grupo };
+  delete r.filtros; delete r.nominal;
+  r.filtros_aplicados = { site: null, servico: null, de: r.filtros_aplicados.de, ate: r.filtros_aplicados.ate };
+  return { ...base, ...r };
+}
+
+async function canguruInfo(req, res) {
+  const c = await R.contextoCliente(req, res); if (!c) return;
+  try { const esc = await escopoCanguru(c); return res.json({ ok: true, liberado: !!esc, clientes: esc?.clientes || [] }); }
+  catch (e) { return falha(res, e, "canguru.info", "Erro ao verificar o Canguru"); }
+}
+async function canguruRelatorio(req, res) {
+  const c = await R.contextoCliente(req, res); if (!c) return;
+  try {
+    const r = await relatorioCanguruCliente(c, req.query); if (!r) return R.erro(res, 404, "O Canguru não está liberado para o seu cliente.");
+    await R.registrarLeitura(req, c.empresaId, "cliente_canguru", null, "Cliente abriu o relatório do Canguru");
+    return res.json(r);
+  } catch (e) { return falha(res, e, "canguru.relatorio", "Erro ao montar o relatório do Canguru"); }
+}
+async function canguruExportar(req, res) {
+  const c = await R.contextoCliente(req, res); if (!c) return;
+  try {
+    const r = await relatorioCanguruCliente(c, req.query); if (!r) return R.erro(res, 404, "O Canguru não está liberado para o seu cliente.");
+    if (r.poucos) return R.erro(res, 409, r.mensagem);
+    const buf = await CanguruC.excelDoCanguru(r, "cliente", null);
+    await R.registrarLeitura(req, c.empresaId, "cliente_canguru", null, "Cliente baixou o Excel do Canguru");
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="canguru_${R.hojeISO()}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  } catch (e) { return falha(res, e, "canguru.exportar", "Erro ao exportar o Canguru"); }
+}
+async function canguruComparativo(req, res) {
+  const c = await R.contextoCliente(req, res); if (!c) return;
+  try {
+    const esc = await escopoCanguru(c); if (!esc) return R.erro(res, 404, "O Canguru não está liberado para o seu cliente.");
+    const p = CanguruC.periodos(req.query);
+    const r = await CanguruS.compararPeriodos(c.empresaId, { servicos: esc.servicos, sites: esc.sites }, p.a, p.b);
+    delete r.filtros_aplicados;
+    await R.registrarLeitura(req, c.empresaId, "cliente_canguru", null, "Cliente abriu o comparativo do Canguru");
+    return res.json({ ok: true, clientes: esc.clientes, ...r });
+  } catch (e) { return falha(res, e, "canguru.comparativo", "Erro ao comparar os períodos"); }
+}
+
+// ═══ 4) Comparativo do Clima para o cliente ══════════════════════════
+// Só entre duas pesquisas que estão liberadas para o cliente. Recortes: apenas os permitidos para o público "cliente".
+async function cicloPar(c, q) {
+  const libs = await liberacoesDoUsuario(c);
+  const ids = [...new Set(libs.map((l) => Number(l.ciclo_id)))];
+  const ciclos = [];
+  for (const id of ids) { const x = await S.carregarCiclo(c.empresaId, id); if (x) ciclos.push(x); }
+  ciclos.sort((a, b) => String(b.data_fim || "").localeCompare(String(a.data_fim || "")) || b.id - a.id);
+  const n = (v) => { const k = Number(v); return Number.isInteger(k) && k > 0 ? k : null; };
+  const idB = n(q.b) || ciclos[0]?.id, idA = n(q.a) || ciclos.find((x) => x.id !== idB)?.id;
+  const a = ciclos.find((x) => x.id === idA), b = ciclos.find((x) => x.id === idB);
+  return { ciclos, a, b };
+}
+async function comparativoClima(req, res) {
+  const c = await R.contextoCliente(req, res); if (!c) return;
+  try {
+    const par = await cicloPar(c, req.query);
+    if (par.ciclos.length < 2) return res.json({ ok: true, disponivel: false, ciclos: par.ciclos.map(ciclo_publico), mensagem: "Para comparar, o RH precisa liberar pelo menos duas pesquisas para o seu cliente." });
+    if (!par.a || !par.b || par.a.id === par.b.id) return R.erro(res, 400, "Escolha duas pesquisas diferentes entre as liberadas.");
+    const permitidos = Clima.PUBLICOS.cliente.recortes;
+    const rec = req.query.recorte ? String(req.query.recorte) : null;
+    if (rec && !permitidos.includes(rec)) return R.erro(res, 400, "Recorte não disponível.");
+    const r = await S.comparar(c.empresaId, par.a, par.b, rec, false);
+    r.a = ciclo_publico(par.a); r.b = ciclo_publico(par.b);
+    await R.registrarLeitura(req, c.empresaId, "cliente_relatorio", par.b.id, "Cliente abriu o comparativo de pesquisas");
+    return res.json({ ok: true, disponivel: true, ...r, ciclos: par.ciclos.map(ciclo_publico), recortes_disponiveis: S.tiposRecorte().filter((t) => permitidos.includes(t.tipo)) });
+  } catch (e) { return falha(res, e, "comparativo", "Erro ao comparar as pesquisas"); }
+}
+async function comparativoClimaExportar(req, res) {
+  const c = await R.contextoCliente(req, res); if (!c) return;
+  try {
+    const par = await cicloPar(c, req.query);
+    if (!par.a || !par.b || par.a.id === par.b.id) return R.erro(res, 400, "Escolha duas pesquisas diferentes entre as liberadas.");
+    const rec = req.query.recorte ? String(req.query.recorte) : null;
+    if (rec && !Clima.PUBLICOS.cliente.recortes.includes(rec)) return R.erro(res, 400, "Recorte não disponível.");
+    const r = await S.comparar(c.empresaId, par.a, par.b, rec, false);
+    r.a = ciclo_publico(par.a); r.b = ciclo_publico(par.b);
+    const buf = await Clima.excelDoComparativo(r);
+    await R.registrarLeitura(req, c.empresaId, "cliente_relatorio", par.b.id, "Cliente baixou o comparativo de pesquisas");
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="comparativo_clima_${R.hojeISO()}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  } catch (e) { return falha(res, e, "comparativo.exportar", "Erro ao exportar o comparativo"); }
+}
+
+module.exports = { listarLiberacoes, clientesConhecidos, liberar, revogar, eu, meusCiclos, relatorio, exportar, planos, canguruListarLiberacoes, canguruLiberar, canguruRevogar, canguruInfo, canguruRelatorio, canguruExportar, canguruComparativo, comparativoClima, comparativoClimaExportar };

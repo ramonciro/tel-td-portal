@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "next": "16.3.4",
+    "pptxgenjs": "3.12.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "xlsx": "npm:@e965/xlsx@^0.20.3"

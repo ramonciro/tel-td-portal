@@ -175,7 +175,7 @@ export function slidesCanguru(r) {
         <Cartao k="Sem sinal" v={fmtN(r.evolucao.sem_sinal)} />
       </div>
     </Slide>));
-  out.push((i, t) => (
+  if ([r.motivos?.insatisfacao_atividades, r.motivos?.lideranca, r.motivos?.acolhimento_area].some((l) => l?.length)) out.push((i, t) => (
     <Slide key="motivos" titulo="Motivos mais citados" n={i} total={t} rodape={rod}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 18 }}>
         {[["Insatisfação com as atividades", r.motivos.insatisfacao_atividades], ["Liderança", r.motivos.lideranca], ["Acolhimento: onde faltou", r.motivos.acolhimento_area]].map(([titulo, itens]) => (
@@ -205,7 +205,9 @@ export function slidesCanguru(r) {
 }
 
 // ── Visualizador ──────────────────────────────────────────────────
-export function Apresentador({ construtores, titulo }) {
+export function Apresentador({ construtores, titulo, onPptx }) {
+  const [baixando, setBaixando] = useState(false);
+  const [avisoPptx, setAvisoPptx] = useState("");
   const total = construtores.length;
   const [i, setI] = useState(0);
   const [escala, setEscala] = useState(1);
@@ -235,6 +237,8 @@ export function Apresentador({ construtores, titulo }) {
         <span>{i + 1} / {total}</span>
         <span style={{ flex: 1, textAlign: "center", opacity: 0.7 }}>{titulo}</span>
         <button type="button" style={btn} onClick={() => document.documentElement.requestFullscreen?.()}>Tela cheia (F)</button>
+        {avisoPptx ? <span style={{ color: "#fecaca" }}>{avisoPptx}</span> : null}
+        {onPptx ? <button type="button" style={btn} disabled={baixando} onClick={async () => { setBaixando(true); setAvisoPptx(""); try { await onPptx(); } catch (e) { console.error("pptx:", e); setAvisoPptx("Não foi possível gerar o PowerPoint."); } finally { setBaixando(false); } }}>{baixando ? "Gerando…" : "Baixar PowerPoint"}</button> : null}
         <button type="button" style={{ ...btn, background: COR, borderColor: COR }} onClick={() => window.print()}>Salvar PDF</button>
       </div>
       <div className="tela no-print-hide" ref={palco} style={{ display: "flex", justifyContent: "center" }}>

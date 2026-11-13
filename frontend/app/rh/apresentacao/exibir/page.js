@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../../../services/api";
 import { Apresentador, slidesClima, slidesCanguru } from "../../../../components/RhSlides";
+import { gerarPptxClima, gerarPptxCanguru } from "../../../../lib/pptxRh";
 
 export default function ExibirApresentacaoPage() {
   const [dados, setDados] = useState(null);
@@ -25,11 +26,11 @@ export default function ExibirApresentacaoPage() {
             const r = await apiFetch(`/rh/planos?ciclo=${ciclo}`);
             planos = (r.planos || []).filter((x) => x.status !== "cancelado" && (publico !== "cliente" || x.visivel_cliente));
           } catch { planos = []; }
-          setDados({ titulo: `${rel.ciclo.nome} · Clima`, slides: slidesClima(rel, planos) });
+          setDados({ titulo: `${rel.ciclo.nome} · Clima`, slides: slidesClima(rel, planos), pptx: () => gerarPptxClima(rel, planos) });
         } else {
           const rel = await apiFetch(`/rh/canguru/relatorio?publico=${publico}`);
           if (!rel.geral || !rel.geral.novatos) throw new Error("Nenhuma avaliação do Canguru importada ainda.");
-          setDados({ titulo: "Projeto Canguru", slides: slidesCanguru(rel) });
+          setDados({ titulo: "Projeto Canguru", slides: slidesCanguru(rel), pptx: () => gerarPptxCanguru(rel) });
         }
       } catch (e) { setErro(e.message || "Não foi possível montar a apresentação. Entre no Portal e tente novamente."); }
     })();
@@ -37,5 +38,5 @@ export default function ExibirApresentacaoPage() {
 
   if (erro) return <div style={{ padding: 32, color: "#fecaca", background: "#0b1220", minHeight: "100vh", fontFamily: "Arial, sans-serif" }}>{erro}</div>;
   if (!dados) return <div style={{ padding: 32, color: "#cbd5e1", background: "#0b1220", minHeight: "100vh", fontFamily: "Arial, sans-serif" }}>Montando a apresentação…</div>;
-  return <Apresentador construtores={dados.slides} titulo={dados.titulo} />;
+  return <Apresentador construtores={dados.slides} titulo={dados.titulo} onPptx={dados.pptx} />;
 }

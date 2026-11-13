@@ -3982,6 +3982,23 @@ async function ensureRh() {
       INDEX idx_rh_lib (empresa_id, ciclo_id, revogado_em),
       INDEX idx_rh_lib_cli (empresa_id, cliente_chave, revogado_em)
     ) ${T}`);
+  // ── Canguru para o cliente (Pacote 7, 13/11/2026) ───────────────────
+  // O cliente vê o resultado agregado do Canguru só dos serviços (e, se houver, dos sites) que o coordenador definiu para ele.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rh_canguru_liberacoes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      empresa_id INT NOT NULL,
+      cliente VARCHAR(100) NOT NULL,
+      cliente_chave VARCHAR(100) NOT NULL,
+      servicos TEXT NOT NULL,
+      sites TEXT NULL,
+      liberado_por INT NULL,
+      liberado_por_nome VARCHAR(150) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      revogado_em DATETIME NULL,
+      revogado_por_nome VARCHAR(150) NULL,
+      INDEX idx_rh_cglib (empresa_id, cliente_chave, revogado_em)
+    ) ${T}`);
   console.log("  ↳ Módulo RH: ok");
 }
 

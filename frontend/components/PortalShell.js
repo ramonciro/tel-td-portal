@@ -120,10 +120,14 @@ const menuItems = [
   { href: "/rh/canguru",          label: "Canguru · Acompanhamento", icon: "users",    roles: ["coordenador_rh", "analista_rh"] },
   { href: "/rh/canguru/atencao",  label: "Canguru · Pontos de atenção", icon: "shield", roles: ["coordenador_rh", "analista_rh"] },
   { href: "/rh/canguru/resultado", label: "Canguru · Resultado",    icon: "award",    roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
+  { href: "/rh/canguru/comparativo", label: "Canguru · Comparar períodos", icon: "trending", roles: ["coordenador_rh", "analista_rh", "gestor_rh"] },
   { href: "/rh/canguru/importar", label: "Canguru · Importar avaliações", icon: "folder", roles: ["coordenador_rh", "analista_rh"] },
   { href: "/rh/configuracoes",  label: "Cadastros",             icon: "settings", roles: ["coordenador_rh"] },
   // Acesso do cliente (13/11/2026): perfil cliente_rh, só leitura das pesquisas que o coordenador liberou para o cliente dele.
   { href: "/rh/cliente",        label: "Minhas pesquisas",      icon: "chart",    roles: ["cliente_rh"] },
+  { href: "/rh/cliente/comparativo", label: "Comparar pesquisas", icon: "trending", roles: ["cliente_rh"] },
+  { href: "/rh/cliente/canguru", label: "Projeto Canguru",      icon: "users",    roles: ["cliente_rh"] },
+  { href: "/rh/cliente/apresentacao", label: "Apresentação",    icon: "file",     roles: ["cliente_rh"] },
   // Módulo Metodologia e Desenvolvimento (16/09/2026) — Mapa de
   // Desenvolvimento e Trilhas fundidos num módulo à parte, fora do escopo de
   // Treinamento, com perfil dedicado ("metodologia"), mesmo padrão do R&S
@@ -596,7 +600,8 @@ export default function PortalShell({
 
       <main style={main}>
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-          <SinoAvisos />
+          {/* O cliente do RH não tem avisos do Portal (a rota é negada para ele): sem o sino, não há chamada 403 a cada tela. */}
+          {user?.perfil === "cliente_rh" ? null : <SinoAvisos />}
         </div>
         <div style={headerCard}>
           <div>

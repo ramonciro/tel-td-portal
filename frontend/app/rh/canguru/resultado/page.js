@@ -10,6 +10,7 @@ import { apiFetch, apiDownload } from "../../../../services/api";
 import { colors } from "../../../../lib/theme";
 import { st, Campo, Select, perfilRh, ehOperacaoRh, COR_RH } from "../../../../components/RhUi";
 import { CangaruRelatorio } from "../../../../components/CangaruUi";
+import CangaruLiberacoes from "../../../../components/CangaruLiberacoes";
 
 export default function CangaruResultadoPage() {
   const operacao = ehOperacaoRh(perfilRh());
@@ -73,6 +74,7 @@ export default function CangaruResultadoPage() {
         {vazio ? <p style={st.vazio}>{filtrando ? "Nenhuma avaliação com esses filtros." : "Nenhuma avaliação importada ainda."}</p> : null}
         {r && !vazio ? <CangaruRelatorio r={r} /> : null}
       </div>
+      {operacao ? <CangaruLiberacoes /> : null}
     </PortalShell>
   );
 }

@@ -749,6 +749,18 @@ function agruparPor(rows, campo, cfg, ocultar) {
   return { linhas, demais, ocultos: pequenos.length };
 }
 
+function resultadoVazio(cfg, f, nominal) {
+  const grupo = { linhas: [], demais: null, ocultos: 0 };
+  const geral = { avaliacoes: 0, novatos: 0, novatos_com_sinal: 0, recorrentes: 0, nas_tres: 0, nas_tres_avaliacoes: 0, prioritarios: nominal ? 0 : null, novatos_com_sinal_pct: null };
+  return {
+    gerado_em: new Date().toISOString(), config: { nota_sinal_max: cfg.nota_sinal_max, risco_moderado_min: cfg.risco_moderado_min, risco_alto_min: cfg.risco_alto_min, min_grupo: cfg.min_grupo, dias: etapasDe(cfg) },
+    filtros_aplicados: { site: null, servico: null, de: f.de || null, ate: f.ate || null }, filtros: { sites: [], servicos: [] }, nominal, geral,
+    etapas: TIPOS.map((t) => ({ tipo: t, dia: etapasDe(cfg).find((e) => e.tipo === t).dia, ...agregarEtapa([]) })),
+    evolucao: { novatos_com_duas_ou_mais: 0, saiu_do_sinal: 0, entrou_no_sinal: 0, manteve_sinal: 0, sem_sinal: 0, variacao_nota_atividades: null, variacao_nota_apoio: null, variacao_nota_clima: null },
+    motivos: { insatisfacao_atividades: [], lideranca: [], acolhimento_area: [] }, por_site: grupo, por_servico: { ...grupo }, leitura: leituraResumo(geral, [], cfg),
+  };
+}
+
 /** Resultado agregado. `nominal` = perfis da equipe do RH (veem grupos pequenos e a contagem de relatos prioritários). */
 async function resultado(empresaId, f = {}, nominal = false) {
   const cfg = await carregarConfig(empresaId);
@@ -756,6 +768,9 @@ async function resultado(empresaId, f = {}, nominal = false) {
   const params = [empresaId]; let where = `a.empresa_id = ?`;
   if (f.site) { where += ` AND a.site = ?`; params.push(f.site); }
   if (f.servico) { where += ` AND a.servico = ?`; params.push(f.servico); }
+  // Escopo de cliente (Pacote 7): lista de serviços (obrigatória) e, se houver, de sites. Sem nenhum serviço, nada é devolvido.
+  if (Array.isArray(f.servicos)) { if (!f.servicos.length) return resultadoVazio(cfg, f, nominal); where += ` AND a.servico IN (${f.servicos.map(() => "?").join(",")})`; params.push(...f.servicos); }
+  if (Array.isArray(f.sites) && f.sites.length) { where += ` AND a.site IN (${f.sites.map(() => "?").join(",")})`; params.push(...f.sites); }
   if (f.de && /^\d{4}-\d{2}-\d{2}$/.test(f.de)) { where += ` AND a.respondida_em >= ?`; params.push(`${f.de} 00:00:00`); }
   if (f.ate && /^\d{4}-\d{2}-\d{2}$/.test(f.ate)) { where += ` AND a.respondida_em <= ?`; params.push(`${f.ate} 23:59:59`); }
   const [rows] = await pool.query(`SELECT a.* FROM rh_canguru_avaliacoes a WHERE ${where}`, params);
@@ -802,6 +817,47 @@ async function resultado(empresaId, f = {}, nominal = false) {
   };
 }
 
+/** Sites e serviços que existem nas avaliações (para o coordenador montar o escopo de um cliente). */
+async function opcoesEscopo(empresaId) {
+  const [sv] = await pool.query(`SELECT servico, COUNT(DISTINCT novato_id) AS novatos FROM rh_canguru_avaliacoes WHERE empresa_id = ? AND servico IS NOT NULL GROUP BY servico ORDER BY servico`, [empresaId]);
+  const [st] = await pool.query(`SELECT DISTINCT site FROM rh_canguru_avaliacoes WHERE empresa_id = ? AND site IS NOT NULL ORDER BY site`, [empresaId]);
+  return { servicos: sv.map((x) => ({ valor: x.servico, novatos: Number(x.novatos) })), sites: st.map((x) => ({ valor: x.site, rotulo: rotuloSite(x.site) })) };
+}
+
+const LIMIAR_PP = 2;
+const dpp = (a, b) => (a === null || a === undefined || b === null || b === undefined ? null : arred2(b - a));
+const tend = (d, inverso = false) => (d === null ? null : Math.abs(d) < LIMIAR_PP ? "estavel" : (d > 0) !== inverso ? "melhorou" : "piorou");
+
+/**
+ * Compara dois períodos de resposta (A = anterior, B = atual), com o mesmo recorte (site/serviço ou escopo de cliente).
+ * Grupos pequenos nunca entram. `inverso`: para "% com sinal", subir é piorar.
+ */
+async function compararPeriodos(empresaId, base, perA, perB) {
+  const [A, B] = [await resultado(empresaId, { ...base, ...perA }, false), await resultado(empresaId, { ...base, ...perB }, false)];
+  const cfg = await carregarConfig(empresaId);
+  const g = (x) => ({ novatos: x.geral.novatos, avaliacoes: x.geral.avaliacoes, com_sinal: x.geral.novatos_com_sinal, com_sinal_pct: x.geral.novatos_com_sinal_pct, recorrentes: x.geral.recorrentes });
+  const poucos = (x) => x.geral.novatos < cfg.min_grupo;
+  const etapas = TIPOS.map((t) => {
+    const a = A.etapas.find((e) => e.tipo === t), b = B.etapas.find((e) => e.tipo === t);
+    const ok = a.novatos >= cfg.min_grupo && b.novatos >= cfg.min_grupo;
+    const c = (k, inv) => { const d = ok ? dpp(a[k], b[k]) : null; return { a: ok ? a[k] : null, b: ok ? b[k] : null, delta: d, tendencia: tend(d, inv) }; };
+    return { tipo: t, dia: a.dia, a_respostas: a.respostas, b_respostas: b.respostas, poucos: !ok, expectativas: c("expectativas_pct"), acolhimento: c("acolhimento_pct"), lideranca: c("lideranca_pct"), com_sinal: c("com_sinal_pct", true), nota_atividades: c("nota_atividades"), nota_apoio: c("nota_apoio"), nota_clima: c("nota_clima") };
+  });
+  const grupos = (campo) => {
+    const mb = new Map(B[campo].linhas.map((l) => [l.rotulo, l]));
+    return A[campo].linhas.filter((l) => mb.has(l.rotulo) && !l.poucos && !mb.get(l.rotulo).poucos).map((l) => {
+      const b = mb.get(l.rotulo); const d = dpp(l.com_sinal_pct, b.com_sinal_pct);
+      return { rotulo: l.rotulo, a_novatos: l.novatos, b_novatos: b.novatos, a_sinal_pct: l.com_sinal_pct, b_sinal_pct: b.com_sinal_pct, delta: d, tendencia: tend(d, true), a_risco: l.risco, b_risco: b.risco };
+    }).sort((x, y) => (y.delta ?? -999) - (x.delta ?? -999));
+  };
+  const dSinal = poucos(A) || poucos(B) ? null : dpp(A.geral.novatos_com_sinal_pct, B.geral.novatos_com_sinal_pct);
+  const avisos = [`Variações de menos de ${LIMIAR_PP} pontos percentuais são tratadas como estáveis.`, `Períodos ou etapas com menos de ${cfg.min_grupo} novatos não são comparados.`];
+  let resumo;
+  if (poucos(A) || poucos(B)) resumo = "Um dos períodos tem poucos novatos para comparar com segurança.";
+  else resumo = `Novatos com sinal de atenção: ${String(A.geral.novatos_com_sinal_pct).replace(".", ",")}% no período anterior e ${String(B.geral.novatos_com_sinal_pct).replace(".", ",")}% no atual (${dSinal > 0 ? "+" : ""}${String(dSinal).replace(".", ",")} p.p., ${{ melhorou: "melhorou", piorou: "piorou", estavel: "estável" }[tend(dSinal, true)]}).`;
+  return { periodo_a: perA, periodo_b: perB, geral: { a: g(A), b: g(B), delta_sinal: dSinal, tendencia: tend(dSinal, true), poucos: poucos(A) || poucos(B) }, etapas, por_site: grupos("por_site"), por_servico: grupos("por_servico"), resumo, avisos, limiar_pp: LIMIAR_PP, filtros_aplicados: A.filtros_aplicados, config: A.config };
+}
+
 function leituraResumo(g, etapas, cfg) {
   if (!g.avaliacoes) return "Ainda não há avaliações importadas para este recorte.";
   const e = etapas.filter((x) => x.respostas);
@@ -840,5 +896,5 @@ async function listaNominal(empresaId) {
 
 module.exports = {
   TIPOS, PASSOS, SINAIS_ROTULO, MIN_GRUPO_MINIMO, rotuloSite, carregarConfig, salvarConfig, importarAvaliacoes, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, salvarAdmissao,
-  filaAtencao, listarPontos, equipe, abrirPonto, atualizarPonto, resultado, resumoPainel, listaNominal, etapasDe,
+  filaAtencao, listarPontos, equipe, abrirPonto, atualizarPonto, resultado, opcoesEscopo, compararPeriodos, resumoPainel, listaNominal, etapasDe,
 };

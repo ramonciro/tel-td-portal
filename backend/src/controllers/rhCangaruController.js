@@ -177,11 +177,8 @@ const RISCO = { baixo: "Baixo", moderado: "Moderado", alto: "Alto" };
 const SIT = { pede_acao: "Pede ação", atencao: "Atenção", em_dia: "Em dia", concluido: "Concluído", sem_admissao: "Sem admissão" };
 const ETAPA_ST = { respondida: "Respondida", vencendo: "Vencendo", sem_resposta: "Sem resposta", futura: "A vencer", anterior: "Anterior ao projeto", sem_admissao: "Sem admissão" };
 
-async function exportar(req, res) {
-  const c = R.contexto(req, res); if (!c) return;
-  try {
-    const publico = publicoDe(c, req, res); if (!publico) return;
-    const r = await S.resultado(c.empresaId, filtros(req.query), publico === "rh");
+/** Monta a planilha do relatório do Canguru. `lista` (só RH interno) é a lista nominal de novatos. */
+async function excelDoCanguru(r, publico, lista) {
     const wb = xl.novoWorkbook();
     const fa = r.filtros_aplicados;
     xl.adicionarTabela(wb, {
@@ -219,20 +216,84 @@ async function exportar(req, res) {
       xl.adicionarTabela(wb, { nomeAba, colunas: [{ titulo, chave: "g", largura: 36 }, { titulo: "Novatos", chave: "novatos", largura: 10 }, { titulo: "Avaliações", chave: "respostas", largura: 12 }, { titulo: "Com sinal", chave: "sinal", largura: 10 }, { titulo: "% com sinal", chave: "pct", formato: "decimal1", largura: 12 }, { titulo: "Risco", chave: "risco", largura: 12 }, { titulo: "% sinal 30 dias", chave: "p30", formato: "decimal1", largura: 14 }, { titulo: "% sinal 60 dias", chave: "p60", formato: "decimal1", largura: 14 }, { titulo: "% sinal 90 dias", chave: "p90", formato: "decimal1", largura: 14 }, { titulo: "Observação", chave: "obs", largura: 28 }], linhas });
     }
     if (publico === "rh") {
-      const lista = await S.listaNominal(c.empresaId);
       xl.adicionarTabela(wb, {
         nomeAba: "Novatos (só RH)",
         colunas: [{ titulo: "Nome", chave: "nome", largura: 38 }, { titulo: "Matrícula", chave: "mat", largura: 12 }, { titulo: "Site", chave: "site", largura: 20 }, { titulo: "Serviço", chave: "servico", largura: 26 }, { titulo: "Supervisor", chave: "sup", largura: 28 }, { titulo: "Coordenador", chave: "coord", largura: 28 }, { titulo: "Admissão", chave: "adm", largura: 12 }, { titulo: "Dia", chave: "dia", largura: 7 }, { titulo: "Situação", chave: "sit", largura: 14 }, { titulo: "Avaliação 30", chave: "e30", largura: 18 }, { titulo: "Avaliação 60", chave: "e60", largura: 18 }, { titulo: "Avaliação 90", chave: "e90", largura: 18 }, { titulo: "Sinais", chave: "sinais", largura: 8 }, { titulo: "Recorrente", chave: "rec", largura: 11 }, { titulo: "Prioritário", chave: "pri", largura: 11 }, { titulo: "Ponto aberto", chave: "ponto", largura: 12 }],
         linhas: lista.map((n) => { const e = (t) => { const x = n.etapas.find((y) => y.tipo === t); return x ? `${ETAPA_ST[x.status]}${x.sinais ? ` · ${x.sinais} sinal(is)` : ""}` : ""; }; return { nome: n.nome, mat: n.matricula, site: n.site_rotulo, servico: n.servico, sup: n.supervisor, coord: n.coordenador, adm: n.data_admissao, dia: n.dia, sit: SIT[n.situacao], e30: e(30), e60: e(60), e90: e(90), sinais: n.sinais_total, rec: n.recorrente ? "Sim" : "", pri: n.prioritario ? "Sim" : "", ponto: n.ponto_aberto ? "Sim" : "" }; }),
       });
-      await R.registrarLeitura(req, c.empresaId, "canguru_exportacao_nominal", null, "Exportou a lista nominal de novatos");
     }
-    const buf = await wb.xlsx.writeBuffer();
+    return wb.xlsx.writeBuffer();
+}
+
+async function exportar(req, res) {
+  const c = R.contexto(req, res); if (!c) return;
+  try {
+    const publico = publicoDe(c, req, res); if (!publico) return;
+    const r = await S.resultado(c.empresaId, filtros(req.query), publico === "rh");
+    const lista = publico === "rh" ? await S.listaNominal(c.empresaId) : null;
+    if (publico === "rh") await R.registrarLeitura(req, c.empresaId, "canguru_exportacao_nominal", null, "Exportou a lista nominal de novatos");
+    const buf = await excelDoCanguru(r, publico, lista);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="canguru_${publico}_${R.hojeISO()}.xlsx"`);
-    auditar(req, "exportar", "rh_canguru", null, `Exportou o relatório do Canguru para ${PUBLICOS[publico]}`, null, { publico, filtros: fa });
+    auditar(req, "exportar", "rh_canguru", null, `Exportou o relatório do Canguru para ${PUBLICOS[publico]}`, null, { publico, filtros: r.filtros_aplicados });
     return res.send(Buffer.from(buf));
   } catch (e) { return falha(res, e, "exportar", "Erro ao exportar o relatório"); }
 }
 
-module.exports = { importar, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };
+
+// ── Comparativo entre períodos (Pacote 7, 13/11/2026) ────────────────
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const somaDias = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+function periodos(q) {
+  const hoje = R.hojeISO();
+  const ok = (v) => (ISO.test(String(v || "")) ? String(v) : null);
+  let [bDe, bAte, aDe, aAte] = [ok(q.b_de), ok(q.b_ate), ok(q.a_de), ok(q.a_ate)];
+  if (!bAte) bAte = hoje;
+  if (!bDe) bDe = somaDias(bAte, -29);
+  if (!aAte) aAte = somaDias(bDe, -1);
+  if (!aDe) aDe = somaDias(aAte, -29);
+  if (aDe > aAte || bDe > bAte) { const e = new Error("A data inicial não pode ser depois da final."); e.status = 400; throw e; }
+  if (aAte >= bDe) { const e = new Error("Os dois períodos não podem se sobrepor: o anterior termina antes de o atual começar."); e.status = 400; throw e; }
+  return { a: { de: aDe, ate: aAte }, b: { de: bDe, ate: bAte } };
+}
+async function comparativo(req, res) {
+  const c = R.contexto(req, res); if (!c) return;
+  try {
+    const p = periodos(req.query);
+    const r = await S.compararPeriodos(c.empresaId, { site: req.query.site || null, servico: req.query.servico || null }, p.a, p.b);
+    const op = await S.opcoesEscopo(c.empresaId);
+    return res.json({ ok: true, ...r, filtros: { sites: op.sites, servicos: op.servicos.map((x) => x.valor) } });
+  } catch (e) { return falha(res, e, "comparativo", "Erro ao comparar os períodos"); }
+}
+
+const TEND = { melhorou: "Melhorou", piorou: "Piorou", estavel: "Estável" };
+async function excelDoComparativoCanguru(r) {
+  const wb = xl.novoWorkbook();
+  const pa = `${r.periodo_a.de} a ${r.periodo_a.ate}`, pb = `${r.periodo_b.de} a ${r.periodo_b.ate}`;
+  xl.adicionarTabela(wb, { nomeAba: "Resumo", colunas: [{ titulo: "Item", chave: "k", largura: 34 }, { titulo: "Valor", chave: "v", largura: 100 }], linhas: [
+    { k: "Período anterior", v: pa }, { k: "Período atual", v: pb },
+    { k: "Novatos (anterior → atual)", v: `${r.geral.a.novatos} → ${r.geral.b.novatos}` }, { k: "Com sinal de atenção % (anterior → atual)", v: `${r.geral.a.com_sinal_pct ?? "—"} → ${r.geral.b.com_sinal_pct ?? "—"}` },
+    { k: "Leitura", v: r.resumo }, { k: "Como ler", v: r.avisos.join(" ") }] });
+  const um = (x) => ({ a: num(x.a), b: num(x.b), d: num(x.delta), t: TEND[x.tendencia] || "" });
+  xl.adicionarTabela(wb, { nomeAba: "Por avaliação", colunas: [{ titulo: "Avaliação", chave: "e", largura: 18 }, { titulo: "Respostas (ant.)", chave: "ra", largura: 16 }, { titulo: "Respostas (atual)", chave: "rb", largura: 16 }, { titulo: "Indicador", chave: "i", largura: 30 }, { titulo: "Anterior", chave: "a", formato: "decimal1", largura: 12 }, { titulo: "Atual", chave: "b", formato: "decimal1", largura: 12 }, { titulo: "Variação", chave: "d", formato: "decimal1", largura: 12 }, { titulo: "Leitura", chave: "t", largura: 12 }],
+    linhas: r.etapas.flatMap((e) => [["Expectativas atendidas (%)", e.expectativas], ["Acolhidos (%)", e.acolhimento], ["Líder bom gestor (%)", e.lideranca], ["Com sinal de atenção (%)", e.com_sinal], ["Nota de atividades", e.nota_atividades], ["Nota de áreas de apoio", e.nota_apoio], ["Nota de clima com os colegas", e.nota_clima]].map(([i, x]) => ({ e: `${e.tipo} dias`, ra: e.a_respostas, rb: e.b_respostas, i, ...um(x) }))) });
+  for (const [nomeAba, grupos, titulo] of [["Por site", r.por_site, "Site"], ["Por serviço", r.por_servico, "Serviço"]]) {
+    xl.adicionarTabela(wb, { nomeAba, colunas: [{ titulo, chave: "g", largura: 36 }, { titulo: "Novatos (ant.)", chave: "na", largura: 14 }, { titulo: "Novatos (atual)", chave: "nb", largura: 14 }, { titulo: "Com sinal ant. (%)", chave: "a", formato: "decimal1", largura: 16 }, { titulo: "Com sinal atual (%)", chave: "b", formato: "decimal1", largura: 16 }, { titulo: "Variação (p.p.)", chave: "d", formato: "decimal1", largura: 14 }, { titulo: "Leitura", chave: "t", largura: 12 }],
+      linhas: grupos.map((g) => ({ g: g.rotulo, na: g.a_novatos, nb: g.b_novatos, a: num(g.a_sinal_pct), b: num(g.b_sinal_pct), d: num(g.delta), t: TEND[g.tendencia] || "" })) });
+  }
+  return wb.xlsx.writeBuffer();
+}
+async function exportarComparativo(req, res) {
+  const c = R.contexto(req, res); if (!c) return;
+  try {
+    const p = periodos(req.query);
+    const r = await S.compararPeriodos(c.empresaId, { site: req.query.site || null, servico: req.query.servico || null }, p.a, p.b);
+    const buf = await excelDoComparativoCanguru(r);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="canguru_comparativo_${R.hojeISO()}.xlsx"`);
+    auditar(req, "exportar", "rh_canguru_comparativo", null, `Exportou o comparativo do Canguru (${r.periodo_a.de} a ${r.periodo_a.ate} → ${r.periodo_b.de} a ${r.periodo_b.ate})`, null, { a: r.periodo_a, b: r.periodo_b });
+    return res.send(Buffer.from(buf));
+  } catch (e) { return falha(res, e, "comparativo.exportar", "Erro ao exportar o comparativo"); }
+}
+
+module.exports = { comparativo, exportarComparativo, periodos, somaDias, excelDoComparativoCanguru, excelDoCanguru, PUBLICOS, importar, importarAdmissoes, modeloAdmissoes, acompanhamento, ficha, admissao, atencao, pontos, abrirPonto, atualizarPonto, obterConfig, salvarConfig, resultado, relatorio, exportar };
