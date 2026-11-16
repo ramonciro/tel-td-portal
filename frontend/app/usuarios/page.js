@@ -6,6 +6,7 @@ import PageHero    from "../../components/PageHero";
 import StatCard    from "../../components/StatCard";
 import { apiFetch, apiDownload, getStoredUser, hasSomeRole } from "../../services/api";
 import { colors, chart } from "../../lib/theme";
+import { erroDeSenha } from "../../lib/politicaSenha";
 
 /* ═══════════════════════════════════════════════
    UTILITÁRIOS
@@ -147,10 +148,17 @@ function perfilPodeExcluirUsuario() {
   const perfil = String(getStoredUser()?.perfil || "").toLowerCase();
   return ["coordenador", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh", "super_admin"].includes(perfil);
 }
+// Varredura 13/11/2026 (C1): contas do Núcleo/RH só são criadas pelo coordenador do próprio módulo (ou super_admin) e o
+// Supervisor só cria 4 perfis. Espelho de backend/src/lib/perfilScope.js — quem decide é sempre a API.
+const PERFIS_MODULO_PRIVADO_UI = ["coordenador_nusp", "analista_nusp", "gestor_nusp", "coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh"];
+const PERFIS_DO_SUPERVISOR_UI = ["instrutor", "treinando", "assistente_treinamento", "analista_conteudo"];
 function escopoPerfilDoUsuarioLogado() {
   const usuario = getStoredUser();
   const perfil = String(usuario?.perfil || "").toLowerCase();
-  return PERFIL_ESCOPOS_UI[perfil] || null;
+  if (PERFIL_ESCOPOS_UI[perfil]) return PERFIL_ESCOPOS_UI[perfil];
+  if (perfil === "super_admin") return null;
+  if (perfil === "supervisor") return PERFIS_DO_SUPERVISOR_UI;
+  return PERFIL_OPTIONS.map((p) => p.value).filter((v) => !PERFIS_MODULO_PRIVADO_UI.includes(v));
 }
 
 /* ═══════════════════════════════════════════════
@@ -314,8 +322,9 @@ function emptyForm() {
 }
 
 function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onFechar }) {
+  // Ao editar, o perfil atual da pessoa sempre aparece no seletor (senão ele ficaria em branco e a API recusaria o salvar).
   const opcoesPerfil = perfisPermitidos
-    ? PERFIL_OPTIONS.filter((p) => perfisPermitidos.includes(p.value))
+    ? PERFIL_OPTIONS.filter((p) => perfisPermitidos.includes(p.value) || (modo === "editar" && p.value === usuario?.perfil))
     : PERFIL_OPTIONS;
 
   const [form,     setForm]     = useState(() => {
@@ -357,7 +366,11 @@ function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onF
         ativo:   Number(form.ativo),
         troca_senha_obrigatoria: Number(form.troca_senha_obrigatoria),
       };
-      if (form.senha) payload.senha = form.senha;
+      if (form.senha) {
+        const erroPadrao = erroDeSenha(form.senha);
+        if (erroPadrao) throw new Error(erroPadrao);
+        payload.senha = form.senha;
+      }
       if (form.cpf && form.cpf.replace(/\D/g, "")) payload.cpf = form.cpf.replace(/\D/g, "");
 
       if (modo === "editar") {
@@ -400,7 +413,7 @@ function ModalUsuario({ modo, usuario, clientes, perfisPermitidos, onSalvar, onF
             <input type="email" value={form.email} onChange={campo("email")} style={mInput} placeholder="email@empresa.com" />
           </MField>
           <MField label={modo === "criar" ? "Senha *" : "Nova senha (opcional)"}>
-            <input type="password" value={form.senha} onChange={campo("senha")} style={mInput} placeholder={modo === "criar" ? "Senha de acesso" : "Em branco = manter"} />
+            <input type="password" value={form.senha} onChange={campo("senha")} style={mInput} placeholder={modo === "criar" ? "Senha (8+ caracteres, com letra e número)" : "Em branco = manter"} />
           </MField>
           <MField label="Perfil *">
             <select value={form.perfil} onChange={campo("perfil")} style={mInput}>

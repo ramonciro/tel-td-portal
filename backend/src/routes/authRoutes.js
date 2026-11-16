@@ -22,6 +22,7 @@ const crypto  = require("crypto");
 const { signToken, authRequired, limparCacheConta } = require("../middlewares/auth");
 const { sendMail } = require("../services/mailer");
 const { canonico } = require("../lib/codigoAcesso");
+const { validarSenha, senhaDentroDoPadrao } = require("../lib/politicaSenha");
 
 /* ─── RATE LIMITING (login) ─────────────────────────────────────────────── */
 // Melhoria: antes não havia nenhum limite de tentativas — dava pra tentar
@@ -281,6 +282,18 @@ router.post("/login", async (req, res) => {
 
     limparTentativas(emailNorm);
 
+    // Padrão de senha (14/11/2026): quem entrou com uma senha digitada fora do padrão passa a ter a troca obrigatória.
+    // Não vale para o código de primeiro acesso (já exige troca) nem para quem já está com a troca pendente.
+    if (!user.codigo_acesso && Number(user.troca_senha_obrigatoria || 0) !== 1 && !senhaDentroDoPadrao(senha)) {
+      try {
+        await pool.query("UPDATE usuarios SET troca_senha_obrigatoria = 1 WHERE id = ?", [user.id]);
+        user.troca_senha_obrigatoria = 1;
+        limparCacheConta(user.id);
+      } catch (e) {
+        console.warn("[auth] não foi possível marcar troca de senha obrigatória:", e.message);
+      }
+    }
+
     // Sprint 4: super_admin flag — se coluna não existir, cai no default 0
     const isSuperAdmin = Number(user.super_admin || 0) === 1;
     const perfilFinal  = isSuperAdmin ? "super_admin" : (user.perfil || "instrutor");
@@ -404,8 +417,12 @@ router.post("/alterar-senha", authRequired, async (req, res) => {
     if (!userId) {
       return res.status(401).json({ message: "Usuário não autenticado." });
     }
-    if (!novaSenha || String(novaSenha).length < 6) {
-      return res.status(400).json({ message: "Informe uma nova senha com pelo menos 6 caracteres." });
+    if (!novaSenha) {
+      return res.status(400).json({ message: "Informe a nova senha." });
+    }
+    {
+      const erroSenha = validarSenha(novaSenha);
+      if (erroSenha) return res.status(400).json({ message: erroSenha });
     }
 
     const [rows] = await pool.query("SELECT * FROM usuarios WHERE id = ? LIMIT 1", [userId]);
@@ -538,8 +555,9 @@ router.post("/redefinir-senha", async (req, res) => {
     if (!token || !nova_senha) {
       return res.status(400).json({ ok: false, message: "Token e nova senha são obrigatórios." });
     }
-    if (nova_senha.length < 6) {
-      return res.status(400).json({ ok: false, message: "A senha deve ter pelo menos 6 caracteres." });
+    {
+      const erroSenha = validarSenha(nova_senha);
+      if (erroSenha) return res.status(400).json({ ok: false, message: erroSenha });
     }
 
     const [rows] = await pool.query(

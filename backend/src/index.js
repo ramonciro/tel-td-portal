@@ -10,6 +10,7 @@ const pool = require("./lib/db");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
+const { validarSenha } = require("./lib/politicaSenha");
 const {
   escopoPerfilFor,
   PERFIS_MODULO_PRIVADO,
@@ -732,6 +733,13 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
   }
 
   if ("senha" in dados && dados.senha) {
+    // Padrão de senha (14/11/2026): 8–72 caracteres, com letra e número. Vale ao criar e ao redefinir pela Gestão de Usuários.
+    const erroSenha = validarSenha(dados.senha);
+    if (erroSenha) {
+      const erro = new Error(erroSenha);
+      erro.status = 400;
+      throw erro;
+    }
     dados.senha = await bcrypt.hash(String(dados.senha), 10);
   }
 

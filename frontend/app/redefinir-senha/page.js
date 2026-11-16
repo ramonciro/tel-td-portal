@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import API_URL from "../../services/api";
 import { colors, radius } from "../../lib/theme";
+import { erroDeSenha } from "../../lib/politicaSenha";
 
 // Next.js exige que useSearchParams() fique dentro de um <Suspense> em rota
 // estática (sem isso, o build de produção falha com "useSearchParams()
@@ -40,8 +41,9 @@ function RedefinirSenhaConteudo() {
       setErro("Link inválido — token não encontrado. Solicite um novo link em \"Esqueci minha senha\".");
       return;
     }
-    if (novaSenha.length < 6) {
-      setErro("A senha deve ter pelo menos 6 caracteres.");
+    const erroPadrao = erroDeSenha(novaSenha);
+    if (erroPadrao) {
+      setErro(erroPadrao);
       return;
     }
     if (novaSenha !== confirmacao) {

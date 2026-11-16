@@ -7,13 +7,18 @@
  */
 
 const pool = require('../lib/db');
+const { validarSenha } = require('../lib/politicaSenha');
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 function gerarSenha(len = 10) {
   const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  let out = '';
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
+  const crypto = require('crypto');
+  // Repete até cair no padrão de senha do Portal (letra + número) — com 10 caracteres quase nunca precisa.
+  for (;;) {
+    let out = '';
+    for (let i = 0; i < len; i++) out += chars[crypto.randomInt(chars.length)];
+    if (!validarSenha(out)) return out;
+  }
 }
 
 const PLANOS_PADRAO = [
@@ -197,9 +202,9 @@ async function createEmpresa(req, res) {
     // digitada manualmente aqui não passava por nenhuma validação, dava pra
     // criar um tenant com senha de administrador de 1 caractere só. Mesmo
     // mínimo já usado em POST /auth/alterar-senha (6+ caracteres).
-    if (admin_senha && String(admin_senha).length < 6) {
+    if (admin_senha && validarSenha(admin_senha)) {
       await conn.rollback(); conn.release();
-      return res.status(400).json({ ok: false, message: 'A senha do administrador deve ter pelo menos 6 caracteres.' });
+      return res.status(400).json({ ok: false, message: validarSenha(admin_senha) });
     }
 
     // 1. Cria empresa com colunas mínimas garantidas

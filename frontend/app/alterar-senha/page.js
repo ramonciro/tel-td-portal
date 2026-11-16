@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import PortalShell from "../../components/PortalShell";
 import SectionCard from "../../components/SectionCard";
 import { apiFetch, getStoredUser } from "../../services/api";
+import { erroDeSenha, SENHA_DICA } from "../../lib/politicaSenha";
 
 export default function AlterarSenhaPage() {
   const router = useRouter();
@@ -26,6 +27,8 @@ export default function AlterarSenhaPage() {
     if (!senhaAtual || !novaSenha || !confirmacao) {
       return setErro("Preencha todos os campos.");
     }
+    const erroPadrao = erroDeSenha(novaSenha);
+    if (erroPadrao) return setErro(erroPadrao);
     if (novaSenha !== confirmacao) {
       return setErro("A nova senha e a confirmação não coincidem.");
     }
@@ -104,7 +107,7 @@ export default function AlterarSenhaPage() {
 
           <input
             type="password"
-            placeholder="Nova senha"
+            placeholder={`Nova senha (${SENHA_DICA})`}
             value={novaSenha}
             onChange={(e) => setNovaSenha(e.target.value)}
             style={input}

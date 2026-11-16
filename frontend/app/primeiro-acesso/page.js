@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getStoredUser } from "../../services/api";
+import { erroDeSenha, SENHA_DICA } from "../../lib/politicaSenha";
 
 export default function PrimeiroAcessoPage() {
   const router = useRouter();
@@ -16,6 +17,11 @@ export default function PrimeiroAcessoPage() {
     e.preventDefault();
     setErro("");
 
+    const erroPadrao = erroDeSenha(senha);
+    if (erroPadrao) {
+      setErro(erroPadrao);
+      return;
+    }
     if (senha !== confirmacao) {
       setErro("Senhas não conferem");
       return;
@@ -93,7 +99,7 @@ export default function PrimeiroAcessoPage() {
         <form onSubmit={salvar} style={form}>
           <input
             type="password"
-            placeholder="Nova senha"
+            placeholder={`Nova senha (${SENHA_DICA})`}
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             style={input}
