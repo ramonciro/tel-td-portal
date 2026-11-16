@@ -272,6 +272,16 @@ async function atualizar(req, res) {
       observacoes,
     } = req.body;
 
+    // Varredura 13/11/2026: entrada inválida responde 400 (antes caía em 500 ao estourar o UPDATE).
+    if (!/^\d+$/.test(String(id))) return res.status(404).json({ error: "Perfil comportamental não encontrado." });
+    if (!nome || !String(nome).trim()) return res.status(400).json({ error: "Nome da pessoa é obrigatório." });
+    if (String(nome).length > 255) return res.status(400).json({ error: "Nome muito longo (máx. 255 caracteres)." });
+    for (const [rotulo, v] of [["D", disc_d], ["I", disc_i], ["S", disc_s], ["C", disc_c]]) {
+      if (v != null && v !== "" && !(Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100)) {
+        return res.status(400).json({ error: `Pontuação DISC (${rotulo}) inválida — informe um número entre 0 e 100.` });
+      }
+    }
+
     const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
     const checkParams = req.empresaId ? [id, req.empresaId] : [id];
     const [exists] = await db.query(`SELECT id FROM pessoas_metodologia WHERE id = ?${tenantCheck}`, checkParams);

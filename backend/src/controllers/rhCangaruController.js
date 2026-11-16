@@ -158,6 +158,8 @@ async function pontos(req, res) {
 async function abrirPonto(req, res) {
   const c = R.contextoOperacao(req, res); if (!c) return;
   try {
+    const novatoId = Number(req.body?.novato_id);
+    if (!Number.isInteger(novatoId) || novatoId <= 0) return R.erro(res, 400, "Informe o novato do ponto de atenção.");
     const id = await S.abrirPonto(c.empresaId, req.user, req.body || {});
     auditar(req, "criar", "rh_canguru_ponto", id, "Abriu um ponto de atenção do Canguru", null, { novato_id: Number(req.body?.novato_id) });
     return res.status(201).json({ ok: true, id, message: "Ponto de atenção aberto" });

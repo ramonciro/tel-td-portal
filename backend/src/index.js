@@ -10,7 +10,12 @@ const pool = require("./lib/db");
 const { runMigrations } = require("./database/migrate");
 const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
-const { escopoPerfilFor } = require("./lib/perfilScope");
+const {
+  escopoPerfilFor,
+  PERFIS_MODULO_PRIVADO,
+  atorSemEscopoDeModulo,
+  motivoDeBloqueioDeUsuario,
+} = require("./lib/perfilScope");
 const { resolverPessoa, pessoaIdDoUsuario } = require("./services/pessoasService");
 const { condicaoIdentidade } = require("./lib/identidadeTreinando");
 
@@ -684,6 +689,22 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
 
   validarEscopoPerfil(dados, req, ctx);
 
+  // Varredura 13/11/2026 (C1): contas do Núcleo/RH só pelo coordenador do módulo ou super_admin; Supervisor não sobe
+  // de perfil; ninguém troca o próprio perfil nem se desativa por aqui.
+  {
+    const mudaAtivo = ctx.antes && "ativo" in dados && String(dados.ativo) !== String(ctx.antes.ativo) && String(dados.ativo) !== "1" && dados.ativo !== true;
+    const motivo = motivoDeBloqueioDeUsuario(req, {
+      antes: ctx.antes || null,
+      novoPerfil: "perfil" in dados ? dados.perfil : undefined,
+      mudaAtivo,
+    });
+    if (motivo) {
+      const erro = new Error(motivo);
+      erro.status = 403;
+      throw erro;
+    }
+  }
+
   // Acesso do cliente ao RH (13/11/2026): o perfil cliente_rh enxerga resultados de pesquisa de uma empresa-cliente, por isso
   // só o coordenador do RH (ou o super_admin) cria, edita ou exclui esse acesso, e ele sempre precisa de um cliente definido.
   {
@@ -751,8 +772,33 @@ async function sanitizarEscritaUsuario(data, req, ctx) {
  * Fase 1 (22/09/2026) — mesma régua de escopo, agora para exclusão (não
  * passa por beforeWrite). Ver validarEscopoPerfil acima.
  */
-function bloquearExclusaoForaDoEscopo(antes, req) {
+async function bloquearExclusaoForaDoEscopo(antes, req) {
   const perfilAtor = String(req.user?.perfil || "").toLowerCase();
+  // Varredura 13/11/2026 (I4): ninguém exclui a própria conta, e o último super_admin ativo não pode ser excluído.
+  if (Number(antes?.id) === Number(req.user?.id)) {
+    const erro = new Error("Você não pode excluir a própria conta.");
+    erro.status = 403;
+    throw erro;
+  }
+  if (String(antes?.perfil || "").toLowerCase() === "super_admin") {
+    const [[{ restantes }]] = await pool.query(
+      "SELECT COUNT(*) AS restantes FROM usuarios WHERE perfil = 'super_admin' AND ativo = 1 AND id <> ?",
+      [antes.id]
+    );
+    if (!Number(restantes)) {
+      const erro = new Error("Não é possível excluir o último super_admin ativo.");
+      erro.status = 409;
+      throw erro;
+    }
+  }
+  if (atorSemEscopoDeModulo(req) && perfilAtor !== "super_admin") {
+    const motivo = motivoDeBloqueioDeUsuario(req, { antes: { ...antes, id: -1 }, novoPerfil: undefined, mudaAtivo: false });
+    if (motivo) {
+      const erro = new Error(motivo);
+      erro.status = 403;
+      throw erro;
+    }
+  }
   if (String(antes?.perfil || "").toLowerCase() === "cliente_rh" && perfilAtor !== "coordenador_rh" && perfilAtor !== "super_admin") {
     const erro = new Error("Só o coordenador do RH pode excluir o acesso de cliente.");
     erro.status = 403;
@@ -818,6 +864,9 @@ app.get(
       if (escopo && escopo.length) {
         condicoes.push(`perfil IN (${escopo.map(() => "?").join(",")})`);
         params.push(...escopo);
+      } else if (atorSemEscopoDeModulo(req)) {
+        condicoes.push(`(perfil IS NULL OR perfil NOT IN (${PERFIS_MODULO_PRIVADO.map(() => "?").join(",")}))`);
+        params.push(...PERFIS_MODULO_PRIVADO);
       }
       if (ids.length) {
         condicoes.push(`id IN (${ids.map(() => "?").join(",")})`);
@@ -904,10 +953,16 @@ app.use(
     // sem nenhuma mudança de comportamento.
     listFiltro: (req) => {
       const escopo = escopoPerfilFor(req);
-      if (!escopo || !escopo.length) return null;
-      return { sql: `perfil IN (${escopo.map(() => "?").join(",")})`, params: escopo };
+      if (escopo && escopo.length) {
+        return { sql: `perfil IN (${escopo.map(() => "?").join(",")})`, params: escopo };
+      }
+      // Varredura 13/11/2026 (C1): coordenador/supervisor/instrutor etc. não enxergam as contas privadas do Núcleo/RH.
+      if (atorSemEscopoDeModulo(req)) {
+        return { sql: `(perfil IS NULL OR perfil NOT IN (${PERFIS_MODULO_PRIVADO.map(() => "?").join(",")}))`, params: PERFIS_MODULO_PRIVADO };
+      }
+      return null;
     },
-    hideFields: ["senha"], // Fase 4 — hash da senha nunca sai na listagem
+    hideFields: ["senha", "senha_hash", "codigo_acesso", "codigo_acesso_expira"], // Fase 4 — hash da senha nunca sai na listagem
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "superintendente", "coaching", "metodologia", "coordenador_rs", "coordenador_nusp", "coordenador_rh")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "superintendente", "coordenador_rs", "metodologia", "coordenador_nusp", "coordenador_rh")],

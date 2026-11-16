@@ -82,6 +82,15 @@ async function calcularImpacto(conn, pessoaId, empresaId) {
   marcar(await contar(conn, `SELECT COUNT(*) AS n FROM dados_bancarios_colaborador WHERE pessoa_id = ?`, [pessoaId]), "dados bancários");
   marcar(await contar(conn, `SELECT COUNT(*) AS n FROM oficina_inscricoes WHERE pessoa_id = ?`, [pessoaId]), "inscrição na Oficina de Talentos");
   marcar(await contar(conn, `SELECT COUNT(*) AS n FROM oficina_certificados WHERE pessoa_id = ?`, [pessoaId]), "certificado da Oficina");
+  // Varredura 13/11/2026 (I2): histórico do Núcleo e do RH não tem FK para pessoas — sem estes bloqueios a exclusão
+  // deixava acolhimentos, participações, pesquisas e novatos do Canguru órfãos.
+  marcar(await contar(conn, `SELECT COUNT(*) AS n FROM nusp_acolhimentos WHERE pessoa_id = ? AND empresa_id = ?`, [pessoaId, empresaId]), "acolhimento do Núcleo");
+  marcar(await contar(conn, `SELECT COUNT(*) AS n FROM nusp_participacoes WHERE pessoa_id = ? AND empresa_id = ?`, [pessoaId, empresaId]), "participação em ação do Núcleo");
+  marcar(await contar(conn, `SELECT COUNT(*) AS n FROM nusp_pesquisa_respostas WHERE pessoa_id = ? AND empresa_id = ?`, [pessoaId, empresaId]), "resposta de pesquisa do Núcleo");
+  marcar(await contar(conn, `SELECT COUNT(*) AS n FROM rh_canguru_novatos WHERE pessoa_id = ? AND empresa_id = ?`, [pessoaId, empresaId]), "acompanhamento Canguru (RH)");
+  if (pessoa.matricula) {
+    marcar(await contar(conn, `SELECT COUNT(*) AS n FROM rh_desligamentos WHERE matricula = ? AND empresa_id = ?`, [pessoa.matricula, empresaId]), "desligamento registrado no RH");
+  }
   const contasNaoTreinando = contas.filter((c) => String(c.perfil || "").toLowerCase() !== "treinando");
   marcar(contasNaoTreinando.length, "conta de acesso com perfil diferente de treinando");
 

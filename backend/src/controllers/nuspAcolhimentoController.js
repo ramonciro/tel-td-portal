@@ -82,7 +82,7 @@ const SQL_LINHA = `
   m.nome AS motivo, e.nome AS encaminhamento, u.nome AS unidade, pr.nome AS programa`;
 const SQL_JOINS = `
   FROM nusp_acolhimentos a
-  JOIN pessoas p ON p.id = a.pessoa_id AND p.empresa_id = a.empresa_id
+  LEFT JOIN pessoas p ON p.id = a.pessoa_id AND p.empresa_id = a.empresa_id
   LEFT JOIN nusp_motivos m ON m.id = a.motivo_id
   LEFT JOIN nusp_encaminhamentos e ON e.id = a.encaminhamento_id
   LEFT JOIN nusp_unidades u ON u.id = a.unidade_id
@@ -152,6 +152,7 @@ async function detalhe(req, res) {
     // Registro de outro analista responde igual a "não existe": não confirma que ele está lá.
     if (!a || !podeAcessar(c, a)) return B.erro(res, 404, "Acolhimento não encontrado");
     const [rows] = await pool.query(`SELECT ${SQL_LINHA} ${SQL_JOINS} WHERE a.id = ? AND a.empresa_id = ?`, [id, c.empresaId]);
+    if (!rows[0]) return B.erro(res, 404, "Acolhimento não encontrado");
     const item = { ...rows[0], tem_resumo: !!rows[0].tem_resumo, resumo: null, resumo_indisponivel: null };
     if (a.resumo_cifrado) {
       const r = crypto.decifrar(a.resumo_cifrado, c.empresaId);

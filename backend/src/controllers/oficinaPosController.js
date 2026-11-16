@@ -34,7 +34,9 @@ const somarDias = (iso, d) => {
 // GET /api/oficina-talentos/reacoes?turma_id=
 async function reacoes(req, res) {
   try {
-    const turma = await buscarTurma(req, Number(req.query.turma_id));
+    const turmaId = Number(req.query.turma_id);
+    if (!Number.isInteger(turmaId) || turmaId <= 0) return res.status(400).json({ error: "Informe a turma (turma_id)." });
+    const turma = await buscarTurma(req, turmaId);
     if (!turma) return res.status(404).json({ error: "Turma não encontrada." });
 
     const [modulos] = await db.query(

@@ -48,4 +48,68 @@ function escopoPerfilFor(req) {
   return PERFIL_ESCOPOS[perfil] || null;
 }
 
-module.exports = { escopoPerfilFor, PERFIL_ESCOPOS };
+/**
+ * Perfis de módulo isolado (Núcleo e RH) — decisão do Ramon (14/11/2026): as contas desses
+ * módulos só são criadas, editadas, desativadas ou excluídas pelo coordenador do próprio módulo
+ * ou pelo super_admin. Coordenador, Supervisor e Superintendente do T&D não mexem nelas e nem
+ * as enxergam na lista de Gestão de Usuários. Antes disso, qualquer um desses três podia criar
+ * um coordenador do Núcleo/RH, ou trocar a senha dele e entrar na conta.
+ */
+const PERFIS_MODULO_PRIVADO = [
+  "coordenador_nusp", "analista_nusp", "gestor_nusp",
+  "coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh",
+];
+
+/** Perfis que o Supervisor pode criar e editar (ele não sobe de perfil nem mexe em quem está acima). */
+const PERFIS_QUE_O_SUPERVISOR_GERENCIA = ["instrutor", "treinando", "assistente_treinamento", "analista_conteudo"];
+
+const norm = (v) => String(v || "").toLowerCase().trim();
+
+function ehPerfilModuloPrivado(perfil) {
+  return PERFIS_MODULO_PRIVADO.includes(norm(perfil));
+}
+
+/** true quando o ator é do T&D sem escopo de módulo (coordenador, supervisor, superintendente). */
+function atorSemEscopoDeModulo(req) {
+  const perfil = norm(req.user?.perfil);
+  return perfil !== "super_admin" && !PERFIL_ESCOPOS[perfil];
+}
+
+/**
+ * Regras extras de escrita em /api/usuarios (além do escopo de módulo).
+ * `antes` é a linha atual do alvo (null na criação); `novoPerfil` é o perfil que ele terá (ou undefined).
+ * Devolve uma mensagem de erro (403) ou null.
+ */
+function motivoDeBloqueioDeUsuario(req, { antes, novoPerfil, mudaAtivo }) {
+  const perfilAtor = norm(req.user?.perfil);
+  const perfilAntes = antes ? norm(antes.perfil) : null;
+  const perfilFinal = novoPerfil !== undefined ? norm(novoPerfil) : perfilAntes;
+
+  // Ninguém muda o próprio perfil nem desativa a própria conta por esta rota.
+  if (antes && Number(antes.id) === Number(req.user?.id)) {
+    if ((novoPerfil !== undefined && norm(novoPerfil) !== perfilAntes) || mudaAtivo) {
+      return "Você não pode alterar o próprio perfil nem desativar a própria conta.";
+    }
+  }
+
+  if (perfilAtor === "super_admin") return null;
+
+  if (atorSemEscopoDeModulo(req)) {
+    if (ehPerfilModuloPrivado(perfilAntes) || ehPerfilModuloPrivado(perfilFinal)) {
+      return "Contas do Núcleo e do RH só são gerenciadas pelo coordenador do próprio módulo.";
+    }
+    if (perfilAtor === "supervisor") {
+      const alvos = [perfilAntes, perfilFinal || "instrutor"].filter((v) => v !== null);
+      if (alvos.some((p) => !PERFIS_QUE_O_SUPERVISOR_GERENCIA.includes(p))) {
+        return "O Supervisor só gerencia contas de Instrutor, Treinando, Assistente de Treinamento e Analista de Conteúdo.";
+      }
+    }
+  }
+  return null;
+}
+
+module.exports = {
+  escopoPerfilFor, PERFIL_ESCOPOS,
+  PERFIS_MODULO_PRIVADO, PERFIS_QUE_O_SUPERVISOR_GERENCIA,
+  ehPerfilModuloPrivado, atorSemEscopoDeModulo, motivoDeBloqueioDeUsuario,
+};

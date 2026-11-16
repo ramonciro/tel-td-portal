@@ -11,7 +11,7 @@
 
 const pool = require("../lib/db");
 
-const CAMPOS_SENSIVEIS = ["senha", "password", "token", "nova_senha", "novaSenha"];
+const CAMPOS_SENSIVEIS = ["senha", "senha_hash", "codigo_acesso", "password", "token", "nova_senha", "novaSenha"];
 
 // Nunca grava valores de senha/token no log, nem no "antes" nem no "depois".
 function mascarar(dados) {

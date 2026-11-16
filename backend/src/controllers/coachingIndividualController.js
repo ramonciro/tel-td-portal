@@ -289,6 +289,22 @@ async function atualizar(req, res) {
       cpf,
     } = req.body;
 
+    // Varredura 13/11/2026: entrada inválida responde 400 (antes caía em 500 ao estourar o UPDATE).
+    if (!/^\d+$/.test(String(id))) return res.status(404).json({ error: "Coaching individual não encontrado." });
+    if (!nome || !String(nome).trim()) return res.status(400).json({ error: "Nome da pessoa é obrigatório." });
+    if (String(nome).length > 255) return res.status(400).json({ error: "Nome muito longo (máx. 255 caracteres)." });
+    if (cadencia_dias != null && cadencia_dias !== "" && !(Number.isInteger(Number(cadencia_dias)) && Number(cadencia_dias) >= 1 && Number(cadencia_dias) <= 365)) {
+      return res.status(400).json({ error: "Cadência inválida — informe um número de dias entre 1 e 365." });
+    }
+    if (status != null && status !== "" && (typeof status !== "string" || status.length > 20)) {
+      return res.status(400).json({ error: "Status inválido." });
+    }
+    for (const [rotulo, v] of [["início", data_inicio], ["fim", data_fim]]) {
+      if (v != null && v !== "" && !/^\d{4}-\d{2}-\d{2}/.test(String(v))) {
+        return res.status(400).json({ error: `Data de ${rotulo} inválida — use AAAA-MM-DD.` });
+      }
+    }
+
     const tenantCheck = req.empresaId ? " AND empresa_id = ?" : "";
     const checkParams = req.empresaId ? [id, req.empresaId] : [id];
     const [exists] = await db.query(`SELECT id FROM coaching_individual WHERE id = ?${tenantCheck}`, checkParams);
