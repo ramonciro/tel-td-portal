@@ -1217,6 +1217,21 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   return dados;
 }
 
+// 16/11/2026 (antes do mount do CRUD, senão :id captura o nome da rota) — Auditoria de participantes por turma (número gravado × lista ativa × presenças fora da lista).
+const auditoriaParticipantes = require("./controllers/auditoriaParticipantesController");
+app.get(
+  "/api/treinamentos/auditoria-participantes",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  auditoriaParticipantes.listar
+);
+app.post(
+  "/api/treinamentos/auditoria-participantes/sincronizar",
+  authRequired,
+  authorizeRoles("coordenador", "superintendente"),
+  auditoriaParticipantes.sincronizar
+);
+
 // GET /api/treinamentos/exportar-selecionadas?ids=1,2,3 — Pacote 3 (redesign,
 // 16/09/2026): a seleção múltipla de Gestão de Turmas usa esta rota pra
 // exportar só as turmas marcadas, no mesmo padrão formatado dos outros

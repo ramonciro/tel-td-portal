@@ -266,7 +266,11 @@ function TurmaCard({ item, necessidade, resumo, salaNome, sala, canEdit, canDele
   const inicio = item.data_inicio || item.data;
   const fim = item.data_fim;
   const confirmados = resumo ? Number(resumo.treinandos_confirmados || 0) : 0;
-  const previstos = Number(item.participantes || item.participantes_previstos || 0);
+  // Auditoria 16/11/2026: o número vem da lista real (ativos) calculada no servidor; o campo digitado na turma
+  // (item.participantes) é só a estimativa de turmas ainda sem lista e envelhece quando alguém sai.
+  const previstos = resumo && resumo.treinandos_previstos != null
+    ? Number(resumo.treinandos_previstos || 0)
+    : Number(item.participantes || item.participantes_previstos || 0);
   const progresso = previstos > 0 ? Math.min(100, Math.round((confirmados / previstos) * 100)) : 0;
 
   // Pacote 3 (redesign, 16/09/2026): ocupação da sala (previstos vs.
@@ -418,6 +422,7 @@ function TreinamentosConteudo() {
   const isInstructor = perfil === "instrutor";
   // RP de origem (27/10/2026): coordenação e assistente vinculam a turma de Avaliação Técnica à RP do R&S.
   const podeRpOrigem = hasSomeRole(usuario, ["coordenador", "assistente_treinamento"]);
+  const podeAuditarParticipantes = hasSomeRole(usuario, ["coordenador", "superintendente"]);
   const [rpsLista, setRpsLista] = useState([]);
   const [rpSugestao, setRpSugestao] = useState(null);
   const rpTocado = useRef(false);
@@ -828,6 +833,33 @@ function TreinamentosConteudo() {
     setSelecionadas(new Set(filtered.map((item) => item.id)));
   }
 
+  // Auditoria 16/11/2026: confere em todas as turmas o número gravado × lista ativa × presenças de quem saiu da lista.
+  async function baixarAuditoriaParticipantes() {
+    try {
+      setError(""); setSuccess("");
+      await apiDownload("/treinamentos/auditoria-participantes?formato=xlsx", "auditoria-participantes-turmas.xlsx");
+    } catch (err) {
+      setError(err.message || "Não foi possível gerar a auditoria de participantes.");
+    }
+  }
+
+  async function corrigirNumerosParticipantes() {
+    try {
+      setError(""); setSuccess("");
+      const aud = await apiFetch("/treinamentos/auditoria-participantes");
+      const alvo = (aud?.itens || []).filter((i) => i.sincronizavel);
+      if (!alvo.length) { setSuccess("Todas as turmas com lista já estão com o número de participantes igual à lista ativa."); return; }
+      const amostra = alvo.slice(0, 8).map((i) => `• ${i.turma}: ${i.numero_gravado} → ${i.lista_ativos}`).join("\n");
+      const mais = alvo.length > 8 ? `\n… e mais ${alvo.length - 8} turma(s)` : "";
+      if (!window.confirm(`Ajustar o número de participantes de ${alvo.length} turma(s) para a quantidade real da lista (sem desistentes)?\n\n${amostra}${mais}\n\nNenhum participante nem presença é apagado.`)) return;
+      const r = await apiFetch("/treinamentos/auditoria-participantes/sincronizar", { method: "POST", body: JSON.stringify({ confirmar: true, ids: alvo.map((i) => i.id) }) });
+      setSuccess(`${r?.atualizadas || 0} turma(s) ajustada(s) para a lista ativa.`);
+      await carregar();
+    } catch (err) {
+      setError(err.message || "Não foi possível ajustar os números de participantes.");
+    }
+  }
+
   async function exportarSelecionadas() {
     if (!selecionadas.size) return;
     try {
@@ -924,6 +956,8 @@ function TreinamentosConteudo() {
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" style={mineToggle(onlyMine)} onClick={() => setOnlyMine((v) => !v)}>{onlyMine ? "Somente minhas" : "Mostrar minhas"}</button>
             <button type="button" style={mineToggle(selectMode)} onClick={toggleSelectMode}>{selectMode ? "Cancelar seleção" : "Selecionar turmas"}</button>
+            {podeAuditarParticipantes && <button type="button" style={mineToggle(false)} onClick={baixarAuditoriaParticipantes} title="Excel com todas as turmas: número gravado, lista ativa, o que a tela mostra e nomes com presença fora da lista">Auditar participantes</button>}
+            {podeAuditarParticipantes && <button type="button" style={mineToggle(false)} onClick={corrigirNumerosParticipantes} title="Ajusta o número de participantes gravado nas turmas para a quantidade real da lista (sem desistentes)">Corrigir números</button>}
             {podeRpOrigem && <button type="button" style={mineToggle(false)} onClick={abrirVinculoEmLote} title="Revisa e grava a RP de origem das turmas de Avaliação Técnica que ainda não têm vínculo">Vincular RPs sugeridas</button>}
             {canCreate && <button type="button" style={btnNovo} onClick={openCreate}>+ Criar nova turma</button>}
           </div>

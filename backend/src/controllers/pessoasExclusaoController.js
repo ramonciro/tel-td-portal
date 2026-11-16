@@ -19,6 +19,7 @@
  */
 const pool = require("../lib/db");
 const { registrarAuditoria } = require("../services/auditoria");
+const { recontarParticipantesDasTurmas } = require("../services/turmaRegras");
 
 // Cada item é uma contagem de "histórico real" que impede a exclusão.
 async function contar(conn, sql, params) {
@@ -141,6 +142,8 @@ async function excluir(req, res) {
       `DELETE FROM treinamento_participantes WHERE pessoa_id = ? AND treinamento_id IN (SELECT id FROM treinamentos WHERE empresa_id = ?)`,
       [id, req.empresaId]
     );
+    // Auditoria 16/11/2026: as turmas de onde a pessoa saiu passam a mostrar o número certo de participantes.
+    await recontarParticipantesDasTurmas(conn, (r.turmas || []).map((t) => t.treinamento_id));
     let contasDesativadas = 0;
     if (r.contas.length) {
       if (desativarConta) {

@@ -104,7 +104,7 @@ async function listarDaTurma(req, res) {
       "SELECT id, titulo, tipo, nota_maxima, questoes_json FROM materiais_avaliativos WHERE treinamento_id = ? ORDER BY id DESC",
       [t.id]
     ).catch(() => [[]]);
-    const [[cont]] = await pool.query("SELECT COUNT(*) AS n FROM treinamento_participantes WHERE treinamento_id = ?", [t.id]);
+    const [[cont]] = await pool.query("SELECT COUNT(*) AS n FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL", [t.id]);
     return res.json({
       ok: true,
       turma: { id: t.id, tema: t.tema, cliente: t.cliente, instrutor: t.instrutor },

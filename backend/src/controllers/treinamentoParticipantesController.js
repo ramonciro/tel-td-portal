@@ -8,6 +8,7 @@ const { garantirUsuarioTreinando } = require("../services/provisionamentoUsuario
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
 const { registrarAuditoria } = require("../services/auditoria");
+const { recontarParticipantesDasTurmas } = require("../services/turmaRegras");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga participantes/chamada de qualquer
@@ -558,10 +559,7 @@ async function importarParticipantesExcel(req, res) {
         else if (provisionamento.motivo === "sem_cpf_matricula") semIdentificadorLogin += 1;
       }
 
-      await conn.query(
-        `UPDATE treinamentos SET participantes = ? WHERE id = ?`,
-        [totalImportados, treinamento_id]
-      );
+      await recontarParticipantesDasTurmas(conn, treinamento_id);
 
       await conn.commit();
     } catch (erroTransacao) {
@@ -1100,16 +1098,8 @@ async function createParticipanteTreinamento(req, res) {
       cliente: clienteTrim,
     });
 
-    const [[countRow]] = await db.query(
-      `SELECT COUNT(*) AS total FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NULL`,
-      [treinamento_id]
-    );
-
     try {
-      await db.query(`UPDATE treinamentos SET participantes = ? WHERE id = ?`, [
-        Number(countRow?.total || 0),
-        treinamento_id,
-      ]);
+      await recontarParticipantesDasTurmas(db, treinamento_id);
     } catch {}
 
     const reaproveitada = !resolvida.criada;
@@ -1268,6 +1258,8 @@ async function deleteParticipanteTreinamento(req, res) {
         `,
         [id]
       );
+      // Auditoria 16/11/2026: o número de participantes gravado na turma não era atualizado ao excluir alguém.
+      await recontarParticipantesDasTurmas(conn, participante.treinamento_id);
     });
 
     return res.json({
@@ -1348,6 +1340,7 @@ async function deleteParticipantesTreinamentoBulk(req, res) {
         `,
         idsConfirmados
       );
+      await recontarParticipantesDasTurmas(conn, rows.map((r) => r.treinamento_id));
     });
 
     return res.json({

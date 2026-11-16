@@ -209,7 +209,10 @@ async function listarSubtiposDoRecorte(req) {
 async function carregarTurmasEnriquecidas(req) {
   const query = req.query || {};
   // colunas fixas — sem SHOW COLUMNS em cada request
-  const participantCountExpr = "COALESCE(t.participantes, 0)";
+  // Participantes da turma = ativos da lista (turma sem lista usa a estimativa do cadastro). A lista já entra na consulta
+  // por LEFT JOIN só com os ativos, então basta contar — nunca ler o número gravado, que ficava velho (auditoria 16/11/2026).
+  const participantCountExpr = "(CASE WHEN COUNT(DISTINCT tp.id) > 0 THEN COUNT(DISTINCT tp.id) ELSE COALESCE(t.participantes, 0) END)";
+  const participantGroupExpr = "COALESCE(t.participantes, 0)";
   const dateOrderExpr = "COALESCE(t.data_inicio, t.data)";
 
   const comAdicionais = await adicionaisDisponiveis();
@@ -275,7 +278,7 @@ async function carregarTurmasEnriquecidas(req) {
         ${whereSql}
         GROUP BY t.id, t.tema, t.cliente, t.instrutor, t.supervisor,
           t.descricao, t.modalidade, t.status, t.data, t.data_inicio, t.data_fim,
-          t.carga_horaria, ${participantCountExpr},
+          t.carga_horaria, ${participantGroupExpr},
           hist.dias, hist.presentes, hist.ausentes, hist.justificados,
           hist.pendentes, hist.participantes_distintos
         ORDER BY ${dateOrderExpr} DESC, t.id DESC`,
@@ -304,7 +307,7 @@ async function carregarTurmasEnriquecidas(req) {
         ${whereSql}
         GROUP BY t.id, t.tema, t.cliente, t.instrutor,
           t.descricao, t.modalidade, t.status, t.data, t.data_inicio, t.data_fim,
-          t.carga_horaria, ${participantCountExpr}
+          t.carga_horaria, ${participantGroupExpr}
         ORDER BY ${dateOrderExpr} DESC, t.id DESC`,
         params
       );

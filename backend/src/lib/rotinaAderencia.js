@@ -110,7 +110,7 @@ async function calcularTurmas({ empresaId, de, ate, cliente, instrutor, podeVer 
     consulta(`SELECT treinamento_id FROM rotina_avaliacao_registro WHERE treinamento_id IN (${inIds})`),
     consulta(`SELECT treinamento_id, DATEDIFF(CURDATE(), DATE(criado_em)) AS dias
                 FROM prova_papel_lotes WHERE treinamento_id IN (${inIds}) AND status = 'rascunho'`),
-    consulta(`SELECT treinamento_id, COUNT(*) AS n FROM treinamento_participantes WHERE treinamento_id IN (${inIds}) GROUP BY treinamento_id`),
+    consulta(`SELECT treinamento_id, COUNT(*) AS n FROM treinamento_participantes WHERE treinamento_id IN (${inIds}) AND desistencia_em IS NULL GROUP BY treinamento_id`),
   ]);
 
   // catálogo: quais atividades têm prazo ao concluir a turma (revisão do plano)

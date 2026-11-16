@@ -25,7 +25,7 @@
 
 const pool = require("../lib/db");
 const { getHorasAplicadasPorTreinamento } = require("./capacidadeResolver");
-const { criarMatcherAvaliacaoTecnica, sqlSemDesistente, aplicarRegraJustificado } = require("./turmaRegras");
+const { criarMatcherAvaliacaoTecnica, sqlSemDesistente, sqlParticipantesDaTurma, aplicarRegraJustificado } = require("./turmaRegras");
 
 function n(value) {
   const x = Number(value);
@@ -201,7 +201,7 @@ async function getResumoPresenca({ treinamentoId, empresaId } = {}) {
 
   const [treinamentos] = await pool.query(
     "SELECT id, tema, cliente, instrutor, supervisor, status, descricao, publico, " +
-    "data, data_inicio, data_fim, carga_horaria, participantes, subtipo " +
+    "data, data_inicio, data_fim, carga_horaria, " + sqlParticipantesDaTurma("treinamentos") + " AS participantes, subtipo " +
     "FROM treinamentos " + whereClause,
     params
   );
