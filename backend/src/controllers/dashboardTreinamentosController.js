@@ -2,6 +2,7 @@ const pool = require("../lib/db");
 const { getResumoPresenca } = require("../services/presencaResolver");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { modalidadeDaTurma } = require("../lib/modalidade");
+const { npsUnificadoSql } = require("../lib/npsFonte");
 const { mapaAdicionais, adicionaisDisponiveis, todosOsInstrutores } = require("../lib/instrutoresTurma");
 
 // Pacote Superintendente (24/09/2026): o Dashboard é leitura pura (nenhum
@@ -493,9 +494,19 @@ async function getDashboardTreinamentos(req, res) {
              AND (nota_nps IS NOT NULL OR nota_qualidade IS NOT NULL OR nota_prova IS NOT NULL)`,
           turmaIds
         );
+        // Varredura 16/11/2026: o NPS que o treinando responde no portal fica em
+        // `avaliacoes_treinandos`; a média do card passa a somar as duas fontes
+        // (sem dupla contagem — ver lib/npsFonte.js). Qualidade e prova seguem só
+        // de `avaliacoes`.
+        const [[npsUnif]] = await pool.query(
+          `SELECT ROUND(AVG(av.nota_nps), 1) AS media_nps
+             FROM ${await npsUnificadoSql()} av
+            WHERE av.treinamento_id IN (${placeholders})`,
+          turmaIds
+        );
         if (npsRow) {
           npsData = {
-            media_nps: Number(npsRow.media_nps || 0),
+            media_nps: Number(npsUnif?.media_nps || 0),
             media_qualidade: Number(npsRow.media_qualidade || 0),
             media_prova: Number(npsRow.media_prova || 0),
             total_avaliacoes: Number(npsRow.total_avaliacoes || 0),

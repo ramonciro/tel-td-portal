@@ -331,7 +331,7 @@ export default function InicioPage() {
         </div>
 
         <div style={{ padding: "18px 24px", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-          <Metrica valor={dados.presencaMedia != null ? `${dados.presencaMedia}%` : "—"} label="Presença média" cor={colors.success} pct={dados.presencaMedia || 0} revelado={revelado} delay={0.25} />
+          <Metrica valor={dados.presencaMedia != null ? `${dados.presencaMedia}%` : "—"} label="Presença média (por chamada)" cor={colors.success} pct={dados.presencaMedia || 0} revelado={revelado} delay={0.25} />
           <Metrica valor={dados.turmasAtivas} label="Turmas em andamento" cor={colors.accent} pct={Math.min(dados.turmasAtivas * 15, 100)} revelado={revelado} delay={0.3} />
           {/* Melhoria: "Instrutores em campo" é pouco relevante pra quem já
               vê só a própria lista de turmas (instrutor/treinando) — mostra

@@ -934,7 +934,7 @@ function TreinamentosConteudo() {
         <StatCard title={isInstructor ? "Minhas turmas" : "Turmas na base"} value={fmt(kpis.base.length)} subtitle={`${fmt(kpis.proximas)} próximas`} accent={chart.blue} />
         <StatCard title="Em andamento" value={fmt(kpis.andamento)} subtitle="Execuções ativas" accent={colors.success} />
         <StatCard title="Horas aplicadas" value={`${fmt(kpis.horasAplicadas)}h`} subtitle="Mesma base do Indicadores" accent={chart.purple} />
-        <StatCard title="Horas no mês" value={`${fmt(kpis.horasMes)}h`} subtitle={`${fmt(kpis.concluidas)} concluídas`} accent={chart.blue} />
+        <StatCard title="Horas previstas no mês" value={`${fmt(kpis.horasMes)}h`} subtitle={`Carga das turmas que começam no mês · ${fmt(kpis.concluidas)} turmas concluídas no total`} accent={chart.blue} />
         <StatCard title="Sem necessidade" value={fmt(kpis.pendencias)} subtitle={kpis.pendencias ? "Atenção necessária" : "Base consistente"} accent={kpis.pendencias ? colors.warning : colors.neutral} />
       </section>
 

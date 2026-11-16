@@ -24,6 +24,7 @@ const {
 } = require('../services/capacidadeResolver');
 const { tenantScopeFor } = require('../lib/tenantScope');
 const { getResumoPresenca } = require('../services/presencaResolver');
+const { npsUnificadoSql } = require('../lib/npsFonte');
 
 // Pacote Superintendente (24/09/2026): a superintendente é chefe dos
 // coordenadores e precisa ver Indicadores de todos os tenants, sem escolher
@@ -250,7 +251,7 @@ async function getResumo(req, res) {
            SUM(CASE WHEN nota_nps >= 9 THEN 1 ELSE 0 END)                  AS promotores,
            SUM(CASE WHEN nota_nps < 7 THEN 1 ELSE 0 END)                   AS detratores,
            ROUND(AVG(nota_nps), 1)                                          AS media
-         FROM avaliacoes av
+         FROM ${await npsUnificadoSql()} av
          JOIN treinamentos t ON t.id = av.treinamento_id
          WHERE ${tenantWhere(eId, 't')}${filtro.sql} AND av.nota_nps IS NOT NULL`,
         filtro.params
@@ -331,7 +332,7 @@ async function getNps(req, res) {
          SUM(CASE WHEN av.nota_nps BETWEEN 7 AND 8.9 THEN 1 ELSE 0 END)  AS neutros,
          SUM(CASE WHEN av.nota_nps < 7 THEN 1 ELSE 0 END)                AS detratores,
          ROUND(AVG(av.nota_nps), 1)                                       AS media
-       FROM avaliacoes av
+       FROM ${await npsUnificadoSql()} av
        JOIN treinamentos t ON t.id = av.treinamento_id
        WHERE ${where} AND av.nota_nps IS NOT NULL`,
       filtro.params
@@ -353,7 +354,7 @@ async function getNps(req, res) {
          ROUND(AVG(av.nota_nps), 1)                                           AS media,
          SUM(CASE WHEN av.nota_nps >= 9 THEN 1 ELSE 0 END)                   AS promotores,
          SUM(CASE WHEN av.nota_nps < 7 THEN 1 ELSE 0 END)                    AS detratores
-       FROM avaliacoes av
+       FROM ${await npsUnificadoSql()} av
        JOIN treinamentos t ON t.id = av.treinamento_id
        WHERE ${where} AND av.nota_nps IS NOT NULL
        GROUP BY t.id, t.tema, t.cliente
@@ -379,7 +380,7 @@ async function getNps(req, res) {
          MONTH(${dataAval})  AS mes,
          COUNT(*)             AS respostas,
          ROUND(AVG(av.nota_nps), 1) AS media
-       FROM avaliacoes av
+       FROM ${await npsUnificadoSql()} av
        JOIN treinamentos t ON t.id = av.treinamento_id
        WHERE ${where}
          AND av.nota_nps IS NOT NULL
@@ -582,7 +583,7 @@ async function exportarIndicadores(req, res) {
       const where = `${tenantWhere(eId, 't')}${filtro.sql}`;
       const [porTurma] = await pool.query(
         `SELECT t.tema, t.cliente, COUNT(av.id) AS respostas, ROUND(AVG(av.nota_nps), 1) AS media
-         FROM avaliacoes av JOIN treinamentos t ON t.id = av.treinamento_id
+         FROM ${await npsUnificadoSql()} av JOIN treinamentos t ON t.id = av.treinamento_id
          WHERE ${where} AND av.nota_nps IS NOT NULL
          GROUP BY t.id, t.tema, t.cliente ORDER BY respostas DESC`,
         filtro.params

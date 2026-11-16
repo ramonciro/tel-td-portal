@@ -499,7 +499,7 @@ export default function DashboardPage() {
             subtitle="Aqui a ideia é sair da visão geral."
             stats={[
               { label: "turmas no recorte", value: fmt(kpis.treinamentos || 0) },
-              { label: "presença consolidada", value: `${fmt(kpis.taxa_presenca || 0)}%` },
+              { label: "presença consolidada (por pessoa)", value: `${fmt(kpis.taxa_presenca || 0)}%` },
               { label: "execução do recorte", value: `${fmt(kpis.taxa_execucao_diaria || 0)}%` },
             ]}
           />

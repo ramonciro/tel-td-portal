@@ -265,7 +265,7 @@ export default function PortalShell({
   // Super Admin já tem acesso de escrita neles no backend via bypass
   // automático do authorizeRoles) — faz sentido ele conseguir abri-los
   // direto, sem passar por /admin.
-  const ROTAS_GLOBAIS_LIBERADAS_SUPER_ADMIN = ["/salas", "/subtipos"];
+  const ROTAS_GLOBAIS_LIBERADAS_SUPER_ADMIN = ["/salas", "/subtipos", "/alterar-senha"];
   useEffect(() => {
     if (!user) return;
     if (
@@ -288,7 +288,9 @@ export default function PortalShell({
     // só coordenador_rs.
     const rsPerfiles = ["coordenador_rs", "gestor_rs"];
     const coordenadorRsEmUsuarios = user.perfil === "coordenador_rs" && pathname.startsWith("/usuarios");
-    if (rsPerfiles.includes(user.perfil) && !pathname.startsWith("/rs") && !coordenadorRsEmUsuarios) {
+    // Varredura 16/11/2026: "/alterar-senha" também é exceção (como já era no Núcleo e no RH) —
+    // sem isso o R&S era devolvido para /rs/rps e não conseguia trocar a senha pelo link do menu.
+    if (rsPerfiles.includes(user.perfil) && !pathname.startsWith("/rs") && !coordenadorRsEmUsuarios && pathname !== "/alterar-senha" && pathname !== "/primeiro-acesso") {
       router.replace("/rs/rps");
       return;
     }
@@ -318,7 +320,7 @@ export default function PortalShell({
     // "/usuarios" (Fase 1, 22/09/2026) entrou na lista pelo mesmo motivo do
     // comentário acima — sem isso, o próprio redirect empurrava metodologia
     // de volta para /mapa-desenvolvimento ao tentar abrir Gestão de Usuários.
-    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao", "/oficina-talentos", "/usuarios", "/pessoas"];
+    const METODOLOGIA_ROTAS = ["/mapa-desenvolvimento", "/trilhas", "/kpis-desenvolvimento", "/tripulacao", "/oficina-talentos", "/usuarios", "/pessoas", "/alterar-senha"];
     if (
       user.perfil === "metodologia" &&
       !METODOLOGIA_ROTAS.some((rota) => isRouteActive(pathname, rota))

@@ -148,7 +148,7 @@ function ClienteCard({ item, saude, podeExcluir, confirmandoExclusao, onEditar, 
       <div style={saudeRow}>
         <SaudeChip label="turmas"    value={saude.totalTurmas} sub={`${saude.ativas} ativas`} />
         <SaudeChip
-          label="freq. média"
+          label="freq. média (por chamada)"
           value={saude.presencaMedia !== null ? `${saude.presencaMedia}%` : "—"}
           cor={saude.presencaMedia !== null ? cor : "#94a3b8"}
         />

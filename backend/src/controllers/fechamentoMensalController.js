@@ -19,6 +19,7 @@ const { tenantScopeFor } = require("../lib/tenantScope");
 const { registrarAuditoria } = require("../services/auditoria");
 const { carregarTurmasEnriquecidas, parseHorasTexto } = require("./dashboardTreinamentosController");
 const { todosOsInstrutores } = require("../lib/instrutoresTurma");
+const { npsUnificadoSql } = require("../lib/npsFonte");
 const { novoWorkbook, adicionarTabela, escreverTabela } = require("../lib/excelExport");
 
 const CROSS = ["superintendente"];
@@ -85,16 +86,25 @@ async function calcularMes(req, cliente, mes) {
       `SELECT treinamento_id, nota_nps, nota_qualidade, nota_prova FROM avaliacoes WHERE treinamento_id IN (${ids.map(() => "?").join(",")})`,
       ids
     );
+    // NPS: fonte unificada (avaliacoes + respostas do treinando no portal, sem
+    // dupla contagem) — varredura 16/11/2026, ver lib/npsFonte.js.
+    const [npsRows] = await pool.query(
+      `SELECT av.treinamento_id, av.nota_nps FROM ${await npsUnificadoSql()} av WHERE av.treinamento_id IN (${ids.map(() => "?").join(",")})`,
+      ids
+    );
+    for (const a of npsRows) {
+      const k = Number(a.treinamento_id);
+      if (!porTurma.has(k)) porTurma.set(k, { nps: [], qual: [], prova: [] });
+      const g = porTurma.get(k);
+      const v = Number(a.nota_nps);
+      g.nps.push(v); nps.total += 1; nps.soma += v;
+      if (v >= 9) nps.promotores += 1;
+      if (v < 7) nps.detratores += 1;
+    }
     for (const a of av) {
       const k = Number(a.treinamento_id);
       if (!porTurma.has(k)) porTurma.set(k, { nps: [], qual: [], prova: [] });
       const g = porTurma.get(k);
-      if (a.nota_nps != null) {
-        const v = Number(a.nota_nps);
-        g.nps.push(v); nps.total += 1; nps.soma += v;
-        if (v >= 9) nps.promotores += 1;
-        if (v < 7) nps.detratores += 1;
-      }
       if (a.nota_qualidade != null) { g.qual.push(Number(a.nota_qualidade)); nps.qual.push(Number(a.nota_qualidade)); }
       if (a.nota_prova != null) { g.prova.push(Number(a.nota_prova)); nps.prova.push(Number(a.nota_prova)); }
     }
