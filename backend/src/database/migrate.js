@@ -3267,6 +3267,8 @@ async function ensureRadar() {
       UNIQUE KEY uk_radar_semana (escopo, semana_inicio)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+  // 16/11/2026: motivo escrito de por que um item voltou (a pessoa via o mesmo crítico de novo sem saber o porquê).
+  await ensureColumn("radar_itens", "reaberto_motivo", "VARCHAR(160) NULL");
   console.log("  ↳ Radar semanal: ok");
 }
 

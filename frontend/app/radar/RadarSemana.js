@@ -49,7 +49,7 @@ function Acoes({ item, motivos, onFeito, onErro }) {
     <div style={{ marginTop: 10 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {item.link && <a href={item.link} style={{ ...chip, textDecoration: "none" }}>Abrir</a>}
-        <button type="button" style={chip} disabled={enviando} onClick={() => enviar("resolver")}>Resolvido</button>
+        <button type="button" style={chip} disabled={enviando} onClick={() => enviar("resolver")} title="O Radar respeita sua resposta por 7 dias. Se o problema continuar depois disso, o item volta e mostra o motivo.">Resolvido</button>
         <button type="button" style={{ ...chip, ...(abrindo ? chipOn : {}) }} onClick={() => setAbrindo((v) => !v)}>Ignorar com motivo</button>
       </div>
       {abrindo && (
@@ -77,6 +77,7 @@ function CartaoRisco({ item, motivos, numero, onFeito, onErro }) {
         <div style={{ flex: "1 1 420px" }}>
           <strong style={{ fontSize: 15 }}>{numero ? `${numero}. ` : ""}{item.titulo}</strong>
           <div style={mini}>{item.origem_nome} · dono sugerido: {item.dono || "Coordenação"} · {prazoTexto(item)}{item.novo ? " · novo nesta semana" : ` · aberto há ${item.dias_aberto} dia(s)`}{item.reabertos ? " · reaberto" : ""}</div>
+          {item.reaberto_motivo && <div style={{ ...mini, color: colors.dangerText }}>Voltou porque {item.reaberto_motivo}.</div>}
         </div>
         <span style={{ ...badge, color: g.cor, background: g.bg }}>{g.texto}</span>
       </div>
@@ -225,6 +226,22 @@ export default function RadarSemana() {
         ) : <p style={vazio}>Clique em Mostrar para ver a lista completa.</p>}
       </SectionCard>
 
+      {(d.resolvidos_por_voce || []).length > 0 && (
+        <SectionCard title="Marcados como resolvidos" subtitle="O Radar respeita sua resposta por 7 dias. Se o problema continuar depois disso, o item volta com o motivo escrito.">
+          <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+            {d.resolvidos_por_voce.map((i) => (
+              <li key={i.id} style={{ ...caixa, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <div>
+                  <strong style={{ fontSize: 14 }}>{i.titulo}</strong>
+                  <div style={mini}>Resolvido em {fmtData(i.resolvido_em)}{i.por ? ` por ${i.por}` : ""} · respeitado até {fmtData(i.ate)}</div>
+                </div>
+                <button type="button" style={chip} onClick={async () => { try { await apiFetch(`/preventivo/radar-itens/${i.id}/reabrir`, { method: "POST", body: "{}" }); feito(); } catch (e) { setAviso(e.message); } }}>Reabrir</button>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      )}
+
       {(d.ignorados.length > 0 || d.calibragem.length > 0) && (
         <SectionCard title="Ignorados e calibragem" subtitle="Os motivos para ignorar mostram quais alertas não servem e ajudam a calibrar as regras do Radar.">
           {d.ignorados.length > 0 && (
@@ -234,6 +251,9 @@ export default function RadarSemana() {
                   <div>
                     <strong style={{ fontSize: 14 }}>{i.titulo}</strong>
                     <div style={mini}>Motivo: {i.motivo} · até {fmtData(i.ate)}{i.por ? ` · por ${i.por}` : ""}</div>
+                    {i.gravidade && i.gravidade_ignorada && i.gravidade !== i.gravidade_ignorada && (
+                      <div style={{ ...mini, color: colors.dangerText }}>Hoje a gravidade é {(GRAV[i.gravidade] || GRAV.media).texto.toLowerCase()} (era {(GRAV[i.gravidade_ignorada] || GRAV.media).texto.toLowerCase()} quando você ignorou).</div>
+                    )}
                   </div>
                   <button type="button" style={chip} onClick={async () => { try { await apiFetch(`/preventivo/radar-itens/${i.id}/reabrir`, { method: "POST", body: "{}" }); feito(); } catch (e) { setAviso(e.message); } }}>Reabrir</button>
                 </li>

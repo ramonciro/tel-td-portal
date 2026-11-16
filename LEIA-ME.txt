@@ -1,17 +1,11 @@
-PACOTE DE CORREÇÃO — achados da varredura de 16/11/2026
+PACOTE — Radar: o Radar passa a guardar o que você respondeu (16/11/2026)
 
 Copie cada arquivo para o mesmo caminho do repositório (ramonciro/tel-td-portal), mantendo as pastas.
-Não há migração de banco nem variável nova. Depois do deploy, o backend sobe sozinho.
+O backend cria sozinho a coluna nova radar_itens.reaberto_motivo no deploy. Nada a fazer no banco.
 
 BACKEND (Railway)
-- backend/src/lib/npsFonte.js                          (NOVO) fonte única de NPS
-- backend/src/controllers/analyticsController.js       Indicadores: NPS (resumo, aba NPS, exportação)
-- backend/src/controllers/dashboardTreinamentosController.js   Dashboard: média de NPS
-- backend/src/controllers/fechamentoMensalController.js        Fechamento mensal: NPS
+- backend/src/services/radarSemanalService.js   regras de "Resolvido" e "Ignorar"
+- backend/src/database/migrate.js               coluna radar_itens.reaberto_motivo (automática)
 
 FRONTEND (Vercel)
-- frontend/components/PortalShell.js                   "Alterar senha" liberado p/ R&S, Metodologia e Super Admin
-- frontend/app/treinamentos/page.js                    card "Horas previstas no mês"
-- frontend/app/dashboard/page.js                       rótulo "presença consolidada (por pessoa)"
-- frontend/app/inicio/page.js                          rótulo "Presença média (por chamada)"
-- frontend/app/clientes/page.js                        rótulo "freq. média (por chamada)"
+- frontend/app/radar/RadarSemana.js             motivo escrito quando o item volta, bloco "Marcados como resolvidos", aviso de gravidade nos Ignorados

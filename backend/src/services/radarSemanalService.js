@@ -30,6 +30,10 @@ const JANELA_PRONTIDAO = 14;
 const MAX_TOP = 5;
 const MAX_POR_ORIGEM = 3;
 const SYNC_MIN_MS = 3 * 60 * 1000;
+// Quanto tempo "Resolvido" (marcado à mão) vale antes de o Radar conferir de novo. Se o problema
+// ainda existir depois disso, o item volta (com o motivo escrito). Era 2 dias — curto demais:
+// a mesma pendência crítica voltava na semana seguinte sem a pessoa entender por quê.
+const GRACA_RESOLVIDO_DIAS = 7;
 const syncRecente = new Map();
 
 const ORIGENS = {
@@ -279,19 +283,40 @@ async function empresasAtivas() {
 const dataStr = (v) => (v ? (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)) : null);
 
 /**
- * Atualiza radar_itens para as empresas pedidas (null = todas). Com throttle de 3 min por escopo,
- * salvo `forcar`. Devolve { sincronizado, novos, resolvidos, reabertos }.
+ * Decide o que fazer com um item que JÁ existe quando o problema é detectado de novo.
+ * Devolve { acao: 'manter' | 'reabrir' | 'restaurar_ignorado', motivo }.
+ *
+ *  - Ignorado: vale até a data escolhida (7, 14 ou 30 dias). A gravidade subir NÃO derruba o "ignorar"
+ *    (era a causa mais comum de o item voltar antes da hora: a turma chegando perto vira "crítica"
+ *    sozinha). A lista de Ignorados mostra a gravidade de hoje para a pessoa enxergar a mudança.
+ *  - Resolvido à mão: vale GRACA_RESOLVIDO_DIAS dias; se o problema continua depois disso, volta.
+ *  - Resolvido pelo sistema (o problema sumiu da detecção): se o item estava "ignorado" quando sumiu e a
+ *    pausa ainda vale, volta para "ignorado" (antes voltava como "aberto" e a escolha da pessoa se perdia
+ *    sempre que a detecção falhava um dia). Fora disso, volta como aberto.
  */
-async function sincronizar({ empresaId = null, forcar = false } = {}) {
-  const escopo = empresaId ? String(empresaId) : "todas";
-  const ult = syncRecente.get(escopo);
-  if (!forcar && ult && Date.now() - ult < SYNC_MIN_MS) return { sincronizado: false };
-  syncRecente.set(escopo, Date.now());
+function decidirReabertura(ex, hoje) {
+  if (ex.estado === "ignorado") {
+    if (dataStr(ex.ignorado_ate) < hoje) return { acao: "reabrir", motivo: `a pausa de “${corta(ex.ignorado_motivo, 40)}” terminou em ${fmt(dataStr(ex.ignorado_ate))} e o problema continua` };
+    return { acao: "manter" };
+  }
+  if (ex.estado === "resolvido") {
+    if (ex.resolvido_por === "usuario") {
+      const fim = somarDias(dataStr(ex.resolvido_em), GRACA_RESOLVIDO_DIAS);
+      if (hoje <= fim) return { acao: "manter" };
+      return { acao: "reabrir", motivo: `foi marcado como resolvido em ${fmt(dataStr(ex.resolvido_em))} e o problema continua` };
+    }
+    const pausaVale = ex.ignorado_motivo && ex.ignorado_ate && dataStr(ex.ignorado_ate) >= hoje;
+    if (pausaVale) return { acao: "restaurar_ignorado" };
+    return { acao: "reabrir", motivo: "o problema sumiu e voltou a aparecer" };
+  }
+  return { acao: "manter" };
+}
 
-  const hoje = hojeBahia();
-  const ids = empresaId ? [Number(empresaId)] : await empresasAtivas();
-  const { itens, origensOk, falhou } = await coletar(ids, { comSalas: true });
-  let novos = 0, resolvidos = 0, reabertos = 0;
+/**
+ * Aplica no banco o que foi detectado. Separado de `sincronizar` para poder ser testado com itens montados à mão.
+ */
+async function aplicarDeteccao({ itens, origensOk, ids, hoje }) {
+  let novos = 0, resolvidos = 0, reabertos = 0, restaurados = 0;
 
   const donos = new Set([...ids, 0]);
   const [existentes] = await pool.query(
@@ -304,8 +329,14 @@ async function sincronizar({ empresaId = null, forcar = false } = {}) {
   for (const it of itens) {
     const k = `${it.empresa_id}|${it.chave}`;
     vistas.add(k);
-    const ex = porChave.get(k);
+    let ex = porChave.get(k);
     const campos = [it.origem, it.gravidade, it.titulo, it.detalhe, it.acao, it.decisao, it.dono, it.cliente, it.link, it.prazo || null];
+    if (!ex) {
+      // Item resolvido há mais de 45 dias não vem na consulta acima, mas a chave é única: sem esta busca o
+      // INSERT falhava e derrubava a sincronização inteira na primeira vez que um problema antigo voltasse.
+      const [[antigo]] = await pool.query("SELECT * FROM radar_itens WHERE empresa_id = ? AND chave = ?", [it.empresa_id, it.chave]);
+      if (antigo) { ex = antigo; porChave.set(k, antigo); }
+    }
     if (!ex) {
       await pool.query(
         `INSERT INTO radar_itens (empresa_id, chave, origem, gravidade, titulo, detalhe, acao, decisao, dono, cliente, link, prazo, estado, primeira_vez, ultima_vez)
@@ -315,22 +346,28 @@ async function sincronizar({ empresaId = null, forcar = false } = {}) {
       novos += 1;
       continue;
     }
-    let estado = ex.estado;
-    let reabre = false;
-    if (ex.estado === "resolvido") {
-      const recente = ex.resolvido_por === "usuario" && dataStr(ex.resolvido_em) > somarDias(hoje, -2);
-      if (!recente) reabre = true;
-    } else if (ex.estado === "ignorado") {
-      const venceu = dataStr(ex.ignorado_ate) < hoje;
-      const piorou = (GRAV_ORDEM[it.gravidade] || 0) > (GRAV_ORDEM[ex.gravidade_ignorada] || 0);
-      if (venceu || piorou) reabre = true;
+    const dec = decidirReabertura(ex, hoje);
+    if (dec.acao === "reabrir") {
+      reabertos += 1;
+      await pool.query(
+        `UPDATE radar_itens SET origem=?, gravidade=?, titulo=?, detalhe=?, acao=?, decisao=?, dono=?, cliente=?, link=?, prazo=?, ultima_vez=?,
+                estado='aberto', resolvido_em=NULL, resolvido_por=NULL, a_tempo=NULL, ignorado_ate=NULL,
+                reabertos=reabertos+1, reaberto_motivo=? WHERE id=?`,
+        [...campos, hoje, String(dec.motivo || "").slice(0, 160), ex.id]
+      );
+    } else if (dec.acao === "restaurar_ignorado") {
+      restaurados += 1;
+      await pool.query(
+        `UPDATE radar_itens SET origem=?, gravidade=?, titulo=?, detalhe=?, acao=?, decisao=?, dono=?, cliente=?, link=?, prazo=?, ultima_vez=?,
+                estado='ignorado', resolvido_em=NULL, resolvido_por=NULL, a_tempo=NULL WHERE id=?`,
+        [...campos, hoje, ex.id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE radar_itens SET origem=?, gravidade=?, titulo=?, detalhe=?, acao=?, decisao=?, dono=?, cliente=?, link=?, prazo=?, ultima_vez=? WHERE id=?`,
+        [...campos, hoje, ex.id]
+      );
     }
-    if (reabre) { estado = "aberto"; reabertos += 1; }
-    await pool.query(
-      `UPDATE radar_itens SET origem=?, gravidade=?, titulo=?, detalhe=?, acao=?, decisao=?, dono=?, cliente=?, link=?, prazo=?, ultima_vez=?, estado=?
-         ${reabre ? ", resolvido_em=NULL, resolvido_por=NULL, a_tempo=NULL, reabertos=reabertos+1" : ""} WHERE id=?`,
-      [...campos, hoje, estado, ex.id]
-    );
   }
 
   // O que sumiu da detecção (só nas origens que rodaram sem falha).
@@ -346,7 +383,24 @@ async function sincronizar({ empresaId = null, forcar = false } = {}) {
     );
     resolvidos += 1;
   }
-  return { sincronizado: true, novos, resolvidos, reabertos, falhou };
+  return { novos, resolvidos, reabertos, restaurados };
+}
+
+/**
+ * Atualiza radar_itens para as empresas pedidas (null = todas). Com throttle de 3 min por escopo,
+ * salvo `forcar`. Devolve { sincronizado, novos, resolvidos, reabertos }.
+ */
+async function sincronizar({ empresaId = null, forcar = false } = {}) {
+  const escopo = empresaId ? String(empresaId) : "todas";
+  const ult = syncRecente.get(escopo);
+  if (!forcar && ult && Date.now() - ult < SYNC_MIN_MS) return { sincronizado: false };
+  syncRecente.set(escopo, Date.now());
+
+  const hoje = hojeBahia();
+  const ids = empresaId ? [Number(empresaId)] : await empresasAtivas();
+  const { itens, origensOk, falhou } = await coletar(ids, { comSalas: true });
+  const r = await aplicarDeteccao({ itens, origensOk, ids, hoje });
+  return { sincronizado: true, ...r, falhou };
 }
 
 /* ───────────────────────── Leitura e ranking ───────────────────────── */
@@ -388,7 +442,7 @@ function aparar(it, hoje, semanaIni) {
     id: it.id, empresa_id: it.empresa_id, origem: it.origem, origem_nome: ORIGENS[it.origem]?.nome, gravidade: it.gravidade,
     titulo: it.titulo, detalhe: it.detalhe, acao: it.acao, decisao: it.decisao, dono: it.dono, cliente: it.cliente, link: it.link,
     prazo: it.prazo, dias_para_prazo: it.prazo ? diasEntre(hoje, it.prazo) : null,
-    novo: it.primeira_vez >= semanaIni, dias_aberto: Math.max(0, diasEntre(it.primeira_vez, hoje)), reabertos: it.reabertos || 0,
+    novo: it.primeira_vez >= semanaIni, dias_aberto: Math.max(0, diasEntre(it.primeira_vez, hoje)), reabertos: it.reabertos || 0, reaberto_motivo: it.reaberto_motivo || null,
   };
 }
 
@@ -495,7 +549,11 @@ async function radarDaSemana({ empresaId = null, podeVer, sincronizarAntes = tru
     por_gravidade: { critica: abertos.filter((i) => i.gravidade === "critica").length, alta: abertos.filter((i) => i.gravidade === "alta").length, media: abertos.filter((i) => i.gravidade === "media").length },
     mudancas, farois: farois(todos, hoje, antes), prevencao: prevencao(todos, hoje),
     itens: ordenados.map((i) => aparar(i, hoje, semanaIni)),
-    ignorados: ignorados.map((i) => ({ id: i.id, titulo: i.titulo, origem_nome: ORIGENS[i.origem]?.nome, motivo: i.ignorado_motivo, ate: i.ignorado_ate, por: i.usuario_nome })),
+    ignorados: ignorados.map((i) => ({ id: i.id, titulo: i.titulo, origem_nome: ORIGENS[i.origem]?.nome, motivo: i.ignorado_motivo, ate: i.ignorado_ate, por: i.usuario_nome, gravidade: i.gravidade, gravidade_ignorada: i.gravidade_ignorada })),
+    // Itens que a pessoa marcou como resolvidos e que o Radar está respeitando (GRACA_RESOLVIDO_DIAS dias).
+    resolvidos_por_voce: todos
+      .filter((i) => i.estado === "resolvido" && i.resolvido_por === "usuario" && i.resolvido_em && i.resolvido_em >= somarDias(hoje, -GRACA_RESOLVIDO_DIAS))
+      .map((i) => ({ id: i.id, titulo: i.titulo, origem_nome: ORIGENS[i.origem]?.nome, resolvido_em: i.resolvido_em, ate: somarDias(i.resolvido_em, GRACA_RESOLVIDO_DIAS), por: i.usuario_nome })),
     calibragem,
   };
 }
@@ -523,7 +581,7 @@ async function resolverItem(req, id, observacao) {
   const prazo = dataStr(it.prazo);
   const aTempo = prazo ? (hoje <= somarDias(prazo, 1) ? 1 : 0) : null;
   await pool.query(
-    "UPDATE radar_itens SET estado='resolvido', resolvido_em=?, resolvido_por='usuario', a_tempo=?, observacao=?, usuario_id=?, usuario_nome=? WHERE id=?",
+    "UPDATE radar_itens SET estado='resolvido', resolvido_em=?, resolvido_por='usuario', a_tempo=?, observacao=?, usuario_id=?, usuario_nome=?, reaberto_motivo=NULL WHERE id=?",
     [hoje, aTempo, String(observacao || "").slice(0, 255) || null, req.user?.id || null, req.user?.nome || null, id]
   );
   await ctxAuditoria(req, it, "radar_resolver", "marcou como resolvido");
@@ -537,7 +595,7 @@ async function ignorarItem(req, id, motivo, dias) {
   if (!it) return { erro: 404, msg: "Item do Radar não encontrado." };
   const d = [7, 14, 30].includes(Number(dias)) ? Number(dias) : 14;
   await pool.query(
-    "UPDATE radar_itens SET estado='ignorado', ignorado_motivo=?, ignorado_ate=?, gravidade_ignorada=?, usuario_id=?, usuario_nome=? WHERE id=?",
+    "UPDATE radar_itens SET estado='ignorado', ignorado_motivo=?, ignorado_ate=?, gravidade_ignorada=?, usuario_id=?, usuario_nome=?, reaberto_motivo=NULL WHERE id=?",
     [m.slice(0, 255), somarDias(hojeBahia(), d), it.gravidade, req.user?.id || null, req.user?.nome || null, id]
   );
   await ctxAuditoria(req, it, "radar_ignorar", `ignorou por ${d} dias (${corta(m, 60)})`);
@@ -548,7 +606,7 @@ async function reabrirItem(req, id) {
   const it = await buscarItem(id);
   if (!it) return { erro: 404, msg: "Item do Radar não encontrado." };
   await pool.query(
-    "UPDATE radar_itens SET estado='aberto', resolvido_em=NULL, resolvido_por=NULL, a_tempo=NULL, ignorado_ate=NULL, reabertos=reabertos+1 WHERE id=?", [id]
+    "UPDATE radar_itens SET estado='aberto', resolvido_em=NULL, resolvido_por=NULL, a_tempo=NULL, ignorado_ate=NULL, reabertos=reabertos+1, reaberto_motivo=? WHERE id=?", [`reaberto à mão por ${String(req.user?.nome || "alguém").slice(0, 60)}`, id]
   );
   await ctxAuditoria(req, it, "radar_reabrir", "reabriu um item");
   return { ok: true, empresa_id: it.empresa_id };
@@ -608,6 +666,6 @@ async function avisoDoSino(user, empresaId) {
 }
 
 module.exports = {
-  sincronizar, radarDaSemana, resolverItem, ignorarItem, reabrirItem, gerarSemana, avisoDoSino,
+  sincronizar, aplicarDeteccao, decidirReabertura, radarDaSemana, resolverItem, ignorarItem, reabrirItem, gerarSemana, avisoDoSino,
   segundaDe, MOTIVOS_PADRAO, ORIGENS,
 };
