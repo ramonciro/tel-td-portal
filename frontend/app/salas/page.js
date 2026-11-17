@@ -53,6 +53,7 @@ export default function SalasPage() {
   // mas ele nunca chega nesta tela — PortalShell redireciona pra /admin,
   // exceto quando acessa /salas direto, ver ROTAS_GLOBAIS_LIBERADAS_SUPER_ADMIN).
   const canManage = hasSomeRole(usuario, ["coordenador", "assistente_treinamento"]);
+  // (super_admin passa pelo bypass do backend; o vínculo sala/ambiente é do ambiente de quem está logado, então ele só vê)
 
   async function carregar() {
     try {
@@ -72,7 +73,14 @@ export default function SalasPage() {
     carregar();
   }, []);
 
-  const ativas = useMemo(() => salas.filter((s) => s.ativo), [salas]);
+  // Salas por ambiente (17/11/2026): o catálogo é único; cada ambiente escolhe quais salas usa.
+  const doAmbiente = useMemo(() => salas.filter((s) => s.ativo && s.habilitada !== false), [salas]);
+  const outrasDoCatalogo = useMemo(() => salas.filter((s) => s.ativo && s.habilitada === false), [salas]);
+  const ehSuperAdmin = String(usuario?.perfil || "").toLowerCase() === "super_admin";
+  const ehAssistente = String(usuario?.perfil || "").toLowerCase() === "assistente_treinamento";
+  // Sala usada por mais de um ambiente: só Assistente/Super Admin editam ou desativam (o servidor também bloqueia).
+  const podeEditarSala = (s) => ehSuperAdmin || ehAssistente || !(s.ambientes_qtd > 1);
+  const ativas = doAmbiente;
   const inativas = useMemo(() => salas.filter((s) => !s.ativo), [salas]);
 
   function abrirCriar() {
@@ -121,6 +129,17 @@ export default function SalasPage() {
     }
   }
 
+  async function definirNoAmbiente(sala, habilitada) {
+    try {
+      setError(""); setSuccess("");
+      await apiFetch(`/salas/${sala.id}/ambiente`, { method: "PUT", body: JSON.stringify({ habilitada }) });
+      setSuccess(habilitada ? `${sala.nome} agora é usada neste ambiente.` : `${sala.nome} foi retirada deste ambiente.`);
+      await carregar();
+    } catch (err) {
+      setError(err.message || "Não foi possível atualizar as salas do ambiente.");
+    }
+  }
+
   async function reativar(sala) {
     try {
       setError("");
@@ -138,7 +157,7 @@ export default function SalasPage() {
         <PageHero
           eyebrow="Portal T&D · Agendamento"
           title="Salas"
-          subtitle="Agenda e catálogo global de salas usados na reserva de horário das turmas — vale para todos os clientes."
+          subtitle="Agenda das salas e catálogo compartilhado. Cada ambiente escolhe quais salas usa; a agenda de uma sala vale para todos os ambientes que a usam."
           actions={canManage ? <button type="button" style={createButton} onClick={abrirCriar}>+ Nova sala</button> : null}
         />
 
@@ -148,23 +167,24 @@ export default function SalasPage() {
         <AgendaSalas podeBloquear={canManage} />
 
         <section style={card}>
-          <h2 style={sectionTitle}>Ativas ({ativas.length})</h2>
+          <h2 style={sectionTitle}>Salas deste ambiente ({ativas.length})</h2>
           {loading ? (
             <div style={emptyState}>Carregando...</div>
           ) : ativas.length === 0 ? (
-            <div style={emptyState}>Nenhuma sala ativa cadastrada.</div>
+            <div style={emptyState}>Nenhuma sala escolhida para este ambiente. {canManage && !ehSuperAdmin ? "Use \"Usar neste ambiente\" nas salas do catálogo abaixo." : ""}</div>
           ) : (
             <div style={grid}>
               {ativas.map((s) => (
                 <div key={s.id} style={salaCard}>
                   <div>
                     <strong style={salaNome}>{s.nome}</strong>
-                    <span style={salaMeta}>{s.grupo === "sebrae" ? "Sebrae" : "Geral"}{s.capacidade ? ` · até ${s.capacidade} pessoas` : ""}</span>
+                    <span style={salaMeta}>{s.grupo === "sebrae" ? "Sebrae" : "Geral"}{s.capacidade ? ` · até ${s.capacidade} pessoas` : ""}{s.ambientes_qtd > 1 ? ` · usada por ${s.ambientes_qtd} ambientes` : ""}</span>
                   </div>
                   {canManage && (
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button type="button" style={ghostButton} onClick={() => abrirEditar(s)}>Editar</button>
-                      <button type="button" style={dangerGhost} onClick={() => desativar(s)}>Desativar</button>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {podeEditarSala(s) && <button type="button" style={ghostButton} onClick={() => abrirEditar(s)}>Editar</button>}
+                      {!ehSuperAdmin && <button type="button" style={ghostButton} onClick={() => definirNoAmbiente(s, false)}>Tirar do ambiente</button>}
+                      {podeEditarSala(s) && <button type="button" style={dangerGhost} onClick={() => desativar(s)}>Desativar</button>}
                     </div>
                   )}
                 </div>
@@ -172,6 +192,26 @@ export default function SalasPage() {
             </div>
           )}
         </section>
+
+        {canManage && !ehSuperAdmin && outrasDoCatalogo.length > 0 && (
+          <section style={{ ...card, marginTop: 16 }}>
+            <h2 style={sectionTitle}>Outras salas do catálogo ({outrasDoCatalogo.length})</h2>
+            <p style={{ margin: "-6px 0 12px", fontSize: 12, color: "#64748b" }}>
+              Salas que existem no portal mas não estão neste ambiente. Ao usar uma sala que outro ambiente também usa, o horário dela é compartilhado: turma de lá ocupando a sala bloqueia o horário aqui (sem mostrar os dados da turma).
+            </p>
+            <div style={grid}>
+              {outrasDoCatalogo.map((s) => (
+                <div key={s.id} style={salaCard}>
+                  <div>
+                    <strong style={salaNome}>{s.nome}</strong>
+                    <span style={salaMeta}>{s.grupo === "sebrae" ? "Sebrae" : "Geral"}{s.capacidade ? ` · até ${s.capacidade} pessoas` : ""}{s.ambientes_qtd > 0 ? ` · usada por ${s.ambientes_qtd} ambiente${s.ambientes_qtd > 1 ? "s" : ""}` : " · sem uso"}</span>
+                  </div>
+                  <button type="button" style={ghostButton} onClick={() => definirNoAmbiente(s, true)}>Usar neste ambiente</button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {canManage && inativas.length > 0 && (
           <section style={{ ...card, marginTop: 16 }}>

@@ -131,7 +131,7 @@ export default function AgendaSalas({ podeBloquear = false }) {
         <div>
           <h2 style={titulo}>Agenda das salas</h2>
           <div style={sub}>
-            {br(inicio)} a {br(fim)} · todos os clientes. A turma ocupa a sala em todos os dias do período dela, no horário informado.
+            {br(inicio)} a {br(fim)} · salas do seu ambiente. Horário ocupado por outro ambiente aparece só como "Ocupada por outro ambiente". A turma ocupa a sala em todos os dias do período dela, no horário informado.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -263,23 +263,24 @@ function Chip({ o, podeBloquear, onCancelar }) {
   const bloqueio = o.tipo === "bloqueio";
   const horario = `${hh(o.hora_inicio)}–${hh(o.hora_fim)}`;
   const periodo = o.periodo_inicio && o.periodo_fim && o.periodo_inicio !== o.periodo_fim ? `${br(o.periodo_inicio)} a ${br(o.periodo_fim)}` : "";
-  const dica = [bloqueio ? "Bloqueio" : "Turma", o.cliente && !bloqueio ? o.cliente : "", o.tema, horario, periodo && `período ${periodo}`, o.instrutor && `Instrutor: ${o.instrutor}`, o.criado_por && `Por: ${o.criado_por}`].filter(Boolean).join(" · ");
+  const outro = !!o.outro_ambiente;
+  const dica = outro ? `Ocupada por outro ambiente · ${horario}` : [bloqueio ? "Bloqueio" : "Turma", o.cliente && !bloqueio ? o.cliente : "", o.tema, horario, periodo && `período ${periodo}`, o.instrutor && `Instrutor: ${o.instrutor}`, o.criado_por && `Por: ${o.criado_por}`].filter(Boolean).join(" · ");
   return (
     <div
       title={dica}
       style={{
         borderRadius: 8, padding: "5px 7px", fontSize: 11.5, lineHeight: 1.3, border: "1px solid",
-        borderColor: bloqueio ? "#f59e0b" : "#93c5fd",
-        background: bloqueio ? "repeating-linear-gradient(45deg,#fffbeb,#fffbeb 5px,#fef3c7 5px,#fef3c7 10px)" : "#eff6ff",
+        borderColor: outro ? "#cbd5e1" : bloqueio ? "#f59e0b" : "#93c5fd",
+        background: outro ? "#f1f5f9" : bloqueio ? "repeating-linear-gradient(45deg,#fffbeb,#fffbeb 5px,#fef3c7 5px,#fef3c7 10px)" : "#eff6ff",
         color: "#0f172a",
       }}
     >
-      <div style={{ fontWeight: 800, color: bloqueio ? "#92400e" : "#1e40af" }}>
-        {bloqueio ? "Bloqueio · " : ""}{horario}
+      <div style={{ fontWeight: 800, color: outro ? "#475569" : bloqueio ? "#92400e" : "#1e40af" }}>
+        {bloqueio && !outro ? "Bloqueio · " : ""}{horario}
       </div>
-      {!bloqueio && o.cliente && <div style={{ fontWeight: 700 }}>{o.cliente}</div>}
+      {!bloqueio && !outro && o.cliente && <div style={{ fontWeight: 700 }}>{o.cliente}</div>}
       <div style={{ color: "#334155", overflowWrap: "anywhere" }}>{o.tema}</div>
-      {bloqueio && podeBloquear && (
+      {bloqueio && !outro && podeBloquear && (
         <button type="button" onClick={onCancelar} style={cancelaBtn}>Cancelar bloqueio</button>
       )}
     </div>

@@ -2486,6 +2486,46 @@ async function runMigrations() {
       console.log(`  ↳ RP de origem da turma não concluída (${error.message}) — seguindo`);
     }
 
+    // 73b2. RP ligada ao cliente (17/11/2026): rps.cliente_id aponta para o cliente ativo do mesmo ambiente
+    //       (menu Clientes). Sem chave estrangeira, de propósito (mesmo padrão do rp_id). As RPs antigas são
+    //       ligadas sozinhas só quando o produto casa com UM cliente ativo; o resto fica "sem cliente" para
+    //       a coordenação do R&S ligar na mão (idempotente).
+    try {
+      await ensureColumn("rps", "cliente_id", "INT NULL");
+      await pool.query(`CREATE INDEX idx_rps_cliente ON rps (empresa_id, cliente_id)`).catch(() => {});
+      const { vincularClientesAutomatico, _resetCache } = require("../services/rpClienteService");
+      _resetCache();
+      const r = await vincularClientesAutomatico({});
+      console.log(`  ↳ RP ligada ao cliente: ${r.ligadas} RP(s) ligada(s) pelo nome, ${r.semCorrespondencia} sem correspondência`);
+    } catch (error) {
+      console.log(`  ↳ RP ligada ao cliente não concluída (${error.message}) — seguindo`);
+    }
+
+    // 73b3. Salas por ambiente (17/11/2026): o catálogo de salas continua único (a sala física existe uma vez e a
+    //       agenda dela é compartilhada), mas cada ambiente escolhe QUAIS salas usa. A tabela sala_ambientes é o
+    //       vínculo. Na primeira criação, todas as salas atuais ficam habilitadas em todos os ambientes existentes
+    //       (nada some); depois cada coordenação ajusta. Sem chave estrangeira (mesmo padrão dos vínculos novos).
+    try {
+      const [jaExistia] = await pool.query(`SHOW TABLES LIKE 'sala_ambientes'`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS sala_ambientes (
+          sala_id     INT NOT NULL,
+          empresa_id  INT NOT NULL,
+          criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (sala_id, empresa_id),
+          INDEX idx_sala_ambientes_empresa (empresa_id)
+        )
+      `);
+      if (!jaExistia.length) {
+        const [r] = await pool.query(`INSERT IGNORE INTO sala_ambientes (sala_id, empresa_id) SELECT s.id, e.id FROM salas s CROSS JOIN empresas e`);
+        console.log(`  ↳ salas por ambiente: tabela criada e ${r.affectedRows} vínculo(s) sala/ambiente criado(s) (todas as salas em todos os ambientes)`);
+      } else {
+        console.log("  ↳ salas por ambiente: ok");
+      }
+    } catch (error) {
+      console.log(`  ↳ salas por ambiente não concluído (${error.message}) — seguindo`);
+    }
+
     // 73c. Operação e data de admissão passam a fazer parte do cadastro da pessoa (28/10/2026): antes só
     //      existiam em cada linha de turma e não acompanhavam a pessoa. Preenche a partir da linha de
     //      turma mais recente que tenha o dado; só onde a pessoa ainda não tem (idempotente).

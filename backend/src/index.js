@@ -214,6 +214,7 @@ const {
   atualizarSala,
   desativarSala,
   disponibilidadeSalas,
+  definirSalaNoAmbiente,
   agendaDasSalas,
   criarBloqueio,
   cancelarBloqueio,
@@ -225,6 +226,7 @@ const {
   salvarDadosBancarios,
 } = require("./controllers/reembolsoTransporteController");
 const { buscarConflitosSala, turmaEhRetroativa } = require("./services/salaConflitoService");
+const SalaAmbiente = require("./services/salaAmbienteService");
 const { normalizeSubtipo, ehSubtipoAvaliacaoTecnica } = require("./lib/subtipos");
 const { rpsElegiveis, validarRpDaTurma, rpDaTurma, sugestoesEmLote } = require("./services/rpOrigemService");
 const {
@@ -1186,6 +1188,16 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   const dataInicio = dados.data_inicio ?? dados.data ?? ctx.antes?.data_inicio ?? ctx.antes?.data;
   const dataFim = dados.data_fim ?? ctx.antes?.data_fim;
 
+  // Salas por ambiente (17/11/2026): a sala escolhida precisa estar habilitada no ambiente da turma. Turma que já usa a
+  // sala (sem trocá-la) não é barrada, para não travar a edição de turma antiga.
+  const empresaDaTurma = ctx.antes?.empresa_id || req?.empresaId || null;
+  const perfilSala = String(req?.user?.perfil || "").toLowerCase().trim();
+  if (salaId && dados.sala_id !== undefined && String(dados.sala_id) !== String(ctx.antes?.sala_id ?? "") && !(await SalaAmbiente.salaDoAmbiente(salaId, empresaDaTurma))) {
+    const erro = new Error("Esta sala não está habilitada no ambiente da turma. Habilite-a em Salas ou escolha outra.");
+    erro.status = 400;
+    throw erro;
+  }
+
   if (salaId && dataInicio && dataFim && horaInicio && horaFim) {
     if (!turmaEhRetroativa(dataFim)) {
       const conflitos = await buscarConflitosSala({
@@ -1197,9 +1209,12 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
         excluirTreinamentoId: ctx.antes?.id || null,
       });
       if (conflitos.length) {
-        const c = conflitos[0];
+        // Conflito com outro ambiente: sem tema/cliente (a Assistente, que vê todos os ambientes, continua vendo).
+        const c = SalaAmbiente.mascarar(conflitos[0], perfilSala === "assistente_treinamento" ? null : empresaDaTurma);
         const erro = new Error(
-          c.tipo === "bloqueio"
+          c.outro_ambiente
+            ? `Sala já ocupada nesse horário por outro ambiente, de ${String(c.hora_inicio).slice(0, 5)} às ${String(c.hora_fim).slice(0, 5)}.`
+            : c.tipo === "bloqueio"
             ? `Sala bloqueada nesse horário (${c.tema}), de ${String(c.hora_inicio).slice(0, 5)} às ${String(c.hora_fim).slice(0, 5)}.`
             : `Sala já reservada nesse horário pela turma "${c.tema}" (${c.cliente}), de ${c.hora_inicio} às ${c.hora_fim}.`
         );
@@ -1910,6 +1925,14 @@ app.get(
 
 // Agenda das salas e bloqueios sem turma (04/11/2026). Leitura para quem já consulta o catálogo
 // (mais superintendente); bloquear/cancelar bloqueio é de quem administra o catálogo.
+// Salas por ambiente (17/11/2026): a coordenação escolhe quais salas do catálogo o ambiente usa.
+app.put(
+  "/api/salas/:id/ambiente",
+  authRequired,
+  authorizeRoles("coordenador", "assistente_treinamento"),
+  definirSalaNoAmbiente
+);
+
 app.get(
   "/api/salas/agenda",
   authRequired,

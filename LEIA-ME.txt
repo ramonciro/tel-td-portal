@@ -1,13 +1,16 @@
-Correção: "Erro ao registrar a atividade" no Núcleo (17/11/2026)
+Pacote Salas por ambiente (17/11/2026)
 
-Causa: o link da evidência passava de 600 caracteres (link do SharePoint/Teams) e o banco recusava
-("Data too long for column 'url'").
+Como subir: envie as pastas backend/ e frontend/ para o repositório (Add files via upload), mantendo os caminhos.
+Ordem: o backend sobe primeiro (a migração roda sozinha no start).
 
-Arquivos (copie por cima do repositório, mesmos caminhos):
-- backend/src/controllers/nuspController.js
-- backend/src/database/migrate.js
+O que muda
+- Catálogo único de salas; cada ambiente escolhe quais salas usa (tela Salas: "Salas deste ambiente" e "Outras salas do catálogo" > "Usar neste ambiente").
+- Migração: cria sala_ambientes e habilita as 6 salas atuais em todos os ambientes existentes (nada muda de início). Ambientes novos começam sem salas.
+- Sala nova criada por um Coordenador já entra habilitada no ambiente dele.
+- Agenda compartilhada: horário ocupado em outro ambiente bloqueia, mas aparece só como "Ocupada por outro ambiente" (sem tema, cliente ou instrutor). Assistente de Treinamento continua vendo tudo.
+- Turma/bloqueio só aceitam sala habilitada no ambiente (turma antiga com sala já escolhida continua editável).
+- "Tirar do ambiente" é recusado se há turma futura do ambiente naquela sala.
+- Sala usada por mais de um ambiente: só Assistente de Treinamento/Super Admin editam nome/capacidade ou desativam.
+- Carga futura (Preventivo) considera só as salas do ambiente.
 
-O que muda: a coluna do link da evidência (nusp_evidencias.url) e do link do material (nusp_materiais.link)
-passa a aceitar até 2000 caracteres (a migração faz isso sozinha na subida). Link acima de 2000 caracteres
-agora recebe uma mensagem clara em vez de erro genérico. Só backend; não precisa subir o frontend.
-Esta correção já está incluída no pacote-rp-cliente (que passa a trazer os mesmos arquivos).
+Manuais: não atualizados (aguardando seu pedido).

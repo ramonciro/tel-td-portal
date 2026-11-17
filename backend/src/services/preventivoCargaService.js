@@ -247,7 +247,7 @@ async function calcularCargaFutura({ empresaId, instrutor } = {}) {
   }
   itens.sort((a, b) => (GRAV_ORDEM[b.gravidade] || 0) - (GRAV_ORDEM[a.gravidade] || 0) || a.instrutor.localeCompare(b.instrutor, "pt-BR"));
 
-  const salas = instrutor ? null : await calcularSalas({ hoje });
+  const salas = instrutor ? null : await calcularSalas({ hoje, empresaId });
   const resumo = {
     instrutores: itens.length,
     instrutores_sobrecarga: itens.filter((i) => i.meses.some((m) => m.status === "sobrecarga")).length,
@@ -270,9 +270,13 @@ async function calcularCargaFutura({ empresaId, instrutor } = {}) {
 }
 
 // Ocupação de sala: dias úteis com aula marcada ÷ dias úteis da janela (todos os ambientes).
-async function calcularSalas({ hoje }) {
+async function calcularSalas({ hoje, empresaId = null }) {
   const ate = somarDias(hoje, 89);
-  const [salas] = await pool.query("SELECT id, nome, capacidade, grupo, ativo FROM salas ORDER BY grupo, nome");
+  const [todas] = await pool.query("SELECT id, nome, capacidade, grupo, ativo FROM salas ORDER BY grupo, nome");
+  // Salas por ambiente (17/11/2026): a ocupação de cada sala continua somando todos os ambientes (sala física compartilhada),
+  // mas só entram as salas que o ambiente usa. Sem ambiente (Radar geral das salas): todas.
+  const habilitadas = await require("./salaAmbienteService").idsDoAmbiente(empresaId);
+  const salas = habilitadas === null ? todas : todas.filter((x) => habilitadas.has(Number(x.id)));
   if (!salas.length) return [];
   const entradas = await carregarEntradas({ empresaId: null, de: hoje, ate, soSala: true });
   const porSala = new Map();

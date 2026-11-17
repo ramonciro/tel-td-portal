@@ -1,20 +1,19 @@
 /**
  * salaConflitoService.js — Pacote Salas/Assistente/CPF/Horas/Farol MPT (15/09/2026)
  *
- * Catálogo de salas é GLOBAL (sem empresa_id — ver migrate.js, passo 31 e
- * decisão 8 da proposta): a checagem de conflito e a listagem de
- * disponibilidade varrem TODAS as tenants de propósito, nunca filtram por
- * req.empresaId. Isso é diferente de toda outra consulta do sistema, e é
- * a única exceção "por natureza do dado" (sala física compartilhada), não
- * uma exceção de perfil como a da Assistente de Treinamento (ver
- * lib/tenantScope.js) — aqui não há tenant nenhum a filtrar.
+ * Catálogo de salas é ÚNICO (sem empresa_id na tabela salas); cada ambiente
+ * escolhe quais salas usa (tabela sala_ambientes — 17/11/2026). A sala física
+ * é a mesma, então a checagem de conflito varre TODOS os ambientes de
+ * propósito: ocupação de um ambiente bloqueia o horário nos outros.
  *
- * Decisão 9: conflito entre tenants mostra o mesmo nível de detalhe que
- * conflito dentro do mesmo tenant (exposição de dado deliberada, restrita a
- * esta tela) — por isso a query devolve tema/cliente/horário do
- * treinamento conflitante sem nenhum corte.
+ * Privacidade entre ambientes (substitui a antiga "decisão 9"): quando o
+ * conflito vem de OUTRO ambiente, o detalhe é mascarado (SA.mascarar) — o
+ * usuário só vê "Ocupada por outro ambiente" e o horário, nunca tema,
+ * cliente ou instrutor. A Assistente de Treinamento (perfil transversal)
+ * continua vendo tudo.
  */
 const pool = require("../lib/db");
+const SA = require("./salaAmbienteService");
 
 function hojeISO() {
   const hoje = new Date();
@@ -124,14 +123,17 @@ async function buscarConflitosSala({ salaId, dataInicio, dataFim, horaInicio, ho
 
 /**
  * Decisão 6: o campo Sala já vem filtrado por disponibilidade depois de
- * informar data(s) e horário. Decisão 8/9: considera todas as tenants.
+ * informar data(s) e horário. Considera todos os ambientes (conflito mascarado quando de outro ambiente); só lista as salas habilitadas no ambiente.
  * "Outro local" e "Online" não passam por aqui (não fazem parte do
  * catálogo — ver decisão 11).
  */
-async function listarSalasComDisponibilidade({ dataInicio, dataFim, horaInicio, horaFim, excluirTreinamentoId }) {
-  const [salas] = await pool.query(
+async function listarSalasComDisponibilidade({ dataInicio, dataFim, horaInicio, horaFim, excluirTreinamentoId, empresaId = null, salaAtualId = null }) {
+  const [todas] = await pool.query(
     `SELECT id, nome, capacidade, grupo, ativo FROM salas WHERE ativo = 1 ORDER BY grupo ASC, nome ASC`
   );
+  // Salas por ambiente (17/11/2026): só as habilitadas no ambiente (e a sala que a turma já usa, para não sumir na edição).
+  const habilitadas = await SA.idsDoAmbiente(empresaId);
+  const salas = habilitadas === null ? todas : todas.filter((x) => habilitadas.has(Number(x.id)) || Number(x.id) === Number(salaAtualId));
 
   const retroativa = turmaEhRetroativa(dataFim);
   const temPeriodo = Boolean(dataInicio && dataFim && horaInicio && horaFim);
@@ -155,7 +157,8 @@ async function listarSalasComDisponibilidade({ dataInicio, dataFim, horaInicio, 
       // Decisão 7: turma retroativa nunca aparece como indisponível — só
       // carrega o(s) conflito(s) pra exibir o aviso não bloqueante.
       disponivel: !temPeriodo || retroativa || conflitos.length === 0,
-      conflitos,
+      // Conflito com turma/bloqueio de OUTRO ambiente aparece sem tema/cliente (só "Ocupada por outro ambiente").
+      conflitos: conflitos.map((c) => SA.mascarar(c, empresaId)),
     });
   }
 
@@ -177,17 +180,20 @@ function somarDiasISO(iso, n) {
  *
  * @returns {{ salas: object[], ocupacoes: object[] }}
  */
-async function agendaSalas({ dataInicio, dataFim }) {
+async function agendaSalas({ dataInicio, dataFim, empresaId = null }) {
   const ini = String(dataInicio).slice(0, 10);
   const fim = String(dataFim).slice(0, 10);
 
-  const [salas] = await pool.query(
+  const [todas] = await pool.query(
     `SELECT id, nome, capacidade, grupo FROM salas WHERE ativo = 1 ORDER BY grupo ASC, nome ASC`
   );
+  const habilitadas = await SA.idsDoAmbiente(empresaId);
+  const salas = habilitadas === null ? todas : todas.filter((x) => habilitadas.has(Number(x.id)));
+  const idsSalas = new Set(salas.map((x) => Number(x.id)));
 
   const [turmas] = await pool.query(
     `
-    SELECT t.id, t.tema, t.cliente, t.instrutor, t.sala_id, t.status,
+    SELECT t.id, t.tema, t.cliente, t.instrutor, t.sala_id, t.status, t.empresa_id,
            DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS data_inicio,
            DATE_FORMAT(COALESCE(t.data_fim, t.data_inicio, t.data), '%Y-%m-%d') AS data_fim,
            TIME_FORMAT(t.hora_inicio, '%H:%i') AS hora_inicio,
@@ -206,7 +212,7 @@ async function agendaSalas({ dataInicio, dataFim }) {
   try {
     const [rows] = await pool.query(
       `
-      SELECT b.id, b.sala_id, b.motivo, b.hora_inicio, b.hora_fim, b.criado_por_id,
+      SELECT b.id, b.sala_id, b.motivo, b.hora_inicio, b.hora_fim, b.criado_por_id, b.empresa_id,
              DATE_FORMAT(b.data_inicio, '%Y-%m-%d') AS data_inicio,
              DATE_FORMAT(b.data_fim, '%Y-%m-%d') AS data_fim,
              u.nome AS criado_por
@@ -226,7 +232,8 @@ async function agendaSalas({ dataInicio, dataFim }) {
     const de = base.data_inicio > ini ? base.data_inicio : ini;
     const ate = base.data_fim < fim ? base.data_fim : fim;
     for (let d = de, guarda = 0; d <= ate && guarda < 400; d = somarDiasISO(d, 1), guarda += 1) {
-      ocupacoes.push({ sala_id: base.sala_id, data: d, hora_inicio: base.hora_inicio, hora_fim: base.hora_fim, ...extra });
+      if (!idsSalas.has(Number(base.sala_id))) continue; // sala que o ambiente não usa não entra na agenda dele
+      ocupacoes.push(SA.mascarar({ sala_id: base.sala_id, data: d, hora_inicio: base.hora_inicio, hora_fim: base.hora_fim, empresa_id: base.empresa_id, ...extra }, empresaId));
     }
   };
   for (const t of turmas) {

@@ -514,6 +514,7 @@ function TreinamentosConteudo() {
       try {
         const q = new URLSearchParams({ data_inicio: form.data_inicio, data_fim: form.data_fim, hora_inicio: form.hora_inicio, hora_fim: form.hora_fim });
         if (editingId) q.set("excluir_treinamento_id", String(editingId));
+        if (form.sala_id) q.set("sala_atual_id", String(form.sala_id));
         const r = await apiFetch(`/salas/disponibilidade?${q.toString()}`);
         if (!cancelado) setDispSalas(r && Array.isArray(r.salas) ? { retroativa: !!r.retroativa, salas: r.salas } : null);
       } catch (_) {
@@ -525,11 +526,14 @@ function TreinamentosConteudo() {
 
   const opcoesSala = useMemo(() => {
     const dispPorId = new Map((dispSalas?.salas || []).map((x) => [Number(x.id), x]));
-    return salas.map((s) => {
+    // Salas por ambiente (17/11/2026): só as salas habilitadas no ambiente (a sala que a turma já usa fica, para não sumir ao editar).
+    return salas.filter((s) => s.habilitada !== false || String(form.sala_id) === String(s.id)).map((s) => {
       const d = dispPorId.get(Number(s.id));
       if (d && d.disponivel === false) {
         const c = (d.conflitos || [])[0];
-        const quem = c ? `${c.tipo === "bloqueio" ? "bloqueada" : "ocupada"}: ${c.cliente || ""}${c.tema ? ` · ${c.tema}` : ""}, ${String(c.hora_inicio || "").slice(0, 5)}–${String(c.hora_fim || "").slice(0, 5)}` : "ocupada";
+        const quem = c ? (c.outro_ambiente
+          ? `ocupada por outro ambiente, ${String(c.hora_inicio || "").slice(0, 5)}–${String(c.hora_fim || "").slice(0, 5)}`
+          : `${c.tipo === "bloqueio" ? "bloqueada" : "ocupada"}: ${c.cliente || ""}${c.tema ? ` · ${c.tema}` : ""}, ${String(c.hora_inicio || "").slice(0, 5)}–${String(c.hora_fim || "").slice(0, 5)}`) : "ocupada";
         return { value: String(s.id), label: `${s.nome} — ${quem}`, disabled: String(form.sala_id) !== String(s.id) };
       }
       return { value: String(s.id), label: s.nome };
