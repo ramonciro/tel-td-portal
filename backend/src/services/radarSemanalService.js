@@ -446,6 +446,31 @@ function aparar(it, hoje, semanaIni) {
   };
 }
 
+// Itens abertos de tipos diferentes sobre a MESMA turma (ex.: prontidão + certificação). Continuam cartões
+// separados (ações e donos diferentes); só avisamos no cartão que a turma tem mais itens abertos.
+function turmaDoItem(it) {
+  const m = /^(prontidao|certificacao):(\d+)$/.exec(String(it.chave || ""));
+  return m ? `${it.empresa_id}|${m[2]}` : null;
+}
+function mesmaTurmaDe(abertos) {
+  const porTurma = new Map();
+  for (const i of abertos) {
+    const k = turmaDoItem(i);
+    if (!k) continue;
+    if (!porTurma.has(k)) porTurma.set(k, []);
+    porTurma.get(k).push(i);
+  }
+  const res = new Map();
+  for (const lista of porTurma.values()) {
+    if (lista.length < 2) continue;
+    for (const i of lista) {
+      const outros = lista.filter((o) => o.id !== i.id);
+      res.set(i.id, { qtd: outros.length, tipos: [...new Set(outros.map((o) => ORIGENS[o.origem]?.nome).filter(Boolean))] });
+    }
+  }
+  return res;
+}
+
 function abertoEm(it, t) {
   // Estava aberto em t: detectado desde antes de t e ainda não resolvido naquela data.
   if (it.primeira_vez > t) return false;
@@ -501,6 +526,8 @@ async function radarDaSemana({ empresaId = null, podeVer, sincronizarAntes = tru
   const todos = (await carregarItens({ empresaId, desde: somarDias(hoje, -60) })).filter((i) => visivel(i, podeVer));
   const abertos = todos.filter((i) => i.estado === "aberto");
   const ignorados = todos.filter((i) => i.estado === "ignorado");
+  const mesmaTurma = mesmaTurmaDe(abertos);
+  const apar = (i) => { const a = aparar(i, hoje, semanaIni); const m = mesmaTurma.get(i.id); return m ? { ...a, mesma_turma_outros: m.qtd, mesma_turma_tipos: m.tipos } : a; };
 
   // Top 5: maior pontuação, no máximo 3 por origem.
   const ordenados = [...abertos].sort((a, b) => pontuar(b, hoje, semanaIni) - pontuar(a, hoje, semanaIni) || (a.prazo || "9999").localeCompare(b.prazo || "9999") || a.id - b.id);
@@ -544,11 +571,11 @@ async function radarDaSemana({ empresaId = null, podeVer, sincronizarAntes = tru
   return {
     hoje, semana_inicio: semanaIni, semana_anterior: antes,
     gerado_em: snap && snap.semana_inicio === semanaIni ? snap.gerado_em : null,
-    top5: top.map((i) => aparar(i, hoje, semanaIni)),
+    top5: top.map(apar),
     abertos: abertos.length,
     por_gravidade: { critica: abertos.filter((i) => i.gravidade === "critica").length, alta: abertos.filter((i) => i.gravidade === "alta").length, media: abertos.filter((i) => i.gravidade === "media").length },
     mudancas, farois: farois(todos, hoje, antes), prevencao: prevencao(todos, hoje),
-    itens: ordenados.map((i) => aparar(i, hoje, semanaIni)),
+    itens: ordenados.map(apar),
     ignorados: ignorados.map((i) => ({ id: i.id, titulo: i.titulo, origem_nome: ORIGENS[i.origem]?.nome, motivo: i.ignorado_motivo, ate: i.ignorado_ate, por: i.usuario_nome, gravidade: i.gravidade, gravidade_ignorada: i.gravidade_ignorada })),
     // Itens que a pessoa marcou como resolvidos e que o Radar está respeitando (GRACA_RESOLVIDO_DIAS dias).
     resolvidos_por_voce: todos
