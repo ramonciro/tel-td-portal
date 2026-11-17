@@ -12,8 +12,8 @@
  *  - A lista do formulário vem pelo CLIENTE da turma (rps.cliente_id); RP antiga sem cliente
  *    entra pelo nome do produto. "Mostrar RPs de outros clientes" libera a lista inteira.
  *  - Uma RP pode ter várias turmas (ex.: duas levas de candidatos).
- *  - Sugestão (nunca grava sozinha): RP operacional em andamento do mesmo ambiente com
- *    início da avaliação a até 3 dias do início da turma; se mais de uma, a que casa
+ *  - Sugestão (nunca grava sozinha): RP operacional em andamento do mesmo ambiente E do mesmo
+ *    cliente da turma, com início da avaliação a até 3 dias do início da turma; se mais de uma, a que casa
  *    pelo nome (produto/site × cliente/tema) vem primeiro.
  */
 
@@ -121,18 +121,21 @@ async function rpsElegiveis({ empresaId, turma = {}, rpAtualId = null, todosClie
   let abertas = await carregarRPsAbertas(empresaId);
   const nomeCli = String(turma.cliente || "").trim();
   let clienteTurma = null;
+  let candidatasSugestao = null;
   let ocultas = 0;
   if (nomeCli) {
     const lista = await clientesAtivos(empresaId);
     const alvo = semAcento(nomeCli);
     clienteTurma = lista.find((c) => semAcento(c.nome) === alvo) || null;
+    const dentro = abertas.filter((r) => rpDoCliente(r, clienteTurma, nomeCli));
+    candidatasSugestao = dentro;
     if (!todosClientes) {
-      const dentro = abertas.filter((r) => rpDoCliente(r, clienteTurma, nomeCli));
       ocultas = abertas.length - dentro.length;
       abertas = dentro;
     }
   }
-  const sug = sugerirRP({ cliente: turma.cliente, tema: turma.tema, ini: turma.data_inicio }, abertas);
+  // A sugestão automática só considera RPs do cliente da turma, mesmo quando a lista mostra todos.
+  const sug = sugerirRP({ cliente: turma.cliente, tema: turma.tema, ini: turma.data_inicio }, candidatasSugestao || abertas);
   const lista = abertas.map((r) => ({ ...r, turmas_vinculadas: Number(r.turmas_vinculadas) || 0, sugerida: !!(sug && sug.rp.id === r.id) }));
   if (rpAtualId && !lista.some((r) => r.id === Number(rpAtualId))) {
     const atual = await buscarRP(rpAtualId, empresaId);
@@ -250,10 +253,21 @@ async function sugestoesEmLote({ empresaId }) {
     throw e;
   }
   const porEmpresa = {};
+  const clientesPorEmpresa = {};
   const out = [];
   for (const t of turmas) {
-    if (!porEmpresa[t.empresa_id]) porEmpresa[t.empresa_id] = await carregarRPsAbertas(t.empresa_id, { apenasOperacionais: true });
-    const s = sugerirRP(t, porEmpresa[t.empresa_id]);
+    if (!porEmpresa[t.empresa_id]) {
+      porEmpresa[t.empresa_id] = await carregarRPsAbertas(t.empresa_id, { apenasOperacionais: true });
+      clientesPorEmpresa[t.empresa_id] = await clientesAtivos(t.empresa_id);
+    }
+    // Só sugere RP do MESMO cliente da turma (17/11/2026): data parecida sozinha não basta
+    // (turma do Mercantil nunca recebe RP da Dasa). Turma sem cliente informado fica sem sugestão.
+    const nomeCli = String(t.cliente || "").trim();
+    if (!nomeCli) continue;
+    const alvo = semAcento(nomeCli);
+    const clienteTurma = clientesPorEmpresa[t.empresa_id].find((c) => semAcento(c.nome) === alvo) || null;
+    const doCliente = porEmpresa[t.empresa_id].filter((r) => rpDoCliente(r, clienteTurma, nomeCli));
+    const s = sugerirRP(t, doCliente);
     if (!s) continue;
     out.push({
       turma: { id: t.id, tema: t.tema, cliente: t.cliente, data_inicio: t.ini },

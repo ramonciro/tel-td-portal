@@ -1066,7 +1066,7 @@ function TreinamentosConteudo() {
       </section>
 
       {vinculoAberto && (
-        <Modal title="Vincular RPs sugeridas" subtitle="Turmas de Avaliação Técnica sem RP de origem, com a RP do R&S que começa na mesma data (até 3 dias de diferença). Confira e marque as que estão certas." onClose={() => !vinculoSalvando && setVinculoAberto(false)}>
+        <Modal title="Vincular RPs sugeridas" subtitle="Turmas de Avaliação Técnica sem RP de origem, com a RP do R&S do mesmo cliente que começa na mesma data (até 3 dias de diferença). Confira e marque as que estão certas." onClose={() => !vinculoSalvando && setVinculoAberto(false)}>
           <div style={{ padding: "6px 24px 8px", display: "grid", gap: 8, maxHeight: "55vh", overflowY: "auto" }}>
             {vinculoCarregando && <p style={sectionSubtitle}>Buscando sugestões...</p>}
             {!vinculoCarregando && !vinculoLista.length && <p style={sectionSubtitle}>Nenhuma sugestão: as turmas de Avaliação Técnica já têm RP de origem ou não há RP com início próximo.</p>}

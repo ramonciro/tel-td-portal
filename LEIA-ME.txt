@@ -1,7 +1,10 @@
-Radar: aviso de "mesma turma" (17/11/2026)
+Correção: "Vincular RPs sugeridas" só sugere RP do mesmo cliente (17/11/2026)
 
-Os cartões continuam separados (cada um tem ação, dono e prazo próprios). Quando uma turma tem mais de um item aberto
-(Prontidão de turma + Risco de certificação), cada cartão mostra:
-"Esta turma tem mais 1 item aberto no Radar (Risco de certificação)."
+Antes a sugestão usava só a data (até 3 dias) e podia propor RP da Dasa para turma do Mercantil.
+Agora:
+- Vincular RPs sugeridas: só sugere RP do mesmo cliente da turma (pelo cliente ligado à RP; RP antiga sem cliente, pelo nome do produto). Turma sem cliente informado fica sem sugestão.
+- Seletor de RP no formulário da turma: com "Mostrar RPs de outros clientes", a lista continua completa, mas a marca "sugerida" só vale para RP do cliente da turma.
+- Texto do modal atualizado.
 
-Não muda contagem, pontuação, top 5 nem faróis. Sem migração. Suba backend e frontend mantendo os caminhos.
+Atenção: se a RP não estiver ligada a um cliente (menu RPs do R&S) e o nome do produto não bater com o cliente, ela deixa de ser sugerida; é só ligar o cliente na RP.
+Sem migração. Suba backend e frontend mantendo os caminhos.
