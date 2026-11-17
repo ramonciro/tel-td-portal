@@ -274,6 +274,7 @@ async function validarAtividade(b, c, { atual = null } = {}) {
   d.analista_id = analista || atual?.analista_id || c.user.id;
   const urlEv = b.evidencia_url ? String(b.evidencia_url).trim() : "";
   if (urlEv && !B.urlValida(urlEv)) erros.push("O link da evidência deve começar com http:// ou https://");
+  else if (urlEv.length > 2000) erros.push("O link da evidência é longo demais (máximo de 2000 caracteres). Use o link de compartilhamento curto do arquivo");
   if (!erros.length) {
     const ref = await B.conferirReferencias(d, c.empresaId);
     if (ref) erros.push(ref);
@@ -529,7 +530,7 @@ async function adicionarEvidencia(req, res) {
   const entidade = String(req.body?.entidade || ""); const id = Number(req.body?.entidade_id);
   if (!["atividade", "plano"].includes(entidade) || !Number.isInteger(id)) return B.erro(res, 400, "Evidência inválida");
   const url = String(req.body?.url || "").trim();
-  if (!B.urlValida(url) || url.length > 600) return B.erro(res, 400, "O link da evidência deve começar com http:// ou https://");
+  if (!B.urlValida(url) || url.length > 2000) return B.erro(res, 400, "O link da evidência deve começar com http:// ou https://");
   try {
     const dono = await donoDaEntidade(c, entidade, id);
     if (!dono) return B.erro(res, 404, "Registro não encontrado");
@@ -722,6 +723,7 @@ async function validarPlano(b, c, atual) {
   d.responsavel_id = resp || atual?.responsavel_id || c.user.id;
   const urlEv = b.evidencia_url ? String(b.evidencia_url).trim() : "";
   if (urlEv && !B.urlValida(urlEv)) erros.push("O link da evidência deve começar com http:// ou https://");
+  else if (urlEv.length > 2000) erros.push("O link da evidência é longo demais (máximo de 2000 caracteres). Use o link de compartilhamento curto do arquivo");
   const comentario = B.texto(b.comentario, 1000, "Comentário", erros);
   if (!erros.length) {
     const ref = await B.conferirReferencias(d, c.empresaId);
@@ -842,12 +844,13 @@ async function salvarMaterial(req, res) {
   const b = req.body || {}; const erros = [];
   const d = {
     titulo: B.texto(b.titulo, 200, "Título", erros, { obrigatorio: true }),
-    link: B.texto(b.link, 600, "Link", erros),
+    link: B.texto(b.link, 2000, "Link", erros),
     status: B.opcao(b.status, B.STATUS_MATERIAL, "Status", erros, { padrao: "em_producao" }),
     responsavel_nome: B.texto(b.responsavel_nome, 150, "Responsável", erros),
     programa_id: B.inteiroOuNulo(b.programa_id, "Programa", erros),
   };
   if (d.link && !B.urlValida(d.link)) erros.push("O link deve começar com http:// ou https://");
+  else if (d.link && d.link.length > 2000) erros.push("O link é longo demais (máximo de 2000 caracteres)");
   if (erros.length) return B.erro(res, 400, erros.join("; "));
   try {
     if (!(await B.existeNaEmpresa("nusp_programas", d.programa_id, c.empresaId))) return B.erro(res, 400, "Programa inválido");

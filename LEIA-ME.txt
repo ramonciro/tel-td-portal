@@ -1,16 +1,13 @@
-Pacote RP ligada ao cliente (17/11/2026)
+Correção: "Erro ao registrar a atividade" no Núcleo (17/11/2026)
 
-Copie as pastas backend/ e frontend/ por cima do repositório (mesmos caminhos).
-Arquivos: backend/src/services/rpClienteService.js (novo), backend/src/database/migrate.js,
-backend/src/controllers/rsController.js, backend/src/index.js,
-backend/src/services/rpOrigemService.js, backend/src/services/preventivoCargaService.js,
-frontend/app/treinamentos/page.js, frontend/app/rs/rps/page.js, frontend/app/radar/DemandaRS.js
+Causa: o link da evidência passava de 600 caracteres (link do SharePoint/Teams) e o banco recusava
+("Data too long for column 'url'").
 
-Ordem: 1) subir o backend (a migração cria rps.cliente_id e liga as RPs antigas pelo nome do produto;
-procure no log "RP ligada ao cliente: N RP(s) ligada(s) pelo nome, M sem correspondência");
-2) subir o frontend. Sem variável nova.
+Arquivos (copie por cima do repositório, mesmos caminhos):
+- backend/src/controllers/nuspController.js
+- backend/src/database/migrate.js
 
-Atenção: a lista de clientes da RP filtra por empresa_id. Cliente com empresa_id vazio não aparece
-nem é ligado automaticamente. Confira no menu Clientes antes de subir.
-
-Depois: R&S > Requisições > faixa amarela "Ligar ao cliente" (Coordenador de R&S) para as RPs sem correspondência.
+O que muda: a coluna do link da evidência (nusp_evidencias.url) e do link do material (nusp_materiais.link)
+passa a aceitar até 2000 caracteres (a migração faz isso sozinha na subida). Link acima de 2000 caracteres
+agora recebe uma mensagem clara em vez de erro genérico. Só backend; não precisa subir o frontend.
+Esta correção já está incluída no pacote-rp-cliente (que passa a trazer os mesmos arquivos).

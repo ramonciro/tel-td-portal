@@ -2486,21 +2486,6 @@ async function runMigrations() {
       console.log(`  ↳ RP de origem da turma não concluída (${error.message}) — seguindo`);
     }
 
-    // 73b2. RP ligada ao cliente (17/11/2026): rps.cliente_id aponta para o cliente ativo do mesmo ambiente
-    //       (menu Clientes). Sem chave estrangeira, de propósito (mesmo padrão do rp_id). As RPs antigas são
-    //       ligadas sozinhas só quando o produto casa com UM cliente ativo; o resto fica "sem cliente" para
-    //       a coordenação do R&S ligar na mão (idempotente).
-    try {
-      await ensureColumn("rps", "cliente_id", "INT NULL");
-      await pool.query(`CREATE INDEX idx_rps_cliente ON rps (empresa_id, cliente_id)`).catch(() => {});
-      const { vincularClientesAutomatico, _resetCache } = require("../services/rpClienteService");
-      _resetCache();
-      const r = await vincularClientesAutomatico({});
-      console.log(`  ↳ RP ligada ao cliente: ${r.ligadas} RP(s) ligada(s) pelo nome, ${r.semCorrespondencia} sem correspondência`);
-    } catch (error) {
-      console.log(`  ↳ RP ligada ao cliente não concluída (${error.message}) — seguindo`);
-    }
-
     // 73c. Operação e data de admissão passam a fazer parte do cadastro da pessoa (28/10/2026): antes só
     //      existiam em cada linha de turma e não acompanhavam a pessoa. Preenche a partir da linha de
     //      turma mais recente que tenha o dado; só onde a pessoa ainda não tem (idempotente).
@@ -3711,6 +3696,14 @@ async function ensureNusp() {
   const [urlCol] = await pool.query(
     `SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nusp_evidencias' AND COLUMN_NAME = 'url' LIMIT 1`);
   if (urlCol[0] && urlCol[0].IS_NULLABLE === "NO") await pool.query(`ALTER TABLE nusp_evidencias MODIFY COLUMN url VARCHAR(600) NULL`);
+  // Links longos (SharePoint, Teams, Drive) passam de 600 caracteres: amplia a coluna da evidência e do link do material
+  // (17/11/2026). Idempotente: só altera se a coluna ainda tiver menos de 2000 caracteres.
+  for (const [tabela, coluna] of [["nusp_evidencias", "url"], ["nusp_materiais", "link"]]) {
+    const [cl] = await pool.query(
+      `SELECT CHARACTER_MAXIMUM_LENGTH AS n FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+      [tabela, coluna]);
+    if (cl[0] && Number(cl[0].n) < 2000) await pool.query(`ALTER TABLE ${tabela} MODIFY COLUMN ${coluna} VARCHAR(2000) NULL`);
+  }
   await ensureColumn("nusp_evidencias", "arquivo_nome", "VARCHAR(255) NULL");
   await ensureColumn("nusp_evidencias", "arquivo_caminho", "VARCHAR(300) NULL");
   await ensureColumn("nusp_evidencias", "arquivo_tipo", "VARCHAR(100) NULL");
