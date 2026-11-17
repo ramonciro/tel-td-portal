@@ -1,11 +1,16 @@
-PACOTE — Radar: o Radar passa a guardar o que você respondeu (16/11/2026)
+Pacote RP ligada ao cliente (17/11/2026)
 
-Copie cada arquivo para o mesmo caminho do repositório (ramonciro/tel-td-portal), mantendo as pastas.
-O backend cria sozinho a coluna nova radar_itens.reaberto_motivo no deploy. Nada a fazer no banco.
+Copie as pastas backend/ e frontend/ por cima do repositório (mesmos caminhos).
+Arquivos: backend/src/services/rpClienteService.js (novo), backend/src/database/migrate.js,
+backend/src/controllers/rsController.js, backend/src/index.js,
+backend/src/services/rpOrigemService.js, backend/src/services/preventivoCargaService.js,
+frontend/app/treinamentos/page.js, frontend/app/rs/rps/page.js, frontend/app/radar/DemandaRS.js
 
-BACKEND (Railway)
-- backend/src/services/radarSemanalService.js   regras de "Resolvido" e "Ignorar"
-- backend/src/database/migrate.js               coluna radar_itens.reaberto_motivo (automática)
+Ordem: 1) subir o backend (a migração cria rps.cliente_id e liga as RPs antigas pelo nome do produto;
+procure no log "RP ligada ao cliente: N RP(s) ligada(s) pelo nome, M sem correspondência");
+2) subir o frontend. Sem variável nova.
 
-FRONTEND (Vercel)
-- frontend/app/radar/RadarSemana.js             motivo escrito quando o item volta, bloco "Marcados como resolvidos", aviso de gravidade nos Ignorados
+Atenção: a lista de clientes da RP filtra por empresa_id. Cliente com empresa_id vazio não aparece
+nem é ligado automaticamente. Confira no menu Clientes antes de subir.
+
+Depois: R&S > Requisições > faixa amarela "Ligar ao cliente" (Coordenador de R&S) para as RPs sem correspondência.

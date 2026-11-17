@@ -66,6 +66,7 @@ const FORM_VAZIO = {
   inicio_av_tecnica: "", final_av_tecnica: "", data_fechamento_vaga: "",
   hcs: "", hcs_com_to: "", hcs_aprovados: "", qtd_entregue: "", hcs_berco: "",
   observacoes: "",
+  cliente_id: "", // cliente da RP (17/11/2026), do menu Clientes
 };
 
 // ─── Modal de cadastro/edição ──────────────────────────────────────
@@ -87,6 +88,8 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   const [convMsg, setConvMsg] = useState("");
   const [estornando, setEstornando] = useState(null); // id da convocação aguardando confirmação
   const [turmasOrigem, setTurmasOrigem] = useState([]); // turmas do T&D que têm esta RP como origem (27/10/2026)
+  // Cliente da RP (17/11/2026): clientes ativos do ambiente. Sem nenhum cadastrado, o Produto segue em texto livre.
+  const [clientes, setClientes] = useState([]);
 
   const carregarBerco = useCallback(async (id) => {
     try {
@@ -99,6 +102,11 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
       setHistorico(h.convocacoes || []);
     } catch { /* o resto do formulário continua valendo */ }
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    apiFetch("/rs/clientes").then((r) => setClientes(Array.isArray(r?.clientes) ? r.clientes : [])).catch(() => setClientes([]));
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -121,6 +129,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
         qtd_entregue: rp.qtd_entregue  ?? "",
         hcs_berco:    rp.hcs_berco     ?? "",
         observacoes:  rp.observacoes || "",
+        cliente_id:   rp.cliente_id ? String(rp.cliente_id) : "",
       });
     } else {
       setForm(FORM_VAZIO);
@@ -189,11 +198,21 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   };
 
   const handleSalvar = async (confirmarDuplicada = false) => {
-    if (!form.site || !form.produto) { setErro("Site e Produto são obrigatórios."); return; }
+    const usaCliente = clientes.length > 0;
+    // RP nova, ou antiga que já tem cliente, exige o cliente; RP antiga sem cliente pode seguir (a ligação é opcional).
+    if (usaCliente && !form.cliente_id && (!rp || rp.cliente_id)) { setErro("Escolha o cliente da RP."); return; }
+    if (!form.site || (!usaCliente && !form.produto)) { setErro(usaCliente ? "Site e Cliente são obrigatórios." : "Site e Produto são obrigatórios."); return; }
     if (!form.data_recebimento) { setErro("Informe a data de recebimento da RP — sem ela o prazo (SLA) não é calculado."); return; }
     setSaving(true); setErro("");
     try {
       const payload = { ...form };
+      if (usaCliente && form.cliente_id) {
+        const cli = clientes.find((c) => String(c.id) === String(form.cliente_id));
+        payload.cliente_id = Number(form.cliente_id);
+        if (cli) payload.produto = cli.nome; // o Produto da RP é o nome do cliente
+      } else {
+        delete payload.cliente_id; // RP antiga sem cliente: não mexe no vínculo
+      }
       if (payload.mes_referencia?.length === 7) payload.mes_referencia += "-01";
       if (rp) {
         await apiFetch(`/rs/rps/${rp.id}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -270,7 +289,21 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
             </p>
           </div>
 
-          {/* Produto com autocomplete */}
+          {/* Cliente da RP (17/11/2026) — ou Produto em texto livre se o ambiente não tem clientes ativos */}
+          {clientes.length > 0 ? (
+            <div>
+              <label style={labelSt}>Cliente *</label>
+              <select value={form.cliente_id} onChange={e => set("cliente_id", e.target.value)} style={inputSt}>
+                <option value="">Selecione o cliente...</option>
+                {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+              <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
+                {rp && !rp.cliente_id
+                  ? `Esta RP ainda não está ligada a um cliente (produto atual: "${rp.produto}"). Ligue-a para o T&D abrir turmas a partir dela.`
+                  : "O T&D usa o cliente para listar a RP ao abrir a turma. Falta um cliente? Cadastre em Clientes."}
+              </p>
+            </div>
+          ) : (
           <div style={{ position: "relative" }}>
             <label style={labelSt}>Produto / Cliente *</label>
             <input
@@ -279,6 +312,9 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
               onBlur={() => setTimeout(() => setShowSug(false), 150)}
               placeholder="Safra, Dasa, Cemig..." style={inputSt}
             />
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
+              Nenhum cliente ativo cadastrado neste ambiente. Cadastre em Clientes para ligar a RP ao cliente.
+            </p>
             {showSug && sugestoes.length > 0 && (
               <div style={{
                 position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10,
@@ -296,6 +332,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
               </div>
             )}
           </div>
+          )}
 
           {/* Cargo — só ESTRATÉGICO */}
           {isEstr ? (
@@ -520,6 +557,10 @@ export default function RPsPage() {
   const [limiteDias, setLimiteDias] = useState(15);
   const [exportando, setExportando] = useState(false);
   const [lixeiraAberta, setLixeiraAberta] = useState(false);
+  // Cliente da RP (17/11/2026): quantas RPs ainda estão sem cliente e a tela para ligar na mão.
+  const [semClienteInfo, setSemClienteInfo] = useState({ total: 0, ambienteTemClientes: false });
+  const [semClienteAberto, setSemClienteAberto] = useState(false);
+  const [filtroSemCliente, setFiltroSemCliente] = useState(false);
   const [msg, setMsg] = useState("");
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -549,12 +590,20 @@ export default function RPsPage() {
     return p;
   }, [filtroMes, filtroSite, filtroSetor, filtroStatus, filtroProduto]);
 
+  const carregarSemCliente = useCallback(() => {
+    apiFetch("/rs/rps-sem-cliente")
+      .then((r) => setSemClienteInfo({ total: (r?.rps || []).length, ambienteTemClientes: (r?.clientes || []).length > 0 }))
+      .catch(() => setSemClienteInfo({ total: 0, ambienteTemClientes: false }));
+  }, []);
+  useEffect(() => { carregarSemCliente(); }, [carregarSemCliente]);
+
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
       const p = filtrosQS();
       p.set("page", String(pagina));
       p.set("limit", String(porPagina));
+      if (filtroSemCliente) p.set("sem_cliente", "1");
       const data = await apiFetch(`/rs/rps?${p}`);
       setRps(data.rps || []);
       setTotais(data.totais || null);
@@ -565,10 +614,10 @@ export default function RPsPage() {
       if ((data.paginas || 1) < pagina) setPagina(data.paginas || 1);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filtrosQS, pagina, porPagina]);
+  }, [filtrosQS, pagina, porPagina, filtroSemCliente]);
 
   // Mudou algum filtro: volta para a primeira página.
-  useEffect(() => { setPagina(1); }, [filtroMes, filtroSite, filtroSetor, filtroStatus, filtroProduto]);
+  useEffect(() => { setPagina(1); }, [filtroMes, filtroSite, filtroSetor, filtroStatus, filtroProduto, filtroSemCliente]);
 
   const carregarSites = useCallback(() => {
     apiFetch("/rs/sites").then(setSites).catch(() => setSites([]));
@@ -631,6 +680,13 @@ export default function RPsPage() {
         }
       />
 
+      {podeEditar && semClienteInfo.ambienteTemClientes && semClienteInfo.total > 0 && (
+        <div style={{ marginTop: 14, padding: "10px 14px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, color: "#92400e", fontSize: 13, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span><strong>{semClienteInfo.total} RP{semClienteInfo.total > 1 ? "s" : ""} sem cliente.</strong> O T&D só encontra essas RPs pelo nome do produto; ligadas ao cliente, elas aparecem direto ao abrir a turma.</span>
+          <button onClick={() => setSemClienteAberto(true)} style={{ ...btnPrim, padding: "6px 14px", fontSize: 12 }}>Ligar ao cliente</button>
+        </div>
+      )}
+
       {/* Filtros */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", margin: "16px 0 12px" }}>
         <div>
@@ -675,8 +731,14 @@ export default function RPsPage() {
           <input value={filtroProduto} onChange={e => setFiltroProduto(e.target.value)}
             placeholder="Buscar..." style={{ ...filterSelect, width: 150 }} />
         </div>
-        {(filtroSite || filtroSetor || filtroStatus || filtroProduto) && (
-          <button onClick={() => { setFiltroSite(""); setFiltroSetor(""); setFiltroStatus(""); setFiltroProduto(""); }}
+        {semClienteInfo.ambienteTemClientes && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textSecondary, cursor: "pointer", paddingBottom: 8 }}>
+            <input type="checkbox" checked={filtroSemCliente} onChange={e => setFiltroSemCliente(e.target.checked)} />
+            Só sem cliente
+          </label>
+        )}
+        {(filtroSite || filtroSetor || filtroStatus || filtroProduto || filtroSemCliente) && (
+          <button onClick={() => { setFiltroSite(""); setFiltroSetor(""); setFiltroStatus(""); setFiltroProduto(""); setFiltroSemCliente(false); }}
             style={{ alignSelf: "flex-end", padding: "7px 13px", background: "none",
                      border: "1px solid #e2e8f0", borderRadius: 8, color: colors.neutral,
                      cursor: "pointer", fontSize: 12 }}>Limpar</button>
@@ -732,6 +794,10 @@ export default function RPsPage() {
                     )}
                     <Td bold>
                       {rp.produto}
+                      {semClienteInfo.ambienteTemClientes && !rp.cliente_id && rp.status !== "CANCELADA" ? (
+                        <span title="Esta RP não está ligada a um cliente. Edite a RP e escolha o cliente para o T&D abrir turmas a partir dela."
+                              style={{ marginLeft: 6, padding: "1px 7px", borderRadius: 999, background: "#fef3c7", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "help" }}>Sem cliente</span>
+                      ) : null}
                       {rp.numeros_incoerentes ? (
                         <span title={`Os números não fecham: ${rp.numeros_incoerentes}. Edite a RP para corrigir.`}
                               style={{ marginLeft: 6, color: "#b45309", cursor: "help" }} aria-label="Números que não fecham">⚠</span>
@@ -819,10 +885,14 @@ export default function RPsPage() {
 
       {/* Modal de cadastro/edição */}
       <RPModal open={modalOpen} rp={rpEditando} sites={sites}
-        onClose={() => setModalOpen(false)} onSaved={carregar} />
+        onClose={() => setModalOpen(false)} onSaved={() => { carregar(); carregarSemCliente(); }} />
 
       {lixeiraAberta && (
         <LixeiraModal onClose={() => setLixeiraAberta(false)} onRestaurada={carregar} />
+      )}
+
+      {semClienteAberto && (
+        <SemClienteModal onClose={() => setSemClienteAberto(false)} onSalvo={() => { carregar(); carregarSemCliente(); }} />
       )}
 
       {/* Comentários da RP */}
@@ -1068,6 +1138,110 @@ function LixeiraModal({ onClose, onRestaurada }) {
               </tbody>
             </table>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Ligar RPs sem cliente (17/11/2026) ────────────────────────────
+function SemClienteModal({ onClose, onSalvo }) {
+  const [rps, setRps] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [escolha, setEscolha] = useState({}); // rp_id -> cliente_id (texto)
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [ok, setOk] = useState("");
+
+  const carregar = useCallback(async () => {
+    try {
+      const r = await apiFetch("/rs/rps-sem-cliente");
+      const lista = Array.isArray(r?.rps) ? r.rps : [];
+      setRps(lista);
+      setClientes(Array.isArray(r?.clientes) ? r.clientes : []);
+      // A sugestão do portal vem pré-marcada; a pessoa confere antes de gravar.
+      setEscolha((atual) => {
+        const novo = { ...atual };
+        for (const x of lista) if (novo[x.id] === undefined && x.cliente_sugerido_id) novo[x.id] = String(x.cliente_sugerido_id);
+        return novo;
+      });
+      setErro("");
+    } catch (e) { setErro(e.message || "Erro ao listar as RPs."); }
+    finally { setCarregando(false); }
+  }, []);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const marcadas = rps.filter((x) => escolha[x.id]);
+
+  async function salvar() {
+    if (!marcadas.length) { setErro("Escolha o cliente de pelo menos uma RP."); return; }
+    setSalvando(true); setErro(""); setOk("");
+    try {
+      const r = await apiFetch("/rs/rps-vincular-clientes", {
+        method: "POST",
+        body: JSON.stringify({ vinculos: marcadas.map((x) => ({ rp_id: x.id, cliente_id: Number(escolha[x.id]) })) }),
+      });
+      const n = r?.vinculadas || 0;
+      const ign = (r?.ignoradas || []).length;
+      setOk(`${n} RP${n === 1 ? "" : "s"} ligada${n === 1 ? "" : "s"} ao cliente.${ign ? ` ${ign} ignorada${ign > 1 ? "s" : ""}: ${(r.ignoradas || []).map((i) => i.motivo).join(" ")}` : ""}`);
+      await carregar();
+      onSalvo && onSalvo();
+    } catch (e) { setErro(e.message || "Erro ao gravar os vínculos."); }
+    finally { setSalvando(false); }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+           style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 24, maxWidth: 860, width: "100%",
+                    maxHeight: "86vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 48px rgba(15,23,42,0.15)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <h3 style={{ margin: 0, color: colors.textPrimary }}>Ligar RPs ao cliente</h3>
+            <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 4 }}>
+              Estas RPs ainda não têm cliente. Onde o produto combina com um cliente, o portal já deixa o cliente escolhido; confira e clique em Ligar. O texto do Produto não muda.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ ...btnAcao, marginRight: 0 }} aria-label="Fechar">✕</button>
+        </div>
+        {erro && <div style={{ marginTop: 10, padding: "8px 12px", background: colors.dangerLight, color: colors.dangerText, borderRadius: 8, fontSize: 13 }}>{erro}</div>}
+        {ok && <div style={{ marginTop: 10, padding: "8px 12px", background: colors.successLight, color: colors.successText, borderRadius: 8, fontSize: 13 }}>{ok}</div>}
+        <div style={{ marginTop: 14, overflowY: "auto" }}>
+          {carregando ? (
+            <div style={{ color: colors.textMuted, fontSize: 13 }}>Carregando...</div>
+          ) : rps.length === 0 ? (
+            <div style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 24, border: "1px dashed #e2e8f0", borderRadius: 10 }}>
+              Todas as RPs já estão ligadas a um cliente.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "#f8fafc" }}>
+                  <Th>RP</Th><Th>Mês</Th><Th>Cliente</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {rps.map((rp) => (
+                  <tr key={rp.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <Td bold>{rp.produto}<div style={{ fontWeight: 400, fontSize: 11, color: colors.textMuted }}>{rp.site} · {rp.setor === "OPERACIONAL" ? "Operacional" : "Estratégico"}{rp.cargo ? ` · ${rp.cargo}` : ""}{rp.chamado ? ` · ${rp.chamado}` : ""}</div></Td>
+                    <Td muted>{mesLabel(rp.mes)}</Td>
+                    <td style={{ padding: "8px 12px" }}>
+                      <select value={escolha[rp.id] || ""} onChange={(e) => setEscolha((a) => ({ ...a, [rp.id]: e.target.value }))} style={{ ...inputSt, padding: "6px 8px" }}>
+                        <option value="">Deixar sem cliente</option>
+                        {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}{String(rp.cliente_sugerido_id) === String(c.id) ? " (sugerido)" : ""}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+          <button onClick={onClose} style={btnSec}>Fechar</button>
+          {rps.length > 0 && <button onClick={salvar} disabled={salvando || !marcadas.length} style={{ ...btnPrim, opacity: salvando || !marcadas.length ? 0.6 : 1 }}>{salvando ? "Gravando..." : `Ligar ${marcadas.length || ""} RP${marcadas.length === 1 ? "" : "s"}`}</button>}
         </div>
       </div>
     </div>

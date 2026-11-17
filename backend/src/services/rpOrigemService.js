@@ -8,7 +8,9 @@
  * Regras:
  *  - A RP precisa ser do MESMO ambiente (empresa_id) da turma, não estar na lixeira
  *    nem cancelada.
- *  - Só turma de Avaliação Técnica guarda RP de origem (outro subtipo limpa o campo).
+ *  - Qualquer subtipo pode guardar RP de origem (desde 17/11/2026; antes só Avaliação Técnica).
+ *  - A lista do formulário vem pelo CLIENTE da turma (rps.cliente_id); RP antiga sem cliente
+ *    entra pelo nome do produto. "Mostrar RPs de outros clientes" libera a lista inteira.
  *  - Uma RP pode ter várias turmas (ex.: duas levas de candidatos).
  *  - Sugestão (nunca grava sozinha): RP operacional em andamento do mesmo ambiente com
  *    início da avaliação a até 3 dias do início da turma; se mais de uma, a que casa
@@ -17,6 +19,7 @@
 
 const pool = require("../lib/db");
 const { nomesAvaliacaoTecnica } = require("../lib/subtipos");
+const { rpsTemClienteId, clientesAtivos, produtoCasaComCliente } = require("./rpClienteService");
 
 const TOLERANCIA_DIAS = 3;
 
@@ -67,18 +70,32 @@ function sugerirRP(turma, rps) {
   return { rp: m.r, confere_pelo_nome: nomeConfere(m.r, turma), dias: m.dias };
 }
 
-/** RPs que podem ser origem de uma turma (operacionais, em andamento, do ambiente). */
-async function carregarRPsAbertas(empresaId) {
+/**
+ * RPs que podem ser origem de uma turma: em andamento, do ambiente, de qualquer setor
+ * (`apenasOperacionais` restringe ao setor Operacional — usado só na sugestão em lote de Avaliação Técnica).
+ * Traz cliente_id/cliente_nome quando o banco já tem a coluna.
+ */
+async function carregarRPsAbertas(empresaId, { apenasOperacionais = false } = {}) {
+  const comCliente = await rpsTemClienteId();
   try {
     const [rows] = await pool.query(
-      `SELECT ${COLUNAS_RP},
+      `SELECT ${COLUNAS_RP}${comCliente ? ", r.cliente_id" : ""},
               (SELECT COUNT(*) FROM treinamentos t WHERE t.rp_id = r.id) AS turmas_vinculadas
          FROM rps r
-        WHERE r.empresa_id = ? AND r.excluido_em IS NULL AND r.setor = 'OPERACIONAL' AND r.status = 'EM ANDAMENTO'
+        WHERE r.empresa_id = ? AND r.excluido_em IS NULL AND r.status = 'EM ANDAMENTO'
+          ${apenasOperacionais ? "AND r.setor = 'OPERACIONAL'" : ""}
         ORDER BY (r.inicio_av_tecnica IS NULL), r.inicio_av_tecnica DESC, r.id DESC
-        LIMIT 300`,
+        LIMIT 500`,
       [empresaId]
     );
+    if (comCliente) {
+      const ids = [...new Set(rows.map((r) => r.cliente_id).filter(Boolean))];
+      if (ids.length) {
+        const [cl] = await pool.query(`SELECT id, nome FROM clientes WHERE id IN (${ids.map(() => "?").join(",")})`, ids).catch(() => [[]]);
+        const nomes = new Map(cl.map((c) => [c.id, c.nome]));
+        for (const r of rows) r.cliente_nome = r.cliente_id ? (nomes.get(r.cliente_id) || null) : null;
+      }
+    }
     return rows;
   } catch (e) {
     if (semColuna(e)) return [];
@@ -86,12 +103,35 @@ async function carregarRPsAbertas(empresaId) {
   }
 }
 
+/** A RP é do cliente da turma? Pelo vínculo (cliente_id); sem vínculo, pelo nome do produto. */
+function rpDoCliente(rp, clienteTurma, nomeClienteTurma) {
+  if (rp.cliente_id) {
+    if (clienteTurma) return Number(rp.cliente_id) === Number(clienteTurma.id);
+    return produtoCasaComCliente(rp.cliente_nome, nomeClienteTurma);
+  }
+  return produtoCasaComCliente(rp.produto, nomeClienteTurma);
+}
+
 /**
- * Lista para o seletor do formulário da turma. `turma` = { cliente, tema, data_inicio } opcional
- * (usado só para marcar a sugerida). `rpAtualId` entra mesmo que não esteja mais "em andamento".
+ * Lista para o seletor do formulário da turma. `turma` = { cliente, tema, data_inicio } opcional.
+ * Com `turma.cliente`, só as RPs desse cliente (ou todas, com `todosClientes`). `rpAtualId` entra mesmo
+ * que não esteja mais "em andamento".
  */
-async function rpsElegiveis({ empresaId, turma = {}, rpAtualId = null }) {
-  const abertas = await carregarRPsAbertas(empresaId);
+async function rpsElegiveis({ empresaId, turma = {}, rpAtualId = null, todosClientes = false }) {
+  let abertas = await carregarRPsAbertas(empresaId);
+  const nomeCli = String(turma.cliente || "").trim();
+  let clienteTurma = null;
+  let ocultas = 0;
+  if (nomeCli) {
+    const lista = await clientesAtivos(empresaId);
+    const alvo = semAcento(nomeCli);
+    clienteTurma = lista.find((c) => semAcento(c.nome) === alvo) || null;
+    if (!todosClientes) {
+      const dentro = abertas.filter((r) => rpDoCliente(r, clienteTurma, nomeCli));
+      ocultas = abertas.length - dentro.length;
+      abertas = dentro;
+    }
+  }
   const sug = sugerirRP({ cliente: turma.cliente, tema: turma.tema, ini: turma.data_inicio }, abertas);
   const lista = abertas.map((r) => ({ ...r, turmas_vinculadas: Number(r.turmas_vinculadas) || 0, sugerida: !!(sug && sug.rp.id === r.id) }));
   if (rpAtualId && !lista.some((r) => r.id === Number(rpAtualId))) {
@@ -106,7 +146,12 @@ async function rpsElegiveis({ empresaId, turma = {}, rpAtualId = null }) {
       return da - db;
     });
   }
-  return { rps: lista, sugestao: sug ? { rp_id: sug.rp.id, confere_pelo_nome: sug.confere_pelo_nome, dias: sug.dias } : null };
+  return {
+    rps: lista,
+    sugestao: sug ? { rp_id: sug.rp.id, confere_pelo_nome: sug.confere_pelo_nome, dias: sug.dias } : null,
+    cliente_filtrado: !!nomeCli && !todosClientes,
+    ocultas_outros_clientes: ocultas,
+  };
 }
 
 async function buscarRP(rpId, empresaId) {
@@ -207,7 +252,7 @@ async function sugestoesEmLote({ empresaId }) {
   const porEmpresa = {};
   const out = [];
   for (const t of turmas) {
-    if (!porEmpresa[t.empresa_id]) porEmpresa[t.empresa_id] = await carregarRPsAbertas(t.empresa_id);
+    if (!porEmpresa[t.empresa_id]) porEmpresa[t.empresa_id] = await carregarRPsAbertas(t.empresa_id, { apenasOperacionais: true });
     const s = sugerirRP(t, porEmpresa[t.empresa_id]);
     if (!s) continue;
     out.push({
@@ -225,5 +270,5 @@ async function sugestoesEmLote({ empresaId }) {
 
 module.exports = {
   TOLERANCIA_DIAS, sugerirRP, nomeConfere, rpsElegiveis, validarRpDaTurma, rpDaTurma, turmasDaRP,
-  soltarTurmasDaRP, sugestoesEmLote, buscarRP,
+  soltarTurmasDaRP, sugestoesEmLote, buscarRP, rpDoCliente, carregarRPsAbertas,
 };

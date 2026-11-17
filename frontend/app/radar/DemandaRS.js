@@ -36,8 +36,8 @@ export default function DemandaRS() {
 
       {r.rps_ocultas_produto_inativo > 0 && (
         <p style={{ ...mini, margin: 0 }}>
-          {r.rps_ocultas_produto_inativo} RP(s) não aparecem porque o produto não corresponde a um cliente ativo do ambiente (menu Clientes)
-          {r.produtos_ocultos?.length ? `: ${r.produtos_ocultos.join(", ")}${r.rps_ocultas_produto_inativo > r.produtos_ocultos.length ? "…" : ""}` : ""}.
+          {r.rps_ocultas_produto_inativo} RP(s) não aparecem porque o cliente da RP está inativo ou, sem cliente ligado, o produto não corresponde a um cliente ativo do ambiente (menu Clientes). Na tela de RPs do R&amp;S, ligue a RP ao cliente
+          {r.produtos_ocultos?.length ? ` (produtos: ${r.produtos_ocultos.join(", ")}${r.rps_ocultas_produto_inativo > r.produtos_ocultos.length ? "…" : ""})` : ""}.
           Se algum deveria aparecer, confira se o nome do cliente é igual ao do produto.
         </p>
       )}

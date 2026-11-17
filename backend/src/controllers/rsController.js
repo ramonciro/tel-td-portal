@@ -10,6 +10,7 @@ const { registrarAuditoria } = require("../services/auditoria");
 const rel     = require("../lib/rsRelatorios");
 const { tituloPadrao, chaveNormal, listarSites, resolverSite } = require("../lib/rsPadrao");
 const { turmasDaRP, soltarTurmasDaRP } = require("../services/rpOrigemService");
+const rpCliente = require("../services/rpClienteService");
 
 const getEmpresaId = (req) => req.user?.empresa_id;
 
@@ -211,9 +212,14 @@ const listar = async (req, res) => {
   const offset = (page - 1) * limit;
   const f = _filtrosLista(req.query, empresa_id);
   if (f.erro) return erro(res, 400, f.erro);
-  const { where, params } = f;
+  let { where, params } = f;
 
   try {
+    const temCliente = await rpCliente.rpsTemClienteId();
+    // 17/11/2026: ?sem_cliente=1 mostra só RPs ainda sem cliente; ?cliente_id=N filtra por cliente.
+    if (temCliente && String(req.query.sem_cliente || "") === "1") where += " AND r.cliente_id IS NULL";
+    const cid = Number(req.query.cliente_id);
+    if (temCliente && Number.isInteger(cid) && cid > 0) { where += " AND r.cliente_id = ?"; params = [...params, cid]; }
     const [rps] = await db.query(
       `SELECT r.*, u.nome AS criado_por_nome,
               CASE WHEN r.status = 'EM ANDAMENTO'
@@ -236,8 +242,15 @@ const listar = async (req, res) => {
               COALESCE(SUM(CASE WHEN status <> 'CANCELADA' THEN hcs_convocados_berco ELSE 0 END),0) AS hcs_convocados_berco
        FROM rps r WHERE ${where}`, params
     );
+    const nomesClientes = new Map();
+    const idsCli = [...new Set(rps.map((r) => r.cliente_id).filter(Boolean))];
+    if (idsCli.length) {
+      const [cl] = await db.query(`SELECT id, nome FROM clientes WHERE id IN (${idsCli.map(() => "?").join(",")})`, idsCli).catch(() => [[]]);
+      for (const c of cl) nomesClientes.set(c.id, c.nome);
+    }
     const itens = rps.map((r) => ({
       ...r,
+      cliente_nome: r.cliente_id ? (nomesClientes.get(r.cliente_id) || null) : null,
       dias_aberto: r.dias_aberto === null || r.dias_aberto === undefined ? null : Number(r.dias_aberto),
       atrasada: r.status === "EM ANDAMENTO" && Number(r.dias_aberto) > limiteDias,
       // Varredura 20/10/2026: marca RPs cujos números não fecham (vindas de
@@ -258,11 +271,23 @@ const criar = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   if (!empresa_id) return erro(res, 401, "Não autorizado");
 
+  // Cliente da RP (17/11/2026): escolhido no formulário (menu Clientes). Ao escolher, o Produto passa a ser o
+  // nome do cliente. Sem cliente_id, liga sozinho quando o produto casa com UM cliente ativo do ambiente.
+  let clienteSel = null;
+  let erroCliente = null;
+  try { clienteSel = await rpCliente.validarClienteDaRP(req.body?.cliente_id, empresa_id); } catch (e) { erroCliente = e.message; }
+  const corpoCriar = clienteSel ? { ...(req.body || {}), produto: clienteSel.nome } : (req.body || {});
+
   // Data de recebimento é obrigatória nas RPs novas (20/10/2026): sem ela o SLA não calcula.
-  const { erros, dados } = validarRP(req.body || {}, { exigirDataRecebimento: true });
+  const { erros, dados } = validarRP(corpoCriar, { exigirDataRecebimento: true });
+  if (erroCliente) erros.unshift(erroCliente);
+  if (clienteSel) dados.produto = clienteSel.nome;
   if (!erros.length) erros.push(...incoerencias(dados));
 
   try {
+    if (!clienteSel && !erros.length && (req.body?.cliente_id === undefined || req.body?.cliente_id === "")) {
+      clienteSel = rpCliente.sugerirCliente(dados.produto, await rpCliente.clientesAtivos(empresa_id));
+    }
     // Site precisa existir no cadastro (ou já aparecer em RPs): evita variações e erros de digitação.
     if (!erros.length) {
       const siteCanon = await resolverSite(empresa_id, dados.site);
@@ -299,10 +324,11 @@ const criar = async (req, res) => {
       [empresa_id, ...COLUNAS_RP.map((c) => dados[c]), req.user?.id || null]
     );
     await _upsertProduto(empresa_id, dados.produto);
+    if (clienteSel) await rpCliente.gravarClienteDaRP(result.insertId, empresa_id, clienteSel.id);
     registrarAuditoria({
       usuario: req.user, acao: "criar", entidade: "rp", entidadeId: result.insertId,
       resumo: `${req.user?.nome || "Alguém"} criou a RP ${dados.produto} · ${dados.site} · ${dados.mes_referencia.slice(0, 7)} (${dados.setor})`,
-      dadosDepois: dados, ip: req.ip,
+      dadosDepois: { ...dados, cliente_id: clienteSel ? clienteSel.id : null }, ip: req.ip,
     });
     return res.status(201).json({ id: result.insertId, message: "RP criada com sucesso" });
   } catch (err) {
@@ -336,7 +362,18 @@ const editar = async (req, res) => {
     const corpo = req.body || {};
     const mesclado = {};
     for (const c of COLUNAS_RP) mesclado[c] = corpo[c] !== undefined ? corpo[c] : antes[c];
+    // Cliente da RP (17/11/2026): cliente_id ausente mantém o atual; null/"" limpa; número liga (e o Produto vira o nome do cliente).
+    let clienteFinal = antes.cliente_id ? { id: antes.cliente_id } : null;
+    let erroCliente = null;
+    if (corpo.cliente_id !== undefined) {
+      try { clienteFinal = await rpCliente.validarClienteDaRP(corpo.cliente_id, empresa_id); } catch (e) { erroCliente = e.message; }
+      if (clienteFinal) mesclado.produto = clienteFinal.nome;
+    } else if (corpo.produto !== undefined && chaveNormal(corpo.produto) !== chaveNormal(antes.produto)) {
+      // Mudou só o texto do produto: o vínculo antigo pode não valer mais; tenta ligar pelo novo nome.
+      clienteFinal = rpCliente.sugerirCliente(corpo.produto, await rpCliente.clientesAtivos(empresa_id));
+    }
     const { erros, dados } = validarRP(mesclado, { exigirDataRecebimento: true });
+    if (erroCliente) erros.unshift(erroCliente);
     // Números incoerentes só travam se esta edição mexeu neles — assim uma RP antiga
     // que já estava inconsistente ainda pode ter observação, datas etc. corrigidas.
     const mexeuNosNumeros = ["hcs", "hcs_com_to", "hcs_aprovados", "qtd_entregue", "hcs_berco", "status", "setor"].some(
@@ -358,6 +395,7 @@ const editar = async (req, res) => {
       [...COLUNAS_RP.map((c) => dados[c]), req.user?.id || null, req.params.id, empresa_id]
     );
     await _upsertProduto(empresa_id, dados.produto);
+    await rpCliente.gravarClienteDaRP(Number(req.params.id), empresa_id, clienteFinal ? clienteFinal.id : null);
     // 27/10/2026: RP cancelada deixa de ser origem das turmas (elas voltam a "sem RP").
     if (dados.status === "CANCELADA" && antes.status !== "CANCELADA") {
       await soltarTurmasDaRP(Number(req.params.id), empresa_id).catch((e) => console.error("[rsController.editar] soltar turmas:", e.message));
@@ -365,7 +403,7 @@ const editar = async (req, res) => {
     registrarAuditoria({
       usuario: req.user, acao: "editar", entidade: "rp", entidadeId: Number(req.params.id),
       resumo: `${req.user?.nome || "Alguém"} editou a RP ${dados.produto} · ${dados.site} · ${dados.mes_referencia.slice(0, 7)}`,
-      dadosAntes: antes, dadosDepois: dados, ip: req.ip,
+      dadosAntes: antes, dadosDepois: { ...dados, cliente_id: clienteFinal ? clienteFinal.id : null }, ip: req.ip,
     });
     return res.json({ message: "RP atualizada com sucesso" });
   } catch (err) {
@@ -1081,6 +1119,8 @@ const importarPlanilha = async (req, res) => {
       conn = null;
       for (const nome of new Set(aInserir.map((r) => r.produto))) await _upsertProduto(empresa_id, nome);
       for (const nome of new Set(aInserir.map((r) => r.site))) await _upsertSite(empresa_id, nome);
+      // 17/11/2026: RPs importadas ligam sozinhas ao cliente quando o produto casa com UM cliente ativo.
+      await rpCliente.vincularClientesAutomatico({ empresaId: empresa_id }).catch((e) => console.error("[rsController.importar] vincular clientes:", e.message));
     }
 
     registrarAuditoria({
@@ -1400,7 +1440,71 @@ const estornarConvocacao = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CLIENTE DA RP (17/11/2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Clientes ativos do ambiente, para o seletor do formulário da RP. */
+const getClientes = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  try {
+    return res.json({ clientes: await rpCliente.clientesAtivos(empresa_id) });
+  } catch (err) {
+    console.error("[rsController.getClientes]", err);
+    return erro(res, 500, "Erro ao buscar clientes");
+  }
+};
+
+/** RPs sem cliente + sugestão do portal, para a coordenação ligar na mão. */
+const listarSemCliente = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  try {
+    return res.json(await rpCliente.rpsSemCliente(empresa_id));
+  } catch (err) {
+    console.error("[rsController.listarSemCliente]", err);
+    return erro(res, 500, "Erro ao listar RPs sem cliente");
+  }
+};
+
+/** Grava vínculos { vinculos: [{ rp_id, cliente_id }] } (máx. 200). Só liga RP sem cliente; o texto do Produto não muda. */
+const vincularClientes = async (req, res) => {
+  const empresa_id = getEmpresaId(req);
+  if (!empresa_id) return erro(res, 401, "Não autorizado");
+  const lista = Array.isArray(req.body?.vinculos) ? req.body.vinculos : [];
+  if (!lista.length) return erro(res, 400, "Nenhum vínculo informado.");
+  if (lista.length > 200) return erro(res, 400, "Envie no máximo 200 vínculos por vez.");
+  try {
+    if (!(await rpCliente.rpsTemClienteId())) return erro(res, 409, "O banco ainda não tem o vínculo RP-cliente. Aguarde o deploy terminar e tente de novo.");
+    const vinculadas = [];
+    const ignoradas = [];
+    for (const v of lista) {
+      const rpId = Number(v?.rp_id);
+      if (!Number.isInteger(rpId) || rpId <= 0) { ignoradas.push({ rp_id: v?.rp_id ?? null, motivo: "Dados inválidos." }); continue; }
+      let cli;
+      try { cli = await rpCliente.validarClienteDaRP(v?.cliente_id, empresa_id); } catch (e) { ignoradas.push({ rp_id: rpId, motivo: e.message }); continue; }
+      if (!cli) { ignoradas.push({ rp_id: rpId, motivo: "Escolha um cliente." }); continue; }
+      const [[rp]] = await db.query("SELECT id, produto, site, cliente_id FROM rps WHERE id = ? AND empresa_id = ? AND excluido_em IS NULL", [rpId, empresa_id]);
+      if (!rp) { ignoradas.push({ rp_id: rpId, motivo: "RP não encontrada." }); continue; }
+      if (rp.cliente_id) { ignoradas.push({ rp_id: rpId, motivo: "A RP já tem cliente." }); continue; }
+      await rpCliente.gravarClienteDaRP(rpId, empresa_id, cli.id);
+      vinculadas.push({ rp_id: rpId, cliente_id: cli.id });
+      registrarAuditoria({
+        usuario: req.user, acao: "editar", entidade: "rp", entidadeId: rpId,
+        resumo: `${req.user?.nome || "Alguém"} ligou a RP ${rp.produto} · ${rp.site} ao cliente ${cli.nome}`, ip: req.ip,
+      });
+    }
+    return res.json({ vinculadas: vinculadas.length, ignoradas });
+  } catch (err) {
+    console.error("[rsController.vincularClientes]", err);
+    return erro(res, 500, "Erro ao gravar os vínculos");
+  }
+};
+
 module.exports = {
+  // Cliente da RP (17/11/2026)
+  getClientes, listarSemCliente, vincularClientes,
   // Sprint 1
   listar, criar, detalhe, editar, excluir, getSites, getProdutos, exportarLista,
   listarComentarios, criarComentario, excluirComentario,

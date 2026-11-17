@@ -23,6 +23,7 @@ const pool = require("../lib/db");
 const { mapaAdicionais } = require("../lib/instrutoresTurma");
 const Cap = require("./capacidadeResolver");
 const { nomesAvaliacaoTecnica } = require("../lib/subtipos");
+const { rpsTemClienteId } = require("./rpClienteService");
 const { hojeBahia, somarDias, diasEntre, GRAV_ORDEM } = require("./preventivoService");
 
 const chave = (s) => String(s || "").trim().toLowerCase();
@@ -311,10 +312,11 @@ async function calcularDemandaRS({ empresaId } = {}) {
   const hoje = hojeBahia();
   const filtro = empresaId ? " AND empresa_id = ?" : "";
   let rps = [];
+  const comClienteId = await rpsTemClienteId();
   try {
     [rps] = await pool.query(
       `SELECT id, empresa_id, site, setor, produto, cargo, chamado, status, hcs, hcs_com_to, hcs_aprovados, qtd_entregue,
-              hcs_berco, hcs_convocados_berco,
+              hcs_berco, hcs_convocados_berco${comClienteId ? ", cliente_id" : ""},
               DATE_FORMAT(inicio_av_tecnica, '%Y-%m-%d') AS inicio_av, DATE_FORMAT(final_av_tecnica, '%Y-%m-%d') AS final_av,
               DATE_FORMAT(data_fechamento_vaga, '%Y-%m-%d') AS fechamento, DATE_FORMAT(created_at, '%Y-%m-%d') AS criado
          FROM rps WHERE excluido_em IS NULL AND status <> 'CANCELADA'${filtro}`,
@@ -324,9 +326,11 @@ async function calcularDemandaRS({ empresaId } = {}) {
     if (!(e && (e.code === "ER_NO_SUCH_TABLE" || e.code === "ER_BAD_FIELD_ERROR"))) throw e;
   }
 
-  // Só entram RPs de produtos que correspondem a um CLIENTE ATIVO do ambiente (menu Clientes).
-  // A correspondência é pelo nome (sem acento/maiúscula; um contém o outro). Ambiente sem nenhum cliente
-  // ativo cadastrado não filtra (não há lista para comparar). Os nomes ocultos são devolvidos para conferência.
+  // Só entram RPs de CLIENTE ATIVO do ambiente (menu Clientes). Desde 17/11/2026 a RP guarda o cliente
+  // (rps.cliente_id): com vínculo, vale o vínculo (cliente ativo = entra; inativo = oculta). Sem vínculo (RP antiga),
+  // vale a regra antiga: o nome do produto casa com o de um cliente ativo (sem acento/maiúscula; um contém o outro).
+  // Ambiente sem nenhum cliente ativo cadastrado não filtra (não há lista para comparar). Os nomes ocultos são
+  // devolvidos para conferência.
   let rpsOcultas = 0;
   let produtosOcultos = [];
   let nomesEmpresa = {};
@@ -334,14 +338,25 @@ async function calcularDemandaRS({ empresaId } = {}) {
     try {
       const ids = [...new Set(rps.map((r) => r.empresa_id))];
       const [cli] = await pool.query(
-        `SELECT empresa_id, nome FROM clientes WHERE (status IS NULL OR status <> 'Inativo') AND empresa_id IN (${ids.map(() => "?").join(",")})`, ids
+        `SELECT id, empresa_id, nome FROM clientes WHERE (status IS NULL OR status <> 'Inativo') AND empresa_id IN (${ids.map(() => "?").join(",")})`, ids
       );
       const porEmpresa = {};
+      const ativosPorId = new Set(cli.map((c) => Number(c.id)));
       for (const c of cli) {
         const n = semAcento(c.nome);
         if (n.length >= 3) (porEmpresa[c.empresa_id] = porEmpresa[c.empresa_id] || []).push(n);
       }
-      const casa = (emp, produto) => {
+      // Clientes citados por RPs mas que não estão na lista de ativos: inativos (ocultam) ou apagados (volta ao nome).
+      const citados = [...new Set(rps.map((r) => Number(r.cliente_id)).filter((x) => x && !ativosPorId.has(x)))];
+      const inativosPorId = new Set();
+      if (citados.length) {
+        const [inat] = await pool.query(`SELECT id FROM clientes WHERE id IN (${citados.map(() => "?").join(",")})`, citados).catch(() => [[]]);
+        for (const c of inat) inativosPorId.add(Number(c.id));
+      }
+      const casa = (emp, produto, clienteId) => {
+        const cid = Number(clienteId);
+        if (cid && ativosPorId.has(cid)) return true;      // vínculo com cliente ativo
+        if (cid && inativosPorId.has(cid)) return false;   // vínculo com cliente inativo
         const lista = porEmpresa[emp];
         if (!lista) return true; // ambiente sem clientes ativos cadastrados: não filtra
         const p = semAcento(produto);
@@ -349,7 +364,7 @@ async function calcularDemandaRS({ empresaId } = {}) {
       };
       const ocultos = new Set();
       const antes = rps.length;
-      rps = rps.filter((r) => (casa(r.empresa_id, r.produto) ? true : (ocultos.add(r.produto), false)));
+      rps = rps.filter((r) => (casa(r.empresa_id, r.produto, r.cliente_id) ? true : (ocultos.add(r.produto), false)));
       rpsOcultas = antes - rps.length;
       produtosOcultos = [...ocultos].sort().slice(0, 15);
     } catch (e) {
@@ -392,8 +407,9 @@ async function calcularDemandaRS({ empresaId } = {}) {
       [turmasVinculadas] = await pool.query(
         `SELECT t.id, t.tema, t.cliente, t.empresa_id, t.rp_id, DATE_FORMAT(COALESCE(t.data_inicio, t.data), '%Y-%m-%d') AS ini
            FROM treinamentos t
-          WHERE t.rp_id IN (${rps.map(() => "?").join(",")}) AND ${NAO_CANCELADA}`,
-        rps.map((r) => r.id)
+          WHERE t.rp_id IN (${rps.map(() => "?").join(",")}) AND ${NAO_CANCELADA}
+            ${nomes.length ? `AND t.subtipo IN (${nomes.map(() => "?").join(",")})` : ""}`,
+        [...rps.map((r) => r.id), ...nomes]
       );
     } catch (e) {
       if (!(e && (e.code === "ER_BAD_FIELD_ERROR" || e.code === "ER_NO_SUCH_TABLE"))) throw e;

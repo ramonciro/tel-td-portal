@@ -34,7 +34,7 @@ const EMPTY_FORM = {
   sala_id: "",
   sala_outro_local: "",
   subtipo: "",
-  // RP de origem (27/10/2026): só para Avaliação Técnica; vem do R&S.
+  // RP de origem (27/10/2026): vem do R&S; qualquer subtipo desde 17/11/2026 (lista pelo cliente da turma).
   rp_id: "",
   // TBT (22/10/2026): instrutores adicionais da turma (o principal fica em `instrutor`)
   instrutores_adicionais: [],
@@ -425,6 +425,9 @@ function TreinamentosConteudo() {
   const podeAuditarParticipantes = hasSomeRole(usuario, ["coordenador", "superintendente"]);
   const [rpsLista, setRpsLista] = useState([]);
   const [rpSugestao, setRpSugestao] = useState(null);
+  const [rpTodosClientes, setRpTodosClientes] = useState(false);
+  const [rpOcultas, setRpOcultas] = useState(0);
+  const [rpPreenchido, setRpPreenchido] = useState("");
   const rpTocado = useRef(false);
   const [vinculoAberto, setVinculoAberto] = useState(false);
   const [vinculoLista, setVinculoLista] = useState([]);
@@ -437,9 +440,12 @@ function TreinamentosConteudo() {
     return String(form.subtipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() === "avaliacao tecnica";
   }, [subtipos, form.subtipo]);
 
-  // Lista de RPs do seletor: recarrega quando muda a data de início, o cliente ou o tema (com espera curta).
+  // Lista de RPs do seletor (17/11/2026): vem pelo CLIENTE da turma (RPs em andamento, de qualquer setor).
+  // Recarrega quando muda a data de início, o cliente ou o tema (com espera curta). Turma de Avaliação Técnica
+  // sem cliente escolhido ainda lista todas as RPs em andamento do ambiente.
+  const mostraRp = podeRpOrigem && (!!form.cliente || ehAvTecForm || !!form.rp_id);
   useEffect(() => {
-    if (!modalOpen || !podeRpOrigem || !ehAvTecForm) { setRpsLista([]); setRpSugestao(null); return undefined; }
+    if (!modalOpen || !mostraRp) { setRpsLista([]); setRpSugestao(null); setRpOcultas(0); return undefined; }
     let cancelado = false;
     const espera = setTimeout(async () => {
       try {
@@ -447,21 +453,53 @@ function TreinamentosConteudo() {
         if (form.data_inicio) q.set("data_inicio", form.data_inicio);
         if (form.cliente) q.set("cliente", form.cliente);
         if (form.tema) q.set("tema", form.tema);
+        if (rpTodosClientes) q.set("todos_clientes", "1");
         if (editingId) q.set("turma_id", String(editingId));
         const r = await apiFetch(`/treinamentos/rps-elegiveis?${q.toString()}`);
         if (cancelado) return;
-        setRpsLista(Array.isArray(r?.rps) ? r.rps : []);
+        const lista = Array.isArray(r?.rps) ? r.rps : [];
+        setRpsLista(lista);
         setRpSugestao(r?.sugestao || null);
-        // Turma nova: pré-seleciona a sugerida (marcada como "sugerida, confirme") se a pessoa ainda não escolheu.
-        if (!editingId && r?.sugestao && !rpTocado.current) {
-          setForm((prev) => (prev.rp_id ? prev : { ...prev, rp_id: String(r.sugestao.rp_id) }));
-        }
+        setRpOcultas(Number(r?.ocultas_outros_clientes) || 0);
+        setForm((prev) => {
+          // Trocou o cliente e a RP escolhida não é dele: limpa (a pessoa escolhe de novo).
+          if (prev.rp_id && !lista.some((x) => String(x.id) === String(prev.rp_id))) return { ...prev, rp_id: "" };
+          // Turma nova de Avaliação Técnica: pré-seleciona a sugerida (marcada como "sugerida, confirme").
+          if (!editingId && ehAvTecForm && r?.sugestao && !rpTocado.current && !prev.rp_id) return { ...prev, rp_id: String(r.sugestao.rp_id) };
+          return prev;
+        });
       } catch (_) {
-        if (!cancelado) { setRpsLista([]); setRpSugestao(null); }
+        if (!cancelado) { setRpsLista([]); setRpSugestao(null); setRpOcultas(0); }
       }
     }, 350);
     return () => { cancelado = true; clearTimeout(espera); };
-  }, [modalOpen, podeRpOrigem, ehAvTecForm, form.data_inicio, form.cliente, form.tema, editingId]);
+  }, [modalOpen, mostraRp, ehAvTecForm, form.data_inicio, form.cliente, form.tema, editingId, rpTodosClientes]);
+
+  // Escolheu a RP numa turma NOVA: preenche o que ainda está vazio (cliente, datas, treinandos previstos) e avisa o que foi.
+  function escolherRp(valor) {
+    rpTocado.current = true;
+    setField("rp_id", valor);
+    setRpPreenchido("");
+    const rp = rpsLista.find((x) => String(x.id) === String(valor));
+    if (!rp || editingId) return;
+    setForm((prev) => {
+      const novo = { ...prev };
+      if (!prev.cliente && rp.cliente_nome) { novo.cliente = rp.cliente_nome; }
+      // As datas da RP são as da avaliação técnica: só preenchem turma de Avaliação Técnica.
+      if (ehAvTecForm && !prev.data_inicio && rp.inicio_av) { novo.data_inicio = rp.inicio_av; }
+      if (ehAvTecForm && !prev.data_fim && rp.final_av) { novo.data_fim = rp.final_av; }
+      const previstos = (ehAvTecForm ? Number(rp.hcs_com_to) : 0) || Number(rp.hcs) || 0;
+      if (!String(prev.participantes || "").trim() && previstos > 0) { novo.participantes = String(previstos); }
+      return novo;
+    });
+    // aviso do que foi preenchido (mesma regra de cima, sobre o estado atual do formulário)
+    const avisos = [];
+    if (!form.cliente && rp.cliente_nome) avisos.push("cliente");
+    if (ehAvTecForm && !form.data_inicio && rp.inicio_av) avisos.push("data de início");
+    if (ehAvTecForm && !form.data_fim && rp.final_av) avisos.push("data de fim");
+    if (!String(form.participantes || "").trim() && ((ehAvTecForm ? Number(rp.hcs_com_to) : 0) || Number(rp.hcs))) avisos.push("treinandos previstos");
+    if (avisos.length) setRpPreenchido(`Preenchido pela RP: ${avisos.join(", ")}. Confira antes de salvar.`);
+  }
 
   // Disponibilidade das salas para o período/horário do formulário (04/11/2026): só aparecem como
   // selecionáveis as salas livres; as ocupadas ficam visíveis, desabilitadas, com quem ocupa.
@@ -660,6 +698,7 @@ function TreinamentosConteudo() {
 
   function openCreate() {
     rpTocado.current = false;
+    setRpTodosClientes(false); setRpPreenchido("");
     setEditingId(null);
     setForm({ ...EMPTY_FORM, cliente: isInstructor && clientesOptions.length === 1 ? clientesOptions[0] : "", instrutor: isInstructor ? nomeLogado : "", supervisor: perfil === "supervisor" ? nomeLogado : "" });
     setFormErrors({}); setError(""); setSuccess(""); setModalOpen(true);
@@ -668,6 +707,7 @@ function TreinamentosConteudo() {
   function openEdit(item) {
     if (!canEdit) return;
     rpTocado.current = true;
+    setRpTodosClientes(false); setRpPreenchido("");
     const meta = parseMetadata(item.descricao, item.modalidade);
     setEditingId(item.id);
     setForm({
@@ -781,8 +821,8 @@ function TreinamentosConteudo() {
         sala_id: form.sala_id && form.sala_id !== "outro" ? Number(form.sala_id) : null,
         sala_outro_local: form.sala_id === "outro" ? form.sala_outro_local.trim() : null,
         subtipo: form.subtipo || null,
-        // RP de origem: só coordenação/assistente enviam; fora da Avaliação Técnica o campo é limpo.
-        ...(podeRpOrigem ? { rp_id: ehAvTecForm && form.rp_id ? Number(form.rp_id) : null } : {}),
+        // RP de origem: só coordenação/assistente enviam (qualquer subtipo; vazio solta o vínculo).
+        ...(podeRpOrigem ? { rp_id: form.rp_id ? Number(form.rp_id) : null } : {}),
       };
       let turmaId = editingId;
       if (editingId) await apiFetch(`/treinamentos/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -1067,6 +1107,38 @@ function TreinamentosConteudo() {
               </Field>
               <Field label="Turma / treinamento" required error={formErrors.tema}><Input value={form.tema} onChange={(e) => setField("tema", e.target.value)} placeholder="Ex.: Reciclagem de Crédito" /></Field>
               <Field label="Cliente" required error={formErrors.cliente}><Select value={form.cliente} onChange={(e) => setField("cliente", e.target.value)} options={clientesOptions.map((x) => ({ value: x, label: x }))} placeholder="Selecione o cliente" /></Field>
+              {mostraRp && (
+                <div style={{ display: "grid", gap: 6, minWidth: 0, alignContent: "start" }}>
+                <Field
+                  label="RP de origem (R&S)"
+                  hint={rpSugestao && String(rpSugestao.rp_id) === String(form.rp_id) && !rpTocado.current
+                    ? "Sugerida pela data de início e pelo nome: confirme se é a RP certa. Opcional."
+                    : form.cliente
+                      ? "RPs em andamento deste cliente. Ligar a turma à RP preenche o que estiver vazio e o Radar passa a conferir pelo vínculo. Opcional."
+                      : "Escolha o cliente para ver as RPs dele. Opcional."}
+                >
+                  <Select
+                    value={form.rp_id}
+                    onChange={(e) => escolherRp(e.target.value)}
+                    options={rpsLista.map((r) => ({
+                      value: String(r.id),
+                      label: `${r.sugerida ? "Sugerida, confirme · " : ""}${r.chamado || "sem chamado"} · ${r.cliente_nome || r.produto} · ${r.site}${r.cargo ? ` · ${r.cargo}` : ""} · ${r.setor === "ESTRATÉGICO" ? "Estratégica" : "Operacional"}${r.hcs ? ` · ${r.hcs} vaga(s)` : ""}${r.inicio_av ? ` · início ${formatDate(r.inicio_av)}` : ""}${r.turmas_vinculadas ? ` · ${r.turmas_vinculadas} turma(s) já ligada(s)` : ""}${r.fora_da_lista ? " (RP não está mais em andamento)" : ""}`,
+                    }))}
+                    placeholder={rpsLista.length ? "Sem RP de origem" : form.cliente && !rpTodosClientes ? "Nenhuma RP em andamento para este cliente" : "Nenhuma RP em andamento neste ambiente"}
+                  />
+                </Field>
+                  {rpPreenchido && <div style={{ fontSize: 12, color: "#166534", fontWeight: 600 }}>{rpPreenchido}</div>}
+                  {form.cliente && (rpOcultas > 0 || rpTodosClientes) && (
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12.5, color: "#475569", cursor: "pointer" }}>
+                      <input type="checkbox" checked={rpTodosClientes} onChange={(e) => setRpTodosClientes(e.target.checked)} />
+                      Mostrar RPs de outros clientes{!rpTodosClientes && rpOcultas > 0 ? ` (${rpOcultas} oculta${rpOcultas > 1 ? "s" : ""})` : ""}
+                    </label>
+                  )}
+                  {form.cliente && rpsLista.length === 0 && !rpTodosClientes && rpOcultas === 0 && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>Se a RP deste cliente não aparece, confira no R&S se ela está em andamento e ligada ao cliente (RPs sem cliente aparecem pelo nome do produto).</div>
+                  )}
+                </div>
+              )}
               <Field label="Público"><Input value={form.publico} onChange={(e) => setField("publico", e.target.value)} placeholder="Ex.: Operação, onboarding, reciclagem" /></Field>
               <Field label="Instrutor" required error={formErrors.instrutor}><Select value={form.instrutor} disabled={isInstructor} onChange={(e) => setField("instrutor", e.target.value)} options={[...instrutores.map((x) => ({ value: x.nome, label: usuarioLabel(x) })), ...(form.instrutor && !instrutores.some((x) => x.nome === form.instrutor) ? [{ value: form.instrutor, label: form.instrutor }] : [])]} placeholder="Selecione o instrutor" /></Field>
               <Field label="Instrutores adicionais" hint={isInstructor ? "Quem cadastra a lista é a coordenação. Todos os instrutores da turma preenchem a chamada, o diário e a rotina e recebem as horas cheias." : "Opcional — para ações com mais de um instrutor, como a TBT. Todos veem a turma, preenchem chamada, diário e rotina e recebem as horas cheias."}>
@@ -1128,24 +1200,6 @@ function TreinamentosConteudo() {
               <Field label="Subdivisão / subtipo" hint="Usado para comprovação de horas por subdivisão (ex.: MPT). Selecione &quot;Avaliação Técnica&quot; para habilitar a Presença Nominal/Reembolso de Transporte.">
                 <Select value={form.subtipo} onChange={(e) => setField("subtipo", e.target.value)} options={opcoesSubtipo(subtipos, form.subtipo)} placeholder="Sem subdivisão" />
               </Field>
-              {podeRpOrigem && ehAvTecForm && (
-                <Field
-                  label="RP de origem (R&S)"
-                  hint={rpSugestao && String(rpSugestao.rp_id) === String(form.rp_id) && !rpTocado.current
-                    ? "Sugerida pela data de início e pelo nome: confirme se é a RP certa. Opcional."
-                    : "Liga a turma à vaga que a originou. O Radar passa a conferir pelo vínculo, não por data e nome. Opcional."}
-                >
-                  <Select
-                    value={form.rp_id}
-                    onChange={(e) => { rpTocado.current = true; setField("rp_id", e.target.value); }}
-                    options={rpsLista.map((r) => ({
-                      value: String(r.id),
-                      label: `${r.sugerida ? "Sugerida, confirme · " : ""}${r.chamado || "sem chamado"} · ${r.produto} · ${r.site}${r.cargo ? ` · ${r.cargo}` : ""}${r.inicio_av ? ` · início ${formatDate(r.inicio_av)}` : ""}${r.fora_da_lista ? " (RP não está mais em andamento)" : ""}`,
-                    }))}
-                    placeholder={rpsLista.length ? "Sem RP de origem" : "Nenhuma RP operacional em andamento neste ambiente"}
-                  />
-                </Field>
-              )}
               <Field label="Status"><Select value={form.status} onChange={(e) => setField("status", e.target.value)} options={Object.entries(STATUS).map(([value, x]) => ({ value, label: x.label }))} placeholder="Selecione o status" /></Field>
               <Field label="Observações"><textarea value={form.descricao} onChange={(e) => setField("descricao", e.target.value)} placeholder="Informações complementares" style={{ ...inputStyle, minHeight: 92, resize: "vertical" }} /></Field>
             </FormSection>
@@ -1239,7 +1293,7 @@ const formSectionHeader = { display: "flex", gap: 12, alignItems: "flex-start", 
 const formSectionBadge = { width: 26, height: 26, borderRadius: "50%", background: colors.primaryLight, color: colors.primary, fontWeight: 900, fontSize: 12, display: "grid", placeItems: "center", flexShrink: 0 };
 const formSectionTitle = { margin: 0, fontSize: 14, fontWeight: 850, color: "#0f172a" };
 const formSectionHint = { margin: "2px 0 0", fontSize: 11, color: "#94a3b8" };
-const fieldWrap = { display: "grid", gap: 6, minWidth: 0 };
+const fieldWrap = { display: "grid", gap: 6, minWidth: 0, alignContent: "start" };
 const fieldLabel = { fontSize: 11, fontWeight: 800, color: "#334155" };
 const fieldHint = { fontSize: 10, color: "#94a3b8", lineHeight: 1.4 };
 const fieldError = { fontSize: 10, color: "#dc2626", fontWeight: 700 };

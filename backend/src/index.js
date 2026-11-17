@@ -1154,20 +1154,15 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
     }
   }
 
-  // RP de origem (27/10/2026): só coordenação e assistente mexem; só Avaliação Técnica guarda;
-  // a RP precisa ser do mesmo ambiente da turma.
+  // RP de origem (27/10/2026): só coordenação e assistente mexem; a RP precisa ser do mesmo ambiente da turma.
   {
     const perfilRp = String(req?.user?.perfil || "").toLowerCase().trim();
     const podeMexerRp = ["coordenador", "assistente_treinamento"].includes(perfilRp);
     if (!podeMexerRp) delete dados.rp_id;
-    const mudouSubtipo = "subtipo" in dados;
-    if ("rp_id" in dados || (mudouSubtipo && ctx?.antes?.rp_id)) {
-      const subtipoFinal = mudouSubtipo ? dados.subtipo : ctx?.antes?.subtipo;
-      if (!(await ehSubtipoAvaliacaoTecnica(subtipoFinal))) {
-        if ("rp_id" in dados || ctx?.antes?.rp_id) dados.rp_id = null;
-      } else if ("rp_id" in dados) {
-        dados.rp_id = await validarRpDaTurma(dados.rp_id, ctx?.antes?.empresa_id || req?.empresaId || null);
-      }
+    // 17/11/2026: qualquer subtipo pode ter RP de origem (a turma é aberta a partir da RP do cliente).
+    // Antes só Avaliação Técnica guardava e mudar o subtipo soltava o vínculo.
+    if ("rp_id" in dados) {
+      dados.rp_id = await validarRpDaTurma(dados.rp_id, ctx?.antes?.empresa_id || req?.empresaId || null);
     }
   }
 
@@ -1456,6 +1451,7 @@ app.get("/api/treinamentos/rps-elegiveis", authRequired, authorizeRoles(...PERFI
       empresaId,
       rpAtualId,
       turma: { cliente: req.query.cliente, tema: req.query.tema, data_inicio: String(req.query.data_inicio || "").slice(0, 10) || null },
+      todosClientes: String(req.query.todos_clientes || "") === "1",
     });
     return res.json({ ok: true, ...r });
   } catch (error) {
@@ -1585,7 +1581,7 @@ app.use(
       "sala_id",
       "sala_outro_local",
       "subtipo",
-      "rp_id", // RP de origem (27/10/2026) — só Avaliação Técnica; validado em sanitizarEscritaTreinamento
+      "rp_id", // RP de origem (27/10/2026; qualquer subtipo desde 17/11/2026); validado em sanitizarEscritaTreinamento
       "modalidade", // online | presencial (04/11/2026) — campo de verdade; normalizado em sanitizarEscritaTreinamento
     ],
     orderBy: "id DESC",
@@ -2888,6 +2884,9 @@ const {
   listarConvocacoes: listarConvocacoesRP,
   convocarBerco:     convocarBercoRP,
   estornarConvocacao: estornarConvocacaoRP,
+  getClientes:       getRSClientes,
+  listarSemCliente:  listarRPsSemCliente,
+  vincularClientes:  vincularClientesRPs,
 } = require("./controllers/rsController");
 const {
   listarSitesGestao: listarRSSitesGestao,
@@ -2920,6 +2919,10 @@ const rhOnboarding = require("./controllers/rhOnboardingController");
 // Leitura: coordenador_rs + gestor_rs | Escrita: coordenador_rs apenas
 app.get   ("/api/rs/sites",     authRequired, authorizeRoles("coordenador_rs","gestor_rs"), getRSSites);
 app.get   ("/api/rs/produtos",  authRequired, authorizeRoles("coordenador_rs","gestor_rs"), getRSProdutos);
+// 17/11/2026 — RP ligada ao cliente
+app.get   ("/api/rs/clientes",  authRequired, authorizeRoles("coordenador_rs","gestor_rs"), getRSClientes);
+app.get   ("/api/rs/rps-sem-cliente",        authRequired, authorizeRoles("coordenador_rs","gestor_rs"), listarRPsSemCliente);
+app.post  ("/api/rs/rps-vincular-clientes",  authRequired, authorizeRoles("coordenador_rs"),              vincularClientesRPs);
 app.get   ("/api/rs/dashboard", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), getRSDashboard);
 app.get   ("/api/rs/relatorio", authRequired, authorizeRoles("coordenador_rs","gestor_rs"), getRSRelatorio);
 app.get   ("/api/rs/exportar",  authRequired, authorizeRoles("coordenador_rs","gestor_rs"), exportarRS);
