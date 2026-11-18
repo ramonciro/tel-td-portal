@@ -34,13 +34,14 @@ async function estadoDaConta(userId) {
   try {
     const pool = require("../lib/db");
     const [rows] = await pool.query(
-      "SELECT ativo, troca_senha_obrigatoria FROM usuarios WHERE id = ? LIMIT 1",
+      "SELECT ativo, troca_senha_obrigatoria, perfil FROM usuarios WHERE id = ? LIMIT 1",
       [userId]
     );
     const r = rows[0];
     const estado = {
       inativa: !!r && r.ativo !== null && Number(r.ativo) === 0,
       trocaPendente: !!r && Number(r.troca_senha_obrigatoria || 0) === 1,
+      perfil: r && r.perfil ? String(r.perfil).toLowerCase().trim() : null,
       expira: agora + CACHE_ATIVO_MS,
     };
     cacheAtivo.set(userId, estado);
@@ -128,6 +129,20 @@ async function authRequired(req, res, next) {
         ok: false,
         codigo: "CONTA_INATIVA",
         message: "Conta inativa. Procure a coordenação.",
+      });
+    }
+    // Perfil alterado (18/11/2026): o token dura 12h e leva o perfil de quando a pessoa entrou. Se a conta mudou de
+    // perfil depois (ex.: Super Admin tirou o acesso ao R&S), o token antigo deixa de valer e a pessoa entra de novo.
+    if (
+      estado.perfil &&
+      String(decoded?.perfil || "").toLowerCase().trim() !== "super_admin" &&
+      Number(decoded?.super_admin || 0) !== 1 &&
+      estado.perfil !== String(decoded?.perfil || "").toLowerCase().trim()
+    ) {
+      return res.status(401).json({
+        ok: false,
+        codigo: "TOKEN_INVALIDO",
+        message: "O perfil da sua conta foi alterado. Entre novamente.",
       });
     }
     if (estado.trocaPendente && !ehTrocaDeSenha(req)) {

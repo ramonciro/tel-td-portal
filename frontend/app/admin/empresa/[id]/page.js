@@ -131,6 +131,33 @@ export default function EmpresaDetailPage() {
     }
   }
 
+  // Usuários do tenant (18/11/2026): Super Admin ativa/desativa e troca o perfil de uma conta do ambiente
+  // (corrige conta de módulo criada no ambiente errado). O servidor recusa Super Admin e conta de outro tenant.
+  const [userBusy, setUserBusy] = useState(null);
+  const PERFIS_TROCA = [
+    ["coordenador", "Coordenador"], ["supervisor", "Supervisor"], ["superintendente", "Superintendente"],
+    ["instrutor", "Instrutor"], ["treinando", "Treinando"], ["assistente_treinamento", "Assistente de Treinamento"],
+    ["analista_conteudo", "Analista de Conteúdo"], ["coaching", "Coaching"], ["metodologia", "Metodologia"],
+    ["coordenador_rs", "Coordenador R&S"], ["gestor_rs", "Gestor R&S"],
+    ["coordenador_nusp", "Coordenador do Núcleo"], ["analista_nusp", "Analista do Núcleo"], ["gestor_nusp", "Gestor do Núcleo"],
+    ["coordenador_rh", "Coordenador do RH"], ["analista_rh", "Analista do RH"], ["gestor_rh", "Gestor do RH"], ["cliente_rh", "Cliente (RH)"],
+  ];
+  async function ajustarUsuario(u, dados, pergunta) {
+    if (!window.confirm(pergunta)) return;
+    setUserBusy(u.id); setError(""); setSuccess("");
+    try {
+      const r = await apiFetch(`/admin/empresas/${id}/usuarios/${u.id}`, { method: "PUT", body: JSON.stringify(dados) });
+      if (r && r.ok === false) { setError(r.message || "Não foi possível alterar o usuário."); return; }
+      const atualizado = await apiFetch(`/admin/empresas/${id}`);
+      setEmpresa(atualizado);
+      setSuccess(`Conta de ${u.nome} atualizada.`);
+    } catch (err) {
+      setError(err.message || "Erro ao alterar o usuário.");
+    } finally {
+      setUserBusy(null);
+    }
+  }
+
   async function handleToggle() {
     setToggling(true); setError(""); setSuccess("");
     try {
@@ -322,7 +349,36 @@ export default function EmpresaDetailPage() {
                       color:      u.perfil === "coordenador" ? "#1d4ed8" : "#6b7280" }}>
                       {u.perfil}
                     </span>
-                    <span style={{ ...atvDot, background: u.ativo ? "#22c55e" : "#9ca3af" }} />
+                    <span style={{ ...atvDot, background: u.ativo ? "#22c55e" : "#9ca3af" }} title={u.ativo ? "Ativa" : "Inativa"} />
+                    {String(u.perfil || "").toLowerCase() !== "super_admin" && (
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: 8, flexWrap: "wrap" }}>
+                        <select
+                          value={String(u.perfil || "").toLowerCase()}
+                          disabled={userBusy === u.id}
+                          onChange={(e) => {
+                            const novo = e.target.value;
+                            if (novo && novo !== String(u.perfil || "").toLowerCase()) {
+                              ajustarUsuario(u, { perfil: novo }, `Trocar o perfil de ${u.nome} de "${u.perfil}" para "${novo}"? Se ela estiver logada, precisará entrar de novo.`);
+                            }
+                          }}
+                          style={{ fontSize: 12, padding: "4px 6px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff" }}
+                          title="Trocar o perfil desta conta"
+                        >
+                          {PERFIS_TROCA.some(([v]) => v === String(u.perfil || "").toLowerCase()) ? null : (
+                            <option value={String(u.perfil || "").toLowerCase()}>{u.perfil}</option>
+                          )}
+                          {PERFIS_TROCA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={userBusy === u.id}
+                          onClick={() => ajustarUsuario(u, { ativo: u.ativo ? 0 : 1 }, u.ativo ? `Desativar a conta de ${u.nome}? Ela perde o acesso na hora.` : `Reativar a conta de ${u.nome}?`)}
+                          style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: u.ativo ? "#b91c1c" : "#15803d", cursor: "pointer", fontWeight: 600 }}
+                        >
+                          {u.ativo ? "Desativar" : "Reativar"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

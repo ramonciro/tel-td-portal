@@ -409,7 +409,73 @@ async function listPlanos(req, res) {
   }
 }
 
+/* ─── PUT /api/admin/empresas/:id/usuarios/:uid ───────────────────────────────
+ * Super Admin ajusta uma conta do tenant: ativar/desativar e/ou trocar o perfil (18/11/2026).
+ * Serve para corrigir conta de módulo (R&S, Metodologia, RH, Núcleo) criada no ambiente errado.
+ * Nunca mexe em super_admin, nem em conta de outro tenant. Desativar vale na hora; troca de perfil
+ * derruba o token antigo da pessoa (ela entra de novo com o perfil novo). */
+const PERFIS_VALIDOS = [
+  'coordenador', 'supervisor', 'instrutor', 'treinando', 'superintendente', 'coaching', 'metodologia',
+  'assistente_treinamento', 'analista_conteudo', 'coordenador_rs', 'gestor_rs',
+  'coordenador_nusp', 'analista_nusp', 'gestor_nusp', 'coordenador_rh', 'analista_rh', 'gestor_rh', 'cliente_rh',
+];
+async function atualizarUsuarioDoTenant(req, res) {
+  try {
+    const empresaId = Number(req.params.id);
+    const uid = Number(req.params.uid);
+    if (!Number.isInteger(empresaId) || empresaId <= 0 || !Number.isInteger(uid) || uid <= 0) {
+      return res.status(400).json({ ok: false, message: 'Identificação inválida.' });
+    }
+    const body = req.body || {};
+    const [rows] = await pool.query(
+      'SELECT id, nome, email, perfil, ativo, super_admin, empresa_id FROM usuarios WHERE id = ? AND empresa_id = ? LIMIT 1',
+      [uid, empresaId]
+    );
+    const alvo = rows[0];
+    if (!alvo) return res.status(404).json({ ok: false, message: 'Usuário não encontrado neste tenant.' });
+    if (Number(alvo.super_admin || 0) === 1 || String(alvo.perfil || '').toLowerCase() === 'super_admin') {
+      return res.status(403).json({ ok: false, message: 'Contas de Super Admin não são alteradas por aqui.' });
+    }
+    if (Number(alvo.id) === Number(req.user?.id)) {
+      return res.status(403).json({ ok: false, message: 'Você não pode alterar a própria conta por aqui.' });
+    }
+    const sets = [];
+    const params = [];
+    const mudancas = [];
+    if (body.perfil !== undefined) {
+      const perfilNovo = String(body.perfil || '').toLowerCase().trim();
+      if (!PERFIS_VALIDOS.includes(perfilNovo)) return res.status(400).json({ ok: false, message: 'Perfil inválido.' });
+      if (perfilNovo !== String(alvo.perfil || '').toLowerCase()) {
+        sets.push('perfil = ?'); params.push(perfilNovo);
+        mudancas.push(`perfil de "${alvo.perfil}" para "${perfilNovo}"`);
+      }
+    }
+    if (body.ativo !== undefined) {
+      const ativoNovo = body.ativo === true || body.ativo === 1 || body.ativo === '1' ? 1 : 0;
+      if (ativoNovo !== Number(alvo.ativo === null ? 1 : alvo.ativo)) {
+        sets.push('ativo = ?'); params.push(ativoNovo);
+        mudancas.push(ativoNovo ? 'reativou a conta' : 'desativou a conta');
+      }
+    }
+    if (!sets.length) return res.json({ ok: true, alterado: false });
+    await pool.query(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = ? AND empresa_id = ?`, [...params, uid, empresaId]);
+    try { require('../middlewares/auth').limparCacheConta(uid); } catch (_) {}
+    try {
+      await require('../services/auditoria').registrarAuditoria({
+        usuario: req.user, acao: 'editar', entidade: 'usuario', entidadeId: uid,
+        resumo: `Super Admin: ${mudancas.join(' e ')} de "${alvo.nome}" (tenant #${empresaId})`,
+        dadosAntes: { perfil: alvo.perfil, ativo: alvo.ativo }, ip: req.ip,
+      });
+    } catch (_) {}
+    return res.json({ ok: true, alterado: true });
+  } catch (error) {
+    console.error('[admin] atualizarUsuarioDoTenant:', error.message);
+    return res.status(500).json({ ok: false, message: 'Erro ao atualizar o usuário.' });
+  }
+}
+
 module.exports = {
+  atualizarUsuarioDoTenant,
   getGlobalStats,
   listEmpresas,
   getEmpresa,
