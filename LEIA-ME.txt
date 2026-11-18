@@ -1,17 +1,7 @@
-Super Admin corrige contas dos ambientes (18/11/2026)
+R&S - RP com opção "Outro" no campo Cliente
 
-O Super Admin não tem a tela Gestão de Usuários (o menu dele é só /admin). Agora, em
-Admin > abrir o tenant (ex.: São Paulo) > seção "Usuários", cada conta (exceto Super Admin) tem:
-- seletor de perfil: troca o perfil da conta;
-- botão Desativar/Reativar.
-Servidor: PUT /api/admin/empresas/:id/usuarios/:uid. Só Super Admin; só conta daquele tenant; nunca Super Admin; não altera a própria conta; registra na Auditoria.
+Arquivo alterado (1): frontend/app/rs/rps/page.js
 
-Também neste pacote
-- Token com perfil antigo deixa de valer: se o perfil da conta muda no banco, quem estava logado com o perfil antigo é derrubado e entra de novo com o perfil novo (antes o token de 12h mantinha o perfil antigo, inclusive o acesso ao R&S). Super Admin não é afetado.
-- Mesmo pacote anterior (R&S e Metodologia isolados: perfilScope.js, usuarios/page.js, index.js). Se já subiu, tudo bem: os arquivos substituem os anteriores.
-
-Passo a passo para o caso de São Paulo
-1. Admin > tenant de São Paulo > Usuários.
-2. Ache a conta com perfil coordenador_rs / gestor_rs / metodologia que não é do time do módulo.
-3. Troque o perfil (ex.: para Coordenador) ou Desative.
-Sem migração. Suba backend e frontend mantendo os caminhos.
+Na tela de RP (Nova/Editar), a lista Cliente ganhou a opção "Outro (Staff, Administrativo, outro produto...)".
+Ao escolher, aparece o campo Produto / Área em texto livre (com sugestões de produtos já usados).
+RP "Outro" não fica ligada a cliente do T&D (não aparece para abrir turma). Backend não muda; só frontend (Vercel).

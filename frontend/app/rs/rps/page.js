@@ -90,6 +90,8 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   const [turmasOrigem, setTurmasOrigem] = useState([]); // turmas do T&D que têm esta RP como origem (27/10/2026)
   // Cliente da RP (17/11/2026): clientes ativos do ambiente. Sem nenhum cadastrado, o Produto segue em texto livre.
   const [clientes, setClientes] = useState([]);
+  // "Outro": RP de área/produto que não é cliente do T&D (Staff, Administrativo, outros produtos) — Produto em texto livre.
+  const [modoOutro, setModoOutro] = useState(false);
 
   const carregarBerco = useCallback(async (id) => {
     try {
@@ -131,8 +133,10 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
         observacoes:  rp.observacoes || "",
         cliente_id:   rp.cliente_id ? String(rp.cliente_id) : "",
       });
+      setModoOutro(!rp.cliente_id); // RP sem cliente do T&D segue com o Produto em texto
     } else {
       setForm(FORM_VAZIO);
+      setModoOutro(false);
     }
     setErro("");
     setDuplicadas(null);
@@ -198,10 +202,10 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   };
 
   const handleSalvar = async (confirmarDuplicada = false) => {
-    const usaCliente = clientes.length > 0;
-    // RP nova, ou antiga que já tem cliente, exige o cliente; RP antiga sem cliente pode seguir (a ligação é opcional).
-    if (usaCliente && !form.cliente_id && (!rp || rp.cliente_id)) { setErro("Escolha o cliente da RP."); return; }
-    if (!form.site || (!usaCliente && !form.produto)) { setErro(usaCliente ? "Site e Cliente são obrigatórios." : "Site e Produto são obrigatórios."); return; }
+    const usaCliente = clientes.length > 0 && !modoOutro;
+    if (clientes.length > 0 && !modoOutro && !form.cliente_id) { setErro("Escolha o cliente da RP ou marque \"Outro\"."); return; }
+    if (!form.site) { setErro("O site é obrigatório."); return; }
+    if (!usaCliente && !String(form.produto || "").trim()) { setErro("Informe o produto / área da RP."); return; }
     if (!form.data_recebimento) { setErro("Informe a data de recebimento da RP — sem ela o prazo (SLA) não é calculado."); return; }
     setSaving(true); setErro("");
     try {
@@ -210,8 +214,11 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
         const cli = clientes.find((c) => String(c.id) === String(form.cliente_id));
         payload.cliente_id = Number(form.cliente_id);
         if (cli) payload.produto = cli.nome; // o Produto da RP é o nome do cliente
+      } else if (modoOutro) {
+        payload.cliente_id = null; // área/produto fora do T&D: sem vínculo de cliente
+        payload.produto = String(form.produto || "").trim();
       } else {
-        delete payload.cliente_id; // RP antiga sem cliente: não mexe no vínculo
+        delete payload.cliente_id; // ambiente sem clientes cadastrados: não mexe no vínculo
       }
       if (payload.mes_referencia?.length === 7) payload.mes_referencia += "-01";
       if (rp) {
@@ -290,31 +297,45 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
           </div>
 
           {/* Cliente da RP (17/11/2026) — ou Produto em texto livre se o ambiente não tem clientes ativos */}
-          {clientes.length > 0 ? (
+          {clientes.length > 0 && (
             <div>
               <label style={labelSt}>Cliente *</label>
-              <select value={form.cliente_id} onChange={e => set("cliente_id", e.target.value)} style={inputSt}>
+              <select
+                value={modoOutro ? "__outro" : form.cliente_id}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === "__outro") { setModoOutro(true); set("cliente_id", ""); }
+                  else { setModoOutro(false); set("cliente_id", v); }
+                }}
+                style={inputSt}
+              >
                 <option value="">Selecione o cliente...</option>
                 {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                <option value="__outro">Outro (Staff, Administrativo, outro produto...)</option>
               </select>
               <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
-                {rp && !rp.cliente_id
-                  ? `Esta RP ainda não está ligada a um cliente (produto atual: "${rp.produto}"). Ligue-a para o T&D abrir turmas a partir dela.`
-                  : "O T&D usa o cliente para listar a RP ao abrir a turma. Falta um cliente? Cadastre em Clientes."}
+                {modoOutro
+                  ? "Para RPs de áreas ou produtos que não são cliente do T&D. Elas não aparecem para abrir turma."
+                  : rp && !rp.cliente_id
+                    ? `Esta RP ainda não está ligada a um cliente (produto atual: "${rp.produto}").`
+                    : "O T&D usa o cliente para listar a RP ao abrir a turma. Falta um cliente? Cadastre em Clientes."}
               </p>
             </div>
-          ) : (
+          )}
+          {(clientes.length === 0 || modoOutro) && (
           <div style={{ position: "relative" }}>
-            <label style={labelSt}>Produto / Cliente *</label>
+            <label style={labelSt}>{clientes.length > 0 ? "Produto / Área *" : "Produto / Cliente *"}</label>
             <input
               value={form.produto}
               onChange={e => { set("produto", e.target.value); buscarProdutos(e.target.value); setShowSug(true); }}
               onBlur={() => setTimeout(() => setShowSug(false), 150)}
-              placeholder="Safra, Dasa, Cemig..." style={inputSt}
+              placeholder={clientes.length > 0 ? "Staff, Administrativo, outro produto..." : "Safra, Dasa, Cemig..."} style={inputSt}
             />
-            <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
-              Nenhum cliente ativo cadastrado neste ambiente. Cadastre em Clientes para ligar a RP ao cliente.
-            </p>
+            {clientes.length === 0 && (
+              <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
+                Nenhum cliente ativo cadastrado neste ambiente. Cadastre em Clientes para ligar a RP ao cliente.
+              </p>
+            )}
             {showSug && sugestoes.length > 0 && (
               <div style={{
                 position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10,
