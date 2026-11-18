@@ -19,7 +19,6 @@
  */
 
 const pool = require("../lib/db");
-const { chavesDeAreas, semAcento: semAcentoArea } = require("../lib/rsAreas");
 
 const semAcento = (s) =>
   String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -176,13 +175,12 @@ async function rpsSemCliente(empresaId) {
       ORDER BY mes_referencia DESC, id DESC LIMIT 300`,
     [empresaId]
   );
-  const areas = await chavesDeAreas(empresaId);
   // Diagnóstico: o produto da RP existe como cliente ATIVO em OUTRO ambiente (só o aviso; nada de outro ambiente é exibido ou ligado).
   const [outros] = await pool.query(
     `SELECT nome FROM clientes WHERE empresa_id <> ? AND (status IS NULL OR status <> 'Inativo')`, [empresaId]
   ).catch(() => [[]]);
   const nomeAmbiente = await pool.query(`SELECT nome FROM empresas WHERE id = ? LIMIT 1`, [empresaId]).then(([r]) => (r[0] && r[0].nome) || null).catch(() => null);
-  const lista = rps.filter((r) => !areas.has(semAcentoArea(r.produto))).map((r) => {
+  const lista = rps.map((r) => {
     const s = sugerirCliente(r.produto, clientes);
     const emOutro = !s && !!sugerirCliente(r.produto, outros);
     return { ...r, cliente_sugerido_id: s ? s.id : null, cliente_em_outro_ambiente: emOutro };

@@ -171,104 +171,79 @@ export function SitesCard() {
   );
 }
 
-// ─── Áreas do R&S (Staff, Administrativo...) ────────────────────────
-export function AreasCard() {
-  const [areas, setAreas] = useState([]);
+// ─── Clientes do ambiente (inclusive internos: Staff, Administrativo...) ───
+export function ClientesRSCard({ onMudou }) {
+  const [clientes, setClientes] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [novo, setNovo] = useState("");
-  const [editandoId, setEditandoId] = useState(null);
-  const [nomeEdit, setNomeEdit] = useState("");
   const [msg, setMsg] = useState(null);
   const [ocupado, setOcupado] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
-      const r = await apiFetch("/rs/areas?todas=1");
-      setAreas(Array.isArray(r?.areas) ? r.areas : []);
-    } catch (e) { setMsg({ tipo: "erro", texto: e.message || "Não foi possível carregar as áreas." }); }
+      const r = await apiFetch("/rs/clientes-gestao");
+      setClientes(Array.isArray(r?.clientes) ? r.clientes : []);
+    } catch (e) { setMsg({ tipo: "erro", texto: e.message || "Não foi possível carregar os clientes." }); }
     finally { setCarregando(false); }
   }, []);
   useEffect(() => { carregar(); }, [carregar]);
 
   async function executar(fn) {
     setOcupado(true); setMsg(null);
-    try { await fn(); await carregar(); }
+    try { await fn(); await carregar(); onMudou && onMudou(); }
     catch (e) { setMsg({ tipo: "erro", texto: e.message || "Não foi possível concluir." }); }
     finally { setOcupado(false); }
   }
   const cadastrar = () => executar(async () => {
-    const r = await apiFetch("/rs/areas", { method: "POST", body: JSON.stringify({ nome: novo }) });
-    setMsg({ tipo: "ok", texto: r.message || "Área cadastrada." }); setNovo("");
+    const r = await apiFetch("/rs/clientes-gestao", { method: "POST", body: JSON.stringify({ nome: novo }) });
+    setMsg({ tipo: "ok", texto: r.message || "Cliente cadastrado." }); setNovo("");
   });
-  const salvarNome = (a) => executar(async () => {
-    const r = await apiFetch(`/rs/areas/${a.id}`, { method: "PUT", body: JSON.stringify({ nome: nomeEdit }) });
-    setMsg({ tipo: "ok", texto: r.message }); setEditandoId(null);
-  });
-  const alternarAtivo = (a) => executar(async () => {
-    const r = await apiFetch(`/rs/areas/${a.id}`, { method: "PUT", body: JSON.stringify({ ativo: !a.ativo }) });
+  const alternar = (c) => executar(async () => {
+    const r = await apiFetch(`/rs/clientes-gestao/${c.id}`, { method: "PUT", body: JSON.stringify({ ativo: !c.ativo }) });
     setMsg({ tipo: "ok", texto: r.message });
   });
 
   return (
     <div style={card}>
-      <h2 style={cardTitle}>🏢 Áreas do R&S</h2>
+      <h2 style={cardTitle}>🏷️ Clientes</h2>
       <p style={cardDesc}>
-        Áreas e produtos que <strong>não são cliente do T&D</strong> (Staff, Administrativo, etc.). Ficam só no R&S: aparecem na lista de
-        Cliente / Área da RP, mas não entram em Clientes, turmas nem em nenhuma tela do T&D.
+        Clientes deste ambiente, inclusive internos (Staff, Administrativo...). Quem cadastra aqui aparece também no T&D do mesmo ambiente.
+        O cliente é o que liga a RP à turma; um cliente <strong>desativado</strong> não aparece para RPs novas, mas as antigas continuam.
       </p>
       {msg && <div style={aviso(msg.tipo)}>{msg.texto}</div>}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <input value={novo} onChange={(e) => setNovo(e.target.value)} placeholder="Nova área (ex.: Staff, Administrativo)"
+        <input value={novo} onChange={(e) => setNovo(e.target.value)} placeholder="Novo cliente (ex.: Staff, Administrativo, Cemig)"
           onKeyDown={(e) => { if (e.key === "Enter" && novo.trim() && !ocupado) cadastrar(); }}
-          style={{ ...inputSt, flex: 1, minWidth: 220 }} maxLength={120} />
-        <button onClick={cadastrar} disabled={ocupado || !novo.trim()} style={{ ...btnPrim, opacity: !novo.trim() ? 0.5 : 1 }}>+ Cadastrar área</button>
+          style={{ ...inputSt, flex: 1, minWidth: 220 }} maxLength={150} />
+        <button onClick={cadastrar} disabled={ocupado || !novo.trim()} style={{ ...btnPrim, opacity: !novo.trim() ? 0.5 : 1 }}>+ Cadastrar cliente</button>
       </div>
       {carregando ? (
-        <p style={{ color: colors.textMuted, fontSize: 13 }}>Carregando áreas...</p>
-      ) : areas.length === 0 ? (
-        <p style={{ color: colors.textMuted, fontSize: 13 }}>Nenhuma área ainda. Cadastre a primeira acima.</p>
+        <p style={{ color: colors.textMuted, fontSize: 13 }}>Carregando clientes...</p>
+      ) : clientes.length === 0 ? (
+        <p style={{ color: colors.textMuted, fontSize: 13 }}>Nenhum cliente neste ambiente ainda. Cadastre o primeiro acima.</p>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#f8fafc" }}>
-              <th style={th}>Área</th><th style={{ ...th, textAlign: "right" }}>RPs</th><th style={th}>Situação</th><th style={{ ...th, textAlign: "right" }}>Ações</th>
+              <th style={th}>Cliente</th><th style={{ ...th, textAlign: "right" }}>RPs</th><th style={th}>Situação</th><th style={{ ...th, textAlign: "right" }}>Ações</th>
             </tr>
           </thead>
           <tbody>
-            {areas.map((a) => {
-              const editando = editandoId === a.id;
-              return (
-                <tr key={a.id} style={{ borderBottom: "1px solid #f1f5f9", opacity: a.ativo ? 1 : 0.6 }}>
-                  <td style={{ padding: "9px 12px", fontWeight: 600, color: colors.textPrimary }}>
-                    {editando ? (
-                      <input value={nomeEdit} onChange={(e) => setNomeEdit(e.target.value)} maxLength={120} autoFocus
-                        onKeyDown={(e) => { if (e.key === "Enter") salvarNome(a); if (e.key === "Escape") setEditandoId(null); }}
-                        style={{ ...inputSt, width: "100%" }} />
-                    ) : a.nome}
-                  </td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", color: colors.textSecondary }}>{a.rps}</td>
-                  <td style={{ padding: "9px 12px" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 999, padding: "3px 10px",
-                      color: a.ativo ? colors.successText : colors.neutral, background: a.ativo ? colors.successLight : colors.neutralLight }}>
-                      {a.ativo ? "Ativa" : "Desativada"}
-                    </span>
-                  </td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
-                    {editando ? (
-                      <>
-                        <button onClick={() => salvarNome(a)} disabled={ocupado || !nomeEdit.trim()} style={{ ...btnPrim, padding: "5px 12px" }}>Salvar</button>{" "}
-                        <button onClick={() => setEditandoId(null)} style={btnSec}>Cancelar</button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => { setEditandoId(a.id); setNomeEdit(a.nome); setMsg(null); }} style={btnSec}>Renomear</button>{" "}
-                        <button onClick={() => alternarAtivo(a)} disabled={ocupado} style={btnSec}>{a.ativo ? "Desativar" : "Reativar"}</button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {clientes.map((c) => (
+              <tr key={c.id} style={{ borderBottom: "1px solid #f1f5f9", opacity: c.ativo ? 1 : 0.6 }}>
+                <td style={{ padding: "9px 12px", fontWeight: 600, color: colors.textPrimary }}>{c.nome}</td>
+                <td style={{ padding: "9px 12px", textAlign: "right", color: colors.textSecondary }}>{c.rps}</td>
+                <td style={{ padding: "9px 12px" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 999, padding: "3px 10px",
+                    color: c.ativo ? colors.successText : colors.neutral, background: c.ativo ? colors.successLight : colors.neutralLight }}>
+                    {c.ativo ? "Ativo" : "Desativado"}
+                  </span>
+                </td>
+                <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                  <button onClick={() => alternar(c)} disabled={ocupado} style={btnSec}>{c.ativo ? "Desativar" : "Reativar"}</button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}

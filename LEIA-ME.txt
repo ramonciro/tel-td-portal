@@ -1,7 +1,16 @@
-Diagnóstico na tela "Ligar RPs ao cliente" (R&S)
+R&S - sem divisão Cliente/Área; coordenador do R&S cadastra clientes no próprio ambiente
 
-Arquivos (2): backend/src/services/rpClienteService.js, frontend/app/rs/rps/page.js
+O que muda:
+- Removida a "Área do R&S" (card, lista da RP, filtros). Staff, Administrativo etc. são clientes comuns.
+- Configurações R&S > novo card "Clientes": o coordenador R&S cadastra e desativa/reativa clientes do ambiente dele
+  (mesma tabela do T&D do ambiente: aparecem nos dois módulos).
+- Tela "Ligar RPs ao cliente": campo "Novo cliente" no topo; ao cadastrar, o cliente já entra na lista e vem sugerido
+  nas RPs com produto igual. Mostra o ambiente, os clientes ativos e avisa quando o cliente da RP só existe em outro ambiente.
+- RP Nova/Editar: lista só de Clientes, com a dica de onde cadastrar.
 
-A tela passa a mostrar: o ambiente do login, quantos clientes ativos existem nele (com os nomes) e, por RP,
-um aviso quando o cliente do produto está cadastrado em OUTRO ambiente (nada de outro ambiente é exibido ou ligado).
-Parte do pacote anterior (rs-areas-fora-do-td): este zip contém a versão final desses 2 arquivos, pode subir os dois.
+Arquivos (9): backend: database/migrate.js, controllers/rsGestaoController.js, controllers/rsController.js,
+services/rpOrigemService.js, services/rpClienteService.js, index.js. frontend: components/RSCadastros.js,
+app/rs/configuracoes/page.js, app/rs/rps/page.js.
+Substitui os zips "rs-areas-fora-do-td" e "rs-ligar-rps-diagnostico" (não subir aqueles).
+Se você já subiu o das áreas: a tabela rs_areas fica no banco sem uso (inofensiva). RPs que usaram uma área aparecem em
+"Ligar RPs ao cliente" para você ligar ao cliente certo.

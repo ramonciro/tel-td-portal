@@ -11,7 +11,6 @@ const rel     = require("../lib/rsRelatorios");
 const { tituloPadrao, chaveNormal, listarSites, resolverSite } = require("../lib/rsPadrao");
 const { turmasDaRP, soltarTurmasDaRP } = require("../services/rpOrigemService");
 const rpCliente = require("../services/rpClienteService");
-const { chavesDeAreas, semAcento: semAcentoArea } = require("../lib/rsAreas");
 
 const getEmpresaId = (req) => req.user?.empresa_id;
 
@@ -218,12 +217,7 @@ const listar = async (req, res) => {
   try {
     const temCliente = await rpCliente.rpsTemClienteId();
     // 17/11/2026: ?sem_cliente=1 mostra só RPs ainda sem cliente; ?cliente_id=N filtra por cliente.
-    if (temCliente && String(req.query.sem_cliente || "") === "1") {
-      where += " AND r.cliente_id IS NULL";
-      // RPs de áreas do R&S (Staff, Administrativo...) não são "sem cliente": são de outra área, de propósito.
-      const [areasCad] = await db.query("SELECT nome FROM rs_areas WHERE empresa_id = ?", [empresa_id]).catch(() => [[]]);
-      if (areasCad.length) { where += ` AND r.produto NOT IN (${areasCad.map(() => "?").join(",")})`; params = [...params, ...areasCad.map((x) => x.nome)]; }
-    }
+    if (temCliente && String(req.query.sem_cliente || "") === "1") where += " AND r.cliente_id IS NULL";
     const cid = Number(req.query.cliente_id);
     if (temCliente && Number.isInteger(cid) && cid > 0) { where += " AND r.cliente_id = ?"; params = [...params, cid]; }
     const [rps] = await db.query(
@@ -254,10 +248,8 @@ const listar = async (req, res) => {
       const [cl] = await db.query(`SELECT id, nome FROM clientes WHERE id IN (${idsCli.map(() => "?").join(",")})`, idsCli).catch(() => [[]]);
       for (const c of cl) nomesClientes.set(c.id, c.nome);
     }
-    const chavesAreas = await chavesDeAreas(empresa_id);
     const itens = rps.map((r) => ({
       ...r,
-      area_rs: !r.cliente_id && chavesAreas.has(semAcentoArea(r.produto)),
       cliente_nome: r.cliente_id ? (nomesClientes.get(r.cliente_id) || null) : null,
       dias_aberto: r.dias_aberto === null || r.dias_aberto === undefined ? null : Number(r.dias_aberto),
       atrasada: r.status === "EM ANDAMENTO" && Number(r.dias_aberto) > limiteDias,

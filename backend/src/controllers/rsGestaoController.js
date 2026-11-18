@@ -5,7 +5,7 @@ const db = require("../lib/db");
 const { comTransacao, ignorarTabelaAusente } = require("../lib/tx");
 const { registrarAuditoria } = require("../services/auditoria");
 const { tituloPadrao, chaveNormal, listarSites } = require("../lib/rsPadrao");
-const { semAcento: semAcentoArea } = require("../lib/rsAreas");
+const rpCliente = require("../services/rpClienteService");
 
 const getEmpresaId = (req) => req.user?.empresa_id;
 const erro = (res, status, msg, extra = {}) => res.status(status).json({ error: msg, message: msg, ...extra });
@@ -300,103 +300,78 @@ const restaurarRP = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ÁREAS DO R&S (18/11/2026) — Staff, Administrativo e outros produtos que não são cliente do T&D.
-// Cadastro próprio do R&S: não toca na tabela clientes, então não aparece em nada do T&D.
+// CLIENTES DO AMBIENTE (18/11/2026) — o coordenador do R&S cadastra, no próprio ambiente, os clientes
+// (inclusive internos: Staff, Administrativo...) para ligar as RPs. É a mesma tabela clientes do T&D
+// do ambiente, então o cliente aparece nos dois módulos. Só nome; renomear fica no menu Clientes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** GET (coordenador e gestor): áreas ativas — alimenta a lista da RP. ?todas=1 (só coordenador na rota de gestão) traz também as inativas, com contagem de RPs. */
-const listarAreas = async (req, res) => {
+const listarClientesGestao = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   if (!empresa_id) return erro(res, 401, "Não autorizado");
   try {
-    const gestao = String(req.query.todas || "") === "1" && req.user?.perfil === "coordenador_rs";
-    const [areas] = await db.query(
-      `SELECT a.id, a.nome, a.ativo,
-              (SELECT COUNT(*) FROM rps r WHERE r.empresa_id = a.empresa_id AND r.excluido_em IS NULL
-                  AND r.cliente_id IS NULL AND r.produto = a.nome) AS rps
-         FROM rs_areas a WHERE a.empresa_id = ? ${gestao ? "" : "AND a.ativo = 1"} ORDER BY a.nome`,
-      [empresa_id]
-    ).catch(() => [[]]);
-    return res.json({ areas: areas.map((a) => ({ id: a.id, nome: a.nome, ativo: !!a.ativo, rps: Number(a.rps) || 0 })) });
+    const [rows] = await db.query(
+      `SELECT c.id, c.nome, c.status,
+              (SELECT COUNT(*) FROM rps r WHERE r.empresa_id = c.empresa_id AND r.cliente_id = c.id AND r.excluido_em IS NULL) AS rps
+         FROM clientes c WHERE c.empresa_id = ? ORDER BY c.nome`, [empresa_id]
+    ).catch(async (e) => {
+      if (e && e.code === "ER_BAD_FIELD_ERROR") return db.query("SELECT id, nome, status, 0 AS rps FROM clientes WHERE empresa_id = ? ORDER BY nome", [empresa_id]);
+      throw e;
+    });
+    return res.json({ clientes: rows.map((c) => ({ id: c.id, nome: c.nome, ativo: String(c.status || "").toLowerCase() !== "inativo", rps: Number(c.rps) || 0 })) });
   } catch (err) {
-    console.error("[rsGestao.listarAreas]", err);
-    return erro(res, 500, "Erro ao listar as áreas");
+    console.error("[rsGestao.listarClientes]", err);
+    return erro(res, 500, "Erro ao listar os clientes");
   }
 };
 
-const nomeEhClienteDoTD = async (empresa_id, nome) => {
-  const [cli] = await db.query("SELECT nome FROM clientes WHERE empresa_id = ?", [empresa_id]).catch(() => [[]]);
-  return cli.find((c) => semAcentoArea(c.nome) === semAcentoArea(nome)) || null;
-};
-
-const criarArea = async (req, res) => {
+const criarClienteRS = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   if (!empresa_id) return erro(res, 401, "Não autorizado");
-  const nome = tituloPadrao(req.body?.nome).slice(0, 120);
-  if (!nome) return erro(res, 400, "Informe o nome da área.");
+  const nome = tituloPadrao(req.body?.nome).slice(0, 150);
+  if (!nome) return erro(res, 400, "Informe o nome do cliente.");
   try {
-    const cliente = await nomeEhClienteDoTD(empresa_id, nome);
-    if (cliente) return erro(res, 400, `"${cliente.nome}" já é cliente do T&D: escolha-o direto na lista Cliente da RP.`);
-    const [cad] = await db.query("SELECT id, nome, ativo FROM rs_areas WHERE empresa_id = ?", [empresa_id]);
-    const igual = cad.find((x) => semAcentoArea(x.nome) === semAcentoArea(nome));
+    const [cad] = await db.query("SELECT id, nome, status FROM clientes WHERE empresa_id = ?", [empresa_id]);
+    const igual = cad.find((x) => rpCliente.semAcento(x.nome) === rpCliente.semAcento(nome));
     if (igual) {
-      if (igual.ativo) return erro(res, 400, `A área "${igual.nome}" já está cadastrada.`);
-      await db.query("UPDATE rs_areas SET ativo = 1 WHERE id = ? AND empresa_id = ?", [igual.id, empresa_id]);
-      registrarAuditoria({ usuario: req.user, acao: "editar", entidade: "rs_area", entidadeId: igual.id,
-        resumo: `${req.user?.nome || "Alguém"} reativou a área ${igual.nome} (R&S)`, ip: req.ip });
-      return res.json({ id: igual.id, nome: igual.nome, message: `Área "${igual.nome}" reativada.` });
+      if (String(igual.status || "").toLowerCase() !== "inativo") return erro(res, 400, `O cliente "${igual.nome}" já está cadastrado.`);
+      await db.query("UPDATE clientes SET status = 'ativo' WHERE id = ? AND empresa_id = ?", [igual.id, empresa_id]);
+      registrarAuditoria({ usuario: req.user, acao: "editar", entidade: "cliente", entidadeId: igual.id,
+        resumo: `${req.user?.nome || "Alguém"} reativou o cliente ${igual.nome} (pelo R&S)`, ip: req.ip });
+      return res.json({ id: igual.id, nome: igual.nome, message: `Cliente "${igual.nome}" reativado.` });
     }
-    const [r] = await db.query("INSERT INTO rs_areas (empresa_id, nome) VALUES (?,?)", [empresa_id, nome]);
-    registrarAuditoria({ usuario: req.user, acao: "criar", entidade: "rs_area", entidadeId: r.insertId,
-      resumo: `${req.user?.nome || "Alguém"} cadastrou a área ${nome} (R&S)`, dadosDepois: { nome }, ip: req.ip });
-    return res.status(201).json({ id: r.insertId, nome, message: `Área "${nome}" cadastrada.` });
+    const [r] = await db.query("INSERT INTO clientes (empresa_id, nome, status) VALUES (?, ?, 'ativo')", [empresa_id, nome]);
+    registrarAuditoria({ usuario: req.user, acao: "criar", entidade: "cliente", entidadeId: r.insertId,
+      resumo: `${req.user?.nome || "Alguém"} cadastrou o cliente ${nome} (pelo R&S)`, dadosDepois: { nome }, ip: req.ip });
+    return res.status(201).json({ id: r.insertId, nome, message: `Cliente "${nome}" cadastrado.` });
   } catch (err) {
-    console.error("[rsGestao.criarArea]", err);
-    return erro(res, 500, "Erro ao cadastrar a área");
+    console.error("[rsGestao.criarCliente]", err);
+    return erro(res, 500, "Erro ao cadastrar o cliente");
   }
 };
 
-/** PUT: renomear (as RPs sem cliente com o nome antigo acompanham) e/ou ativar/desativar. */
-const editarArea = async (req, res) => {
+/** PUT { ativo } — ativa/desativa. Desativar não apaga nada: as RPs ligadas continuam, só não dá para escolhê-lo em RPs novas. */
+const alterarClienteRS = async (req, res) => {
   const empresa_id = getEmpresaId(req);
   if (!empresa_id) return erro(res, 401, "Não autorizado");
   const id = parseInt(req.params.id, 10);
-  if (!id) return erro(res, 400, "Área inválida");
-  const b = req.body || {};
+  if (!id) return erro(res, 400, "Cliente inválido");
   try {
-    const [[atual]] = await db.query("SELECT id, nome, ativo FROM rs_areas WHERE id = ? AND empresa_id = ?", [id, empresa_id]);
-    if (!atual) return erro(res, 404, "Área não encontrada");
-    if (b.nome === undefined) {
-      const ativo = b.ativo ? 1 : 0;
-      await db.query("UPDATE rs_areas SET ativo = ? WHERE id = ? AND empresa_id = ?", [ativo, id, empresa_id]);
-      registrarAuditoria({ usuario: req.user, acao: "editar", entidade: "rs_area", entidadeId: id,
-        resumo: `${req.user?.nome || "Alguém"} ${ativo ? "reativou" : "desativou"} a área ${atual.nome} (R&S)`, ip: req.ip });
-      return res.json({ message: ativo ? `Área "${atual.nome}" reativada.` : `Área "${atual.nome}" desativada. As RPs dela continuam; só não dá mais para escolhê-la em RPs novas.` });
-    }
-    const nome = tituloPadrao(b.nome).slice(0, 120);
-    if (!nome) return erro(res, 400, "Informe o nome da área.");
-    if (semAcentoArea(nome) === semAcentoArea(atual.nome) && nome === atual.nome) return res.json({ message: "Nada mudou." });
-    const cliente = await nomeEhClienteDoTD(empresa_id, nome);
-    if (cliente) return erro(res, 400, `"${cliente.nome}" já é cliente do T&D: escolha-o direto na lista Cliente da RP.`);
-    const [cad] = await db.query("SELECT id, nome FROM rs_areas WHERE empresa_id = ? AND id <> ?", [empresa_id, id]);
-    const outro = cad.find((x) => semAcentoArea(x.nome) === semAcentoArea(nome));
-    if (outro) return erro(res, 409, `Já existe a área "${outro.nome}".`);
-    await db.query("UPDATE rs_areas SET nome = ? WHERE id = ? AND empresa_id = ?", [nome, id, empresa_id]);
-    const [up] = await db.query(
-      "UPDATE rps SET produto = ? WHERE empresa_id = ? AND cliente_id IS NULL AND produto = ?", [nome, empresa_id, atual.nome]
-    ).catch(() => [{ affectedRows: 0 }]);
-    registrarAuditoria({ usuario: req.user, acao: "editar", entidade: "rs_area", entidadeId: id,
-      resumo: `${req.user?.nome || "Alguém"} renomeou a área ${atual.nome} para ${nome} (R&S)`, dadosAntes: { nome: atual.nome }, dadosDepois: { nome }, ip: req.ip });
-    return res.json({ message: `Área renomeada: "${atual.nome}" → "${nome}". ${up.affectedRows || 0} RP(s) atualizada(s).` });
+    const [[atual]] = await db.query("SELECT id, nome FROM clientes WHERE id = ? AND empresa_id = ?", [id, empresa_id]);
+    if (!atual) return erro(res, 404, "Cliente não encontrado");
+    const ativo = req.body?.ativo ? 1 : 0;
+    await db.query("UPDATE clientes SET status = ? WHERE id = ? AND empresa_id = ?", [ativo ? "ativo" : "inativo", id, empresa_id]);
+    registrarAuditoria({ usuario: req.user, acao: "editar", entidade: "cliente", entidadeId: id,
+      resumo: `${req.user?.nome || "Alguém"} ${ativo ? "reativou" : "desativou"} o cliente ${atual.nome} (pelo R&S)`, ip: req.ip });
+    return res.json({ message: ativo ? `Cliente "${atual.nome}" reativado.` : `Cliente "${atual.nome}" desativado. As RPs e turmas dele continuam; só não dá mais para escolhê-lo em RPs novas.` });
   } catch (err) {
-    console.error("[rsGestao.editarArea]", err);
-    return erro(res, 500, "Erro ao editar a área");
+    console.error("[rsGestao.alterarCliente]", err);
+    return erro(res, 500, "Erro ao alterar o cliente");
   }
 };
 
 module.exports = {
   listarSitesGestao, criarSite, editarSite,
-  listarAreas, criarArea, editarArea,
+  listarClientesGestao, criarClienteRS, alterarClienteRS,
   previaPadronizacao, aplicarPadronizacao,
   listarLixeira, restaurarRP, purgarLixeira,
 };

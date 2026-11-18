@@ -2526,24 +2526,6 @@ async function runMigrations() {
       console.log(`  ↳ salas por ambiente não concluído (${error.message}) — seguindo`);
     }
 
-    // 73b5. Áreas do R&S (18/11/2026): cadastro próprio do R&S para RPs de áreas/produtos que não são cliente do T&D
-    //       (Staff, Administrativo...). Fica fora da tabela clientes de propósito: não aparece em nenhuma tela do T&D.
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS rs_areas (
-          id         INT PRIMARY KEY AUTO_INCREMENT,
-          empresa_id INT NOT NULL,
-          nome       VARCHAR(120) NOT NULL,
-          ativo      TINYINT(1) DEFAULT 1,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          INDEX idx_rs_areas_empresa (empresa_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-      `);
-      console.log("  ↳ áreas do R&S: ok");
-    } catch (error) {
-      console.log(`  ↳ áreas do R&S não concluído (${error.message}) — seguindo`);
-    }
-
     // 73c. Operação e data de admissão passam a fazer parte do cadastro da pessoa (28/10/2026): antes só
     //      existiam em cada linha de turma e não acompanhavam a pessoa. Preenche a partir da linha de
     //      turma mais recente que tenha o dado; só onde a pessoa ainda não tem (idempotente).

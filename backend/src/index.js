@@ -2917,9 +2917,9 @@ const {
   listarSitesGestao: listarRSSitesGestao,
   criarSite:         criarRSSite,
   editarSite:        editarRSSite,
-  listarAreas:       listarRSAreas,
-  criarArea:         criarRSArea,
-  editarArea:        editarRSArea,
+  listarClientesGestao: listarRSClientesGestao,
+  criarClienteRS:    criarRSCliente,
+  alterarClienteRS:  alterarRSCliente,
   previaPadronizacao: previaRSPadronizacao,
   aplicarPadronizacao: aplicarRSPadronizacao,
   listarLixeira:     listarRSLixeira,
@@ -2973,9 +2973,9 @@ app.get   ("/api/rs/rps-exportar", authRequired, authorizeRoles("coordenador_rs"
 app.get   ("/api/rs/sites-gestao",      authRequired, authorizeRoles("coordenador_rs"), listarRSSitesGestao);
 app.post  ("/api/rs/sites-gestao",      authRequired, authorizeRoles("coordenador_rs"), criarRSSite);
 app.put   ("/api/rs/sites-gestao/:id",  authRequired, authorizeRoles("coordenador_rs"), editarRSSite);
-app.get   ("/api/rs/areas",             authRequired, authorizeRoles("coordenador_rs","gestor_rs"), listarRSAreas);
-app.post  ("/api/rs/areas",             authRequired, authorizeRoles("coordenador_rs"), criarRSArea);
-app.put   ("/api/rs/areas/:id",         authRequired, authorizeRoles("coordenador_rs"), editarRSArea);
+app.get   ("/api/rs/clientes-gestao",     authRequired, authorizeRoles("coordenador_rs"), listarRSClientesGestao);
+app.post  ("/api/rs/clientes-gestao",     authRequired, authorizeRoles("coordenador_rs"), criarRSCliente);
+app.put   ("/api/rs/clientes-gestao/:id", authRequired, authorizeRoles("coordenador_rs"), alterarRSCliente);
 app.get   ("/api/rs/padronizacao",      authRequired, authorizeRoles("coordenador_rs"), previaRSPadronizacao);
 app.post  ("/api/rs/padronizacao",      authRequired, authorizeRoles("coordenador_rs"), aplicarRSPadronizacao);
 app.get   ("/api/rs/lixeira",           authRequired, authorizeRoles("coordenador_rs"), listarRSLixeira);

@@ -90,9 +90,6 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   const [turmasOrigem, setTurmasOrigem] = useState([]); // turmas do T&D que têm esta RP como origem (27/10/2026)
   // Cliente da RP (17/11/2026): clientes ativos do ambiente. Sem nenhum cadastrado, o Produto segue em texto livre.
   const [clientes, setClientes] = useState([]);
-  // Áreas do R&S (cadastro próprio, fora do T&D): Staff, Administrativo, outros produtos. Escolher uma área grava o Produto com o nome dela, sem cliente.
-  const [areas, setAreas] = useState([]);
-  const [modoOutro, setModoOutro] = useState(false); // true = a RP é de uma área (form.produto guarda o nome)
 
   const carregarBerco = useCallback(async (id) => {
     try {
@@ -109,7 +106,6 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   useEffect(() => {
     if (!open) return;
     apiFetch("/rs/clientes").then((r) => setClientes(Array.isArray(r?.clientes) ? r.clientes : [])).catch(() => setClientes([]));
-    apiFetch("/rs/areas").then((r) => setAreas(Array.isArray(r?.areas) ? r.areas : [])).catch(() => setAreas([]));
   }, [open]);
 
   useEffect(() => {
@@ -135,10 +131,8 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
         observacoes:  rp.observacoes || "",
         cliente_id:   rp.cliente_id ? String(rp.cliente_id) : "",
       });
-      setModoOutro(!rp.cliente_id); // RP sem cliente do T&D: o Produto (texto) vira a área
     } else {
       setForm(FORM_VAZIO);
-      setModoOutro(false);
     }
     setErro("");
     setDuplicadas(null);
@@ -204,11 +198,10 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   };
 
   const handleSalvar = async (confirmarDuplicada = false) => {
-    const temLista = clientes.length > 0 || areas.length > 0;
-    const usaCliente = clientes.length > 0 && !modoOutro;
-    if (temLista && !modoOutro && !form.cliente_id) { setErro("Escolha o cliente ou a área da RP."); return; }
-    if (!form.site) { setErro("O site é obrigatório."); return; }
-    if (!usaCliente && !String(form.produto || "").trim()) { setErro("Informe o produto / área da RP."); return; }
+    const usaCliente = clientes.length > 0;
+    // RP nova, ou antiga que já tem cliente, exige o cliente; RP antiga sem cliente pode seguir (a ligação é opcional).
+    if (usaCliente && !form.cliente_id && (!rp || rp.cliente_id)) { setErro("Escolha o cliente da RP."); return; }
+    if (!form.site || (!usaCliente && !form.produto)) { setErro(usaCliente ? "Site e Cliente são obrigatórios." : "Site e Produto são obrigatórios."); return; }
     if (!form.data_recebimento) { setErro("Informe a data de recebimento da RP — sem ela o prazo (SLA) não é calculado."); return; }
     setSaving(true); setErro("");
     try {
@@ -217,11 +210,8 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
         const cli = clientes.find((c) => String(c.id) === String(form.cliente_id));
         payload.cliente_id = Number(form.cliente_id);
         if (cli) payload.produto = cli.nome; // o Produto da RP é o nome do cliente
-      } else if (modoOutro) {
-        payload.cliente_id = null; // área/produto fora do T&D: sem vínculo de cliente
-        payload.produto = String(form.produto || "").trim();
       } else {
-        delete payload.cliente_id; // ambiente sem clientes cadastrados: não mexe no vínculo
+        delete payload.cliente_id; // RP antiga sem cliente: não mexe no vínculo
       }
       if (payload.mes_referencia?.length === 7) payload.mes_referencia += "-01";
       if (rp) {
@@ -300,41 +290,20 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
           </div>
 
           {/* Cliente da RP (17/11/2026) — ou Produto em texto livre se o ambiente não tem clientes ativos */}
-          {(clientes.length > 0 || areas.length > 0) && (
+          {clientes.length > 0 ? (
             <div>
-              <label style={labelSt}>Cliente / Área *</label>
-              <select
-                value={modoOutro ? `a:${form.produto}` : form.cliente_id}
-                onChange={e => {
-                  const v = e.target.value;
-                  if (v.startsWith("a:")) { setModoOutro(true); set("cliente_id", ""); set("produto", v.slice(2)); }
-                  else { setModoOutro(false); set("cliente_id", v); }
-                }}
-                style={inputSt}
-              >
-                <option value="">Selecione...</option>
-                {clientes.length > 0 && (
-                  <optgroup label="Clientes">
-                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </optgroup>
-                )}
-                {(areas.length > 0 || (modoOutro && form.produto)) && (
-                  <optgroup label="Áreas do R&S">
-                    {areas.map(a => <option key={`a${a.id}`} value={`a:${a.nome}`}>{a.nome}</option>)}
-                    {modoOutro && form.produto && !areas.some(a => a.nome === form.produto) && (
-                      <option value={`a:${form.produto}`}>{form.produto} (atual)</option>
-                    )}
-                  </optgroup>
-                )}
+              <label style={labelSt}>Cliente *</label>
+              <select value={form.cliente_id} onChange={e => set("cliente_id", e.target.value)} style={inputSt}>
+                <option value="">Selecione o cliente...</option>
+                {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
               <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
-                {modoOutro
-                  ? "Área do R&S: não é cliente do T&D e não aparece para abrir turma."
-                  : "Cliente: o T&D usa para listar a RP ao abrir a turma. Staff, Administrativo e outras áreas: cadastre em Configurações R&S > Áreas."}
+                {rp && !rp.cliente_id
+                  ? `Esta RP ainda não está ligada a um cliente (produto atual: "${rp.produto}"). Ligue-a para o T&D abrir turmas a partir dela.`
+                  : "O T&D usa o cliente para listar a RP ao abrir a turma. Falta um cliente (inclusive Staff, Administrativo)? Cadastre em Configurações R&S > Clientes."}
               </p>
             </div>
-          )}
-          {clientes.length === 0 && areas.length === 0 && (
+          ) : (
           <div style={{ position: "relative" }}>
             <label style={labelSt}>Produto / Cliente *</label>
             <input
@@ -344,7 +313,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
               placeholder="Safra, Dasa, Cemig..." style={inputSt}
             />
             <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
-              Nenhum cliente ativo nem área cadastrada. Cadastre clientes em Clientes e áreas (Staff, Administrativo...) em Configurações R&S.
+              Nenhum cliente ativo neste ambiente. Cadastre em Clientes, nas Configurações R&S, para ligar a RP ao cliente.
             </p>
             {showSug && sugestoes.length > 0 && (
               <div style={{
@@ -825,7 +794,7 @@ export default function RPsPage() {
                     )}
                     <Td bold>
                       {rp.produto}
-                      {semClienteInfo.ambienteTemClientes && !rp.cliente_id && !rp.area_rs && rp.status !== "CANCELADA" ? (
+                      {semClienteInfo.ambienteTemClientes && !rp.cliente_id && rp.status !== "CANCELADA" ? (
                         <span title="Esta RP não está ligada a um cliente. Edite a RP e escolha o cliente para o T&D abrir turmas a partir dela."
                               style={{ marginLeft: 6, padding: "1px 7px", borderRadius: 999, background: "#fef3c7", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "help" }}>Sem cliente</span>
                       ) : null}
@@ -1180,6 +1149,8 @@ function SemClienteModal({ onClose, onSalvo }) {
   const [rps, setRps] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [ambiente, setAmbiente] = useState(null);
+  const [novoCliente, setNovoCliente] = useState("");
+  const [cadastrando, setCadastrando] = useState(false);
   const [escolha, setEscolha] = useState({}); // rp_id -> cliente_id (texto)
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -1206,6 +1177,19 @@ function SemClienteModal({ onClose, onSalvo }) {
   useEffect(() => { carregar(); }, [carregar]);
 
   const marcadas = rps.filter((x) => escolha[x.id]);
+
+  async function cadastrarCliente() {
+    const nome = novoCliente.trim();
+    if (!nome) return;
+    setCadastrando(true); setErro(""); setOk("");
+    try {
+      const r = await apiFetch("/rs/clientes-gestao", { method: "POST", body: JSON.stringify({ nome }) });
+      setNovoCliente("");
+      await carregar(); // o cliente novo já entra na lista e, onde o produto combina, vem sugerido
+      setOk(r?.message || "Cliente cadastrado.");
+    } catch (e) { setErro(e.message || "Não foi possível cadastrar o cliente."); }
+    finally { setCadastrando(false); }
+  }
 
   async function salvar() {
     if (!marcadas.length) { setErro("Escolha o cliente de pelo menos uma RP."); return; }
@@ -1236,6 +1220,16 @@ function SemClienteModal({ onClose, onSalvo }) {
             <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 4 }}>
               Estas RPs ainda não têm cliente. Onde o produto combina com um cliente, o portal já deixa o cliente escolhido; confira e clique em Ligar. O texto do Produto não muda.
             </div>
+            {!carregando && (
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <input value={novoCliente} onChange={(e) => setNovoCliente(e.target.value)} maxLength={150}
+                  onKeyDown={(e) => { if (e.key === "Enter" && novoCliente.trim() && !cadastrando) cadastrarCliente(); }}
+                  placeholder="Novo cliente (ex.: Staff, Administrativo, Cemig)"
+                  style={{ ...inputSt, padding: "6px 10px", minWidth: 260, flex: "0 1 320px" }} />
+                <button onClick={cadastrarCliente} disabled={cadastrando || !novoCliente.trim()}
+                  style={{ ...btnPrim, padding: "6px 14px", fontSize: 12, opacity: !novoCliente.trim() ? 0.5 : 1 }}>+ Cadastrar cliente</button>
+              </div>
+            )}
             {!carregando && (
               <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 6 }}>
                 {ambiente ? <>Ambiente <strong>{ambiente}</strong> · </> : null}
@@ -1268,7 +1262,7 @@ function SemClienteModal({ onClose, onSalvo }) {
                     <Td bold>{rp.produto}<div style={{ fontWeight: 400, fontSize: 11, color: colors.textMuted }}>{rp.site} · {rp.setor === "OPERACIONAL" ? "Operacional" : "Estratégico"}{rp.cargo ? ` · ${rp.cargo}` : ""}{rp.chamado ? ` · ${rp.chamado}` : ""}</div>
                       {rp.cliente_em_outro_ambiente && (
                         <div style={{ fontWeight: 600, fontSize: 11, color: "#92400e", marginTop: 3 }}>
-                          Esse cliente está cadastrado em outro ambiente, não neste. Cadastre-o em Clientes neste ambiente para ligar aqui.
+                          Esse cliente só existe em outro ambiente. Cadastre-o aqui neste ambiente (campo "Novo cliente" acima) para ligar.
                         </div>
                       )}</Td>
                     <Td muted>{mesLabel(rp.mes)}</Td>
