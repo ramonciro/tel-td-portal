@@ -90,8 +90,9 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   const [turmasOrigem, setTurmasOrigem] = useState([]); // turmas do T&D que têm esta RP como origem (27/10/2026)
   // Cliente da RP (17/11/2026): clientes ativos do ambiente. Sem nenhum cadastrado, o Produto segue em texto livre.
   const [clientes, setClientes] = useState([]);
-  // "Outro": RP de área/produto que não é cliente do T&D (Staff, Administrativo, outros produtos) — Produto em texto livre.
-  const [modoOutro, setModoOutro] = useState(false);
+  // Áreas do R&S (cadastro próprio, fora do T&D): Staff, Administrativo, outros produtos. Escolher uma área grava o Produto com o nome dela, sem cliente.
+  const [areas, setAreas] = useState([]);
+  const [modoOutro, setModoOutro] = useState(false); // true = a RP é de uma área (form.produto guarda o nome)
 
   const carregarBerco = useCallback(async (id) => {
     try {
@@ -108,6 +109,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   useEffect(() => {
     if (!open) return;
     apiFetch("/rs/clientes").then((r) => setClientes(Array.isArray(r?.clientes) ? r.clientes : [])).catch(() => setClientes([]));
+    apiFetch("/rs/areas").then((r) => setAreas(Array.isArray(r?.areas) ? r.areas : [])).catch(() => setAreas([]));
   }, [open]);
 
   useEffect(() => {
@@ -133,7 +135,7 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
         observacoes:  rp.observacoes || "",
         cliente_id:   rp.cliente_id ? String(rp.cliente_id) : "",
       });
-      setModoOutro(!rp.cliente_id); // RP sem cliente do T&D segue com o Produto em texto
+      setModoOutro(!rp.cliente_id); // RP sem cliente do T&D: o Produto (texto) vira a área
     } else {
       setForm(FORM_VAZIO);
       setModoOutro(false);
@@ -202,8 +204,9 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
   };
 
   const handleSalvar = async (confirmarDuplicada = false) => {
+    const temLista = clientes.length > 0 || areas.length > 0;
     const usaCliente = clientes.length > 0 && !modoOutro;
-    if (clientes.length > 0 && !modoOutro && !form.cliente_id) { setErro("Escolha o cliente da RP ou marque \"Outro\"."); return; }
+    if (temLista && !modoOutro && !form.cliente_id) { setErro("Escolha o cliente ou a área da RP."); return; }
     if (!form.site) { setErro("O site é obrigatório."); return; }
     if (!usaCliente && !String(form.produto || "").trim()) { setErro("Informe o produto / área da RP."); return; }
     if (!form.data_recebimento) { setErro("Informe a data de recebimento da RP — sem ela o prazo (SLA) não é calculado."); return; }
@@ -297,45 +300,52 @@ function RPModal({ open, rp, sites, onClose, onSaved }) {
           </div>
 
           {/* Cliente da RP (17/11/2026) — ou Produto em texto livre se o ambiente não tem clientes ativos */}
-          {clientes.length > 0 && (
+          {(clientes.length > 0 || areas.length > 0) && (
             <div>
-              <label style={labelSt}>Cliente *</label>
+              <label style={labelSt}>Cliente / Área *</label>
               <select
-                value={modoOutro ? "__outro" : form.cliente_id}
+                value={modoOutro ? `a:${form.produto}` : form.cliente_id}
                 onChange={e => {
                   const v = e.target.value;
-                  if (v === "__outro") { setModoOutro(true); set("cliente_id", ""); }
+                  if (v.startsWith("a:")) { setModoOutro(true); set("cliente_id", ""); set("produto", v.slice(2)); }
                   else { setModoOutro(false); set("cliente_id", v); }
                 }}
                 style={inputSt}
               >
-                <option value="">Selecione o cliente...</option>
-                {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                <option value="__outro">Outro (Staff, Administrativo, outro produto...)</option>
+                <option value="">Selecione...</option>
+                {clientes.length > 0 && (
+                  <optgroup label="Clientes">
+                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </optgroup>
+                )}
+                {(areas.length > 0 || (modoOutro && form.produto)) && (
+                  <optgroup label="Áreas do R&S">
+                    {areas.map(a => <option key={`a${a.id}`} value={`a:${a.nome}`}>{a.nome}</option>)}
+                    {modoOutro && form.produto && !areas.some(a => a.nome === form.produto) && (
+                      <option value={`a:${form.produto}`}>{form.produto} (atual)</option>
+                    )}
+                  </optgroup>
+                )}
               </select>
               <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
                 {modoOutro
-                  ? "Para RPs de áreas ou produtos que não são cliente do T&D. Elas não aparecem para abrir turma."
-                  : rp && !rp.cliente_id
-                    ? `Esta RP ainda não está ligada a um cliente (produto atual: "${rp.produto}").`
-                    : "O T&D usa o cliente para listar a RP ao abrir a turma. Falta um cliente? Cadastre em Clientes."}
+                  ? "Área do R&S: não é cliente do T&D e não aparece para abrir turma."
+                  : "Cliente: o T&D usa para listar a RP ao abrir a turma. Staff, Administrativo e outras áreas: cadastre em Configurações R&S > Áreas."}
               </p>
             </div>
           )}
-          {(clientes.length === 0 || modoOutro) && (
+          {clientes.length === 0 && areas.length === 0 && (
           <div style={{ position: "relative" }}>
-            <label style={labelSt}>{clientes.length > 0 ? "Produto / Área *" : "Produto / Cliente *"}</label>
+            <label style={labelSt}>Produto / Cliente *</label>
             <input
               value={form.produto}
               onChange={e => { set("produto", e.target.value); buscarProdutos(e.target.value); setShowSug(true); }}
               onBlur={() => setTimeout(() => setShowSug(false), 150)}
-              placeholder={clientes.length > 0 ? "Staff, Administrativo, outro produto..." : "Safra, Dasa, Cemig..."} style={inputSt}
+              placeholder="Safra, Dasa, Cemig..." style={inputSt}
             />
-            {clientes.length === 0 && (
-              <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
-                Nenhum cliente ativo cadastrado neste ambiente. Cadastre em Clientes para ligar a RP ao cliente.
-              </p>
-            )}
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: colors.textMuted }}>
+              Nenhum cliente ativo nem área cadastrada. Cadastre clientes em Clientes e áreas (Staff, Administrativo...) em Configurações R&S.
+            </p>
             {showSug && sugestoes.length > 0 && (
               <div style={{
                 position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10,
@@ -815,7 +825,7 @@ export default function RPsPage() {
                     )}
                     <Td bold>
                       {rp.produto}
-                      {semClienteInfo.ambienteTemClientes && !rp.cliente_id && rp.status !== "CANCELADA" ? (
+                      {semClienteInfo.ambienteTemClientes && !rp.cliente_id && !rp.area_rs && rp.status !== "CANCELADA" ? (
                         <span title="Esta RP não está ligada a um cliente. Edite a RP e escolha o cliente para o T&D abrir turmas a partir dela."
                               style={{ marginLeft: 6, padding: "1px 7px", borderRadius: 999, background: "#fef3c7", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "help" }}>Sem cliente</span>
                       ) : null}

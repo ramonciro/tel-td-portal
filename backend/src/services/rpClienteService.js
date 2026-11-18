@@ -19,6 +19,7 @@
  */
 
 const pool = require("../lib/db");
+const { chavesDeAreas, semAcento: semAcentoArea } = require("../lib/rsAreas");
 
 const semAcento = (s) =>
   String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -175,7 +176,8 @@ async function rpsSemCliente(empresaId) {
       ORDER BY mes_referencia DESC, id DESC LIMIT 300`,
     [empresaId]
   );
-  const lista = rps.map((r) => {
+  const areas = await chavesDeAreas(empresaId);
+  const lista = rps.filter((r) => !areas.has(semAcentoArea(r.produto))).map((r) => {
     const s = sugerirCliente(r.produto, clientes);
     return { ...r, cliente_sugerido_id: s ? s.id : null };
   });

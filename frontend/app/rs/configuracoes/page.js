@@ -5,7 +5,7 @@ import Link from "next/link";
 import PortalShell from "../../../components/PortalShell";
 import PageHero    from "../../../components/PageHero";
 import { apiFetch } from "../../../services/api";
-import { SitesCard, PadronizacaoCard } from "../../../components/RSCadastros";
+import { SitesCard, AreasCard, PadronizacaoCard } from "../../../components/RSCadastros";
 import { colors } from "../../../lib/theme";
 
 export default function RSConfiguracoes() {
@@ -80,6 +80,7 @@ export default function RSConfiguracoes() {
       <div style={{ marginTop: 16, display: "grid", gap: 16 }}>
 
         <SitesCard />
+        <AreasCard />
         <PadronizacaoCard />
 
         {/* ── Importação de planilha ── */}

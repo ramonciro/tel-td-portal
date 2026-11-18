@@ -171,6 +171,111 @@ export function SitesCard() {
   );
 }
 
+// ─── Áreas do R&S (Staff, Administrativo...) ────────────────────────
+export function AreasCard() {
+  const [areas, setAreas] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [novo, setNovo] = useState("");
+  const [editandoId, setEditandoId] = useState(null);
+  const [nomeEdit, setNomeEdit] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  const carregar = useCallback(async () => {
+    try {
+      const r = await apiFetch("/rs/areas?todas=1");
+      setAreas(Array.isArray(r?.areas) ? r.areas : []);
+    } catch (e) { setMsg({ tipo: "erro", texto: e.message || "Não foi possível carregar as áreas." }); }
+    finally { setCarregando(false); }
+  }, []);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  async function executar(fn) {
+    setOcupado(true); setMsg(null);
+    try { await fn(); await carregar(); }
+    catch (e) { setMsg({ tipo: "erro", texto: e.message || "Não foi possível concluir." }); }
+    finally { setOcupado(false); }
+  }
+  const cadastrar = () => executar(async () => {
+    const r = await apiFetch("/rs/areas", { method: "POST", body: JSON.stringify({ nome: novo }) });
+    setMsg({ tipo: "ok", texto: r.message || "Área cadastrada." }); setNovo("");
+  });
+  const salvarNome = (a) => executar(async () => {
+    const r = await apiFetch(`/rs/areas/${a.id}`, { method: "PUT", body: JSON.stringify({ nome: nomeEdit }) });
+    setMsg({ tipo: "ok", texto: r.message }); setEditandoId(null);
+  });
+  const alternarAtivo = (a) => executar(async () => {
+    const r = await apiFetch(`/rs/areas/${a.id}`, { method: "PUT", body: JSON.stringify({ ativo: !a.ativo }) });
+    setMsg({ tipo: "ok", texto: r.message });
+  });
+
+  return (
+    <div style={card}>
+      <h2 style={cardTitle}>🏢 Áreas do R&S</h2>
+      <p style={cardDesc}>
+        Áreas e produtos que <strong>não são cliente do T&D</strong> (Staff, Administrativo, etc.). Ficam só no R&S: aparecem na lista de
+        Cliente / Área da RP, mas não entram em Clientes, turmas nem em nenhuma tela do T&D.
+      </p>
+      {msg && <div style={aviso(msg.tipo)}>{msg.texto}</div>}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <input value={novo} onChange={(e) => setNovo(e.target.value)} placeholder="Nova área (ex.: Staff, Administrativo)"
+          onKeyDown={(e) => { if (e.key === "Enter" && novo.trim() && !ocupado) cadastrar(); }}
+          style={{ ...inputSt, flex: 1, minWidth: 220 }} maxLength={120} />
+        <button onClick={cadastrar} disabled={ocupado || !novo.trim()} style={{ ...btnPrim, opacity: !novo.trim() ? 0.5 : 1 }}>+ Cadastrar área</button>
+      </div>
+      {carregando ? (
+        <p style={{ color: colors.textMuted, fontSize: 13 }}>Carregando áreas...</p>
+      ) : areas.length === 0 ? (
+        <p style={{ color: colors.textMuted, fontSize: 13 }}>Nenhuma área ainda. Cadastre a primeira acima.</p>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#f8fafc" }}>
+              <th style={th}>Área</th><th style={{ ...th, textAlign: "right" }}>RPs</th><th style={th}>Situação</th><th style={{ ...th, textAlign: "right" }}>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {areas.map((a) => {
+              const editando = editandoId === a.id;
+              return (
+                <tr key={a.id} style={{ borderBottom: "1px solid #f1f5f9", opacity: a.ativo ? 1 : 0.6 }}>
+                  <td style={{ padding: "9px 12px", fontWeight: 600, color: colors.textPrimary }}>
+                    {editando ? (
+                      <input value={nomeEdit} onChange={(e) => setNomeEdit(e.target.value)} maxLength={120} autoFocus
+                        onKeyDown={(e) => { if (e.key === "Enter") salvarNome(a); if (e.key === "Escape") setEditandoId(null); }}
+                        style={{ ...inputSt, width: "100%" }} />
+                    ) : a.nome}
+                  </td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", color: colors.textSecondary }}>{a.rps}</td>
+                  <td style={{ padding: "9px 12px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 999, padding: "3px 10px",
+                      color: a.ativo ? colors.successText : colors.neutral, background: a.ativo ? colors.successLight : colors.neutralLight }}>
+                      {a.ativo ? "Ativa" : "Desativada"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                    {editando ? (
+                      <>
+                        <button onClick={() => salvarNome(a)} disabled={ocupado || !nomeEdit.trim()} style={{ ...btnPrim, padding: "5px 12px" }}>Salvar</button>{" "}
+                        <button onClick={() => setEditandoId(null)} style={btnSec}>Cancelar</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => { setEditandoId(a.id); setNomeEdit(a.nome); setMsg(null); }} style={btnSec}>Renomear</button>{" "}
+                        <button onClick={() => alternarAtivo(a)} disabled={ocupado} style={btnSec}>{a.ativo ? "Desativar" : "Reativar"}</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ─── Padronização dos nomes que já estão no banco ──────────────────
 const ROTULO_CAMPO = { site: "Site", produto: "Produto", cargo: "Cargo" };
 

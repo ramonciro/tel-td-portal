@@ -1,7 +1,13 @@
-R&S - RP com opção "Outro" no campo Cliente
+R&S - Áreas do R&S (Staff, Administrativo...) fora do T&D
 
-Arquivo alterado (1): frontend/app/rs/rps/page.js
+Cadastro próprio do R&S, separado dos clientes do T&D.
+- Configurações R&S > novo card "Áreas do R&S": cadastrar, renomear (RPs acompanham), desativar/reativar. Só coordenador R&S edita.
+- Nova/Editar RP: lista "Cliente / Área" com dois grupos: Clientes (do T&D) e Áreas do R&S. Área grava o Produto com o nome dela, sem cliente.
+- T&D não vê as áreas: não entram em Clientes, nem na lista de RPs para abrir turma (nem em "ver de todos os clientes"),
+  nem no aviso/selo "RPs sem cliente". Nome de área igual a cliente do T&D é recusado.
+- Migração automática (tabela rs_areas) ao subir o backend. Sem dados antigos alterados.
 
-Na tela de RP (Nova/Editar), a lista Cliente ganhou a opção "Outro (Staff, Administrativo, outro produto...)".
-Ao escolher, aparece o campo Produto / Área em texto livre (com sugestões de produtos já usados).
-RP "Outro" não fica ligada a cliente do T&D (não aparece para abrir turma). Backend não muda; só frontend (Vercel).
+Arquivos (10): backend: lib/rsAreas.js (novo), database/migrate.js, controllers/rsGestaoController.js, controllers/rsController.js,
+services/rpOrigemService.js, services/rpClienteService.js, index.js. frontend: components/RSCadastros.js,
+app/rs/configuracoes/page.js, app/rs/rps/page.js.
+Substitui o zip anterior "rs-rp-opcao-outro" (não precisa subir aquele).

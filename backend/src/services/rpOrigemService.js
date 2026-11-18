@@ -20,6 +20,7 @@
 const pool = require("../lib/db");
 const { nomesAvaliacaoTecnica } = require("../lib/subtipos");
 const { rpsTemClienteId, clientesAtivos, produtoCasaComCliente } = require("./rpClienteService");
+const { chavesDeAreas, semAcento: semAcentoArea } = require("../lib/rsAreas");
 
 const TOLERANCIA_DIAS = 3;
 
@@ -96,6 +97,9 @@ async function carregarRPsAbertas(empresaId, { apenasOperacionais = false } = {}
         for (const r of rows) r.cliente_nome = r.cliente_id ? (nomes.get(r.cliente_id) || null) : null;
       }
     }
+    // RPs de áreas do R&S (Staff, Administrativo...) não são do T&D: nunca entram nas listas de origem de turma.
+    const areas = await chavesDeAreas(empresaId);
+    if (areas.size) return rows.filter((r) => !(!r.cliente_id && areas.has(semAcentoArea(r.produto))));
     return rows;
   } catch (e) {
     if (semColuna(e)) return [];
