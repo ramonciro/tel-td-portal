@@ -150,7 +150,7 @@ function perfilPodeExcluirUsuario() {
 }
 // Varredura 13/11/2026 (C1): contas do Núcleo/RH só são criadas pelo coordenador do próprio módulo (ou super_admin) e o
 // Supervisor só cria 4 perfis. Espelho de backend/src/lib/perfilScope.js — quem decide é sempre a API.
-const PERFIS_MODULO_PRIVADO_UI = ["coordenador_nusp", "analista_nusp", "gestor_nusp", "coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh"];
+const PERFIS_MODULO_PRIVADO_UI = ["coordenador_nusp", "analista_nusp", "gestor_nusp", "coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh", "coordenador_rs", "gestor_rs", "metodologia"];
 const PERFIS_DO_SUPERVISOR_UI = ["instrutor", "treinando", "assistente_treinamento", "analista_conteudo"];
 function escopoPerfilDoUsuarioLogado() {
   const usuario = getStoredUser();

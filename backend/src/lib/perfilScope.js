@@ -49,15 +49,19 @@ function escopoPerfilFor(req) {
 }
 
 /**
- * Perfis de módulo isolado (Núcleo e RH) — decisão do Ramon (14/11/2026): as contas desses
- * módulos só são criadas, editadas, desativadas ou excluídas pelo coordenador do próprio módulo
- * ou pelo super_admin. Coordenador, Supervisor e Superintendente do T&D não mexem nelas e nem
- * as enxergam na lista de Gestão de Usuários. Antes disso, qualquer um desses três podia criar
- * um coordenador do Núcleo/RH, ou trocar a senha dele e entrar na conta.
+ * Perfis de módulo isolado (Núcleo, RH, R&S e Metodologia) — decisão do Ramon (14/11/2026 para
+ * Núcleo/RH; 18/11/2026 estendida a R&S e Metodologia): cada módulo só é visto por quem pertence a
+ * ele. As contas do módulo só são criadas, editadas, desativadas ou excluídas pelo coordenador do
+ * próprio módulo ou pelo super_admin. Coordenador, Supervisor e Superintendente do T&D não mexem
+ * nelas e nem as enxergam na lista de Gestão de Usuários. Antes disso, qualquer um desses três
+ * podia criar uma conta de R&S/Núcleo/RH/Metodologia (inclusive no próprio ambiente), ou trocar a
+ * senha de uma e entrar na conta.
  */
 const PERFIS_MODULO_PRIVADO = [
   "coordenador_nusp", "analista_nusp", "gestor_nusp",
   "coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh",
+  "coordenador_rs", "gestor_rs",
+  "metodologia",
 ];
 
 /** Perfis que o Supervisor pode criar e editar (ele não sobe de perfil nem mexe em quem está acima). */
@@ -96,7 +100,7 @@ function motivoDeBloqueioDeUsuario(req, { antes, novoPerfil, mudaAtivo }) {
 
   if (atorSemEscopoDeModulo(req)) {
     if (ehPerfilModuloPrivado(perfilAntes) || ehPerfilModuloPrivado(perfilFinal)) {
-      return "Contas do Núcleo e do RH só são gerenciadas pelo coordenador do próprio módulo.";
+      return "Contas do Núcleo, do RH, do R&S e da Metodologia só são gerenciadas pelo coordenador do próprio módulo.";
     }
     if (perfilAtor === "supervisor") {
       const alvos = [perfilAntes, perfilFinal || "instrutor"].filter((v) => v !== null);

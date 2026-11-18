@@ -1,10 +1,15 @@
-Correção: "Vincular RPs sugeridas" só sugere RP do mesmo cliente (17/11/2026)
+Módulos isolados: R&S e Metodologia só para quem é do módulo (18/11/2026)
 
-Antes a sugestão usava só a data (até 3 dias) e podia propor RP da Dasa para turma do Mercantil.
-Agora:
-- Vincular RPs sugeridas: só sugere RP do mesmo cliente da turma (pelo cliente ligado à RP; RP antiga sem cliente, pelo nome do produto). Turma sem cliente informado fica sem sugestão.
-- Seletor de RP no formulário da turma: com "Mostrar RPs de outros clientes", a lista continua completa, mas a marca "sugerida" só vale para RP do cliente da turma.
-- Texto do modal atualizado.
+Brecha: a trava de "cada módulo só é visto por quem pertence a ele" existia só para Núcleo e RH. Coordenador, Supervisor e Superintendente do T&D conseguiam, em Gestão de Usuários:
+- criar uma conta Coordenador R&S, Gestor R&S ou Metodologia no próprio ambiente (e assim ver o R&S);
+- trocar a senha, desativar ou excluir uma conta dessas e entrar com ela;
+- ver essas contas na lista.
 
-Atenção: se a RP não estiver ligada a um cliente (menu RPs do R&S) e o nome do produto não bater com o cliente, ela deixa de ser sugerida; é só ligar o cliente na RP.
-Sem migração. Suba backend e frontend mantendo os caminhos.
+Agora R&S (coordenador_rs, gestor_rs) e Metodologia entram na mesma regra do Núcleo e do RH:
+- só o coordenador do próprio módulo e o Super Admin criam, editam, desativam ou excluem essas contas;
+- Coordenador, Supervisor e Superintendente do T&D não as veem na lista nem mexem nelas;
+- no formulário, essas opções de perfil não aparecem para o T&D.
+O coordenador do R&S continua criando Coordenador R&S e Gestor R&S, e a Metodologia continua gerenciando a Metodologia. Sem migração.
+
+IMPORTANTE (dados que já existem): o pacote não apaga nada. Se já existe conta R&S/Metodologia criada por engano no ambiente de São Paulo (ou em outro ambiente de treinamento), o Super Admin precisa desativá-la ou trocar o perfil em Gestão de Usuários.
+Suba backend e frontend mantendo os caminhos.
