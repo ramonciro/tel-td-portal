@@ -1179,6 +1179,7 @@ function LixeiraModal({ onClose, onRestaurada }) {
 function SemClienteModal({ onClose, onSalvo }) {
   const [rps, setRps] = useState([]);
   const [clientes, setClientes] = useState([]);
+  const [ambiente, setAmbiente] = useState(null);
   const [escolha, setEscolha] = useState({}); // rp_id -> cliente_id (texto)
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -1191,6 +1192,7 @@ function SemClienteModal({ onClose, onSalvo }) {
       const lista = Array.isArray(r?.rps) ? r.rps : [];
       setRps(lista);
       setClientes(Array.isArray(r?.clientes) ? r.clientes : []);
+      setAmbiente(r?.ambiente || null);
       // A sugestão do portal vem pré-marcada; a pessoa confere antes de gravar.
       setEscolha((atual) => {
         const novo = { ...atual };
@@ -1234,6 +1236,13 @@ function SemClienteModal({ onClose, onSalvo }) {
             <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 4 }}>
               Estas RPs ainda não têm cliente. Onde o produto combina com um cliente, o portal já deixa o cliente escolhido; confira e clique em Ligar. O texto do Produto não muda.
             </div>
+            {!carregando && (
+              <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 6 }}>
+                {ambiente ? <>Ambiente <strong>{ambiente}</strong> · </> : null}
+                {clientes.length} cliente{clientes.length === 1 ? "" : "s"} ativo{clientes.length === 1 ? "" : "s"} para escolher aqui
+                {clientes.length > 0 && <span style={{ color: colors.textMuted }}> ({clientes.map((c) => c.nome).join(", ")})</span>}
+              </div>
+            )}
           </div>
           <button onClick={onClose} style={{ ...btnAcao, marginRight: 0 }} aria-label="Fechar">✕</button>
         </div>
@@ -1256,7 +1265,12 @@ function SemClienteModal({ onClose, onSalvo }) {
               <tbody>
                 {rps.map((rp) => (
                   <tr key={rp.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <Td bold>{rp.produto}<div style={{ fontWeight: 400, fontSize: 11, color: colors.textMuted }}>{rp.site} · {rp.setor === "OPERACIONAL" ? "Operacional" : "Estratégico"}{rp.cargo ? ` · ${rp.cargo}` : ""}{rp.chamado ? ` · ${rp.chamado}` : ""}</div></Td>
+                    <Td bold>{rp.produto}<div style={{ fontWeight: 400, fontSize: 11, color: colors.textMuted }}>{rp.site} · {rp.setor === "OPERACIONAL" ? "Operacional" : "Estratégico"}{rp.cargo ? ` · ${rp.cargo}` : ""}{rp.chamado ? ` · ${rp.chamado}` : ""}</div>
+                      {rp.cliente_em_outro_ambiente && (
+                        <div style={{ fontWeight: 600, fontSize: 11, color: "#92400e", marginTop: 3 }}>
+                          Esse cliente está cadastrado em outro ambiente, não neste. Cadastre-o em Clientes neste ambiente para ligar aqui.
+                        </div>
+                      )}</Td>
                     <Td muted>{mesLabel(rp.mes)}</Td>
                     <td style={{ padding: "8px 12px" }}>
                       <select value={escolha[rp.id] || ""} onChange={(e) => setEscolha((a) => ({ ...a, [rp.id]: e.target.value }))} style={{ ...inputSt, padding: "6px 8px" }}>

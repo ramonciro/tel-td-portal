@@ -1,13 +1,7 @@
-R&S - Áreas do R&S (Staff, Administrativo...) fora do T&D
+Diagnóstico na tela "Ligar RPs ao cliente" (R&S)
 
-Cadastro próprio do R&S, separado dos clientes do T&D.
-- Configurações R&S > novo card "Áreas do R&S": cadastrar, renomear (RPs acompanham), desativar/reativar. Só coordenador R&S edita.
-- Nova/Editar RP: lista "Cliente / Área" com dois grupos: Clientes (do T&D) e Áreas do R&S. Área grava o Produto com o nome dela, sem cliente.
-- T&D não vê as áreas: não entram em Clientes, nem na lista de RPs para abrir turma (nem em "ver de todos os clientes"),
-  nem no aviso/selo "RPs sem cliente". Nome de área igual a cliente do T&D é recusado.
-- Migração automática (tabela rs_areas) ao subir o backend. Sem dados antigos alterados.
+Arquivos (2): backend/src/services/rpClienteService.js, frontend/app/rs/rps/page.js
 
-Arquivos (10): backend: lib/rsAreas.js (novo), database/migrate.js, controllers/rsGestaoController.js, controllers/rsController.js,
-services/rpOrigemService.js, services/rpClienteService.js, index.js. frontend: components/RSCadastros.js,
-app/rs/configuracoes/page.js, app/rs/rps/page.js.
-Substitui o zip anterior "rs-rp-opcao-outro" (não precisa subir aquele).
+A tela passa a mostrar: o ambiente do login, quantos clientes ativos existem nele (com os nomes) e, por RP,
+um aviso quando o cliente do produto está cadastrado em OUTRO ambiente (nada de outro ambiente é exibido ou ligado).
+Parte do pacote anterior (rs-areas-fora-do-td): este zip contém a versão final desses 2 arquivos, pode subir os dois.

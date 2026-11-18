@@ -167,7 +167,7 @@ async function rpsSemCliente(empresaId) {
   if (!(await rpsTemClienteId())) return { rps: [], clientes: [] };
   const clientes = await clientesAtivos(empresaId);
   // Ambiente sem cliente ativo cadastrado: não há o que ligar.
-  if (!clientes.length) return { rps: [], clientes: [] };
+  if (!clientes.length) return { rps: [], clientes: [], ambiente: null };
   const [rps] = await pool.query(
     `SELECT id, site, setor, produto, cargo, chamado, status,
             DATE_FORMAT(mes_referencia, '%Y-%m') AS mes
@@ -177,11 +177,17 @@ async function rpsSemCliente(empresaId) {
     [empresaId]
   );
   const areas = await chavesDeAreas(empresaId);
+  // Diagnóstico: o produto da RP existe como cliente ATIVO em OUTRO ambiente (só o aviso; nada de outro ambiente é exibido ou ligado).
+  const [outros] = await pool.query(
+    `SELECT nome FROM clientes WHERE empresa_id <> ? AND (status IS NULL OR status <> 'Inativo')`, [empresaId]
+  ).catch(() => [[]]);
+  const nomeAmbiente = await pool.query(`SELECT nome FROM empresas WHERE id = ? LIMIT 1`, [empresaId]).then(([r]) => (r[0] && r[0].nome) || null).catch(() => null);
   const lista = rps.filter((r) => !areas.has(semAcentoArea(r.produto))).map((r) => {
     const s = sugerirCliente(r.produto, clientes);
-    return { ...r, cliente_sugerido_id: s ? s.id : null };
+    const emOutro = !s && !!sugerirCliente(r.produto, outros);
+    return { ...r, cliente_sugerido_id: s ? s.id : null, cliente_em_outro_ambiente: emOutro };
   });
-  return { rps: lista, clientes };
+  return { rps: lista, clientes, ambiente: nomeAmbiente };
 }
 
 module.exports = {
