@@ -37,10 +37,7 @@ function removerCpfSeNecessario(req, linhas) {
   });
 }
 
-function normalizarCpf(valor) {
-  const digitos = String(valor || "").replace(/\D/g, "");
-  return digitos.length === 11 ? digitos : null;
-}
+const { normalizarCpf } = require("../lib/cpf"); // padrão único: 11 dígitos, completa zeros à esquerda perdidos no Excel
 
 function parseLocalDate(dateValue) {
   if (!dateValue) return null;
@@ -650,7 +647,7 @@ async function baixarModeloImportacaoParticipantes(req, res) {
     wsModelo.getCell(headerRow, 7).note =
       "Preencha pelo menos uma das duas: Matrícula ou CPF.";
     wsModelo.getCell(headerRow, 8).note =
-      "Só é aceito com 11 dígitos. Turma de Avaliação Técnica, sem matrícula/login no RH de origem: preencha só o CPF.";
+      "11 dígitos, com zero à esquerda (ex.: 03671373563). A coluna já está como Texto para o Excel não tirar o zero; se o seu CPF perdeu o zero, o portal completa sozinho. Turma de Avaliação Técnica, sem matrícula/login no RH de origem: preencha só o CPF.";
 
     // Linhas de exemplo (itálico/cinza, pra ficar claro que são só ilustração
     // e devem ser apagadas antes de importar) — uma com matrícula, outra só
@@ -676,6 +673,12 @@ async function baixarModeloImportacaoParticipantes(req, res) {
       wsModelo.getRow(row).font = { italic: true, color: { argb: "FF64748B" } };
     });
 
+    // Matrícula e CPF como TEXTO (19/11/2026): como número, o Excel tira o zero à esquerda (03671373563 → 3671373563).
+    for (let row = headerRow + 1; row <= headerRow + 1 + exemplos.length + 15; row++) {
+      wsModelo.getCell(row, 7).numFmt = "@";
+      wsModelo.getCell(row, 8).numFmt = "@";
+    }
+
     // Algumas linhas em branco prontas pra preencher, já com Cliente/Turma/
     // Supervisor desta turma — poupa o preenchimento repetitivo linha a linha.
     for (let i = 0; i < 15; i++) {
@@ -700,6 +703,7 @@ async function baixarModeloImportacaoParticipantes(req, res) {
       { texto: "Colunas obrigatórias: Nome, Cliente, Turma, Supervisor, Operação e Data Admissão." },
       { texto: "Preencha pelo menos uma das colunas Matrícula ou CPF (as duas juntas também funcionam)." },
       { texto: "Turma de Avaliação Técnica, sem matrícula/login no RH de origem: use só a coluna CPF (11 dígitos)." },
+      { texto: "CPF: 11 dígitos, com ou sem pontos e traço (ex.: 03671373563). As colunas Matrícula e CPF do modelo já estão como Texto, para o Excel não apagar o zero à esquerda. Se o seu arquivo veio com o zero perdido (3671373563), o portal completa sozinho; o CPF só é aceito se os dígitos verificadores baterem." },
       { texto: "Data Admissão: pode usar uma data do Excel (como nas duas linhas de exemplo da aba \"Modelo\") ou texto no formato DD/MM/AAAA." },
       { texto: "" },
       { texto: "A aba \"Modelo\" já vem com Cliente, Turma e Supervisor preenchidos com os dados desta turma — troque nome, operação, data de admissão e matrícula/CPF de cada treinando, apague as duas linhas de exemplo (em itálico) e adicione mais linhas se precisar." },

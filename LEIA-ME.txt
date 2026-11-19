@@ -1,16 +1,13 @@
-R&S - sem divisão Cliente/Área; coordenador do R&S cadastra clientes no próprio ambiente
+CPF sem zero à esquerda na importação (e em todo cadastro de CPF)
 
-O que muda:
-- Removida a "Área do R&S" (card, lista da RP, filtros). Staff, Administrativo etc. são clientes comuns.
-- Configurações R&S > novo card "Clientes": o coordenador R&S cadastra e desativa/reativa clientes do ambiente dele
-  (mesma tabela do T&D do ambiente: aparecem nos dois módulos).
-- Tela "Ligar RPs ao cliente": campo "Novo cliente" no topo; ao cadastrar, o cliente já entra na lista e vem sugerido
-  nas RPs com produto igual. Mostra o ambiente, os clientes ativos e avisa quando o cliente da RP só existe em outro ambiente.
-- RP Nova/Editar: lista só de Clientes, com a dica de onde cadastrar.
+Causa: o portal só aceitava CPF com exatamente 11 dígitos. O Excel tira o zero à esquerda de CPF guardado como número
+(03671373563 vira 3671373563, 10 dígitos), e esses CPFs eram descartados (a pessoa entrava na turma sem CPF).
 
-Arquivos (9): backend: database/migrate.js, controllers/rsGestaoController.js, controllers/rsController.js,
-services/rpOrigemService.js, services/rpClienteService.js, index.js. frontend: components/RSCadastros.js,
-app/rs/configuracoes/page.js, app/rs/rps/page.js.
-Substitui os zips "rs-areas-fora-do-td" e "rs-ligar-rps-diagnostico" (não subir aqueles).
-Se você já subiu o das áreas: a tabela rs_areas fica no banco sem uso (inofensiva). RPs que usaram uma área aparecem em
-"Ligar RPs ao cliente" para você ligar ao cliente certo.
+Agora: CPF com 9 ou 10 dígitos é completado com zeros à esquerda, desde que os dígitos verificadores batam
+(se não baterem, continua sendo descartado, para não inventar CPF). CPF com 11 dígitos segue como antes.
+Vale na importação de participantes, inclusão manual, Jornadas, Coaching individual, Reembolso de Transporte e Cadastro de Pessoas.
+O modelo de importação (Baixar modelo) agora vem com Matrícula e CPF como Texto e com a instrução do padrão.
+
+Padrão: 11 dígitos, só números, com zeros à esquerda (com ou sem pontos/traço na digitação).
+Só backend (Railway). 6 arquivos: lib/cpf.js (novo) + 5 que passam a usá-lo.
+Obs.: quem já foi importado sem CPF precisa reimportar a lista da turma (a importação substitui a lista) ou editar o CPF.

@@ -12,10 +12,7 @@ const { resolverPessoa } = require("../services/pessoasService");
 // Cadastro Único de Pessoas (Fase 2, item 5 — 28/09/2026): mesma
 // normalização usada no resto do Cadastro Único (ver pessoasService.js e
 // jornadaParticipantesController.js).
-function normalizarCpf(valor) {
-  const digits = String(valor || "").replace(/\D/g, "");
-  return digits.length === 11 ? digits : null;
-}
+const { normalizarCpf } = require("../lib/cpf"); // padrão único: 11 dígitos, completa zeros à esquerda perdidos no Excel
 
 // Resolve a identidade da pessoa por trás de um coaching individual.
 // Prioridade: (1) CPF informado neste cadastro; (2) sem CPF aqui, mas

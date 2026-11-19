@@ -64,10 +64,7 @@ async function buscarTurmaElegivel(req, treinamentoId) {
   return rows[0] || null;
 }
 
-function normalizarCpf(valor) {
-  const digits = String(valor || "").replace(/\D/g, "");
-  return digits.length === 11 ? digits : null;
-}
+const { normalizarCpf } = require("../lib/cpf"); // padrão único: 11 dígitos, completa zeros à esquerda perdidos no Excel
 
 // Correção de segurança 15/09/2026 (auditoria, Pacote A.1): antes, essa
 // consulta não filtrava por tenant nenhum — qualquer Coordenador conseguia

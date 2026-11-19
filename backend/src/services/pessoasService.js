@@ -35,10 +35,7 @@
  */
 const pool = require("../lib/db");
 
-function normalizarCpf(valor) {
-  const digits = String(valor || "").replace(/\D/g, "");
-  return digits.length === 11 ? digits : null;
-}
+const { normalizarCpf } = require("../lib/cpf"); // padrão único: 11 dígitos, completa zeros à esquerda perdidos no Excel
 
 function normalizarNome(valor) {
   return String(valor || "").trim().toLowerCase().replace(/\s+/g, " ");
