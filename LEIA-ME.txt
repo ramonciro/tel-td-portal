@@ -1,12 +1,13 @@
-Avaliação individual: encerrar com desistentes / sem notas
-==========================================================
+Visão geral da turma: pendências de chamada corretas
+====================================================
 Arquivos (subir no GitHub, mantendo as pastas):
-  backend/src/controllers/rotinaController.js
-  frontend/app/turma/[id]/rotina/page.js
+  backend/src/controllers/turmaAulasController.js
+  frontend/app/turma/[id]/page.js
 
-O que muda:
-- Quem foi marcado como Desistência na turma (botão "Desistência" em Participantes) sai da avaliação individual e não exige notas. Aparece apenas uma observação listando os desistentes.
-- Candidato ainda ativo que não pode ser pontuado: deixe as notas em branco, marque "Reprovado" e preencha a Observação com o motivo. Assim a avaliação pode ser registrada.
-- Aprovado / Em berço continuam exigindo todas as notas.
-- Reprovado sem notas e sem observação continua bloqueando ("sem notas: informe o motivo na observação").
-Sem alteração de banco.
+Problema: a Visão geral contava "aulas sem chamada" pelo STATUS da aula (Planejada), que é manual. Aula com chamada feita mas status Planejada aparecia como pendente (ex.: 6 pendências com todas as chamadas lançadas).
+Correção:
+- A API de aulas passa a informar se a chamada foi lançada (chamada_lancada).
+- Aula conta como "com chamada" se está Concluída/Em andamento OU tem chamada lançada.
+- Pendência = aula que já passou (data até hoje) e continua sem chamada. Aula futura e aula cancelada não entram.
+- "Aderência" e "Próxima aula" seguem a mesma regra.
+Sem alteração de banco. A regra das 3 faltas NÃO está neste pacote.

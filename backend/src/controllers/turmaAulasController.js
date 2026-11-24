@@ -3,6 +3,7 @@ const { montarLinhasCronograma, toDateOnly: toDateOnlyGerador } = require("../li
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { usuarioTemAcessoAoCliente } = require("../lib/acessoCliente");
 const { planejarImportacao, gravarImportacao } = require("../services/presencaLegadaParaCronograma");
+const { sqlSemDesistente } = require("../services/turmaRegras");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga o cronograma de qualquer tenant nesta
@@ -154,7 +155,10 @@ async function listTurmaAulas(req, res) {
         a.motivo_reprogramacao,
         a.ministrada_em,
         a.criado_em,
-        a.atualizado_em
+        a.atualizado_em,
+        (SELECT COUNT(*) FROM presenca_aulas x
+          WHERE x.turma_aula_id = a.id AND x.status IN ('presente','ausente','justificado')
+            AND ${sqlSemDesistente("x")}) AS chamada_lancada
       FROM turma_aulas a
       JOIN treinamentos t ON t.id = a.treinamento_id
       WHERE a.treinamento_id = ?${tenantJoinTreinamento(req)}

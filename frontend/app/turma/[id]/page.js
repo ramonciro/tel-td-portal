@@ -124,13 +124,19 @@ export default function GestaoTurmaPage() {
   }
 
   const resumo = useMemo(() => {
-    const totalAulas        = aulas.length;
-    const aulasComPresenca  = aulas.filter((a) =>
-      ["concluida", "em_andamento"].includes(String(a.status_execucao || "").toLowerCase())
-    ).length;
-    const pendencias        = aulas.filter(
-      (a) => String(a.status_execucao || "planejada").toLowerCase() === "planejada"
-    ).length;
+    // Aula "com chamada" = status concluída/em andamento OU chamada realmente lançada
+    // (o status da aula é manual e ficava "Planejada" mesmo com a chamada feita).
+    const hojeISO = (() => {
+      const h = new Date();
+      return [h.getFullYear(), String(h.getMonth() + 1).padStart(2, "0"), String(h.getDate()).padStart(2, "0")].join("-");
+    })();
+    const statusDe = (a) => String(a.status_execucao || "planejada").toLowerCase();
+    const ativas            = aulas.filter((a) => statusDe(a) !== "cancelada");
+    const totalAulas        = ativas.length;
+    const temChamada        = (a) => ["concluida", "em_andamento"].includes(statusDe(a)) || Number(a.chamada_lancada || 0) > 0;
+    const aulasComPresenca  = ativas.filter(temChamada).length;
+    // Pendência = aula que já deveria ter acontecido (data até hoje) e continua sem chamada.
+    const pendencias        = ativas.filter((a) => !temChamada(a) && String(a.data_aula || "").slice(0, 10) <= hojeISO).length;
     const aderenciaMedia    = totalAulas > 0
       ? Math.round((aulasComPresenca / totalAulas) * 100) : 0;
 
@@ -140,8 +146,8 @@ export default function GestaoTurmaPage() {
       dataFim:    treinamento?.data_fim || null,
     });
 
-    const proximaAula = aulas
-      .filter((a) => String(a.status_execucao || "planejada").toLowerCase() === "planejada")
+    const proximaAula = ativas
+      .filter((a) => !temChamada(a))
       .sort((a, b) => compareLocalDatesAsc(a.data_aula, b.data_aula))[0] || null;
 
     return { totalAulas, aulasComPresenca, pendencias, aderenciaMedia, status, proximaAula };
