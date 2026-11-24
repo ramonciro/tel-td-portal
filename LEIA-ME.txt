@@ -1,13 +1,9 @@
-Visão geral da turma: pendências de chamada corretas
-====================================================
-Arquivos (subir no GitHub, mantendo as pastas):
-  backend/src/controllers/turmaAulasController.js
-  frontend/app/turma/[id]/page.js
+Lista de Pessoas (Avaliação Técnica): mostra as faltas ao lado da frequência
+============================================================================
+Arquivo (subir no GitHub, mantendo as pastas):
+  frontend/app/turma/[id]/participantes/page.js
 
-Problema: a Visão geral contava "aulas sem chamada" pelo STATUS da aula (Planejada), que é manual. Aula com chamada feita mas status Planejada aparecia como pendente (ex.: 6 pendências com todas as chamadas lançadas).
-Correção:
-- A API de aulas passa a informar se a chamada foi lançada (chamada_lancada).
-- Aula conta como "com chamada" se está Concluída/Em andamento OU tem chamada lançada.
-- Pendência = aula que já passou (data até hoje) e continua sem chamada. Aula futura e aula cancelada não entram.
-- "Aderência" e "Próxima aula" seguem a mesma regra.
-Sem alteração de banco. A regra das 3 faltas NÃO está neste pacote.
+Abaixo do percentual de frequência aparece "N faltas · N pres." (só em turmas de Avaliação Técnica).
+Faltas justificadas contam como falta. Com 3 faltas a pessoa é eliminada automaticamente.
+Cor: cinza (0-1 falta), laranja (2 faltas), vermelho (3 ou mais).
+Só frontend; sem alteração de banco.

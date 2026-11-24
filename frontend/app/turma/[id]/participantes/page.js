@@ -837,7 +837,7 @@ export default function ParticipantesTurmaPage() {
                         <span style={item.desistente ? { textDecoration: "line-through", textDecorationColor: "#cbd5e1" } : undefined}>{item.nome}</span>
                         {item.desistente && (
                           <div style={{ marginTop: 3, fontWeight: 500, fontSize: 11, color: "#92400e" }}>
-                            <span style={{ ...pill, background: colors.warningLight, color: colors.warningText, marginRight: 6 }}>Desistente</span>
+                            <span style={{ ...pill, background: String(item.desistencia_motivo || "").startsWith("Eliminado por faltas") ? colors.dangerLight : colors.warningLight, color: String(item.desistencia_motivo || "").startsWith("Eliminado por faltas") ? colors.dangerText : colors.warningText, marginRight: 6 }}>{String(item.desistencia_motivo || "").startsWith("Eliminado por faltas") ? "Eliminado" : "Desistente"}</span>
                             {item.desistencia_data ? `em ${formatDate(item.desistencia_data)}` : ""}
                             {item.desistencia_motivo ? ` · ${item.desistencia_motivo}` : ""}
                             {item.desistencia_por ? ` · registrado por ${item.desistencia_por}` : ""}
@@ -863,9 +863,19 @@ export default function ParticipantesTurmaPage() {
                         {item.desistente ? (
                           <span style={{ fontSize: 11, color: "#94a3b8" }}>—</span>
                         ) : freq ? (
-                          <span style={{ ...pill, ...estiloFreq(freq.frequencia_percentual) }}>
-                            {freq.frequencia_percentual}%
-                          </span>
+                          <>
+                            <span style={{ ...pill, ...estiloFreq(freq.frequencia_percentual) }}>
+                              {freq.frequencia_percentual}%
+                            </span>
+                            {item.avaliacao_tecnica && (
+                              <div
+                                style={{ marginTop: 3, fontSize: 11, fontWeight: 600, color: Number(freq.ausentes || 0) >= 3 ? "#b91c1c" : Number(freq.ausentes || 0) === 2 ? "#b45309" : "#64748b" }}
+                                title="Faltas contadas para a eliminação (a falta justificada conta como falta). Com 3 faltas a pessoa é eliminada."
+                              >
+                                {Number(freq.ausentes || 0)} {Number(freq.ausentes || 0) === 1 ? "falta" : "faltas"} · {Number(freq.presentes || 0)} pres.
+                              </div>
+                            )}
+                          </>
                         ) : (
                           <span style={{ fontSize: 11, color: "#94a3b8" }}>s/d</span>
                         )}
