@@ -608,6 +608,8 @@ app.use(
     fields: ["nome", "segmento", "status", "gestor", "descricao"],
     orderBy: "nome ASC",
     multiTenant: true, // Sprint 1
+    // 24/11/2026: clientes cadastrados pelo R&S (origem = 'rs') não aparecem na lista de clientes do T&D.
+    listFiltro: () => ({ sql: "(origem IS NULL OR origem <> 'rs')", params: [] }),
     listMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor", "instrutor", "analista_conteudo")],
     createMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],
     updateMiddlewares: [authRequired, authorizeRoles("coordenador", "supervisor")],

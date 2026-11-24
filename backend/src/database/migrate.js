@@ -1736,6 +1736,23 @@ async function runMigrations() {
     await ensureColumn("treinamento_participantes", "desistencia_data", "DATE NULL");
     await ensureColumn("treinamento_participantes", "desistencia_motivo", "VARCHAR(255) NULL");
     await ensureColumn("treinamento_participantes", "desistencia_por", "VARCHAR(150) NULL");
+    // 24/11/2026: eliminação automática por 3 faltas (Avaliação Técnica). 1 = a coordenação desfez; não eliminar de novo.
+    await ensureColumn("treinamento_participantes", "eliminacao_faltas_revertida", "TINYINT(1) NOT NULL DEFAULT 0");
+
+    // 24/11/2026: o R&S atende a empresa toda (não tem ambiente próprio); quem filtra é o T&D de cada ambiente.
+    // clientes.origem = 'rs' marca o cliente cadastrado pelo R&S: ele não é cliente do T&D (não entra na lista de
+    // clientes do T&D nem no filtro do Radar). Os já criados pelo R&S são identificados pela Auditoria.
+    await ensureColumn("clientes", "origem", "VARCHAR(10) NULL");
+    try {
+      const [marc] = await pool.query(
+        `UPDATE clientes c
+           JOIN (SELECT DISTINCT entidade_id FROM auditoria_log
+                  WHERE entidade = 'cliente' AND acao = 'criar' AND resumo LIKE '%(pelo R&S)%') a ON a.entidade_id = c.id
+            SET c.origem = 'rs'
+          WHERE c.origem IS NULL`
+      );
+      if (marc.affectedRows) console.log(`  ↳ clientes cadastrados pelo R&S marcados (origem = rs): ${marc.affectedRows}`);
+    } catch (e) { console.error("[migrate] marcar clientes do R&S:", e.message); }
     await pool.query(`CREATE INDEX idx_tp_desistencia ON treinamento_participantes (treinamento_id, desistencia_em)`).catch(() => {});
 
     // 34. Ajuste pós-entrega do Pacote Salas (15/09/2026) — Ramon revisou a

@@ -314,7 +314,10 @@ const DIAS_BERCO_ALTA = 30;
 
 async function calcularDemandaRS({ empresaId } = {}) {
   const hoje = hojeBahia();
-  const filtro = empresaId ? " AND empresa_id = ?" : "";
+  // 24/11/2026 (Ramon): o R&S atende a empresa toda, não tem ambiente próprio. Quem filtra é o T&D de cada ambiente:
+  // com empresaId, olha as RPs de TODOS os ambientes e fica só com as dos clientes do T&D deste ambiente.
+  const cross = !!empresaId;
+  const filtro = "";
   let rps = [];
   const comClienteId = await rpsTemClienteId();
   try {
@@ -323,8 +326,7 @@ async function calcularDemandaRS({ empresaId } = {}) {
               hcs_berco, hcs_convocados_berco${comClienteId ? ", cliente_id" : ""},
               DATE_FORMAT(inicio_av_tecnica, '%Y-%m-%d') AS inicio_av, DATE_FORMAT(final_av_tecnica, '%Y-%m-%d') AS final_av,
               DATE_FORMAT(data_fechamento_vaga, '%Y-%m-%d') AS fechamento, DATE_FORMAT(created_at, '%Y-%m-%d') AS criado
-         FROM rps WHERE excluido_em IS NULL AND status <> 'CANCELADA'${filtro}`,
-      empresaId ? [empresaId] : []
+         FROM rps WHERE excluido_em IS NULL AND status <> 'CANCELADA'${filtro}`
     );
   } catch (e) {
     if (!(e && (e.code === "ER_NO_SUCH_TABLE" || e.code === "ER_BAD_FIELD_ERROR"))) throw e;
@@ -340,10 +342,20 @@ async function calcularDemandaRS({ empresaId } = {}) {
   let nomesEmpresa = {};
   if (rps.length) {
     try {
-      const ids = [...new Set(rps.map((r) => r.empresa_id))];
-      const [cli] = await pool.query(
-        `SELECT id, empresa_id, nome FROM clientes WHERE (status IS NULL OR status <> 'Inativo') AND empresa_id IN (${ids.map(() => "?").join(",")})`, ids
-      );
+      const ids = cross ? [Number(empresaId)] : [...new Set(rps.map((r) => r.empresa_id))];
+      // Clientes do T&D do ambiente: os cadastrados pelo R&S (origem = 'rs') não são clientes do T&D.
+      let cli;
+      try {
+        [cli] = await pool.query(
+          `SELECT id, empresa_id, nome FROM clientes WHERE (status IS NULL OR status <> 'Inativo') AND (origem IS NULL OR origem <> 'rs')
+             AND empresa_id IN (${ids.map(() => "?").join(",")})`, ids
+        );
+      } catch (e) {
+        if (!(e && e.code === "ER_BAD_FIELD_ERROR")) throw e;
+        [cli] = await pool.query(
+          `SELECT id, empresa_id, nome FROM clientes WHERE (status IS NULL OR status <> 'Inativo') AND empresa_id IN (${ids.map(() => "?").join(",")})`, ids
+        );
+      }
       const porEmpresa = {};
       const ativosPorId = new Set(cli.map((c) => Number(c.id)));
       const nomePorId = new Map(cli.map((c) => [Number(c.id), c.nome]));
@@ -353,7 +365,7 @@ async function calcularDemandaRS({ empresaId } = {}) {
         if (n.length >= 3) { (porEmpresa[c.empresa_id] = porEmpresa[c.empresa_id] || []).push(n); nomeOriginal[`${c.empresa_id}|${n}`] = c.nome; }
       }
       // Clientes citados por RPs mas que não estão na lista de ativos: inativos (ocultam) ou apagados (volta ao nome).
-      const citados = [...new Set(rps.map((r) => Number(r.cliente_id)).filter((x) => x && !ativosPorId.has(x)))];
+      const citados = cross ? [] : [...new Set(rps.map((r) => Number(r.cliente_id)).filter((x) => x && !ativosPorId.has(x)))];
       const inativosPorId = new Set();
       if (citados.length) {
         const [inat] = await pool.query(`SELECT id FROM clientes WHERE id IN (${citados.map(() => "?").join(",")})`, citados).catch(() => [[]]);
@@ -362,6 +374,16 @@ async function calcularDemandaRS({ empresaId } = {}) {
       // Devolve { ok, cliente }: ok = a RP entra; cliente = o cliente do ambiente a que ela pertence (para o Radar mostrar).
       const casa = (emp, produto, clienteId) => {
         const cid = Number(clienteId);
+        if (cross) {
+          // Modo ambiente: vale o vínculo só se for com cliente do T&D deste ambiente; senão, o nome do produto
+          // tem de casar com um deles. Ambiente sem clientes do T&D cadastrados não recebe nada do R&S.
+          if (cid && ativosPorId.has(cid)) return { ok: true, cliente: nomePorId.get(cid) || null };
+          const listaT = porEmpresa[emp];
+          if (!listaT) return { ok: false };
+          const pT = semAcento(produto);
+          const achouT = listaT.find((c) => pT.includes(c) || (pT.length >= 3 && c.includes(pT)));
+          return achouT ? { ok: true, cliente: nomeOriginal[`${emp}|${achouT}`] || null } : { ok: false };
+        }
         if (cid && ativosPorId.has(cid)) return { ok: true, cliente: nomePorId.get(cid) || null };   // vínculo com cliente ativo
         if (cid && inativosPorId.has(cid)) return { ok: false };   // vínculo com cliente inativo (ou de outro ambiente)
         const lista = porEmpresa[emp];
@@ -372,9 +394,10 @@ async function calcularDemandaRS({ empresaId } = {}) {
       };      const ocultos = new Set();
       const antes = rps.length;
       rps = rps.filter((r) => {
-        const c = casa(r.empresa_id, r.produto, r.cliente_id);
+        const c = casa(cross ? Number(empresaId) : r.empresa_id, r.produto, r.cliente_id);
         if (!c.ok) { ocultos.add(r.produto); return false; }
         r.cliente_ambiente = c.cliente;
+        if (cross) r.empresa_id = Number(empresaId); // o item pertence ao ambiente que está olhando
         return true;
       });
       rpsOcultas = antes - rps.length;

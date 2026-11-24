@@ -339,7 +339,14 @@ const criarClienteRS = async (req, res) => {
         resumo: `${req.user?.nome || "Alguém"} reativou o cliente ${igual.nome} (pelo R&S)`, ip: req.ip });
       return res.json({ id: igual.id, nome: igual.nome, message: `Cliente "${igual.nome}" reativado.` });
     }
-    const [r] = await db.query("INSERT INTO clientes (empresa_id, nome, status) VALUES (?, ?, 'ativo')", [empresa_id, nome]);
+    // origem = 'rs': cliente do R&S (que atende a empresa toda); não vira cliente do T&D do ambiente.
+    let r;
+    try {
+      [r] = await db.query("INSERT INTO clientes (empresa_id, nome, status, origem) VALUES (?, ?, 'ativo', 'rs')", [empresa_id, nome]);
+    } catch (e) {
+      if (!(e && e.code === "ER_BAD_FIELD_ERROR")) throw e;
+      [r] = await db.query("INSERT INTO clientes (empresa_id, nome, status) VALUES (?, ?, 'ativo')", [empresa_id, nome]);
+    }
     registrarAuditoria({ usuario: req.user, acao: "criar", entidade: "cliente", entidadeId: r.insertId,
       resumo: `${req.user?.nome || "Alguém"} cadastrou o cliente ${nome} (pelo R&S)`, dadosDepois: { nome }, ip: req.ip });
     return res.status(201).json({ id: r.insertId, nome, message: `Cliente "${nome}" cadastrado.` });

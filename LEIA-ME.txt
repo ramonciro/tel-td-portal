@@ -1,13 +1,18 @@
-Radar por ambiente: R&S só dos clientes do ambiente
-===================================================
-Substitui o pacote "radar-sem-itens-do-rs" (que tirava tudo do R&S). Subir os 3 arquivos mantendo as pastas:
-  backend/src/services/radarSemanalService.js
+Radar por ambiente: o R&S atende a empresa toda; cada ambiente do T&D filtra pelos seus clientes
+==================================================================================================
+Subir mantendo as pastas (4 arquivos):
+  backend/src/index.js
+  backend/src/database/migrate.js
+  backend/src/controllers/rsGestaoController.js
   backend/src/services/preventivoCargaService.js
-  frontend/app/radar/RadarSemana.js
+(Os arquivos radarSemanalService.js e RadarSemana.js do pacote anterior "radar-por-ambiente" continuam valendo.)
 
-Regra: o Radar de cada ambiente mostra do R&S (avaliação sem turma, berço parado) apenas as RPs dos clientes ATIVOS cadastrados naquele ambiente (Clientes do ambiente). RP de cliente que não é do ambiente não aparece. Vale para todos os ambientes.
-- O vínculo da RP com o cliente (rps.cliente_id) vale primeiro; sem vínculo, o nome do produto da RP é comparado com os clientes ativos do ambiente.
-- Ambiente sem nenhum cliente ativo cadastrado não filtra (não há lista para comparar).
-- O item do R&S no Radar agora mostra "cliente: X" (o cliente do ambiente a que a RP pertence), e respeita o acesso por cliente de cada usuário.
-Se continuar aparecendo RP de cliente que não é do ambiente, o "cliente: X" no cartão mostra a qual cliente ela foi ligada.
-Sem alteração de banco.
+Regra
+- O R&S não tem ambiente: as RPs valem para a empresa toda. O Radar de cada ambiente olha as RPs de TODOS os ambientes e mostra só as dos clientes do T&D daquele ambiente (cliente ativo na lista de Clientes do ambiente; vale o vínculo da RP com o cliente ou, sem vínculo, o nome do produto da RP).
+- Ambiente sem clientes do T&D cadastrados não recebe itens do R&S (antes recebia tudo).
+
+Clientes cadastrados pelo R&S
+- Nova coluna clientes.origem. Cliente cadastrado em Configurações R&S > Clientes nasce com origem = 'rs': é cliente do R&S, NÃO é cliente do T&D. Não aparece na lista de Clientes do T&D e não conta para o Radar.
+- Ao subir, a migração marca como 'rs' os clientes que a Auditoria registra como criados "(pelo R&S)" (ex.: Sabesp, Dasa, se foram criados por lá). Cliente criado direto pelo menu Clientes do T&D não é tocado.
+- Para um cliente marcado errado: o R&S não é afetado (continua vendo todos). Para devolver um cliente ao T&D basta executar: UPDATE clientes SET origem = NULL WHERE id = ?; (me peça que eu crio um botão, se precisar).
+Sem outras alterações de banco.
