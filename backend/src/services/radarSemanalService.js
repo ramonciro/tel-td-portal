@@ -36,6 +36,8 @@ const SYNC_MIN_MS = 3 * 60 * 1000;
 const GRACA_RESOLVIDO_DIAS = 7;
 const syncRecente = new Map();
 
+const ORIGENS_RS = ["rs-av", "rs-berco"]; // itens que vêm do R&S: fora do Radar do T&D
+
 const ORIGENS = {
   prontidao: { nome: "Prontidão de turma", farol: "Turmas começando com pendência" },
   certificacao: { nome: "Risco de certificação", farol: "Turmas com gente em risco de não certificar" },
@@ -416,6 +418,10 @@ async function carregarItens({ empresaId, desde }) {
   if (ids) { where.push(`empresa_id IN (${ids.map(() => "?").join(",")})`); params.push(...ids); }
   where.push("(estado <> 'resolvido' OR resolvido_em >= ?)");
   params.push(desde);
+  // 24/11/2026 (Ramon): o Radar do T&D não mostra itens vindos do R&S (avaliação sem turma, berço parado) —
+  // a rotina do R&S não é do ambiente do T&D. Continuam sendo calculados, só não aparecem aqui.
+  where.push(`origem NOT IN (${ORIGENS_RS.map(() => "?").join(",")})`);
+  params.push(...ORIGENS_RS);
   const [rows] = await pool.query(`SELECT * FROM radar_itens WHERE ${where.join(" AND ")}`, params);
   return rows.map((r) => ({
     ...r,
@@ -480,6 +486,7 @@ function abertoEm(it, t) {
 function farois(itens, hoje, antes) {
   const lista = [];
   for (const [origem, meta] of Object.entries(ORIGENS)) {
+    if (ORIGENS_RS.includes(origem)) continue; // R&S não é do Radar do T&D
     const atuais = itens.filter((i) => i.origem === origem && i.estado === "aberto");
     const passados = itens.filter((i) => i.origem === origem && i.estado !== "ignorado" && abertoEm(i, antes));
     const valor = atuais.length;

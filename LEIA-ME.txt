@@ -1,9 +1,10 @@
-Lista de Pessoas (Avaliação Técnica): mostra as faltas ao lado da frequência
-============================================================================
+Radar do T&D sem itens do R&S
+=============================
 Arquivo (subir no GitHub, mantendo as pastas):
-  frontend/app/turma/[id]/participantes/page.js
+  backend/src/services/radarSemanalService.js
 
-Abaixo do percentual de frequência aparece "N faltas · N pres." (só em turmas de Avaliação Técnica).
-Faltas justificadas contam como falta. Com 3 faltas a pessoa é eliminada automaticamente.
-Cor: cinza (0-1 falta), laranja (2 faltas), vermelho (3 ou mais).
-Só frontend; sem alteração de banco.
+- Itens vindos do R&S ("R&S → T&D (avaliação)": Avaliação Técnica sem turma; "R&S → T&D (berço)": RP com berço parado) não aparecem mais no Radar do T&D: nem no Top 5, nem na lista, nem nos faróis, nem no aviso do sino, nem no resumo semanal.
+- Os faróis "Avaliações Técnicas sem turma" e "RPs com berço parado" também saem da tela.
+- O R&S continua calculando esses itens internamente e tem as próprias telas (RPs, Berço); nada foi apagado do banco.
+- Os outros itens do Radar (prontidão, certificação, carga, salas, qualidade, necessidades, reciclagem) continuam iguais.
+- Só backend; sem alteração de banco. Para voltar atrás: esvaziar a lista ORIGENS_RS no início do arquivo.
