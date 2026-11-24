@@ -1,10 +1,13 @@
-Radar do T&D sem itens do R&S
-=============================
-Arquivo (subir no GitHub, mantendo as pastas):
+Radar por ambiente: R&S só dos clientes do ambiente
+===================================================
+Substitui o pacote "radar-sem-itens-do-rs" (que tirava tudo do R&S). Subir os 3 arquivos mantendo as pastas:
   backend/src/services/radarSemanalService.js
+  backend/src/services/preventivoCargaService.js
+  frontend/app/radar/RadarSemana.js
 
-- Itens vindos do R&S ("R&S → T&D (avaliação)": Avaliação Técnica sem turma; "R&S → T&D (berço)": RP com berço parado) não aparecem mais no Radar do T&D: nem no Top 5, nem na lista, nem nos faróis, nem no aviso do sino, nem no resumo semanal.
-- Os faróis "Avaliações Técnicas sem turma" e "RPs com berço parado" também saem da tela.
-- O R&S continua calculando esses itens internamente e tem as próprias telas (RPs, Berço); nada foi apagado do banco.
-- Os outros itens do Radar (prontidão, certificação, carga, salas, qualidade, necessidades, reciclagem) continuam iguais.
-- Só backend; sem alteração de banco. Para voltar atrás: esvaziar a lista ORIGENS_RS no início do arquivo.
+Regra: o Radar de cada ambiente mostra do R&S (avaliação sem turma, berço parado) apenas as RPs dos clientes ATIVOS cadastrados naquele ambiente (Clientes do ambiente). RP de cliente que não é do ambiente não aparece. Vale para todos os ambientes.
+- O vínculo da RP com o cliente (rps.cliente_id) vale primeiro; sem vínculo, o nome do produto da RP é comparado com os clientes ativos do ambiente.
+- Ambiente sem nenhum cliente ativo cadastrado não filtra (não há lista para comparar).
+- O item do R&S no Radar agora mostra "cliente: X" (o cliente do ambiente a que a RP pertence), e respeita o acesso por cliente de cada usuário.
+Se continuar aparecendo RP de cliente que não é do ambiente, o "cliente: X" no cartão mostra a qual cliente ela foi ligada.
+Sem alteração de banco.

@@ -76,7 +76,7 @@ function CartaoRisco({ item, motivos, numero, onFeito, onErro }) {
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 420px" }}>
           <strong style={{ fontSize: 15 }}>{numero ? `${numero}. ` : ""}{item.titulo}</strong>
-          <div style={mini}>{item.origem_nome} · dono sugerido: {item.dono || "Coordenação"} · {prazoTexto(item)}{item.novo ? " · novo nesta semana" : ` · aberto há ${item.dias_aberto} dia(s)`}{item.reabertos ? " · reaberto" : ""}</div>
+          <div style={mini}>{item.origem_nome}{item.cliente ? ` · cliente: ${item.cliente}` : ""} · dono sugerido: {item.dono || "Coordenação"} · {prazoTexto(item)}{item.novo ? " · novo nesta semana" : ` · aberto há ${item.dias_aberto} dia(s)`}{item.reabertos ? " · reaberto" : ""}</div>
           {item.reaberto_motivo && <div style={{ ...mini, color: colors.dangerText }}>Voltou porque {item.reaberto_motivo}.</div>}
           {item.mesma_turma_outros > 0 && <div style={{ ...mini, color: colors.dangerText }}>Esta turma tem mais {item.mesma_turma_outros} {item.mesma_turma_outros === 1 ? "item aberto" : "itens abertos"} no Radar{item.mesma_turma_tipos?.length ? ` (${item.mesma_turma_tipos.join(", ")})` : ""}.</div>}
         </div>

@@ -346,9 +346,11 @@ async function calcularDemandaRS({ empresaId } = {}) {
       );
       const porEmpresa = {};
       const ativosPorId = new Set(cli.map((c) => Number(c.id)));
+      const nomePorId = new Map(cli.map((c) => [Number(c.id), c.nome]));
+      const nomeOriginal = {};
       for (const c of cli) {
         const n = semAcento(c.nome);
-        if (n.length >= 3) (porEmpresa[c.empresa_id] = porEmpresa[c.empresa_id] || []).push(n);
+        if (n.length >= 3) { (porEmpresa[c.empresa_id] = porEmpresa[c.empresa_id] || []).push(n); nomeOriginal[`${c.empresa_id}|${n}`] = c.nome; }
       }
       // Clientes citados por RPs mas que não estão na lista de ativos: inativos (ocultam) ou apagados (volta ao nome).
       const citados = [...new Set(rps.map((r) => Number(r.cliente_id)).filter((x) => x && !ativosPorId.has(x)))];
@@ -357,18 +359,24 @@ async function calcularDemandaRS({ empresaId } = {}) {
         const [inat] = await pool.query(`SELECT id FROM clientes WHERE id IN (${citados.map(() => "?").join(",")})`, citados).catch(() => [[]]);
         for (const c of inat) inativosPorId.add(Number(c.id));
       }
+      // Devolve { ok, cliente }: ok = a RP entra; cliente = o cliente do ambiente a que ela pertence (para o Radar mostrar).
       const casa = (emp, produto, clienteId) => {
         const cid = Number(clienteId);
-        if (cid && ativosPorId.has(cid)) return true;      // vínculo com cliente ativo
-        if (cid && inativosPorId.has(cid)) return false;   // vínculo com cliente inativo
+        if (cid && ativosPorId.has(cid)) return { ok: true, cliente: nomePorId.get(cid) || null };   // vínculo com cliente ativo
+        if (cid && inativosPorId.has(cid)) return { ok: false };   // vínculo com cliente inativo (ou de outro ambiente)
         const lista = porEmpresa[emp];
-        if (!lista) return true; // ambiente sem clientes ativos cadastrados: não filtra
+        if (!lista) return { ok: true, cliente: null }; // ambiente sem clientes ativos cadastrados: não filtra
         const p = semAcento(produto);
-        return lista.some((c) => p.includes(c) || (p.length >= 3 && c.includes(p)));
-      };
-      const ocultos = new Set();
+        const achou = lista.find((c) => p.includes(c) || (p.length >= 3 && c.includes(p)));
+        return achou ? { ok: true, cliente: nomeOriginal[`${emp}|${achou}`] || null } : { ok: false };
+      };      const ocultos = new Set();
       const antes = rps.length;
-      rps = rps.filter((r) => (casa(r.empresa_id, r.produto, r.cliente_id) ? true : (ocultos.add(r.produto), false)));
+      rps = rps.filter((r) => {
+        const c = casa(r.empresa_id, r.produto, r.cliente_id);
+        if (!c.ok) { ocultos.add(r.produto); return false; }
+        r.cliente_ambiente = c.cliente;
+        return true;
+      });
       rpsOcultas = antes - rps.length;
       produtosOcultos = [...ocultos].sort().slice(0, 15);
     } catch (e) {
@@ -441,7 +449,7 @@ async function calcularDemandaRS({ empresaId } = {}) {
     let gravidade = null;
     if (semTurma) gravidade = emCurso || dias <= 3 ? "critica" : dias <= 7 ? "alta" : "media";
     avaliacoes.push({
-      rp_id: r.id, empresa_id: r.empresa_id, ambiente: nomesEmpresa[r.empresa_id] || null,
+      rp_id: r.id, empresa_id: r.empresa_id, ambiente: nomesEmpresa[r.empresa_id] || null, cliente_ambiente: r.cliente_ambiente || null,
       site: r.site, produto: r.produto, cargo: r.cargo, chamado: r.chamado,
       inicio: r.inicio_av, final: r.final_av, dias_para_inicio: dias, em_curso: !!emCurso,
       candidatos_esperados: Number(r.hcs_com_to) || Number(r.hcs) || 0,
@@ -472,7 +480,7 @@ async function calcularDemandaRS({ empresaId } = {}) {
           .map((o) => ({ rp_id: o.id, site: o.site, produto: o.produto, chamado: o.chamado, vagas_abertas: Number(o.hcs) - Number(o.qtd_entregue), mesmo_site: o.site === r.site }))
       : [];
     berco.push({
-      rp_id: r.id, empresa_id: r.empresa_id, ambiente: nomesEmpresa[r.empresa_id] || null,
+      rp_id: r.id, empresa_id: r.empresa_id, ambiente: nomesEmpresa[r.empresa_id] || null, cliente_ambiente: r.cliente_ambiente || null,
       site: r.site, produto: r.produto, cargo: r.cargo, chamado: r.chamado, status: r.status,
       saldo_berco: saldo, dias_parado: parado, desde: ref,
       gravidade: parado >= DIAS_BERCO_ALTA ? "alta" : parado >= DIAS_BERCO_ATENCAO ? "media" : null,
