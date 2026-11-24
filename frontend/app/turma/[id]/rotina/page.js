@@ -790,7 +790,10 @@ function Avaliacao({ id }) {
     const p = [];
     linhas.forEach((l) => {
       const m = mediaDe(l.notas, criterios);
-      if (m === null) p.push(`${l.nome}: faltam notas`);
+      // Quem desistiu/não seguiu e não tem como ser pontuado: "Reprovado" + motivo na observação dispensa as notas.
+      if (m === null && l.resultado === "nao_seguiu") {
+        if (!String(l.observacao).trim()) p.push(`${l.nome}: sem notas, informe o motivo na observação`);
+      } else if (m === null) p.push(`${l.nome}: faltam notas`);
       else if (!l.resultado) p.push(`${l.nome}: falta o resultado`);
       else if (m < (dados?.media_minima || 6) && !String(l.observacao).trim()) p.push(`${l.nome}: média abaixo de ${dados?.media_minima || 6} pede observação`);
     });
@@ -889,6 +892,7 @@ function Avaliacao({ id }) {
             <h2 style={h2}>Avaliação individual dos candidatos</h2>
             <p style={sub}>
               Notas inteiras de {dados.nota_min} a {dados.nota_max} em cada critério. A média é calculada; abaixo de {dados.media_minima} a observação é obrigatória.
+              Quem desistiu e não tem como ser pontuado: deixe sem notas, marque <strong>Reprovado</strong> e explique o motivo na observação.
               Esta tela não substitui a planilha em papel e não soma horas na CH.
             </p>
           </div>
@@ -993,6 +997,11 @@ function Avaliacao({ id }) {
 
         <div style={{ padding: "14px 16px", borderTop: `1px solid ${colors.border}`, display: "grid", gap: 10 }}>
           <div style={{ fontSize: 13, color: colors.textSecondary }}>
+            {(dados.desistentes || []).length > 0 && (
+              <div style={{ marginBottom: 6 }}>
+                {dados.desistentes.length} desistente{dados.desistentes.length > 1 ? "s" : ""} registrado{dados.desistentes.length > 1 ? "s" : ""} na lista de participantes não entra{dados.desistentes.length > 1 ? "m" : ""} nesta avaliação: {dados.desistentes.join(", ")}.
+              </div>
+            )}
             Quem for <strong>Aprovado</strong> entra automaticamente na célula baby da turma.
             {dados.celula ? (
               <>

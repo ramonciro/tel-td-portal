@@ -927,7 +927,7 @@ async function carregarAvaliacao(t) {
             a.media, a.resultado, a.observacao, a.atualizado_por, a.updated_at
        FROM treinamento_participantes p
        LEFT JOIN rotina_avaliacao_individual a ON a.treinamento_id = p.treinamento_id AND a.participante_id = p.id
-      WHERE p.treinamento_id = ? ORDER BY p.nome`,
+      WHERE p.treinamento_id = ? AND p.desistencia_em IS NULL ORDER BY p.nome`,
     [t.id]
   );
   const [regRows] = await pool.query("SELECT registrada_por, registrada_em FROM rotina_avaliacao_registro WHERE treinamento_id = ?", [t.id]);
@@ -969,6 +969,14 @@ async function obterAvaliacao(req, res) {
     if (!t) return;
     const { rows, registro, papel } = await carregarAvaliacao(t);
     const linhas = rows.map((r) => ({ ...linhaParaApi(r), provas_papel: papel.get(Number(r.participante_id)) || [] }));
+    // Desistentes (botão "Desistência" da lista de participantes) não entram na avaliação: só são citados na tela.
+    let desistentes = [];
+    try {
+      const [d] = await pool.query(
+        "SELECT nome FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NOT NULL ORDER BY nome", [t.id]
+      );
+      desistentes = d.map((x) => x.nome);
+    } catch (_) { /* coluna ainda não existe: segue sem a lista */ }
     const cont = { passou: 0, em_berco: 0, nao_seguiu: 0, sem_resultado: 0 };
     linhas.forEach((l) => { if (l.resultado) cont[l.resultado] += 1; else cont.sem_resultado += 1; });
     const sit = await AV.situacaoNaCelula(t.id, 0);
@@ -978,7 +986,7 @@ async function obterAvaliacao(req, res) {
       turma: { id: t.id, tema: t.tema, cliente: t.cliente, instrutor: t.instrutor },
       criterios: AV.CRITERIOS.map((c) => ({ chave: c.chave, rotulo: c.rotulo })),
       nota_min: AV.NOTA_MIN, nota_max: AV.NOTA_MAX, media_minima: AV.MEDIA_MINIMA,
-      linhas, contagem: cont,
+      linhas, contagem: cont, desistentes,
       registro: registro ? { registrada_por: registro.registrada_por, registrada_em: registro.registrada_em } : null,
       celula: sit.celula ? { id: sit.celula.id, status: sit.celula.status } : null,
       pode_editar: podeEditarTurma_ && (!registro || ehGestao(req)),
@@ -1034,7 +1042,10 @@ async function salvarAvaliacao(req, res) {
       if (!finais.size) return erro(res, 400, "Esta turma não tem candidatos para avaliar.");
       const faltas = [];
       for (const l of finais.values()) {
-        if (l.media === null) faltas.push(`${l.nome} (faltam notas)`);
+        // Quem desistiu/não seguiu e não tem como ser pontuado: "Reprovado" + motivo na observação dispensa as notas.
+        if (l.media === null && l.resultado === "nao_seguiu") {
+          if (!String(l.observacao || "").trim()) faltas.push(`${l.nome} (sem notas: informe o motivo na observação)`);
+        } else if (l.media === null) faltas.push(`${l.nome} (faltam notas)`);
         else if (!l.resultado) faltas.push(`${l.nome} (falta o resultado)`);
         else if (l.media < AV.MEDIA_MINIMA && !l.observacao) faltas.push(`${l.nome} (média abaixo de ${AV.MEDIA_MINIMA} pede observação)`);
       }

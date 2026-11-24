@@ -1,13 +1,12 @@
-CPF sem zero à esquerda na importação (e em todo cadastro de CPF)
+Avaliação individual: encerrar com desistentes / sem notas
+==========================================================
+Arquivos (subir no GitHub, mantendo as pastas):
+  backend/src/controllers/rotinaController.js
+  frontend/app/turma/[id]/rotina/page.js
 
-Causa: o portal só aceitava CPF com exatamente 11 dígitos. O Excel tira o zero à esquerda de CPF guardado como número
-(03671373563 vira 3671373563, 10 dígitos), e esses CPFs eram descartados (a pessoa entrava na turma sem CPF).
-
-Agora: CPF com 9 ou 10 dígitos é completado com zeros à esquerda, desde que os dígitos verificadores batam
-(se não baterem, continua sendo descartado, para não inventar CPF). CPF com 11 dígitos segue como antes.
-Vale na importação de participantes, inclusão manual, Jornadas, Coaching individual, Reembolso de Transporte e Cadastro de Pessoas.
-O modelo de importação (Baixar modelo) agora vem com Matrícula e CPF como Texto e com a instrução do padrão.
-
-Padrão: 11 dígitos, só números, com zeros à esquerda (com ou sem pontos/traço na digitação).
-Só backend (Railway). 6 arquivos: lib/cpf.js (novo) + 5 que passam a usá-lo.
-Obs.: quem já foi importado sem CPF precisa reimportar a lista da turma (a importação substitui a lista) ou editar o CPF.
+O que muda:
+- Quem foi marcado como Desistência na turma (botão "Desistência" em Participantes) sai da avaliação individual e não exige notas. Aparece apenas uma observação listando os desistentes.
+- Candidato ainda ativo que não pode ser pontuado: deixe as notas em branco, marque "Reprovado" e preencha a Observação com o motivo. Assim a avaliação pode ser registrada.
+- Aprovado / Em berço continuam exigindo todas as notas.
+- Reprovado sem notas e sem observação continua bloqueando ("sem notas: informe o motivo na observação").
+Sem alteração de banco.
