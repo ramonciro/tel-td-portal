@@ -115,9 +115,14 @@ export default function AdminPage() {
           subtitle="Gestão de tenants, planos e saúde da plataforma"
           icon="⚙️"
           actions={
-            <button style={btnConsolidado} onClick={() => router.push("/admin/consolidado")}>
-              📊 Visão consolidada
-            </button>
+            <>
+              <button style={btnConsolidado} onClick={() => router.push("/admin/saude")}>
+                🩺 Saúde do sistema
+              </button>
+              <button style={btnConsolidado} onClick={() => router.push("/admin/consolidado")}>
+                📊 Visão consolidada
+              </button>
+            </>
           }
         />
 

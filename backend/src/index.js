@@ -35,6 +35,7 @@ const {
   sondarBanco,
 } = require("./lib/saudeBanco");
 const { rodarBackup, statusBackup } = require("./services/backupService");
+const registroJobs = require("./lib/registroJobs");
 const { rodarDigestPendencias, montarResumoEmpresa } = require("./jobs/pendenciasDigest");
 const { rodarLembretesAula } = require("./jobs/lembretesAula");
 const { rodarCalculoConquistas } = require("./jobs/conquistasJob");
@@ -330,6 +331,8 @@ app.use(cors(opcoesCors()));
 // esperar minutos. Fica logo depois do CORS para o 503 chegar legível ao
 // frontend. Só /api/health* continua respondendo. Ver lib/saudeBanco.js.
 app.use(protecaoIndisponibilidade);
+// Tela de saúde (O7): anota as respostas 5xx para o Super Admin ver em /admin/saude. Não altera nenhuma resposta.
+app.use(registroJobs.monitorar5xx);
 
 // Verificações de saúde — sem login, sem tocar nos dados.
 //  /api/health        → o processo está de pé (SEMPRE 200; use no healthcheck
@@ -3313,6 +3316,73 @@ app.get(
   (req, res) => res.json({ ok: true, ...statusBackup() })
 );
 
+
+// Tela de saúde do sistema (O7, 26/11/2026) — só o Super Admin. Reúne em um lugar o que antes só se via no Railway:
+// versão no ar, banco, backup, último disparo de cada job agendado e os últimos erros do servidor.
+// Nada aqui altera dados. Os registros de jobs ficam na tabela sistema_jobs (sobrevivem a reinícios);
+// os erros recentes ficam em memória (zeram a cada reinício, e a tela avisa desde quando valem).
+app.get("/api/admin/saude", authRequired, requireSuperAdmin, async (req, res) => {
+  try {
+    const inicioSonda = Date.now();
+    const bancoRespondeu = await sondarBanco();
+    const latenciaMs = Date.now() - inicioSonda;
+    const snap = snapshotSaude();
+    const bk = statusBackup();
+    const jobs = await registroJobs.resumoDosJobs();
+    const erros = registroJobs.errosRecentes();
+
+    let backupSituacao = "desligado";
+    if (bk.configurado) {
+      if (bk.horas_desde_ultimo_ok === null) backupSituacao = "sem_registro";
+      else if (bk.horas_desde_ultimo_ok > 36) backupSituacao = "atrasado";
+      else if (bk.ultimo && bk.ultimo.ok === false) backupSituacao = "erro";
+      else backupSituacao = "ok";
+    }
+
+    const jobsComProblema = jobs.filter((j) => j.situacao === "erro" || j.situacao === "atrasado").length;
+    let geral = "ok";
+    if (!bancoRespondeu || snap.migracoes !== "ok") geral = "critico";
+    else if (jobsComProblema > 0 || backupSituacao === "atrasado" || backupSituacao === "erro") geral = "atencao";
+
+    const sha = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null;
+    return res.json({
+      ok: true,
+      gerado_em: new Date().toISOString(),
+      geral,
+      versao: {
+        commit: sha,
+        commit_curto: sha ? sha.slice(0, 7) : null,
+        mensagem_commit: process.env.RAILWAY_GIT_COMMIT_MESSAGE || null,
+        branch: process.env.RAILWAY_GIT_BRANCH || null,
+        deploy_id: process.env.RAILWAY_DEPLOYMENT_ID || null,
+        ambiente: process.env.RAILWAY_ENVIRONMENT_NAME || process.env.NODE_ENV || null,
+        node: process.version,
+        no_ar_ha_segundos: snap.uptime_segundos,
+      },
+      banco: {
+        responde: bancoRespondeu,
+        latencia_ms: latenciaMs,
+        migracoes: snap.migracoes,
+        ultima_falha_em: snap.ultima_falha_em,
+        ultimo_erro: snap.ultimo_erro,
+      },
+      backup: {
+        situacao: backupSituacao,
+        configurado: bk.configurado,
+        em_execucao: bk.em_execucao,
+        horas_desde_ultimo_ok: bk.horas_desde_ultimo_ok,
+        limite_horas: 36,
+        ultimo: bk.ultimo,
+      },
+      jobs,
+      erros,
+    });
+  } catch (error) {
+    console.error("Erro ao montar a tela de saúde:", error);
+    return res.status(500).json({ ok: false, message: "Erro ao montar a tela de saúde do sistema." });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 // Migrações com nova tentativa: se o banco estiver inalcançável (falha de rede
@@ -3340,9 +3410,11 @@ async function aplicarMigracoesComTentativas() {
 // processo, que a hospedagem reinicia limpo.
 process.on("unhandledRejection", (motivo) => {
   console.error("[boot] Promessa rejeitada sem tratamento:", motivo);
+  registroJobs.registrarErro({ origem: "promessa_rejeitada", mensagem: motivo && motivo.message ? motivo.message : String(motivo) });
 });
 process.on("uncaughtException", (error) => {
   console.error("[boot] Exceção não tratada:", error);
+  registroJobs.registrarErro({ origem: "excecao", mensagem: error && error.message });
   if (!erroDeConexao(error)) process.exit(1);
 });
 

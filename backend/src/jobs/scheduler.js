@@ -34,12 +34,13 @@ const { rodarCertificadosAutomaticos } = require("./certificadosAutomaticos");
 const { sincronizarCelulas } = require("../lib/celulaBaby");
 const { rodarAvisoAtrasadas, rodarLimpezaLixeiraRS } = require("./rsAtrasadasDigest");
 const radarSemanal = require("../services/radarSemanalService");
+const { executar } = require("../lib/registroJobs");
 const { configurado: backupConfigurado, rodarBackup, carregarUltimoDoBucket } = require("../services/backupService");
 
 function iniciarAgendamentos() {
   cron.schedule("0 5 * * *", async () => {
     try {
-      const resultado = await rodarCertificadosAutomaticos();
+      const resultado = await executar("certificados", () => rodarCertificadosAutomaticos());
       console.log("[scheduler] Certificados automáticos executados:", JSON.stringify(resultado));
     } catch (error) {
       console.error("[scheduler] Erro ao rodar certificados automáticos:", error.message);
@@ -50,7 +51,7 @@ function iniciarAgendamentos() {
   // concluídas. Também roda ao abrir a lista de células; este é o reforço diário.
   cron.schedule("30 5 * * *", async () => {
     try {
-      const criadas = await sincronizarCelulas(null);
+      const criadas = await executar("celulas_baby", () => sincronizarCelulas(null));
       console.log("[scheduler] Células baby abertas:", criadas);
     } catch (error) {
       console.error("[scheduler] Erro ao abrir células baby:", error.message);
@@ -59,7 +60,7 @@ function iniciarAgendamentos() {
 
   cron.schedule("0 6 * * *", async () => {
     try {
-      const resultado = await rodarCalculoConquistas();
+      const resultado = await executar("conquistas", () => rodarCalculoConquistas());
       console.log("[scheduler] Cálculo de conquistas executado:", JSON.stringify(resultado));
     } catch (error) {
       console.error("[scheduler] Erro ao calcular conquistas:", error.message);
@@ -68,7 +69,7 @@ function iniciarAgendamentos() {
 
   cron.schedule("0 7 * * 1-5", async () => {
     try {
-      const resultado = await rodarDigestPendencias();
+      const resultado = await executar("pendencias", () => rodarDigestPendencias());
       console.log("[scheduler] Digest de pendências executado:", JSON.stringify(resultado));
     } catch (error) {
       console.error("[scheduler] Erro ao rodar digest de pendências:", error.message);
@@ -78,7 +79,7 @@ function iniciarAgendamentos() {
   // R&S (20/10/2026): aviso das RPs atrasadas, dias úteis às 07h10 (logo depois do digest de pendências).
   cron.schedule("10 7 * * 1-5", async () => {
     try {
-      const resultado = await rodarAvisoAtrasadas();
+      const resultado = await executar("rs_atrasadas", () => rodarAvisoAtrasadas());
       console.log("[scheduler] Aviso de RPs atrasadas (R&S):", JSON.stringify(resultado));
     } catch (error) {
       console.error("[scheduler] Erro no aviso de RPs atrasadas:", error.message);
@@ -88,7 +89,7 @@ function iniciarAgendamentos() {
   // R&S: apaga da lixeira as RPs excluídas há mais de 30 dias — todo dia às 04h.
   cron.schedule("0 4 * * *", async () => {
     try {
-      const resultado = await rodarLimpezaLixeiraRS();
+      const resultado = await executar("rs_lixeira", () => rodarLimpezaLixeiraRS());
       console.log("[scheduler] Limpeza da lixeira do R&S:", JSON.stringify(resultado));
     } catch (error) {
       console.error("[scheduler] Erro ao limpar a lixeira do R&S:", error.message);
@@ -120,7 +121,7 @@ function iniciarAgendamentos() {
   // top 5 e faróis); todo dia 06h30 sincroniza os itens para medir se os alertas foram tratados a tempo.
   cron.schedule("0 7 * * 1", async () => {
     try {
-      const r = await radarSemanal.gerarSemana({ forcar: true });
+      const r = await executar("radar_semanal", () => radarSemanal.gerarSemana({ forcar: true }));
       console.log("[scheduler] Radar semanal gerado:", JSON.stringify(r.resumo));
     } catch (error) {
       console.error("[scheduler] Erro ao gerar o Radar semanal:", error.message);
@@ -128,7 +129,7 @@ function iniciarAgendamentos() {
   }, { timezone: "America/Sao_Paulo" });
   cron.schedule("30 6 * * *", async () => {
     try {
-      const r = await radarSemanal.sincronizar({ forcar: true });
+      const r = await executar("radar_sincronizacao", () => radarSemanal.sincronizar({ forcar: true }));
       console.log("[scheduler] Radar sincronizado:", JSON.stringify({ novos: r.novos, resolvidos: r.resolvidos, reabertos: r.reabertos }));
     } catch (error) {
       console.error("[scheduler] Erro ao sincronizar o Radar:", error.message);
@@ -137,7 +138,7 @@ function iniciarAgendamentos() {
 
   cron.schedule("0 17 * * *", async () => {
     try {
-      const resultado = await rodarLembretesAula();
+      const resultado = await executar("lembretes", () => rodarLembretesAula());
       console.log("[scheduler] Lembretes de aula executados:", JSON.stringify(resultado));
     } catch (error) {
       console.error("[scheduler] Erro ao rodar lembretes de aula:", error.message);
