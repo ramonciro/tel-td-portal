@@ -7,7 +7,7 @@ const authRoutes = require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
-const { runMigrations } = require("./database/migrate");
+const { executarMigracoes, statusMigracoes } = require("./database/runner");
 const { opcoesCors } = require("./lib/corsOrigens");
 const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
@@ -3330,6 +3330,7 @@ app.get("/api/admin/saude", authRequired, requireSuperAdmin, async (req, res) =>
     const bk = statusBackup();
     const jobs = await registroJobs.resumoDosJobs();
     const erros = registroJobs.errosRecentes();
+    const migracoes = await statusMigracoes();
 
     let backupSituacao = "desligado";
     if (bk.configurado) {
@@ -3340,9 +3341,12 @@ app.get("/api/admin/saude", authRequired, requireSuperAdmin, async (req, res) =>
     }
 
     const jobsComProblema = jobs.filter((j) => j.situacao === "erro" || j.situacao === "atrasado").length;
+    const migracoesComAviso = Boolean(
+      migracoes.registrado && ((migracoes.legado && migracoes.legado.avisos > 0) || migracoes.alteradas_depois_de_aplicadas.length > 0)
+    );
     let geral = "ok";
     if (!bancoRespondeu || snap.migracoes !== "ok") geral = "critico";
-    else if (jobsComProblema > 0 || backupSituacao === "atrasado" || backupSituacao === "erro") geral = "atencao";
+    else if (jobsComProblema > 0 || migracoesComAviso || backupSituacao === "atrasado" || backupSituacao === "erro") geral = "atencao";
 
     const sha = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null;
     return res.json({
@@ -3363,6 +3367,7 @@ app.get("/api/admin/saude", authRequired, requireSuperAdmin, async (req, res) =>
         responde: bancoRespondeu,
         latencia_ms: latenciaMs,
         migracoes: snap.migracoes,
+        migracoes_detalhe: migracoes,
         ultima_falha_em: snap.ultima_falha_em,
         ultimo_erro: snap.ultimo_erro,
       },
@@ -3394,7 +3399,7 @@ async function aplicarMigracoesComTentativas() {
   for (;;) {
     registrarTentativaMigracao();
     try {
-      await runMigrations();
+      await executarMigracoes();
       return;
     } catch (error) {
       if (!erroDeConexao(error)) throw error;

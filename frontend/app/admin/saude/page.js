@@ -155,6 +155,23 @@ export default function SaudePage() {
                 {dados.banco.ultima_falha_em && (
                   <div style={cardSub}>Última falha: {fmtDataHora(dados.banco.ultima_falha_em)}</div>
                 )}
+                {dados.banco.migracoes_detalhe && dados.banco.migracoes_detalhe.registrado && (
+                  <div style={cardSub}>
+                    {dados.banco.migracoes_detalhe.numeradas_aplicadas} migração(ões) numerada(s)
+                    {dados.banco.migracoes_detalhe.ultima_numerada ? ` · última: ${dados.banco.migracoes_detalhe.ultima_numerada.id} em ${fmtDataHora(dados.banco.migracoes_detalhe.ultima_numerada.aplicada_em)}` : ""}
+                    {dados.banco.migracoes_detalhe.legado ? ` · legado rodou em ${fmtDuracao(dados.banco.migracoes_detalhe.legado.duracao_ms)}` : ""}
+                  </div>
+                )}
+                {dados.banco.migracoes_detalhe && dados.banco.migracoes_detalhe.legado && dados.banco.migracoes_detalhe.legado.avisos > 0 && (
+                  <div style={{ ...cardSub, color: colors.warningText }}>
+                    ⚠ {dados.banco.migracoes_detalhe.legado.avisos} passo(s) das migrações antigas não concluíram e seguiram: {dados.banco.migracoes_detalhe.legado.detalhe}
+                  </div>
+                )}
+                {dados.banco.migracoes_detalhe && dados.banco.migracoes_detalhe.alteradas_depois_de_aplicadas && dados.banco.migracoes_detalhe.alteradas_depois_de_aplicadas.length > 0 && (
+                  <div style={{ ...cardSub, color: colors.warningText }}>
+                    ⚠ Migração já aplicada foi alterada depois ({dados.banco.migracoes_detalhe.alteradas_depois_de_aplicadas.join(", ")}). Mudança nova vai em arquivo novo.
+                  </div>
+                )}
               </div>
 
               <div style={card}>

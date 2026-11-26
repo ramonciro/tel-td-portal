@@ -40,6 +40,9 @@ test("devolve versão, banco, backup, jobs e erros no formato esperado", async (
   assert.ok(s.versao.node.startsWith("v"));
   assert.equal(s.banco.responde, true);
   assert.equal(s.banco.migracoes, "ok");
+  assert.equal(s.banco.migracoes_detalhe.registrado, true, "o controle de migrações aparece na tela de saúde");
+  assert.ok(s.banco.migracoes_detalhe.numeradas_aplicadas >= 1);
+  assert.ok(s.banco.migracoes_detalhe.legado, "o legado foi registrado na subida");
   assert.ok(Number.isFinite(s.banco.latencia_ms));
   assert.equal(s.backup.situacao, "desligado", "no teste as variáveis BACKUP_S3_* não existem");
   assert.equal(s.jobs.length, registroJobs.JOBS.length);

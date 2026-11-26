@@ -56,7 +56,7 @@ async function main() {
   }
 
   const pool = require("../lib/db");
-  const { runMigrations } = require("../database/migrate");
+  const { executarMigracoes } = require("../database/runner");
 
   const [[{ n: existentes }]] = await pool.query(
     "SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'"
@@ -81,7 +81,7 @@ async function main() {
   console.log(`1/3 estrutura-base aplicada (${comandos.length} comandos)`);
 
   // 2. migrações
-  await runMigrations();
+  await executarMigracoes();
   console.log("2/3 migrações aplicadas");
 
   // conferência: nenhuma chave antiga para a tabela legada

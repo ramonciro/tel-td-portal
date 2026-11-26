@@ -29,11 +29,11 @@ async function main() {
   for (const c of comandos) await admin.query(c);
   await admin.end();
 
-  const { runMigrations } = require("../src/database/migrate");
+  const { executarMigracoes } = require("../src/database/runner");
   const log = console.log;
   console.log = () => {}; // o migrate.js é muito falante
   try {
-    await runMigrations();
+    await executarMigracoes();
   } finally {
     console.log = log;
   }
