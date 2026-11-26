@@ -32,14 +32,37 @@ function hojeISO(deslocamentoDias = 0) {
   return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-");
 }
 
+// Resumo da empresa (usado por vários avisos). Duas proteções contra lentidão:
+//  1) uma única conta por empresa de cada vez — se 30 pessoas abrem o portal na mesma hora em que o
+//     cache venceu, só uma refaz a conta e as outras esperam o mesmo resultado (antes cada uma refazia);
+//  2) cache "velho mas válido": vencido há pouco, devolve o que tem na hora e atualiza por trás,
+//     assim ninguém espera a conta pesada (só a primeira vez depois de um deploy).
+const CACHE_RESUMO_VELHO_MS = 60 * 60 * 1000;
+const resumoEmAndamento = new Map(); // chave -> Promise
+
+function recalcularResumo(chave, empresaId) {
+  const andando = resumoEmAndamento.get(chave);
+  if (andando) return andando;
+  const p = (async () => {
+    const { montarResumoEmpresa } = require("../jobs/pendenciasDigest");
+    const dados = await montarResumoEmpresa(empresaId);
+    cacheResumo.set(chave, { quando: Date.now(), dados });
+    return dados;
+  })().finally(() => resumoEmAndamento.delete(chave));
+  resumoEmAndamento.set(chave, p);
+  return p;
+}
+
 async function resumoEmpresa(empresaId) {
   const chave = String(empresaId ?? "global");
   const c = cacheResumo.get(chave);
-  if (c && Date.now() - c.quando < CACHE_RESUMO_MS) return c.dados;
-  const { montarResumoEmpresa } = require("../jobs/pendenciasDigest");
-  const dados = await montarResumoEmpresa(empresaId);
-  cacheResumo.set(chave, { quando: Date.now(), dados });
-  return dados;
+  const idade = c ? Date.now() - c.quando : Infinity;
+  if (c && idade < CACHE_RESUMO_MS) return c.dados;
+  if (c && idade < CACHE_RESUMO_VELHO_MS) {
+    recalcularResumo(chave, empresaId).catch((e) => console.error("[avisos] atualizar resumo:", e.message));
+    return c.dados;
+  }
+  return recalcularResumo(chave, empresaId);
 }
 
 async function pessoaDoUsuario(userId) {
@@ -352,4 +375,4 @@ async function marcarTodosLidos(user) {
   await pool.query("UPDATE avisos SET lido_em = NOW() WHERE usuario_id = ? AND lido_em IS NULL AND resolvido_em IS NULL", [user.id]);
 }
 
-module.exports = { sincronizar, listar, marcarLido, marcarTodosLidos, calcular, registrarFonte };
+module.exports = { sincronizar, listar, marcarLido, marcarTodosLidos, calcular, registrarFonte, _resumoEmpresa: resumoEmpresa, _limparCacheResumo: () => { cacheResumo.clear(); resumoEmAndamento.clear(); } };

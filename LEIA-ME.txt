@@ -1,18 +1,27 @@
-Radar por ambiente: o R&S atende a empresa toda; cada ambiente do T&D filtra pelos seus clientes
-==================================================================================================
-Subir mantendo as pastas (4 arquivos):
-  backend/src/index.js
-  backend/src/database/migrate.js
-  backend/src/controllers/rsGestaoController.js
-  backend/src/services/preventivoCargaService.js
-(Os arquivos radarSemanalService.js e RadarSemana.js do pacote anterior "radar-por-ambiente" continuam valendo.)
+PACOTE 6 — Sino de avisos mais rápido (G10) — 26/11/2026
 
-Regra
-- O R&S não tem ambiente: as RPs valem para a empresa toda. O Radar de cada ambiente olha as RPs de TODOS os ambientes e mostra só as dos clientes do T&D daquele ambiente (cliente ativo na lista de Clientes do ambiente; vale o vínculo da RP com o cliente ou, sem vínculo, o nome do produto da RP).
-- Ambiente sem clientes do T&D cadastrados não recebe itens do R&S (antes recebia tudo).
+O QUE FOI MEDIDO (Railway, últimos 7 dias, ~39 mil requisições)
+- O portal em geral é rápido: mediana de 3 a 4 ms, CPU média ~0,1%, memória ~0,1 GB. Nada pesado.
+- A única rota que se destaca é /api/avisos (o sininho): nos dias de uso forte a mediana
+  sobe para 300–450 ms e os 5% mais lentos passam de 1 segundo.
+- Os 90 erros 5xx da semana são quase todos da queda de hoje (deploy do pacote 5).
 
-Clientes cadastrados pelo R&S
-- Nova coluna clientes.origem. Cliente cadastrado em Configurações R&S > Clientes nasce com origem = 'rs': é cliente do R&S, NÃO é cliente do T&D. Não aparece na lista de Clientes do T&D e não conta para o Radar.
-- Ao subir, a migração marca como 'rs' os clientes que a Auditoria registra como criados "(pelo R&S)" (ex.: Sabesp, Dasa, se foram criados por lá). Cliente criado direto pelo menu Clientes do T&D não é tocado.
-- Para um cliente marcado errado: o R&S não é afetado (continua vendo todos). Para devolver um cliente ao T&D basta executar: UPDATE clientes SET origem = NULL WHERE id = ?; (me peça que eu crio um botão, se precisar).
-Sem outras alterações de banco.
+CAUSA PROVÁVEL
+O sino usa um "resumo da empresa" guardado por 10 minutos. Quando vence, TODAS as pessoas
+que abrem o portal naquele momento refazem a mesma conta pesada ao mesmo tempo.
+
+O QUE MUDA (sem mexer em banco, tela ou regras)
+1) Só uma conta por empresa por vez; quem chega junto espera o mesmo resultado.
+2) Cache vencido há menos de 1 hora: responde na hora com o valor anterior e atualiza por trás.
+   (os avisos já podiam ter até 10 min de idade; agora, no momento da renovação, podem ter um pouco mais)
+3) Se a atualização falhar, mantém o valor anterior; sem valor nenhum, o sino já vem vazio como antes.
+
+ARQUIVOS (copie por cima, mesmas pastas)
+- backend/src/services/avisosService.js
+- backend/tests/avisos-resumo-cache.test.js  (novo — 7 testes)
+
+Suíte completa: 59 testes passando.
+
+COMO CONFERIR DEPOIS
+Tela Saúde do sistema continua igual. Em alguns dias, peça para eu repetir a medição
+de /api/avisos: a meta é o p95 ficar abaixo de ~300 ms.
