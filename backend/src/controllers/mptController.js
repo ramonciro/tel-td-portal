@@ -99,7 +99,7 @@ async function salvarMeta(req, res) {
   try {
     const { empresaId } = tenantScopeFor(req);
     if (!empresaId) return res.status(400).json({ ok: false, message: "Escolha o ambiente antes de definir a meta." });
-    const subtipo = await normalizeSubtipo(req.body?.subtipo);
+    const subtipo = await normalizeSubtipo(req.body?.subtipo, null, empresaId);
     if (!subtipo) return res.status(400).json({ ok: false, message: "Escolha uma subdivisão do catálogo." });
     const horas = Number(String(req.body?.horas_meta ?? "").replace(",", "."));
     if (!Number.isFinite(horas) || horas <= 0 || horas > 1000) {

@@ -27,6 +27,13 @@
  * para os dois usos (Ações de Desenvolvimento e turma).
  */
 
+/*
+ * 26/11/2026 (decisão do Ramon na revisão geral): o catálogo passou a ser POR AMBIENTE (subtipos.empresa_id).
+ * Cada ambiente tem o seu e renomear/desativar um subtipo só afeta as turmas, ações, jornadas e metas daquele ambiente.
+ * As linhas com empresa_id NULL são o "catálogo modelo": quem nunca teve catálogo próprio (ambiente novo)
+ * recebe uma cópia dele na primeira consulta (garantirSubtiposDoAmbiente). Super Admin sem ambiente enxerga o modelo.
+ * A detecção de "Avaliação Técnica" continua olhando o nome em TODOS os ambientes (ver nomesAvaliacaoTecnica).
+ */
 const pool = require("./db");
 
 function normalizarChave(valor) {
@@ -45,23 +52,52 @@ function normalizarChave(valor) {
  * quantas turmas e ações usam cada subtipo, para a tela avisar antes de
  * renomear/desativar algo que está em uso.
  */
-async function listarSubtipos({ incluirInativos = false, comUso = false } = {}) {
-  const where = incluirInativos ? "" : "WHERE s.ativo = 1";
+async function garantirSubtiposDoAmbiente(empresaId) {
+  if (!empresaId) return;
+  try {
+    const [[r]] = await pool.query("SELECT COUNT(*) AS n FROM subtipos WHERE empresa_id = ?", [empresaId]);
+    if (Number(r.n) > 0) return;
+    await pool.query(
+      `INSERT INTO subtipos (nome, ativo, chave_sistema, empresa_id)
+       SELECT nome, ativo, chave_sistema, ? FROM subtipos WHERE empresa_id IS NULL`,
+      [empresaId]
+    );
+  } catch (error) {
+    // coluna ainda inexistente (migração não rodou) ou corrida entre dois pedidos: segue com o que existe
+    if (!error || (error.code !== "ER_BAD_FIELD_ERROR" && error.code !== "ER_DUP_ENTRY")) throw error;
+  }
+}
+
+/**
+ * Lista de subtipos do ambiente (`empresaId`), para popular o seletor no frontend (Treinamentos,
+ * Ações de Desenvolvimento) — ordenada por nome. Sem `empresaId` (Super Admin sem ambiente): o catálogo modelo.
+ * `incluirInativos` é usado só pela tela de administração (`/subtipos`), que precisa mostrar/reativar os
+ * desativados. `comUso` (também só da tela de administração) acrescenta quantas turmas e ações do
+ * ambiente usam cada subtipo, para a tela avisar antes de renomear/desativar algo que está em uso.
+ */
+async function listarSubtipos({ incluirInativos = false, comUso = false, empresaId = null } = {}) {
+  await garantirSubtiposDoAmbiente(empresaId);
+  const filtros = [];
+  const params = [];
+  if (!incluirInativos) filtros.push("s.ativo = 1");
+  filtros.push(empresaId ? "s.empresa_id = ?" : "s.empresa_id IS NULL");
+  if (empresaId) params.push(empresaId);
+  const where = `WHERE ${filtros.join(" AND ")}`;
   const uso = comUso
-    ? `, (SELECT COUNT(*) FROM treinamentos t WHERE t.subtipo = s.nome) AS turmas_em_uso,
-         (SELECT COUNT(*) FROM acoes_desenvolvimento a WHERE a.subtipo = s.nome) AS acoes_em_uso`
+    ? `, (SELECT COUNT(*) FROM treinamentos t WHERE t.subtipo = s.nome AND t.empresa_id <=> s.empresa_id) AS turmas_em_uso,
+         (SELECT COUNT(*) FROM acoes_desenvolvimento a WHERE a.subtipo = s.nome AND a.empresa_id <=> s.empresa_id) AS acoes_em_uso`
     : "";
   try {
     const [rows] = await pool.query(
-      `SELECT s.id, s.nome, s.ativo, s.criado_em, s.chave_sistema${uso} FROM subtipos s ${where} ORDER BY s.nome ASC`
+      `SELECT s.id, s.nome, s.ativo, s.criado_em, s.chave_sistema, s.empresa_id${uso} FROM subtipos s ${where} ORDER BY s.nome ASC`,
+      params
     );
     return rows;
   } catch (error) {
-    // Banco ainda sem a coluna `chave_sistema` (migração não rodou): mantém a
-    // tela funcionando com o que já existia.
+    // Banco ainda sem as colunas novas (migração não rodou): mantém a tela funcionando com o que já existia.
     if (error && error.code === "ER_BAD_FIELD_ERROR") {
       const [rows] = await pool.query(
-        `SELECT s.id, s.nome, s.ativo, s.criado_em${uso} FROM subtipos s ${where} ORDER BY s.nome ASC`
+        `SELECT s.id, s.nome, s.ativo, s.criado_em FROM subtipos s ${incluirInativos ? "" : "WHERE s.ativo = 1"} ORDER BY s.nome ASC`
       );
       return rows;
     }
@@ -78,11 +114,11 @@ async function listarSubtipos({ incluirInativos = false, comUso = false } = {}) 
 const CHAVE_AVALIACAO_TECNICA = "avaliacao_tecnica";
 const NOME_PADRAO_AVALIACAO_TECNICA = "Avaliação Técnica";
 
-async function obterNomeSubtipoSistema(chave, nomePadrao) {
+async function obterNomeSubtipoSistema(chave, nomePadrao, empresaId = null) {
   try {
     const [rows] = await pool.query(
-      "SELECT nome FROM subtipos WHERE chave_sistema = ? LIMIT 1",
-      [chave]
+      `SELECT nome FROM subtipos WHERE chave_sistema = ?${empresaId ? " AND empresa_id = ?" : ""} ORDER BY id LIMIT 1`,
+      empresaId ? [chave, empresaId] : [chave]
     );
     if (rows[0] && rows[0].nome) return rows[0].nome;
   } catch (_) {
@@ -91,22 +127,30 @@ async function obterNomeSubtipoSistema(chave, nomePadrao) {
   return nomePadrao;
 }
 
-// Nomes aceitos como "Avaliação Técnica": o atual (que pode ter sido
-// renomeado) e o nome original, para turmas antigas que ainda carreguem o
-// texto de antes.
-async function nomesAvaliacaoTecnica() {
-  const atual = await obterNomeSubtipoSistema(CHAVE_AVALIACAO_TECNICA, NOME_PADRAO_AVALIACAO_TECNICA);
-  const nomes = [atual];
-  if (normalizarChave(atual) !== normalizarChave(NOME_PADRAO_AVALIACAO_TECNICA)) {
+// Nomes aceitos como "Avaliação Técnica": o atual de CADA ambiente (que pode ter sido renomeado) e o nome
+// original, para turmas antigas que ainda carreguem o texto de antes. Sem `empresaId` junta os nomes de todos
+// os ambientes — quase todos os pontos do sistema decidem "é Avaliação Técnica?" só olhando o texto da turma.
+async function nomesAvaliacaoTecnica(empresaId = null) {
+  let nomes = [];
+  try {
+    const [rows] = await pool.query(
+      `SELECT DISTINCT nome FROM subtipos WHERE chave_sistema = ?${empresaId ? " AND empresa_id = ?" : ""}`,
+      empresaId ? [CHAVE_AVALIACAO_TECNICA, empresaId] : [CHAVE_AVALIACAO_TECNICA]
+    );
+    nomes = rows.map((r) => r.nome).filter(Boolean);
+  } catch (_) {
+    // coluna ainda inexistente: só o nome padrão
+  }
+  if (!nomes.some((n) => normalizarChave(n) === normalizarChave(NOME_PADRAO_AVALIACAO_TECNICA))) {
     nomes.push(NOME_PADRAO_AVALIACAO_TECNICA);
   }
-  return { atual, nomes };
+  return { atual: nomes[0], nomes };
 }
 
-async function ehSubtipoAvaliacaoTecnica(valor) {
+async function ehSubtipoAvaliacaoTecnica(valor, empresaId = null) {
   const chave = normalizarChave(valor);
   if (!chave) return false;
-  const { nomes } = await nomesAvaliacaoTecnica();
+  const { nomes } = await nomesAvaliacaoTecnica(empresaId);
   return nomes.some((n) => normalizarChave(n) === chave);
 }
 
@@ -123,7 +167,7 @@ async function ehSubtipoAvaliacaoTecnica(valor) {
  * que não é ativo nem o atual é descartado (null) com um aviso no log, sem
  * derrubar a escrita — mesma política de antes.
  */
-async function normalizeSubtipo(valorBruto, atual = null) {
+async function normalizeSubtipo(valorBruto, atual = null, empresaId = null) {
   const bruto = String(valorBruto || "").trim();
   if (!bruto) return null;
 
@@ -132,7 +176,17 @@ async function normalizeSubtipo(valorBruto, atual = null) {
   // Valor inalterado em relação ao que o registro já tem: preserva.
   if (atual && normalizarChave(atual) === chave) return String(atual).trim();
 
-  const ativos = await listarSubtipos();
+  // Com ambiente: só o catálogo dele. Sem ambiente (Super Admin): qualquer subtipo ativo de qualquer ambiente.
+  let ativos;
+  if (empresaId) {
+    ativos = await listarSubtipos({ empresaId });
+  } else {
+    try {
+      [ativos] = await pool.query("SELECT nome FROM subtipos WHERE ativo = 1 ORDER BY nome");
+    } catch (_) {
+      ativos = await listarSubtipos({});
+    }
+  }
   const encontrado = ativos.find((s) => normalizarChave(s.nome) === chave);
   if (encontrado) return encontrado.nome;
 
@@ -144,6 +198,7 @@ async function normalizeSubtipo(valorBruto, atual = null) {
 
 module.exports = {
   listarSubtipos,
+  garantirSubtiposDoAmbiente,
   normalizeSubtipo,
   normalizarChave,
   CHAVE_AVALIACAO_TECNICA,

@@ -1129,7 +1129,7 @@ async function sanitizarEscritaTreinamento(data, req, ctx) {
   }
 
   if ("subtipo" in dados) {
-    dados.subtipo = await normalizeSubtipo(dados.subtipo, ctx?.antes?.subtipo);
+    dados.subtipo = await normalizeSubtipo(dados.subtipo, ctx?.antes?.subtipo, ctx?.antes?.empresa_id || req?.empresaId || null);
   }
 
   if ("carga_horaria" in dados) {

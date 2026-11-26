@@ -105,7 +105,7 @@ async function criar(req, res) {
     const data_inicio = req.body.data_inicio || null;
     const data_fim = req.body.data_fim || null;
     // Subdivisão padrão da jornada (Comprovação MPT, 04/11/2026): vale para os encontros sem subdivisão própria.
-    const subtipo = await normalizeSubtipo(req.body.subtipo);
+    const subtipo = await normalizeSubtipo(req.body.subtipo, null, req.empresaId || null);
 
     if (!nome) {
       return res.status(400).json({ error: "Nome da jornada é obrigatório." });
@@ -176,7 +176,7 @@ async function atualizar(req, res) {
 
     // Subdivisão: só muda quando o corpo traz o campo (tela antiga aberta não apaga o valor).
     const subtipoEnviado = Object.prototype.hasOwnProperty.call(req.body, "subtipo");
-    const subtipo = subtipoEnviado ? await normalizeSubtipo(req.body.subtipo, exists[0].subtipo) : exists[0].subtipo;
+    const subtipo = subtipoEnviado ? await normalizeSubtipo(req.body.subtipo, exists[0].subtipo, req.empresaId || null) : exists[0].subtipo;
 
     const updateParams = [cliente, nome, descricao, objetivo, publico_macro, observacoes, status, responsavel_id, data_inicio, data_fim, subtipo, id];
     if (req.empresaId) updateParams.push(req.empresaId);

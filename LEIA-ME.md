@@ -1,33 +1,36 @@
-# Pacote 1 da revisão geral — dependências, CORS, rota perigosa e CI (26/11/2026)
+# Pacote 2 da revisão geral — subtipos por ambiente + testes automatizados (26/11/2026)
 
-Sobe por cima do que já está no GitHub (mesmos caminhos). Nada de banco: **não tem migração**.
+**Sobe por cima do Pacote 1** (este zip já traz o `index.js` completo, com as mudanças do Pacote 1). Mesmos caminhos do GitHub.
+Tem **migração automática** (roda sozinha na subida do Railway, é idempotente e não apaga nada).
 
-## O que muda
+## 1) Subtipos por ambiente (decisão: "cada ambiente")
+- Cada ambiente passa a ter o **seu** catálogo de subtipos (tabela `subtipos` ganha `empresa_id`).
+- Na subida, todo ambiente existente recebe uma **cópia do catálogo atual** (mesmos nomes, mesmo item de sistema "Avaliação Técnica"). **Nada muda nas turmas**: o subtipo é gravado como texto e continua igual.
+- Daqui para frente, **criar, renomear e desativar** só afeta o ambiente de quem está logado. Renomear atualiza turmas, ações, jornadas, encontros e metas MPT **só daquele ambiente**. Um ambiente não consegue editar o catálogo de outro (devolve "não encontrado").
+- Ambiente novo recebe a cópia do "catálogo modelo" na primeira consulta. O Super Admin sem ambiente enxerga/edita o modelo.
+- A validação do subtipo ao salvar turma/ação/jornada/meta usa o catálogo do ambiente.
+- A regra de **Avaliação Técnica** (justificado = falta, eliminação por 3 faltas, Reembolso, Radar) continua reconhecendo o nome "Avaliação Técnica" e também o nome que cada ambiente tiver dado ao item de sistema.
+- Ponto de atenção: registros **antigos sem `empresa_id`** (legado) não acompanham renomeação feita num ambiente.
+- Não há mudança nas telas.
 
-1. **Dependências atualizadas** (vulnerabilidades críticas/altas do `npm audit`)
-   - Frontend: Next.js 16.3.4 → **16.4.6** (e `eslint-config-next` junto), `sharp` e `source-map-js` corrigidos.
-   - Backend: Express 4.22.2 (corrige `body-parser` e `proxy-addr`). Só o `package-lock.json` muda.
-   - Sobraram avisos **moderados** (uuid, dentro de `exceljs` e `node-cron`) e 1 alto no `image-size` (dentro do `pptxgenjs`, biblioteca que só roda no navegador de quem gera o PPT). Corrigir esses exigiria trocar de versão maior das bibliotecas — fica para depois.
-2. **CORS restrito**: a API só aceita chamadas de navegador vindas do portal (`FRONTEND_URL` do Railway, `https://tel-td-portal.vercel.app` e `localhost` para desenvolvimento). Chamadas sem navegador (healthcheck, servidor a servidor) seguem normais. Para liberar outro endereço (domínio próprio, preview da Vercel) crie no Railway a variável `CORS_ORIGINS` com os endereços separados por vírgula.
-3. **Rota `/api/zerar-dashboard` removida** (apagava toda a base com um POST de super_admin; nenhuma tela usava). O script de linha de comando `npm run db:zero` continua existindo.
-4. **Rotas `/api/admin/jobs/*` só para Super Admin** (radar, pendências, lembretes, certificados, conquistas, backup): elas rodam o trabalho de **todos** os ambientes, e antes qualquer coordenador/supervisor/superintendente de um ambiente podia disparar. O agendamento automático não muda. Nenhuma tela usava essas rotas. *(Se você as dispara à mão com um token que não é de Super Admin, avise.)*
-5. **CI no GitHub** (`.github/workflows/ci.yml`): a cada push roda checagem de sintaxe, lint e build do frontend e mostra ✓/✗ ao lado do commit. **Não trava nem atrasa o deploy.**
-6. `index.js` passa a exportar o `app` (só abre a porta quando executado direto, como o Railway faz) — preparação para os testes do próximo pacote. Sem efeito em produção.
+## 2) Testes automatizados (O1 e O2) — 32 testes, ~30 s
+Veja `backend/tests/LEIA-ME.md`. Resumo: regras da Avaliação Técnica, Radar × R&S, subtipos por ambiente e, principalmente, **isolamento entre ambientes**: todas as rotas de leitura (≈280 × 6 perfis) e de escrita (≈8 mil requisições) conferindo que o ambiente A nunca vê nem altera dado do B. Eu testei os testes: removendo de propósito um filtro de ambiente, o teste falha apontando a rota.
+- **O que os testes já encontraram:** as rotas `/api/admin/jobs/*` deixavam qualquer coordenador disparar o trabalho de todos os ambientes (corrigido no Pacote 1). Fora isso, **nenhum vazamento de leitura ou escrita entre ambientes** nas rotas exercitadas.
+- Observações para você decidir (não mudei): `/api/auth/ambientes` é pública de propósito (seletor do login) e lista o **nome, código, logo e cor de todos os ambientes** para qualquer pessoa. E o arquivo `tests/consultas-sem-ambiente.baseline.json` registra 9 consultas de apoio (mapas por id, catálogo de salas, nomes de Avaliação Técnica) que não filtram por ambiente e que eu avaliei como seguras.
 
-## Arquivos (sobem nos mesmos caminhos)
-- `backend/package.json`, `backend/package-lock.json`
-- `backend/src/index.js`
-- `backend/src/lib/corsOrigens.js` (novo)
-- `frontend/package.json`, `frontend/package-lock.json`
-- `.github/workflows/ci.yml` (novo)
+## 3) CI com testes
+`.github/workflows/ci.yml` (v2) agora também sobe um MySQL 9 e roda `npm test`. Continua **sem travar o deploy**. É a primeira vez que os testes rodam no MySQL 9 do GitHub (aqui rodei em MariaDB); se a primeira execução ficar vermelha por diferença de versão do banco, me mande a mensagem que eu ajusto.
+Substitua o `ci.yml` do Pacote 1 (mesma observação sobre a pasta `.github`: se não subir arrastando, crie o arquivo pelo botão *Create new file*).
 
-> **Atenção com a pasta `.github`:** por começar com ponto, ela pode não subir no arrastar-e-soltar. Se não aparecer no GitHub, use *Add file → Create new file*, digite `.github/workflows/ci.yml` no nome e cole o conteúdo do arquivo `ci.yml` que está na raiz deste zip.
+## Arquivos
+- `backend/src/index.js`, `backend/src/lib/subtipos.js`, `backend/src/lib/corsOrigens.js`
+- `backend/src/controllers/` — `subtiposController`, `acoesDesenvolvimentoController`, `mptController`, `jornadaPresencaController`, `jornadasDesenvolvimentoController`
+- `backend/src/database/migrate.js`
+- `backend/package.json` (scripts `test`, `test:rapido`, `test:baseline`, `verificar:sintaxe`)
+- `backend/tests/**` (novo)
+- `.github/workflows/ci.yml` (atualizado)
 
 ## Como conferir depois de subir
-- Railway: o deploy precisa terminar e `https://tel-td-portal-production.up.railway.app/api/health` responder `"status":"ok"`.
-- Vercel: o build do frontend precisa concluir; abra o portal, faça login, abra o Dashboard e uma turma.
-- Teste rápido de CORS: se o portal carregar normalmente (login, listas), está certo. Se aparecer erro de rede/CORS no navegador, crie `CORS_ORIGINS` com o endereço usado para abrir o portal.
-- GitHub → aba *Actions*: deve aparecer a execução "Verificação".
-
-## Como desfazer
-Todos os itens são independentes e reversíveis pelo GitHub (reverter o commit). O Express e o Next foram testados aqui (build do frontend e subida do backend).
+1. Deploy do Railway concluído e `/api/health` com `"status":"ok"`.
+2. Menu **Subtipos** (coordenação): a lista deve aparecer igual à de antes. Renomeie um subtipo de teste e confira que as turmas daquele ambiente acompanham.
+3. GitHub → *Actions*: a execução "Verificação" com ✓ (backend com testes, frontend, segurança informativa).

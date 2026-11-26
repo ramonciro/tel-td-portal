@@ -591,7 +591,7 @@ async function validarEncontro(body, jornada) {
   const trilhaId = body?.trilha_id ? Number(body.trilha_id) : null;
   const trilhaEtapaId = body?.trilha_etapa_id ? Number(body.trilha_etapa_id) : null;
   // Subdivisão do encontro (Comprovação MPT): vazio = vale a subdivisão padrão da jornada.
-  const subtipo = body && Object.prototype.hasOwnProperty.call(body, "subtipo") ? await normalizeSubtipo(body.subtipo) : undefined;
+  const subtipo = body && Object.prototype.hasOwnProperty.call(body, "subtipo") ? await normalizeSubtipo(body.subtipo, null, jornada?.empresa_id || null) : undefined;
 
   if (!titulo) return { erro: "Informe o título do encontro." };
   if (titulo.length > 200) return { erro: "Título muito longo (máximo 200 caracteres)." };

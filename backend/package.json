@@ -9,7 +9,10 @@
     "migrar:cronograma": "node src/scripts/migrarCronogramaRetroativo.js",
     "db:zero": "node src/scripts/bancoDoZero.js --confirmo",
     "lint": "npx --yes eslint@9 -c eslint.config.mjs \"src/**/*.js\"",
-    "verificar:sintaxe": "find src -name '*.js' -print0 | xargs -0 -n1 node --check"
+    "verificar:sintaxe": "find src -name '*.js' -print0 | xargs -0 -n1 node --check",
+    "test": "node tests/preparar-banco.js && node --test --test-concurrency=1 \"tests/**/*.test.js\"",
+    "test:rapido": "node --test --test-concurrency=1 \"tests/**/*.test.js\"",
+    "test:baseline": "UPDATE_BASELINE=1 node --test --test-concurrency=1 tests/isolamento-entre-ambientes.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1155.0",
@@ -23,5 +26,8 @@
     "mysql2": "^3.0.0",
     "node-cron": "^3.0.3",
     "xlsx": "npm:@e965/xlsx@^0.20.3"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

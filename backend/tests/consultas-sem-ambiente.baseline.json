@@ -1,0 +1,11 @@
+{
+  "SELECT ? FROM rotina_atividades_registros LIMIT ?": "GET /api/dashboard/treinamentos",
+  "SELECT ? FROM treinamento_instrutores LIMIT ?": "GET /api/dashboard/treinamentos",
+  "SELECT DISTINCT nome FROM subtipos WHERE chave_sistema = ?": "GET /api/dashboard/treinamentos",
+  "SELECT id, necessidade_id, tema, carga_horaria, status, participantes FROM treinamentos WHERE necessidade_id IS NOT NULL": "GET /api/necessidades",
+  "SELECT sala_id, COUNT(*) AS n FROM sala_ambientes GROUP BY sala_id": "GET /api/salas",
+  "SELECT t.id AS tid, TRIM(COALESCE(t.instrutor, '?')) AS principal, t.sala_id, t.carga_horaria, DATE_FORMAT(COALESCE(t.data_inicio, t.data), '?') AS ini, DATE_FORMAT(COALESCE(t.data_fim, t.data_inicio, t.data), '?') AS fi": "GET /api/avisos/",
+  "SELECT ta.treinamento_id AS tid, DATE_FORMAT(ta.data_aula, '?') AS data, COALESCE(ta.carga_horaria_planejada, ?) AS horas, TRIM(COALESCE(ta.instrutor_responsavel, '?')) AS resp, TRIM(COALESCE(t.instrutor, '?')) AS princi": "GET /api/avisos/",
+  "SELECT treinamento_id, COUNT(*) AS dias_planejados FROM turma_aulas GROUP BY treinamento_id": "GET /api/dashboard/treinamentos",
+  "SELECT treinamento_id, treinando_nome, SUM(CASE WHEN status = '?' THEN ? ELSE ? END) AS presente, SUM(CASE WHEN status = '?' THEN ? ELSE ? END) AS ausente, SUM(CASE WHEN status = '?' THEN ? ELSE ? END) AS justificado, SU": "GET /api/dashboard/treinamentos"
+}

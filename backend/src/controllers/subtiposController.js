@@ -16,27 +16,31 @@
 const pool = require("../lib/db");
 const { listarSubtipos, normalizarChave } = require("../lib/subtipos");
 
+// 26/11/2026: o catálogo é POR AMBIENTE. Quem tem ambiente (req.empresaId) só enxerga e mexe no catálogo dele;
+// o Super Admin sem ambiente mexe no catálogo modelo (empresa_id NULL), que serve de base para ambientes novos.
+const escopo = (req) => req.empresaId || null;
+
 // Ajuste 15/10/2026: renomear um subtipo agora acompanha as turmas e ações que
 // já o usam (o texto é gravado nelas), e o item "de sistema" (usado pelo
 // Reembolso de Transporte) não pode ser desativado.
 const MSG_SISTEMA =
   "Este subtipo é usado pelo Reembolso de Transporte e não pode ser desativado. Você pode renomeá-lo livremente.";
 
-async function contarUso(conn, nome) {
-  const [[t]] = await conn.query(`SELECT COUNT(*) AS n FROM treinamentos WHERE subtipo = ?`, [nome]);
-  const [[a]] = await conn.query(`SELECT COUNT(*) AS n FROM acoes_desenvolvimento WHERE subtipo = ?`, [nome]);
+async function contarUso(conn, nome, empresaId) {
+  const [[t]] = await conn.query(`SELECT COUNT(*) AS n FROM treinamentos WHERE subtipo = ? AND empresa_id <=> ?`, [nome, empresaId]);
+  const [[a]] = await conn.query(`SELECT COUNT(*) AS n FROM acoes_desenvolvimento WHERE subtipo = ? AND empresa_id <=> ?`, [nome, empresaId]);
   return { turmas: Number(t.n) || 0, acoes: Number(a.n) || 0 };
 }
 
-async function buscarPorId(id) {
+async function buscarPorId(id, empresaId) {
   try {
     const [rows] = await pool.query(
-      `SELECT id, nome, ativo, chave_sistema FROM subtipos WHERE id = ? LIMIT 1`, [id]);
+      `SELECT id, nome, ativo, chave_sistema, empresa_id FROM subtipos WHERE id = ? AND empresa_id <=> ? LIMIT 1`, [id, empresaId]);
     return rows[0] || null;
   } catch (error) {
     if (error && error.code === "ER_BAD_FIELD_ERROR") {
       const [rows] = await pool.query(`SELECT id, nome, ativo FROM subtipos WHERE id = ? LIMIT 1`, [id]);
-      return rows[0] ? { ...rows[0], chave_sistema: null } : null;
+      return rows[0] ? { ...rows[0], chave_sistema: null, empresa_id: null } : null;
     }
     throw error;
   }
@@ -45,7 +49,7 @@ async function buscarPorId(id) {
 async function listar(req, res) {
   try {
     const incluirInativos = String(req.query?.incluir_inativos || "") === "1";
-    const rows = await listarSubtipos({ incluirInativos, comUso: incluirInativos });
+    const rows = await listarSubtipos({ incluirInativos, comUso: incluirInativos, empresaId: escopo(req) });
     return res.json(rows);
   } catch (error) {
     console.error("[subtiposController]", error.message || error);
@@ -64,13 +68,14 @@ async function criar(req, res) {
     // UNIQUE KEY em `nome` (bate exato), mas isso sozinho deixaria passar
     // "avaliação técnica" e "Avaliação Técnica" como duas linhas diferentes,
     // exatamente o tipo de duplicidade que essa tabela existe para evitar.
-    const existentes = await listarSubtipos({ incluirInativos: true });
+    const empresaId = escopo(req);
+    const existentes = await listarSubtipos({ incluirInativos: true, empresaId });
     const chave = normalizarChave(nome);
     if (existentes.some((s) => normalizarChave(s.nome) === chave)) {
       return res.status(409).json({ ok: false, message: "Já existe um subtipo com esse nome" });
     }
 
-    const [result] = await pool.query(`INSERT INTO subtipos (nome, ativo) VALUES (?, 1)`, [nome]);
+    const [result] = await pool.query(`INSERT INTO subtipos (nome, ativo, empresa_id) VALUES (?, 1, ?)`, [nome, empresaId]);
     return res.status(201).json({ ok: true, id: result.insertId, message: "Subtipo criado com sucesso" });
   } catch (error) {
     if (error.code === "ER_DUP_ENTRY") {
@@ -87,7 +92,7 @@ async function atualizar(req, res) {
     const { id } = req.params;
     const { nome, ativo } = req.body || {};
 
-    const atual = await buscarPorId(id);
+    const atual = await buscarPorId(id, escopo(req));
     if (!atual) {
       return res.status(404).json({ ok: false, message: "Subtipo não encontrado" });
     }
@@ -107,7 +112,7 @@ async function atualizar(req, res) {
     if (renomeia) {
       // Duplicidade case/acento-insensível, ignorando o próprio registro
       // (permite só trocar maiúscula/acento do mesmo item).
-      const todos = await listarSubtipos({ incluirInativos: true });
+      const todos = await listarSubtipos({ incluirInativos: true, empresaId: atual.empresa_id });
       const chave = normalizarChave(nomeNovo);
       if (todos.some((s) => Number(s.id) !== Number(atual.id) && normalizarChave(s.nome) === chave)) {
         return res.status(409).json({ ok: false, message: "Já existe um subtipo com esse nome" });
@@ -131,12 +136,14 @@ async function atualizar(req, res) {
       // O subtipo é gravado como texto em turmas e ações: sem este passo,
       // renomear deixaria o histórico apontando para um nome que não existe
       // mais no catálogo.
-      const [rt] = await conn.query(`UPDATE treinamentos SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
-      const [ra] = await conn.query(`UPDATE acoes_desenvolvimento SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
+      // Só o que é deste ambiente (empresa_id igual ao do subtipo): o texto igual em outro ambiente não é tocado.
+      const emp = atual.empresa_id === undefined ? null : atual.empresa_id;
+      const [rt] = await conn.query(`UPDATE treinamentos SET subtipo = ? WHERE subtipo = ? AND empresa_id <=> ?`, [nomeNovo, atual.nome, emp]);
+      const [ra] = await conn.query(`UPDATE acoes_desenvolvimento SET subtipo = ? WHERE subtipo = ? AND empresa_id <=> ?`, [nomeNovo, atual.nome, emp]);
       // Comprovação MPT (04/11/2026): jornada, encontro e meta guardam o nome da subdivisão como texto.
-      await conn.query(`UPDATE jornadas_desenvolvimento SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
-      await conn.query(`UPDATE jornada_encontros SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
-      await conn.query(`UPDATE mpt_metas SET subtipo = ? WHERE subtipo = ?`, [nomeNovo, atual.nome]);
+      await conn.query(`UPDATE jornadas_desenvolvimento SET subtipo = ? WHERE subtipo = ? AND empresa_id <=> ?`, [nomeNovo, atual.nome, emp]);
+      await conn.query(`UPDATE jornada_encontros SET subtipo = ? WHERE subtipo = ? AND empresa_id <=> ?`, [nomeNovo, atual.nome, emp]);
+      await conn.query(`UPDATE mpt_metas SET subtipo = ? WHERE subtipo = ? AND empresa_id <=> ?`, [nomeNovo, atual.nome, emp]);
       atualizadas = { turmas: rt.affectedRows || 0, acoes: ra.affectedRows || 0 };
     }
     await conn.commit();
@@ -165,14 +172,14 @@ async function atualizar(req, res) {
 async function desativar(req, res) {
   try {
     const { id } = req.params;
-    const existente = await buscarPorId(id);
+    const existente = await buscarPorId(id, escopo(req));
     if (!existente) {
       return res.status(404).json({ ok: false, message: "Subtipo não encontrado" });
     }
     if (existente.chave_sistema) {
       return res.status(409).json({ ok: false, message: MSG_SISTEMA });
     }
-    const uso = await contarUso(pool, existente.nome);
+    const uso = await contarUso(pool, existente.nome, existente.empresa_id === undefined ? null : existente.empresa_id);
     await pool.query(`UPDATE subtipos SET ativo = 0 WHERE id = ?`, [id]);
     // Turmas/ações que já usam o subtipo continuam com ele (histórico
     // preservado); só deixa de ser oferecido para novos cadastros.

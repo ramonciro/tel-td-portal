@@ -1803,6 +1803,24 @@ async function runMigrations() {
         AND NOT EXISTS (SELECT 1 FROM (SELECT id FROM subtipos WHERE chave_sistema = 'avaliacao_tecnica') marcado)
     `);
 
+    // 34b2. Catálogo de subtipos POR AMBIENTE (26/11/2026, decisão do Ramon na revisão geral).
+    // Antes o catálogo era um só para todos os ambientes: renomear um subtipo no Comércio mudava também as turmas
+    // da IBM e da Dasa. Agora cada ambiente tem o seu (subtipos.empresa_id). As linhas com empresa_id NULL viram o
+    // "catálogo modelo" (o que ambientes novos recebem na primeira consulta). Idempotente: só copia o modelo para
+    // o ambiente que ainda não tem nenhum subtipo; o nome é gravado como texto nas turmas, então nada muda para elas.
+    try {
+      await ensureColumn("subtipos", "empresa_id", "INT NULL");
+      await pool.query(`ALTER TABLE subtipos DROP INDEX uq_subtipos_nome`).catch(() => {});
+      await pool.query(`ALTER TABLE subtipos ADD UNIQUE KEY uq_subtipos_empresa_nome (empresa_id, nome)`).catch(() => {});
+      await pool.query(`
+        INSERT INTO subtipos (nome, ativo, chave_sistema, empresa_id)
+        SELECT m.nome, m.ativo, m.chave_sistema, e.id
+          FROM empresas e
+          JOIN subtipos m ON m.empresa_id IS NULL
+         WHERE NOT EXISTS (SELECT 1 FROM subtipos x WHERE x.empresa_id = e.id)
+      `);
+    } catch (e) { console.error("[migrate] subtipos por ambiente:", e.message); }
+
     // 34c. Lista de instrutores (14/10/2026). O nome do instrutor é texto livre
     // em treinamentos.instrutor / turma_aulas.instrutor_responsavel, então a
     // tela Capacidade e o Dashboard contavam 17 "instrutores" quando o time
