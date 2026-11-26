@@ -1,27 +1,33 @@
-PACOTE 6 — Sino de avisos mais rápido (G10) — 26/11/2026
+PACOTE 7 — Backup que realmente restaura (26/11/2026)
 
-O QUE FOI MEDIDO (Railway, últimos 7 dias, ~39 mil requisições)
-- O portal em geral é rápido: mediana de 3 a 4 ms, CPU média ~0,1%, memória ~0,1 GB. Nada pesado.
-- A única rota que se destaca é /api/avisos (o sininho): nos dias de uso forte a mediana
-  sobe para 300–450 ms e os 5% mais lentos passam de 1 segundo.
-- Os 90 erros 5xx da semana são quase todos da queda de hoje (deploy do pacote 5).
+O QUE FOI ACHADO
+Ensaiei backup -> restauração com dados "difíceis" (acentos, emoji, quebras de linha, binário, nulos).
+Quase tudo voltou certo, mas há um defeito real: o backup gravava também o VALOR de colunas
+calculadas (hoje só respostas_avaliativas.treinando_nome_legado). O MySQL de produção recusa
+gravar essas colunas ("value specified for generated column is not allowed"), e o script de
+restauração parava no primeiro erro. Como as tabelas são restauradas em ordem alfabética,
+tudo que vem depois de "respostas_avaliativas" (treinamentos, turmas, usuários...) ficaria sem voltar.
+Neste computador de teste (MariaDB) o erro não aparece; ele aparece no MySQL, por isso o teste
+novo também roda no CI (MySQL 9).
 
-CAUSA PROVÁVEL
-O sino usa um "resumo da empresa" guardado por 10 minutos. Quando vence, TODAS as pessoas
-que abrem o portal naquele momento refazem a mesma conta pesada ao mesmo tempo.
+O QUE MUDA
+1) backupService.js: o dump deixa de fora as colunas calculadas (o banco recalcula ao restaurar).
+2) restaurarBackup.js: 
+   - confere no fim se tabelas e linhas do banco restaurado batem com o que o backup informa;
+   - recusa backup cortado (sem a linha final de conferência);
+   - se um comando falhar, mostra qual foi e quantos já tinham rodado.
+3) Novo teste de ponta a ponta (6 testes): gera dump, restaura em outro banco pelo próprio script
+   e compara os dados. Suíte completa: 65 testes passando.
+4) backend/RESTAURACAO-BACKUP.md: roteiro do teste de restauração real (o arquivo era citado no
+   código, mas não estava no repositório).
 
-O QUE MUDA (sem mexer em banco, tela ou regras)
-1) Só uma conta por empresa por vez; quem chega junto espera o mesmo resultado.
-2) Cache vencido há menos de 1 hora: responde na hora com o valor anterior e atualiza por trás.
-   (os avisos já podiam ter até 10 min de idade; agora, no momento da renovação, podem ter um pouco mais)
-3) Se a atualização falhar, mantém o valor anterior; sem valor nenhum, o sino já vem vazio como antes.
+IMPORTANTE
+- Dumps anteriores a este pacote NÃO restauram em MySQL. O backup de 02h30 do dia seguinte ao deploy
+  já sai correto. Faça o teste de restauração com ele.
+- Nada muda para os usuários; só o backup e o script de restauração.
 
 ARQUIVOS (copie por cima, mesmas pastas)
-- backend/src/services/avisosService.js
-- backend/tests/avisos-resumo-cache.test.js  (novo — 7 testes)
-
-Suíte completa: 59 testes passando.
-
-COMO CONFERIR DEPOIS
-Tela Saúde do sistema continua igual. Em alguns dias, peça para eu repetir a medição
-de /api/avisos: a meta é o p95 ficar abaixo de ~300 ms.
+- backend/src/services/backupService.js
+- backend/src/scripts/restaurarBackup.js
+- backend/tests/backup-restauracao.test.js (novo)
+- backend/RESTAURACAO-BACKUP.md (novo)

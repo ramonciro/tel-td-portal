@@ -83,15 +83,43 @@ async function restaurarBanco(arquivoGz) {
     crlfDelay: Infinity,
   });
   let comandos = 0;
+  let rodape = null; // "-- fim: N tabelas, M linhas" gravado pelo backup
   for await (const linha of leitor) {
     const sql = linha.trim();
+    const fim = sql.match(/^-- fim: (\d+) tabelas, (\d+) linhas/);
+    if (fim) rodape = { tabelas: Number(fim[1]), linhas: Number(fim[2]) };
     if (!sql || sql.startsWith("--")) continue;
-    await c.query(sql);
+    try {
+      await c.query(sql);
+    } catch (e) {
+      conexao.destroy();
+      throw new Error(
+        `${e.message}\n  Comando que falhou (início): ${sql.slice(0, 160)}\n` +
+        `  ${comandos} comandos tinham rodado antes: o banco de destino ficou restaurado só até aqui.`
+      );
+    }
     comandos += 1;
     if (comandos % 500 === 0) process.stdout.write(`\r  ${comandos} comandos executados...`);
   }
+  console.log(`\r  ${comandos} comandos executados.`);
+
+  // Conferência: o que está no banco agora tem de bater com o que o backup diz que levou.
+  if (!rodape) {
+    conexao.destroy();
+    throw new Error("O arquivo não tem a linha final de conferência (\"-- fim: ...\"): o backup pode estar cortado/incompleto.");
+  }
+  const [lista] = await c.query("SHOW FULL TABLES");
+  const tabelas = lista.filter((r) => String(r.Table_type).toUpperCase() !== "VIEW").map((r) => Object.values(r)[0]);
+  let linhas = 0;
+  for (const t of tabelas) {
+    const [[n]] = await c.query(`SELECT COUNT(*) AS n FROM \`${String(t).replace(/`/g, "``")}\``);
+    linhas += Number(n.n);
+  }
   conexao.destroy();
-  console.log(`\r  ${comandos} comandos executados. Banco restaurado.`);
+  const ok = tabelas.length === rodape.tabelas && linhas === rodape.linhas;
+  console.log(`Conferência: backup diz ${rodape.tabelas} tabelas e ${rodape.linhas} linhas; o banco restaurado tem ${tabelas.length} tabelas e ${linhas} linhas — ${ok ? "CONFERE." : "DIVERGE."}`);
+  if (!ok) throw new Error("A contagem do banco restaurado não bate com a do backup. Não use este banco.");
+  console.log("Banco restaurado e conferido.");
 }
 
 async function restaurarUploads() {

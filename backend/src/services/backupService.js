@@ -115,6 +115,28 @@ function valorSql(v) {
 
 const q = (nome) => "`" + String(nome).replace(/`/g, "``") + "`";
 
+/**
+ * SELECT usado no dump de uma tabela. Colunas calculadas (GENERATED, ex.:
+ * respostas_avaliativas.treinando_nome_legado) não podem receber valor num INSERT do MySQL
+ * ("The value specified for generated column ... is not allowed"): ficam de fora do dump e o
+ * próprio banco recalcula ao restaurar. Sem colunas calculadas, continua `SELECT *`.
+ * (Sem isso, a restauração parava na primeira tabela com coluna calculada e deixava de
+ * restaurar todas as tabelas seguintes na ordem alfabética.)
+ */
+async function sqlSelecionar(c, tabela) {
+  const [cols] = await c.query(
+    `SELECT COLUMN_NAME AS nome,
+            (EXTRA LIKE '%VIRTUAL GENERATED%' OR EXTRA LIKE '%STORED GENERATED%') AS gerada
+       FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+      ORDER BY ORDINAL_POSITION`,
+    [tabela]
+  );
+  if (!cols.some((x) => Number(x.gerada) === 1)) return `SELECT * FROM ${q(tabela)}`;
+  const lista = cols.filter((x) => Number(x.gerada) !== 1).map((x) => q(x.nome)).join(",");
+  return `SELECT ${lista} FROM ${q(tabela)}`;
+}
+
 async function escrever(gz, texto) {
   if (!gz.write(texto)) await once(gz, "drain");
 }
@@ -170,7 +192,7 @@ async function gerarDump(destino) {
         tamanhoLote = 0;
       };
 
-      const fluxo = conexao.query(`SELECT * FROM ${q(tabela)}`).stream({ highWaterMark: 200 });
+      const fluxo = conexao.query(await sqlSelecionar(c, tabela)).stream({ highWaterMark: 200 });
       for await (const row of fluxo) {
         if (!colunas) colunas = Object.keys(row).map(q).join(",");
         const valores = Object.values(row).map((v) => conexao.escape(valorSql(v))).join(",");
@@ -459,6 +481,7 @@ function statusBackup() {
 }
 
 module.exports = {
+  sqlSelecionar,
   configurado,
   criarCliente,
   gerarDump,
