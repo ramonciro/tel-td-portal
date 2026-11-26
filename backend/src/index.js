@@ -8,6 +8,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const createCrudRouter = require("./routes/entityCrud");
 const pool = require("./lib/db");
 const { runMigrations } = require("./database/migrate");
+const { opcoesCors } = require("./lib/corsOrigens");
 const { authRequired, authorizeRoles, requireSuperAdmin } = require("./middlewares/auth");
 const { filtroClientesSQL, usuarioTemAcessoAoCliente } = require("./lib/acessoCliente");
 const { validarSenha } = require("./lib/politicaSenha");
@@ -322,7 +323,7 @@ const uploadBiblioteca = multer({
   },
 });
 
-app.use(cors());
+app.use(cors(opcoesCors()));
 
 // Resiliência (21/10/2026): com o banco fora (ou as migrações ainda rodando) as
 // rotas /api respondem 503 na hora, com mensagem clara — em vez de o navegador
@@ -2407,60 +2408,9 @@ app.post(
   marcarEtapaConcluida
 );
 
-// Sprint 1: convertido de GET para POST — TRUNCATE nunca pode ser GET
-// Fase 4 (isolamento multi-tenant): TRUNCATE esvazia a tabela inteira — não
-// existe "TRUNCATE só da minha empresa". Com authorizeRoles("coordenador"),
-// qualquer coordenador de qualquer empresa apagava os dados de TODAS as
-// empresas de uma vez. Restrito a super_admin (não há nenhum botão no
-// frontend que chame esta rota hoje — confirmado por busca no código —
-// então essa restrição não tira nenhuma funcionalidade em uso).
-app.post(
-  "/api/zerar-dashboard",
-  authRequired,
-  requireSuperAdmin,
-  async (req, res) => {
-    try {
-      // 19/10/2026 (decisão do Ramon): trava de confirmação — a ação apaga TUDO
-      // (inclusive usuários) e só roda se o corpo trouxer confirmacao: "ZERAR".
-      if (String(req.body?.confirmacao || "").trim() !== "ZERAR") {
-        return res.status(400).json({
-          ok: false,
-          message: 'Confirmação obrigatória: envie confirmacao = "ZERAR" para apagar toda a base.',
-        });
-      }
-      registrarAuditoria({
-        usuario: req.user, acao: "excluir", entidade: "base", entidadeId: null,
-        resumo: `${req.user?.nome || "Alguém"} zerou a base inteira (zerar-dashboard)`, ip: req.ip,
-      });
-      await pool.query("SET FOREIGN_KEY_CHECKS = 0");
-
-      await pool.query("TRUNCATE TABLE avaliacoes");
-      await pool.query("TRUNCATE TABLE presenca_aulas");
-      await pool.query("TRUNCATE TABLE presencas");
-      await pool.query("TRUNCATE TABLE treinamento_participantes");
-      await pool.query("TRUNCATE TABLE turma_aulas");
-      await pool.query("TRUNCATE TABLE treinamentos");
-      await pool.query("TRUNCATE TABLE usuarios");
-      await pool.query("TRUNCATE TABLE clientes");
-
-      await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-
-      res.json({
-        ok: true,
-        message: "Base zerada com sucesso.",
-      });
-    } catch (error) {
-      try {
-        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-      } catch (_) {}
-
-      console.error("Erro ao zerar base:", error);
-      res.status(500).json({
-        ok: false,
-        message: "Erro ao zerar base."});
-    }
-  }
-);
+// /api/zerar-dashboard (TRUNCATE de toda a base) removida em 26/11/2026, por decisão do Ramon (revisão geral):
+// nenhuma tela a chamava e, se um token de super_admin vazasse, bastava um POST para apagar tudo (inclusive usuários).
+// Se algum dia for preciso zerar a base, use o script de linha de comando `npm run db:zero` (exige --confirmo e acesso ao servidor).
 
 // /api/importar-dashboard (importação antiga do Excel do Dashboard) removida em 19/10/2026,
 // por decisão do Ramon: estava quebrada e sem uso. A importação de notas por planilha/prova em papel a substitui.
@@ -2790,7 +2740,11 @@ app.post("/api/preventivo/radar-itens/:id/resolver", authRequired, authorizeRole
 app.post("/api/preventivo/radar-itens/:id/ignorar", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarIgnorar);
 app.post("/api/preventivo/radar-itens/:id/reabrir", authRequired, authorizeRoles(...RADAR_SEMANAL), preventivoCtrl.radarReabrir);
 // Radar semanal: gera o retrato da semana na hora (o agendamento é toda segunda às 07h, em jobs/scheduler.js).
-app.post("/api/admin/jobs/rodar-radar-semanal", authRequired, authorizeRoles("coordenador", "supervisor", "superintendente"), async (req, res) => {
+// 26/11/2026 (teste de isolamento de escrita): as rotas /api/admin/jobs/* rodam o trabalho de TODOS os ambientes
+// (radar, resumo diário, lembretes, certificados, conquistas, backup) — antes qualquer coordenador/supervisor/
+// superintendente de um ambiente podia disparar isso para os outros. Agora só o Super Admin dispara à mão; o agendamento
+// automático (jobs/scheduler.js) não muda. Nenhuma tela usava estas rotas.
+app.post("/api/admin/jobs/rodar-radar-semanal", authRequired, requireSuperAdmin, async (req, res) => {
   try {
     const resultado = await require("./services/radarSemanalService").gerarSemana({ forcar: true });
     return res.json({ ok: true, resultado });
@@ -3174,7 +3128,7 @@ app.post  ("/api/nusp/importar", authRequired, authorizeRoles(...NUSP_COORD), co
 app.post(
   "/api/admin/jobs/rodar-pendencias",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  requireSuperAdmin,
   async (req, res) => {
     try {
       const resultado = await rodarDigestPendencias();
@@ -3189,7 +3143,7 @@ app.post(
 app.post(
   "/api/admin/jobs/rodar-lembretes",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  requireSuperAdmin,
   async (req, res) => {
     try {
       const resultado = await rodarLembretesAula();
@@ -3204,7 +3158,7 @@ app.post(
 app.post(
   "/api/admin/jobs/rodar-conquistas",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  requireSuperAdmin,
   async (req, res) => {
     try {
       const resultado = await rodarCalculoConquistas();
@@ -3221,7 +3175,7 @@ app.post(
 app.post(
   "/api/admin/jobs/rodar-certificados-automaticos",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  requireSuperAdmin,
   async (req, res) => {
     try {
       const resultado = await rodarCertificadosAutomaticos();
@@ -3336,7 +3290,7 @@ app.get(
 app.post(
   "/api/admin/jobs/rodar-backup",
   authRequired,
-  authorizeRoles("coordenador", "supervisor", "superintendente"),
+  requireSuperAdmin,
   async (req, res) => {
     const st = statusBackup();
     if (!st.configurado) {
@@ -3411,4 +3365,11 @@ async function iniciarAplicacao() {
   }
 }
 
-iniciarAplicacao();
+// 26/11/2026: só abre a porta e roda migrações/agendamentos quando o arquivo é executado direto
+// (`node src/index.js`, como o Railway faz). Quando outro arquivo faz `require("./index")` (os testes
+// automatizados), o app é só exportado, sem efeitos colaterais.
+if (require.main === module) {
+  iniciarAplicacao();
+}
+
+module.exports = { app, iniciarAplicacao };
