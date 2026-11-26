@@ -9,11 +9,30 @@ on:
 
 jobs:
   backend:
-    name: Backend (sintaxe e lint)
+    name: Backend (sintaxe, lint e testes)
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        # Mesma família do banco de produção (MySQL 9 no Railway).
+        image: mysql:9
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     defaults:
       run:
         working-directory: backend
+    env:
+      TEST_MYSQLHOST: 127.0.0.1
+      TEST_MYSQLPORT: 3306
+      TEST_MYSQLUSER: root
+      TEST_MYSQLPASSWORD: root
+      TEST_MYSQLDATABASE: td_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,6 +45,8 @@ jobs:
         run: npm run verificar:sintaxe
       - name: Lint (só erros de verdade, sem regras de estilo)
         run: npm run lint
+      - name: Testes automatizados
+        run: npm test
 
   frontend:
     name: Frontend (build)
