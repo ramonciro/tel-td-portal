@@ -7,7 +7,7 @@
  *     a cada subida, como sempre, porque inclui acertos de dados recorrentes. O runner só MEDE e REGISTRA: duração e
  *     quantos passos "engoliram" um erro e seguiram ("não concluído — seguindo"), que antes sumiam no log.
  *  3. Aplica, em ordem, as migrações NUMERADAS de database/migracoes/NNNN_nome.js que ainda não constam na tabela
- *     schema_migrations. Cada uma roda UMA vez e é registrada. Se uma falhar, o servidor para (falha alta, não silenciosa)
+ *     td_migracoes_controle. Cada uma roda UMA vez e é registrada. Se uma falhar, o servidor para (falha alta, não silenciosa)
  *     e a mesma migração é tentada de novo na próxima subida.
  *
  * Regra daqui para frente: mudança de banco NOVA vai em um arquivo numerado novo, nunca no migrate.js.
@@ -21,6 +21,10 @@ const defaultPool = require("../lib/db");
 const DIR_PADRAO = path.join(__dirname, "migracoes");
 const PADRAO_ARQUIVO = /^(\d{4})_([a-z0-9_]+)\.js$/;
 const TRAVA = "td_migracoes";
+// Nome próprio de propósito: em produção já existia uma tabela "schema_migrations" de outro formato (26/11/2026),
+// e usar esse nome derrubou a subida do servidor. Nunca reaproveitar nome genérico de tabela.
+const TABELA_PADRAO = "td_migracoes_controle";
+const COLUNAS = ["id", "tipo", "aplicada_em", "duracao_ms", "checksum", "avisos", "detalhe"];
 const ESPERA_TRAVA_S = 120;
 
 const memoria = { alteradas: [], avisosLegado: [] };
@@ -39,6 +43,16 @@ async function garantirTabela(pool, tabela) {
       avisos INT NOT NULL DEFAULT 0,
       detalhe VARCHAR(500) NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  // Se a tabela já existia com outro formato, o CREATE acima não a altera: confere e para com uma mensagem clara.
+  const [cols] = await pool.query(
+    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+    [tabela]
+  );
+  const tem = new Set(cols.map((c) => c.COLUMN_NAME));
+  const faltam = COLUNAS.filter((c) => !tem.has(c));
+  if (faltam.length) {
+    throw new Error(`A tabela de controle de migrações "${tabela}" já existe com outro formato (faltam as colunas: ${faltam.join(", ")}). Não mexi nela.`);
+  }
 }
 
 function listarArquivos(dir) {
@@ -89,7 +103,7 @@ async function rodarLegado(legado) {
   return { duracaoMs: Date.now() - inicio, avisos };
 }
 
-async function executarMigracoes({ pool = defaultPool, dir = DIR_PADRAO, legado, tabela = "schema_migrations" } = {}) {
+async function executarMigracoes({ pool = defaultPool, dir = DIR_PADRAO, legado, tabela = TABELA_PADRAO } = {}) {
   const rodaLegado = legado === undefined ? require("./migrate").runMigrations : legado;
   const arquivos = listarArquivos(dir); // valida nomes e números ANTES de mexer em qualquer coisa
 
@@ -100,12 +114,17 @@ async function executarMigracoes({ pool = defaultPool, dir = DIR_PADRAO, legado,
     if (rodaLegado) {
       const { duracaoMs, avisos } = await rodarLegado(rodaLegado);
       memoria.avisosLegado = avisos;
-      await pool.query(
-        `INSERT INTO \`${tabela}\` (id, tipo, aplicada_em, duracao_ms, avisos, detalhe)
-         VALUES ('legado', 'legado', NOW(), ?, ?, ?)
-         ON DUPLICATE KEY UPDATE aplicada_em = NOW(), duracao_ms = VALUES(duracao_ms), avisos = VALUES(avisos), detalhe = VALUES(detalhe)`,
-        [duracaoMs, avisos.length, avisos.length ? curto(avisos.join(" | "), 500) : null]
-      );
+      // O registro do legado é só estatística: se falhar, a subida do servidor NÃO pode cair por causa dele.
+      try {
+        await pool.query(
+          `INSERT INTO \`${tabela}\` (id, tipo, aplicada_em, duracao_ms, avisos, detalhe)
+           VALUES ('legado', 'legado', NOW(), ?, ?, ?)
+           ON DUPLICATE KEY UPDATE aplicada_em = NOW(), duracao_ms = VALUES(duracao_ms), avisos = VALUES(avisos), detalhe = VALUES(detalhe)`,
+          [duracaoMs, avisos.length, avisos.length ? curto(avisos.join(" | "), 500) : null]
+        );
+      } catch (e) {
+        console.warn("[migracoes] não consegui registrar a execução do legado (segue sem registrar):", e.message);
+      }
       if (avisos.length) console.warn(`[migracoes] ${avisos.length} passo(s) do legado não concluíram e seguiram — veja os avisos acima.`);
     }
 
@@ -146,7 +165,7 @@ async function executarMigracoes({ pool = defaultPool, dir = DIR_PADRAO, legado,
 }
 
 // Estado para a tela de saúde (somente leitura).
-async function statusMigracoes({ pool = defaultPool, tabela = "schema_migrations" } = {}) {
+async function statusMigracoes({ pool = defaultPool, tabela = TABELA_PADRAO } = {}) {
   try {
     const [rows] = await pool.query(
       `SELECT id, tipo, aplicada_em, duracao_ms, avisos, detalhe FROM \`${tabela}\` ORDER BY aplicada_em DESC, id DESC`
@@ -165,4 +184,4 @@ async function statusMigracoes({ pool = defaultPool, tabela = "schema_migrations
   }
 }
 
-module.exports = { executarMigracoes, statusMigracoes, listarArquivos, DIR_PADRAO };
+module.exports = { executarMigracoes, statusMigracoes, listarArquivos, DIR_PADRAO, TABELA_PADRAO };

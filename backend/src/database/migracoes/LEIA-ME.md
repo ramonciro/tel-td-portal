@@ -16,7 +16,7 @@ module.exports = {
 ```
 
 ## Regras
-- Cada migração roda **uma única vez** e fica registrada em `schema_migrations` (quando, quanto tempo levou).
+- Cada migração roda **uma única vez** e fica registrada em `td_migracoes_controle` (quando, quanto tempo levou).
 - Escreva de forma que rodar duas vezes não quebre (`CREATE TABLE IF NOT EXISTS`, checar se a coluna já existe), porque bancos antigos podem já ter a mudança.
 - **Nunca edite uma migração já aplicada.** Se o arquivo mudar depois, o sistema não roda de novo e avisa na tela de saúde. Corrija com uma migração nova.
 - Se uma migração falhar, o servidor **não sobe** e a mesma migração é tentada de novo na próxima subida. Isso é proposital: melhor parar do que seguir com o banco pela metade.

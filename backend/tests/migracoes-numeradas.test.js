@@ -6,7 +6,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const F = require("./helpers/fabrica");
-const { executarMigracoes, statusMigracoes, listarArquivos } = require("../src/database/runner");
+const { executarMigracoes, statusMigracoes, listarArquivos, TABELA_PADRAO } = require("../src/database/runner");
 
 const pool = F.pool;
 let seq = 0;
@@ -144,4 +144,46 @@ test("no banco de teste, o controle real já aplicou o legado e a 0001 (tabela s
   assert.ok(st.numeradas_aplicadas >= 1);
   const [t] = await pool.query("SHOW TABLES LIKE 'sistema_jobs'");
   assert.equal(t.length, 1);
+});
+
+// Incidente de 26/11/2026: em produção já existia uma tabela "schema_migrations" de outro formato e o controle,
+// que usava esse nome, derrubou a subida do servidor. Estes testes garantem que isso não se repete.
+test("o nome padrão da tabela de controle não é um nome genérico que possa colidir", () => {
+  assert.notEqual(TABELA_PADRAO, "schema_migrations");
+  assert.match(TABELA_PADRAO, /^td_/);
+});
+
+test("uma tabela 'schema_migrations' de outro formato no banco não atrapalha a subida nem é tocada", async () => {
+  await pool.query("DROP TABLE IF EXISTS schema_migrations");
+  await pool.query("CREATE TABLE schema_migrations (version VARCHAR(50) PRIMARY KEY, aplicada TINYINT)");
+  await pool.query("INSERT INTO schema_migrations VALUES ('20240101', 1)");
+  try {
+    const r = await executarMigracoes({ pool, legado: null });
+    assert.ok(r.total >= 1);
+    const [rows] = await pool.query("SELECT version FROM schema_migrations");
+    assert.deepEqual(rows.map((x) => x.version), ["20240101"], "a tabela alheia continua intacta");
+  } finally {
+    await pool.query("DROP TABLE IF EXISTS schema_migrations");
+  }
+});
+
+test("tabela de controle existente com formato incompatível: para com mensagem clara e sem alterar a tabela", async () => {
+  const c = novoCenario();
+  await pool.query(`CREATE TABLE \`${c.tabela}\` (id VARCHAR(120) PRIMARY KEY, outra_coisa INT)`);
+  await assert.rejects(() => executarMigracoes(c.opcoes()), /já existe com outro formato \(faltam as colunas: tipo, aplicada_em/);
+  const [cols] = await pool.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?", [c.tabela]);
+  assert.deepEqual(cols.map((x) => x.COLUMN_NAME).sort(), ["id", "outra_coisa"]);
+});
+
+test("falha ao registrar a execução do legado NÃO derruba a subida", async () => {
+  const c = novoCenario();
+  c.escrever("0001_a.js", c.migracao("a"));
+  const poolQuePerdeORegistro = {
+    query: (sql, params) => (/VALUES \('legado'/.test(String(sql)) ? Promise.reject(new Error("sem permissão")) : pool.query(sql, params)),
+    getConnection: () => pool.getConnection(),
+  };
+  const warn = console.warn; console.warn = () => {};
+  let r;
+  try { r = await executarMigracoes({ pool: poolQuePerdeORegistro, dir: c.dir, tabela: c.tabela, legado: async () => {} }); } finally { console.warn = warn; }
+  assert.equal(r.aplicadas, 1, "as migrações numeradas seguiram normalmente");
 });
