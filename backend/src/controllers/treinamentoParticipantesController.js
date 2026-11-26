@@ -8,6 +8,7 @@ const { garantirUsuarioTreinando } = require("../services/provisionamentoUsuario
 const { condicaoIdentidade } = require("../lib/identidadeTreinando");
 const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
 const { registrarAuditoria } = require("../services/auditoria");
+const { aplicarEliminacaoPorFaltas, ehMotivoEliminacao } = require("../services/eliminacaoFaltasService");
 const { recontarParticipantesDasTurmas } = require("../services/turmaRegras");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
@@ -167,6 +168,9 @@ async function getParticipantesByTreinamento(req, res) {
         return res.status(404).json({ ok: false, message: "Treinamento não encontrado" });
       }
     }
+
+    // 3 faltas na Avaliação Técnica = eliminado: atualiza antes de listar (pega faltas antigas também).
+    await aplicarEliminacaoPorFaltas(id);
 
     let rows;
 
@@ -1468,10 +1472,19 @@ async function desfazerDesistencia(req, res) {
     await comTransacao(async (conn) => {
       await conn.query(
         `UPDATE treinamento_participantes
-         SET desistencia_em = NULL, desistencia_data = NULL, desistencia_motivo = NULL, desistencia_por = NULL
+         SET desistencia_em = NULL, desistencia_data = NULL, desistencia_motivo = NULL, desistencia_por = NULL,
+             eliminacao_faltas_revertida = ?
          WHERE id = ?`,
-        [p.id]
+        [ehMotivoEliminacao(p.desistencia_motivo) ? 1 : 0, p.id]
       );
+      if (ehMotivoEliminacao(p.desistencia_motivo)) {
+        // tira o "Reprovado" automático da avaliação individual (só o que o sistema gravou, sem notas)
+        await conn.query(
+          `DELETE FROM rotina_avaliacao_individual
+            WHERE treinamento_id = ? AND participante_id = ? AND atualizado_por = 'Sistema' AND media IS NULL`,
+          [p.treinamento_id, p.id]
+        );
+      }
       ativos = await recontarParticipantesAtivos(conn, p.treinamento_id);
     });
 

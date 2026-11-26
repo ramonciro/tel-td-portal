@@ -30,6 +30,7 @@ const { ehSubtipoAvaliacaoTecnica } = require("../lib/subtipos");
 
 const CROSS_TENANT_ROLES = ["assistente_treinamento"];
 const PRESENCA_MINIMA_PADRAO = 75;
+const { aplicarEliminacaoPorFaltas } = require("../services/eliminacaoFaltasService");
 const SITUACOES = ["presente", "justificado", "ausente"];
 const LETRA = { presente: "P", justificado: "J", ausente: "F" };
 const ROTULO_SITUACAO = { presente: "Presente", justificado: "Justificado", ausente: "Ausente" };
@@ -276,6 +277,7 @@ async function grade(req, res) {
   try {
     const turma = await buscarTurma(req, req.params.id);
     if (!turma) return erro(res, 404, "Turma não encontrada.");
+    await aplicarEliminacaoPorFaltas(turma.id); // pega também as faltas lançadas antes desta regra existir
     return res.json(await montarGrade(turma));
   } catch (e) {
     return falha(res, "carregar a grade de presença da turma", e);
@@ -331,7 +333,9 @@ async function registrarPresenca(req, res) {
     if (situacao === "justificado" && !justificativa) return erro(res, 400, "Informe a justificativa da falta justificada.");
 
     await db.query(SQL_GRAVAR, [[[aula.id, aula.treinamento_id, aula.data, ps[0].nome, situacao || "pendente", justificativa || null, aula.empresa_id || null]]]);
-    return res.json({ ok: true, situacao, justificativa: justificativa || null });
+    const elim = await aplicarEliminacaoPorFaltas(aula.treinamento_id);
+    const eliminado = elim.eliminados.find((e) => Number(e.id) === Number(ps[0].id)) || null;
+    return res.json({ ok: true, situacao, justificativa: justificativa || null, eliminado, eliminados: elim.eliminados });
   } catch (e) {
     return falha(res, "salvar a presença", e);
   }

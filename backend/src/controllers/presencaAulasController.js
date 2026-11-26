@@ -1,6 +1,7 @@
 const pool = require("../lib/db");
 const { tenantScopeFor } = require("../lib/tenantScope");
 const { sqlSemDesistente, criarMatcherAvaliacaoTecnica } = require("../services/turmaRegras");
+const { aplicarEliminacaoPorFaltas } = require("../services/eliminacaoFaltasService");
 
 // Decisão 12 (Pacote Salas/Assistente/CPF/Horas/Farol MPT, 15/09/2026): a
 // Assistente de Treinamento enxerga presença de qualquer tenant nesta tela
@@ -271,6 +272,9 @@ async function salvarPresencaAula(req, res) {
       );
     }
 
+    // 3 faltas na Avaliação Técnica = eliminado (vira desistência automática).
+    const eliminacao = await aplicarEliminacaoPorFaltas(aula.treinamento_id);
+
     const [rows] = await pool.query(
       `
       SELECT
@@ -290,7 +294,10 @@ async function salvarPresencaAula(req, res) {
 
     return res.json({
       ok: true,
-      message: "Presença da aula salva com sucesso",
+      message: eliminacao.eliminados.length
+        ? `Presença da aula salva. Eliminado(s) por 3 faltas: ${eliminacao.eliminados.map((e) => e.nome).join(", ")}.`
+        : "Presença da aula salva com sucesso",
+      eliminados: eliminacao.eliminados,
       registros: rows,
     });
   } catch (error) {

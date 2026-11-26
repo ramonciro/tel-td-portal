@@ -920,14 +920,18 @@ async function turmaDeAvTec(req, res, { editar = false } = {}) {
   return t;
 }
 
+const { aplicarEliminacaoPorFaltas, sqlEliminadoPorFaltas } = require("../services/eliminacaoFaltasService");
+
 async function carregarAvaliacao(t) {
+  // 3 faltas = eliminado: garante a desistência automática e o "Reprovado" na avaliação antes de montar a lista.
+  await aplicarEliminacaoPorFaltas(t.id);
   const [rows] = await pool.query(
     `SELECT p.id AS participante_id, p.nome, p.matricula, p.pessoa_id,
             a.nota_pontualidade, a.nota_interesse, a.nota_comportamento, a.nota_quiz, a.nota_avaliacao_final,
             a.media, a.resultado, a.observacao, a.atualizado_por, a.updated_at
        FROM treinamento_participantes p
        LEFT JOIN rotina_avaliacao_individual a ON a.treinamento_id = p.treinamento_id AND a.participante_id = p.id
-      WHERE p.treinamento_id = ? AND p.desistencia_em IS NULL ORDER BY p.nome`,
+      WHERE p.treinamento_id = ? AND (p.desistencia_em IS NULL OR ${sqlEliminadoPorFaltas("p")}) ORDER BY p.nome`,
     [t.id]
   );
   const [regRows] = await pool.query("SELECT registrada_por, registrada_em FROM rotina_avaliacao_registro WHERE treinamento_id = ?", [t.id]);
@@ -973,7 +977,7 @@ async function obterAvaliacao(req, res) {
     let desistentes = [];
     try {
       const [d] = await pool.query(
-        "SELECT nome FROM treinamento_participantes WHERE treinamento_id = ? AND desistencia_em IS NOT NULL ORDER BY nome", [t.id]
+        `SELECT nome FROM treinamento_participantes p WHERE treinamento_id = ? AND desistencia_em IS NOT NULL AND NOT ${sqlEliminadoPorFaltas("p")} ORDER BY nome`, [t.id]
       );
       desistentes = d.map((x) => x.nome);
     } catch (_) { /* coluna ainda não existe: segue sem a lista */ }
