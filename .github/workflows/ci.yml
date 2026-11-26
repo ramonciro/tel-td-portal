@@ -1,0 +1,82 @@
+# Verificação automática a cada push e pull request (criado em 26/11/2026).
+# NÃO bloqueia nem atrasa o deploy (Railway e Vercel publicam do mesmo jeito); serve para avisar, no GitHub,
+# quando algo quebrou: aparece um ✓ verde ou um ✗ vermelho ao lado do commit.
+name: Verificação
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (sintaxe, lint e testes)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        # Mesma família do banco de produção (MySQL 9 no Railway).
+        image: mysql:9
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      TEST_MYSQLHOST: 127.0.0.1
+      TEST_MYSQLPORT: 3306
+      TEST_MYSQLUSER: root
+      TEST_MYSQLPASSWORD: root
+      TEST_MYSQLDATABASE: td_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Sintaxe de todos os arquivos
+        run: npm run verificar:sintaxe
+      - name: Lint (só erros de verdade, sem regras de estilo)
+        run: npm run lint
+      - name: Testes automatizados
+        run: npm test
+
+  frontend:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Build de produção
+        run: npm run build
+
+  seguranca:
+    name: Dependências (npm audit, informativo)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Backend
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Frontend
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
