@@ -19,7 +19,23 @@ const path = require("path");
 
 const ARQUIVO_BASELINE = path.join(__dirname, "consultas-sem-ambiente.baseline.json");
 
-const PERFIS = ["coordenador", "supervisor", "instrutor", "treinando", "analista_conteudo", "metodologia"];
+// Todos os perfis do sistema. Superintendente e Assistente de Treinamento veem outros ambientes DE PROPÓSITO em telas
+// específicas (controllers com crossTenantRoles); para eles, mostrar dado do B só é aceito nas rotas listadas abaixo.
+const PERFIS = [
+  "coordenador", "supervisor", "instrutor", "treinando", "analista_conteudo", "metodologia",
+  "coordenador_rs", "gestor_rs", "coordenador_nusp", "analista_nusp", "gestor_nusp",
+  "coordenador_rh", "analista_rh", "gestor_rh", "cliente_rh", "coaching",
+  "superintendente", "assistente_treinamento",
+];
+const CRUZA_DE_PROPOSITO = {
+  superintendente: /^\/api\/(analytics|capacidade|desempenho-instrutor|frequencia-individual|presenca-resumo|mpt|dashboard)\b/,
+  assistente_treinamento: /^\/api\/(celulas-baby|conteudo|presenca-resumo|preventivo|provas-papel|reembolso-transporte|rotina|treinamentos|treinamentos-instrutores|turma-aulas|turma-presenca|presenca-aulas|salas|instrutores-turma)\b/,
+};
+// Além do caminho, manda ids do ambiente B pela URL (?turma_id=, ?empresa_id=...): muita rota só consulta o banco com eles.
+const QS = (b) => ["empresa_id", "ambiente_id", "tenant_id"].map((k) => `${k}=${b.empresa}`).concat(
+  ["id", "turma_id", "treinamento_id", "pessoa_id", "cliente_id", "usuario_id", "aula_id", "participante_id", "instrutor_id", "user_id"]
+    .map((k) => `${k}=${k === "turma_id" || k === "treinamento_id" ? b.turma : k === "cliente_id" ? b.cliente : k === "aula_id" ? b.aula : ["usuario_id", "user_id", "instrutor_id"].includes(k) ? b.usuario : b.pessoa}`)
+).join("&");
 const IGNORAR = /\/(logout|zerar|backup)\b|^\/api\/health/i;
 // Públicas DE PROPÓSITO: /api/auth/ambientes alimenta o seletor de ambiente da tela de login (antes de logar), e devolve
 // só nome, código, logo e cor. Se um dia isso deixar de ser desejado, tire a rota desta lista e o teste passa a cobrar.
@@ -73,17 +89,19 @@ before(async () => {
   resultado = { vazamentos: [], chamadas: 0, comDadosDeA: new Set(), erros500: new Set() };
   for (const perfil of PERFIS) {
     const token = usuarios[perfil].token;
+    espia.pausar(!!CRUZA_DE_PROPOSITO[perfil]); // a catraca vale para quem NÃO deve cruzar ambientes
     for (const r of rotas) {
       const temParam = r.caminho.includes(":");
       const caminhos = temParam
         ? candidatosB.map((id) => r.caminho.replace(/:[A-Za-z_]+\??/g, String(id)))
         : [r.caminho];
-      for (const c of caminhos) {
+      for (const c of caminhos.flatMap((x) => [x, `${x}?${QS(idsB)}`])) {
         espia.definirRota(`GET ${r.caminho}`);
         const resp = await api.get(c, { token });
         resultado.chamadas += 1;
         if (resp.status >= 500) resultado.erros500.add(`${r.caminho} (${perfil})`);
-        if (!PUBLICAS_DE_PROPOSITO.has(r.caminho)) {
+        const liberada = CRUZA_DE_PROPOSITO[perfil] && CRUZA_DE_PROPOSITO[perfil].test(r.caminho);
+        if (!PUBLICAS_DE_PROPOSITO.has(r.caminho) && !liberada) {
           if (resp.texto.includes(sentB)) resultado.vazamentos.push(`${perfil} -> GET ${c} [${resp.status}] (texto do ambiente B na resposta)`);
           else if (resp.json && linhasDeOutroAmbiente(resp.json, A.id)) resultado.vazamentos.push(`${perfil} -> GET ${c} [${resp.status}] (linha com empresa_id de outro ambiente)`);
         }

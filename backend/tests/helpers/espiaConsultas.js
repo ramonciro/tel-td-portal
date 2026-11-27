@@ -19,9 +19,10 @@ function normalizar(sql) {
 
 function instalar(pool, tabelasComEmpresa, idAmbiente) {
   const registro = new Map(); // assinatura -> primeira rota que a executou
-  const estado = { rota: "(fora de rota)" };
+  const estado = { rota: "(fora de rota)", pausado: false };
 
   const avaliar = (sql, params) => {
+    if (estado.pausado) return; // perfis que cruzam ambientes de propósito (superintendente, assistente) não entram na catraca
     const texto = typeof sql === "string" ? sql : sql && sql.sql;
     if (!texto || !/^\s*(SELECT|UPDATE|DELETE)\b/i.test(texto)) return;
     const tabelas = [...texto.matchAll(/\b(?:FROM|JOIN|UPDATE)\s+`?(\w+)`?/gi)].map((m) => m[1].toLowerCase()).filter((t) => tabelasComEmpresa.has(t));
@@ -43,7 +44,7 @@ function instalar(pool, tabelasComEmpresa, idAmbiente) {
   const getConnection = pool.getConnection.bind(pool);
   pool.getConnection = async (...a) => { const c = await getConnection(...a); if (!c.__espiada) { envolver(c); c.__espiada = true; } return c; };
 
-  return { registro, definirRota: (r) => { estado.rota = r; } };
+  return { registro, definirRota: (r) => { estado.rota = r; }, pausar: (p) => { estado.pausado = !!p; } };
 }
 
 module.exports = { instalar, normalizar };

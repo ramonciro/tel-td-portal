@@ -278,9 +278,13 @@ async function criarBloqueio(req, res) {
 async function cancelarBloqueio(req, res) {
   try {
     const id = Number(req.params.id);
-    const [rows] = await pool.query(`SELECT id, motivo, sala_id, ativo FROM sala_bloqueios WHERE id = ? LIMIT 1`, [id]);
+    // Coordenador só cancela bloqueio do próprio ambiente (Assistente e Super Admin enxergam todos: empresaId nulo).
+    const { empresaId: escopoEmp } = escopo(req);
+    const filtroEmp = escopoEmp ? " AND empresa_id = ?" : "";
+    const paramsEmp = escopoEmp ? [id, escopoEmp] : [id];
+    const [rows] = await pool.query(`SELECT id, motivo, sala_id, ativo FROM sala_bloqueios WHERE id = ?${filtroEmp} LIMIT 1`, paramsEmp);
     if (!rows.length || !rows[0].ativo) return res.status(404).json({ ok: false, message: "Bloqueio não encontrado." });
-    await pool.query(`UPDATE sala_bloqueios SET ativo = 0, cancelado_em = NOW() WHERE id = ?`, [id]);
+    await pool.query(`UPDATE sala_bloqueios SET ativo = 0, cancelado_em = NOW() WHERE id = ?${filtroEmp}`, paramsEmp);
     registrarAuditoria({
       usuario: req.user, acao: "excluir", entidade: "sala_bloqueio", entidadeId: id,
       resumo: `${req.user?.nome || "Alguém"} cancelou o bloqueio de sala "${rows[0].motivo}"`,

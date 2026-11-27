@@ -1,26 +1,16 @@
-PACOTE 8 — Restaurar também os backups antigos (27/11/2026)
+PACOTE 9 - Fechamento da revisão de isolamento entre ambientes (G3)
 
-PROBLEMA
-Os dumps feitos antes do Pacote 7 (o mensal de 01/11 e os diários até 26/11) trazem o valor da coluna
-calculada respostas_avaliativas.treinando_nome_legado. O MySQL 8 recusa isso e a restauração pararia
-nessa tabela. Confirmado no arquivo de 01/11 que você enviou.
+O QUE MUDA
+1) CORREÇÃO REAL: backend/src/controllers/salasController.js
+   Cancelar bloqueio de sala (DELETE de bloqueio) não conferia o ambiente.
+   Um coordenador que soubesse o id de um bloqueio de OUTRO ambiente conseguia cancelá-lo.
+   Agora a busca e a atualização filtram por empresa_id (Assistente de Treinamento e Super Admin continuam enxergando todos).
 
-O QUE MUDA (só a restauração; o backup em si e o portal não mudam)
-- Novo src/lib/dumpLegado.js: ao restaurar, reescreve o INSERT sem a coluna calculada (o banco recalcula).
-  Dump novo passa sem alteração nenhuma.
-- restaurarBackup.js usa isso e avisa: "Dump antigo: valores de coluna calculada ignorados (...)".
-  A conferência final de tabelas e linhas continua valendo.
-- Se a quantidade de valores não bater com a de colunas, ou houver texto sem fechar, o script para com erro
-  claro (nunca grava errado).
+2) TESTES (não mexem no sistema, só na rede de segurança):
+   - tests/isolamento-entre-ambientes.test.js: agora cobre 18 perfis (inclui RS, NUSP, RH, cliente_rh, coaching, superintendente e assistente) e também ids de outro ambiente passados na query string.
+   - tests/isolamento-escrita.test.js: sementes do ambiente B com ids próprios (antes colidiam com outro teste e deixavam o teste "cego"), checagem de que a semente entrou em todas as tabelas, e verificação do que a Assistente pode alterar em outro ambiente (lista de telas liberadas).
+   - tests/helpers/espiaConsultas.js: ganhou pausar(), para a "catraca" ignorar perfis que cruzam ambientes de propósito.
 
-TESTES (75 no total, todos passando)
-- 9 de leitura do formato (aspas, vírgulas, parênteses, barras, binário, nulo, crase) + um de estresse com 3.000
-  linhas de texto "difícil" escapado pelo mesmo driver do backup.
-- 1 ponta a ponta: dump no formato antigo restaurado em outro banco e comparado com o original.
-
-ARQUIVOS (copie por cima, mesmas pastas)
-- backend/src/lib/dumpLegado.js (novo)
-- backend/src/scripts/restaurarBackup.js
-- backend/tests/dump-legado.test.js (novo)
-- backend/tests/backup-restauracao.test.js
-- backend/RESTAURACAO-BACKUP.md
+COMO SUBIR
+Copie as 4 pastas/arquivos para o repositório mantendo os caminhos e faça o commit.
+Suíte: 77 testes passando, lint limpo.
