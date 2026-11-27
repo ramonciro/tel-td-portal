@@ -1,33 +1,26 @@
-PACOTE 7 — Backup que realmente restaura (26/11/2026)
+PACOTE 8 — Restaurar também os backups antigos (27/11/2026)
 
-O QUE FOI ACHADO
-Ensaiei backup -> restauração com dados "difíceis" (acentos, emoji, quebras de linha, binário, nulos).
-Quase tudo voltou certo, mas há um defeito real: o backup gravava também o VALOR de colunas
-calculadas (hoje só respostas_avaliativas.treinando_nome_legado). O MySQL de produção recusa
-gravar essas colunas ("value specified for generated column is not allowed"), e o script de
-restauração parava no primeiro erro. Como as tabelas são restauradas em ordem alfabética,
-tudo que vem depois de "respostas_avaliativas" (treinamentos, turmas, usuários...) ficaria sem voltar.
-Neste computador de teste (MariaDB) o erro não aparece; ele aparece no MySQL, por isso o teste
-novo também roda no CI (MySQL 9).
+PROBLEMA
+Os dumps feitos antes do Pacote 7 (o mensal de 01/11 e os diários até 26/11) trazem o valor da coluna
+calculada respostas_avaliativas.treinando_nome_legado. O MySQL 8 recusa isso e a restauração pararia
+nessa tabela. Confirmado no arquivo de 01/11 que você enviou.
 
-O QUE MUDA
-1) backupService.js: o dump deixa de fora as colunas calculadas (o banco recalcula ao restaurar).
-2) restaurarBackup.js: 
-   - confere no fim se tabelas e linhas do banco restaurado batem com o que o backup informa;
-   - recusa backup cortado (sem a linha final de conferência);
-   - se um comando falhar, mostra qual foi e quantos já tinham rodado.
-3) Novo teste de ponta a ponta (6 testes): gera dump, restaura em outro banco pelo próprio script
-   e compara os dados. Suíte completa: 65 testes passando.
-4) backend/RESTAURACAO-BACKUP.md: roteiro do teste de restauração real (o arquivo era citado no
-   código, mas não estava no repositório).
+O QUE MUDA (só a restauração; o backup em si e o portal não mudam)
+- Novo src/lib/dumpLegado.js: ao restaurar, reescreve o INSERT sem a coluna calculada (o banco recalcula).
+  Dump novo passa sem alteração nenhuma.
+- restaurarBackup.js usa isso e avisa: "Dump antigo: valores de coluna calculada ignorados (...)".
+  A conferência final de tabelas e linhas continua valendo.
+- Se a quantidade de valores não bater com a de colunas, ou houver texto sem fechar, o script para com erro
+  claro (nunca grava errado).
 
-IMPORTANTE
-- Dumps anteriores a este pacote NÃO restauram em MySQL. O backup de 02h30 do dia seguinte ao deploy
-  já sai correto. Faça o teste de restauração com ele.
-- Nada muda para os usuários; só o backup e o script de restauração.
+TESTES (75 no total, todos passando)
+- 9 de leitura do formato (aspas, vírgulas, parênteses, barras, binário, nulo, crase) + um de estresse com 3.000
+  linhas de texto "difícil" escapado pelo mesmo driver do backup.
+- 1 ponta a ponta: dump no formato antigo restaurado em outro banco e comparado com o original.
 
 ARQUIVOS (copie por cima, mesmas pastas)
-- backend/src/services/backupService.js
+- backend/src/lib/dumpLegado.js (novo)
 - backend/src/scripts/restaurarBackup.js
-- backend/tests/backup-restauracao.test.js (novo)
-- backend/RESTAURACAO-BACKUP.md (novo)
+- backend/tests/dump-legado.test.js (novo)
+- backend/tests/backup-restauracao.test.js
+- backend/RESTAURACAO-BACKUP.md

@@ -29,6 +29,7 @@ const {
   configurado, criarCliente, listarTudo, PREFIXO_DB, PREFIXO_UPLOADS,
 } = require("../services/backupService");
 const { pastaUploads } = require("../lib/uploadAssinado");
+const { removerColunasGeradas, tabelaDoCreate, tabelaDoInsert } = require("../lib/dumpLegado");
 
 const args = process.argv.slice(2);
 const tem = (f) => args.includes(f);
@@ -84,13 +85,35 @@ async function restaurarBanco(arquivoGz) {
   });
   let comandos = 0;
   let rodape = null; // "-- fim: N tabelas, M linhas" gravado pelo backup
+  const geradasPorTabela = new Map(); // tabela -> Set de colunas calculadas (para ler dumps antigos)
+  const ignoradas = new Set();
   for await (const linha of leitor) {
     const sql = linha.trim();
     const fim = sql.match(/^-- fim: (\d+) tabelas, (\d+) linhas/);
     if (fim) rodape = { tabelas: Number(fim[1]), linhas: Number(fim[2]) };
     if (!sql || sql.startsWith("--")) continue;
     try {
-      await c.query(sql);
+      let comando = sql;
+      const nomeInsert = tabelaDoInsert(sql);
+      if (nomeInsert && geradasPorTabela.has(nomeInsert)) {
+        // Dump antigo (anterior a 26/11/2026): o INSERT traz o valor de coluna calculada, que o MySQL recusa.
+        const r = removerColunasGeradas(sql, geradasPorTabela.get(nomeInsert));
+        if (r.removidas.length) {
+          comando = r.sql;
+          for (const col of r.removidas) ignoradas.add(`${nomeInsert}.${col}`);
+        }
+      }
+      await c.query(comando);
+      const nomeCreate = tabelaDoCreate(sql);
+      if (nomeCreate && /GENERATED ALWAYS AS/i.test(sql)) {
+        const [g] = await c.query(
+          `SELECT COLUMN_NAME AS nome FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+              AND (EXTRA LIKE '%VIRTUAL GENERATED%' OR EXTRA LIKE '%STORED GENERATED%')`,
+          [nomeCreate]
+        );
+        if (g.length) geradasPorTabela.set(nomeCreate, new Set(g.map((x) => x.nome)));
+      }
     } catch (e) {
       conexao.destroy();
       throw new Error(
@@ -102,6 +125,9 @@ async function restaurarBanco(arquivoGz) {
     if (comandos % 500 === 0) process.stdout.write(`\r  ${comandos} comandos executados...`);
   }
   console.log(`\r  ${comandos} comandos executados.`);
+  if (ignoradas.size) {
+    console.log(`Dump antigo: valores de coluna calculada ignorados (o banco recalcula): ${[...ignoradas].join(", ")}.`);
+  }
 
   // Conferência: o que está no banco agora tem de bater com o que o backup diz que levou.
   if (!rodape) {

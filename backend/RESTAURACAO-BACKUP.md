@@ -4,7 +4,7 @@ Backup que nunca foi restaurado é só esperança. Este roteiro confirma que o d
 
 **O que existe:** todo dia às 02h30 (Brasília) o portal grava no bucket um dump em `db/AAAA/MM/portal-td_AAAA-MM-DD_0230.sql.gz` e sincroniza os uploads.
 
-**Atenção:** dumps feitos **antes** do Pacote 7 não restauram em MySQL (a coluna calculada de `respostas_avaliativas` era gravada e o MySQL recusa). Use um dump feito **depois** do deploy do Pacote 7, ou seja, o de 02h30 do dia seguinte.
+**Dumps antigos:** os feitos antes de 26/11/2026 gravavam o valor de uma coluna calculada (`respostas_avaliativas.treinando_nome_legado`), que o MySQL recusa. O script de restauração já sabe ler esses dumps: ele tira a coluna do `INSERT` e o banco recalcula. Quando isso acontece ele avisa "Dump antigo: valores de coluna calculada ignorados", e a conferência de tabelas e linhas no final continua valendo.
 
 ## Passo a passo
 

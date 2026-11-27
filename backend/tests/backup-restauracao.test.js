@@ -8,6 +8,7 @@ const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 const { spawnSync } = require("child_process");
+const mysql = require("mysql2");
 const F = require("./helpers/fabrica");
 const backup = require("../src/services/backupService");
 
@@ -116,4 +117,26 @@ test("conferência acusa divergência quando a contagem do backup não bate", as
   const r = restaurar(falso, ["--forcar"]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /DIVERGE\./);
+});
+
+test("dump ANTIGO (INSERT com o valor da coluna calculada) também restaura, sem a coluna", async (t) => {
+  if (!podeCriarBanco) return t.skip("sem permissão para criar banco de destino");
+  // monta um dump no formato antigo: o INSERT de zz_bk_a sai de SELECT * (inclui `ger`), como saía antes
+  const [linhas] = await F.pool.query("SELECT * FROM zz_bk_a ORDER BY id");
+  const cols = Object.keys(linhas[0]).map((c) => "`" + c + "`").join(",");
+  const tuplas = linhas.map((l) => "(" + Object.values(l).map((v) => mysql.escape(v instanceof Date ? v.toISOString().slice(0, 19).replace("T", " ") : v)).join(",") + ")").join(",");
+  const antigo = zlib.gunzipSync(fs.readFileSync(dump)).toString("utf8").split("\n").map((l) => (
+    l.startsWith("INSERT INTO `zz_bk_a`") ? `INSERT INTO \`zz_bk_a\` (${cols}) VALUES ${tuplas};` : l
+  )).join("\n");
+  assert.ok(/`ger`/.test(antigo.split("\n").find((l) => l.startsWith("INSERT INTO `zz_bk_a`"))), "o dump de teste está no formato antigo");
+  const arq = path.join(pasta, "antigo.sql.gz");
+  fs.writeFileSync(arq, zlib.gzipSync(antigo));
+
+  const r = restaurar(arq, ["--forcar"]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /Dump antigo: .*zz_bk_a\.ger/);
+  assert.match(r.stdout, /CONFERE\./);
+  const [origem] = await F.pool.query(`SELECT ${colunas} FROM zz_bk_a ORDER BY id`);
+  const [destino] = await F.pool.query(`SELECT ${colunas} FROM ${BANCO_DESTINO}.zz_bk_a ORDER BY id`);
+  assert.deepEqual(destino, origem);
 });
